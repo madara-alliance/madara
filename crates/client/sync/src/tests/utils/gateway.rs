@@ -208,12 +208,10 @@ impl TestContext {
         });
     }
 
-    pub fn mock_class_hash(&self) {
+    pub fn mock_class_hash(&self, path: &str) {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_class_by_hash");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body_from_file("src/tests/utils/class_hash.json");
+            then.status(200).header("content-type", "application/json").body_from_file(path);
         });
     }
 

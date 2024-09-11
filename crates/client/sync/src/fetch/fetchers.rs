@@ -268,10 +268,8 @@ async fn fetch_state_update_with_block(
     (starknet_providers::sequencer::models::StateUpdate, starknet_providers::sequencer::models::Block),
     ProviderError,
 > {
-    log::info!("Fetching state update with block");
     #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
     let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
-    log::info!("State update with block: {:?}", state_update_with_block);
     Ok((state_update_with_block.state_update, state_update_with_block.block))
 }
 
@@ -343,7 +341,6 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<(Felt, ContractClass), ProviderError> {
     let contract_class = provider.get_class(starknet_core::types::BlockId::from(block_id), class_hash).await?;
-    log::debug!("got the contract class here {:?}", contract_class);
     Ok((class_hash, contract_class))
 }
 
@@ -372,19 +369,26 @@ mod test_l2_fetchers {
         ctx.mock_block_pending();
 
         // Mock class hash
-        ctx.mock_class_hash();
+        ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
 
         let result = fetch_pending_block_and_updates(&ctx.backend, &ctx.provider).await;
 
-        assert!(result.is_ok(), "Failed to fetch pending block: {:?}", result.err());
+        let pending_block = result
+            .expect("Failed to fetch pending block")
+            .expect("Expected Some(UnverifiedPendingFullBlock), got None");
 
-        let pending_block = result.unwrap();
-
-        // Test that we received an UnverifiedPendingFullBlock
-        assert!(matches!(pending_block, UnverifiedPendingFullBlock { .. }));
+        assert!(
+            matches!(pending_block, UnverifiedPendingFullBlock { .. }),
+            "Expected UnverifiedPendingFullBlock, got {:?}",
+            pending_block
+        );
 
         // Verify essential components of the pending block
-        assert!(pending_block.header.parent_block_hash.is_some(), "Parent block hash should be present");
+        assert_eq!(
+            pending_block.header.parent_block_hash,
+            Some(felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75")),
+            "Parent block hash should be present"
+        );
         assert_eq!(
             pending_block.header.sequencer_address,
             felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
@@ -441,12 +445,11 @@ mod test_l2_fetchers {
 
         let result = fetch_pending_block_and_updates(&ctx.backend, &ctx.provider).await;
 
-        assert!(result.is_err(), "Expected an error, but got: {:?}", result);
-
-        match result.unwrap_err() {
-            FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)) => {}
-            err => panic!("Unexpected error: {:?}", err),
-        }
+        assert!(
+            matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
+            "Expected BlockNotFound error, but got: {:?}",
+            result
+        );
     }
 
     /// Test successful fetching of state update with block for the pending block.
@@ -462,11 +465,9 @@ mod test_l2_fetchers {
         // Mock the pending block
         ctx.mock_block_pending();
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::Pending).await;
-
-        assert!(result.is_ok(), "Failed to fetch state update with block: {:?}", result.err());
-
-        let (state_update, block) = result.unwrap();
+        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::Pending)
+            .await
+            .expect("Failed to fetch state update with block");
 
         // Verify state update
         assert!(!state_update.state_diff.storage_diffs.is_empty(), "State update should contain storage diffs");
@@ -502,12 +503,11 @@ mod test_l2_fetchers {
 
         let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
 
-        assert!(result.is_err(), "Expected an error, but got: {:?}", result);
-
-        match result.unwrap_err() {
-            ProviderError::StarknetError(StarknetError::BlockNotFound) => {}
-            err => panic!("Unexpected error: {:?}", err),
-        }
+        assert!(
+            matches!(result, Err(ProviderError::StarknetError(StarknetError::BlockNotFound))),
+            "Expected BlockNotFound error, but got: {:?}",
+            result
+        );
     }
 
     /// Test fetching with provider returning partial data.
@@ -521,22 +521,18 @@ mod test_l2_fetchers {
 
         // Mock partial data scenario
         ctx.mock_block_partial_data(5);
-        ctx.mock_class_hash();
+        ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
 
         let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
 
-        assert!(result.is_err(), "Expected an error due to partial data, but got: {:?}", result);
-
-        match result.unwrap_err() {
-            ProviderError::Other(err) => {
-                assert!(
-                    err.to_string().contains("data did not match any variant of enum GatewayResponse"),
-                    "Unexpected error message: {}",
-                    err
-                );
-            }
-            err => panic!("Unexpected error: {:?}", err),
-        }
+        assert!(
+            matches!(
+                result,
+                Err(ProviderError::Other(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
+            ),
+            "Expected error about mismatched data, but got: {:?}",
+            result
+        );
     }
 
     /// Test fetching of class updates.
@@ -550,16 +546,16 @@ mod test_l2_fetchers {
         let ctx = TestContext::new();
 
         ctx.mock_block(5);
-        ctx.mock_class_hash();
+        ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
 
-        let (state_update, _block) =
-            fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
+        let (state_update, _block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+            .await
+            .expect("Failed to fetch state update with block");
 
-        let result = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
+        let class_updates = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider)
+            .await
+            .expect("Failed to fetch class updates");
 
-        assert!(result.is_ok(), "Failed to fetch class updates: {:?}", result.err());
-
-        let class_updates = result.unwrap();
         assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
 
         // Verify the structure of the first class update
@@ -582,12 +578,17 @@ mod test_l2_fetchers {
         ctx.mock_class_hash_not_found("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0".to_string());
         let result = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
 
-        assert!(result.is_err(), "Expected an error, but got: {:?}", result);
-        match result.unwrap_err().downcast::<L2SyncError>() {
-            Ok(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::ClassHashNotFound))) => {}
-            Ok(err) => panic!("Unexpected L2SyncError: {:?}", err),
-            Err(err) => panic!("Unexpected error type: {:?}", err),
-        }
+        assert!(
+            matches!(
+                result,
+                Err(ref e) if matches!(
+                    e.downcast_ref::<L2SyncError>(),
+                    Some(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::ClassHashNotFound)))
+                )
+            ),
+            "Expected ClassHashNotFound error, but got: {:?}",
+            result
+        );
     }
 
     /// Test fetching of individual class definitions.
@@ -600,14 +601,12 @@ mod test_l2_fetchers {
     async fn test_fetch_class() {
         let ctx = TestContext::new();
 
-        let class_hash = Felt::from_hex_unchecked("0x1234");
-        ctx.mock_class_hash();
+        let class_hash = Felt::from_hex_unchecked("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0");
+        ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
 
-        let result = fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await;
+        let (fetched_hash, _contract_class) =
+            fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await.expect("Failed to fetch class");
 
-        assert!(result.is_ok(), "Failed to fetch class: {:?}", result.err());
-
-        let (fetched_hash, _contract_class) = result.unwrap();
         assert_eq!(fetched_hash, class_hash, "Fetched class hash should match the requested one");
     }
 
@@ -625,12 +624,11 @@ mod test_l2_fetchers {
 
         let result = fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await;
 
-        assert!(result.is_err(), "Expected an error, but got: {:?}", result);
-
-        match result.unwrap_err() {
-            ProviderError::StarknetError(StarknetError::ClassHashNotFound) => {}
-            err => panic!("Unexpected error: {:?}", err),
-        }
+        assert!(
+            matches!(result, Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound))),
+            "Expected ClassHashNotFound error, but got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -640,11 +638,9 @@ mod test_l2_fetchers {
         // Mock a block with a state update
         ctx.mock_block(5);
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
-
-        assert!(result.is_ok(), "Failed to fetch state update with block: {:?}", result.err());
-
-        let (state_update, block) = result.unwrap();
+        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+            .await
+            .expect("Failed to fetch state update with block");
 
         // Verify state update
         assert!(!state_update.state_diff.storage_diffs.is_empty(), "State update should contain storage diffs");
