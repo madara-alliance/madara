@@ -156,7 +156,9 @@ pub async fn fetch_block_and_updates(
     let sw = PerfStopwatch::new();
     let (state_update, block) =
         retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
+
     let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
+
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
     // Verify against these commitments.
