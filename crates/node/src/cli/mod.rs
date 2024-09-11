@@ -18,7 +18,6 @@ use mp_chain_config::{ChainConfig,StarknetVersion};
 use std::path::PathBuf;
 use std::str::FromStr;
 use url::Url;
-use serde::Deserialize;
 use clap::ArgGroup;
 use std::sync::Arc;
 use std::time::Duration;

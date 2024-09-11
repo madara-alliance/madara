@@ -8,6 +8,7 @@ use primitive_types::H160;
 use serde::Deserialize;
 use serde::Deserializer;
 use starknet_api::core::{ChainId, ContractAddress};
+use std::env;
 use std::str::FromStr;
 use std::{
     collections::BTreeMap,
@@ -21,6 +22,12 @@ use std::{
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
 
+fn resolve_path(relative_path: &str) -> std::io::Result<PathBuf> {
+    let exe_path = env::current_exe()?;
+    let exe_dir = exe_path.parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Unable to determine executable directory"))?;
+    Ok(exe_dir.join(relative_path))
+}
 
 pub enum ChainPreset{
     Mainnet,
@@ -42,10 +49,10 @@ impl ChainPreset {
 
     pub fn get_config(self) -> anyhow::Result<ChainConfig> {
         match self {
-            ChainPreset::Mainnet => ChainConfig::from_yaml(Path::new("./presets/mainnet.yaml")),
-            ChainPreset::Sepolia => ChainConfig::from_yaml(Path::new("./presets/sepolia.yaml")),
-            ChainPreset::IntegrationSepolia => ChainConfig::from_yaml(Path::new("./presets/integration.yaml")),
-            ChainPreset::Test => ChainConfig::from_yaml(Path::new("./presets/test.yaml")),
+            ChainPreset::Mainnet => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml")),
+            ChainPreset::Sepolia => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/sepolia.yaml")),
+            ChainPreset::IntegrationSepolia => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/integration.yaml")),
+            ChainPreset::Test => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/test.yaml")),
         }
     }
 }
@@ -175,23 +182,23 @@ impl ChainConfig {
         // - state_diff_size is the blob size limit of ethereum
         // - pending_block_update_time: educated guess
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
-        Self::from_yaml(&PathBuf::from_str("./presets/mainnet.yaml")?)
+        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/mainnet.yaml")?)
     }
 
     /// Returns the Chain Config preset for Starknet Sepolia.
     pub fn starknet_sepolia() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("./presets/sepolia.yaml")?)
+        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/sepolia.yaml")?)
     }
 
     /// Returns the Chain Config preset for Starknet Integration.
     pub fn starknet_integration() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("./presets/integration.yaml")?)
+        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/integration.yaml")?)
     }
 
     /// Returns the Chain Config preset for our Madara tests.
     #[cfg(test)]
     pub fn test_config() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("./presets/test.yaml")?)
+        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/test.yaml")?)
     }
 
     /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
@@ -222,7 +229,11 @@ mod tests {
 
     #[test]
     fn test_mainnet_from_yaml() {
-        let chain_config : ChainConfig = ChainConfig::from_yaml(&Path::new("./presets/mainnet.yaml")).expect("failed to get cfg");
+        // Set current dir to root project dir
+        let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
+        env::set_current_dir(&root_dir).unwrap();
+        
+        let chain_config : ChainConfig = ChainConfig::from_yaml(&Path::new("crates/primitives/chain_config/presets/mainnet.yaml")).expect("failed to get cfg");
 
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
@@ -235,7 +246,7 @@ mod tests {
         
         // Check versioned constants
         // Load and parse the JSON file
-        let json_content = fs::read_to_string("./resources/versioned_constants_13_0.json")
+        let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
         .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
@@ -302,6 +313,11 @@ mod tests {
 
     #[test]
     fn test_from_preset() {
+        
+        // Set current dir to root project dir
+        let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
+        env::set_current_dir(&root_dir).unwrap();
+
         let chain_config : ChainConfig = ChainConfig::from_preset("mainnet").expect("failed to get cfg");
 
 
@@ -315,7 +331,7 @@ mod tests {
         
         // Check versioned constants
         // Load and parse the JSON file
-        let json_content = fs::read_to_string("./resources/versioned_constants_13_0.json")
+        let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
         .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
