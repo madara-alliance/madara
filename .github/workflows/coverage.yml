@@ -49,22 +49,10 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo nextest run --cargo-profile dev
-
-      - name: Generate coverage info
-        run: |
-          source <(cargo llvm-cov show-env --export-prefix)
-          cargo llvm-cov report --cobertura --output-path coverage.cobertura.xml
-
-      - name: Display coverage
-        uses: ewjoachim/coverage-comment-action@v1
-        continue-on-error: true
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
-          COVERAGE_FILE: coverage.cobertura.xml
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --cargo-profile dev --lcov --output-path lcov.info --test-threads=1 --workspace
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
         with:
-          files: coverage.cobertura.xml
+          files: lcov.info
           debug: true
