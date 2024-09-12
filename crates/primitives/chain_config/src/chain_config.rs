@@ -207,7 +207,6 @@ impl ChainConfig {
     }
 
     /// Returns the Chain Config preset for our Madara tests.
-    #[cfg(test)]
     pub fn test_config() -> anyhow::Result<Self> {
         Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/test.yaml")?)
     }
