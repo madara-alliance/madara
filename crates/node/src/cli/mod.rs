@@ -14,16 +14,18 @@ pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
-use mp_chain_config::{ChainConfig,StarknetVersion};
+use clap::ArgGroup;
+use mp_chain_config::{ChainConfig, StarknetVersion};
+use primitive_types::H160;
+use starknet_api::core::PatriciaKey;
+use starknet_api::core::{ChainId, ContractAddress};
+use starknet_api::{contract_address, felt, patricia_key};
+use starknet_core::types::Felt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use url::Url;
-use clap::ArgGroup;
 use std::sync::Arc;
 use std::time::Duration;
-use starknet_api::core::{ContractAddress,ChainId};
-use starknet_core::types::Felt;
-use primitive_types::H160;
+use url::Url;
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
@@ -126,13 +128,16 @@ impl RunCmd {
     pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
         let mut chain_config: ChainConfig = match &self.preset {
             Some(preset_name) => ChainConfig::from_preset(preset_name.as_str())?,
-            None => ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?,
+            None => {
+                ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?
+            }
         };
 
         // Override stuff if flag is setted
         let run_cmd = self.clone();
         if self.chain_config_override {
-            (chain_config.chain_name,
+            (
+                chain_config.chain_name,
                 chain_config.chain_id,
                 chain_config.native_fee_token_address,
                 chain_config.parent_fee_token_address,
@@ -141,22 +146,33 @@ impl RunCmd {
                 chain_config.pending_block_update_time,
                 chain_config.sequencer_address,
                 chain_config.max_nonce_for_validation_skip,
-                chain_config.eth_core_contract_address) = (
-                   run_cmd.chain_name.map_or(chain_config.chain_name, |v| v),
-                   run_cmd.chain_id.map_or(chain_config.chain_id, |v| ChainId::from(v)),
-                   run_cmd.native_fee_token_address.map_or(chain_config.native_fee_token_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse native fee token")).expect("failed to assign native fee token")),
-                   run_cmd.parent_fee_token_address.map_or(chain_config.parent_fee_token_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse parent fee token")).expect("failed to assign parent fee token")),
-                   run_cmd.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")),
-                   run_cmd.block_time.map_or(chain_config.block_time, |v| Duration::from_secs(v)),
-                   run_cmd.pending_block_update_time.map_or(chain_config.pending_block_update_time, |v| Duration::from_secs(v)),
-                   run_cmd.sequencer_address.map_or(chain_config.sequencer_address, |v| ContractAddress::try_from(Felt::from_hex(v.as_str()).expect("failed to parse sequencer address")).expect("failed to assign sequencer address")),
-                   run_cmd.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
-                   run_cmd.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| H160::from_str(v.as_str()).expect("failed to parse core contract"))
-               );
+                chain_config.eth_core_contract_address,
+            ) = (
+                run_cmd.chain_name.map_or(chain_config.chain_name, |v| v),
+                run_cmd.chain_id.map_or(chain_config.chain_id, |v| ChainId::from(v)),
+                run_cmd
+                    .native_fee_token_address
+                    .map_or(chain_config.native_fee_token_address, |v| contract_address!(v.as_str())),
+                run_cmd
+                    .parent_fee_token_address
+                    .map_or(chain_config.parent_fee_token_address, |v| contract_address!(v.as_str())),
+                run_cmd.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| {
+                    StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")
+                }),
+                run_cmd.block_time.map_or(chain_config.block_time, |v| Duration::from_secs(v)),
+                run_cmd
+                    .pending_block_update_time
+                    .map_or(chain_config.pending_block_update_time, |v| Duration::from_secs(v)),
+                run_cmd.sequencer_address.map_or(chain_config.sequencer_address, |v| contract_address!(v.as_str())),
+                run_cmd.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
+                run_cmd.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| {
+                    H160::from_str(v.as_str()).expect("failed to parse core contract")
+                }),
+            );
         };
         Ok(Arc::new(chain_config))
     }
-    
+
     pub fn is_authority(&self) -> bool {
         self.authority || self.block_production_params.devnet
     }

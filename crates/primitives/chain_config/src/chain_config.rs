@@ -1,10 +1,7 @@
 use crate::StarknetVersion;
-use anyhow::{bail,Context};
+use anyhow::{bail, Context};
 use blockifier::bouncer::BouncerWeights;
-use blockifier::{
-    bouncer::BouncerConfig,
-    versioned_constants::VersionedConstants,
-};
+use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use primitive_types::H160;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -22,15 +19,15 @@ use std::{
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
 
-pub enum ChainPreset{
+pub enum ChainPreset {
     Mainnet,
     Sepolia,
     IntegrationSepolia,
-    Test
+    Test,
 }
 
 impl ChainPreset {
-    pub fn from_str(preset_name : &str) -> anyhow::Result<Self> {
+    pub fn from_str(preset_name: &str) -> anyhow::Result<Self> {
         match preset_name {
             "mainnet" => Ok(ChainPreset::Mainnet),
             "sepolia" => Ok(ChainPreset::Sepolia),
@@ -42,9 +39,15 @@ impl ChainPreset {
 
     pub fn get_config(self) -> anyhow::Result<ChainConfig> {
         match self {
-            ChainPreset::Mainnet => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml")),
-            ChainPreset::Sepolia => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/sepolia.yaml")),
-            ChainPreset::IntegrationSepolia => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/integration.yaml")),
+            ChainPreset::Mainnet => {
+                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
+            }
+            ChainPreset::Sepolia => {
+                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/sepolia.yaml"))
+            }
+            ChainPreset::IntegrationSepolia => {
+                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/integration.yaml"))
+            }
             ChainPreset::Test => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/test.yaml")),
         }
     }
@@ -122,9 +125,7 @@ where
     }
 
     let helper = BouncerConfigHelper::deserialize(deserializer)?;
-    Ok(BouncerConfig {
-        block_max_capacity: helper.block_max_capacity,
-    })
+    Ok(BouncerConfig { block_max_capacity: helper.block_max_capacity })
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +179,7 @@ impl ChainConfig {
     pub fn from_preset(preset_name: &str) -> anyhow::Result<Self> {
         ChainPreset::from_str(preset_name)?.get_config()
     }
-    
+
     pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
         let config_str = fs::read_to_string(path)?;
         serde_yaml::from_str(&config_str).context("While deserializing chain config")
@@ -244,22 +245,25 @@ mod tests {
         // Set current dir to root project dir
         let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
         env::set_current_dir(&root_dir).unwrap();
-        
-        let chain_config : ChainConfig = ChainConfig::from_yaml(&Path::new("crates/primitives/chain_config/presets/mainnet.yaml")).expect("failed to get cfg");
 
+        let chain_config: ChainConfig =
+            ChainConfig::from_yaml(&Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
+                .expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
-        
-        let native_fee_token_address = Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();
-        let parent_fee_token_address = Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap();
+
+        let native_fee_token_address =
+            Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();
+        let parent_fee_token_address =
+            Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap();
         assert_eq!(chain_config.native_fee_token_address, ContractAddress::try_from(native_fee_token_address).unwrap());
         assert_eq!(chain_config.parent_fee_token_address, ContractAddress::try_from(parent_fee_token_address).unwrap());
-        
+
         // Check versioned constants
         // Load and parse the JSON file
         let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
-        .expect("Failed to read JSON file");
+            .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
         // Get the VersionedConstants for version 0.13.0
@@ -280,14 +284,17 @@ mod tests {
         // Check OsConstants
         let os_constants = &constants.os_constants;
         assert_eq!(os_constants.gas_costs.step_gas_cost, json["os_constants"]["step_gas_cost"].as_u64().unwrap());
-        assert_eq!(os_constants.gas_costs.range_check_gas_cost, json["os_constants"]["range_check_gas_cost"].as_u64().unwrap());
+        assert_eq!(
+            os_constants.gas_costs.range_check_gas_cost,
+            json["os_constants"]["range_check_gas_cost"].as_u64().unwrap()
+        );
         // Add more checks for other gas costs...
 
         // Check ValidateRoundingConsts
         assert_eq!(os_constants.validate_rounding_consts.validate_block_number_rounding, 1);
         assert_eq!(os_constants.validate_rounding_consts.validate_timestamp_rounding, 1);
 
-        // Check OsResources 
+        // Check OsResources
         let declare_tx_resources = constants.os_resources_for_tx_type(&TransactionType::Declare, 0);
         assert!(declare_tx_resources.n_steps > 0);
 
@@ -297,7 +304,7 @@ mod tests {
 
         // Check vm_resource_fee_cost using the public method
         let vm_costs = constants.vm_resource_fee_cost();
-        
+
         // Verify specific resource costs
         assert_eq!(vm_costs.get("n_steps").unwrap(), &ResourceCost::new(5, 1000));
         assert_eq!(vm_costs.get("pedersen_builtin").unwrap(), &ResourceCost::new(16, 100));
@@ -311,40 +318,43 @@ mod tests {
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(360));
         assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
-        
+
         // Check bouncer config
         assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.n_steps, 40000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 131072);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);
-        
+
         assert_eq!(chain_config.sequencer_address, ContractAddress::try_from(Felt::from_str("0x0").unwrap()).unwrap());
         assert_eq!(chain_config.max_nonce_for_validation_skip, 2);
-        assert_eq!(chain_config.eth_core_contract_address, H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap());
+        assert_eq!(
+            chain_config.eth_core_contract_address,
+            H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
+        );
     }
 
     #[test]
     fn test_from_preset() {
-        
         // Set current dir to root project dir
         let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
         env::set_current_dir(&root_dir).unwrap();
 
-        let chain_config : ChainConfig = ChainConfig::from_preset("mainnet").expect("failed to get cfg");
-
+        let chain_config: ChainConfig = ChainConfig::from_preset("mainnet").expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
-        
-        let native_fee_token_address = Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();
-        let parent_fee_token_address = Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap();
+
+        let native_fee_token_address =
+            Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();
+        let parent_fee_token_address =
+            Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap();
         assert_eq!(chain_config.native_fee_token_address, ContractAddress::try_from(native_fee_token_address).unwrap());
         assert_eq!(chain_config.parent_fee_token_address, ContractAddress::try_from(parent_fee_token_address).unwrap());
-        
+
         // Check versioned constants
         // Load and parse the JSON file
         let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
-        .expect("Failed to read JSON file");
+            .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
         // Get the VersionedConstants for version 0.13.0
@@ -365,14 +375,17 @@ mod tests {
         // Check OsConstants
         let os_constants = &constants.os_constants;
         assert_eq!(os_constants.gas_costs.step_gas_cost, json["os_constants"]["step_gas_cost"].as_u64().unwrap());
-        assert_eq!(os_constants.gas_costs.range_check_gas_cost, json["os_constants"]["range_check_gas_cost"].as_u64().unwrap());
+        assert_eq!(
+            os_constants.gas_costs.range_check_gas_cost,
+            json["os_constants"]["range_check_gas_cost"].as_u64().unwrap()
+        );
         // Add more checks for other gas costs...
 
         // Check ValidateRoundingConsts
         assert_eq!(os_constants.validate_rounding_consts.validate_block_number_rounding, 1);
         assert_eq!(os_constants.validate_rounding_consts.validate_timestamp_rounding, 1);
 
-        // Check OsResources 
+        // Check OsResources
         let declare_tx_resources = constants.os_resources_for_tx_type(&TransactionType::Declare, 0);
         assert!(declare_tx_resources.n_steps > 0);
 
@@ -382,7 +395,7 @@ mod tests {
 
         // Check vm_resource_fee_cost using the public method
         let vm_costs = constants.vm_resource_fee_cost();
-        
+
         // Verify specific resource costs
         assert_eq!(vm_costs.get("n_steps").unwrap(), &ResourceCost::new(5, 1000));
         assert_eq!(vm_costs.get("pedersen_builtin").unwrap(), &ResourceCost::new(16, 100));
@@ -402,16 +415,19 @@ mod tests {
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(360));
         assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
-        
+
         // Check bouncer config
         assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.n_steps, 40000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 131072);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);
-        
+
         assert_eq!(chain_config.sequencer_address, ContractAddress::try_from(Felt::from_str("0x0").unwrap()).unwrap());
         assert_eq!(chain_config.max_nonce_for_validation_skip, 2);
-        assert_eq!(chain_config.eth_core_contract_address, H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap());
+        assert_eq!(
+            chain_config.eth_core_contract_address,
+            H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
+        );
     }
 
     #[test]
@@ -428,7 +444,8 @@ mod tests {
                     constants.validate_max_n_steps = 10;
                     constants
                 }),
-            ].into(),
+            ]
+            .into(),
             ..ChainConfig::test_config().unwrap()
         };
 
