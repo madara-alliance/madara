@@ -1,4 +1,6 @@
 mod common;
+use std::env;
+
 use common::temp_db;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::{block_db::TxIndex, db_block_id::DbBlockId};
@@ -21,6 +23,7 @@ use starknet_types_core::felt::Felt;
 
 #[tokio::test]
 async fn test_chain_info() {
+    println!("current dir is {:?}", env::current_dir());
     let db = temp_db().await;
     let chain_config = db.backend().chain_config();
     assert_eq!(chain_config.chain_id, ChainConfig::test_config().unwrap().chain_id);
