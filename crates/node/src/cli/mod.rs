@@ -1,4 +1,5 @@
 pub mod block_production;
+pub mod chain_config_overrides;
 pub mod db;
 pub mod l1;
 pub mod prometheus;
@@ -8,6 +9,7 @@ pub mod telemetry;
 
 use crate::cli::l1::L1SyncParams;
 pub use block_production::*;
+pub use chain_config_overrides::*;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
@@ -15,16 +17,9 @@ pub use sync::*;
 pub use telemetry::*;
 
 use clap::ArgGroup;
-use mp_chain_config::{ChainConfig, StarknetVersion};
-use primitive_types::H160;
-use starknet_api::core::PatriciaKey;
-use starknet_api::core::{ChainId, ContractAddress};
-use starknet_api::{contract_address, felt, patricia_key};
-use starknet_core::types::Felt;
+use mp_chain_config::ChainConfig;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 use url::Url;
 
 /// Madara: High performance Starknet sequencer/full-node.
@@ -84,27 +79,9 @@ pub struct RunCmd {
     #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
     pub chain_config_override: bool,
 
-    //Overrideable args
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN NAME")]
-    pub chain_name: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN ID")]
-    pub chain_id: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED NATIVE FEE TOKEN")]
-    pub native_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PARENT FEE TOKEN")]
-    pub parent_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED LATEST PROTOCOL VERSION")]
-    pub latest_protocol_version: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED BLOCK TIME")]
-    pub block_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PENDING BLOCK UPDATE")]
-    pub pending_block_update_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED SEQUENCER ADDRESS")]
-    pub sequencer_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED MAX NONCE VALIDATION FOR SKIP")]
-    pub max_nonce_for_validation_skip: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED ETH CORE CONTRACT")]
-    pub eth_core_contract_address: Option<String>,
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub chain_params: ChainConfigOverrideParams,
 
     /// Run the TUI dashboard
     #[cfg(feature = "tui")]
@@ -134,42 +111,9 @@ impl RunCmd {
         };
 
         // Override stuff if flag is setted
-        let run_cmd = self.clone();
         if self.chain_config_override {
-            (
-                chain_config.chain_name,
-                chain_config.chain_id,
-                chain_config.native_fee_token_address,
-                chain_config.parent_fee_token_address,
-                chain_config.latest_protocol_version,
-                chain_config.block_time,
-                chain_config.pending_block_update_time,
-                chain_config.sequencer_address,
-                chain_config.max_nonce_for_validation_skip,
-                chain_config.eth_core_contract_address,
-            ) = (
-                run_cmd.chain_name.map_or(chain_config.chain_name, |v| v),
-                run_cmd.chain_id.map_or(chain_config.chain_id, |v| ChainId::from(v)),
-                run_cmd
-                    .native_fee_token_address
-                    .map_or(chain_config.native_fee_token_address, |v| contract_address!(v.as_str())),
-                run_cmd
-                    .parent_fee_token_address
-                    .map_or(chain_config.parent_fee_token_address, |v| contract_address!(v.as_str())),
-                run_cmd.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| {
-                    StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")
-                }),
-                run_cmd.block_time.map_or(chain_config.block_time, |v| Duration::from_secs(v)),
-                run_cmd
-                    .pending_block_update_time
-                    .map_or(chain_config.pending_block_update_time, |v| Duration::from_secs(v)),
-                run_cmd.sequencer_address.map_or(chain_config.sequencer_address, |v| contract_address!(v.as_str())),
-                run_cmd.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
-                run_cmd.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| {
-                    H160::from_str(v.as_str()).expect("failed to parse core contract")
-                }),
-            );
-        };
+            chain_config = self.chain_params.override_cfg(chain_config);
+        }
         Ok(Arc::new(chain_config))
     }
 
