@@ -91,7 +91,7 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::create_ethereum_client;
+    use crate::client::eth_client_getter_test::{create_ethereum_client, eth_client};
     use alloy::node_bindings::Anvil;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
@@ -109,20 +109,9 @@ mod eth_client_gas_price_worker_test {
         (server, eth_client)
     }
 
-    #[fixture]
-    #[once]
-    pub fn eth_client() -> EthereumClient {
-        create_ethereum_client(None)
-    }
-
+    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = Anvil::new()
-            .fork("https://eth.merkle.io")
-            .fork_block_number(20395662)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+    async fn gas_price_worker_when_infinite_loop_true_works(eth_client: &EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
         // Spawn the gas_price_worker in a separate task

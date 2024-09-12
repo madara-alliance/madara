@@ -61,11 +61,6 @@ pub struct RunCmd {
     /// The network chain configuration.
     #[clap(long, short, default_value = "main")]
     pub network: NetworkType,
-
-    /// Run the TUI dashboard
-    #[cfg(feature = "tui")]
-    #[clap(long)]
-    pub tui: bool,
 }
 
 impl RunCmd {

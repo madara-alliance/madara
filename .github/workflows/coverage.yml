@@ -1,4 +1,3 @@
----
 name: Task - Integration Tests
 
 on:
@@ -31,16 +30,6 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
-      - name: Launch Anvil
-        run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
-        env:
-          ANVIL_FORK_URL: "https://eth.merkle.io"
-          ANVIL_BLOCK_NUMBER: 20395662
-      - name: Wait for Anvil to be ready
-        run: |
-          while ! nc -z localhost 8545; do
-            sleep 1
-          done
 
       - name: Build and run tests
         run: |
@@ -53,11 +42,10 @@ jobs:
       - name: Generate coverage info
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
-          cargo llvm-cov report --cobertura --output-path coverage.cobertura.xml
+          cargo llvm-cov report --lcov --output-path lcov.info
 
-      - name: Display coverage
-        uses: ewjoachim/coverage-comment-action@v1
-        continue-on-error: true
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
         with:
-          GITHUB_TOKEN: ${{ github.token }}
-          COVERAGE_FILE: coverage.cobertura.xml
+          files: lcov.info
+          debug: true
