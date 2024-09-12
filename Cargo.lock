@@ -5465,6 +5465,7 @@ dependencies = [
  "mockall",
  "mp-block",
  "mp-chain-config",
+ "mp-class",
  "mp-convert",
  "mp-receipt",
  "mp-state-update",
