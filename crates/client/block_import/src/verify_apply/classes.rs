@@ -46,10 +46,42 @@ pub fn class_trie_root(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use mp_chain_config::ChainConfig;
     use super::*;
 
     #[test]
     fn test_contract_class_hash_version() {
         assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
+    }
+
+    #[test]
+    fn test_class_trie_root() {
+        // Test the class_trie_root function
+        
+        // Create a test backend using a test chain configuration
+        let chain_config = Arc::new(ChainConfig::test_config());
+        let backend = MadaraBackend::open_for_testing(chain_config);
+
+        // Create sample DeclaredClassItems with predefined class and compiled class hashes
+        let declared_classes = vec![
+            DeclaredClassItem {
+                class_hash: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
+                compiled_class_hash: Felt::from_hex_unchecked("0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
+            },
+            DeclaredClassItem {
+                class_hash: Felt::from_hex_unchecked("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
+                compiled_class_hash: Felt::from_hex_unchecked("0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321"),
+            },
+        ];
+
+        // Set the block number for the test
+        let block_number = 1;
+
+        // Call the class_trie_root function with the test data
+        let result = class_trie_root(&backend, &declared_classes, block_number).unwrap();
+
+        // Assert that the resulting root hash matches the expected value
+        assert_eq!(result, Felt::from_hex_unchecked("0x9e521cb5e73189fe985db9dfd50b1dcdefc95ca4e1ebf23b0a4408a81bb610"));
     }
 }

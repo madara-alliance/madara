@@ -28,3 +28,6 @@ bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"
