@@ -186,6 +186,7 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use mc_block_import::{BlockImporter, BlockValidationContext};
     use mc_db::MadaraBackend;
     use mc_mempool::block_production::BlockProductionTask;
@@ -195,10 +196,7 @@ mod tests {
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
     use mp_convert::felt_to_u128;
-    use mp_receipt::{
-        DeclareTransactionReceipt, Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit,
-        TransactionReceipt,
-    };
+    use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
     use rstest::{fixture, rstest};
@@ -370,7 +368,7 @@ mod tests {
 
         let res = chain.sign_and_add_declare_tx(declare_txn, sender_address);
 
-        let calculated_class_hash = sierra_class.clone().class_hash().unwrap();
+        let calculated_class_hash = sierra_class.class_hash().unwrap();
 
         assert_eq!(res.class_hash, calculated_class_hash);
 
@@ -381,34 +379,19 @@ mod tests {
 
         assert_eq!(block.inner.transactions.len(), 1);
         assert_eq!(block.inner.receipts.len(), 1);
-        log::info!("receipt: {:?}", block.inner.receipts[0]);
+        log::debug!("receipt: {:?}", block.inner.receipts[0]);
 
         let class_info =
             chain.backend.get_class_info(&BlockId::Tag(BlockTag::Pending), &calculated_class_hash).unwrap().unwrap();
-        match class_info {
-            ClassInfo::Sierra(info) => {
-                assert_eq!(info.compiled_class_hash, compiled_contract_class_hash);
-            }
-            ClassInfo::Legacy(_) => {}
-        }
+
+        assert_matches!(
+            class_info,
+            ClassInfo::Sierra(info) if info.compiled_class_hash == compiled_contract_class_hash
+        );
 
         let TransactionReceipt::Declare(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
 
-        assert_eq!(
-            receipt,
-            DeclareTransactionReceipt {
-                transaction_hash: res.transaction_hash,
-                messages_sent: vec![],
-                events: vec![Event {
-                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                    keys: receipt.events[0].keys.clone(),
-                    data: receipt.events[0].data.clone(),
-                }],
-                execution_resources: receipt.execution_resources.clone(),
-                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
-                execution_result: receipt.execution_result.clone(),
-            }
-        );
+        assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
     }
 
     #[rstest]
@@ -416,14 +399,14 @@ mod tests {
         println!("{}", chain.contracts);
 
         let key = SigningKey::from_random();
-        log::info!("Secret Key : {:?}", key.secret_scalar());
+        log::debug!("Secret Key : {:?}", key.secret_scalar());
 
         let pubkey = key.verifying_key();
-        log::info!("Public Key : {:?}", pubkey.scalar());
+        log::debug!("Public Key : {:?}", pubkey.scalar());
 
         let calculated_address =
             calculate_contract_address(Felt::ZERO, ACCOUNT_CLASS_HASH, &[pubkey.scalar()], Felt::ZERO);
-        log::info!("Calculated Address : {:?}", calculated_address);
+        log::debug!("Calculated Address : {:?}", calculated_address);
 
         // =====================================================================================
         // Transferring the funds from pre deployed account into the calculated address
@@ -455,10 +438,11 @@ mod tests {
             }),
             contract_0,
         );
-        log::info!("tx hash: {:#x}", transfer_txn.transaction_hash);
+        log::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
-        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
         chain.block_production.on_pending_time_tick().unwrap();
+
         // =====================================================================================
 
         let account_balance = get_fee_tokens_balance(&chain.backend, calculated_address).unwrap();
@@ -488,7 +472,19 @@ mod tests {
 
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account);
 
+        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
+        chain.block_production.on_pending_time_tick().unwrap();
+
         assert_eq!(res.contract_address, account.address);
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        assert_eq!(block.inner.transactions.len(), 2);
+        assert_eq!(block.inner.receipts.len(), 2);
+
+        let TransactionReceipt::DeployAccount(receipt) = block.inner.receipts[1].clone() else { unreachable!() };
+
+        assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
     }
 
     // TODO: add eth transfer
