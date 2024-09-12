@@ -91,17 +91,14 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::create_ethereum_client;
-    use alloy::node_bindings::{Anvil, AnvilInstance};
+    use crate::client::eth_client_getter_test::{create_ethereum_client, eth_client};
+    use alloy::node_bindings::Anvil;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use rstest::*;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
-
-    const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://eth.merkle.io";
 
     #[fixture]
     #[once]
@@ -110,24 +107,6 @@ mod eth_client_gas_price_worker_test {
         let addr = format!("http://{}", server.address());
         let eth_client = create_ethereum_client(Some(&addr));
         (server, eth_client)
-    }
-
-    #[fixture]
-    #[once]
-    fn anvil_instance() -> AnvilInstance {
-        let anvil = Anvil::new()
-            .fork(FORK_URL)
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .try_spawn()
-            .expect("failed to spawn anvil instance");
-        println!("Anvil started and running at `{}`", anvil.endpoint());
-        anvil
-    }
-
-    #[fixture]
-    #[once]
-    pub fn eth_client(anvil_instance: &AnvilInstance) -> EthereumClient {
-        create_ethereum_client(Some(&anvil_instance.endpoint()))
     }
 
     #[rstest]
