@@ -82,11 +82,6 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_params: ChainConfigOverrideParams,
-
-    /// Run the TUI dashboard
-    #[cfg(feature = "tui")]
-    #[clap(long)]
-    pub tui: bool,
 }
 
 impl RunCmd {
