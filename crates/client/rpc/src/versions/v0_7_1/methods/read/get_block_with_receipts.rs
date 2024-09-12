@@ -70,10 +70,19 @@ mod tests {
     use super::*;
     use crate::{
         errors::StarknetRpcApiError,
-        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+        test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
+    use mc_db::MadaraBackend;
+    use mp_block::{header::GasPrices, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock};
+    use mp_chain_config::StarknetVersion;
+    use mp_receipt::{
+        ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
+    };
+    use mp_state_update::StateDiff;
+    use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
     use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
+    use std::sync::Arc;
 
     #[rstest]
     fn test_get_block_with_receipts(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
@@ -168,5 +177,73 @@ mod tests {
             get_block_with_receipts(&rpc, BlockId::Hash(does_not_exist)),
             Err(StarknetRpcApiError::BlockNotFound)
         );
+    }
+
+    #[rstest]
+    fn test_get_block_with_receipts_pending_always_present(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
+        let (backend, rpc) = rpc_test_setup;
+        backend
+            .store_block(
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        header: Header {
+                            parent_block_hash: Felt::ZERO,
+                            block_number: 0,
+                            transaction_count: 1,
+                            global_state_root: Felt::from_hex_unchecked("0x88912"),
+                            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                            block_timestamp: 43,
+                            transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
+                            event_count: 0,
+                            event_commitment: Felt::from_hex_unchecked("0xb"),
+                            state_diff_length: 5,
+                            state_diff_commitment: Felt::from_hex_unchecked("0xb1"),
+                            receipt_commitment: Felt::from_hex_unchecked("0xb4"),
+                            protocol_version: StarknetVersion::V0_13_1_1,
+                            l1_gas_price: GasPrices {
+                                eth_l1_gas_price: 123,
+                                strk_l1_gas_price: 12,
+                                eth_l1_data_gas_price: 44,
+                                strk_l1_data_gas_price: 52,
+                            },
+                            l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+                        },
+                        block_hash: Felt::from_hex_unchecked("0x1777177171"),
+                        tx_hashes: vec![Felt::from_hex_unchecked("0x8888888")],
+                    }),
+                    inner: MadaraBlockInner {
+                        transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                            max_fee: Felt::from_hex_unchecked("0x12"),
+                            signature: vec![],
+                            contract_address: Felt::from_hex_unchecked("0x4343"),
+                            entry_point_selector: Felt::from_hex_unchecked("0x1212"),
+                            calldata: vec![Felt::from_hex_unchecked("0x2828")],
+                        }))],
+                        receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                            transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                            actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
+                            messages_sent: vec![],
+                            events: vec![],
+                            execution_resources: ExecutionResources::default(),
+                            execution_result: ExecutionResult::Succeeded,
+                        })],
+                    },
+                },
+                StateDiff::default(),
+                vec![],
+            )
+            .unwrap();
+
+        let res = MaybePendingBlockWithReceipts::PendingBlock(PendingBlockWithReceipts {
+            parent_hash: Felt::from_hex_unchecked("0x1777177171"),
+            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+            timestamp: 43,
+            starknet_version: StarknetVersion::V0_13_1_1.to_string(),
+            l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+            l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+            l1_da_mode: starknet_core::types::L1DataAvailabilityMode::Blob,
+            transactions: vec![],
+        });
+        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
     }
 }

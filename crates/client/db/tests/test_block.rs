@@ -81,7 +81,7 @@ async fn test_store_pending_block() {
     let db = temp_db().await;
     let backend = db.backend();
 
-    assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().is_none());
+    assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().is_some()); // Pending block should always be there
 
     let block = pending_block_one();
     let state_diff = pending_state_diff_one();
@@ -106,7 +106,12 @@ async fn test_erase_pending_block() {
     backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
     backend.clear_pending_block().unwrap();
 
-    assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().is_none());
+    assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().inner.transactions.is_empty());
+    assert!(
+        backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().info.as_pending().unwrap().header.parent_block_hash
+            == finalized_block_zero().info.as_nonpending().unwrap().block_hash,
+        "fake pending block parent hash must match with latest block in db"
+    );
 
     backend.store_block(finalized_block_one(), finalized_state_diff_one(), vec![]).unwrap();
 
