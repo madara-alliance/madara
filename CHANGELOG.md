@@ -3,6 +3,7 @@
 ## Next release
 
 - test: added tests for declare and deploy transactions
+- fix: pending block must always be returned in rpc even if none is in db
 - fix: fixed the starting block arg with an ignore_block_order argument
 - docs: fixed Docker Compose instructions
 - fix: removed unused dependencies with udeps and machete
