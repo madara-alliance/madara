@@ -23,7 +23,7 @@ use starknet_types_core::felt::Felt;
 async fn test_chain_info() {
     let db = temp_db().await;
     let chain_config = db.backend().chain_config();
-    assert_eq!(chain_config.chain_id, ChainConfig::test_config().chain_id);
+    assert_eq!(chain_config.chain_id, ChainConfig::test_config().unwrap().chain_id);
 }
 
 #[tokio::test]
