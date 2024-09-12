@@ -137,7 +137,10 @@ impl EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
-    use alloy::primitives::U256;
+    use alloy::{
+        node_bindings::{Anvil, AnvilInstance},
+        primitives::U256,
+    };
     use mc_metrics::MetricsService;
     use rstest::*;
     use tokio;
@@ -145,19 +148,32 @@ pub mod eth_client_getter_test {
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
+    const FORK_URL: &str = "https://eth.merkle.io";
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
+    #[fixture]
+    #[once]
+    fn anvil_instance() -> AnvilInstance {
+        let anvil = Anvil::new()
+            .fork(FORK_URL)
+            .fork_block_number(L1_BLOCK_NUMBER)
+            .try_spawn()
+            .expect("failed to spawn anvil instance");
+        println!("Anvil started and running at `{}`", anvil.endpoint());
+        anvil
+    }
+
     #[rstest]
     #[tokio::test]
-    async fn fail_create_new_client_invalid_core_contract() {
+    async fn fail_create_new_client_invalid_core_contract(anvil_instance: &AnvilInstance) {
+        let anvil = anvil_instance;
         // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
 
-        let rpc_url_string = String::from("http://localhost:8545");
-        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
+        let rpc_url: Url = anvil.endpoint_url();
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
@@ -183,8 +199,8 @@ pub mod eth_client_getter_test {
 
     #[fixture]
     #[once]
-    pub fn eth_client() -> EthereumClient {
-        create_ethereum_client(None)
+    pub fn eth_client(anvil_instance: &AnvilInstance) -> EthereumClient {
+        create_ethereum_client(Some(&anvil_instance.endpoint()))
     }
 
     #[rstest]
