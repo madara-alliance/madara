@@ -299,7 +299,7 @@ mod tests {
         let mut g = ChainGenesisDescription::base_config();
         let contracts = g.add_devnet_contracts(10);
 
-        let chain_config = Arc::new(ChainConfig::test_config());
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend)));
