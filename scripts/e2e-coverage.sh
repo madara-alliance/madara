@@ -1,10 +1,6 @@
 #!/bin/bash
 set -e
 
-# will also launch anvil and automatically close it down on error or success
-
-anvil --fork-url https://eth.merkle.io --fork-block-number 20395662 &
-
 subshell() {
     set -e
     rm -f target/madara-* lcov.info
@@ -21,5 +17,4 @@ subshell() {
 }
 
 (subshell && r=$?) || r=$?
-pkill -P $$
 exit $r

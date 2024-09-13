@@ -9,12 +9,12 @@ pub struct SyncParams {
     #[clap(long, alias = "no-sync")]
     pub sync_disabled: bool,
 
-    /// The block you want to start syncing from.
+    /// The block you want to start syncing from. This will most probably break your database.
     #[clap(long, value_name = "BLOCK NUMBER")]
-    pub starting_block: Option<u64>,
+    pub unsafe_starting_block: Option<u64>,
 
     /// This will produce sound interpreted from the block hashes.
-    #[cfg(feature = "m")]
+    #[cfg(feature = "sound")]
     #[clap(long)]
     pub sound: bool,
 
@@ -57,9 +57,9 @@ impl SyncParams {
 
         let polling = if self.no_sync_polling { None } else { Some(Duration::from_secs(self.sync_polling_interval)) };
 
-        #[cfg(feature = "m")]
+        #[cfg(feature = "sound")]
         let sound = self.sound;
-        #[cfg(not(feature = "m"))]
+        #[cfg(not(feature = "sound"))]
         let sound = false;
 
         FetchConfig {
