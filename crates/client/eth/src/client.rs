@@ -142,8 +142,8 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
     use mc_metrics::MetricsService;
+    use serial_test::serial;
     use tokio;
-
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
@@ -178,6 +178,7 @@ pub mod eth_client_getter_test {
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
+    #[serial]
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
         let anvil = create_anvil_instance();
@@ -194,6 +195,7 @@ pub mod eth_client_getter_test {
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
+    #[serial]
     #[tokio::test]
     async fn get_latest_block_number_works() {
         let anvil = create_anvil_instance();
@@ -203,6 +205,7 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
+    #[serial]
     #[tokio::test]
     async fn get_last_event_block_number_works() {
         let anvil = create_anvil_instance();
@@ -214,6 +217,7 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
+    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_hash_works() {
         let anvil = create_anvil_instance();
@@ -224,6 +228,7 @@ pub mod eth_client_getter_test {
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
+    #[serial]
     #[tokio::test]
     async fn get_last_state_root_works() {
         let anvil = create_anvil_instance();
@@ -233,6 +238,7 @@ pub mod eth_client_getter_test {
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
+    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_number_works() {
         let anvil = create_anvil_instance();
