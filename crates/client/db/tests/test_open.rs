@@ -1,8 +1,9 @@
 mod common;
 
-use common::temp_db;
+use common::*;
 use mc_db::DatabaseService;
 use mp_chain_config::ChainConfig;
+use rstest::*;
 
 #[rstest]
 #[tokio::test]
