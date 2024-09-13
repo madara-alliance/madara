@@ -236,15 +236,27 @@ mod tests {
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
+    use rstest::*;
 
     use super::*;
 
-    #[test]
-    fn test_mainnet_from_yaml() {
-        // Set current dir to root project dir
-        let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
-        env::set_current_dir(&root_dir).unwrap();
+    #[fixture]
+    fn set_workdir() {
+        let output = std::process::Command::new("cargo")
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .expect("Failed to execute command");
 
+        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
+        
+        env::set_current_dir(&project_root).expect("Failed to set working directory");
+    }
+
+    #[rstest]
+    fn test_mainnet_from_yaml(_set_workdir: ()) {
         let chain_config: ChainConfig =
             ChainConfig::from_yaml(&Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
                 .expect("failed to get cfg");
@@ -332,12 +344,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_from_preset() {
-        // Set current dir to root project dir
-        let root_dir = env::current_dir().unwrap().join(Path::new("../../../"));
-        env::set_current_dir(&root_dir).unwrap();
-
+    #[rstest]
+    fn test_from_preset(_set_workdir: ()) {
         let chain_config: ChainConfig = ChainConfig::from_preset("mainnet").expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
@@ -429,8 +437,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_exec_constants() {
+    #[rstest]
+    fn test_exec_constants(_set_workdir: ()) {
         let chain_config = ChainConfig {
             versioned_constants: [
                 (StarknetVersion::new(0, 1, 5, 0), {
