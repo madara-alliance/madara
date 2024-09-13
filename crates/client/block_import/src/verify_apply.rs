@@ -65,22 +65,18 @@ pub fn verify_apply_inner(
     validation: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
-    println!("Checkpoint 1: Checking parent hash and number");
     let (block_number, parent_block_hash) =
         check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number, &validation)?;
 
     // Update contract and its storage tries
-    println!("Checkpoint 2: Updating tries");
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
 
     // Block hash
-    println!("Checkpoint 3: Calculating block hash");
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
 
     log::debug!("verify_apply_inner store block {}", header.block_number);
 
     // store block, also uses rayon heavily internally
-    println!("Checkpoint 4: Storing block");
     backend
         .store_block(
             MadaraMaybePendingBlock {
