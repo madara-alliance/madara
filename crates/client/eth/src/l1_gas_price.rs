@@ -95,13 +95,12 @@ mod eth_client_gas_price_worker_test {
     use alloy::node_bindings::Anvil;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
-    use rstest::*;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
     const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://eth.merkle.io";
+    const FORK_URL: &str = "https://ethereum-rpc.publicnode.com";
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
@@ -224,7 +223,6 @@ mod eth_client_gas_price_worker_test {
         mock.assert();
     }
 
-    #[rstest]
     #[tokio::test]
     async fn update_gas_price_works() {
         let anvil = Anvil::new()
