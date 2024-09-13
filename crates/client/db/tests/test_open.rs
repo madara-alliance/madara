@@ -4,13 +4,15 @@ use common::temp_db;
 use mc_db::DatabaseService;
 use mp_chain_config::ChainConfig;
 
+#[rstest]
 #[tokio::test]
-async fn test_open_db() {
+async fn test_open_db(_set_workdir: ()) {
     temp_db().await;
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_open_different_chain_id() {
+async fn test_open_different_chain_id(_set_workdir: ()) {
     let temp_dir = tempfile::TempDir::new().unwrap();
     {
         let chain_config = std::sync::Arc::new(ChainConfig::starknet_integration().expect("failed to retrieve integration chain config"));
