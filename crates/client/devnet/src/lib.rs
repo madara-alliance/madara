@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
+    #[case("./cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
     fn test_erc_20_declare(_set_workdir: (),mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
