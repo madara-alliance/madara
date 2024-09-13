@@ -142,7 +142,6 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
     use mc_metrics::MetricsService;
-    use rstest::*;
     use tokio;
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
@@ -155,9 +154,7 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
-    #[fixture]
-    #[once]
-    fn anvil_instance() -> AnvilInstance {
+    fn create_anvil_instance() -> AnvilInstance {
         let anvil = Anvil::new()
             .fork(FORK_URL)
             .fork_block_number(L1_BLOCK_NUMBER)
@@ -168,10 +165,22 @@ pub mod eth_client_getter_test {
         anvil
     }
 
-    #[rstest]
+    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
+        let rpc_url: Url = url.unwrap_or("http://localhost:8545").parse().expect("issue while parsing URL");
+
+        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
+        let contract = StarknetCoreContract::new(address, provider.clone());
+
+        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+
+        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
+    }
+
     #[tokio::test]
-    async fn fail_create_new_client_invalid_core_contract(anvil_instance: &AnvilInstance) {
-        let anvil = anvil_instance;
+    async fn fail_create_new_client_invalid_core_contract() {
+        let anvil = create_anvil_instance();
         // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
 
@@ -185,37 +194,19 @@ pub mod eth_client_getter_test {
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
-    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
-        let rpc_url_string = url.unwrap_or("http://localhost:8545").to_string();
-        let rpc_url: Url = rpc_url_string.parse().expect("issue while parsing URL");
-
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
-        let contract = StarknetCoreContract::new(address, provider.clone());
-
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
-
-        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
-    }
-
-    #[fixture]
-    #[once]
-    pub fn eth_client(anvil_instance: &AnvilInstance) -> EthereumClient {
-        create_ethereum_client(Some(&anvil_instance.endpoint()))
-    }
-
-    #[rstest]
     #[tokio::test]
-    async fn get_latest_block_number_works(eth_client: &EthereumClient) {
+    async fn get_latest_block_number_works() {
+        let anvil = create_anvil_instance();
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_event_block_number_works(eth_client: &EthereumClient) {
+    async fn get_last_event_block_number_works() {
+        let anvil = create_anvil_instance();
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
             .await
@@ -223,26 +214,29 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_hash_works(eth_client: &EthereumClient) {
+    async fn get_last_verified_block_hash_works() {
+        let anvil = create_anvil_instance();
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_state_root_works(eth_client: &EthereumClient) {
+    async fn get_last_state_root_works() {
+        let anvil = create_anvil_instance();
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_number_works(eth_client: &EthereumClient) {
+    async fn get_last_verified_block_number_works() {
+        let anvil = create_anvil_instance();
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
