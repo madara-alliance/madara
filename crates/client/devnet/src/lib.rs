@@ -207,6 +207,8 @@ mod tests {
         BroadcastedTransaction, DataAvailabilityMode, DeclareTransactionResult, DeployAccountTransactionResult,
         FlattenedSierraClass, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
+    use std::env;
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     struct DevnetForTesting {
@@ -333,9 +335,24 @@ mod tests {
         DevnetForTesting { backend, contracts, block_production, mempool }
     }
 
+    #[fixture]
+    pub fn set_workdir() {
+        let output = std::process::Command::new("cargo")
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .expect("Failed to execute command");
+
+        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
+        
+        env::set_current_dir(&project_root).expect("Failed to set working directory");
+    }
+
     #[rstest]
     #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    fn test_erc_20_declare(_set_workdir: (),mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -395,7 +412,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_deploy(mut chain: DevnetForTesting) {
+    fn test_account_deploy(_set_workdir: (),mut chain: DevnetForTesting) {
         println!("{}", chain.contracts);
 
         let key = SigningKey::from_random();
@@ -492,7 +509,7 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+    fn test_basic_transfer(_set_workdir: (),mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
