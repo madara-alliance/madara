@@ -322,7 +322,10 @@ mod verify_apply_tests {
             L1HandlerTransaction,
         };
 
-    // Common helper functions
+    /// Creates a dummy UnverifiedHeader for testing purposes.
+    ///
+    /// This function generates an UnverifiedHeader with predefined values,
+    /// useful for creating consistent test scenarios.
     fn create_dummy_unverified_header() -> UnverifiedHeader {
         UnverifiedHeader {
             parent_block_hash: Some(felt!("0x1")),
@@ -339,6 +342,10 @@ mod verify_apply_tests {
         }
     }
 
+    /// Creates dummy ValidatedCommitments for testing purposes.
+    ///
+    /// This function generates ValidatedCommitments with predefined values,
+    /// useful for creating consistent test scenarios.
     fn create_dummy_commitments() -> ValidatedCommitments {
         ValidatedCommitments {
             transaction_count: 1,
@@ -351,6 +358,10 @@ mod verify_apply_tests {
         }
     }
 
+    /// Sets up a test backend with a temporary directory.
+    ///
+    /// This function creates a new MadaraBackend instance with a temporary
+    /// directory and test configuration, useful for isolated test environments.
     async fn setup_test_backend() -> Arc<MadaraBackend> {
         let temp_dir = TempDir::new().unwrap();
         let chain_config = Arc::new(ChainConfig::test_config());
@@ -358,6 +369,10 @@ mod verify_apply_tests {
         db_service.backend().clone()
     }
 
+    /// Creates a BlockValidationContext for testing purposes.
+    ///
+    /// This function generates a BlockValidationContext with customizable
+    /// ignore_block_order flag, useful for testing different validation scenarios.
     fn create_validation_context(ignore_block_order: bool) -> BlockValidationContext {
         BlockValidationContext {
             chain_id: ChainId::Other("something".to_string()),
@@ -368,6 +383,10 @@ mod verify_apply_tests {
         }
     }
 
+    /// Creates a dummy Header for testing purposes.
+    ///
+    /// This function generates a Header with predefined values,
+    /// useful for creating consistent test scenarios.
     fn create_dummy_header() -> Header {
         Header {
             parent_block_hash: felt!("0x1"),
@@ -393,6 +412,10 @@ mod verify_apply_tests {
         }
     }
 
+    /// Creates a finalized block zero (genesis block) for testing purposes.
+    ///
+    /// This function generates a MadaraMaybePendingBlock representing the genesis block,
+    /// useful for testing scenarios involving the first block in the chain.
     fn finalized_block_zero(header: Header) -> MadaraMaybePendingBlock {
         let transactions = vec![
             InvokeTransactionV1::default().into(),
@@ -418,6 +441,10 @@ mod verify_apply_tests {
         MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
     }
 
+    /// Creates an empty StateDiff for testing purposes.
+    ///
+    /// This function returns a default StateDiff, useful for testing scenarios
+    /// where an empty state difference is needed.
     fn finalized_state_diff_zero() -> StateDiff {
         StateDiff::default()
     }
@@ -540,7 +567,7 @@ mod verify_apply_tests {
         ///
         /// Verifies that:
         /// 1. The function correctly calculates the state root from non-zero inputs.
-        /// 2. The result is not zero and differs from both input roots.
+        /// 2. The result is verified and differs from both input roots.
         #[test]
         fn test_calculate_state_root_success() {
             let contracts_trie_root = felt!("0x123456");
@@ -551,7 +578,7 @@ mod verify_apply_tests {
             assert_eq!(
                 result,
                 felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e"),
-                "State root should not be zero"
+                "State root should match"
             );
             assert_ne!(result, contracts_trie_root, "State root should not be equal to contracts_trie_root");
             assert_ne!(result, classes_trie_root, "State root should not be equal to classes_trie_root");
@@ -573,33 +600,16 @@ mod verify_apply_tests {
                 "State root should be equal to contracts_trie_root when classes_trie_root is zero"
             );
         }
-
-        /// Test state root calculation with non-zero class trie root.
-        ///
-        /// Verifies that:
-        /// 1. The function produces a non-zero result different from both inputs.
-        /// 2. The calculation is deterministic (same inputs produce the same output).
-        #[test]
-        fn test_calculate_state_root_non_zero_class_trie_root() {
-            let contracts_trie_root = felt!("0x123456");
-            let classes_trie_root = felt!("0x789abc");
-
-            let result = calculate_state_root(contracts_trie_root, classes_trie_root);
-
-            assert_ne!(result, felt!("0x0"), "State root should not be zero");
-            assert_ne!(result, contracts_trie_root, "State root should not be equal to contracts_trie_root");
-            assert_ne!(result, classes_trie_root, "State root should not be equal to classes_trie_root");
-
-            // Verify that the result is deterministic
-            let result2 = calculate_state_root(contracts_trie_root, classes_trie_root);
-            assert_eq!(result, result2, "State root calculation should be deterministic");
-        }
     }
 
     mod update_tries_tests {
         use super::*;
         use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
 
+        /// Creates a dummy PreValidatedBlock for testing purposes.
+        ///
+        /// This function generates a PreValidatedBlock with predefined values,
+        /// useful for testing update_tries scenarios.
         fn create_dummy_block() -> PreValidatedBlock {
             PreValidatedBlock {
                 header: create_dummy_unverified_header(),
@@ -675,7 +685,7 @@ mod verify_apply_tests {
         ///
         /// Verifies that:
         /// 1. The function returns an Internal error when the global state root is missing.
-            #[tokio::test]
+        #[tokio::test]
         async fn test_update_tries_missing_global_state_root() {
             let backend = setup_test_backend().await;
             let mut block = create_dummy_block();
@@ -774,7 +784,7 @@ mod verify_apply_tests {
             assert_eq!(
                 result.0,
                 felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
-                "Block hash should not be zero"
+                "Block hash should match"
             );
             assert_eq!(result.1.block_number, 1, "Block number should be 1");
         }
@@ -818,6 +828,8 @@ mod verify_apply_tests {
         ///
         /// Verifies that:
         /// 1. For specific block numbers on mainnet, the function uses the provided block hash.
+        /// 
+        /// Note: This test should be updated/removed when the block hash calculation logic is updated.
         #[test]
         fn test_block_hash_special_trusted_case() {
             let block = PreValidatedBlock {
@@ -852,8 +864,11 @@ mod verify_apply_tests {
 
     mod verify_apply_inner_tests {
         use super::*;
-        use mp_state_update::StateDiff;
 
+        /// Creates a test PreValidatedBlock for verify_apply_inner tests.
+        ///
+        /// This function generates a PreValidatedBlock with specific values
+        /// tailored for testing the verify_apply_inner function.
         fn create_test_block() -> PreValidatedBlock {
             PreValidatedBlock {
                 header: create_dummy_unverified_header(),
@@ -887,7 +902,6 @@ mod verify_apply_tests {
             block.header.parent_block_hash = Some(felt!("0x12345"));
             let validation = create_validation_context(false);
 
-            // Call verify_apply_inner
             let _result = verify_apply_inner(&backend, block.clone(), validation.clone());
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
@@ -916,10 +930,9 @@ mod verify_apply_tests {
 
             let validation = create_validation_context(false);
 
-            // Call verify_apply_inner
             let result = verify_apply_inner(&backend, block.clone(), validation);
 
-            assert!(matches!(result, Err(BlockImportError::LatestBlockN { .. })), "Expected mismatch error");
+            assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
         }
