@@ -10,6 +10,7 @@
 - fix: defaulted l1 gas price in devnet mode
 - fix: fixed anvil port value in tests
 - fix: flaky tests in gas price worker fixed
+- test: tests added for verify and apply task in l2 sync
 - ci: add coveralls report
 - test: added tests for declare and deploy transactions
 - fix: pending block must always be returned in rpc even if none is in db

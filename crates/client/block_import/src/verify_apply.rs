@@ -306,21 +306,19 @@ mod verify_apply_tests {
     use super::*;
     use mc_db::DatabaseService;
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+    use mp_block::Header;
     use mp_chain_config::{ChainConfig, StarknetVersion};
+    use mp_receipt::{
+        DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
+        L1HandlerTransactionReceipt,
+    };
+    use mp_state_update::StateDiff;
+    use mp_transactions::{
+        DeclareTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV1, L1HandlerTransaction,
+    };
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
     use tempfile::TempDir;
-    use mp_block:: Header;
-        use mp_receipt::{
-            DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,
-            InvokeTransactionReceipt, L1HandlerTransactionReceipt,
-        };
-        use mp_state_update::StateDiff;
-        use mp_transactions::{
-             DeclareTransactionV1,
-            DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV1,
-            L1HandlerTransaction,
-        };
 
     /// Creates a dummy UnverifiedHeader for testing purposes.
     ///
@@ -451,7 +449,6 @@ mod verify_apply_tests {
 
     pub mod check_parent_hash_and_num_tests {
         use super::*;
-        
 
         /// Test successful parent hash and number check.
         ///
@@ -828,7 +825,7 @@ mod verify_apply_tests {
         ///
         /// Verifies that:
         /// 1. For specific block numbers on mainnet, the function uses the provided block hash.
-        /// 
+        ///
         /// Note: This test should be updated/removed when the block hash calculation logic is updated.
         #[test]
         fn test_block_hash_special_trusted_case() {
@@ -905,8 +902,6 @@ mod verify_apply_tests {
             let _result = verify_apply_inner(&backend, block.clone(), validation.clone());
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
-           
-
         }
 
         /// Test error handling during block verification.
@@ -934,7 +929,6 @@ mod verify_apply_tests {
 
             assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
-
         }
     }
 }
