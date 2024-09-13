@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: generate a fixed set of public and private keys for devnet
 - ci: add coveralls report
 - test: added tests for declare and deploy transactions
 - fix: pending block must always be returned in rpc even if none is in db

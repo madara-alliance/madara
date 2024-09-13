@@ -4,6 +4,8 @@ use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
@@ -115,10 +117,20 @@ impl ChainGenesisDescription {
             get_storage_var_address("Account_public_key", &[])
         }
 
+        pub fn from_seed(seed: u64) -> Felt {
+            // Use a fixed seed for deterministic RNG
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut buffer = [0u8; 32];
+            rng.fill_bytes(&mut buffer);
+
+            Felt::from_bytes_be_slice(&buffer)
+        }
+
         DevnetKeys(
             (0..n_addr)
-                .map(|_| {
-                    let key = SigningKey::from_random();
+                .map(|addr_idx| {
+                    let secret_scalar = from_seed(addr_idx);
+                    let key = SigningKey::from_secret_scalar(secret_scalar);
                     let pubkey = key.verifying_key();
 
                     // calculating actual address w.r.t. the class hash.
