@@ -197,12 +197,10 @@ fn update_tries(
     validation: &BlockValidationContext,
     block_number: u64,
 ) -> Result<Felt, BlockImportError> {
-    println!("Checkpoint 1: Checking if we trust global tries");
     if validation.trust_global_tries {
         let Some(global_state_root) = block.unverified_global_state_root else {
             return Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()));
         };
-        println!("Checkpoint 2: Returning global state root");
         return Ok(global_state_root);
     }
 
