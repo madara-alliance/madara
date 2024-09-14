@@ -1,3 +1,4 @@
+use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
     account_transaction::AccountTransaction,
     objects::{FeeType, GasVector, HasRelatedFeeType, TransactionExecutionInfo},
@@ -37,18 +38,11 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
 
-    // `non_optional_call_infos` recursively returns the call infos for all calls in this tx.
+    // println!(">>>> res : {:?}", res);
+    let mut events: Vec<Event> = Vec::new();
+    get_events_from_call_info(res.execute_call_info.as_ref().unwrap(), 0, &mut events);
+    // println!(">>>>> events fetched : {:?}", events);
 
-    let events = res
-        .non_optional_call_infos()
-        .flat_map(|call| {
-            call.execution.events.iter().map(|event| Event {
-                from_address: call.call.storage_address.into(),
-                keys: event.event.keys.iter().map(|k| k.0).collect(),
-                data: event.event.data.0.clone(),
-            })
-        })
-        .collect();
     let messages_sent = res
         .non_optional_call_infos()
         .flat_map(|call| {
@@ -132,6 +126,44 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         //     message_hash: todo!(),
         // }),
     }
+}
+
+/// To get all the events from the CallInfo including the inner call events.
+fn get_events_from_call_info(call_info: &CallInfo, next_order: usize, events_vec: &mut Vec<Event>) -> usize {
+    let mut event_idx = 0;
+    let mut inner_call_idx = 0;
+    let mut next_order = next_order;
+
+    loop {
+        if event_idx < call_info.execution.events.len() {
+            let ordered_event = &call_info.execution.events[event_idx];
+            if ordered_event.order == next_order {
+                let event = Event {
+                    from_address: call_info.call.storage_address.into(),
+                    keys: ordered_event.event.keys.iter().map(|k| k.0).collect(),
+                    data: ordered_event.event.data.0.clone(),
+                };
+                events_vec.push(event);
+                next_order += 1;
+                event_idx += 1;
+                continue;
+            }
+        }
+
+        if inner_call_idx < call_info.inner_calls.len() {
+            next_order = get_events_from_call_info(
+                &call_info.inner_calls[inner_call_idx],
+                next_order,
+                events_vec
+            );
+            inner_call_idx += 1;
+            continue;
+        }
+
+        break;
+    }
+
+    next_order
 }
 
 impl From<GasVector> for DataAvailabilityResources {
