@@ -103,8 +103,7 @@ impl NetworkType {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
-            // TODO: what should we actually pass here?
-            NetworkType::Devnet => "",
+            NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
         }
     }
 
