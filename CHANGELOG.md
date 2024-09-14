@@ -2,7 +2,7 @@
 
 ## Next release
 
-- refactor: change default chain id
+- refactor: change default chain id and add custom flag to override
 - ci: add coveralls report
 - test: added tests for declare and deploy transactions
 - fix: pending block must always be returned in rpc even if none is in db
