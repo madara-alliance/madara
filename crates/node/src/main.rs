@@ -11,6 +11,7 @@ mod cli;
 mod service;
 mod util;
 
+use crate::cli::NetworkType;
 use crate::service::L1SyncService;
 use cli::RunCmd;
 use mc_db::DatabaseService;
@@ -22,6 +23,7 @@ use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
+
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
@@ -32,7 +34,6 @@ async fn main() -> anyhow::Result<()> {
     crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
-
     let chain_config = run_cmd.network.chain_config();
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
@@ -153,6 +154,16 @@ async fn main() -> anyhow::Result<()> {
         .with(rpc_service)
         .with(telemetry_service)
         .with(prometheus_service);
+
+    if run_cmd.block_production_params.devnet && run_cmd.network != NetworkType::Devnet {
+        if !run_cmd.block_production_params.override_devnet_chain_id {
+            panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+        } else {
+            // this log is immediately flooded with devnet accounts and so this can be missed.
+            // should we add a delay here to make this clearly visisble?
+            log::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        }
+    }
 
     app.start_and_drive_to_end().await?;
     Ok(())

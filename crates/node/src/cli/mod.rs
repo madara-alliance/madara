@@ -92,6 +92,9 @@ pub enum NetworkType {
     Test,
     /// The integration network.
     Integration,
+    /// A devnet for local testing
+    #[value(alias("devnet"))]
+    Devnet,
 }
 
 impl NetworkType {
@@ -100,6 +103,8 @@ impl NetworkType {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
+            // TODO: what should we actually pass here?
+            NetworkType::Devnet => "",
         }
     }
 
@@ -108,6 +113,7 @@ impl NetworkType {
             NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
             NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
             NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
+            NetworkType::Devnet => Arc::new(ChainConfig::dev_config()),
         }
     }
 
