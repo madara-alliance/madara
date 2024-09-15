@@ -7,10 +7,9 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{Service, TaskGroup};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct SyncService {
@@ -54,7 +53,10 @@ impl SyncService {
 
 #[async_trait::async_trait]
 impl Service for SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    fn name(&self) -> &str {
+        "L2 Sync"
+    }
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }

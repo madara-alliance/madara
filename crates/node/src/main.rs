@@ -9,7 +9,7 @@ use clap::Parser;
 use mc_block_import::BlockImporter;
 mod cli;
 mod service;
-mod util;
+mod utils;
 
 use crate::service::L1SyncService;
 use cli::RunCmd;
@@ -27,9 +27,9 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_logging()?;
-    crate::util::setup_rayon_threadpool()?;
-    crate::util::raise_fdlimit();
+    crate::utils::setup_logging()?;
+    crate::utils::setup_rayon_threadpool()?;
+    crate::utils::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
@@ -135,6 +135,8 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
+    let block_provider_service = block_provider_service.named("Block Provider service group");
+
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,
         &db_service,
@@ -152,7 +154,8 @@ async fn main() -> anyhow::Result<()> {
         .with(block_provider_service)
         .with(rpc_service)
         .with(telemetry_service)
-        .with(prometheus_service);
+        .with(prometheus_service)
+        .named("App");
 
     app.start_and_drive_to_end().await?;
     Ok(())

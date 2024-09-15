@@ -60,7 +60,14 @@ async fn l2_verify_and_apply_task(
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
-        let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
+        let block_n = block.unverified_block_number;
+        let make_err = |t: &'static str| {
+            move || format!("{t} block #{}", block_n.map(|n| format!("{n}")).unwrap_or_else(|| "<unknown>".into()))
+        };
+        let BlockImportResult { header, block_hash } = block_import
+            .verify_apply(block, validation.clone())
+            .await
+            .with_context(make_err("Verifying and applying"))?;
 
         update_sync_metrics(
             header.block_number,
@@ -71,10 +78,11 @@ async fn l2_verify_and_apply_task(
             sync_timer.clone(),
             &backend,
         )
-        .await?;
+        .await
+        .with_context(make_err("Updating sync metrics for"))?;
 
         let sw = PerfStopwatch::new();
-        if backend.maybe_flush(false)? {
+        if backend.maybe_flush(false).with_context(make_err("Flushing DB at"))? {
             stopwatch_end!(sw, "flush db: {:?}");
         }
 
@@ -104,7 +112,7 @@ async fn l2_verify_and_apply_task(
         if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| header.block_number % backup_every_n_blocks == 0) {
             log::info!("⏳ Backing up database at block {}...", header.block_number);
             let sw = PerfStopwatch::new();
-            backend.backup().await.context("backing up database")?;
+            backend.backup().await.with_context(make_err("Backin up db at"))?;
             log::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
     }
@@ -131,8 +139,17 @@ async fn l2_block_conversion_task(
             channel_wait_or_graceful_shutdown(updates_recv.recv()).await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
                 let validation_ = validation.clone();
+                let block_n = block.unverified_block_number;
+
                 (
-                    async move { block_import_.pre_validate(block, validation_).await },
+                    async move {
+                        block_import_.pre_validate(block, validation_).await.with_context(|| {
+                            format!(
+                                "Converting block #{}",
+                                block_n.map(|n| format!("{n}")).unwrap_or_else(|| "<unknown>".into())
+                            )
+                        })
+                    },
                     (updates_recv, block_import, validation),
                 )
             })
@@ -284,7 +301,7 @@ pub async fn sync(
     ));
 
     while let Some(res) = join_set.join_next().await {
-        res.context("task was dropped")??;
+        res.context("Task was dropped")??;
     }
 
     Ok(())

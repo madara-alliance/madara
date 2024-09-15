@@ -7,8 +7,7 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use mc_metrics::MetricsRegistry;
 use mc_telemetry::TelemetryHandle;
-use mp_utils::service::Service;
-use tokio::task::JoinSet;
+use mp_utils::service::{Service, TaskGroup};
 
 use crate::cli::block_production::BlockProductionParams;
 
@@ -55,8 +54,12 @@ impl BlockProductionService {
 
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
+    fn name(&self) -> &str {
+        "Block Production"
+    }
+
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
         }
@@ -102,7 +105,6 @@ impl Service for BlockProductionService {
             BlockProductionTask::new(backend, block_import, mempool, l1_data_provider)?.block_production_task().await?;
             Ok(())
         });
-
         Ok(())
     }
 }

@@ -131,6 +131,7 @@ impl StarknetRpcApiError {
                 "transaction_index": tx_index,
                 "execution_error": error,
             })),
+            StarknetRpcApiError::ValidationFailure { error } => Some(json!(error)),
             _ => None,
         }
     }

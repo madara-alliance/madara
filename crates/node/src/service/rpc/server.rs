@@ -1,12 +1,7 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::borrow_interior_mutable_const)]
 
-use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
-use std::num::NonZeroU32;
-use std::str::FromStr;
-use std::time::Duration;
-
+use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics, VersionMiddlewareLayer};
 use anyhow::Context;
 use forwarded_header_value::ForwardedHeaderValue;
 use hyper::header::{HeaderName, HeaderValue};
@@ -19,14 +14,16 @@ use jsonrpsee::server::middleware::http::HostFilterLayer;
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
 use jsonrpsee::{Methods, RpcModule};
+use mp_utils::service::TaskGroup;
+use mp_utils::wait_or_graceful_shutdown;
+use std::convert::Infallible;
+use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
+use std::str::FromStr;
+use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::task::JoinSet;
 use tower::Service;
 use tower_http::cors::{AllowOrigin, CorsLayer};
-
-use mp_utils::wait_or_graceful_shutdown;
-
-use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics, VersionMiddlewareLayer};
 
 const MEGABYTE: u32 = 1024 * 1024;
 
@@ -63,7 +60,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 /// Start RPC server listening on given address.
 pub async fn start_server(
     config: ServerConfig,
-    join_set: &mut JoinSet<anyhow::Result<()>>,
+    join_set: &mut TaskGroup,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
         addr,

@@ -18,4 +18,8 @@ impl DatabaseService {
 }
 
 #[async_trait::async_trait]
-impl Service for DatabaseService {}
+impl Service for DatabaseService {
+    fn name(&self) -> &str {
+        "Database"
+    }
+}

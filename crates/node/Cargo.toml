@@ -60,7 +60,3 @@ tokio = { workspace = true }
 tower-http.workspace = true
 tower.workspace = true
 url = { workspace = true }
-
-[features]
-default = []
-sound = ["mc-sync/m"]

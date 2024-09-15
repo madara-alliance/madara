@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use jsonrpsee::server::ServerHandle;
-use tokio::task::JoinSet;
 
 use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
 use mc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{Service, TaskGroup};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -73,7 +72,10 @@ impl RpcService {
 
 #[async_trait::async_trait]
 impl Service for RpcService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    fn name(&self) -> &str {
+        "RPC Server"
+    }
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         if let Some(server_config) = &self.server_config {
             // rpc enabled
             self.server_handle = Some(start_server(server_config.clone(), join_set).await?);

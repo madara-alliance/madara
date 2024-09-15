@@ -7,11 +7,10 @@ use mc_mempool::GasPriceProvider;
 use mc_metrics::MetricsRegistry;
 use mp_block::H160;
 use mp_convert::ToFelt;
-use mp_utils::service::Service;
+use mp_utils::service::{Service, TaskGroup};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct L1SyncService {
@@ -79,7 +78,10 @@ impl L1SyncService {
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    fn name(&self) -> &str {
+        "L1 Sync"
+    }
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll_ms, .. } = self.clone();
 
         if let Some(eth_client) = self.eth_client.take() {

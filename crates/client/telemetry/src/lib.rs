@@ -4,10 +4,9 @@ use std::time::SystemTime;
 use anyhow::Context;
 use futures::SinkExt;
 use mp_utils::channel_wait_or_graceful_shutdown;
-use mp_utils::service::Service;
+use mp_utils::service::{Service, TaskGroup};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
-use tokio::task::JoinSet;
 
 mod sysinfo;
 pub use sysinfo::*;
@@ -93,7 +92,11 @@ impl TelemetryService {
 
 #[async_trait::async_trait]
 impl Service for TelemetryService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    fn name(&self) -> &str {
+        "Telemetry"
+    }
+
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         if self.no_telemetry {
             return Ok(());
         }

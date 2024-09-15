@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
@@ -46,7 +47,11 @@ pub async fn l2_fetch_task(
                     break;
                 }
                 val => {
-                    if fetch_stream_sender.send(val?).await.is_err() {
+                    if fetch_stream_sender
+                        .send(val.with_context(|| format!("Fetching block {:?}", block_n))?)
+                        .await
+                        .is_err()
+                    {
                         // join error
                         break;
                     }
@@ -72,7 +77,11 @@ pub async fn l2_fetch_task(
                         break;
                     }
                     val => {
-                        if fetch_stream_sender.send(val?).await.is_err() {
+                        if fetch_stream_sender
+                            .send(val.with_context(|| format!("Fetching block {:?}", next_block))?)
+                            .await
+                            .is_err()
+                        {
                             // stream closed
                             break;
                         }

@@ -13,11 +13,6 @@ pub struct SyncParams {
     #[clap(long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
 
-    /// This will produce sound interpreted from the block hashes.
-    #[cfg(feature = "m")]
-    #[clap(long)]
-    pub sound: bool,
-
     /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
     /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
     // TODO(docs): explain the security cost
@@ -57,16 +52,10 @@ impl SyncParams {
 
         let polling = if self.no_sync_polling { None } else { Some(Duration::from_secs(self.sync_polling_interval)) };
 
-        #[cfg(feature = "m")]
-        let sound = self.sound;
-        #[cfg(not(feature = "m"))]
-        let sound = false;
-
         FetchConfig {
             gateway,
             feeder_gateway,
             chain_id,
-            sound,
             verify: !self.disable_root,
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,

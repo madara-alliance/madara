@@ -61,17 +61,12 @@ pub struct RunCmd {
     /// The network chain configuration.
     #[clap(long, short, default_value = "main")]
     pub network: NetworkType,
-
-    /// Run the TUI dashboard
-    #[cfg(feature = "tui")]
-    #[clap(long)]
-    pub tui: bool,
 }
 
 impl RunCmd {
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
-            let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
+            let name = crate::utils::get_random_pokemon_name().await.unwrap_or_else(|e| {
                 log::warn!("Failed to get random pokemon name: {}", e);
                 "madara".to_string()
             });

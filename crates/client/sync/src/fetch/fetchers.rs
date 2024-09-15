@@ -37,8 +37,6 @@ pub struct FetchConfig {
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
     pub chain_id: ChainId,
-    /// Whether to play a sound when a new block is fetched.
-    pub sound: bool,
     /// Whether to check the root of the state update.
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.

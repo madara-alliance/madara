@@ -5,9 +5,12 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
 };
-use mp_utils::{service::Service, wait_or_graceful_shutdown, StopHandle};
+use mp_utils::{
+    service::{Service, TaskGroup},
+    wait_or_graceful_shutdown, StopHandle,
+};
 use prometheus::{core::Collector, Encoder, TextEncoder};
-use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
+use tokio::{net::TcpListener, sync::oneshot};
 
 pub use prometheus::{
     self,
@@ -89,7 +92,11 @@ impl MetricsService {
 
 #[async_trait::async_trait]
 impl Service for MetricsService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    fn name(&self) -> &str {
+        "Metrics Endpoint"
+    }
+
+    async fn start(&mut self, join_set: &mut TaskGroup) -> anyhow::Result<()> {
         if self.no_prometheus {
             return Ok(());
         }
