@@ -1,3 +1,7 @@
+use crate::{
+    ContractFeeTokensBalance, ERC20_ETH_CONTRACT_ADDRESS, ERC20_STRK_CONTRACT_ADDRESS, ETH_WEI_DECIMALS,
+    STRK_FRI_DECIMALS,
+};
 use anyhow::Context;
 use blockifier::abi::{abi_utils::get_fee_token_var_address, sierra_types::next_storage_key};
 use core::fmt;
@@ -6,10 +10,22 @@ use mp_block::{BlockId, BlockTag};
 use starknet_core::types::Felt;
 use starknet_signers::SigningKey;
 
-use crate::{
-    ContractFeeTokensBalance, ERC20_ETH_CONTRACT_ADDRESS, ERC20_STRK_CONTRACT_ADDRESS, ETH_WEI_DECIMALS,
-    STRK_FRI_DECIMALS,
-};
+pub fn format_bal(f: &mut impl fmt::Write, val: u128, mut decimals: u128) -> fmt::Result {
+    let before_point = val / decimals;
+    write!(f, "{}", before_point)?;
+
+    let after_point = val % decimals;
+    if after_point != 0 {
+        write!(f, ".")?;
+
+        while after_point % decimals > 0 {
+            decimals /= 10;
+            if decimals == 0 { break }
+            write!(f, "{}", (after_point / decimals) % 10)?;
+        }
+    }
+    Ok(())
+}
 
 pub struct DevnetPredeployedContract {
     pub address: Felt,
@@ -30,8 +46,12 @@ impl fmt::Display for DevnetKeys {
             writeln!(f, "  Private key: {:#x}", contract.secret.secret_scalar())?;
             match contract.balance.as_u128_fri_wei() {
                 Ok((fri, wei)) => {
-                    let (strk, eth) = (fri / STRK_FRI_DECIMALS, wei / ETH_WEI_DECIMALS);
-                    writeln!(f, "  Balance: {strk} STRK, {eth} ETH")?;
+                    write!(f, "  Balance: ")?;
+                    format_bal(f, fri, STRK_FRI_DECIMALS)?;
+                    write!(f, " STRK, ")?;
+                    format_bal(f, wei, ETH_WEI_DECIMALS)?;
+                    writeln!(f, " ETH")?;
+
                     writeln!(f)?;
                 }
                 Err(err) => writeln!(f, "Error getting balance: {err:#}\n")?,
@@ -69,7 +89,6 @@ pub fn get_bal_contract(
     Ok(low)
 }
 
-/// (STRK in FRI, ETH in WEI)
 pub fn get_fee_tokens_balance(
     backend: &MadaraBackend,
     contract_address: Felt,
@@ -117,5 +136,25 @@ impl DevnetKeys {
         backend.set_devnet_predeployed_keys(keys).context("Saving devnet predeployed contracts keys to database")?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[rstest::rstest]
+    #[case(28, ETH_WEI_DECIMALS, "0.000000000000000028")]
+    #[case(20, ETH_WEI_DECIMALS, "0.00000000000000002")]
+    #[case(20000, ETH_WEI_DECIMALS, "0.00000000000002")]
+    #[case(0, ETH_WEI_DECIMALS, "0")]
+    #[case(28 * ETH_WEI_DECIMALS, ETH_WEI_DECIMALS, "28")]
+    #[case(28 * ETH_WEI_DECIMALS + 64, ETH_WEI_DECIMALS, "28.000000000000000064")]
+    #[case(28 * ETH_WEI_DECIMALS + 6000, ETH_WEI_DECIMALS, "28.000000000000006")]
+    #[case(28 * ETH_WEI_DECIMALS + 6100, ETH_WEI_DECIMALS, "28.0000000000000061")]
+    #[case(28 * ETH_WEI_DECIMALS + 6101, ETH_WEI_DECIMALS, "28.000000000000006101")]
+    pub fn test_display_bal(#[case] val: u128, #[case] decimals: u128, #[case] expected: &'static str) {
+        let mut s = String::new();
+        format_bal(&mut s, val, decimals).unwrap();
+        assert_eq!(s, expected)
     }
 }
