@@ -7,7 +7,7 @@ use mc_mempool::GasPriceProvider;
 use mc_metrics::MetricsRegistry;
 use mp_block::H160;
 use mp_convert::ToFelt;
-use mp_utils::service::{Service, TaskGroup};
+use mp_service::service::{Service, TaskGroup};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;

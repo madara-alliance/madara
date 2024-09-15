@@ -11,7 +11,7 @@ use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_service::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 
 pub mod block_db;

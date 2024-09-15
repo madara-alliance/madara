@@ -5,7 +5,7 @@ use anyhow::Context;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
+use mp_service::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};

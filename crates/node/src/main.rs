@@ -19,7 +19,10 @@ use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
-use mp_utils::service::{Service, ServiceGroup};
+use mp_service::{
+    secondary_thread_pool::IsolatedThreadService,
+    service::{Service, ServiceGroup},
+};
 use service::{BlockProductionService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
 const GREET_IMPL_NAME: &str = "Madara";
@@ -107,6 +110,9 @@ async fn main() -> anyhow::Result<()> {
                     telemetry_service.new_handle(),
                 )?;
 
+                // Isolate the block production service to a special dedicated thread. This prevent some DoS vectors.
+                let block_production_service = IsolatedThreadService::new(block_production_service);
+
                 (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
             }
             // Block sync service. (full node)
@@ -148,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
-    let app = ServiceGroup::default()
+    let mut app = ServiceGroup::default()
         .with(db_service)
         .with(l1_service)
         .with(block_provider_service)

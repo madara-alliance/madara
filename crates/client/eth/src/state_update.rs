@@ -6,8 +6,8 @@ use crate::{
 use anyhow::Context;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
+use mp_service::channel_wait_or_graceful_shutdown;
 use mp_transactions::MAIN_CHAIN_ID;
-use mp_utils::channel_wait_or_graceful_shutdown;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 

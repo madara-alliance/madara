@@ -6,7 +6,7 @@ use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
 use mc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{Service, TaskGroup};
+use mp_service::service::{Service, TaskGroup};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};

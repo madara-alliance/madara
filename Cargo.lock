@@ -5367,7 +5367,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-convert",
- "mp-utils",
+ "mp-service",
  "rand",
  "rayon",
  "reqwest 0.12.5",
@@ -5436,9 +5436,9 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-receipt",
+ "mp-service",
  "mp-state-update",
  "mp-transactions",
- "mp-utils",
  "rayon",
  "rocksdb",
  "serde",
@@ -5517,8 +5517,8 @@ dependencies = [
  "mc-metrics",
  "mp-chain-config",
  "mp-convert",
+ "mp-service",
  "mp-transactions",
- "mp-utils",
  "once_cell",
  "prometheus",
  "regex",
@@ -5575,9 +5575,9 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "mp-receipt",
+ "mp-service",
  "mp-state-update",
  "mp-transactions",
- "mp-utils",
  "proptest",
  "proptest-derive",
  "rstest 0.18.2",
@@ -5596,7 +5596,7 @@ dependencies = [
  "async-trait",
  "hyper 0.14.29",
  "log",
- "mp-utils",
+ "mp-service",
  "prometheus",
  "thiserror",
  "tokio",
@@ -5648,8 +5648,8 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "mp-receipt",
+ "mp-service",
  "mp-transactions",
- "mp-utils",
  "num-traits 0.2.19",
  "serde_json",
  "starknet-core",
@@ -5670,7 +5670,7 @@ dependencies = [
  "chrono",
  "futures",
  "log",
- "mp-utils",
+ "mp-service",
  "reqwest 0.12.5",
  "reqwest-websocket",
  "serde_json",
@@ -5835,6 +5835,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mp-service"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "rayon",
+ "tokio",
+]
+
+[[package]]
 name = "mp-state-update"
 version = "0.7.0"
 dependencies = [
@@ -5867,17 +5878,6 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
-]
-
-[[package]]
-name = "mp-utils"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "rayon",
- "tokio",
 ]
 
 [[package]]

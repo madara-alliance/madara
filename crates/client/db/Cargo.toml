@@ -18,9 +18,9 @@ mc-metrics = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
+mp-service = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
 
 # Starknet
 bonsai-trie = { workspace = true }

@@ -14,12 +14,12 @@ use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
+use mp_service::graceful_shutdown;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
 use mp_transactions::TransactionWithHash;
-use mp_utils::graceful_shutdown;
 use starknet_types_core::felt::Felt;
 use std::mem;
 use std::sync::Arc;

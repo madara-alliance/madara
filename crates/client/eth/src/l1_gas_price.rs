@@ -5,7 +5,7 @@ use anyhow::Context;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::time::{Duration, UNIX_EPOCH};
 
-use mp_utils::wait_or_graceful_shutdown;
+use mp_service::wait_or_graceful_shutdown;
 use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(

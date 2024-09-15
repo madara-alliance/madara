@@ -18,7 +18,7 @@ members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
-  "crates/primitives/utils",
+  "crates/primitives/service",
   "crates/proc-macros",
   "crates/tests",
 ]
@@ -42,9 +42,8 @@ default-members = [
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
-  "crates/primitives/utils",
+  "crates/primitives/service",
   "crates/proc-macros",
-  "crates/tests",
 ]
 
 [profile.dev]
@@ -90,7 +89,7 @@ mp-transactions = { path = "crates/primitives/transactions", default-features = 
 mp-class = { path = "crates/primitives/class", default-features = false }
 mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
-mp-utils = { path = "crates/primitives/utils", default-features = false }
+mp-service = { path = "crates/primitives/service", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 
 # Madara client

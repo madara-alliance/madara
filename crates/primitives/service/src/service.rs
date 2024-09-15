@@ -42,10 +42,7 @@ pub trait Service: 'static + Send + Sync {
         "<unnamed>"
     }
 
-    async fn start_and_drive_to_end(mut self) -> anyhow::Result<()>
-    where
-        Self: Sized,
-    {
+    async fn start_and_drive_to_end(&mut self) -> anyhow::Result<()> {
         let mut join_set = TaskGroup::new(self.name().to_owned());
         self.start(&mut join_set).await.with_context(|| format!("Starting service: {}", self.name()))?;
         drive_joinset(join_set.set).await

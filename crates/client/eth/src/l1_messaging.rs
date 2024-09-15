@@ -10,7 +10,7 @@ use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
-use mp_utils::channel_wait_or_graceful_shutdown;
+use mp_service::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{
     Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,

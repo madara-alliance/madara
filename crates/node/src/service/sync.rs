@@ -7,7 +7,7 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::metrics::block_metrics::BlockMetrics;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{Service, TaskGroup};
+use mp_service::service::{Service, TaskGroup};
 use std::sync::Arc;
 use std::time::Duration;
 

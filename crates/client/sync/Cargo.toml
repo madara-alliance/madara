@@ -27,8 +27,8 @@ mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
+mp-service = { workspace = true }
 mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
 
 # Starknet
 starknet-core = { workspace = true }

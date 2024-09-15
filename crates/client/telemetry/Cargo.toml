@@ -14,7 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mp-utils = { workspace = true }
+mp-service = { workspace = true }
 
 # Other
 anyhow.workspace = true

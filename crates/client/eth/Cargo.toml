@@ -19,8 +19,8 @@ mc-mempool = { workspace = true }
 mc-metrics = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
+mp-service = { workspace = true }
 mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }

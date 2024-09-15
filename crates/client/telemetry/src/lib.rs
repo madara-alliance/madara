@@ -3,8 +3,8 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use futures::SinkExt;
-use mp_utils::channel_wait_or_graceful_shutdown;
-use mp_utils::service::{Service, TaskGroup};
+use mp_service::channel_wait_or_graceful_shutdown;
+use mp_service::service::{Service, TaskGroup};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 

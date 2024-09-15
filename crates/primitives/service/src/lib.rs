@@ -1,28 +1,12 @@
 #![allow(clippy::new_without_default)]
 
+pub mod secondary_thread_pool;
 pub mod service;
 
+use futures::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-
-use futures::Future;
 use tokio::sync::oneshot;
-
-/// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
-/// we don't really need that
-pub async fn spawn_rayon_task<F, R>(func: F) -> R
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    rayon::spawn(move || {
-        let _result = tx.send(func());
-    });
-
-    rx.await.expect("tokio channel closed")
-}
 
 static CTRL_C: AtomicBool = AtomicBool::new(false);
 

@@ -5,7 +5,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
 };
-use mp_utils::{
+use mp_service::{
     service::{Service, TaskGroup},
     wait_or_graceful_shutdown, StopHandle,
 };

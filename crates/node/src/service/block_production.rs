@@ -7,7 +7,7 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use mc_metrics::MetricsRegistry;
 use mc_telemetry::TelemetryHandle;
-use mp_utils::service::{Service, TaskGroup};
+use mp_service::service::{Service, TaskGroup};
 
 use crate::cli::block_production::BlockProductionParams;
 
@@ -82,7 +82,7 @@ impl Service for BlockProductionService {
                     .context("Building genesis block from devnet config")?;
 
                 block_import
-                    .add_block(genesis_block, BlockValidationContext::new(backend.chain_config().chain_id.clone()))
+                    .add_block(genesis_block, BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true))
                     .await
                     .context("Importing devnet genesis block")?;
 

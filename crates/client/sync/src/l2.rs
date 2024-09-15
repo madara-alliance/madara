@@ -13,7 +13,7 @@ use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::Header;
-use mp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use mp_service::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use num_traits::FromPrimitive;
 use starknet_api::core::ChainId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
