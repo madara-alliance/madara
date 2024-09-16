@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: defaulted l1 gas price in devnet mode
 - fix: fixed anvil port value in tests
 - ci: add coveralls report
 - test: added tests for declare and deploy transactions
