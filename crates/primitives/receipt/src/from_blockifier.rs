@@ -38,10 +38,8 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
 
-    // println!(">>>> res : {:?}", res);
     let mut events: Vec<Event> = Vec::new();
-    get_events_from_call_info(res.execute_call_info.as_ref().unwrap(), 0, &mut events);
-    // println!(">>>>> events fetched : {:?}", events);
+    get_events_from_call_info(res.execute_call_info.as_ref(), 0, &mut events);
 
     let messages_sent = res
         .non_optional_call_infos()
@@ -129,10 +127,15 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 }
 
 /// To get all the events from the CallInfo including the inner call events.
-fn get_events_from_call_info(call_info: &CallInfo, next_order: usize, events_vec: &mut Vec<Event>) -> usize {
+fn get_events_from_call_info(call_info: Option<&CallInfo>, next_order: usize, events_vec: &mut Vec<Event>) -> usize {
     let mut event_idx = 0;
     let mut inner_call_idx = 0;
     let mut next_order = next_order;
+
+    let call_info = match call_info {
+        Some(call) => call,
+        None => return 0,
+    };
 
     loop {
         if event_idx < call_info.execution.events.len() {
@@ -151,11 +154,8 @@ fn get_events_from_call_info(call_info: &CallInfo, next_order: usize, events_vec
         }
 
         if inner_call_idx < call_info.inner_calls.len() {
-            next_order = get_events_from_call_info(
-                &call_info.inner_calls[inner_call_idx],
-                next_order,
-                events_vec
-            );
+            next_order =
+                get_events_from_call_info(Some(&call_info.inner_calls[inner_call_idx]), next_order, events_vec);
             inner_call_idx += 1;
             continue;
         }
@@ -169,5 +169,85 @@ fn get_events_from_call_info(call_info: &CallInfo, next_order: usize, events_vec
 impl From<GasVector> for DataAvailabilityResources {
     fn from(value: GasVector) -> Self {
         DataAvailabilityResources { l1_gas: value.l1_gas as _, l1_data_gas: value.l1_data_gas as _ }
+    }
+}
+
+#[cfg(test)]
+mod events_logic_tests {
+    use crate::from_blockifier::get_events_from_call_info;
+    use crate::Event;
+    use blockifier::execution::call_info::{CallExecution, CallInfo, OrderedEvent};
+    use rstest::rstest;
+    use starknet_api::transaction::{EventContent, EventData, EventKey};
+    use starknet_types_core::felt::Felt;
+
+    #[rstest]
+    fn test_event_ordering() {
+        let mut events = Vec::new();
+        get_events_from_call_info(Some(&call_info()), 0, &mut events);
+
+        let expected_events_ordering = vec![event(0), event(1), event(2), event(3), event(4)];
+
+        assert_eq!(expected_events_ordering, events);
+    }
+
+    fn call_info() -> CallInfo {
+        CallInfo {
+            call: Default::default(),
+            execution: execution(vec![ordered_event(0)]),
+            resources: Default::default(),
+            inner_calls: vec![CallInfo {
+                call: Default::default(),
+                execution: execution(vec![ordered_event(1)]),
+                resources: Default::default(),
+                inner_calls: vec![CallInfo {
+                    call: Default::default(),
+                    execution: execution(vec![ordered_event(2)]),
+                    resources: Default::default(),
+                    inner_calls: vec![CallInfo {
+                        call: Default::default(),
+                        execution: execution(vec![ordered_event(3)]),
+                        resources: Default::default(),
+                        inner_calls: vec![CallInfo {
+                            call: Default::default(),
+                            execution: execution(vec![ordered_event(4)]),
+                            resources: Default::default(),
+                            inner_calls: vec![],
+                            storage_read_values: vec![],
+                            accessed_storage_keys: Default::default(),
+                        }],
+                        storage_read_values: vec![],
+                        accessed_storage_keys: Default::default(),
+                    }],
+                    storage_read_values: vec![],
+                    accessed_storage_keys: Default::default(),
+                }],
+                storage_read_values: vec![],
+                accessed_storage_keys: Default::default(),
+            }],
+            storage_read_values: vec![],
+            accessed_storage_keys: Default::default(),
+        }
+    }
+
+    fn execution(events: Vec<OrderedEvent>) -> CallExecution {
+        CallExecution {
+            retdata: Default::default(),
+            events,
+            l2_to_l1_messages: vec![],
+            failed: false,
+            gas_consumed: Default::default(),
+        }
+    }
+
+    fn ordered_event(order: usize) -> OrderedEvent {
+        OrderedEvent {
+            order,
+            event: EventContent { keys: vec![EventKey(Felt::ZERO); order], data: EventData(vec![Felt::ZERO; order]) },
+        }
+    }
+
+    fn event(order: usize) -> Event {
+        Event { from_address: Default::default(), keys: vec![Felt::ZERO; order], data: vec![Felt::ZERO; order] }
     }
 }
