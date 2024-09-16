@@ -5786,6 +5786,7 @@ dependencies = [
 name = "mp-class"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "cairo-lang-starknet 1.0.0-alpha.6",
  "cairo-lang-starknet 1.0.0-rc0",
@@ -5802,6 +5803,7 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
+ "sha3",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
