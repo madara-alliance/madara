@@ -207,7 +207,7 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 }
 
 #[cfg(test)]
-mod tests {
+mod l1_messaging_tests {
 
     use std::{sync::Arc, time::Duration};
 

@@ -100,6 +100,8 @@ mod eth_client_gas_price_worker_test {
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
+    const ANOTHER_ANVIL_PORT: u16 = 8546;
+
     #[fixture]
     #[once]
     pub fn eth_client_with_mock() -> (MockServer, EthereumClient) {
@@ -148,6 +150,7 @@ mod eth_client_gas_price_worker_test {
         let anvil = Anvil::new()
             .fork("https://eth.merkle.io")
             .fork_block_number(20395662)
+            .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
             .expect("issue while forking for the anvil");
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
