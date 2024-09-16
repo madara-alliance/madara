@@ -214,6 +214,7 @@ mod tests {
     use super::Felt;
     use crate::{
         client::{
+            eth_client_getter_test::ANVIL_PORT,
             EthereumClient, L1BlockMetrics,
             StarknetCoreContract::{self, LogMessageToL2},
         },
@@ -330,7 +331,12 @@ mod tests {
     #[fixture]
     async fn setup_test_env() -> TestRunner {
         // Start Anvil instance
-        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+        let anvil = Anvil::new()
+            .block_time(1)
+            .chain_id(1337)
+            .port(ANVIL_PORT)
+            .try_spawn()
+            .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info

@@ -102,6 +102,8 @@ pub async fn state_update_worker(
 
 #[cfg(test)]
 mod eth_client_event_subscription_test {
+    use crate::client::eth_client_getter_test::ANVIL_PORT;
+
     use super::*;
     use std::{sync::Arc, time::Duration};
 
@@ -145,7 +147,12 @@ mod eth_client_event_subscription_test {
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_works() {
         // Start Anvil instance
-        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+        let anvil = Anvil::new()
+            .block_time(1)
+            .chain_id(1337)
+            .port(ANVIL_PORT)
+            .try_spawn()
+            .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info

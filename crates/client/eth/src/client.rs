@@ -149,6 +149,7 @@ pub mod eth_client_getter_test {
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const FORK_URL: &str = "https://eth.merkle.io";
+    pub const ANVIL_PORT: u16 = 8545;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
@@ -160,6 +161,7 @@ pub mod eth_client_getter_test {
         let anvil = Anvil::new()
             .fork(FORK_URL)
             .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANVIL_PORT)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
