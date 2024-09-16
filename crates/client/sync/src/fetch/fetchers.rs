@@ -118,10 +118,8 @@ pub async fn fetch_pending_block_and_updates(
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
-    println!("block = {:?}", &(&block, &state_update, &class_update));
     let converted = convert_sequencer_pending_block(block, state_update, class_update)
         .context("Parsing the FGW pending block format")?;
-    println!("converted = {}", serde_json::to_string_pretty(&converted).unwrap());
     Ok(converted)
 }
 
@@ -264,7 +262,6 @@ async fn fetch_class(
 }
 
 fn convert_block_header(block: &SequencerBlock) -> anyhow::Result<UnverifiedHeader> {
-    println!("{:?}", block.starknet_version);
     Ok(UnverifiedHeader {
         parent_block_hash: Some(block.parent_block_hash),
         sequencer_address: block.sequencer_address.unwrap_or_default(),
@@ -581,7 +578,6 @@ mod tests {
             vec![],
         );
         let converted = convert_sequencer_pending_block(block.0, block.1, block.2).unwrap();
-        println!("{}", serde_json::to_string_pretty(&converted).unwrap());
         assert_eq!(
             converted,
             serde_json::from_value(serde_json::json!({
