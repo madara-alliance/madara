@@ -79,7 +79,10 @@ impl Service for BlockProductionService {
                     .context("Building genesis block from devnet config")?;
 
                 block_import
-                    .add_block(genesis_block, BlockValidationContext::new(backend.chain_config().chain_id.clone()))
+                    .add_block(
+                        genesis_block,
+                        BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true),
+                    )
                     .await
                     .context("Importing devnet genesis block")?;
 
