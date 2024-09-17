@@ -372,7 +372,7 @@ mod tests {
                 nonce: Felt::ZERO,
                 contract_class: Arc::new(flattened_class),
                 resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 203089, max_price_per_unit: 10000 },
+                    l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
                     l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 },
                 tip: 0,
