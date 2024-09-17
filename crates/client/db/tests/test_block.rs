@@ -18,8 +18,8 @@ use mp_transactions::{
     DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
     L1HandlerTransaction,
 };
-use starknet_types_core::felt::Felt;
 use rstest::*;
+use starknet_types_core::felt::Felt;
 
 #[rstest]
 #[tokio::test]

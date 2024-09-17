@@ -234,9 +234,9 @@ mod tests {
     use std::env;
 
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
+    use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
-    use rstest::*;
 
     use super::*;
 
@@ -251,7 +251,7 @@ mod tests {
 
         let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
         let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
-        
+
         env::set_current_dir(&project_root).expect("Failed to set working directory");
     }
 
