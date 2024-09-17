@@ -37,8 +37,6 @@ num-bigint = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
-sha3 = { workspace = true }
 
 [dev-dependencies]
 starknet-providers = { workspace = true }
