@@ -459,6 +459,29 @@ mod verify_apply_tests {
         }
     }
 
+    /// Creates a dummy PreValidatedPendingBlock for testing purposes.
+    fn create_dummy_pending_block() -> PreValidatedPendingBlock {
+        PreValidatedPendingBlock {
+            header: UnverifiedHeader {
+                parent_block_hash: Some(felt!("0x1")),
+                sequencer_address: felt!("0x2"),
+                block_timestamp: 12345,
+                protocol_version: StarknetVersion::new(0, 13, 2, 0),
+                l1_gas_price: GasPrices {
+                    eth_l1_gas_price: 14,
+                    strk_l1_gas_price: 15,
+                    eth_l1_data_gas_price: 16,
+                    strk_l1_data_gas_price: 17,
+                },
+                l1_da_mode: L1DataAvailabilityMode::Blob,
+            },
+            transactions: vec![],
+            receipts: vec![],
+            state_diff: StateDiff::default(),
+            converted_classes: Default::default(),
+        }
+    }
+
     pub mod check_parent_hash_and_num_tests {
         use super::*;
 
@@ -862,6 +885,109 @@ mod verify_apply_tests {
 
             assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+        }
+    }
+
+    mod verify_apply_pending_tests {
+        use mc_db::db_block_id::DbBlockId;
+
+        use super::*;
+        const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
+
+        /// Test successful block verification and storage.
+        ///
+        /// Verifies that:
+        /// 1. The function correctly verifies and stores a new block.
+        /// 2. The latest block number is updated after successful storage.
+        #[tokio::test]
+        async fn test_verify_apply_pending_success_stores_block() {
+            // Setup
+            let backend = setup_test_backend().await;
+            let mut genesis_header = create_dummy_header();
+            genesis_header.block_number = 0;
+            let genesis_block = finalized_block_zero(genesis_header.clone());
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            // Create pending block
+            let mut pending_block = create_dummy_pending_block();
+            pending_block.header.parent_block_hash = Some(felt!("0x12345"));
+            let validation_context = create_validation_context(false);
+
+            // Expected pending header
+            let expected_pending_header = PendingHeader {
+                parent_block_hash: felt!("0x12345"),
+                sequencer_address: genesis_header.sequencer_address,
+                block_timestamp: genesis_header.block_timestamp,
+                protocol_version: genesis_header.protocol_version,
+                l1_gas_price: genesis_header.l1_gas_price,
+                l1_da_mode: genesis_header.l1_da_mode,
+            };
+
+            // Expected pending block info
+            let expected_pending_info = MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: expected_pending_header,
+                tx_hashes: pending_block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
+            });
+
+            // Verify and apply pending block
+            verify_apply_pending_inner(&backend, pending_block, validation_context).unwrap();
+
+            // Assert
+            let stored_pending_info = backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap();
+            assert_eq!(stored_pending_info, expected_pending_info);
+        }
+
+        /// Test error handling during block verification.
+        ///
+        /// Verifies that:
+        /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
+        /// 2. The latest block number remains unchanged when an error occurs.
+        #[tokio::test]
+        async fn test_verify_apply_pending_error_does_not_store_block() {
+            // Setup
+            let backend = setup_test_backend().await;
+            let mut genesis_header = create_dummy_header();
+            genesis_header.block_number = 0;
+            let genesis_block = finalized_block_zero(genesis_header.clone());
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            // Create pending block with mismatched parent hash
+            let mut pending_block = create_dummy_pending_block();
+            pending_block.header.parent_block_hash = Some(felt!("0x1234")); // Mismatched parent hash
+            let validation_context = create_validation_context(false);
+
+            // Expected pending header (should not be stored)
+            let unexpected_pending_header = PendingHeader {
+                parent_block_hash: felt!("0x1234"),
+                sequencer_address: genesis_header.sequencer_address,
+                block_timestamp: genesis_header.block_timestamp,
+                protocol_version: genesis_header.protocol_version,
+                l1_gas_price: genesis_header.l1_gas_price,
+                l1_da_mode: genesis_header.l1_da_mode,
+            };
+
+            // Expected pending block info (should not be stored)
+            let unexpected_pending_info = MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: unexpected_pending_header,
+                tx_hashes: pending_block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
+            });
+
+            // Verify and apply pending block (should fail)
+            let result = verify_apply_pending_inner(&backend, pending_block, validation_context);
+
+            // Assert
+            assert!(result.is_err(), "Expected an error due to mismatched parent hash");
+
+            let stored_pending_info = backend.get_block_info(&BLOCK_ID_PENDING).unwrap();
+            assert_ne!(
+                stored_pending_info,
+                Some(unexpected_pending_info),
+                "Unexpected pending block should not be stored"
+            );
         }
     }
 }
