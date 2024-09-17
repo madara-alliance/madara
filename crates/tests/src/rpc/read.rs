@@ -7,6 +7,7 @@ mod test_rpc_read_calls {
     use rstest::rstest;
     use std::any::Any;
 
+    use crate::set_workdir;
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
     use starknet::macros::felt;
@@ -31,7 +32,6 @@ mod test_rpc_read_calls {
     use std::io::BufReader;
     use std::io::Read;
     use tokio::sync::OnceCell;
-    use crate::set_workdir;
 
     static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(OnceCell::new);
 

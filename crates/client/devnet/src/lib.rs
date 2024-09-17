@@ -211,6 +211,7 @@ mod tests {
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
+    use mp_utils::tests_common::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
@@ -219,7 +220,6 @@ mod tests {
         BroadcastedTransaction, DataAvailabilityMode, DeclareTransactionResult, DeployAccountTransactionResult,
         FlattenedSierraClass, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
-    use mp_utils::tests_common::*;
     use std::sync::Arc;
 
     struct DevnetForTesting {

@@ -1,5 +1,5 @@
-use std::{env, path::PathBuf};
 use rstest::fixture;
+use std::{env, path::PathBuf};
 
 #[fixture]
 pub fn set_workdir() {
