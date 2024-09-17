@@ -172,11 +172,13 @@ fn class_conversion(
         }
         DeclaredClass::Legacy(legacy) => {
             log::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
+            // TODO: verify that the class hash is correct
             if !validation.trust_class_hashes {
                 let class_hash = legacy
                     .contract_class
                     .compute_class_hash()
                     .map_err(|e| BlockImportError::ComputeClassHash { class_hash: legacy.class_hash, error: e })?;
+                log::info!("Computed class hash {:#x}", class_hash);
                 if class_hash != legacy.class_hash {
                     return Err(BlockImportError::ClassHash { got: legacy.class_hash, expected: class_hash });
                 }

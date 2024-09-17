@@ -1,11 +1,7 @@
 use flate2::bufread::GzDecoder; // For GzDecoder
-use starknet_core::types::contract::legacy::{
-        LegacyContractClass, 
-        LegacyProgram, 
-        RawLegacyEntryPoints, 
-        RawLegacyEntryPoint,
-        LegacyEntrypointOffset,
-    };
+use starknet_core::types::{contract::legacy::{
+        LegacyContractClass, LegacyEntrypointOffset, LegacyProgram, RawLegacyEntryPoint, RawLegacyEntryPoints
+    }, CompressedLegacyContractClass as CLCC};
 use std::io::Read;
 use starknet_core::types::LegacyContractEntryPoint;
 
@@ -14,7 +10,8 @@ use crate::CompressedLegacyContractClass;
 /// Attempts to recover a compressed legacy program.
 pub fn parse_compressed_legacy_class(
     class: CompressedLegacyContractClass,
-) -> Result<LegacyContractClass, anyhow::Error> {
+) -> Result<LegacyContractClass, ParseCompressedLegacyClassError> {
+    let class: CLCC = class.into();
     let mut gzip_decoder = GzDecoder::new(class.program.as_slice());
     let mut program_json = String::new();
     gzip_decoder.read_to_string(&mut program_json)?;
@@ -26,7 +23,7 @@ pub fn parse_compressed_legacy_class(
             let minor_version = compiler_version
                 .split('.')
                 .nth(1)
-                .ok_or_else(|| anyhow::anyhow!("unexpected legacy compiler version string"))?;
+                .ok_or(ParseCompressedLegacyClassError::InvalidCompilerVersion)?;
 
             let minor_version: u8 = minor_version.parse()?;
             minor_version < 11
@@ -80,3 +77,16 @@ fn parse_legacy_entrypoint(
         selector: entrypoint.selector,
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseCompressedLegacyClassError {
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("JSON parse error: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Unexpected legacy compiler version string")]
+    InvalidCompilerVersion,
+    #[error("Integer parse error: {0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+}
+
