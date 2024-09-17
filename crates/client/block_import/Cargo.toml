@@ -31,3 +31,4 @@ starknet_api = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+rstest = { workspace = true }

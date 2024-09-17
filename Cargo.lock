@@ -5566,6 +5566,7 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "rayon",
+ "rstest 0.18.2",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",

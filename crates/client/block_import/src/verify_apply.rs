@@ -310,6 +310,7 @@ mod verify_apply_tests {
     use mp_transactions::{
         DeclareTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV1, L1HandlerTransaction,
     };
+    use rstest::*;
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -482,114 +483,85 @@ mod verify_apply_tests {
         }
     }
 
-    pub mod check_parent_hash_and_num_tests {
-        use super::*;
+    /// Test various scenarios for the `check_parent_hash_and_num` function.
+    ///
+    /// This test covers different cases of block import, including:
+    /// - Successful import of a regular block
+    /// - Import of the genesis block
+    /// - Handling mismatched block numbers
+    /// - Handling mismatched parent hashes
+    /// - Behavior when ignoring block order
+    ///
+    /// Each case tests the function's ability to correctly validate or reject
+    /// block imports based on the given parameters and database state.
+    #[rstest]
+    #[case::success(
+        Some(felt!("0x12345")),  // Parent block hash of the new block
+        Some(2),                 // Block number of the new block
+        false,                   // Not ignoring block order
+        Ok((2, felt!("0x12345"))), // Expected result: success with correct block number and parent hash
+        true                     // Populate DB with a previous block
+    )]
+        #[case::genesis_block(
+        None,                    // No parent hash for genesis block
+        None,                    // No specific block number (should default to 0)
+        false,                   // Not ignoring block order
+        Ok((0, felt!("0x0"))),   // Expected result: success with block 0 and zero parent hash
+        false                    // Don't populate DB (simulating empty chain)
+    )]
+        #[case::mismatch_block_number(
+        Some(felt!("0x12345")),  // Correct parent hash
+        Some(3),                 // Incorrect block number (should be 2)
+        false,                   // Not ignoring block order
+        Err(BlockImportError::LatestBlockN { expected: 2, got: 3 }), // Expected error
+        true                     // Populate DB with a previous block
+    )]
+        #[case::mismatch_parent_hash(
+        Some(felt!("0x1")),      // Incorrect parent hash
+        Some(2),                 // Correct block number
+        false,                   // Not ignoring block order
+        Err(BlockImportError::ParentHash { expected: felt!("0x12345"), got: felt!("0x1") }), // Expected error
+        true                     // Populate DB with a previous block
+    )]
+        #[case::ignore_block_order(
+        Some(felt!("0x1")),      // Incorrect parent hash (but will be ignored)
+        Some(3),                 // Incorrect block number (but will be ignored)
+        true,                    // Ignoring block order
+        Ok((3, felt!("0x12345"))), // Expected result: success despite mismatches
+        true                     // Populate DB with a previous block
+    )]
+    #[tokio::test]
+    async fn test_check_parent_hash_and_num(
+        #[case] parent_block_hash: Option<Felt>,
+        #[case] unverified_block_number: Option<u64>,
+        #[case] ignore_block_order: bool,
+        #[case] expected_result: Result<(u64, Felt), BlockImportError>,
+        #[case] populate_db: bool,
+    ) {
+        // Set up a test backend (database)
+        let backend = setup_test_backend().await;
 
-        /// Test successful parent hash and number check.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly validates the parent hash and block number.
-        /// 2. It returns the expected block number and parent hash for a valid input.
-        #[tokio::test]
-        async fn test_check_parent_hash_and_num_success() {
-            let backend = setup_test_backend().await;
-            let mut header = create_dummy_header();
-
-            let new_block_number = 2;
-
-            header.block_number = new_block_number;
-
-            let pending_block = finalized_block_zero(header);
-            let block_hash = pending_block.info.block_hash();
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
-
-            let validation = create_validation_context(false);
-
-            let result = check_parent_hash_and_num(&backend, block_hash, Some(new_block_number + 1), &validation)
-                .expect("Failed to check parent hash and number");
-            assert_eq!(result, (new_block_number + 1, block_hash.unwrap()));
-        }
-
-        /// Test parent hash and number check for genesis block.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly handles the case of importing a genesis block.
-        /// 2. It returns the expected values (0, Felt::ZERO) for a genesis block.
-        #[tokio::test]
-        async fn test_check_parent_hash_and_num_genesis_block() {
-            let backend = setup_test_backend().await;
-            let parent_block_hash = None;
-            let unverified_block_number = None;
-            let validation = create_validation_context(false);
-
-            let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation)
-                .expect("Failed to check parent hash and number");
-            assert_eq!(result, (0, felt!("0x0")));
-        }
-
-        /// Test error handling for mismatched block number.
-        ///
-        /// Verifies that:
-        /// 1. The function detects a mismatch between the expected and provided block number.
-        /// 2. It returns a LatestBlockN error when there's a mismatch.
-        #[tokio::test]
-        async fn test_check_parent_hash_and_num_mismatch_block_number() {
-            let backend = setup_test_backend().await;
-            let header = create_dummy_header();
-
-            let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
-
-            let parent_block_hash = pending_block.info.block_hash();
-            let unverified_block_number = pending_block.info.block_n().map(|n| n + 2); // Mismatch
-            let validation = create_validation_context(false);
-
-            let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation);
-            assert!(matches!(result, Err(BlockImportError::LatestBlockN { .. })));
-        }
-
-        /// Test error handling for mismatched parent hash.
-        ///
-        /// Verifies that:
-        /// 1. The function detects a mismatch between the expected and provided parent hash.
-        /// 2. It returns a ParentHash error when there's a mismatch.
-        #[tokio::test]
-        async fn test_check_parent_hash_and_num_mismatch_parent_hash() {
-            let backend = setup_test_backend().await;
+        // Populate the database with a block in case it's not a genesis block
+        if populate_db {
             let header = create_dummy_header();
             let pending_block = finalized_block_zero(header);
             backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
-
-            let parent_block_hash = Some(felt!("0x1")); // Mismatch
-            let unverified_block_number = pending_block.info.block_n().map(|n| n + 1);
-            let validation = create_validation_context(false);
-
-            let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation);
-            assert!(matches!(result, Err(BlockImportError::ParentHash { .. })));
         }
 
-        /// Test ignore_block_order flag functionality.
-        ///
-        /// Verifies that:
-        /// 1. When ignore_block_order is true, mismatches in block number and parent hash are allowed.
-        /// 2. The function returns the provided values instead of throwing errors.
-        #[tokio::test]
-        async fn test_check_parent_hash_and_num_ignore_block_order() {
-            let backend = setup_test_backend().await;
-            let header = create_dummy_header();
-            let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
+        // Create a validation context with the specified ignore_block_order flag
+        let validation = create_validation_context(ignore_block_order);
 
-            let parent_block_hash = Some(felt!("0x1")); // Mismatch
-            let unverified_block_number = pending_block.info.block_n().map(|n| n + 2); // Mismatch
-            let validation = create_validation_context(true);
+        // Call the function under test
+        let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation);
 
-            let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation)
-                .expect("Failed to check parent hash and number");
-            assert_eq!(result, (pending_block.info.block_n().unwrap() + 2, pending_block.info.block_hash().unwrap()));
+        // Assert that the result matches the expected outcome
+        match (result, expected_result) {
+            (Ok(actual), Ok(expected)) => assert_eq!(actual, expected),
+            (Err(actual), Err(expected)) => assert_eq!(format!("{:?}", actual), format!("{:?}", expected)),
+            _ => panic!("Result types do not match"),
         }
     }
-
+    
     mod calculate_state_root_tests {
         use starknet_api::felt;
 
