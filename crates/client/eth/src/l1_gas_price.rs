@@ -102,6 +102,7 @@ mod eth_client_gas_price_worker_test {
 
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const FORK_URL: &str = "https://ethereum-rpc.publicnode.com";
+    const ANOTHER_ANVIL_PORT: u16 = 8546;
 
     #[serial]
     #[tokio::test]
@@ -109,6 +110,7 @@ mod eth_client_gas_price_worker_test {
         let anvil = Anvil::new()
             .fork(FORK_URL)
             .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
             .expect("issue while forking for the anvil");
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -149,6 +151,7 @@ mod eth_client_gas_price_worker_test {
         let anvil = Anvil::new()
             .fork(FORK_URL)
             .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
             .expect("issue while forking for the anvil");
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -233,6 +236,7 @@ mod eth_client_gas_price_worker_test {
         let anvil = Anvil::new()
             .fork(FORK_URL)
             .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
             .expect("issue while forking for the anvil");
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));

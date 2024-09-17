@@ -3,7 +3,6 @@
 mod rpc;
 
 use anyhow::bail;
-use rstest::rstest;
 use starknet_providers::Provider;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
 use std::ops::Range;
