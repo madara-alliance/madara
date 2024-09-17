@@ -4,10 +4,8 @@
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
-    use rstest::{fixture, rstest};
+    use rstest::rstest;
     use std::any::Any;
-    use std::env;
-    use std::path::PathBuf;
 
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
@@ -33,23 +31,9 @@ mod test_rpc_read_calls {
     use std::io::BufReader;
     use std::io::Read;
     use tokio::sync::OnceCell;
+    use crate::set_workdir;
 
     static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(OnceCell::new);
-
-    #[fixture]
-    pub fn set_workdir() {
-        let output = std::process::Command::new("cargo")
-            .arg("locate-project")
-            .arg("--workspace")
-            .arg("--message-format=plain")
-            .output()
-            .expect("Failed to execute command");
-
-        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
-        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
-
-        env::set_current_dir(&project_root).expect("Failed to set working directory");
-    }
 
     async fn setup_madara() -> MadaraCmd {
         let mut madara = MadaraCmdBuilder::new()
