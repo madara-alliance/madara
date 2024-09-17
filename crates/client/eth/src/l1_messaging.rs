@@ -209,7 +209,7 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 #[cfg(test)]
 mod l1_messaging_tests {
 
-    use std::{sync::Arc, time::Duration};
+    use std::{env, path::PathBuf, sync::Arc, time::Duration};
 
     use super::Felt;
     use crate::{
@@ -315,6 +315,21 @@ mod l1_messaging_tests {
         }
     );
 
+    #[fixture]
+    pub fn set_workdir() {
+        let output = std::process::Command::new("cargo")
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .expect("Failed to execute command");
+
+        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
+
+        env::set_current_dir(&project_root).expect("Failed to set working directory");
+    }
+    
     /// Common setup for tests
     ///
     /// This test performs the following steps:
@@ -385,7 +400,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -437,7 +452,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -484,7 +499,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
