@@ -10,6 +10,11 @@ pub struct BlockProductionParams {
     #[arg(long)]
     pub devnet: bool,
 
+    /// Launch a devnet with a producton chain id (like SN_MAINNET, SN_SEPOLIA).
+    /// This in unsafe because your devnet transactiosn can be replayed on the actual network.
+    #[arg(long, default_value_t = false)]
+    pub override_devnet_chain_id: bool,
+
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(long, default_value_t = 10)]
     pub devnet_contracts: u64,
