@@ -36,6 +36,8 @@ mod tests {
     use rstest::rstest;
     use starknet_core::types::Felt;
 
+    
+
     #[rstest]
     fn test_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
