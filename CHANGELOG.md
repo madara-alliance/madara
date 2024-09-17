@@ -2,6 +2,7 @@
 
 ## Next release
 
+- test: tests added for verify and apply task in l2 sync
 - tests: integration test for l2 fetch task added
 - refactor: calculate class hashes in devnet
 - feat: add config file and preset configure chain
@@ -10,7 +11,6 @@
 - fix: defaulted l1 gas price in devnet mode
 - fix: fixed anvil port value in tests
 - fix: flaky tests in gas price worker fixed
-- test: tests added for verify and apply task in l2 sync
 - ci: add coveralls report
 - test: added tests for declare and deploy transactions
 - fix: pending block must always be returned in rpc even if none is in db
@@ -215,7 +215,7 @@
 - fix(workflows): Fix madara CI
 - feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
 - feat(rpc): tx_receipt, re-execute tx
-- feat(script): added CI scripts for starting madara and comparing JSON RPC
+- feat(script): added CI scripts for starting Madara and comparing JSON RPC
   calls
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations
