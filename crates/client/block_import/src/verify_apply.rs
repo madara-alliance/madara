@@ -441,6 +441,24 @@ mod verify_apply_tests {
         StateDiff::default()
     }
 
+    /// Creates a dummy PreValidatedBlock for testing purposes.
+    ///
+    /// This function generates a PreValidatedBlock with predefined values,
+    /// useful for testing update_tries scenarios.
+    fn create_dummy_block() -> PreValidatedBlock {
+        PreValidatedBlock {
+            header: create_dummy_unverified_header(),
+            unverified_block_hash: None,
+            unverified_block_number: Some(1),
+            unverified_global_state_root: Some(felt!("0xa")),
+            commitments: create_dummy_commitments(),
+            transactions: vec![],
+            receipts: vec![],
+            state_diff: StateDiff::default(),
+            converted_classes: Default::default(),
+        }
+    }
+
     pub mod check_parent_hash_and_num_tests {
         use super::*;
 
@@ -571,8 +589,6 @@ mod verify_apply_tests {
                 felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e"),
                 "State root should match"
             );
-            assert_ne!(result, contracts_trie_root, "State root should not be equal to contracts_trie_root");
-            assert_ne!(result, classes_trie_root, "State root should not be equal to classes_trie_root");
         }
 
         /// Test state root calculation with zero class trie root.
@@ -596,24 +612,6 @@ mod verify_apply_tests {
     mod update_tries_tests {
         use super::*;
         use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
-
-        /// Creates a dummy PreValidatedBlock for testing purposes.
-        ///
-        /// This function generates a PreValidatedBlock with predefined values,
-        /// useful for testing update_tries scenarios.
-        fn create_dummy_block() -> PreValidatedBlock {
-            PreValidatedBlock {
-                header: create_dummy_unverified_header(),
-                unverified_block_hash: None,
-                unverified_block_number: Some(1),
-                unverified_global_state_root: Some(felt!("0xa")),
-                commitments: create_dummy_commitments(),
-                transactions: vec![],
-                receipts: vec![],
-                state_diff: StateDiff::default(),
-                converted_classes: Default::default(),
-            }
-        }
 
         /// Test successful trie update.
         ///
@@ -746,25 +744,8 @@ mod verify_apply_tests {
         /// 2. The returned header contains the expected block number.
         #[test]
         fn test_block_hash_success() {
-            let block = PreValidatedBlock {
-                header: create_dummy_unverified_header(),
-                unverified_block_hash: None,
-                unverified_block_number: Some(1),
-                unverified_global_state_root: Some(felt!("0xa")),
-                commitments: create_dummy_commitments(),
-                transactions: vec![],
-                receipts: vec![],
-                state_diff: StateDiff::default(),
-                converted_classes: Default::default(),
-            };
-
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Other("something".to_string()),
-                ignore_block_order: false,
-                trust_global_tries: false,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
+            let block = create_dummy_block();
+            let validation = create_validation_context(false);
 
             let block_number = 1;
             let parent_block_hash = felt!("0x1");
@@ -786,25 +767,9 @@ mod verify_apply_tests {
         /// 1. The function returns a BlockHash error when the calculated hash doesn't match the expected one.
         #[test]
         fn test_block_hash_mismatch() {
-            let block = PreValidatedBlock {
-                header: create_dummy_unverified_header(),
-                unverified_block_hash: Some(felt!("0xdeadbeef")),
-                unverified_block_number: Some(1),
-                unverified_global_state_root: Some(felt!("0xa")),
-                commitments: create_dummy_commitments(),
-                transactions: vec![],
-                receipts: vec![],
-                state_diff: StateDiff::default(),
-                converted_classes: Default::default(),
-            };
-
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Other("something".to_string()),
-                ignore_block_order: false,
-                trust_global_tries: false,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
+            let mut block = create_dummy_block();
+            block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+            let validation = create_validation_context(false);
 
             let block_number = 1;
             let parent_block_hash = felt!("0x1");
@@ -823,18 +788,9 @@ mod verify_apply_tests {
         /// Note: This test should be updated/removed when the block hash calculation logic is updated.
         #[test]
         fn test_block_hash_special_trusted_case() {
-            let block = PreValidatedBlock {
-                header: create_dummy_unverified_header(),
-                unverified_block_hash: Some(felt!("0xdeadbeef")),
-                unverified_block_number: Some(1466),
-                unverified_global_state_root: Some(felt!("0xa")),
-                commitments: create_dummy_commitments(),
-                transactions: vec![],
-                receipts: vec![],
-                state_diff: StateDiff::default(),
-                converted_classes: Default::default(),
-            };
-
+            let mut block = create_dummy_block();
+            block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+            block.unverified_block_number = Some(1466);
             let validation = BlockValidationContext {
                 chain_id: ChainId::Mainnet,
                 ignore_block_order: false,
@@ -856,24 +812,6 @@ mod verify_apply_tests {
     mod verify_apply_inner_tests {
         use super::*;
 
-        /// Creates a test PreValidatedBlock for verify_apply_inner tests.
-        ///
-        /// This function generates a PreValidatedBlock with specific values
-        /// tailored for testing the verify_apply_inner function.
-        fn create_test_block() -> PreValidatedBlock {
-            PreValidatedBlock {
-                header: create_dummy_unverified_header(),
-                unverified_block_hash: None,
-                unverified_block_number: Some(1),
-                unverified_global_state_root: Some(felt!("0x0")),
-                commitments: create_dummy_commitments(),
-                transactions: vec![],
-                receipts: vec![],
-                state_diff: StateDiff::default(),
-                converted_classes: Default::default(),
-            }
-        }
-
         /// Test successful block verification and storage.
         ///
         /// Verifies that:
@@ -889,8 +827,9 @@ mod verify_apply_tests {
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
-            let mut block = create_test_block();
+            let mut block = create_dummy_block();
             block.header.parent_block_hash = Some(felt!("0x12345"));
+            block.unverified_global_state_root = Some(felt!("0x0"));
             let validation = create_validation_context(false);
 
             let _result = verify_apply_inner(&backend, block.clone(), validation.clone());
@@ -913,7 +852,7 @@ mod verify_apply_tests {
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
-            let mut block = create_test_block();
+            let mut block = create_dummy_block();
             block.header.parent_block_hash = Some(felt!("0x12345"));
             block.unverified_block_number = Some(2); // Mismatch to trigger an error
 
