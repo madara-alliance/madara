@@ -306,7 +306,7 @@ mod verify_apply_tests {
         DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
         L1HandlerTransactionReceipt,
     };
-    use mp_state_update::StateDiff;
+    use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
     use mp_transactions::{
         DeclareTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV1, L1HandlerTransaction,
     };
@@ -502,28 +502,28 @@ mod verify_apply_tests {
         Ok((2, felt!("0x12345"))), // Expected result: success with correct block number and parent hash
         true                     // Populate DB with a previous block
     )]
-        #[case::genesis_block(
+    #[case::genesis_block(
         None,                    // No parent hash for genesis block
         None,                    // No specific block number (should default to 0)
         false,                   // Not ignoring block order
         Ok((0, felt!("0x0"))),   // Expected result: success with block 0 and zero parent hash
         false                    // Don't populate DB (simulating empty chain)
     )]
-        #[case::mismatch_block_number(
+    #[case::mismatch_block_number(
         Some(felt!("0x12345")),  // Correct parent hash
         Some(3),                 // Incorrect block number (should be 2)
         false,                   // Not ignoring block order
         Err(BlockImportError::LatestBlockN { expected: 2, got: 3 }), // Expected error
         true                     // Populate DB with a previous block
     )]
-        #[case::mismatch_parent_hash(
+    #[case::mismatch_parent_hash(
         Some(felt!("0x1")),      // Incorrect parent hash
         Some(2),                 // Correct block number
         false,                   // Not ignoring block order
         Err(BlockImportError::ParentHash { expected: felt!("0x12345"), got: felt!("0x1") }), // Expected error
         true                     // Populate DB with a previous block
     )]
-        #[case::ignore_block_order(
+    #[case::ignore_block_order(
         Some(felt!("0x1")),      // Incorrect parent hash (but will be ignored)
         Some(3),                 // Incorrect block number (but will be ignored)
         true,                    // Ignoring block order
@@ -561,65 +561,49 @@ mod verify_apply_tests {
             _ => panic!("Result types do not match"),
         }
     }
-    
-    mod calculate_state_root_tests {
-        use starknet_api::felt;
 
-        use super::*;
+    /// Test cases for the `calculate_state_root` function.
+    ///
+    /// This test uses `rstest` to parameterize different scenarios for calculating
+    /// the state root. It verifies that the function correctly handles various
+    /// input combinations and produces the expected results.
+    #[rstest]
+    #[case::non_zero_inputs(
+            felt!("0x123456"),  // Non-zero contracts trie root
+            felt!("0x789abc"),  // Non-zero classes trie root
+            // Expected result: Poseidon hash of STARKNET_STATE_PREFIX and both non-zero roots
+            felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e")
+        )]
+    #[case::zero_class_trie_root(
+            felt!("0x123456"),  // Non-zero contracts trie root
+            felt!("0x0"),       // Zero classes trie root
+            felt!("0x123456")   // Expected result: same as contracts trie root
+        )]
+    fn test_calculate_state_root(
+        #[case] contracts_trie_root: Felt,
+        #[case] classes_trie_root: Felt,
+        #[case] expected_result: Felt,
+    ) {
+        // GIVEN: We have a contracts trie root and a classes trie root
 
-        /// Test successful state root calculation.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly calculates the state root from non-zero inputs.
-        /// 2. The result is verified and differs from both input roots.
-        #[test]
-        fn test_calculate_state_root_success() {
-            let contracts_trie_root = felt!("0x123456");
-            let classes_trie_root = felt!("0x789abc");
+        // WHEN: We calculate the state root using these inputs
+        let result = calculate_state_root(contracts_trie_root, classes_trie_root);
 
-            let result = calculate_state_root(contracts_trie_root, classes_trie_root);
-
-            assert_eq!(
-                result,
-                felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e"),
-                "State root should match"
-            );
-        }
-
-        /// Test state root calculation with zero class trie root.
-        ///
-        /// Verifies that:
-        /// 1. When the class trie root is zero, the function returns the contracts trie root.
-        #[test]
-        fn test_calculate_state_root_zero_class_trie_root() {
-            let contracts_trie_root = felt!("0x123456");
-            let classes_trie_root = felt!("0x0");
-
-            let result = calculate_state_root(contracts_trie_root, classes_trie_root);
-
-            assert_eq!(
-                result, contracts_trie_root,
-                "State root should be equal to contracts_trie_root when classes_trie_root is zero"
-            );
-        }
+        // THEN: The calculated state root should match the expected result
+        assert_eq!(result, expected_result, "State root should match the expected result");
     }
 
-    mod update_tries_tests {
-        use super::*;
-        use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
-
-        /// Test successful trie update.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly updates the tries with the given state diff.
-        /// 2. It returns the expected global state root.
-        #[tokio::test]
-        async fn test_update_tries_success() {
-            let backend = setup_test_backend().await;
-            let mut block = create_dummy_block();
-            block.unverified_global_state_root =
-                Some(felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"));
-            block.state_diff = StateDiff {
+    /// Test cases for the `update_tries` function.
+    ///
+    /// This test uses `rstest` to parameterize different scenarios for updating the tries.
+    /// It verifies that the function correctly handles various input combinations and
+    /// produces the expected results or errors.
+    #[rstest]
+    #[case::success(
+            // A non-zero global state root
+            Some(felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a")),
+            // A non-empty state diff with deployed contracts and storage changes
+            StateDiff {
                 deployed_contracts: vec![(DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") })],
                 storage_diffs: vec![
                     (ContractStorageDiffItem {
@@ -628,179 +612,174 @@ mod verify_apply_tests {
                     }),
                 ],
                 ..Default::default()
-            };
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Mainnet,
-                ignore_block_order: false,
-                trust_global_tries: false,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
+            },
+            false, // Don't trust global tries
+            // Expected result: the same as the input global state root
+            Ok(felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"))
+        )]
+    #[case::trust_global_tries(
+            Some(felt!("0xa")), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            true, // Trust global tries
+            Ok(felt!("0xa")) // Expected result: the same as the input global state root
+        )]
+    #[case::missing_global_state_root(
+            None, // Missing global state root
+            StateDiff::default(), // Empty state diff
+            true, // Trust global tries (irrelevant in this case)
+            // Expected result: an Internal error
+            Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()))
+        )]
+    #[case::mismatch_global_state_root(
+            Some(felt!("0xb")), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            false, // Don't trust global tries
+            // Expected result: a GlobalStateRoot error due to mismatch
+            Err(BlockImportError::GlobalStateRoot { got: felt!("0x0"), expected: felt!("0xb") })
+        )]
+    #[case::empty_state_diff(
+            Some(felt!("0x0")), // Zero global state root
+            StateDiff::default(), // Empty state diff
+            false, // Don't trust global tries
+            Ok(felt!("0x0")) // Expected result: zero global state root
+        )]
+    #[tokio::test]
+    async fn test_update_tries(
+        #[case] unverified_global_state_root: Option<Felt>,
+        #[case] state_diff: StateDiff,
+        #[case] trust_global_tries: bool,
+        #[case] expected_result: Result<Felt, BlockImportError>,
+    ) {
+        // GIVEN: We have a test backend and a block with specified parameters
+        let backend = setup_test_backend().await;
+        let mut block = create_dummy_block();
+        block.unverified_global_state_root = unverified_global_state_root;
+        block.state_diff = state_diff;
 
-            let result = update_tries(&backend, &block, &validation, 1).expect("Update tries should succeed");
-            assert_eq!(
-                result,
-                felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"),
-                "Update tries should succeed"
-            );
-        }
+        // AND: We have a validation context with specified trust_global_tries
+        let validation = BlockValidationContext {
+            chain_id: ChainId::Mainnet,
+            ignore_block_order: false,
+            trust_global_tries,
+            trust_transaction_hashes: false,
+            trust_class_hashes: false,
+        };
 
-        /// Test trie update with trust_global_tries flag.
-        ///
-        /// Verifies that:
-        /// 1. When trust_global_tries is true, the function returns the unverified global state root.
-        #[tokio::test]
-        async fn test_update_tries_trust_global_tries() {
-            let backend = setup_test_backend().await;
-            let block = create_dummy_block();
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Mainnet,
-                ignore_block_order: false,
-                trust_global_tries: true,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
+        // WHEN: We call update_tries with these parameters
+        let result = update_tries(&backend, &block, &validation, 1);
 
-            let result = update_tries(&backend, &block, &validation, 1).expect("Update tries should succeed");
-            assert_eq!(result, felt!("0xa"), "Should return the unverified global state root");
-        }
-
-        /// Test error handling for missing global state root.
-        ///
-        /// Verifies that:
-        /// 1. The function returns an Internal error when the global state root is missing.
-        #[tokio::test]
-        async fn test_update_tries_missing_global_state_root() {
-            let backend = setup_test_backend().await;
-            let mut block = create_dummy_block();
-            block.unverified_global_state_root = None;
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Mainnet,
-                ignore_block_order: false,
-                trust_global_tries: true,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
-
-            let result = update_tries(&backend, &block, &validation, 1);
-            assert!(matches!(result.unwrap_err(), BlockImportError::Internal(_)));
-        }
-
-        /// Test error handling for mismatched global state root.
-        ///
-        /// Verifies that:
-        /// 1. The function returns a GlobalStateRoot error when the calculated root doesn't match the expected one.
-        #[tokio::test]
-        async fn test_update_tries_mismatch_global_state_root() {
-            let backend = setup_test_backend().await;
-            let mut block = create_dummy_block();
-            block.unverified_global_state_root = Some(felt!("0xb")); // Different from the calculated root
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Mainnet,
-                ignore_block_order: false,
-                trust_global_tries: false,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
-
-            let result = update_tries(&backend, &block, &validation, 1);
-            assert!(matches!(result.unwrap_err(), BlockImportError::GlobalStateRoot { .. }));
-        }
-
-        /// Test trie update with empty state diff.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly handles an empty state diff.
-        /// 2. It returns the expected global state root (0x0 in this case).
-        #[tokio::test]
-        async fn test_update_tries_empty_state_diff() {
-            let backend = setup_test_backend().await;
-            let mut block = create_dummy_block(); // StateDiff is already empty by default
-            block.unverified_global_state_root = Some(felt!("0x0"));
-            let validation = BlockValidationContext {
-                chain_id: ChainId::Mainnet,
-                ignore_block_order: false,
-                trust_global_tries: false,
-                trust_transaction_hashes: false,
-                trust_class_hashes: false,
-            };
-
-            let result = update_tries(&backend, &block, &validation, 1).expect("Update tries should succeed");
-            assert_eq!(result, felt!("0x0"), "Update tries should succeed with empty state diff");
+        // THEN: The result should match the expected outcome
+        match (result, expected_result) {
+            (Ok(got), Ok(expected)) => {
+                // For successful cases, compare the returned Felt values
+                assert_eq!(got, expected, "Returned global state root should match expected value");
+            }
+            (Err(got), Err(expected)) => {
+                // For error cases, compare the string representations of the errors
+                assert_eq!(
+                    format!("{:?}", got),
+                    format!("{:?}", expected),
+                    "Returned error should match expected error"
+                );
+            }
+            _ => panic!("Result types do not match"),
         }
     }
 
-    mod block_hash_tests {
-        use super::*;
-        /// Test successful block hash calculation.
-        ///
-        /// Verifies that:
-        /// 1. The function correctly calculates the block hash.
-        /// 2. The returned header contains the expected block number.
-        #[test]
-        fn test_block_hash_success() {
-            let block = create_dummy_block();
-            let validation = create_validation_context(false);
-
-            let block_number = 1;
-            let parent_block_hash = felt!("0x1");
-            let global_state_root = felt!("0xa");
-
-            let result = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root).unwrap();
-
-            assert_eq!(
-                result.0,
-                felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
-                "Block hash should match"
-            );
-            assert_eq!(result.1.block_number, 1, "Block number should be 1");
-        }
-
-        /// Test error handling for mismatched block hash.
-        ///
-        /// Verifies that:
-        /// 1. The function returns a BlockHash error when the calculated hash doesn't match the expected one.
-        #[test]
-        fn test_block_hash_mismatch() {
-            let mut block = create_dummy_block();
-            block.unverified_block_hash = Some(felt!("0xdeadbeef"));
-            let validation = create_validation_context(false);
-
-            let block_number = 1;
-            let parent_block_hash = felt!("0x1");
-            let global_state_root = felt!("0xa");
-
-            let result = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root);
-
-            assert!(matches!(result.unwrap_err(), BlockImportError::BlockHash { .. }));
-        }
-
-        /// Test special trusted case for block hash calculation.
-        ///
-        /// Verifies that:
-        /// 1. For specific block numbers on mainnet, the function uses the provided block hash.
-        ///
-        /// Note: This test should be updated/removed when the block hash calculation logic is updated.
-        #[test]
-        fn test_block_hash_special_trusted_case() {
-            let mut block = create_dummy_block();
-            block.unverified_block_hash = Some(felt!("0xdeadbeef"));
-            block.unverified_block_number = Some(1466);
-            let validation = BlockValidationContext {
+    #[rstest]
+    // Case 1: Successful block hash calculation
+    #[case::success(
+            create_dummy_block(),
+            create_validation_context(false),
+            1,
+            felt!("0x1"),
+            felt!("0xa"),
+            Ok((felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 1))
+        )]
+    // Case 2: Block hash mismatch
+    #[case::mismatch(
+            {
+                let mut block = create_dummy_block();
+                block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+                block
+            },
+            create_validation_context(false),
+            1,
+            felt!("0x1"),
+            felt!("0xa"),
+            Err(BlockImportError::BlockHash {
+                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 
+                expected: felt!("0xdeadbeef") 
+            })
+        )]
+    // Case 3: Special trusted case for Mainnet blocks 1466-2242
+    #[case::special_trusted_case(
+            {
+                let mut block = create_dummy_block();
+                block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+                block.unverified_block_number = Some(1466);
+                block
+            },
+            BlockValidationContext {
                 chain_id: ChainId::Mainnet,
                 ignore_block_order: false,
                 trust_global_tries: false,
                 trust_transaction_hashes: false,
                 trust_class_hashes: false,
-            };
+            },
+            1466,
+            felt!("0x1"),
+            felt!("0xa"),
+            Ok((felt!("0xdeadbeef"), 1466))
+        )]
+    fn test_block_hash(
+        #[case] block: PreValidatedBlock,
+        #[case] validation: BlockValidationContext,
+        #[case] block_number: u64,
+        #[case] parent_block_hash: Felt,
+        #[case] global_state_root: Felt,
+        #[case] expected_result: Result<(Felt, u64), BlockImportError>,
+    ) {
+        // This test function verifies the behavior of the block_hash function
+        // under various scenarios. It uses parameterized testing to cover
+        // different cases:
+        //
+        // 1. Success case:
+        //    - Input: A default dummy block with standard validation context
+        //    - Expected: Successful calculation of block hash and number
+        //    - Purpose: Verifies correct hash calculation for a valid block
+        //
+        // 2. Mismatch case:
+        //    - Input: A block with a predefined unverified hash that doesn't match the calculated hash
+        //    - Expected: BlockImportError indicating hash mismatch
+        //    - Purpose: Ensures the function detects and reports hash mismatches correctly
+        //
+        // 3. Special trusted case: (ideally this should be removed)
+        //    - Input: A block simulating Mainnet blocks 1466-2242 with a mismatched hash
+        //    - Expected: Successful result, accepting the provided unverified hash
+        //    - Purpose: Verifies the special handling for a specific range of Mainnet blocks
 
-            let block_number = 1466;
-            let parent_block_hash = felt!("0x1");
-            let global_state_root = felt!("0xa");
+        // GIVEN: We have a block, validation context, block number, parent block hash, and global state root
 
-            let result = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root).unwrap();
+        // WHEN: We call the block_hash function with these parameters
+        let result = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root);
 
-            assert_eq!(result.0, felt!("0xdeadbeef"), "Should use the provided block hash for special case");
+        // THEN: We compare the result with the expected outcome
+        match (result, expected_result) {
+            (Ok((hash, header)), Ok((expected_hash, expected_block_number))) => {
+                // For successful cases:
+                // - Verify that the calculated hash matches the expected hash
+                // - Check if the block number in the header matches the expected block number
+                assert_eq!(hash, expected_hash, "Block hash should match");
+                assert_eq!(header.block_number, expected_block_number, "Block number should match");
+            }
+            (Err(got), Err(expected)) => {
+                // For error cases:
+                // - Compare the string representations of the actual and expected errors
+                // This ensures that not only the error type matches, but also the error details
+                assert_eq!(format!("{:?}", got), format!("{:?}", expected), "Errors should match");
+            }
+            _ => panic!("Result types do not match."),
         }
     }
 
