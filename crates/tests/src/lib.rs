@@ -3,7 +3,6 @@
 mod rpc;
 
 use anyhow::bail;
-use mp_utils::tests_common::*;
 use rstest::rstest;
 use starknet_providers::Provider;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
@@ -202,6 +201,8 @@ impl MadaraCmdBuilder {
     }
 }
 
+#[allow(unused_imports)]
+use mp_utils::tests_common::set_workdir;
 #[rstest]
 fn madara_help_shows(_set_workdir: ()) {
     let _ = env_logger::builder().is_test(true).try_init();
