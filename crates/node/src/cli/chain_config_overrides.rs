@@ -50,7 +50,7 @@ impl ChainConfigOverrideParams {
             chain_config.eth_core_contract_address,
         ) = (
             params.chain_name.map_or(chain_config.chain_name, |v| v),
-            params.chain_id.map_or(chain_config.chain_id, |v| ChainId::from(v)),
+            params.chain_id.map_or(chain_config.chain_id, ChainId::from),
             params
                 .native_fee_token_address
                 .map_or(chain_config.native_fee_token_address, |v| contract_address!(v.as_str())),
@@ -60,8 +60,8 @@ impl ChainConfigOverrideParams {
             params.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| {
                 StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")
             }),
-            params.block_time.map_or(chain_config.block_time, |v| Duration::from_secs(v)),
-            self.pending_block_update_time.map_or(chain_config.pending_block_update_time, |v| Duration::from_secs(v)),
+            params.block_time.map_or(chain_config.block_time, Duration::from_secs),
+            self.pending_block_update_time.map_or(chain_config.pending_block_update_time,Duration::from_secs),
             params.sequencer_address.map_or(chain_config.sequencer_address, |v| contract_address!(v.as_str())),
             params.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
             params.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| {

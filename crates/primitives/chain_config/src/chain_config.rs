@@ -27,16 +27,6 @@ pub enum ChainPreset {
 }
 
 impl ChainPreset {
-    pub fn from_str(preset_name: &str) -> anyhow::Result<Self> {
-        match preset_name {
-            "mainnet" => Ok(ChainPreset::Mainnet),
-            "sepolia" => Ok(ChainPreset::Sepolia),
-            "integration-sepolia" => Ok(ChainPreset::IntegrationSepolia),
-            "test" => Ok(ChainPreset::Test),
-            _ => bail!("Failed to get preset {preset_name}"),
-        }
-    }
-
     pub fn get_config(self) -> anyhow::Result<ChainConfig> {
         match self {
             ChainPreset::Mainnet => {
@@ -49,6 +39,20 @@ impl ChainPreset {
                 ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/integration.yaml"))
             }
             ChainPreset::Test => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/test.yaml")),
+        }
+    }
+}
+
+impl FromStr for ChainPreset {
+    type Err = anyhow::Error;
+
+    fn from_str(preset_name: &str) -> Result<Self, Self::Err> {
+        match preset_name {
+            "mainnet" => Ok(ChainPreset::Mainnet),
+            "sepolia" => Ok(ChainPreset::Sepolia),
+            "integration-sepolia" => Ok(ChainPreset::IntegrationSepolia),
+            "test" => Ok(ChainPreset::Test),
+            _ => bail!("Failed to get preset {}", preset_name),
         }
     }
 }
@@ -258,7 +262,7 @@ mod tests {
     #[rstest]
     fn test_mainnet_from_yaml(_set_workdir: ()) {
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(&Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
+            ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
                 .expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
