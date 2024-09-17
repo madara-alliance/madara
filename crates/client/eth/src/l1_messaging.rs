@@ -329,7 +329,7 @@ mod l1_messaging_tests {
 
         env::set_current_dir(&project_root).expect("Failed to set working directory");
     }
-    
+
     /// Common setup for tests
     ///
     /// This test performs the following steps:
