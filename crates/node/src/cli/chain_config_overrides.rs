@@ -61,7 +61,7 @@ impl ChainConfigOverrideParams {
                 StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")
             }),
             params.block_time.map_or(chain_config.block_time, Duration::from_secs),
-            self.pending_block_update_time.map_or(chain_config.pending_block_update_time,Duration::from_secs),
+            self.pending_block_update_time.map_or(chain_config.pending_block_update_time, Duration::from_secs),
             params.sequencer_address.map_or(chain_config.sequencer_address, |v| contract_address!(v.as_str())),
             params.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
             params.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| {
