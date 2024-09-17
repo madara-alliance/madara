@@ -16,6 +16,7 @@ pub struct DevnetPredeployedContract {
     pub secret: SigningKey,
     pub pubkey: Felt,
     pub balance: ContractFeeTokensBalance,
+    pub class_hash: Felt,
 }
 
 pub struct DevnetKeys(pub Vec<DevnetPredeployedContract>);
@@ -96,6 +97,7 @@ impl DevnetKeys {
                     secret: SigningKey::from_secret_scalar(k.secret),
                     pubkey: k.pubkey,
                     balance: get_fee_tokens_balance(backend, k.address)?,
+                    class_hash: k.class_hash,
                 })
             })
             .collect::<anyhow::Result<_>>()?;
@@ -107,10 +109,11 @@ impl DevnetKeys {
         let keys = mc_db::devnet_db::DevnetPredeployedKeys(
             self.0
                 .iter()
-                .map(|k| mc_db::devnet_db::DevnetPredeployedContractKey {
+                .map(|k| mc_db::devnet_db::DevnetPredeployedContractAccount {
                     address: k.address,
                     secret: k.secret.secret_scalar(),
                     pubkey: k.pubkey,
+                    class_hash: k.class_hash,
                 })
                 .collect(),
         );

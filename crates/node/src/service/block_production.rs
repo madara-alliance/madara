@@ -71,8 +71,11 @@ impl Service for BlockProductionService {
 
                 log::info!("⛏️  Deploying devnet genesis block");
 
-                let mut genesis_config = ChainGenesisDescription::base_config();
-                let contracts = genesis_config.add_devnet_contracts(n_devnet_contracts);
+                let mut genesis_config =
+                    ChainGenesisDescription::base_config().context("Failed to create base genesis config")?;
+                let contracts = genesis_config
+                    .add_devnet_contracts(n_devnet_contracts)
+                    .context("Failed to add devnet contracts")?;
 
                 let genesis_block = genesis_config
                     .build(backend.chain_config())
