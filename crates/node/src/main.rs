@@ -162,6 +162,16 @@ async fn main() -> anyhow::Result<()> {
         .with(telemetry_service)
         .with(prometheus_service);
 
+    if run_cmd.block_production_params.devnet && run_cmd.network != NetworkType::Devnet {
+        if !run_cmd.block_production_params.override_devnet_chain_id {
+            panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+        } else {
+            // this log is immediately flooded with devnet accounts and so this can be missed.
+            // should we add a delay here to make this clearly visisble?
+            log::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        }
+    }
+
     app.start_and_drive_to_end().await?;
     Ok(())
 }

@@ -128,6 +128,9 @@ pub enum NetworkType {
     Test,
     /// The integration network.
     Integration,
+    /// A devnet for local testing
+    #[value(alias("devnet"))]
+    Devnet,
 }
 
 impl NetworkType {
@@ -136,6 +139,7 @@ impl NetworkType {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
+            NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
         }
     }
 

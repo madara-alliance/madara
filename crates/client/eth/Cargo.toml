@@ -56,3 +56,4 @@ dotenv = { workspace = true }
 prometheus = { workspace = true }
 httpmock = { workspace = true }
 tracing-test = "0.2.5"
+serial_test = { workspace = true }
