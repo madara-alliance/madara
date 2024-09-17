@@ -28,9 +28,9 @@ pub enum InitiallyDeclaredClass {
 impl InitiallyDeclaredClass {
     pub fn new_sierra(definition: impl Into<Vec<u8>>) -> anyhow::Result<Self> {
         let class = serde_json::from_slice::<SierraClass>(&definition.into())
-            .with_context(|| format!("Deserializing sierra class"))?;
+            .with_context(|| "Deserializing sierra class".to_string())?;
         let contract_class: FlattenedSierraClass =
-            class.flatten().with_context(|| format!("Flattening sierra class"))?.into();
+            class.flatten().with_context(|| "Flattening sierra class".to_string())?.into();
         let class_hash = contract_class.compute_class_hash().context("Computing sierra class hash")?;
         let (compiled_class_hash, _) = contract_class.compile_to_casm().context("Compiling sierra class")?;
 
@@ -38,7 +38,7 @@ impl InitiallyDeclaredClass {
     }
     pub fn new_legacy(definition: impl Into<Vec<u8>>) -> anyhow::Result<Self> {
         let contract_class = serde_json::from_slice::<LegacyContractClass>(&definition.into())
-            .with_context(|| format!("Deserializing legacy class"))?;
+            .with_context(|| "Deserializing legacy class".to_string())?;
         let class_hash = contract_class.class_hash().context("Computing legacy class hash")?;
         let contract_class = contract_class.compress().context("Compressing legacy")?.into();
 
@@ -94,9 +94,7 @@ impl InitiallyDeclaredClasses {
 
     /// Load the classes into `DeclaredClass`es.
     pub fn into_loaded_classes(self) -> Vec<DeclaredClass> {
-        self.0
-            .into_iter()
-            .map(|(_, class)| match class {
+        self.0.into_values().map(|class| match class {
                 InitiallyDeclaredClass::Sierra(c) => DeclaredClass::Sierra(SierraDeclaredClass {
                     class_hash: c.class_hash,
                     contract_class: c.contract_class,
