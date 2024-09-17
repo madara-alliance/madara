@@ -22,7 +22,7 @@ use mp_utils::service::{Service, ServiceGroup};
 
 use starknet_providers::SequencerGatewayProvider;
 
-use cli::RunCmd;
+use cli::{NetworkType, RunCmd};
 use service::L1SyncService;
 use service::{BlockProductionService, RpcService, SyncService};
 
