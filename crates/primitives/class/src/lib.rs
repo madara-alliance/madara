@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use starknet_types_core::felt::Felt;
 
-pub mod convert;
 pub mod class_hash;
 pub mod class_update;
 pub mod compile;
+pub mod convert;
 mod into_starknet_core;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

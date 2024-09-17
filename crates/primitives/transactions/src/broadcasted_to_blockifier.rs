@@ -4,10 +4,10 @@ use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWith
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::{
-    compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass, LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass
+    compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+    LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::contract::ComputeClassHashError;
 use starknet_types_core::felt::Felt;
 
 #[derive(thiserror::Error, Debug)]
@@ -38,13 +38,6 @@ pub fn broadcasted_to_blockifier(
     (blockifier::transaction::transaction_execution::Transaction, Option<ConvertedClass>),
     BroadcastedToBlockifierError,
 > {
-    // // TODO: when class_hash computation is fixed on legacy contract classes, remove this check
-    // if let starknet_core::types::BroadcastedTransaction::Declare(
-    //     starknet_core::types::BroadcastedDeclareTransaction::V1(_),
-    // ) = &transaction
-    // {
-    //     return Err(BroadcastedToBlockifierError::LegacyContractClassesNotSupported);
-    // }
     let (class_info, class_hash, extra_class_info) = match &transaction {
         starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
