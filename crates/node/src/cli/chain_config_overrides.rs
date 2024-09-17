@@ -37,37 +37,49 @@ pub struct ChainConfigOverrideParams {
 impl ChainConfigOverrideParams {
     pub fn override_cfg(&self, mut chain_config: ChainConfig) -> ChainConfig {
         let params = self.clone();
-        (
-            chain_config.chain_name,
-            chain_config.chain_id,
-            chain_config.native_fee_token_address,
-            chain_config.parent_fee_token_address,
-            chain_config.latest_protocol_version,
-            chain_config.block_time,
-            chain_config.pending_block_update_time,
-            chain_config.sequencer_address,
-            chain_config.max_nonce_for_validation_skip,
-            chain_config.eth_core_contract_address,
-        ) = (
-            params.chain_name.map_or(chain_config.chain_name, |v| v),
-            params.chain_id.map_or(chain_config.chain_id, ChainId::from),
-            params
-                .native_fee_token_address
-                .map_or(chain_config.native_fee_token_address, |v| contract_address!(v.as_str())),
-            params
-                .parent_fee_token_address
-                .map_or(chain_config.parent_fee_token_address, |v| contract_address!(v.as_str())),
-            params.latest_protocol_version.map_or(chain_config.latest_protocol_version, |v| {
-                StarknetVersion::from_str(v.as_str()).expect("failed to retrieve version")
-            }),
-            params.block_time.map_or(chain_config.block_time, Duration::from_secs),
-            self.pending_block_update_time.map_or(chain_config.pending_block_update_time, Duration::from_secs),
-            params.sequencer_address.map_or(chain_config.sequencer_address, |v| contract_address!(v.as_str())),
-            params.max_nonce_for_validation_skip.map_or(chain_config.max_nonce_for_validation_skip, |v| v),
-            params.eth_core_contract_address.map_or(chain_config.eth_core_contract_address, |v| {
-                H160::from_str(v.as_str()).expect("failed to parse core contract")
-            }),
-        );
+    
+        if let Some(name) = params.chain_name {
+            chain_config.chain_name = name;
+        }
+    
+        if let Some(id) = params.chain_id {
+            chain_config.chain_id = ChainId::from(id);
+        }
+    
+        if let Some(address) = params.native_fee_token_address {
+            chain_config.native_fee_token_address = contract_address!(address.as_str());
+        }
+    
+        if let Some(address) = params.parent_fee_token_address {
+            chain_config.parent_fee_token_address = contract_address!(address.as_str());
+        }
+    
+        if let Some(version) = params.latest_protocol_version {
+            chain_config.latest_protocol_version = StarknetVersion::from_str(version.as_str())
+                .expect("failed to retrieve version");
+        }
+    
+        if let Some(time) = params.block_time {
+            chain_config.block_time = Duration::from_secs(time);
+        }
+    
+        if let Some(time) = self.pending_block_update_time {
+            chain_config.pending_block_update_time = Duration::from_secs(time);
+        }
+    
+        if let Some(address) = params.sequencer_address {
+            chain_config.sequencer_address = contract_address!(address.as_str());
+        }
+    
+        if let Some(max_nonce) = params.max_nonce_for_validation_skip {
+            chain_config.max_nonce_for_validation_skip = max_nonce;
+        }
+    
+        if let Some(address) = params.eth_core_contract_address {
+            chain_config.eth_core_contract_address = H160::from_str(address.as_str())
+                .expect("failed to parse core contract");
+        }
+    
         chain_config
     }
 }
