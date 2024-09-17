@@ -99,10 +99,9 @@ mod eth_client_gas_price_worker_test {
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
-
-    const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://ethereum-rpc.publicnode.com";
     const ANOTHER_ANVIL_PORT: u16 = 8546;
+    const L1_BLOCK_NUMBER: u64 = 20395662;
+    const FORK_URL: &str = "https://eth.merkle.io";
 
     #[serial]
     #[tokio::test]
@@ -175,8 +174,6 @@ mod eth_client_gas_price_worker_test {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
         let eth_client = create_ethereum_client(Some(&addr));
-
-        println!("add is: {:?} ", addr.as_str());
 
         let mock = mock_server.mock(|when, then| {
             when.method("POST").path("/").json_body_obj(&serde_json::json!({
