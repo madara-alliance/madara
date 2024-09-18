@@ -2,6 +2,7 @@
 
 ## Next release
 
+- tests: integration test for l2 fetch task added
 - refactor: calculate class hashes in devnet
 - feat: add config file and preset configure chain
 - refactor: change default chain id and add custom flag to override
@@ -22,7 +23,6 @@
 - feat: rpc versioning
 - feat: bumping Starknet version from v0.13.2 to Starknet v0.13.2.1
 - fix: replaced old namings with adapted namings
-- tests: integration test for l2 fetch task added
 - refactor: block import is now centrally done in a single crate
 - tests: add e2e tests for rpc read methods
 - tests: add e2e tests for the node
