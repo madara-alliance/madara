@@ -155,7 +155,7 @@ mod eth_client_event_subscription_test {
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_info = Arc::new(ChainConfig::test_config());
+        let chain_info = Arc::new(ChainConfig::test_config().unwrap());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");

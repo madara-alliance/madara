@@ -5344,6 +5344,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
+ "blockifier",
  "chrono",
  "clap",
  "env_logger 0.11.3",
@@ -5368,10 +5369,13 @@ dependencies = [
  "mp-chain-config",
  "mp-convert",
  "mp-utils",
+ "primitive-types",
  "rand",
  "rayon",
  "reqwest 0.12.5",
+ "serde",
  "serde_json",
+ "starknet-core",
  "starknet-providers",
  "starknet_api",
  "thiserror",
@@ -5441,6 +5445,7 @@ dependencies = [
  "mp-utils",
  "rayon",
  "rocksdb",
+ "rstest 0.18.2",
  "serde",
  "starknet-core",
  "starknet-types-core",
@@ -5470,6 +5475,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "proptest",
  "proptest-derive",
  "rand",
@@ -5490,6 +5496,7 @@ dependencies = [
  "env_logger 0.11.3",
  "flate2",
  "lazy_static",
+ "mp-utils",
  "once_cell",
  "reqwest 0.12.5",
  "rstest 0.18.2",
@@ -5624,6 +5631,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "paste",
  "rstest 0.18.2",
  "serde_json",
@@ -5773,11 +5781,15 @@ dependencies = [
 name = "mp-chain-config"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "lazy_static",
+ "mp-utils",
  "primitive-types",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
+ "serde_yaml",
  "starknet-types-core",
  "starknet_api",
  "thiserror",
@@ -5879,6 +5891,7 @@ dependencies = [
  "async-trait",
  "futures",
  "rayon",
+ "rstest 0.18.2",
  "tokio",
 ]
 
@@ -7539,6 +7552,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.2.6",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serial_test"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8871,6 +8897,12 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

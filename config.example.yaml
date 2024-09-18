@@ -1,0 +1,62 @@
+# Name of the blockchain network
+chain_name: "Starknet Mainnet"
+
+# Unique identifier for the blockchain network
+chain_id: "SN_MAIN"
+
+# Contract address of the token used to pay transaction fees on this network (STRK)
+native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+
+# Contract address of the token used for fees on the parent chain (ETH)
+parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+
+# Paths to JSON files containing blockifier's constants for different versions
+versioned_constants:
+  "0.13.0": "crates/primitives/chain_config/resources/versioned_constants_13_0.json"
+  "0.13.1": "crates/primitives/chain_config/resources/versioned_constants_13_1.json"
+  "0.13.1.1": "crates/primitives/chain_config/resources/versioned_constants_13_1_1.json"
+  "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
+
+# Address of the core contract on the L1 network that interacts with this L2 network
+eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
+
+# Most recent version supported
+latest_protocol_version: "0.13.2"
+
+# Target time interval between blocks, in seconds
+block_time: 360
+
+# How often the pending block is updated, in seconds
+pending_block_update_time: 2
+
+# Settings for the transaction bouncer
+bouncer_config:
+  block_max_capacity:
+    # Limits for various built-in operations (set to max uint64 value)
+    builtin_count:
+      add_mod: 18446744073709551615
+      bitwise: 18446744073709551615
+      ecdsa: 18446744073709551615
+      ec_op: 18446744073709551615
+      keccak: 18446744073709551615
+      mul_mod: 18446744073709551615
+      pedersen: 18446744073709551615
+      poseidon: 18446744073709551615
+      range_check: 18446744073709551615
+      range_check96: 18446744073709551615
+    # Maximum gas limit per block
+    gas: 5000000
+    # Maximum number of steps per block
+    n_steps: 40000000
+    # Maximum length of message segments
+    message_segment_length: 18446744073709551615
+    # Maximum number of events per block
+    n_events: 18446744073709551615
+    # Maximum size of state differences per block
+    state_diff_size: 131072
+
+# Address of the sequencer (0x0 for a full node).
+sequencer_address: "0x0"
+
+# Maximum nonce difference allowed for skipping validation of intermediate transactions
+max_nonce_for_validation_skip: 2

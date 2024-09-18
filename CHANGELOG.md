@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add config file and preset configure chain
 - refactor: change default chain id and add custom flag to override
 - fix: generate a fixed set of public and private keys for devnet
 - fix: defaulted l1 gas price in devnet mode
