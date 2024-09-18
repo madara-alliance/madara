@@ -8,6 +8,7 @@
 
 use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
+use log::info;
 use mp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
@@ -136,6 +137,7 @@ impl NonceChain {
         if force {
             self.transactions.replace(OrderMempoolTransactionByNonce(mempool_tx));
         } else if !self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx)) {
+            println!("error 1");
             return Err(TxInsersionError::NonceConflict);
         }
 
@@ -247,6 +249,7 @@ impl MempoolInner {
                 let position = match entry.get_mut().insert(mempool_tx, force) {
                     Ok(position) => position,
                     Err(_nonce_collision) => {
+                        println!("error 2");
                         if force {
                             panic!("Force add should never error")
                         }

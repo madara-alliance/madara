@@ -161,7 +161,6 @@ impl ChainGenesisDescription {
     }
 
     pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
-        log::info!("CA PASSE");
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
         Ok(UnverifiedFullBlock {
