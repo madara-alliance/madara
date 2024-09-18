@@ -33,6 +33,8 @@ mp-convert = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
+blockifier = { workspace = true }
+starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
@@ -51,9 +53,11 @@ hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
 log = { workspace = true }
+primitive-types.workspace = true
 rand = { workspace = true }
 rayon.workspace = true
 reqwest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true }

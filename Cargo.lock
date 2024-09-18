@@ -5344,6 +5344,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
+ "blockifier",
  "chrono",
  "clap",
  "env_logger 0.11.3",
@@ -5368,10 +5369,13 @@ dependencies = [
  "mp-chain-config",
  "mp-convert",
  "mp-utils",
+ "primitive-types",
  "rand",
  "rayon",
  "reqwest 0.12.5",
+ "serde",
  "serde_json",
+ "starknet-core",
  "starknet-providers",
  "starknet_api",
  "thiserror",
@@ -5441,6 +5445,7 @@ dependencies = [
  "mp-utils",
  "rayon",
  "rocksdb",
+ "rstest 0.18.2",
  "serde",
  "starknet-core",
  "starknet-types-core",
@@ -5470,6 +5475,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "proptest",
  "proptest-derive",
  "rand",
@@ -5490,6 +5496,7 @@ dependencies = [
  "env_logger 0.11.3",
  "flate2",
  "lazy_static",
+ "mp-utils",
  "once_cell",
  "reqwest 0.12.5",
  "rstest 0.18.2",
@@ -5526,6 +5533,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "serial_test",
  "starknet-types-core",
  "starknet_api",
  "tempfile",
@@ -5623,6 +5631,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "paste",
  "rstest 0.18.2",
  "serde_json",
@@ -5772,11 +5781,15 @@ dependencies = [
 name = "mp-chain-config"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "lazy_static",
+ "mp-utils",
  "primitive-types",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
+ "serde_yaml",
  "starknet-types-core",
  "starknet_api",
  "thiserror",
@@ -5880,6 +5893,7 @@ dependencies = [
  "async-trait",
  "futures",
  "rayon",
+ "rstest 0.18.2",
  "tokio",
 ]
 
@@ -7281,6 +7295,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scc"
+version = "2.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c947adb109a8afce5fc9c7bf951f87f146e9147b3a6a58413105628fb1d1e66"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7341,6 +7364,12 @@ dependencies = [
  "ring",
  "untrusted",
 ]
+
+[[package]]
+name = "sdd"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60a7b59a5d9b0099720b417b6325d91a52cbf5b3dcb5041d864be53eefa58abc"
 
 [[package]]
 name = "sec1"
@@ -7519,6 +7548,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
 dependencies = [
  "darling 0.20.9",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.2.6",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b4b487fe2acf240a021cf57c6b2b4903b1e78ca0ecd862a71b71d2a51fed77d"
+dependencies = [
+ "futures",
+ "log",
+ "once_cell",
+ "parking_lot 0.12.3",
+ "scc",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82fe9db325bcef1fbcde82e078a5cc4efdf787e96b3b9cf45b50b529f2083d67"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.66",
@@ -8832,6 +8899,12 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

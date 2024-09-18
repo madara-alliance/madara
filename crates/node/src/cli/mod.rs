@@ -1,4 +1,5 @@
 pub mod block_production;
+pub mod chain_config_overrides;
 pub mod db;
 pub mod l1;
 pub mod prometheus;
@@ -8,18 +9,22 @@ pub mod telemetry;
 
 use crate::cli::l1::L1SyncParams;
 pub use block_production::*;
+pub use chain_config_overrides::*;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 pub use sync::*;
 pub use telemetry::*;
 
+use clap::ArgGroup;
 use mp_chain_config::ChainConfig;
+use std::path::PathBuf;
 use std::sync::Arc;
 use url::Url;
 
-#[derive(Clone, Debug, clap::Parser)]
 /// Madara: High performance Starknet sequencer/full-node.
+#[derive(Clone, Debug, clap::Parser)]
+#[clap(group(ArgGroup::new("chain_config").args(["chain_config_path", "preset"]).required(true)))]
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -61,6 +66,22 @@ pub struct RunCmd {
     /// The network chain configuration.
     #[clap(long, short, default_value = "main")]
     pub network: NetworkType,
+
+    /// Chain configuration file path.
+    #[clap(long, value_name = "CHAIN CONFIG FILE PATH")]
+    pub chain_config_path: Option<PathBuf>,
+
+    /// Use preset as chain Config
+    #[clap(long, value_name = "PRESET NAME")]
+    pub preset: Option<String>,
+
+    /// Allow to override some parameters present in preset or configuration file
+    #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
+    pub chain_config_override: bool,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub chain_params: ChainConfigOverrideParams,
 }
 
 impl RunCmd {
@@ -74,6 +95,21 @@ impl RunCmd {
             self.name = Some(name);
         }
         self.name.as_ref().expect("Name was just set")
+    }
+
+    pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
+        let mut chain_config: ChainConfig = match &self.preset {
+            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str())?,
+            None => {
+                ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?
+            }
+        };
+
+        // Override stuff if flag is setted
+        if self.chain_config_override {
+            chain_config = self.chain_params.override_cfg(chain_config);
+        }
+        Ok(Arc::new(chain_config))
     }
 
     pub fn is_authority(&self) -> bool {
@@ -92,6 +128,9 @@ pub enum NetworkType {
     Test,
     /// The integration network.
     Integration,
+    /// A devnet for local testing
+    #[value(alias("devnet"))]
+    Devnet,
 }
 
 impl NetworkType {
@@ -100,14 +139,7 @@ impl NetworkType {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
             NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
-        }
-    }
-
-    pub fn chain_config(&self) -> Arc<ChainConfig> {
-        match self {
-            NetworkType::Main => Arc::new(ChainConfig::starknet_mainnet()),
-            NetworkType::Test => Arc::new(ChainConfig::starknet_sepolia()),
-            NetworkType::Integration => Arc::new(ChainConfig::starknet_integration()),
+            NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
         }
     }
 

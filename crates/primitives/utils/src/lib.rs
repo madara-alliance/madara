@@ -1,6 +1,7 @@
 #![allow(clippy::new_without_default)]
 
 pub mod service;
+pub mod tests_common;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
