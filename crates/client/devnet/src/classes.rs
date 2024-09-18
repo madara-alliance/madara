@@ -94,7 +94,9 @@ impl InitiallyDeclaredClasses {
 
     /// Load the classes into `DeclaredClass`es.
     pub fn into_loaded_classes(self) -> Vec<DeclaredClass> {
-        self.0.into_values().map(|class| match class {
+        self.0
+            .into_values()
+            .map(|class| match class {
                 InitiallyDeclaredClass::Sierra(c) => DeclaredClass::Sierra(SierraDeclaredClass {
                     class_hash: c.class_hash,
                     contract_class: c.contract_class,
