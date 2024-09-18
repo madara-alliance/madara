@@ -127,6 +127,7 @@ impl StarknetRpcApiError {
     pub fn data(&self) -> Option<serde_json::Value> {
         match self {
             StarknetRpcApiError::ErrUnexpectedError { data } => Some(json!(data)),
+            StarknetRpcApiError::ValidationFailure { error } => Some(json!(error)),
             StarknetRpcApiError::TxnExecutionError { tx_index, error } => Some(json!({
                 "transaction_index": tx_index,
                 "execution_error": error,

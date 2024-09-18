@@ -124,7 +124,7 @@ impl ChainConfig {
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
             latest_protocol_version: StarknetVersion::V0_13_2,
-            block_time: Duration::from_secs(6 * 60),
+            block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
 
             bouncer_config: BouncerConfig {

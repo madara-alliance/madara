@@ -86,16 +86,17 @@ pub fn setup_logging() -> anyhow::Result<()> {
                 Level::Warn => {
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}]{brackets:#} ⚠️ {}",
+                        "{brackets}[{brackets:#}{} {style}{}{style:#} {}{brackets}]{brackets:#} ⚠️  {}",
                         ts,
                         record.level(),
+                        record.target(),
                         record.args()
                     )
                 }
                 Level::Error if record.target() == "rpc_errors" => {
                     writeln!(
                         fmt,
-                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}]{brackets:#} ❗ {}",
+                        "{brackets}[{brackets:#}{} {style}{}{style:#}{brackets}]{brackets:#} ❗ RPC Internal Server Error: {}",
                         ts,
                         record.level(),
                         record.args()

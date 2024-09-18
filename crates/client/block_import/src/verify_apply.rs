@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{borrow::Cow, sync::Arc};
 
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -5,7 +6,7 @@ use mp_block::{
     header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
-use mp_convert::ToFelt;
+use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -204,6 +205,19 @@ fn update_tries(
         return Ok(global_state_root);
     }
 
+    log::debug!(
+        "Deployed contracts: {:?}",
+        DisplayableIter(block.state_diff.deployed_contracts.iter().map(|c| c.address.hex_display()))
+    );
+    log::debug!(
+        "Declared classes: {:?}",
+        DisplayableIter(block.state_diff.declared_classes.iter().map(|c| c.class_hash.hex_display()))
+    );
+    log::debug!(
+        "Deprecated declared classes: {:?}",
+        DisplayableIter(block.state_diff.deprecated_declared_classes.iter().map(|c| c.hex_display()))
+    );
+
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
             contracts::contract_trie_root(
@@ -292,4 +306,33 @@ fn block_hash(
     }
 
     Ok((block_hash, header))
+}
+
+/// Display an iterator without collecting it.
+struct DisplayableIter<I: IntoIterator + Clone>(pub I);
+impl<I: IntoIterator + Clone> fmt::Display for DisplayableIter<I> where I::Item: fmt::Display {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.0.clone().into_iter();
+        if let Some(fst) = iter.next() {
+            write!(f, "{}", fst)?;
+            for el in iter {
+                write!(f, ", {}", el)?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+impl<I: IntoIterator + Clone> fmt::Debug for DisplayableIter<I> where I::Item: fmt::Debug {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.0.clone().into_iter();
+        if let Some(fst) = iter.next() {
+            write!(f, "{:?}", fst)?;
+            for el in iter {
+                write!(f, ", {:?}", el)?;
+            }
+        }
+        write!(f, "]")
+    }
 }

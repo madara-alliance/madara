@@ -207,7 +207,8 @@ impl BlockProductionTask {
         })
     }
 
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<StateDiff, Error> {
+    /// Returns the state diff and number of executed transactions during this tick.
+    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, usize), Error> {
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
 
         let mut txs_to_process = Vec::with_capacity(TX_BATCH_SIZE);
@@ -238,11 +239,10 @@ impl BlockProductionTask {
         let n_executed_txs = executed_txs.len();
 
         for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), executed_txs) {
-            log::debug!("res for {:?}", mempool_tx);
             match exec_result {
                 Ok(execution_info) => {
                     // Reverted transactions appear here as Ok too.
-                    log::debug!("Successful execution of transaction {}", mempool_tx.tx_hash());
+                    log::debug!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
 
                     if let Some(class) = mempool_tx.converted_class {
                         self.declared_classes.push(class);
@@ -266,19 +266,20 @@ impl BlockProductionTask {
             }
         }
 
-        log::debug!(
-            "Finished tick with {} new transactions, now at {}",
-            n_executed_txs,
-            self.block.inner.transactions.len()
-        );
-
         // This contains the rest of `to_process_iter`.
         let rest_txs_to_process: Vec<_> = to_process_iter.collect();
+        let n_not_executed = rest_txs_to_process.len();
 
         // Add back the unexecuted transactions to the mempool.
         self.mempool.re_add_txs(rest_txs_to_process);
 
-        Ok(state_diff)
+        log::debug!(
+            "Finished tick with {} new transactions, now at {} - re-adding {n_not_executed} txs to mempool",
+            n_executed_txs,
+            self.block.inner.transactions.len()
+        );
+
+        Ok((state_diff, n_executed_txs))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -287,35 +288,51 @@ impl BlockProductionTask {
 
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
-        log::debug!("begin pending tick {}/{}", current_pending_tick, n_pending_ticks_per_block);
+        if current_pending_tick == 0 {
+            return Ok(());
+        }
 
         // Reduced bouncer capacity for the current pending tick
 
-        let config_bouncer = self.executor.bouncer.bouncer_config.block_max_capacity;
-        let frac = n_pending_ticks_per_block / current_pending_tick; // div by zero: current_pending_tick has been checked for 0 above
+        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity.clone();
 
-        log::debug!("frac for this tick: {:.2}", 1f64 / frac as f64);
+        // reduced_gas = gas * current_pending_tick/n_pending_ticks_per_block
+        // - we're dealing with integers here so prefer having the division last
+        // - use u128 here because the multiplication would overflow
+        // - div by zero: current_pending_tick has been checked for 0 above
+        let reduced_cap = |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
+
+        let gas = reduced_cap(config_bouncer.gas);
+        let frac = current_pending_tick as f64 / n_pending_ticks_per_block as f64;
+        log::debug!("begin pending tick {current_pending_tick}/{n_pending_ticks_per_block}, proportion for this tick: {frac:.2}, gas limit: {gas}/{}", config_bouncer.gas);
+
         let bouncer_cap = BouncerWeights {
             builtin_count: BuiltinCount {
-                add_mod: config_bouncer.builtin_count.add_mod / frac,
-                bitwise: config_bouncer.builtin_count.bitwise / frac,
-                ecdsa: config_bouncer.builtin_count.ecdsa / frac,
-                ec_op: config_bouncer.builtin_count.ec_op / frac,
-                keccak: config_bouncer.builtin_count.keccak / frac,
-                mul_mod: config_bouncer.builtin_count.mul_mod / frac,
-                pedersen: config_bouncer.builtin_count.pedersen / frac,
-                poseidon: config_bouncer.builtin_count.poseidon / frac,
-                range_check: config_bouncer.builtin_count.range_check / frac,
-                range_check96: config_bouncer.builtin_count.range_check96 / frac,
+                add_mod: reduced_cap(config_bouncer.builtin_count.add_mod),
+                bitwise: reduced_cap(config_bouncer.builtin_count.bitwise),
+                ecdsa: reduced_cap(config_bouncer.builtin_count.ecdsa),
+                ec_op: reduced_cap(config_bouncer.builtin_count.ec_op),
+                keccak: reduced_cap(config_bouncer.builtin_count.keccak),
+                mul_mod: reduced_cap(config_bouncer.builtin_count.mul_mod),
+                pedersen: reduced_cap(config_bouncer.builtin_count.pedersen),
+                poseidon: reduced_cap(config_bouncer.builtin_count.poseidon),
+                range_check: reduced_cap(config_bouncer.builtin_count.range_check),
+                range_check96: reduced_cap(config_bouncer.builtin_count.range_check96),
             },
-            gas: config_bouncer.gas / frac,
-            message_segment_length: config_bouncer.message_segment_length / frac,
-            n_events: config_bouncer.n_events / frac,
-            n_steps: config_bouncer.n_steps / frac,
-            state_diff_size: config_bouncer.state_diff_size / frac,
+            gas,
+            message_segment_length: reduced_cap(config_bouncer.message_segment_length),
+            n_events: reduced_cap(config_bouncer.n_events),
+            n_steps: reduced_cap(config_bouncer.n_steps),
+            state_diff_size: reduced_cap(config_bouncer.state_diff_size),
         };
 
-        let state_diff = self.continue_block(bouncer_cap)?;
+        let (state_diff, n_executed) = self.continue_block(bouncer_cap)?;
+        if n_executed > 0 {
+            log::info!(
+                "🧮 Executed and added {n_executed} transaction(s) to the pending block at height {}",
+                self.block_n()
+            );
+        }
 
         // Store pending block
         self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
@@ -329,7 +346,8 @@ impl BlockProductionTask {
         log::debug!("closing block #{}", block_n);
 
         // Complete the block with full bouncer capacity.
-        let new_state_diff = self.continue_block(self.executor.bouncer.bouncer_config.block_max_capacity)?;
+        let (new_state_diff, _n_executed) =
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity.clone())?;
 
         // Convert the pending block to a closed block and save to db.
 

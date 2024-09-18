@@ -33,6 +33,7 @@ pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
+pub use inner::TxInsersionError;
 
 pub mod block_production;
 mod close_block;
@@ -47,7 +48,7 @@ pub enum Error {
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
-    InnerMempool(#[from] inner::TxInsersionError),
+    InnerMempool(#[from] TxInsersionError),
     #[error(transparent)]
     Exec(#[from] mc_exec::Error),
     #[error("Preprocessing transaction: {0:#}")]
@@ -55,7 +56,7 @@ pub enum Error {
 }
 impl Error {
     pub fn is_internal(&self) -> bool {
-        !matches!(self, Error::Validation(_))
+        matches!(self, Error::StorageError(_) | Error::BroadcastedToBlockifier(_))
     }
 }
 
