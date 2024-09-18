@@ -347,12 +347,14 @@ async fn fetch_class(
 #[cfg(test)]
 mod test_l2_fetchers {
     use super::*;
-    use crate::tests::utils::gateway::TestContext;
+    use crate::tests::utils::gateway::{test_setup, TestContext};
     use mc_block_import::UnverifiedPendingFullBlock;
     use mp_block::header::L1DataAvailabilityMode;
     use mp_chain_config::StarknetVersion;
+    use rstest::*;
     use starknet_api::felt;
     use starknet_providers::sequencer::models::BlockStatus;
+    use std::sync::Arc;
 
     /// Test successful fetching of a pending block and updates.
     ///
@@ -361,9 +363,10 @@ mod test_l2_fetchers {
     /// 2. The state update is properly retrieved.
     /// 3. Class updates are fetched and processed correctly.
     /// 4. The returned UnverifiedPendingFullBlock contains the expected data.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_pending_block_and_updates_success() {
-        let ctx = TestContext::new();
+    async fn test_fetch_pending_block_and_updates_success(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock the pending block
         ctx.mock_block_pending();
@@ -436,9 +439,10 @@ mod test_l2_fetchers {
     /// Verifies that:
     /// 1. The function properly handles the case when a pending block is not found.
     /// 2. It returns an appropriate FetchError.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_pending_block_and_updates_not_found() {
-        let ctx = TestContext::new();
+    async fn test_fetch_pending_block_and_updates_not_found(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock a "pending block not found" scenario
         ctx.mock_block_pending_not_found();
@@ -458,9 +462,10 @@ mod test_l2_fetchers {
     /// 1. The function correctly fetches both state update and block for the pending block.
     /// 2. The returned data matches the expected format for a pending block.
     /// 3. Certain fields that should be None for pending blocks are indeed None.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_state_update_with_block_pending() {
-        let ctx = TestContext::new();
+    async fn test_fetch_state_update_with_block_pending(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock the pending block
         ctx.mock_block_pending();
@@ -494,9 +499,10 @@ mod test_l2_fetchers {
     /// Verifies that:
     /// 1. The function returns a ProviderError::StarknetError(StarknetError::BlockNotFound) when the block doesn't exist.
     /// 2. The error is propagated correctly through the retry mechanism.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_state_update_with_block_not_found() {
-        let ctx = TestContext::new();
+    async fn test_fetch_state_update_with_block_not_found(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock a "block not found" scenario
         ctx.mock_block_not_found(5);
@@ -515,9 +521,10 @@ mod test_l2_fetchers {
     /// Verifies that:
     /// 1. The function correctly handles cases where the provider returns incomplete data.
     /// 2. It returns an appropriate error or retries as necessary.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_state_update_with_block_partial_data() {
-        let ctx = TestContext::new();
+    async fn test_fetch_state_update_with_block_partial_data(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock partial data scenario
         ctx.mock_block_partial_data(5);
@@ -541,9 +548,10 @@ mod test_l2_fetchers {
     /// 1. Missing classes are correctly identified and fetched.
     /// 2. A known problematic class hash is properly handled.
     /// 3. The function returns the expected class update data.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_class_updates() {
-        let ctx = TestContext::new();
+    async fn test_fetch_class_updates(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
         ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
@@ -568,9 +576,10 @@ mod test_l2_fetchers {
     /// Verifies that:
     /// 1. The function properly handles errors when checking for the classes that doesn't exist.
     /// 2. It handles errors during class fetching.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_class_updates_error_handling() {
-        let ctx = TestContext::new();
+    async fn test_fetch_class_updates_error_handling(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
         let (state_update, _block) =
@@ -597,9 +606,10 @@ mod test_l2_fetchers {
     /// 1. The function correctly fetches a class definition for a given hash.
     /// 2. It handles different block IDs correctly.
     /// 3. It returns the expected ContractClass structure.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_class() {
-        let ctx = TestContext::new();
+    async fn test_fetch_class(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         let class_hash = Felt::from_hex_unchecked("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0");
         ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
@@ -615,9 +625,10 @@ mod test_l2_fetchers {
     /// Verifies that:
     /// 1. The function properly handles provider errors.
     /// 2. It returns an appropriate ProviderError.
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_class_error_handling() {
-        let ctx = TestContext::new();
+    async fn test_fetch_class_error_handling(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         let class_hash = felt!("0x1234");
         ctx.mock_class_hash_not_found("0x1234".to_string());
@@ -631,9 +642,10 @@ mod test_l2_fetchers {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_fetch_state_update_works() {
-        let ctx = TestContext::new();
+    async fn test_fetch_state_update_works(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
         // Mock a block with a state update
         ctx.mock_block(5);

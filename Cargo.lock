@@ -5814,6 +5814,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.5",
  "rodio",
+ "rstest 0.18.2",
  "serde_json",
  "starknet-core",
  "starknet-providers",

@@ -94,7 +94,8 @@ pub enum FetchError {
 #[cfg(test)]
 mod test_l2_fetch_task {
     use super::*;
-    use crate::tests::utils::gateway::TestContext;
+    use crate::tests::utils::gateway::{test_setup, TestContext};
+    use rstest::*;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -105,9 +106,10 @@ mod test_l2_fetch_task {
     /// 2. The task sends the "caught up" signal after the initial fetch.
     /// 3. The task continues to poll for new blocks at the specified interval.
     /// 4. The task can fetch new blocks that appear after the initial sync.
+    #[rstest]
     #[tokio::test]
-    async fn test_l2_fetch_task_comprehensive() {
-        let mut ctx = TestContext::new();
+    async fn test_l2_fetch_task_comprehensive(test_setup: Arc<MadaraBackend>) {
+        let mut ctx = TestContext::new(test_setup);
 
         for block_number in 0..8 {
             ctx.mock_block(block_number);

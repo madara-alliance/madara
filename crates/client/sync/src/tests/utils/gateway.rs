@@ -2,6 +2,8 @@ use httpmock::MockServer;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
+use mp_utils::tests_common::set_workdir;
+use rstest::*;
 use serde_json::json;
 use starknet_providers::SequencerGatewayProvider;
 use starknet_types_core::felt::Felt;
@@ -21,20 +23,27 @@ pub struct TestContext {
 
 impl Default for TestContext {
     fn default() -> Self {
-        Self::new()
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        let backend = MadaraBackend::open_for_testing(chain_config.clone());
+        Self::new(backend)
     }
 }
 
+#[fixture]
+pub fn test_setup(_set_workdir: ()) -> Arc<MadaraBackend> {
+    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    MadaraBackend::open_for_testing(chain_config.clone())
+}
+
+#[cfg(test)]
 impl TestContext {
-    pub fn new() -> Self {
+    pub fn new(backend: Arc<MadaraBackend>) -> Self {
         let mock_server = MockServer::start();
         let provider = Arc::new(SequencerGatewayProvider::new(
             Url::parse(&format!("{}/gateway", mock_server.base_url())).unwrap(),
             Url::parse(&format!("{}/feeder_gateway", mock_server.base_url())).unwrap(),
             Felt::from_hex_unchecked("0x4d41444152415f54455354"),
         ));
-        let chain_config = Arc::new(ChainConfig::test_config());
-        let backend = MadaraBackend::open_for_testing(chain_config);
         let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(100);
         let (once_caught_up_sender, once_caught_up_receiver) = oneshot::channel();
 
