@@ -197,6 +197,7 @@ mod tests {
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
+    use mp_utils::tests_common::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
@@ -297,7 +298,7 @@ mod tests {
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
 
-        let chain_config = Arc::new(ChainConfig::test_config());
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend)));
@@ -337,8 +338,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    #[case("./cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
+    fn test_erc_20_declare(_set_workdir: (), mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -358,7 +359,7 @@ mod tests {
                 nonce: Felt::ZERO,
                 contract_class: Arc::new(flattened_class),
                 resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
                     l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 },
                 tip: 0,
@@ -398,7 +399,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_deploy(mut chain: DevnetForTesting) {
+    fn test_account_deploy(_set_workdir: (), mut chain: DevnetForTesting) {
         let key = SigningKey::from_random();
         log::debug!("Secret Key : {:?}", key.secret_scalar());
 
@@ -496,7 +497,12 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+    fn test_basic_transfer(
+        _set_workdir: (),
+        mut chain: DevnetForTesting,
+        #[case] transfer_amount: u128,
+        #[case] expect_reverted: bool,
+    ) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();

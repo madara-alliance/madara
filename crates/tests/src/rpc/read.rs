@@ -4,8 +4,10 @@
 #[cfg(test)]
 mod test_rpc_read_calls {
     use once_cell::sync::Lazy;
+    use rstest::rstest;
     use std::any::Any;
 
+    use crate::set_workdir;
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
     use starknet::macros::felt;
@@ -35,7 +37,15 @@ mod test_rpc_read_calls {
 
     async fn setup_madara() -> MadaraCmd {
         let mut madara = MadaraCmdBuilder::new()
-            .args(["--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
+            .args([
+                "--network",
+                "sepolia",
+                "--no-sync-polling",
+                "--n-blocks-to-sync",
+                "20",
+                "--no-l1-sync",
+                "--preset=sepolia",
+            ])
             .run();
 
         madara.wait_for_ready().await;
@@ -62,8 +72,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_block_hash_and_number_works() {
+    async fn test_block_hash_and_number_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let result = { json_client.block_hash_and_number().await.unwrap() };
@@ -95,8 +106,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_block_txn_count_works() {
+    async fn test_get_block_txn_count_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let result = { json_client.get_block_transaction_count(BlockId::Number(2)).await.unwrap() };
@@ -121,8 +133,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_block_txn_with_receipts_works() {
+    async fn test_get_block_txn_with_receipts_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let block = { json_client.get_block_with_receipts(BlockId::Number(2)).await.unwrap() };
@@ -197,8 +210,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_block_txn_with_tx_hashes_works() {
+    async fn test_get_block_txn_with_tx_hashes_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let block = { json_client.get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap() };
@@ -238,8 +252,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_block_txn_with_tx_works() {
+    async fn test_get_block_txn_with_tx_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let block = json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap();
@@ -286,8 +301,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_class_hash_at_works() {
+    async fn test_get_class_hash_at_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let class_hash = {
@@ -323,8 +339,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_nonce_works() {
+    async fn test_get_nonce_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let nonce = {
@@ -360,8 +377,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_txn_by_block_id_and_index_works() {
+    async fn test_get_txn_by_block_id_and_index_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap() };
@@ -398,8 +416,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_txn_by_hash_works() {
+    async fn test_get_txn_by_hash_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn = {
@@ -441,8 +460,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_txn_receipt_works() {
+    async fn test_get_txn_receipt_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn_receipt = {
@@ -509,8 +529,9 @@ mod test_rpc_read_calls {
     /// verify the state root.
     ///
     /// Hence, all the txn would be marked as AcceptedOnL2.
+    #[rstest]
     #[tokio::test]
-    async fn test_get_txn_status_works() {
+    async fn test_get_txn_status_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let txn_status = {
@@ -544,8 +565,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_storage_at_works() {
+    async fn test_get_storage_at_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let storage_response = {
@@ -581,8 +603,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_state_update_works() {
+    async fn test_get_state_update_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let state_update = { json_client.get_state_update(BlockId::Number(13)).await.unwrap() };
@@ -660,8 +683,9 @@ mod test_rpc_read_calls {
     ///
     /// In here we are testing the event data apart from continuation token and checking type for
     /// the continuation token.
+    #[rstest]
     #[tokio::test]
-    async fn test_get_events_works() {
+    async fn test_get_events_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let events = {
@@ -738,8 +762,9 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    #[rstest]
     #[tokio::test]
-    async fn test_get_events_with_continuation_token_works() {
+    async fn test_get_events_with_continuation_token_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let events = {
@@ -828,8 +853,9 @@ mod test_rpc_read_calls {
     /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
     /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
+    #[rstest]
     #[tokio::test]
-    async fn test_call_works() {
+    async fn test_call_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
@@ -900,8 +926,9 @@ mod test_rpc_read_calls {
     /// with the decompressed program we get from the madara response.
     ///
     /// Along with that we are also checking for abi and the entry points.
+    #[rstest]
     #[tokio::test]
-    async fn test_get_class_works() {
+    async fn test_get_class_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let contract_class = {
@@ -938,8 +965,9 @@ mod test_rpc_read_calls {
     /// ```
     ///
     /// Note: The program has been compressed using the same script mentioned in the above test case.
+    #[rstest]
     #[tokio::test]
-    async fn test_get_class_at_works() {
+    async fn test_get_class_at_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let contract_class = {
@@ -1001,8 +1029,9 @@ mod test_rpc_read_calls {
     /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
     /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
+    #[rstest]
     #[tokio::test]
-    async fn test_estimate_fee_works() {
+    async fn test_estimate_fee_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
@@ -1078,8 +1107,9 @@ mod test_rpc_read_calls {
     /// Note: The test is ignored as of now because madara support the transaction with starknet version >= 0.13.0
     /// and ideally for the node will call the sequencer to get the result of the transaction for older starknet version.
     #[ignore]
+    #[rstest]
     #[tokio::test]
-    async fn test_estimate_message_fee_works() {
+    async fn test_estimate_message_fee_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
         let call_response = {
@@ -1128,12 +1158,12 @@ mod test_rpc_read_calls {
 
         let decompressed_program = decompress_to_string(contract_program.unwrap());
 
-        let mut class_program_file = File::open("src/rpc/test_utils/class_program.txt").unwrap();
+        let mut class_program_file = File::open("crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
 
         let mut original_program = String::new();
         class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
 
-        let contract_class_file = File::open("src/rpc/test_utils/contract_class.json").unwrap();
+        let contract_class_file = File::open("crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
         let reader = BufReader::new(contract_class_file);
 
         let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();

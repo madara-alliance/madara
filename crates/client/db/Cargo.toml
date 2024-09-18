@@ -34,6 +34,7 @@ bincode = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
+rstest = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }

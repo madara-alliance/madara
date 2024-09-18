@@ -1,5 +1,6 @@
 mod common;
-use common::temp_db;
+
+use common::*;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::{block_db::TxIndex, db_block_id::DbBlockId};
 use mp_block::BlockId;
@@ -17,17 +18,21 @@ use mp_transactions::{
     DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
     L1HandlerTransaction,
 };
+use mp_utils::tests_common::*;
+use rstest::*;
 use starknet_types_core::felt::Felt;
 
+#[rstest]
 #[tokio::test]
-async fn test_chain_info() {
+async fn test_chain_info(_set_workdir: ()) {
     let db = temp_db().await;
     let chain_config = db.backend().chain_config();
-    assert_eq!(chain_config.chain_id, ChainConfig::test_config().chain_id);
+    assert_eq!(chain_config.chain_id, ChainConfig::test_config().unwrap().chain_id);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_block_id() {
+async fn test_block_id(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
@@ -43,16 +48,18 @@ async fn test_block_id() {
     assert_eq!(backend.resolve_block_id(&DbBlockId::Pending).unwrap().unwrap(), DbBlockId::Pending);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_block_id_not_found() {
+async fn test_block_id_not_found(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
     assert!(backend.resolve_block_id(&BlockId::Hash(Felt::from(0))).unwrap().is_none());
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_store_block() {
+async fn test_store_block(_set_workdir: ()) {
     const BLOCK_ID_0: DbBlockId = DbBlockId::BlockN(0);
 
     let db = temp_db().await;
@@ -74,8 +81,9 @@ async fn test_store_block() {
     assert_eq!(backend.get_block_state_diff(&BLOCK_ID_0).unwrap().unwrap(), state_diff);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_store_pending_block() {
+async fn test_store_pending_block(_set_workdir: ()) {
     const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
 
     let db = temp_db().await;
@@ -95,8 +103,9 @@ async fn test_store_pending_block() {
     assert_eq!(backend.get_block_state_diff(&BLOCK_ID_PENDING).unwrap().unwrap(), state_diff);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_erase_pending_block() {
+async fn test_erase_pending_block(_set_workdir: ()) {
     const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
 
     let db = temp_db().await;
@@ -126,8 +135,9 @@ async fn test_erase_pending_block() {
     assert_eq!(backend.get_block_state_diff(&BLOCK_ID_PENDING).unwrap().unwrap(), state_diff);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_store_latest_block() {
+async fn test_store_latest_block(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
@@ -139,8 +149,9 @@ async fn test_store_latest_block() {
     assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_latest_confirmed_block() {
+async fn test_latest_confirmed_block(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
@@ -151,8 +162,9 @@ async fn test_latest_confirmed_block() {
     assert_eq!(backend.get_l1_last_confirmed_block().unwrap().unwrap(), 0);
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_store_block_transactions() {
+async fn test_store_block_transactions(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
@@ -166,8 +178,9 @@ async fn test_store_block_transactions() {
     assert_eq!(backend.find_tx_hash_block(&tx_hash_1).unwrap().unwrap(), (block, TxIndex(1)));
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_store_block_transactions_pending() {
+async fn test_store_block_transactions_pending(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
