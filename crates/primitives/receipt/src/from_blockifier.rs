@@ -184,15 +184,13 @@ mod events_logic_tests {
     #[rstest]
     fn test_event_ordering() {
         let mut events = Vec::new();
-        let nested_calls = create_call_info(0, vec![
-            create_call_info(1, vec![
-                create_call_info(2, vec![
-                    create_call_info(3, vec![
-                        create_call_info(4, vec![])
-                    ])
-                ])
-            ])
-        ]);
+        let nested_calls = create_call_info(
+            0,
+            vec![create_call_info(
+                1,
+                vec![create_call_info(2, vec![create_call_info(3, vec![create_call_info(4, vec![])])])],
+            )],
+        );
         get_events_from_call_info(Some(&nested_calls), 0, &mut events);
 
         let expected_events_ordering = vec![event(0), event(1), event(2), event(3), event(4)];
