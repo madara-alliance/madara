@@ -184,47 +184,28 @@ mod events_logic_tests {
     #[rstest]
     fn test_event_ordering() {
         let mut events = Vec::new();
-        get_events_from_call_info(Some(&call_info()), 0, &mut events);
+        let nested_calls = create_call_info(0, vec![
+            create_call_info(1, vec![
+                create_call_info(2, vec![
+                    create_call_info(3, vec![
+                        create_call_info(4, vec![])
+                    ])
+                ])
+            ])
+        ]);
+        get_events_from_call_info(Some(&nested_calls), 0, &mut events);
 
         let expected_events_ordering = vec![event(0), event(1), event(2), event(3), event(4)];
 
         assert_eq!(expected_events_ordering, events);
     }
 
-    fn call_info() -> CallInfo {
+    fn create_call_info(event_number: u32, inner_calls: Vec<CallInfo>) -> CallInfo {
         CallInfo {
             call: Default::default(),
-            execution: execution(vec![ordered_event(0)]),
+            execution: execution(vec![ordered_event(event_number as usize)]),
             resources: Default::default(),
-            inner_calls: vec![CallInfo {
-                call: Default::default(),
-                execution: execution(vec![ordered_event(1)]),
-                resources: Default::default(),
-                inner_calls: vec![CallInfo {
-                    call: Default::default(),
-                    execution: execution(vec![ordered_event(2)]),
-                    resources: Default::default(),
-                    inner_calls: vec![CallInfo {
-                        call: Default::default(),
-                        execution: execution(vec![ordered_event(3)]),
-                        resources: Default::default(),
-                        inner_calls: vec![CallInfo {
-                            call: Default::default(),
-                            execution: execution(vec![ordered_event(4)]),
-                            resources: Default::default(),
-                            inner_calls: vec![],
-                            storage_read_values: vec![],
-                            accessed_storage_keys: Default::default(),
-                        }],
-                        storage_read_values: vec![],
-                        accessed_storage_keys: Default::default(),
-                    }],
-                    storage_read_values: vec![],
-                    accessed_storage_keys: Default::default(),
-                }],
-                storage_read_values: vec![],
-                accessed_storage_keys: Default::default(),
-            }],
+            inner_calls,
             storage_read_values: vec![],
             accessed_storage_keys: Default::default(),
         }
