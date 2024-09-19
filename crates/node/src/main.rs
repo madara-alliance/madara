@@ -10,9 +10,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use mc_block_import::BlockImporter;
-
 use cli::{NetworkType, RunCmd};
+use mc_block_import::BlockImporter;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
@@ -20,8 +19,7 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-use service::L1SyncService;
-use service::{BlockProductionService, GatewayService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
 
 const GREET_IMPL_NAME: &str = "Madara";

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use hyper::{Body, Request, Response};
+use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraPendingBlock};
@@ -10,6 +10,10 @@ use mp_gateway::{
     state_update::{PendingStateUpdateProvider, StateUpdateProvider},
 };
 use serde_json::json;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    BroadcastedTransaction,
+};
 use starknet_types_core::felt::Felt;
 
 use crate::error::{StarknetError, StarknetErrorCode};
@@ -18,7 +22,7 @@ use super::{
     error::{GatewayError, ResultExt},
     helpers::{
         block_id_from_params, create_json_response, create_response_with_json_body, get_params_from_request,
-        include_block_params, not_implemented_response,
+        include_block_params,
     },
 };
 
@@ -244,18 +248,60 @@ pub async fn handle_get_class_by_hash(req: Request<Body>, backend: Arc<MadaraBac
 
 pub async fn handle_add_transaction(
     req: Request<Body>,
-    backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<Body> {
-    // let transaction = match serde_json::from_slice::<BroadcastedTransaction>(req.body())) {
-    //     Ok(transaction) => transaction,
-    //     Err(e) => {
-    //         return GatewayError::StarknetError(StarknetError {
-    //             code: StarknetErrorCode::MalformedRequest,
-    //             message: format!("Failed to parse transaction: {}", e),
-    //         })
-    //         .into()
-    //     }
-    // };
-    not_implemented_response()
+    let whole_body = match body::to_bytes(req.into_body()).await {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("Failed to read request body: {}", e);
+            return GatewayError::InternalServerError.into();
+        }
+    };
+
+    let transaction = match serde_json::from_slice::<BroadcastedTransaction>(whole_body.as_ref()) {
+        Ok(transaction) => transaction,
+        Err(e) => {
+            return GatewayError::StarknetError(StarknetError {
+                code: StarknetErrorCode::MalformedRequest,
+                message: format!("Failed to parse transaction: {}", e),
+            })
+            .into()
+        }
+    };
+
+    match transaction {
+        BroadcastedTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
+        BroadcastedTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
+        BroadcastedTransaction::Invoke(tx) => invoke_transaction(tx, add_transaction_provider).await,
+    }
+}
+
+async fn declare_transaction(
+    tx: BroadcastedDeclareTransaction,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+) -> Response<Body> {
+    match add_transaction_provider.add_declare_transaction(tx).await {
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+    }
+}
+
+async fn deploy_account_transaction(
+    tx: BroadcastedDeployAccountTransaction,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+) -> Response<Body> {
+    match add_transaction_provider.add_deploy_account_transaction(tx).await {
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+    }
+}
+
+async fn invoke_transaction(
+    tx: BroadcastedInvokeTransaction,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+) -> Response<Body> {
+    match add_transaction_provider.add_invoke_transaction(tx).await {
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+    }
 }

@@ -77,14 +77,14 @@ mod tests {
     async fn test_get_state_update() {
         let client = FeederClient::starknet_alpha_mainnet();
 
-        let block = client.get_state_update(BlockId::Number(0)).await.unwrap();
-        let block = client
+        let _block = client.get_state_update(BlockId::Number(0)).await.unwrap();
+        let _block = client
             .get_state_update(BlockId::Hash(Felt::from_hex_unchecked(
                 "0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943",
             )))
             .await
             .unwrap();
-        let block = client.get_state_update(BlockId::Tag(BlockTag::Latest)).await.unwrap();
-        let block = client.get_state_update(BlockId::Tag(BlockTag::Pending)).await.unwrap();
+        let _block = client.get_state_update(BlockId::Tag(BlockTag::Latest)).await.unwrap();
+        let _block = client.get_state_update(BlockId::Tag(BlockTag::Pending)).await.unwrap();
     }
 }

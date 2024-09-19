@@ -18,7 +18,7 @@ pub(crate) async fn main_router(
     match (req.uri().path(), feeder_gateway_enable, gateway_enable) {
         ("/health", _, _) => Ok(Response::new(Body::from("OK"))),
         (path, true, _) if path.starts_with("/feeder_gateway/") => feeder_gateway_router(req, backend).await,
-        (path, _, true) if path.starts_with("/feeder/") => gateway_router(req, backend, add_transaction_provider).await,
+        (path, _, true) if path.starts_with("/feeder/") => gateway_router(req, add_transaction_provider).await,
         (path, false, _) if path.starts_with("/feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("/feeder/") => Ok(service_unavailable_response("Feeder")),
         _ => Ok(not_found_response()),
@@ -38,13 +38,10 @@ async fn feeder_gateway_router(req: Request<Body>, backend: Arc<MadaraBackend>) 
 // Router for requests related to feeder
 async fn gateway_router(
     req: Request<Body>,
-    backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
-        (&Method::POST, "/feeder/add_transaction") => {
-            Ok(handle_add_transaction(req, backend, add_transaction_provider).await)
-        }
+        (&Method::POST, "/feeder/add_transaction") => Ok(handle_add_transaction(req, add_transaction_provider).await),
         _ => Ok(not_found_response()),
     }
 }
