@@ -146,8 +146,11 @@ impl TestContext {
                             "0x786b58232e3830dfb3a4b3aee0cfebe12399b246e1a3befa1ea04ee50bda427": "0x8",
                         },
                         "deployed_contracts": [],
-                        "old_declared_contracts": ["0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0"],
-                        "declared_classes": [],
+                        "old_declared_contracts": [],
+                        "declared_classes": [{
+                            "class_hash": "0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a",
+                            "compiled_class_hash": "0x7d24ab3a5277e064c65b37f2bd4b118050a9f1864bd3f74beeb3e84b2213692"
+                        }],
                         "replaced_classes": []
                     }
                 }
@@ -227,7 +230,7 @@ impl TestContext {
             when.method("GET").path_contains("get_class_by_hash").query_param("classHash", class_hash.clone());
             then.status(400).header("content-type", "application/json").json_body(json!({
                 "code": "StarknetErrorCode.UNDECLARED_CLASS",
-                "message": format!("Class with hash {} is not declared.", class_hash)
+                "message": "Class hash is not declared."
             }));
         });
     }
