@@ -24,7 +24,7 @@ use url::Url;
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
-#[clap(group(ArgGroup::new("chain_config").args(["chain_config_path", "preset"]).required(true)))]
+#[clap(group(ArgGroup::new("chain_config")))]
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -71,7 +71,7 @@ pub struct RunCmd {
     #[clap(long, value_name = "CHAIN CONFIG FILE PATH")]
     pub chain_config_path: Option<PathBuf>,
 
-    /// Use preset as chain Config
+    /// Use preset as chain Config. Default presets are defined in the chain_config module under primitives/chain_config/presets.
     #[clap(long, value_name = "PRESET NAME")]
     pub preset: Option<String>,
 
@@ -98,19 +98,31 @@ impl RunCmd {
     }
 
     pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
-        let mut chain_config: ChainConfig = match &self.preset {
-            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str())?,
-            None => {
-                ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?
+        let mut chain_config: ChainConfig = if let Some(preset_name) = &self.preset {
+            ChainConfig::from_preset(preset_name.as_str())?
+        } else if let Some(path) = &self.chain_config_path {
+            ChainConfig::from_yaml(path)?
+        } else {
+            // Neither preset nor chain_config_path is provided
+            match self.network {
+                NetworkType::Main => ChainConfig::from_preset("mainnet")?,
+                NetworkType::Test => ChainConfig::from_preset("sepolia")?,
+                NetworkType::Devnet => ChainConfig::from_preset("test")?,
+                NetworkType::Integration => ChainConfig::from_preset("integration")?,
+                _ => {
+                    return Err(anyhow::Error::msg(
+                        "You must provide either --preset or --chain-config-path when using a custom network",
+                    ));
+                }
             }
         };
-
-        // Override stuff if flag is setted
+    
+        // Override config if flag is set
         if self.chain_config_override {
             chain_config = self.chain_params.override_cfg(chain_config);
         }
         Ok(Arc::new(chain_config))
-    }
+    }    
 
     pub fn is_authority(&self) -> bool {
         self.authority || self.block_production_params.devnet
