@@ -7,7 +7,7 @@ use rstest::*;
 #[rstest]
 #[tokio::test]
 async fn test_open_db(_set_workdir: ()) {
-    temp_db().await;
+    temp_db::temp_db().await;
 }
 
 #[rstest]
