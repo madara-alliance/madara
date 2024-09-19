@@ -1,4 +1,4 @@
-use mc_db::DatabaseService;
+use crate::DatabaseService;
 use mp_chain_config::ChainConfig;
 use tempfile::TempDir;
 

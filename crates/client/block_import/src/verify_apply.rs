@@ -298,6 +298,7 @@ fn block_hash(
 #[cfg(test)]
 mod verify_apply_tests {
     use super::*;
+    use mc_db::tests::test_block::{finalized_block_zero, finalized_state_diff_zero};
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_block::Header;
     use mp_chain_config::{ChainConfig, StarknetVersion};
@@ -401,43 +402,6 @@ mod verify_apply_tests {
             },
             l1_da_mode: L1DataAvailabilityMode::Blob,
         }
-    }
-
-    /// Creates a finalized block zero (genesis block) for testing purposes.
-    ///
-    /// This function generates a MadaraMaybePendingBlock representing the genesis block,
-    /// useful for testing scenarios involving the first block in the chain.
-    fn finalized_block_zero(header: Header) -> MadaraMaybePendingBlock {
-        let transactions = vec![
-            InvokeTransactionV1::default().into(),
-            L1HandlerTransaction::default().into(),
-            DeclareTransactionV1::default().into(),
-            DeployTransaction::default().into(),
-            DeployAccountTransactionV3::default().into(),
-        ];
-
-        let transaction_receipts = vec![
-            InvokeTransactionReceipt::default().into(),
-            L1HandlerTransactionReceipt::default().into(),
-            DeclareTransactionReceipt::default().into(),
-            DeployTransactionReceipt::default().into(),
-            DeployAccountTransactionReceipt::default().into(),
-        ];
-
-        let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
-
-        let tx_hashes = vec![Felt::from(0), Felt::from(1), Felt::from(2), Felt::from(3), Felt::from(4)];
-        let block_info = MadaraBlockInfo::new(header, tx_hashes, felt!("0x12345"));
-
-        MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
-    }
-
-    /// Creates an empty StateDiff for testing purposes.
-    ///
-    /// This function returns a default StateDiff, useful for testing scenarios
-    /// where an empty state difference is needed.
-    fn finalized_state_diff_zero() -> StateDiff {
-        StateDiff::default()
     }
 
     /// Creates a dummy PreValidatedBlock for testing purposes.

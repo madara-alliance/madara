@@ -1,7 +1,5 @@
-mod common;
-
-use common::*;
-use mc_db::DatabaseService;
+use super::common::*;
+use crate::DatabaseService;
 use mp_chain_config::ChainConfig;
 use mp_utils::tests_common::*;
 use rstest::*;

@@ -1,8 +1,6 @@
-mod common;
-
-use common::*;
-use mc_db::db_block_id::DbBlockIdResolvable;
-use mc_db::{block_db::TxIndex, db_block_id::DbBlockId};
+use super::common::*;
+use crate::db_block_id::DbBlockIdResolvable;
+use crate::{block_db::TxIndex, db_block_id::DbBlockId};
 use mp_block::BlockId;
 use mp_block::{
     header::PendingHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraPendingBlockInfo,
@@ -20,7 +18,8 @@ use mp_transactions::{
 };
 use mp_utils::tests_common::*;
 use rstest::*;
-use starknet_types_core::felt::Felt;
+use starknet_api::felt;
+use starknet_types_core::felt::{self, Felt};
 
 #[rstest]
 #[tokio::test]
@@ -36,7 +35,7 @@ async fn test_block_id(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
-    let block = finalized_block_zero();
+    let block = finalized_block_zero(Header::default());
     let block_hash = block.info.block_hash().unwrap();
     let state_diff = finalized_state_diff_zero();
 
@@ -67,7 +66,7 @@ async fn test_store_block(_set_workdir: ()) {
 
     assert!(backend.get_block(&BLOCK_ID_0).unwrap().is_none());
 
-    let block = finalized_block_zero();
+    let block = finalized_block_zero(Header::default());
     let state_diff = finalized_state_diff_zero();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
@@ -111,14 +110,14 @@ async fn test_erase_pending_block(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
     backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
     backend.clear_pending_block().unwrap();
 
     assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().inner.transactions.is_empty());
     assert!(
         backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().info.as_pending().unwrap().header.parent_block_hash
-            == finalized_block_zero().info.as_nonpending().unwrap().block_hash,
+            == finalized_block_zero(Header::default()).info.as_nonpending().unwrap().block_hash,
         "fake pending block parent hash must match with latest block in db"
     );
 
@@ -141,7 +140,7 @@ async fn test_store_latest_block(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
 
     let latest_block = finalized_block_one();
     backend.store_block(latest_block.clone(), finalized_state_diff_one(), vec![]).unwrap();
@@ -168,7 +167,7 @@ async fn test_store_block_transactions(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
-    let block = finalized_block_zero();
+    let block = finalized_block_zero(Header::default());
     let state_diff = finalized_state_diff_zero();
 
     backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
@@ -184,7 +183,7 @@ async fn test_store_block_transactions_pending(_set_workdir: ()) {
     let db = temp_db().await;
     let backend = db.backend();
 
-    backend.store_block(finalized_block_zero(), finalized_state_diff_zero(), vec![]).unwrap();
+    backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
 
     let block_pending = pending_block_one();
     backend.store_block(block_pending.clone(), pending_state_diff_one(), vec![]).unwrap();
@@ -194,7 +193,7 @@ async fn test_store_block_transactions_pending(_set_workdir: ()) {
     assert_eq!(backend.find_tx_hash_block(&tx_hash_1).unwrap().unwrap(), (block_pending, TxIndex(1)));
 }
 
-fn finalized_block_zero() -> MadaraMaybePendingBlock {
+pub fn finalized_block_zero(header: Header) -> MadaraMaybePendingBlock {
     let transactions = vec![
         InvokeTransactionV0::default().into(),
         L1HandlerTransaction::default().into(),
@@ -214,12 +213,12 @@ fn finalized_block_zero() -> MadaraMaybePendingBlock {
     let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(0), Felt::from(1), Felt::from(2), Felt::from(3), Felt::from(4)];
-    let block_info = MadaraBlockInfo::new(Header::default(), tx_hashes, Felt::from(0));
+    let block_info = MadaraBlockInfo::new(header, tx_hashes, felt!("0x12345"));
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn finalized_state_diff_zero() -> StateDiff {
+pub fn finalized_state_diff_zero() -> StateDiff {
     StateDiff::default()
 }
 
@@ -249,7 +248,7 @@ fn finalized_block_one() -> MadaraMaybePendingBlock {
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
 
-fn finalized_state_diff_one() -> StateDiff {
+pub fn finalized_state_diff_one() -> StateDiff {
     StateDiff::default()
 }
 
