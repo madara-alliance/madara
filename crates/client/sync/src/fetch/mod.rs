@@ -115,7 +115,7 @@ mod test_l2_fetch_task {
             ctx.mock_block(block_number);
         }
 
-        ctx.mock_class_hash("src/tests/utils/artifacts/class.json");
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         let polling_interval = Duration::from_millis(100);
         let task = tokio::spawn({

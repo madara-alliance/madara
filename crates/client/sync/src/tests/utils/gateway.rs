@@ -4,9 +4,10 @@ use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_utils::tests_common::set_workdir;
 use rstest::*;
-use serde_json::json;
+use serde_json::{json, Value};
 use starknet_providers::SequencerGatewayProvider;
 use starknet_types_core::felt::Felt;
+use std::fs;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
@@ -219,9 +220,23 @@ impl TestContext {
     }
 
     pub fn mock_class_hash(&self, path: &str) {
+        let file_content = fs::read_to_string(path).expect("Failed to read file");
+        let json: Value = serde_json::from_str(&file_content).expect("Failed to parse JSON");
+
+        // Convert ABI to string
+        let abi_string = serde_json::to_string(&json["abi"]).expect("Failed to serialize ABI");
+
+        // Transform the JSON to match the expected API response format
+        let api_response = json!({
+            "contract_class_version": json["contract_class_version"],
+            "sierra_program": json["sierra_program"],
+            "entry_points_by_type": json["entry_points_by_type"],
+            "abi": abi_string,
+        });
+
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_class_by_hash");
-            then.status(200).header("content-type", "application/json").body_from_file(path);
+            then.status(200).header("content-type", "application/json").json_body(api_response);
         });
     }
 
