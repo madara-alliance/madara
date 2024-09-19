@@ -405,24 +405,17 @@ mod test_l2_fetchers {
         );
 
         // Verify L1 gas prices
+        assert_eq!(pending_block.header.l1_gas_price.eth_l1_gas_price, 0x274287586, "ETH L1 gas price should match");
         assert_eq!(
-            pending_block.header.l1_gas_price.eth_l1_gas_price,
-            0x274287586,
-            "ETH L1 gas price should match"
-        );
-        assert_eq!(
-            pending_block.header.l1_gas_price.strk_l1_gas_price,
-            0x363cc34e29f8,
+            pending_block.header.l1_gas_price.strk_l1_gas_price, 0x363cc34e29f8,
             "STRK L1 gas price should match"
         );
         assert_eq!(
-            pending_block.header.l1_gas_price.eth_l1_data_gas_price,
-            0x2bc1e42413,
+            pending_block.header.l1_gas_price.eth_l1_data_gas_price, 0x2bc1e42413,
             "ETH L1 data gas price should match"
         );
         assert_eq!(
-            pending_block.header.l1_gas_price.strk_l1_data_gas_price,
-            0x3c735d85586c2,
+            pending_block.header.l1_gas_price.strk_l1_data_gas_price, 0x3c735d85586c2,
             "STRK L1 data gas price should match"
         );
 
@@ -496,41 +489,45 @@ mod test_l2_fetchers {
             felt!("0x37817010d31db557217addb3b4357c2422c8d8de0290c3f6a867bbdc49c32a0"),
             "Old root should match"
         );
-        
+
         // Verify storage diffs
         assert_eq!(state_update.state_diff.storage_diffs.len(), 1, "Should have 1 storage diff");
-        let storage_diff = state_update.state_diff.storage_diffs.get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")).expect("Storage diff should exist");
+        let storage_diff = state_update
+            .state_diff
+            .storage_diffs
+            .get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"))
+            .expect("Storage diff should exist");
         assert_eq!(storage_diff.len(), 2, "Should have 2 storage entries");
         assert_eq!(
             storage_diff[0].key,
             felt!("0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a"),
             "First storage key should match"
         );
-        assert_eq!(
-            storage_diff[0].value,
-            felt!("0x1b7622454b6cea6e76bb2"),
-            "First storage value should match"
-        );
+        assert_eq!(storage_diff[0].value, felt!("0x1b7622454b6cea6e76bb2"), "First storage value should match");
         assert_eq!(
             storage_diff[1].key,
             felt!("0x5928e5598505749c60b49cc98e3acd5f3faa4a36910f50824395385b3c3a5c6"),
             "Second storage key should match"
         );
-        assert_eq!(
-            storage_diff[1].value,
-            felt!("0xdefb9937f1c6af5096"),
-            "Second storage value should match"
-        );
+        assert_eq!(storage_diff[1].value, felt!("0xdefb9937f1c6af5096"), "Second storage value should match");
 
         // Verify nonces
         assert_eq!(state_update.state_diff.nonces.len(), 2, "Should have 2 nonces");
         assert_eq!(
-            state_update.state_diff.nonces.get(&felt!("0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c")).unwrap(),
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c"))
+                .unwrap(),
             &felt!("0x2"),
             "First nonce should match"
         );
         assert_eq!(
-            state_update.state_diff.nonces.get(&felt!("0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535")).unwrap(),
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535"))
+                .unwrap(),
             &felt!("0x18ab"),
             "Second nonce should match"
         );
@@ -573,17 +570,13 @@ mod test_l2_fetchers {
         assert!(block.state_root.is_none(), "Pending block should not have a state root");
         assert!(block.transactions.is_empty(), "Pending block should not contain transactions");
         assert_eq!(block.status, BlockStatus::Pending, "Pending block status should be 'PENDING'");
-        assert_eq!(block.l1_da_mode, starknet_core::types::L1DataAvailabilityMode::Calldata, "L1 DA mode should be CALLDATA");
         assert_eq!(
-            block.l1_gas_price.price_in_wei,
-            felt!("0x274287586"),
-            "L1 gas price in wei should match"
+            block.l1_da_mode,
+            starknet_core::types::L1DataAvailabilityMode::Calldata,
+            "L1 DA mode should be CALLDATA"
         );
-        assert_eq!(
-            block.l1_gas_price.price_in_fri,
-            felt!("0x363cc34e29f8"),
-            "L1 gas price in fri should match"
-        );
+        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x274287586"), "L1 gas price in wei should match");
+        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x363cc34e29f8"), "L1 gas price in fri should match");
         assert_eq!(
             block.l1_data_gas_price.price_in_wei,
             felt!("0x2bc1e42413"),
@@ -765,26 +758,46 @@ mod test_l2_fetchers {
             .expect("Failed to fetch state update with block");
 
         // Verify state update
-        assert_eq!(state_update.block_hash, Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32")));
-        assert_eq!(state_update.new_root, Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f")));
+        assert_eq!(
+            state_update.block_hash,
+            Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"))
+        );
+        assert_eq!(
+            state_update.new_root,
+            Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"))
+        );
         assert_eq!(state_update.old_root, felt!("0x6152bda357cb522337756c71bcab298d88c5d829a479ad8247b82b969912713"));
 
         // Verify storage diffs
         assert_eq!(state_update.state_diff.storage_diffs.len(), 6);
-        let storage_diff = state_update.state_diff.storage_diffs.get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")).unwrap();
+        let storage_diff = state_update
+            .state_diff
+            .storage_diffs
+            .get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"))
+            .unwrap();
         assert_eq!(storage_diff.len(), 2);
         assert_eq!(storage_diff[0].key, felt!("0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a"));
         assert_eq!(storage_diff[0].value, felt!("0x1b77017df88b0858c9c29"));
 
         // Verify nonces
         assert_eq!(state_update.state_diff.nonces.len(), 2);
-        assert_eq!(state_update.state_diff.nonces.get(&felt!("0x5005f66205d5d1c08d23b2046a9fa44f27a21dc1ea205bd33c5d7c667df2d7b")).unwrap(), &felt!("0x33f0"));
+        assert_eq!(
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x5005f66205d5d1c08d23b2046a9fa44f27a21dc1ea205bd33c5d7c667df2d7b"))
+                .unwrap(),
+            &felt!("0x33f0")
+        );
 
         // Verify other state diff components
         assert!(state_update.state_diff.deployed_contracts.is_empty());
         assert!(state_update.state_diff.old_declared_contracts.is_empty());
         assert_eq!(state_update.state_diff.declared_classes.len(), 1);
-        assert_eq!(state_update.state_diff.declared_classes[0].class_hash, felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a"));
+        assert_eq!(
+            state_update.state_diff.declared_classes[0].class_hash,
+            felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a")
+        );
         assert!(state_update.state_diff.replaced_classes.is_empty());
 
         // Verify block
@@ -794,7 +807,7 @@ mod test_l2_fetchers {
         assert_eq!(block.state_root, Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f")));
         assert_eq!(block.status, BlockStatus::AcceptedOnL1);
         assert_eq!(block.l1_da_mode, starknet_core::types::L1DataAvailabilityMode::Calldata);
-        
+
         // Verify gas prices
         assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x3bf1322e5"));
         assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x55dfe7f2de82"));
@@ -802,7 +815,10 @@ mod test_l2_fetchers {
         assert_eq!(block.l1_data_gas_price.price_in_fri, felt!("0x5b269552db6fa"));
 
         assert_eq!(block.timestamp, 1725974819);
-        assert_eq!(block.sequencer_address, Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")));
+        assert_eq!(
+            block.sequencer_address,
+            Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"))
+        );
         assert!(block.transactions.is_empty());
         assert!(block.transaction_receipts.is_empty());
         assert_eq!(block.starknet_version, Some("0.13.2.1".to_string()));
