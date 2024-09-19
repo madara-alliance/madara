@@ -198,7 +198,7 @@
 - feat(bonsai): Bumped bonsai lib to latest opti
 - refactor(generic): reduced runtime dependence on generics
 - fix(sync): Cleaned mc-sync isolating fetch process + added shared SyncStatus
-- feat(self-hosted): host our own runner
+- feat(ubuntu-latest): host our own runner
 - fix(deps): Removed unused dependencies
 - feat(multi-trie): Added support for persistent storage tries
 - feat(pending): added support for pending blocks in RPC requests

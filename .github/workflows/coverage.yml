@@ -8,7 +8,7 @@ jobs:
   coverage:
     permissions:
       pull-requests: write
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
