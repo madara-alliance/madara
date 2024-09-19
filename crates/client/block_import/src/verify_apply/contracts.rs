@@ -133,17 +133,13 @@ fn contract_state_leaf_hash(
 #[cfg(test)]
 mod contract_trie_root_tests {
     use super::*;
-    use mp_chain_config::ChainConfig;
+    use crate::verify_apply::verify_apply_tests::setup_test_backend;
+    use rstest::*;
     use std::sync::Arc;
 
-    fn setup_test_backend() -> Arc<MadaraBackend> {
-        let chain_config = Arc::new(ChainConfig::test_config());
-        MadaraBackend::open_for_testing(chain_config)
-    }
-
-    #[test]
-    fn test_contract_trie_root_success() {
-        let backend = setup_test_backend();
+    #[rstest]
+    fn test_contract_trie_root_success(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
 
         // Create dummy data
         let deployed_contracts = vec![DeployedContractItem {
@@ -186,9 +182,9 @@ mod contract_trie_root_tests {
         );
     }
 
-    #[test]
-    fn test_contract_state_leaf_hash_success() {
-        let backend = setup_test_backend();
+    #[rstest]
+    fn test_contract_state_leaf_hash_success(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
 
         // Create dummy data
         let contract_address =

@@ -298,7 +298,6 @@ fn block_hash(
 #[cfg(test)]
 mod verify_apply_tests {
     use super::*;
-    use mc_db::DatabaseService;
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_block::Header;
     use mp_chain_config::{ChainConfig, StarknetVersion};
@@ -310,10 +309,10 @@ mod verify_apply_tests {
     use mp_transactions::{
         DeclareTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV1, L1HandlerTransaction,
     };
+    use mp_utils::tests_common::set_workdir;
     use rstest::*;
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
-    use tempfile::TempDir;
 
     /// Creates a dummy UnverifiedHeader for testing purposes.
     ///
@@ -351,15 +350,14 @@ mod verify_apply_tests {
         }
     }
 
-    /// Sets up a test backend with a temporary directory.
+    /// Sets up a test backend.
     ///
     /// This function creates a new MadaraBackend instance with a temporary
     /// directory and test configuration, useful for isolated test environments.
-    async fn setup_test_backend() -> Arc<MadaraBackend> {
-        let temp_dir = TempDir::new().unwrap();
-        let chain_config = Arc::new(ChainConfig::test_config());
-        let db_service = DatabaseService::new(temp_dir.path(), None, false, chain_config).await.unwrap();
-        db_service.backend().clone()
+    #[fixture]
+    pub fn setup_test_backend(_set_workdir: ()) -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        MadaraBackend::open_for_testing(chain_config.clone())
     }
 
     /// Creates a BlockValidationContext for testing purposes.
@@ -537,9 +535,10 @@ mod verify_apply_tests {
         #[case] ignore_block_order: bool,
         #[case] expected_result: Result<(u64, Felt), BlockImportError>,
         #[case] populate_db: bool,
+        setup_test_backend: Arc<MadaraBackend>,
     ) {
         // Set up a test backend (database)
-        let backend = setup_test_backend().await;
+        let backend = setup_test_backend;
 
         // Populate the database with a block in case it's not a genesis block
         if populate_db {
@@ -649,9 +648,10 @@ mod verify_apply_tests {
         #[case] state_diff: StateDiff,
         #[case] trust_global_tries: bool,
         #[case] expected_result: Result<Felt, BlockImportError>,
+        setup_test_backend: Arc<MadaraBackend>,
     ) {
         // GIVEN: We have a test backend and a block with specified parameters
-        let backend = setup_test_backend().await;
+        let backend = setup_test_backend;
         let mut block = create_dummy_block();
         block.unverified_global_state_root = unverified_global_state_root;
         block.state_diff = state_diff;
@@ -791,9 +791,10 @@ mod verify_apply_tests {
         /// Verifies that:
         /// 1. The function correctly verifies and stores a new block.
         /// 2. The latest block number is updated after successful storage.
+        #[rstest]
         #[tokio::test]
-        async fn test_verify_apply_inner_success_stores_block() {
-            let backend = setup_test_backend().await;
+        async fn test_verify_apply_inner_success_stores_block(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
@@ -816,9 +817,10 @@ mod verify_apply_tests {
         /// Verifies that:
         /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
         /// 2. The latest block number remains unchanged when an error occurs.
+        #[rstest]
         #[tokio::test]
-        async fn test_verify_apply_inner_error_does_not_store_block() {
-            let backend = setup_test_backend().await;
+        async fn test_verify_apply_inner_error_does_not_store_block(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
@@ -850,10 +852,11 @@ mod verify_apply_tests {
         /// Verifies that:
         /// 1. The function correctly verifies and stores a new block.
         /// 2. The latest block number is updated after successful storage.
+        #[rstest]
         #[tokio::test]
-        async fn test_verify_apply_pending_success_stores_block() {
+        async fn test_verify_apply_pending_success_stores_block(setup_test_backend: Arc<MadaraBackend>) {
             // Setup
-            let backend = setup_test_backend().await;
+            let backend = setup_test_backend;
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());
@@ -895,10 +898,11 @@ mod verify_apply_tests {
         /// Verifies that:
         /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
         /// 2. The latest block number remains unchanged when an error occurs.
+        #[rstest]
         #[tokio::test]
-        async fn test_verify_apply_pending_error_does_not_store_block() {
+        async fn test_verify_apply_pending_error_does_not_store_block(setup_test_backend: Arc<MadaraBackend>) {
             // Setup
-            let backend = setup_test_backend().await;
+            let backend = setup_test_backend;
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());

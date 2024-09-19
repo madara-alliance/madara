@@ -47,22 +47,17 @@ pub fn class_trie_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mp_chain_config::ChainConfig;
+    use crate::verify_apply::verify_apply_tests::setup_test_backend;
+    use rstest::*;
     use std::sync::Arc;
-
     #[test]
     fn test_contract_class_hash_version() {
         assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
     }
 
-    #[test]
-    fn test_class_trie_root() {
-        // Test the class_trie_root function
-
-        // Create a test backend using a test chain configuration
-        let chain_config = Arc::new(ChainConfig::test_config());
-        let backend = MadaraBackend::open_for_testing(chain_config);
-
+    #[rstest]
+    fn test_class_trie_root(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
         // Create sample DeclaredClassItems with predefined class and compiled class hashes
         let declared_classes = vec![
             DeclaredClassItem {
