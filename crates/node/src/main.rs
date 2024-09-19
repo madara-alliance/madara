@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.is_authority() { "authority" } else { "full node" };
     log::info!("👤 Role: {}", role);
-    log::info!("🌐 Network: {}", chain_config.chain_name);
+    log::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
 
     let sys_info = SysInfo::probe();
     sys_info.show();
@@ -72,11 +72,22 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
         Arc::clone(&chain_config),
+        prometheus_service.registry(),
     )
     .await
     .context("Initializing db service")?;
 
-    let importer = Arc::new(BlockImporter::new(Arc::clone(db_service.backend())));
+    let importer = Arc::new(
+        BlockImporter::new(
+            Arc::clone(db_service.backend()),
+            prometheus_service.registry(),
+            run_cmd.sync_params.unsafe_starting_block,
+            // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
+            /* always_force_flush */
+            run_cmd.is_authority(),
+        )
+        .context("Initializing importer service")?,
+    );
 
     let l1_gas_setter = GasPriceProvider::new();
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
@@ -125,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
                     Arc::clone(&chain_config),
                     run_cmd.network,
                     &db_service,
-                    prometheus_service.registry(),
+                    importer,
                     telemetry_service.new_handle(),
                 )
                 .await

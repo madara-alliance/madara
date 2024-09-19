@@ -29,11 +29,11 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+pub use inner::TxInsersionError;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
-pub use inner::TxInsersionError;
 
 pub mod block_production;
 mod close_block;
@@ -68,9 +68,13 @@ pub trait MempoolProvider: Send + Sync {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error>;
-    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize);
+    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
+    where
+        Self: Sized;
     fn take_tx(&self) -> Option<MempoolTransaction>;
-    fn re_add_txs(&self, txs: Vec<MempoolTransaction>);
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I)
+    where
+        Self: Sized;
     fn chain_id(&self) -> Felt;
 }
 
@@ -210,7 +214,8 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
-    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) {
+    /// Warning: A lock is held while a user-supplied function (extend) is run - Callers should be careful
+    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next_chunk(dest, n)
     }
@@ -220,7 +225,8 @@ impl MempoolProvider for Mempool {
         inner.pop_next()
     }
 
-    fn re_add_txs(&self, txs: Vec<MempoolTransaction>) {
+    /// Warning: A lock is taken while a user-supplied function (iterator stuff) is run - Callers should be careful
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.re_add_txs(txs)
     }

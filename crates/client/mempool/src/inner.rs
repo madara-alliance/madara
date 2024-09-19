@@ -327,14 +327,11 @@ impl MempoolInner {
         Some(mempool_tx)
     }
 
-    pub fn pop_next_chunk(&mut self, dest: &mut Vec<MempoolTransaction>, n: usize) {
-        for _ in 0..n {
-            let Some(tx) = self.pop_next() else { break };
-            dest.push(tx);
-        }
+    pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) {
+        dest.extend((0..n).map_while(|_| self.pop_next()))
     }
 
-    pub fn re_add_txs(&mut self, txs: Vec<MempoolTransaction>) {
+    pub fn re_add_txs(&mut self, txs: impl IntoIterator<Item = MempoolTransaction>) {
         for tx in txs {
             let force = true;
             self.insert_tx(tx, force).expect("Force insert tx should not error");

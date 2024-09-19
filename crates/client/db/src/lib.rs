@@ -10,6 +10,7 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
+use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
@@ -305,6 +306,7 @@ pub struct MadaraBackend {
     db: Arc<DB>,
     last_flush_time: Mutex<Option<Instant>>,
     chain_config: Arc<ChainConfig>,
+    db_metrics: DbMetrics,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -332,12 +334,18 @@ impl DatabaseService {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
+        metrics_registry: &MetricsRegistry,
     ) -> anyhow::Result<Self> {
         log::info!("💾 Opening database at: {}", base_path.display());
 
-        let handle =
-            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
-                .await?;
+        let handle = MadaraBackend::open(
+            base_path.to_owned(),
+            backup_dir.clone(),
+            restore_from_latest_backup,
+            chain_config,
+            metrics_registry,
+        )
+        .await?;
 
         Ok(Self { handle })
     }
@@ -357,6 +365,7 @@ struct BackupRequest {
 impl Drop for MadaraBackend {
     fn drop(&mut self) {
         log::info!("⏳ Gracefully closing the database...");
+        self.maybe_flush(true).expect("Error when flushing the database"); // flush :)
     }
 }
 
@@ -373,6 +382,7 @@ impl MadaraBackend {
             db: open_rocksdb(temp_dir.as_ref(), true).unwrap(),
             last_flush_time: Default::default(),
             chain_config,
+            db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
             _temp_dir: Some(temp_dir),
         })
     }
@@ -383,6 +393,7 @@ impl MadaraBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
+        metrics_registry: &MetricsRegistry,
     ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
@@ -410,6 +421,7 @@ impl MadaraBackend {
         let db = open_rocksdb(&db_path, true)?;
 
         let backend = Arc::new(Self {
+            db_metrics: DbMetrics::register(metrics_registry).context("Registering db metrics")?,
             backup_handle,
             db,
             last_flush_time: Default::default(),
@@ -423,12 +435,12 @@ impl MadaraBackend {
 
     pub fn maybe_flush(&self, force: bool) -> Result<bool> {
         let mut inst = self.last_flush_time.lock().expect("poisoned mutex");
-        let should_flush = force
+        let will_flush = force
             || match *inst {
                 Some(inst) => inst.elapsed() >= Duration::from_secs(5),
                 None => true,
             };
-        if should_flush {
+        if will_flush {
             log::debug!("doing a db flush");
             let mut opts = FlushOptions::default();
             opts.set_wait(true);
@@ -440,7 +452,7 @@ impl MadaraBackend {
             *inst = Some(Instant::now());
         }
 
-        Ok(should_flush)
+        Ok(will_flush)
     }
 
     pub async fn backup(&self) -> Result<()> {
@@ -498,19 +510,9 @@ impl MadaraBackend {
         })
     }
 
-    pub fn get_storage_size(&self, db_metrics: &DbMetrics) -> u64 {
-        let mut storage_size = 0;
-
-        for &column in Column::ALL.iter() {
-            let cf_handle = self.db.get_column(column);
-            let cf_metadata = self.db.get_column_family_metadata_cf(&cf_handle);
-            let column_size = cf_metadata.size;
-            storage_size += column_size;
-
-            db_metrics.column_sizes.with_label_values(&[column.rocksdb_name()]).set(column_size as i64);
-        }
-
-        storage_size
+    /// Returns the total storage size
+    pub fn update_metrics(&self) -> u64 {
+        self.db_metrics.update(&self.db)
     }
 }
 

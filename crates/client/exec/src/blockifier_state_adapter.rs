@@ -148,6 +148,7 @@ impl StateReader for BlockifierStateAdapter {
                         "Inconsistent state: compiled sierra class {:#x} not found",
                         class_hash.to_felt()
                     )))?;
+
                 // TODO: convert ClassCompilationError to StateError
                 Ok(compiled_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
             }

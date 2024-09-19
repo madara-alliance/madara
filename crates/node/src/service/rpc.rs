@@ -27,7 +27,7 @@ impl RpcService {
         config: &RpcParams,
         db: &DatabaseService,
         chain_config: Arc<ChainConfig>,
-        metrics_handle: MetricsRegistry,
+        metrics_handle: &MetricsRegistry,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
         if config.rpc_disabled {
@@ -48,7 +48,7 @@ impl RpcService {
         };
         let (read, write, trace) = (rpcs, rpcs, rpcs);
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
-        let metrics = RpcMetrics::register(&metrics_handle)?;
+        let metrics = RpcMetrics::register(metrics_handle)?;
 
         Ok(Self {
             server_config: Some(ServerConfig {

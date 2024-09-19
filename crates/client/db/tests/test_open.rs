@@ -2,6 +2,7 @@ mod common;
 
 use common::*;
 use mc_db::DatabaseService;
+use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::tests_common::*;
 use rstest::*;
@@ -20,8 +21,9 @@ async fn test_open_different_chain_id(_set_workdir: ()) {
         let chain_config = std::sync::Arc::new(
             ChainConfig::starknet_integration().expect("failed to retrieve integration chain config"),
         );
-        let _db = DatabaseService::new(temp_dir.path(), None, false, chain_config).await.unwrap();
+        let _db =
+            DatabaseService::new(temp_dir.path(), None, false, chain_config, &MetricsRegistry::dummy()).await.unwrap();
     }
     let chain_config = std::sync::Arc::new(ChainConfig::test_config().expect("failed to retrieve test chain config"));
-    assert!(DatabaseService::new(temp_dir.path(), None, false, chain_config).await.is_err());
+    assert!(DatabaseService::new(temp_dir.path(), None, false, chain_config, &MetricsRegistry::dummy()).await.is_err());
 }

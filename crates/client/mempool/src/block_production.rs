@@ -21,15 +21,25 @@ use mp_state_update::{
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
 use starknet_types_core::felt::Felt;
+use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, Mempool, MempoolProvider, MempoolTransaction};
+use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 
-/// We always take transactions in batches from the mempool
-const TX_BATCH_SIZE: usize = 128;
+#[derive(Default, Clone)]
+struct ContinueBlockStats {
+    /// Number of batches executed before reaching the bouncer capacity.
+    pub n_batches: usize,
+    /// Number of transactions included into the block
+    pub n_added_to_block: usize,
+    pub n_re_added_to_mempool: usize,
+    pub n_reverted: usize,
+    /// Rejected are txs that were unsucessful and but that were not revertible.
+    pub n_rejected: usize,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -153,10 +163,13 @@ fn finalize_execution_state<S: StateReader>(
 /// The block production task consumes transactions from the mempool in batches.
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
-pub struct BlockProductionTask {
+///
+/// To understand block production in madara, you should probably start with the [`mp_chain_config::ChainConfig`]
+/// documentation.
+pub struct BlockProductionTask<Mempool: MempoolProvider> {
     importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
-    mempool: Arc<dyn MempoolProvider>,
+    mempool: Arc<Mempool>,
     block: MadaraPendingBlock,
     declared_classes: Vec<ConvertedClass>,
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
@@ -164,7 +177,7 @@ pub struct BlockProductionTask {
     current_pending_tick: usize,
 }
 
-impl BlockProductionTask {
+impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     #[cfg(any(test, feature = "testing"))]
     pub fn set_current_pending_tick(&mut self, n: usize) {
         self.current_pending_tick = n;
@@ -207,23 +220,84 @@ impl BlockProductionTask {
         })
     }
 
-    /// Returns the state diff and number of executed transactions during this tick.
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, usize), Error> {
+    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats), Error> {
+        let mut stats = ContinueBlockStats::default();
+
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
+        let batch_size = self.backend.chain_config().execution_batch_size;
 
-        let mut txs_to_process = Vec::with_capacity(TX_BATCH_SIZE);
-        self.mempool.take_txs_chunk(&mut txs_to_process, TX_BATCH_SIZE);
+        let mut txs_to_process = VecDeque::with_capacity(batch_size);
+        let mut txs_to_process_blockifier = Vec::with_capacity(batch_size);
+        // This does not need to be outside the loop, but that saves an allocation
+        let mut executed_txs = Vec::with_capacity(batch_size);
 
-        let blockifier_txs: Vec<_> =
-            txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))).collect();
+        loop {
+            // Take transactions from mempool.
+            let to_take = batch_size.saturating_sub(txs_to_process.len());
+            if to_take > 0 {
+                self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
+            }
 
-        // Execute the transactions.
-        let all_results = self.executor.execute_txs(&blockifier_txs);
+            if txs_to_process.is_empty() {
+                // Not enough transactions in mempool to make a new batch.
+                break;
+            }
 
-        // Split the `txs_to_process` vec into two iterators.
-        let mut to_process_iter = txs_to_process.into_iter();
-        // This iterator will consume the first part of `to_process_iter`.
-        let consumed_txs_to_process = to_process_iter.by_ref().take(all_results.len());
+            stats.n_batches += 1;
+
+            txs_to_process_blockifier
+                .extend(txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))));
+
+            // Execute the transactions.
+            let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
+            // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
+            let block_now_full = all_results.len() < txs_to_process_blockifier.len();
+
+            for exec_result in all_results {
+                let mut mempool_tx = txs_to_process.pop_front().expect("Vector length mismatch");
+                match exec_result {
+                    Ok(execution_info) => {
+                        // Reverted transactions appear here as Ok too.
+                        log::debug!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
+
+                        stats.n_added_to_block += 1;
+                        if execution_info.is_reverted() {
+                            stats.n_reverted += 1;
+                        }
+
+                        if let Some(class) = mem::take(&mut mempool_tx.converted_class) {
+                            self.declared_classes.push(class);
+                        }
+
+                        self.block.inner.receipts.push(from_blockifier_execution_info(
+                            &execution_info,
+                            &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
+                        ));
+                        let converted_tx = TransactionWithHash::from(clone_account_tx(&mempool_tx.tx)); // TODO: too many tx clones!
+                        self.block.info.tx_hashes.push(converted_tx.hash);
+                        self.block.inner.transactions.push(converted_tx.transaction);
+                    }
+                    Err(err) => {
+                        // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
+                        // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                        // We reject them.
+                        // Note that this is a big DoS vector.
+                        log::error!("Rejected transaction {} for unexpected error: {err:#}", mempool_tx.tx_hash());
+                        stats.n_rejected += 1;
+                    }
+                }
+
+                executed_txs.push(mempool_tx)
+            }
+
+            if block_now_full {
+                break;
+            }
+        }
+
+        // Add back the unexecuted transactions to the mempool.
+        stats.n_re_added_to_mempool = txs_to_process.len();
+        self.mempool.re_add_txs(txs_to_process);
 
         let on_top_of = self
             .executor
@@ -232,54 +306,18 @@ impl BlockProductionTask {
             .expect("Block state can not be None unless we take ownership of it")
             .state
             .on_top_of_block_id;
-        let executed_txs: Vec<_> = consumed_txs_to_process.collect();
+
         let (state_diff, _visited_segments, _weights) =
             finalize_execution_state(&executed_txs, &mut self.executor, &self.backend, &on_top_of)?;
 
-        let n_executed_txs = executed_txs.len();
-
-        for (exec_result, mempool_tx) in Iterator::zip(all_results.into_iter(), executed_txs) {
-            match exec_result {
-                Ok(execution_info) => {
-                    // Reverted transactions appear here as Ok too.
-                    log::debug!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
-
-                    if let Some(class) = mempool_tx.converted_class {
-                        self.declared_classes.push(class);
-                    }
-
-                    self.block.inner.receipts.push(from_blockifier_execution_info(
-                        &execution_info,
-                        &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
-                    ));
-                    let converted_tx = TransactionWithHash::from(mempool_tx.tx);
-                    self.block.info.tx_hashes.push(converted_tx.hash);
-                    self.block.inner.transactions.push(converted_tx.transaction);
-                }
-                Err(err) => {
-                    // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
-                    // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
-                    // We reject them.
-                    // Note that this is a big DoS vector.
-                    log::error!("Unsuccessful execution of transaction {}: {err:#}", mempool_tx.tx_hash());
-                }
-            }
-        }
-
-        // This contains the rest of `to_process_iter`.
-        let rest_txs_to_process: Vec<_> = to_process_iter.collect();
-        let n_not_executed = rest_txs_to_process.len();
-
-        // Add back the unexecuted transactions to the mempool.
-        self.mempool.re_add_txs(rest_txs_to_process);
-
         log::debug!(
-            "Finished tick with {} new transactions, now at {} - re-adding {n_not_executed} txs to mempool",
-            n_executed_txs,
-            self.block.inner.transactions.len()
+            "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",
+            stats.n_added_to_block,
+            self.block.inner.transactions.len(),
+            stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, n_executed_txs))
+        Ok((state_diff, stats))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -294,13 +332,14 @@ impl BlockProductionTask {
 
         // Reduced bouncer capacity for the current pending tick
 
-        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity.clone();
+        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity;
 
         // reduced_gas = gas * current_pending_tick/n_pending_ticks_per_block
         // - we're dealing with integers here so prefer having the division last
         // - use u128 here because the multiplication would overflow
         // - div by zero: current_pending_tick has been checked for 0 above
-        let reduced_cap = |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
+        let reduced_cap =
+            |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
 
         let gas = reduced_cap(config_bouncer.gas);
         let frac = current_pending_tick as f64 / n_pending_ticks_per_block as f64;
@@ -326,10 +365,11 @@ impl BlockProductionTask {
             state_diff_size: reduced_cap(config_bouncer.state_diff_size),
         };
 
-        let (state_diff, n_executed) = self.continue_block(bouncer_cap)?;
-        if n_executed > 0 {
+        let (state_diff, stats) = self.continue_block(bouncer_cap)?;
+        if stats.n_added_to_block > 0 {
             log::info!(
-                "🧮 Executed and added {n_executed} transaction(s) to the pending block at height {}",
+                "🧮 Executed and added {} transaction(s) to the pending block at height {}",
+                stats.n_added_to_block,
                 self.block_n()
             );
         }
@@ -347,7 +387,7 @@ impl BlockProductionTask {
 
         // Complete the block with full bouncer capacity.
         let (new_state_diff, _n_executed) =
-            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity.clone())?;
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // Convert the pending block to a closed block and save to db.
 
@@ -359,7 +399,7 @@ impl BlockProductionTask {
         ));
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
-        let _declared_classes = mem::take(&mut self.declared_classes);
+        let declared_classes = mem::take(&mut self.declared_classes);
 
         let n_txs = block_to_close.inner.transactions.len();
 
@@ -370,6 +410,7 @@ impl BlockProductionTask {
             &new_state_diff,
             self.backend.chain_config().chain_id.clone(),
             block_n,
+            declared_classes,
         )
         .await?;
         self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)

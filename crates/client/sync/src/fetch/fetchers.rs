@@ -223,6 +223,7 @@ pub async fn fetch_block_and_updates(
             .context("Converting the FGW format")?,
         declared_classes: class_update.into_iter().map(Into::into).collect(),
         commitments,
+        ..Default::default()
     })
 }
 

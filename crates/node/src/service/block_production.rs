@@ -32,7 +32,7 @@ impl BlockProductionService {
         mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
-        _metrics_handle: MetricsRegistry,
+        _metrics_handle: &MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         if config.block_production_disabled {

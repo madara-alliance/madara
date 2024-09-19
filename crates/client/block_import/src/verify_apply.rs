@@ -21,7 +21,7 @@ mod contracts;
 
 pub struct VerifyApply {
     pool: Arc<RayonPool>,
-    backend: Arc<MadaraBackend>,
+    pub(crate) backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
     mutex: tokio::sync::Mutex<()>,
@@ -310,7 +310,10 @@ fn block_hash(
 
 /// Display an iterator without collecting it.
 struct DisplayableIter<I: IntoIterator + Clone>(pub I);
-impl<I: IntoIterator + Clone> fmt::Display for DisplayableIter<I> where I::Item: fmt::Display {
+impl<I: IntoIterator + Clone> fmt::Display for DisplayableIter<I>
+where
+    I::Item: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         let mut iter = self.0.clone().into_iter();
@@ -323,7 +326,10 @@ impl<I: IntoIterator + Clone> fmt::Display for DisplayableIter<I> where I::Item:
         write!(f, "]")
     }
 }
-impl<I: IntoIterator + Clone> fmt::Debug for DisplayableIter<I> where I::Item: fmt::Debug {
+impl<I: IntoIterator + Clone> fmt::Debug for DisplayableIter<I>
+where
+    I::Item: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         let mut iter = self.0.clone().into_iter();
