@@ -624,7 +624,7 @@ mod verify_apply_tests {
     mod verify_apply_inner_tests {
         use super::*;
 
-        /// Test successful pending block verification and storage.
+        /// Test successful block verification and storage.
         ///
         /// Verifies that:
         /// 1. The function correctly verifies and stores a new pending block.
@@ -650,7 +650,7 @@ mod verify_apply_tests {
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
         }
 
-        /// Test error handling during pending block verification.
+        /// Test error handling during block verification.
         ///
         /// Verifies that:
         /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
@@ -685,7 +685,7 @@ mod verify_apply_tests {
         use super::*;
         const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
 
-        /// Test successful block verification and storage.
+        /// Test successful pending block verification and storage.
         ///
         /// Verifies that:
         /// 1. The function correctly verifies and stores a new block.
@@ -731,7 +731,7 @@ mod verify_apply_tests {
             assert_eq!(stored_pending_info, expected_pending_info);
         }
 
-        /// Test error handling during block verification.
+        /// Test error handling during pending block verification.
         ///
         /// Verifies that:
         /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
