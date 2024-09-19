@@ -19,11 +19,13 @@ mp-convert = { workspace = true }
 # Starknet
 blockifier = { workspace = true }
 cairo-vm = { workspace = true }
+rstest.workspace = true
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
-
+starknet_api = { workspace = true }
 # Other
+log = "0.4.21"
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

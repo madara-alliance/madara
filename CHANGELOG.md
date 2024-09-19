@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: UDC cairo 0 migration & events logic fix
 - refactor: calculate class hashes in devnet
 - feat: add config file and preset configure chain
 - refactor: change default chain id and add custom flag to override
