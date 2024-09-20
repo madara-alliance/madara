@@ -11,7 +11,6 @@ jobs:
     runs-on: karnot-arc-runner-set
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
       - name: Setup build deps
         run: |
           sudo apt-get update
@@ -19,6 +18,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.78
+      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
       - uses: rui314/setup-mold@v1
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
