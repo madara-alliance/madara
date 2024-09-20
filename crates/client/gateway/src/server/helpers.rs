@@ -28,13 +28,6 @@ pub(crate) fn internal_error_response() -> Response<Body> {
         .expect("Failed to build INTERNAL_SERVER_ERROR response with a valid status and body")
 }
 
-pub(crate) fn not_implemented_response() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::NOT_IMPLEMENTED)
-        .body(Body::from("Not Implemented"))
-        .expect("Failed to build NOT_IMPLEMENTED response with a valid status and body")
-}
-
 /// Creates a JSON response with the given status code and a body that can be serialized to JSON.
 ///
 /// If the serialization fails, this function returns a 500 Internal Server Error response.
@@ -61,6 +54,7 @@ where
     }
 }
 
+/// Creates a JSON response with the given status code and a body that is already serialized to a string.
 pub(crate) fn create_response_with_json_body(status: StatusCode, body: &str) -> Response<Body> {
     // Build the response with the specified status code and serialized body
     match Response::builder()
@@ -89,7 +83,6 @@ pub(crate) fn get_params_from_request(req: &Request<Body>) -> HashMap<String, St
     query_params
 }
 
-// blockNumber or blockHash
 pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<BlockId, StarknetError> {
     if let Some(block_number) = params.get("blockNumber") {
         match block_number.as_str() {
