@@ -365,12 +365,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             state_diff_size: reduced_cap(config_bouncer.state_diff_size),
         };
 
+        let start_time = Instant::now();
         let (state_diff, stats) = self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             log::info!(
-                "🧮 Executed and added {} transaction(s) to the pending block at height {}",
+                "🧮 Executed and added {} transaction(s) to the pending block at height {} - {}",
                 stats.n_added_to_block,
-                self.block_n()
+                self.block_n(),
+                start_time.elapsed(),
             );
         }
 
@@ -386,6 +388,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         log::debug!("closing block #{}", block_n);
 
         // Complete the block with full bouncer capacity.
+        let start_time = Instant::now();
         let (new_state_diff, _n_executed) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
@@ -420,7 +423,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
-        log::info!("⛏️  Closed block #{} with {} transactions", block_n, n_txs);
+        log::info!("⛏️  Closed block #{} with {} transactions - {}", block_n, n_txs, start_time.elapsed());
 
         Ok(())
     }

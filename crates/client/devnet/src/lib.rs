@@ -52,7 +52,7 @@ impl StorageDiffs {
 
 /// Universal Deployer Contract.
 const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
+    include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
@@ -78,7 +78,7 @@ pub struct ChainGenesisDescription {
 
 impl ChainGenesisDescription {
     pub fn base_config() -> anyhow::Result<Self> {
-        let udc_class = InitiallyDeclaredClass::new_sierra(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
+        let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
             InitiallyDeclaredClass::new_sierra(ERC20_CLASS_DEFINITION).context("Failed to add ERC20 class")?;
         Ok(Self {

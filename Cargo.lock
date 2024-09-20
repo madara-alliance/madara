@@ -5880,6 +5880,7 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.7.0",
  "cairo-vm",
+ "log",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
