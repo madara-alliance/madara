@@ -40,37 +40,53 @@ pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
+const MB: usize = 1024 * 1024;
+const GB: usize = 1024 * MB;
+
 pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
+    let opts = create_db_options(create)?;
+    let env = create_db_env()?;
+    opts.set_env(&env);
+
+    log::debug!("Opening database at {:?}", path.display());
+    DB::open_cf_descriptors(&opts, path, get_column_families())
+        .map(Arc::new)
+        .context("Failed to open RocksDB")
+}
+
+fn create_db_options(create: bool) -> Result<Options> {
     let mut opts = Options::default();
     opts.set_report_bg_io_stats(true);
     opts.set_use_fsync(false);
     opts.create_if_missing(create);
     opts.create_missing_column_families(true);
-    opts.set_bytes_per_sync(1024 * 1024);
+    opts.set_bytes_per_sync(MB);
     opts.set_keep_log_file_num(1);
-    opts.optimize_level_style_compaction(4096 * 1024 * 1024);
+    opts.optimize_level_style_compaction(4 * GB);
     opts.set_compression_type(DBCompressionType::Zstd);
-    let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
-    opts.increase_parallelism(cores);
-
     opts.set_atomic_flush(true);
     opts.set_manual_wal_flush(true);
-    opts.set_max_subcompactions(cores as _);
 
-    let mut env = Env::new().context("Creating rocksdb env")?;
-    // env.set_high_priority_background_threads(cores); // flushes
-    env.set_low_priority_background_threads(cores); // compaction
+    let cores = std::thread::available_parallelism()
+        .map(|e| e.get() as i32)
+        .unwrap_or(1);
+    opts.increase_parallelism(cores);
+    opts.set_max_subcompactions(cores as u32);
 
-    opts.set_env(&env);
+    Ok(opts)
+}
 
-    log::debug!("opening db at {:?}", path.display());
-    let db = DB::open_cf_descriptors(
-        &opts,
-        path,
-        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
-    )?;
+fn create_db_env() -> Result<Env> {
+    let cores = std::thread::available_parallelism()
+        .map(|e| e.get() as i32)
+        .unwrap_or(1);
+    let mut env = Env::new().context("Unable to create RocksDB environment")?;
+    env.set_low_priority_background_threads(cores);
+    Ok(env)
+}
 
-    Ok(Arc::new(db))
+fn get_column_families() -> Vec<ColumnFamilyDescriptor> {
+    Column::iter().map(|c| ColumnFamilyDescriptor::new(c.as_str(), Options::default())).collect()
 }
 
 /// This runs in anothr thread as the backup engine is not thread safe
