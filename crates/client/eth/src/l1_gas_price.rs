@@ -101,7 +101,7 @@ mod eth_client_gas_price_worker_test {
     use tokio::time::{timeout, Duration};
     const ANOTHER_ANVIL_PORT: u16 = 8546;
     const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://eth.merkle.io";
+    const FORK_URL: &str = "https://eth.llamarpc.com";
 
     #[serial]
     #[tokio::test]
