@@ -3,6 +3,7 @@
 ## Next release
 
 - fix: UDC cairo 0 migration & events logic fix
+- tests: integration test for l2 fetch task added
 - refactor: calculate class hashes in devnet
 - feat: add config file and preset configure chain
 - refactor: change default chain id and add custom flag to override
@@ -214,7 +215,7 @@
 - fix(workflows): Fix madara CI
 - feat(rpc): add_invoke_tx, add_deploy_account_tx, add_declare_tx
 - feat(rpc): tx_receipt, re-execute tx
-- feat(script): added CI scripts for starting Madara and comparing JSON RPC
+- feat(script): added CI scripts for starting madara and comparing JSON RPC
   calls
 - perf(verify_l2): parallelized l2 state root update
 - perf(state_commitment): parallelized state commitment hash computations
