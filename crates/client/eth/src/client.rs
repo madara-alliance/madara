@@ -147,7 +147,7 @@ pub mod eth_client_getter_test {
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://eth.llamarpc.com";
+    const FORK_URL: &str = "https://eth.merkle.io";
     const ANVIL_PORT: u16 = 8545;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
