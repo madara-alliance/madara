@@ -202,7 +202,7 @@ pub async fn sync(
     // starves the tokio worker
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
-        trust_global_tries: config.verify,
+        trust_global_tries: !config.verify,
         chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,
