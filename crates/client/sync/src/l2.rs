@@ -181,6 +181,7 @@ async fn l2_pending_block_task(
 
         let Some(block) = block else {
             // No pending block.
+            log::trace!("No pending block available, continuing to next iteration");
             continue;
         };
 
