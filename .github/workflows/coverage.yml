@@ -3,6 +3,9 @@ name: Task - Integration Tests
 on:
   workflow_dispatch:
   workflow_call:
+    secrets:
+      ETH_FORK_URL:
+        required: true
 
 jobs:
   coverage:
@@ -32,6 +35,8 @@ jobs:
           version: nightly
 
       - name: Build and run tests
+        env:
+          ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
           cargo build --bin madara --profile dev

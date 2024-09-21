@@ -37,3 +37,4 @@ jobs:
     name: Run Coverage
     uses: ./.github/workflows/coverage.yml
     needs: changelog
+    secrets: inherit
