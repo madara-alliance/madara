@@ -3,6 +3,7 @@
 ## Next release
 
 - test: tests added for verify and apply task in l2 sync
+- fix: response of spec version rpc call fixed
 - tests: integration test for l2 fetch task added
 - refactor: calculate class hashes in devnet
 - feat: add config file and preset configure chain
