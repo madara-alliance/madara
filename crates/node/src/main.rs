@@ -108,43 +108,42 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) = match run_cmd
-        .is_sequencer()
-    {
-        // Block production service. (authority)
-        true => {
-            let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
+    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
+        match run_cmd.is_sequencer() {
+            // Block production service. (authority)
+            true => {
+                let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
-            let block_production_service = BlockProductionService::new(
-                &run_cmd.block_production_params,
-                &db_service,
-                Arc::clone(&mempool),
-                importer,
-                Arc::clone(&l1_data_provider),
-                run_cmd.devnet,
-                prometheus_service.registry(),
-                telemetry_service.new_handle(),
-            )?;
+                let block_production_service = BlockProductionService::new(
+                    &run_cmd.block_production_params,
+                    &db_service,
+                    Arc::clone(&mempool),
+                    importer,
+                    Arc::clone(&l1_data_provider),
+                    run_cmd.devnet,
+                    prometheus_service.registry(),
+                    telemetry_service.new_handle(),
+                )?;
 
-            (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-        }
-        // Block sync service. (full node)
-        false => {
-            // Feeder gateway sync service.
-            let sync_service = SyncService::new(
-                &run_cmd.sync_params,
-                Arc::clone(&chain_config),
-                run_cmd
-                    .network
-                    .expect("You should provide a `--network` argument to ensure you're syncing from the right FGW"),
-                &db_service,
-                prometheus_service.registry(),
-                telemetry_service.new_handle(),
-            )
-            .await
-            .context("Initializing sync service")?;
+                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
+            }
+            // Block sync service. (full node)
+            false => {
+                // Feeder gateway sync service.
+                let sync_service = SyncService::new(
+                    &run_cmd.sync_params,
+                    Arc::clone(&chain_config),
+                    run_cmd.network.expect(
+                        "You should provide a `--network` argument to ensure you're syncing from the right FGW",
+                    ),
+                    &db_service,
+                    prometheus_service.registry(),
+                    telemetry_service.new_handle(),
+                )
+                .await
+                .context("Initializing sync service")?;
 
-            (
+                (
                 ServiceGroup::default().with(sync_service),
                 // TODO(rate-limit): we may get rate limited with this unconfigured provider?
                 Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
@@ -161,8 +160,8 @@ async fn main() -> anyhow::Result<()> {
                     chain_config.chain_id.to_felt(),
                 ))),
             )
-        }
-    };
+            }
+        };
 
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,

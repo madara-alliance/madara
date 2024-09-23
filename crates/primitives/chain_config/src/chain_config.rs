@@ -1,11 +1,13 @@
 use crate::StarknetVersion;
-use anyhow::{bail, Context};
+use anyhow::{bail, Context, Result};
 use blockifier::bouncer::BouncerWeights;
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use primitive_types::H160;
+use reqwest;
 use serde::Deserialize;
 use serde::Deserializer;
 use starknet_api::core::{ChainId, ContractAddress};
+use std::io::Write;
 use std::str::FromStr;
 use std::{
     collections::BTreeMap,
@@ -27,18 +29,54 @@ pub enum ChainPreset {
 }
 
 impl ChainPreset {
-    pub fn get_config(self) -> anyhow::Result<ChainConfig> {
+    /// If the local file exists, read it. Otherwise, fetch the remote file and save it locally under "crates/primitives/chain_config/presets/" .
+    pub fn get_config(self) -> Result<ChainConfig> {
+        let local_path = match self {
+            ChainPreset::Mainnet => "crates/primitives/chain_config/presets/mainnet.yaml",
+            ChainPreset::Sepolia => "crates/primitives/chain_config/presets/sepolia.yaml",
+            ChainPreset::IntegrationSepolia => "crates/primitives/chain_config/presets/integration.yaml",
+            ChainPreset::Test => "crates/primitives/chain_config/presets/test.yaml",
+        };
+
+        if Path::new(local_path).exists() {
+            ChainConfig::from_yaml(Path::new(local_path))
+                .context(format!("Failed to read local config file: {}", local_path))
+        } else {
+            log::info!("📝 Local Chain config file for: {:?} not found. Fetching from remote URL.", self.get_preset_name());
+            let remote_url = match self {
+                ChainPreset::Mainnet => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/mainnet.yaml",
+                ChainPreset::Sepolia => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/sepolia.yaml",
+                ChainPreset::IntegrationSepolia => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/integration.yaml",
+                ChainPreset::Test => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/test.yaml",
+            };
+
+            let response = reqwest::blocking::get(remote_url)
+                .context(format!("Failed to fetch config from remote URL: {}", remote_url))?;
+
+            if response.status().is_success() {
+                let content = response.text().context("Failed to read response text")?;
+
+                // Save the content to the local file for future use
+                let mut file = fs::File::create(local_path)
+                    .context(format!("Failed to create local config file: {}", local_path))?;
+                file.write_all(content.as_bytes())
+                    .context(format!("Failed to write to local config file: {}", local_path))?;
+
+                ChainConfig::from_yaml(Path::new(local_path))
+                    .context(format!("Failed to parse config from remote file: {}", local_path))
+            } else {
+                Err(anyhow::anyhow!("Failed to fetch config. HTTP status: {}", response.status()))
+            }
+        }
+    }
+
+    /// Returns the human readable name of the preset.
+    pub fn get_preset_name(&self) -> &str {
         match self {
-            ChainPreset::Mainnet => {
-                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
-            }
-            ChainPreset::Sepolia => {
-                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/sepolia.yaml"))
-            }
-            ChainPreset::IntegrationSepolia => {
-                ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/integration.yaml"))
-            }
-            ChainPreset::Test => ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/test.yaml")),
+            ChainPreset::Mainnet => "Mainnet",
+            ChainPreset::Sepolia => "Sepolia",
+            ChainPreset::IntegrationSepolia => "Integration",
+            ChainPreset::Test => "Test",
         }
     }
 }
