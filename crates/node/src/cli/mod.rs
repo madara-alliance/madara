@@ -59,9 +59,9 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub block_production_params: BlockProductionParams,
 
-    /// Enable authority mode: the node will run as a sequencer and try and produce its own blocks.
+    /// The node will run as a sequencer produce its own state.
     #[arg(long)]
-    pub authority: bool,
+    pub sequencer: bool,
 
     /// The network chain configuration.
     #[clap(long, short, default_value = "main")]
@@ -112,8 +112,8 @@ impl RunCmd {
         Ok(Arc::new(chain_config))
     }
 
-    pub fn is_authority(&self) -> bool {
-        self.authority || self.block_production_params.devnet
+    pub fn is_sequencer(&self) -> bool {
+        self.sequencer || self.block_production_params.devnet
     }
 }
 

@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("✌️  Version {}", node_version);
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
-    let role = if run_cmd.is_authority() { "authority" } else { "full node" };
+    let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     log::info!("👤 Role: {}", role);
     log::info!("🌐 Network: {}", chain_config.chain_name);
 
@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
-        run_cmd.is_authority(),
+        run_cmd.is_sequencer(),
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
     let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.is_authority() {
+        match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
                 let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
