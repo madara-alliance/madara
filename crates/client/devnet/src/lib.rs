@@ -51,8 +51,7 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 

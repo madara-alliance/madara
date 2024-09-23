@@ -331,7 +331,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         // Reduced bouncer capacity for the current pending tick
-        
+
         // reduced_gas = gas * current_pending_tick/n_pending_ticks_per_block
         // - we're dealing with integers here so prefer having the division last
         // - use u128 here because the multiplication would overflow
