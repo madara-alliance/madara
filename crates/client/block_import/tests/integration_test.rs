@@ -18,7 +18,7 @@ use starknet_core::types::Felt;
 
 #[tokio::test]
 async fn import_one_empty_block_full() {
-    let chain_config = Arc::new(ChainConfig::test_config());
+    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let block_importer = BlockImporter::new(backend.clone());
 
@@ -44,6 +44,7 @@ async fn import_one_empty_block_full() {
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
         trust_class_hashes: false,
+        ignore_block_order: false,
     };
 
     let pre_validated_block =
@@ -89,7 +90,7 @@ async fn import_one_empty_block_full() {
 
 #[tokio::test]
 async fn import_one_empty_block_pending() {
-    let chain_config = Arc::new(ChainConfig::test_config());
+    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let block_importer = BlockImporter::new(backend.clone());
 
@@ -113,6 +114,7 @@ async fn import_one_empty_block_pending() {
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
         trust_class_hashes: false,
+        ignore_block_order: false,
     };
 
     let pre_validated_block =
@@ -147,7 +149,7 @@ async fn import_one_empty_block_pending() {
 
 #[tokio::test]
 async fn import_block_with_txs() {
-    let chain_config = Arc::new(ChainConfig::test_config());
+    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let block_importer = BlockImporter::new(backend.clone());
 
@@ -158,6 +160,7 @@ async fn import_block_with_txs() {
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
         trust_class_hashes: false,
+        ignore_block_order: false,
     };
 
     let pre_validated_block =
@@ -207,7 +210,7 @@ async fn import_block_with_txs() {
 
 #[tokio::test]
 async fn import_multiple_blocks_with_txs() {
-    let chain_config = Arc::new(ChainConfig::test_config());
+    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let block_importer = BlockImporter::new(backend.clone());
 
@@ -218,6 +221,7 @@ async fn import_multiple_blocks_with_txs() {
         chain_id: chain_config.chain_id.clone(),
         trust_global_tries: false,
         trust_class_hashes: false,
+        ignore_block_order: false,
     };
 
     let pre_validated_block =

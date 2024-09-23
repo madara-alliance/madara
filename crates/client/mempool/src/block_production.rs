@@ -436,7 +436,7 @@ mod tests {
     impl TestEnvironment {
         #[allow(unused)]
         fn new() -> Self {
-            let chain_config = Arc::new(ChainConfig::test_config());
+            let chain_config = Arc::new(ChainConfig::test_config().unwrap());
             let backend = MadaraBackend::open_for_testing(chain_config.clone());
             let l1_gas_setter = GasPriceProvider::new();
             let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
