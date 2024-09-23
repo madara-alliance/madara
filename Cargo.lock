@@ -5557,6 +5557,7 @@ dependencies = [
  "anyhow",
  "bitvec",
  "bonsai-trie",
+ "itertools 0.13.0",
  "log",
  "mc-db",
  "mc-metrics",

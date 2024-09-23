@@ -354,6 +354,11 @@ impl DatabaseService {
     pub fn backend(&self) -> &Arc<MadaraBackend> {
         &self.handle
     }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Self {
+        Self { handle: MadaraBackend::open_for_testing(chain_config) }
+    }
 }
 
 impl Service for DatabaseService {}

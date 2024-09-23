@@ -16,14 +16,11 @@ use starknet_types_core::felt::Felt;
 #[cfg(feature = "testing")]
 pub mod temp_db {
     use crate::DatabaseService;
-    use mc_metrics::MetricsRegistry;
     use mp_chain_config::ChainConfig;
-    use tempfile::TempDir;
     pub async fn temp_db() -> DatabaseService {
-        let temp_dir = TempDir::new().unwrap();
         let chain_config =
             std::sync::Arc::new(ChainConfig::test_config().expect("failed to retrieve test chain config"));
-        DatabaseService::new(temp_dir.path(), None, false, chain_config, &MetricsRegistry::dummy()).await.unwrap()
+        DatabaseService::open_for_testing(chain_config)
     }
 }
 
