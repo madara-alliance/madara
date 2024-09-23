@@ -15,7 +15,7 @@ rayon.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-mc-db = { workspace = true, features = ["testing"]}
+mc-db = { workspace = true, features = ["testing"] }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
