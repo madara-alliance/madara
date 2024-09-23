@@ -16,39 +16,28 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use crate::error::{StarknetError, StarknetErrorCode};
+use crate::error::StarknetError;
 
 use super::{
-    error::{GatewayError, ResultExt},
+    error::{GatewayError, OptionExt, ResultExt},
     helpers::{
         block_id_from_params, create_json_response, create_response_with_json_body, get_params_from_request,
         include_block_params,
     },
 };
 
-pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -> Response<Body> {
+pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = match block_id_from_params(&params) {
-        Ok(block_id) => block_id,
-        // Return the error response if the request is malformed
-        Err(e) => return e.into(),
-    };
+    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
-    let block = match backend
+    let block = backend
         .get_block(&block_id)
-        .or_internal_server_error("get_block")
-        .and_then(|block_id| block_id.ok_or(StarknetError::block_not_found().into()))
-    {
-        Ok(block) => block,
-        Err(e) => return e.into(),
-    };
+        .or_internal_server_error(format!("Retrieving block {block_id}"))?
+        .ok_or(StarknetError::block_not_found())?;
 
     if let Ok(block) = MadaraBlock::try_from(block.clone()) {
         let last_l1_confirmed_block =
-            match backend.get_l1_last_confirmed_block().or_internal_server_error("get_l1_last_confirmed_block") {
-                Ok(block) => block,
-                Err(e) => return e.into(),
-            };
+            backend.get_l1_last_confirmed_block().or_internal_server_error("Retrieving last l1 confirmed block")?;
 
         let status = if Some(block.info.header.block_number) <= last_l1_confirmed_block {
             BlockStatus::AcceptedOnL1
@@ -57,50 +46,37 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
         };
 
         let block_provider = BlockProvider::new(block, status);
-        create_json_response(hyper::StatusCode::OK, &block_provider)
+        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     } else if let Ok(block) = MadaraPendingBlock::try_from(block) {
         let block_provider = PendingBlockProvider::new(block);
-        create_json_response(hyper::StatusCode::OK, &block_provider)
+        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     } else {
-        GatewayError::InternalServerError.into()
+        Err(GatewayError::InternalServerError.into())
     }
 }
 
-pub async fn handle_get_state_update(req: Request<Body>, backend: Arc<MadaraBackend>) -> Response<Body> {
+pub async fn handle_get_state_update(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = match block_id_from_params(&params) {
-        Ok(block_id) => block_id,
-        // Return the error response if the request is malformed
-        Err(e) => return e.into(),
-    };
+    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
-    let resolved_block_id = match backend
+    let resolved_block_id = backend
         .resolve_block_id(&block_id)
-        .or_internal_server_error("resolve_block_id")
-        .and_then(|block_id| block_id.ok_or(StarknetError::block_not_found().into()))
-    {
-        Ok(block_id) => block_id,
-        Err(e) => return e.into(),
-    };
+        .or_internal_server_error("Resolving block id from database")?
+        .ok_or(StarknetError::block_not_found())?;
 
-    let state_diff = match backend
+    let state_diff = backend
         .get_block_state_diff(&resolved_block_id)
-        .or_internal_server_error("get_block_state_diff")
-        .and_then(|block_id| block_id.ok_or(StarknetError::block_not_found().into()))
-    {
-        Ok(state_diff) => state_diff,
-        Err(e) => return e.into(),
-    };
+        .or_internal_server_error("Retrieving state diff")?
+        .ok_or(StarknetError::block_not_found())?;
 
     let with_block = if include_block_params(&params) {
-        let block = match backend
+        let block = backend
             .get_block(&block_id)
-            .or_internal_server_error("get_block")
-            .and_then(|block_id| block_id.ok_or(StarknetError::block_not_found().into()))
-        {
-            Ok(block) => block,
-            Err(e) => return e.into(),
-        };
+            .or_internal_server_error("Retrieving block {block_id}")?
+            .ok_or(StarknetError::block_not_found())?;
         Some(block)
     } else {
         None
@@ -108,59 +84,55 @@ pub async fn handle_get_state_update(req: Request<Body>, backend: Arc<MadaraBack
 
     match resolved_block_id.is_pending() {
         true => {
-            let old_root = match backend
+            let old_root = backend
                 .get_block_info(&BlockId::Tag(BlockTag::Latest))
-                .or_internal_server_error("get_block_state_diff")
-            {
-                Ok(Some(block)) => match block.as_nonpending() {
-                    Some(block) => block.header.global_state_root,
-                    None => return GatewayError::InternalServerError.into(),
-                },
-                Ok(None) => Felt::ZERO, // The pending block is actually genesis, so old root is zero
-                Err(e) => return e.into(),
-            };
+                .or_internal_server_error("Retrieving old state root on latest block")?
+                .map(|block| {
+                    block
+                        .as_nonpending()
+                        .map(|block| block.header.global_state_root)
+                        .ok_or_internal_server_error("Converting block to non-pending")
+                })
+                .unwrap_or(Ok(Felt::ZERO))?;
+
             let state_update = PendingStateUpdateProvider { old_root, state_diff: state_diff.into() };
 
-            if let Some(block) = with_block {
-                let block = match MadaraPendingBlock::try_from(block.clone()) {
-                    Ok(block) => block,
-                    Err(_) => return GatewayError::InternalServerError.into(),
-                };
+            let json_response = if let Some(block) = with_block {
+                let block = MadaraPendingBlock::try_from(block.clone())
+                    .or_internal_server_error("Attempting to convert pending block to non-pending")?;
                 let block_provider = PendingBlockProvider::new(block);
+
                 create_json_response(
                     hyper::StatusCode::OK,
                     &json!({"block": block_provider, "state_update": state_update}),
                 )
             } else {
                 create_json_response(hyper::StatusCode::OK, &state_update)
-            }
+            };
+
+            Ok(json_response)
         }
         false => {
-            let block_info = match backend
+            let resolved_block = backend
                 .get_block_info(&resolved_block_id)
-                .or_internal_server_error("get_block_info")
-                .and_then(|block_id| block_id.ok_or(StarknetError::block_not_found().into()))
-            {
-                Ok(block_info) => block_info,
-                Err(e) => return e.into(),
-            };
+                .or_internal_server_error(format!("Retrieving block info at block {resolved_block_id}"))?
+                .ok_or(StarknetError::block_not_found())?;
+            let block_info = resolved_block
+                .as_nonpending()
+                .ok_or_internal_server_error(format!("Converting potentially pending block to non-pending"))?;
 
-            let block_info = match block_info.as_nonpending() {
-                Some(block_info) => block_info,
-                None => return GatewayError::InternalServerError.into(),
-            };
-
-            let old_root = if let Some(val) = block_info.header.block_number.checked_sub(1) {
-                match backend.get_block_info(&BlockId::Number(val)).or_internal_server_error("get_block_info") {
-                    Ok(Some(block)) => match block.as_nonpending() {
-                        Some(block) => block.header.global_state_root,
-                        None => return GatewayError::InternalServerError.into(),
-                    },
-                    Ok(None) => Felt::ZERO, // The pending block is actually genesis, so old root is zero
-                    Err(e) => return e.into(),
-                }
-            } else {
-                Felt::ZERO
+            let old_root = match block_info.header.block_number.checked_sub(1) {
+                Some(val) => backend
+                    .get_block_info(&BlockId::Number(val))
+                    .or_internal_server_error("Retrieving old state root on latest block")?
+                    .map(|block| {
+                        block
+                            .as_nonpending()
+                            .map(|block| block.header.global_state_root)
+                            .ok_or_internal_server_error("Converting block to non-pending")
+                    })
+                    .unwrap_or(Ok(Felt::ZERO))?,
+                None => Felt::ZERO,
             };
 
             let state_update = StateUpdateProvider {
@@ -170,110 +142,71 @@ pub async fn handle_get_state_update(req: Request<Body>, backend: Arc<MadaraBack
                 state_diff: state_diff.into(),
             };
 
-            if let Some(block) = with_block {
-                let block = match MadaraBlock::try_from(block.clone()) {
-                    Ok(block) => block,
-                    Err(_) => return GatewayError::InternalServerError.into(),
-                };
+            let json_response = if let Some(block) = with_block {
+                let block = MadaraBlock::try_from(block.clone())
+                    .or_internal_server_error("Attempting to convert pending block to non-pending")?;
                 let block_provider = BlockProvider::new(block, BlockStatus::AcceptedOnL2);
+
                 create_json_response(
                     hyper::StatusCode::OK,
                     &json!({"block": block_provider, "state_update": state_update}),
                 )
             } else {
                 create_json_response(hyper::StatusCode::OK, &state_update)
-            }
+            };
+
+            Ok(json_response)
         }
     }
 }
 
-pub async fn handle_get_class_by_hash(req: Request<Body>, backend: Arc<MadaraBackend>) -> Response<Body> {
+pub async fn handle_get_class_by_hash(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
 
-    let class_hash = match params.get("classHash") {
-        Some(class_hash) => class_hash,
-        None => {
-            return StarknetError {
-                code: StarknetErrorCode::MalformedRequest,
-                message: "Missing class_hash parameter".to_string(),
-            }
-            .into()
-        }
-    };
+    let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
+    let class_hash = Felt::from_hex(class_hash).map_err(|e| StarknetError::invalid_class_hash(e))?;
 
-    let class_hash = match Felt::from_hex(class_hash) {
-        Ok(class_hash) => class_hash,
-        Err(e) => {
-            return StarknetError {
-                code: StarknetErrorCode::MalformedRequest,
-                message: format!("Invalid class_hash: {}", e),
-            }
-            .into()
-        }
-    };
-
-    let class_info = match backend
+    let class_info = backend
         .get_class_info(&block_id, &class_hash)
-        .or_internal_server_error("get_class_by_hash")
-        .and_then(|class| {
-            class.ok_or(
-                StarknetError {
-                    code: StarknetErrorCode::UndeclaredClass,
-                    message: format!("Class with hash {:#x} not found", class_hash),
-                }
-                .into(),
-            )
-        }) {
-        Ok(class) => class,
-        Err(e) => return e.into(),
-    };
+        .or_internal_server_error(format!("Retrieving class info from class hash {class_hash:x}"))?
+        .ok_or(StarknetError::class_not_found(class_hash))?;
 
-    match class_info.contract_class() {
+    let json_response = match class_info.contract_class() {
         ContractClass::Sierra(flattened_sierra_class) => {
             create_json_response(hyper::StatusCode::OK, flattened_sierra_class.as_ref())
         }
         ContractClass::Legacy(compressed_legacy_contract_class) => {
-            let class = match compressed_legacy_contract_class.as_ref().serialize_to_json() {
-                Ok(class) => class,
-                Err(e) => {
-                    log::error!("Failed to serialize legacy class: {}", e);
-                    return GatewayError::InternalServerError.into();
-                }
-            };
+            let class = compressed_legacy_contract_class
+                .as_ref()
+                .serialize_to_json()
+                .or_internal_server_error("Failed to serialize legacy class")?;
             create_response_with_json_body(hyper::StatusCode::OK, &class)
         }
-    }
+    };
+
+    Ok(json_response)
 }
 
 pub async fn handle_add_transaction(
     req: Request<Body>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Response<Body> {
-    let whole_body = match body::to_bytes(req.into_body()).await {
-        Ok(body) => body,
-        Err(e) => {
-            log::error!("Failed to read request body: {}", e);
-            return GatewayError::InternalServerError.into();
-        }
-    };
+) -> Result<Response<Body>, GatewayError> {
+    let whole_body = body::to_bytes(req.into_body()).await.or_internal_server_error("Failed to read request body")?;
 
-    let transaction = match serde_json::from_slice::<BroadcastedTransaction>(whole_body.as_ref()) {
-        Ok(transaction) => transaction,
-        Err(e) => {
-            return GatewayError::StarknetError(StarknetError {
-                code: StarknetErrorCode::MalformedRequest,
-                message: format!("Failed to parse transaction: {}", e),
-            })
-            .into()
-        }
-    };
+    let transaction = serde_json::from_slice::<BroadcastedTransaction>(whole_body.as_ref())
+        .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
 
-    match transaction {
+    let response = match transaction {
         BroadcastedTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
         BroadcastedTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
         BroadcastedTransaction::Invoke(tx) => invoke_transaction(tx, add_transaction_provider).await,
-    }
+    };
+
+    Ok(response)
 }
 
 async fn declare_transaction(

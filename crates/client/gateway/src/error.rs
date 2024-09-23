@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use starknet_core::types::Felt;
+use starknet_types_core::felt::FromStrError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SequencerError {
@@ -24,6 +26,25 @@ impl StarknetError {
 
     pub fn block_not_found() -> Self {
         Self { code: StarknetErrorCode::BlockNotFound, message: "Block not found".to_string() }
+    }
+
+    pub fn missing_class_hash() -> Self {
+        Self { code: StarknetErrorCode::MalformedRequest, message: "Missing class_hash parameter".to_string() }
+    }
+
+    pub fn invalid_class_hash(e: FromStrError) -> Self {
+        Self { code: StarknetErrorCode::MalformedRequest, message: format!("Invalid class_hash: {}", e) }
+    }
+
+    pub fn class_not_found(class_hash: Felt) -> Self {
+        Self {
+            code: StarknetErrorCode::UndeclaredClass,
+            message: format!("Class with hash {:#x} not found", class_hash),
+        }
+    }
+
+    pub fn malformed_request(e: serde_json::Error) -> Self {
+        Self { code: StarknetErrorCode::MalformedRequest, message: format!("Failed to parse transaction: {}", e) }
     }
 }
 
