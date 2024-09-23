@@ -324,21 +324,18 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
     pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
-
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
-
+        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity;
         if current_pending_tick == 0 {
             return Ok(());
         }
 
         // Reduced bouncer capacity for the current pending tick
-
-        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity;
-
+        
         // reduced_gas = gas * current_pending_tick/n_pending_ticks_per_block
         // - we're dealing with integers here so prefer having the division last
         // - use u128 here because the multiplication would overflow
-        // - div by zero: current_pending_tick has been checked for 0 above
+        // - div by zero: see [`ChainConfig::precheck_block_production`]
         let reduced_cap =
             |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
 

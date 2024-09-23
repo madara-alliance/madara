@@ -215,6 +215,21 @@ impl ChainConfig {
         serde_yaml::from_str(&config_str).context("While deserializing chain config")
     }
 
+    /// Verify that the chain config is valid for block production.
+    pub fn precheck_block_production(&self) -> anyhow::Result<()> {
+        // block_time != 0 implies that n_pending_ticks_per_block != 0.
+        if self.sequencer_address == ContractAddress::default() {
+            bail!("Sequencer address cannot be 0x0 for block production.")
+        }
+        if self.block_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        if self.pending_block_update_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        Ok(())
+    }
+
     /// Returns the Chain Config preset for Starknet Mainnet.
     pub fn starknet_mainnet() -> anyhow::Result<Self> {
         // Sources:
@@ -242,7 +257,9 @@ impl ChainConfig {
     }
 
     /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
+    /// The chain config needs to be checked with [`ChainConfig::precheck_block_production`] beforehand.
     pub fn n_pending_ticks_per_block(&self) -> usize {
+        // Division by zero: see [`ChainConfig::precheck_block_production`].
         (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
     }
 
