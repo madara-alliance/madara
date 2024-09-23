@@ -17,7 +17,7 @@ pub enum GatewayError {
 
 impl From<MadaraStorageError> for GatewayError {
     fn from(e: MadaraStorageError) -> Self {
-        log::error!("Storage error: {}", e);
+        log::error!(target: "gateway_errors", "Storage error: {}", e);
         Self::InternalServerError
     }
 }

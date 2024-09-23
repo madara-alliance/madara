@@ -2,6 +2,8 @@
 
 pub mod header;
 
+use std::fmt::Display;
+
 pub use header::Header;
 use header::PendingHeader;
 use mp_chain_config::StarknetVersion;
@@ -123,6 +125,18 @@ impl From<BlockId> for starknet_core::types::BlockId {
             BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt),
             BlockId::Number(number) => starknet_core::types::BlockId::Number(number),
             BlockId::Tag(tag) => starknet_core::types::BlockId::Tag(tag.into()),
+        }
+    }
+}
+impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockId::Hash(hash) => write!(f, "0x{hash:x}"),
+            BlockId::Number(number) => write!(f, "{number}"),
+            BlockId::Tag(blocktag) => match blocktag {
+                BlockTag::Latest => write!(f, "latest"),
+                BlockTag::Pending => write!(f, "pending"),
+            },
         }
     }
 }

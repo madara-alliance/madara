@@ -104,6 +104,5 @@ where
         return Err(error);
     }
 
-    response.error_for_status_ref().map(|_| ())?;
     Ok(response.json::<T>().await?)
 }

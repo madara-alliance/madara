@@ -28,9 +28,15 @@ pub(crate) async fn main_router(
 // Router for requests related to feeder_gateway
 async fn feeder_gateway_router(req: Request<Body>, backend: Arc<MadaraBackend>) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
-        (&Method::GET, "/feeder_gateway/get_block") => Ok(handle_get_block(req, backend).await),
-        (&Method::GET, "/feeder_gateway/get_state_update") => Ok(handle_get_state_update(req, backend).await),
-        (&Method::GET, "/feeder_gateway/get_class_by_hash") => Ok(handle_get_class_by_hash(req, backend).await),
+        (&Method::GET, "/feeder_gateway/get_block") => {
+            Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "/feeder_gateway/get_state_update") => {
+            Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "/feeder_gateway/get_class_by_hash") => {
+            Ok(handle_get_class_by_hash(req, backend).await.unwrap_or_else(Into::into))
+        }
         _ => Ok(not_found_response()),
     }
 }
@@ -41,7 +47,9 @@ async fn gateway_router(
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
-        (&Method::POST, "/feeder/add_transaction") => Ok(handle_add_transaction(req, add_transaction_provider).await),
+        (&Method::POST, "/feeder/add_transaction") => {
+            Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))
+        }
         _ => Ok(not_found_response()),
     }
 }
