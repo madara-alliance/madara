@@ -8,6 +8,7 @@ pub mod sync;
 pub mod telemetry;
 
 use crate::cli::l1::L1SyncParams;
+use anyhow::Context;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
@@ -24,7 +25,26 @@ use url::Url;
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
-#[clap(group(ArgGroup::new("chain_config").args(["chain_config_path", "preset"]).required(true)))]
+#[clap(
+    group(
+        ArgGroup::new("mode")
+            .args(&["sequencer", "full", "devnet"])
+            .required(true)
+            .multiple(false)
+    ),
+    group(
+        ArgGroup::new("chain_config")
+            .args(&["chain_config_path", "preset"])
+            .requires("sequencer")
+            .requires("devnet")
+    ),
+    group(
+        ArgGroup::new("full_mode_config")
+            .args(&["network", "chain_config_path", "preset"])
+            .requires("full")
+    ),
+)]
+
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -59,23 +79,31 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub block_production_params: BlockProductionParams,
 
-    /// The node will run as a sequencer produce its own state.
-    #[arg(long)]
+    /// The node will run as a sequencer and produce its own state.
+    #[arg(long, group = "mode")]
     pub sequencer: bool,
 
+    /// The node will run as a full node and sync the state of a specific network from others.
+    #[arg(long, group = "mode")]
+    pub full: bool,
+
+    /// The node will run as a testing sequencer with predeployed contracts.
+    #[arg(long, group = "mode")]
+    pub devnet: bool,
+
     /// The network chain configuration.
-    #[clap(long, short, default_value = "main")]
-    pub network: NetworkType,
+    #[clap(long, short, group = "full_mode_config")]
+    pub network: Option<NetworkType>,
 
     /// Chain configuration file path.
-    #[clap(long, value_name = "CHAIN CONFIG FILE PATH")]
+    #[clap(long, value_name = "CHAIN CONFIG FILE PATH", group = "chain_config")]
     pub chain_config_path: Option<PathBuf>,
 
     /// Use preset as chain Config
-    #[clap(long, value_name = "PRESET NAME")]
+    #[clap(long, value_name = "PRESET NAME", group = "chain_config")]
     pub preset: Option<String>,
 
-    /// Allow to override some parameters present in preset or configuration file
+    /// Allow overriding parameters present in preset or configuration file.
     #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
     pub chain_config_override: bool,
 
@@ -98,22 +126,80 @@ impl RunCmd {
     }
 
     pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
-        let mut chain_config: ChainConfig = match &self.preset {
-            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str())?,
+        let chain_config = match &self.preset {
+            Some(preset_name) => {
+                ChainConfig::from_preset(preset_name.as_str()).map_err(|err| {
+                    log::error!("Failed to load config from preset '{}': {}", preset_name, err);
+                    err
+                })?
+            }
             None => {
-                ChainConfig::from_yaml(&self.chain_config_path.clone().expect("Failed to retrieve chain config path"))?
+                let path = self.chain_config_path.clone().ok_or_else(|| {
+                    log::error!("{}", "Chain config path is not set");
+                    anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`")
+                })?;
+                ChainConfig::from_yaml(&path).map_err(|err| {
+                    log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
+                    err
+                })?
+            }
+        };
+    
+        // Override stuff if flag is set
+        let chain_config = if self.chain_config_override {
+            self.chain_params.override_cfg(chain_config)
+        } else {
+            chain_config
+        };
+    
+        Ok(Arc::new(chain_config))
+    }
+
+    /// Assigns a specific ChainConfig based on a defined network.
+    pub fn set_preset_from_network(&self) -> anyhow::Result<Arc<ChainConfig>> {
+        let chain_config = match self.network {
+            Some(NetworkType::Main) => {
+                ChainConfig::starknet_mainnet().map_err(|err| {
+                    log::error!("Failed to load Starknet Mainnet config: {}", err);
+                    err
+                })?
+            }
+            Some(NetworkType::Test) => {
+                ChainConfig::starknet_sepolia().map_err(|err| {
+                    log::error!("Failed to load Starknet Testnet config: {}", err);
+                    err
+                })?
+            }
+            Some(NetworkType::Integration) => {
+                ChainConfig::starknet_integration().map_err(|err| {
+                    log::error!("Failed to load Starknet Integration config: {}", err);
+                    err
+                })?
+            }
+            Some(NetworkType::Devnet) => {
+                ChainConfig::test_config().map_err(|err| {
+                    log::error!("Failed to load Madara Test Config: {}", err);
+                    err
+                })?
+            }
+            None => {
+                log::error!("{}", "Chain config path is not set");
+                return Err(anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`"));
             }
         };
 
-        // Override stuff if flag is setted
-        if self.chain_config_override {
-            chain_config = self.chain_params.override_cfg(chain_config);
-        }
+        // Override stuff if flag is set
+        let chain_config = if self.chain_config_override {
+            self.chain_params.override_cfg(chain_config)
+        } else {
+            chain_config
+        };
+
         Ok(Arc::new(chain_config))
     }
 
     pub fn is_sequencer(&self) -> bool {
-        self.sequencer || self.block_production_params.devnet
+        self.sequencer || self.devnet
     }
 }
 

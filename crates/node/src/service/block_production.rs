@@ -32,6 +32,7 @@ impl BlockProductionService {
         mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        devnet: bool,
         _metrics_handle: MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
@@ -46,7 +47,7 @@ impl BlockProductionService {
                 mempool,
                 block_import,
                 n_devnet_contracts: config.devnet_contracts,
-                is_devnet: config.devnet,
+                is_devnet: devnet,
             }),
             enabled: true,
         })

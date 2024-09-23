@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    let chain_config = run_cmd.get_config()?;
+    let chain_config = if run_cmd.is_sequencer() { run_cmd.get_config()? } else { run_cmd.set_preset_from_network() };
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
 
     let l1_gas_setter = GasPriceProvider::new();
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-    if run_cmd.block_production_params.devnet {
+    if run_cmd.devnet {
         run_cmd.l1_sync_params.sync_l1_disabled = true;
         run_cmd.l1_sync_params.gas_price_sync_disabled = true;
     }
@@ -111,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
                     Arc::clone(&mempool),
                     importer,
                     Arc::clone(&l1_data_provider),
+                    run_cmd.devnet,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
                 )?;
@@ -123,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
-                    run_cmd.network,
+                    run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right FGW"),
                     &db_service,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
@@ -135,8 +136,8 @@ async fn main() -> anyhow::Result<()> {
                     ServiceGroup::default().with(sync_service),
                     // TODO(rate-limit): we may get rate limited with this unconfigured provider?
                     Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                        run_cmd.network.gateway(),
-                        run_cmd.network.feeder_gateway(),
+                        run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right gateway").gateway(),
+                        run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right FGW").feeder_gateway(),
                         chain_config.chain_id.to_felt(),
                     ))),
                 )
@@ -162,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
         .with(telemetry_service)
         .with(prometheus_service);
 
-    if run_cmd.block_production_params.devnet && run_cmd.network != NetworkType::Devnet {
+    if run_cmd.devnet && run_cmd.network != Some(NetworkType::Devnet) {
         if !run_cmd.block_production_params.override_devnet_chain_id {
             panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
         } else {
