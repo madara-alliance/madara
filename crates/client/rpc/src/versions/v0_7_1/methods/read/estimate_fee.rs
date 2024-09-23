@@ -44,7 +44,7 @@ pub async fn estimate_fee(
 
     let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
-    let execution_results = exec_context.re_execute_transactions([], transactions, validate, true)?;
+    let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
 
     let fee_estimates =
         execution_results.iter().map(|result| exec_context.execution_result_to_fee_estimate(result)).collect();

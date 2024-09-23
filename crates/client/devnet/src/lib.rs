@@ -51,8 +51,7 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
@@ -78,7 +77,7 @@ pub struct ChainGenesisDescription {
 
 impl ChainGenesisDescription {
     pub fn base_config() -> anyhow::Result<Self> {
-        let udc_class = InitiallyDeclaredClass::new_sierra(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
+        let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
             InitiallyDeclaredClass::new_sierra(ERC20_CLASS_DEFINITION).context("Failed to add ERC20 class")?;
         Ok(Self {
@@ -552,23 +551,26 @@ mod tests {
         log::info!("receipt: {:?}", block.inner.receipts[0]);
 
         let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
-        assert_eq!(
-            receipt,
-            InvokeTransactionReceipt {
-                transaction_hash: result.transaction_hash,
-                messages_sent: vec![],
-                events: vec![Event {
-                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                    // TODO: do not match keys and data yet (unsure)
-                    keys: receipt.events[0].keys.clone(),
-                    data: receipt.events[0].data.clone(),
-                }],
-                // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
-                execution_resources: receipt.execution_resources.clone(),
-                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
-                execution_result: receipt.execution_result.clone(), // matched below
-            }
-        );
+
+        if !expect_reverted {
+            assert_eq!(
+                receipt,
+                InvokeTransactionReceipt {
+                    transaction_hash: result.transaction_hash,
+                    messages_sent: vec![],
+                    events: vec![Event {
+                        from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                        // TODO: do not match keys and data yet (unsure)
+                        keys: receipt.events[0].keys.clone(),
+                        data: receipt.events[0].data.clone(),
+                    }],
+                    // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
+                    execution_resources: receipt.execution_resources.clone(),
+                    actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                    execution_result: receipt.execution_result.clone(), // matched below
+                }
+            );
+        }
 
         match expect_reverted {
             false => {

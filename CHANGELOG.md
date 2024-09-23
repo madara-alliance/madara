@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: UDC cairo 0 migration & events logic fix
 - fix: response of spec version rpc call fixed
 - tests: integration test for l2 fetch task added
 - refactor: calculate class hashes in devnet
