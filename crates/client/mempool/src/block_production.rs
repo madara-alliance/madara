@@ -413,3 +413,176 @@ impl BlockProductionTask {
         self.executor.block_context.block_info().block_number.0
     }
 }
+
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use crate::GasPriceProvider;
+    use mc_block_import::BlockImporter;
+    use mc_db::MadaraBackend;
+
+    use mp_chain_config::ChainConfig;
+
+    #[derive(Clone)]
+    #[allow(unused)]
+    struct TestEnvironment {
+        backend: Arc<MadaraBackend>,
+        l1_data_provider: Arc<dyn L1DataProvider>,
+        mempool: Arc<Mempool>,
+        importer: Arc<BlockImporter>,
+    }
+
+    impl TestEnvironment {
+        #[allow(unused)]
+        fn new() -> Self {
+            let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+            let backend = MadaraBackend::open_for_testing(chain_config.clone());
+            let l1_gas_setter = GasPriceProvider::new();
+            let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+            let mempool = Arc::new(Mempool::new(backend.clone(), l1_data_provider.clone()));
+            let importer = Arc::new(BlockImporter::new(backend.clone()));
+            Self { backend, l1_data_provider, mempool, importer }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_block_production_empty_mempool() {
+        use assert_matches::assert_matches;
+        use mc_db::db_block_id::DbBlockId;
+
+        use mp_block::MadaraMaybePendingBlockInfo;
+
+        let test_env = TestEnvironment::new();
+        let mut block_production_task = BlockProductionTask::new(
+            test_env.backend.clone(),
+            test_env.importer,
+            test_env.mempool,
+            test_env.l1_data_provider,
+        )
+        .expect("Failed to create block production task");
+
+        // Ignore first tick
+        block_production_task.set_current_pending_tick(1);
+
+        block_production_task.on_pending_time_tick().expect("Failed to produce empty pending block");
+
+        let block = test_env.backend.get_block(&DbBlockId::Pending).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::Pending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+
+        block_production_task.on_block_time().await.expect("Failed to close empty block");
+        let block = test_env.backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_production_with_invalid_tx() {
+        use crate::InvokeTransaction;
+        use assert_matches::assert_matches;
+        use blockifier::transaction::account_transaction::AccountTransaction;
+        use mp_block::MadaraMaybePendingBlockInfo;
+        use starknet_api::transaction::InvokeTransactionV1;
+        use std::time::SystemTime;
+
+        let test_env = TestEnvironment::new();
+        let mut block_production_task = BlockProductionTask::new(
+            test_env.backend.clone(),
+            test_env.importer,
+            test_env.mempool.clone(),
+            test_env.l1_data_provider,
+        )
+        .expect("Failed to create block production task");
+
+        // Ignore first tick
+        block_production_task.set_current_pending_tick(1);
+
+        let now = SystemTime::now();
+
+        let tx = MempoolTransaction {
+            tx: AccountTransaction::Invoke(InvokeTransaction {
+                tx: starknet_api::transaction::InvokeTransaction::V1(InvokeTransactionV1::default()),
+                tx_hash: starknet_api::transaction::TransactionHash(Felt::ONE),
+                only_query: false,
+            }),
+            arrived_at: now,
+            converted_class: None,
+        };
+
+        test_env.mempool.re_add_txs(vec![tx.clone()]);
+
+        block_production_task.on_pending_time_tick().expect("Failed to produce pending block with tx");
+
+        let block = test_env.backend.get_block(&DbBlockId::Pending).expect("get_block failed");
+        assert!(block.is_some());
+        assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::Pending(_));
+        assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_production_task() {
+        use std::time::Duration;
+        use tokio::sync::oneshot;
+
+        let test_env = TestEnvironment::new();
+        let backend = test_env.backend.clone();
+        let mut block_production_task =
+            BlockProductionTask::new(backend.clone(), test_env.importer, test_env.mempool, test_env.l1_data_provider)
+                .expect("Failed to create block production task");
+
+        // Create a channel to signal the task to stop
+        let (tx, rx) = oneshot::channel();
+
+        // Spawn the block production task
+        let task_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = block_production_task.block_production_task() => {
+                    if let Err(e) = result {
+                        panic!("Block production task failed: {:?}", e);
+                    }
+                }
+                _ = rx => {
+                    // The task has been signaled to stop
+                }
+            }
+        });
+
+        // Let the task run for 10 seconds
+        tokio::time::sleep(Duration::from_secs(11)).await;
+
+        // Signal the task to stop
+        tx.send(()).expect("Failed to send stop signal");
+
+        // Wait for the task to finish
+        task_handle.await.expect("Failed to join task handle");
+
+        // Make assertions
+        let block_number =
+            backend.get_latest_block_n().expect("Failed to get latest block").expect("No blocks were produced");
+
+        // Check if the number of blocks produced is reasonable
+        // This will depend on your chain configuration
+        let expected_min_blocks = 5 / backend.chain_config().block_time.as_secs();
+        assert!(
+            block_number >= expected_min_blocks,
+            "Fewer blocks produced than expected. Expected at least {}, got {}",
+            expected_min_blocks,
+            block_number
+        );
+
+        // You can add more assertions here, such as checking the content of the blocks,
+        // verifying the state updates, or ensuring that the mempool is being processed correctly.
+
+        // For example, you might want to check if transactions are being included in blocks:
+        for block_number in 0..=block_number {
+            let block = backend.get_block(&DbBlockId::BlockN(block_number)).expect("Failed to get block");
+            if let Some(block) = block {
+                println!("Block {} has {} transactions", block_number, block.info.tx_hashes().len());
+                // Add more specific checks here if needed
+            }
+        }
+    }
+}
