@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use mp_block::{BlockId, BlockTag};
-use reqwest::Client;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client,
+};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
 use url::Url;
@@ -12,13 +15,13 @@ use crate::error::{SequencerError, StarknetError};
 pub struct RequestBuilder<'a> {
     client: &'a Client,
     url: Url,
-    params: HashMap<String, String>,
-    headers: HashMap<String, String>,
+    params: HashMap<Cow<'static, str>, String>,
+    headers: HeaderMap,
 }
 
 impl<'a> RequestBuilder<'a> {
     pub fn new(client: &'a Client, base_url: Url) -> Self {
-        Self { client, url: base_url, params: HashMap::new(), headers: HashMap::new() }
+        Self { client, url: base_url, params: HashMap::new(), headers: HeaderMap::new() }
     }
 
     pub fn add_uri_segment(mut self, segment: &str) -> Result<Self, url::ParseError> {
@@ -26,37 +29,37 @@ impl<'a> RequestBuilder<'a> {
         Ok(self)
     }
 
-    pub fn add_header(mut self, name: &str, value: &str) -> Self {
-        self.headers.insert(name.to_string(), value.to_string());
+    pub fn add_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.insert(name, value);
         self
     }
 
-    pub fn add_param(mut self, name: &str, value: &str) -> Self {
-        self.params.insert(name.to_string(), value.to_string());
+    pub fn add_param(mut self, name: Cow<'static, str>, value: &str) -> Self {
+        self.params.insert(name, value.to_string());
         self
     }
 
     pub fn with_block_id(mut self, block_id: BlockId) -> Self {
         match block_id {
             BlockId::Hash(hash) => {
-                self = self.add_param("blockHash", &format!("0x{:x}", hash));
+                self = self.add_param(Cow::from("blockHash"), &format!("0x{:x}", hash));
             }
             BlockId::Number(number) => {
-                self = self.add_param("blockNumber", &number.to_string());
+                self = self.add_param(Cow::from("blockNumber"), &number.to_string());
             }
             BlockId::Tag(tag) => {
                 let tag = match tag {
                     BlockTag::Latest => "latest",
                     BlockTag::Pending => "pending",
                 };
-                self = self.add_param("blockNumber", tag);
+                self = self.add_param(Cow::from("blockNumber"), tag);
             }
         }
         self
     }
 
     pub fn with_class_hash(mut self, class_hash: Felt) -> Self {
-        self = self.add_param("classHash", &format!("0x{:x}", class_hash));
+        self = self.add_param(Cow::from("classHash"), &format!("0x{:x}", class_hash));
         self
     }
 
@@ -66,7 +69,7 @@ impl<'a> RequestBuilder<'a> {
     {
         let mut request = self.client.get(self.url);
 
-        for (key, value) in self.headers {
+        for (key, value) in self.headers.iter() {
             request = request.header(key, value);
         }
 
@@ -81,7 +84,7 @@ impl<'a> RequestBuilder<'a> {
     {
         let mut request = self.client.post(self.url);
 
-        for (key, value) in self.headers {
+        for (key, value) in self.headers.iter() {
             request = request.header(key, value);
         }
 
