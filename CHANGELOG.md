@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: cleaned cli settings for sequencer, devnet and full
 - test: tests added for verify and apply task in l2 sync
 - fix: UDC cairo 0 migration & events logic fix
 - fix: response of spec version rpc call fixed

@@ -129,21 +129,20 @@ impl RunCmd {
         let chain_config = match &self.preset {
             Some(preset_name) => ChainConfig::from_preset(preset_name.as_str()).map_err(|err| {
                 log::error!("Failed to load config from preset '{}': {}", preset_name, err);
-                err
+                anyhow::anyhow!(err)
             })?,
             None => {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
-                    if self.is_sequencer() {
-                        return anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)");
-                    }
-                    else {
-                        return anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)");
-                    }
+                    anyhow::anyhow!(if self.is_sequencer() {
+                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)"
+                    } else {
+                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)"
+                    })
                 })?;
                 ChainConfig::from_yaml(&path).map_err(|err| {
                     log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
-                    err
+                    anyhow::anyhow!(err)
                 })?
             }
         };
@@ -226,7 +225,7 @@ impl NetworkType {
         format!("{}/feeder_gateway", self.uri()).parse().expect("Invalid uri")
     }
 
-    pub fn to_chain_id(&self) -> ChainId {
+    pub fn chain_id(&self) -> ChainId {
         match self {
             NetworkType::Main => ChainId::Mainnet,
             NetworkType::Test => ChainId::Sepolia,

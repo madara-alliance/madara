@@ -120,7 +120,6 @@ async fn main() -> anyhow::Result<()> {
                     Arc::clone(&l1_data_provider),
                     run_cmd.devnet,
                     prometheus_service.registry(),
-                    telemetry_service.new_handle(),
                 )?;
 
                 (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
@@ -181,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
         .with(prometheus_service);
 
     // Check if the devnet is running with the correct chain id.
-    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.to_chain_id() {
+    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
             log::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
             panic!();

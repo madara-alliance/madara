@@ -6,7 +6,6 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use mc_metrics::MetricsRegistry;
-use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;
 
@@ -34,7 +33,6 @@ impl BlockProductionService {
         l1_data_provider: Arc<dyn L1DataProvider>,
         devnet: bool,
         _metrics_handle: MetricsRegistry,
-        _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         if config.block_production_disabled {
             return Ok(Self { start: None, enabled: false });
