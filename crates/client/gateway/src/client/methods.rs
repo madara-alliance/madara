@@ -60,6 +60,10 @@ mod tests {
 
         let block = client.get_block(BlockId::Number(0)).await.unwrap();
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
+        assert!(matches!(block, ProviderMaybePendingBlock::Block(_)));
+        assert_eq!(block.block().unwrap().block_number, 0);
+        assert_eq!(block.block().unwrap().parent_block_hash, Felt::from_hex_unchecked("0x0"));
+
         let block = client
             .get_block(BlockId::Hash(Felt::from_hex_unchecked(
                 "0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943",
@@ -77,7 +81,13 @@ mod tests {
     async fn test_get_state_update() {
         let client = FeederClient::starknet_alpha_mainnet();
 
-        let _block = client.get_state_update(BlockId::Number(0)).await.unwrap();
+        let state_update = client.get_state_update(BlockId::Number(0)).await.unwrap();
+        assert!(matches!(state_update, ProviderMaybePendingStateUpdate::Update(_)));
+        assert_eq!(
+            state_update.state_update().unwrap().block_hash,
+            Felt::from_hex_unchecked("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943")
+        );
+
         let _block = client
             .get_state_update(BlockId::Hash(Felt::from_hex_unchecked(
                 "0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943",

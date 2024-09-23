@@ -12,6 +12,22 @@ pub enum ProviderMaybePendingStateUpdate {
     Pending(PendingStateUpdateProvider),
 }
 
+impl ProviderMaybePendingStateUpdate {
+    pub fn state_update(&self) -> Option<&StateUpdateProvider> {
+        match self {
+            ProviderMaybePendingStateUpdate::Update(state_update) => Some(state_update),
+            ProviderMaybePendingStateUpdate::Pending(_) => None,
+        }
+    }
+
+    pub fn pending(&self) -> Option<&PendingStateUpdateProvider> {
+        match self {
+            ProviderMaybePendingStateUpdate::Update(_) => None,
+            ProviderMaybePendingStateUpdate::Pending(pending) => Some(pending),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct StateUpdateProvider {

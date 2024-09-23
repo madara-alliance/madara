@@ -104,8 +104,6 @@ pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<B
     }
 }
 
-// append_pair("includeBlock", "true");
-
 pub(crate) fn include_block_params(params: &HashMap<String, String>) -> bool {
     params.get("includeBlock").map_or(false, |v| v == "true")
 }
