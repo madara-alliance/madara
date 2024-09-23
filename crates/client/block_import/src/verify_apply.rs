@@ -198,7 +198,9 @@ fn update_tries(
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
         let Some(global_state_root) = block.unverified_global_state_root else {
-            return Err(BlockImportError::Internal("Trying to import a block without a global state root when using trust_global_tries".into()));
+            return Err(BlockImportError::Internal(
+                "Trying to import a block without a global state root when using trust_global_tries".into(),
+            ));
         };
         return Ok(global_state_root);
     }
@@ -477,7 +479,7 @@ mod verify_apply_tests {
             StateDiff::default(), // Empty state diff
             true, // Trust global tries (irrelevant in this case)
             // Expected result: an Internal error
-            Err(BlockImportError::Internal("Trying to import a block without a global state root but when using trust_global_tries".into()))
+            Err(BlockImportError::Internal("Trying to import a block without a global state root when using trust_global_tries".into()))
         )]
     #[case::mismatch_global_state_root(
             Some(felt!("0xb")), // A non-zero global state root
