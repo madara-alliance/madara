@@ -66,7 +66,7 @@ impl Service for BlockProductionService {
         if is_devnet {
             // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
 
-            let keys = if (backend.get_latest_block_n().context("Getting the latest block number in db")?).is_none() {
+            let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
                 // deploy devnet genesis
 
                 log::info!("⛏️  Deploying devnet genesis block");

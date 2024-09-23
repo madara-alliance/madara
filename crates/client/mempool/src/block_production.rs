@@ -24,6 +24,7 @@ use starknet_types_core::felt::Felt;
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
@@ -369,7 +370,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let (state_diff, stats) = self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             log::info!(
-                "🧮 Executed and added {} transaction(s) to the pending block at height {} - {}",
+                "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
                 stats.n_added_to_block,
                 self.block_n(),
                 start_time.elapsed(),
@@ -423,7 +424,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
-        log::info!("⛏️  Closed block #{} with {} transactions - {}", block_n, n_txs, start_time.elapsed());
+        log::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, start_time.elapsed());
 
         Ok(())
     }
