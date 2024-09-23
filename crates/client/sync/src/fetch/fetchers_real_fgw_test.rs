@@ -1,5 +1,3 @@
-
-#![cfg(test)]
 //! These tests use the real FGW. They are very basic compared to the mock tests.
 
 use super::*;
@@ -456,10 +454,7 @@ async fn test_can_convert_pending_block() {
 #[case(0)]
 #[case(724_130)]
 #[tokio::test]
-async fn test_can_fetch_and_convert_block(
-    sequencer_gateway_provider: SequencerGatewayProvider,
-    #[case] block_n: u64,
-) {
+async fn test_can_fetch_and_convert_block(sequencer_gateway_provider: SequencerGatewayProvider, #[case] block_n: u64) {
     let block = fetch_block_and_updates(&ChainId::Mainnet, block_n, &sequencer_gateway_provider).await.unwrap();
     let path = &format!("test-data/block_{block_n}.json");
     // serde_json::to_writer(std::fs::File::create(path).unwrap(), &block).unwrap();

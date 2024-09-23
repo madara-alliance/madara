@@ -386,8 +386,7 @@ mod test_l2_fetchers {
 
         let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
-        let pending_block = result
-            .expect("Failed to fetch pending block");
+        let pending_block = result.expect("Failed to fetch pending block");
 
         assert!(
             matches!(pending_block, UnverifiedPendingFullBlock { .. }),
@@ -672,9 +671,14 @@ mod test_l2_fetchers {
             .await
             .expect("Failed to fetch state update with block");
 
-        let class_updates = fetch_class_updates(&ctx.backend.chain_config().chain_id, &state_update, FetchBlockId::BlockN(5), &ctx.provider)
-            .await
-            .expect("Failed to fetch class updates");
+        let class_updates = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            &state_update,
+            FetchBlockId::BlockN(5),
+            &ctx.provider,
+        )
+        .await
+        .expect("Failed to fetch class updates");
 
         assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
 
@@ -697,7 +701,13 @@ mod test_l2_fetchers {
         let (state_update, _block) =
             fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
-        let result = fetch_class_updates(&ctx.backend.chain_config().chain_id, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
+        let result = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            &state_update,
+            FetchBlockId::BlockN(5),
+            &ctx.provider,
+        )
+        .await;
 
         assert!(
             matches!(
