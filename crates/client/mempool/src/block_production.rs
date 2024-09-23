@@ -6,7 +6,7 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction;
-use mc_block_import::BlockImporter;
+use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
@@ -375,7 +375,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         // Store pending block
+        // todo, prefer using the block import pipeline?
         self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
+        // do not forget to flush :)
+        self.backend
+            .maybe_flush(true)
+            .map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
 
         Ok(())
     }
