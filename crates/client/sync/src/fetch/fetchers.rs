@@ -1,11 +1,11 @@
 //! Contains the code required to fetch data from the network efficiently.
+use super::FetchError;
+use crate::l2::L2SyncError;
+use anyhow::Context;
 use core::fmt;
 use core::time::Duration;
-
-use anyhow::Context;
 use futures::FutureExt;
 use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock};
-use mc_db::MadaraBackend;
 use mp_block::header::GasPrices;
 use mp_chain_config::StarknetVersion;
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
@@ -15,14 +15,11 @@ use mp_receipt::TransactionReceipt;
 use mp_transactions::{Transaction, MAIN_CHAIN_ID};
 use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_core::types::{ContractClass, MaybePendingBlockWithReceipts, StarknetError};
+use starknet_core::types::{ContractClass, StarknetError};
+use starknet_providers::sequencer::models::{Block as SequencerBlock, StateUpdate as SequencerStateUpdate};
 use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use url::Url;
-
-use crate::l2::L2SyncError;
-
-use super::FetchError;
 
 const MAX_RETRY: u32 = 15;
 const BASE_DELAY: Duration = Duration::from_secs(1);
@@ -91,63 +88,43 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 }
 
 pub async fn fetch_pending_block_and_updates(
-    backend: &MadaraBackend,
+    chain_id: &ChainId,
     provider: &SequencerGatewayProvider,
-) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
+) -> Result<UnverifiedPendingFullBlock, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
-    let (state_update, block) =
-        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
+    let (state_update, block) = retry(
+        || async {
+            let (state_update, block) = fetch_state_update_with_block(provider, block_id).await?;
+            if let Some(block_hash) = block.block_hash {
+                // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
+                log::debug!(
+                    "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
+                    block.block_number,
+                    block_hash,
+                );
+                Err(ProviderError::StarknetError(StarknetError::BlockNotFound))
+            } else {
+                Ok((state_update, block))
+            }
+        },
+        MAX_RETRY,
+        BASE_DELAY,
+    )
+    .await?;
 
-    let block = starknet_core::types::MaybePendingBlockWithReceipts::try_from(block)
-        .context("Converting the FGW format to starknet_types_core")?;
-
-    let block = match block {
-        MaybePendingBlockWithReceipts::Block(block) => {
-            // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
-            log::debug!(
-                "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
-                block.block_number,
-                block.block_hash
-            );
-            return Ok(None);
-        }
-        MaybePendingBlockWithReceipts::PendingBlock(block) => block,
-    };
-
-    let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
+    let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
-    let (transactions, receipts) =
-        block.transactions.into_iter().map(|t| (t.transaction.into(), t.receipt.into())).unzip();
-
-    Ok(Some(UnverifiedPendingFullBlock {
-        header: UnverifiedHeader {
-            parent_block_hash: Some(block.parent_hash),
-            sequencer_address: block.sequencer_address,
-            block_timestamp: block.timestamp,
-            protocol_version: block.starknet_version.parse().context("Invalid starknet version")?,
-            l1_gas_price: GasPrices {
-                eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
-                strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
-                eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei)
-                    .context("Converting prices")?,
-                strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri)
-                    .context("Converting prices")?,
-            },
-            l1_da_mode: block.l1_da_mode.into(),
-        },
-        state_diff: state_update.state_diff.into(),
-        transactions,
-        receipts,
-        declared_classes: class_update.into_iter().map(Into::into).collect(),
-    }))
+    let converted = convert_sequencer_pending_block(block, state_update, class_update)
+        .context("Parsing the FGW pending block format")?;
+    Ok(converted)
 }
 
 pub async fn fetch_block_and_updates(
-    backend: &MadaraBackend,
+    chain_id: &ChainId,
     block_n: u64,
     provider: &SequencerGatewayProvider,
 ) -> Result<UnverifiedFullBlock, FetchError> {
@@ -156,75 +133,13 @@ pub async fn fetch_block_and_updates(
     let sw = PerfStopwatch::new();
     let (state_update, block) =
         retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
-
-    let class_update = fetch_class_updates(backend, &state_update, block_id, provider).await?;
+    let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
-    // Verify against these commitments.
-    let commitments = UnverifiedCommitments {
-        // TODO: these commitments are wrong for mainnet from block 0 to unknown. We need to figure out
-        // which blocks and handle the case directly in the block import crate.
-        // transaction_commitment: Some(block.transaction_commitment.context("No transaction commitment")?),
-        // event_commitment: Some(block.event_commitment.context("No event commitment")?),
-        state_diff_commitment: None,
-        receipt_commitment: None,
-        global_state_root: Some(block.state_root.context("No state root")?),
-        block_hash: Some(block.block_hash.context("No block hash")?),
-        ..Default::default()
-    };
-
-    // let block = starknet_core::types::MaybePendingBlockWithReceipts::try_from(block)
-    //     .context("Converting the FGW format to starknet_types_core")?;
-
-    // let MaybePendingBlockWithReceipts::Block(block) = block else {
-    //     return Err(anyhow::anyhow!("Fetched a closed block, got a pending one").into());
-    // };
-
-    Ok(UnverifiedFullBlock {
-        unverified_block_number: Some(block.block_number.context("FGW should have a block number for closed blocks")?),
-        header: UnverifiedHeader {
-            parent_block_hash: Some(block.parent_block_hash),
-            sequencer_address: block.sequencer_address.unwrap_or_default(),
-            block_timestamp: block.timestamp,
-            protocol_version: block
-                .starknet_version
-                .as_deref()
-                .map(|v| v.parse().context("Invalid starknet version"))
-                .unwrap_or(
-                    StarknetVersion::try_from_mainnet_block_number(
-                        block
-                            .block_number
-                            .context("A block number is needed to determine the missing Starknet version")?,
-                    )
-                    .ok_or(anyhow::anyhow!("Unable to determine the Starknet version")),
-                )?,
-            l1_gas_price: GasPrices {
-                eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
-                strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
-                eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei)
-                    .context("Converting prices")?,
-                strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri)
-                    .context("Converting prices")?,
-            },
-            l1_da_mode: block.l1_da_mode.into(),
-        },
-        state_diff: state_update.state_diff.into(),
-        receipts: block
-            .transaction_receipts
-            .into_iter()
-            .zip(&block.transactions)
-            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
-            .collect(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(Transaction::try_from)
-            .collect::<Result<_, _>>()
-            .context("Converting the FGW format")?,
-        declared_classes: class_update.into_iter().map(Into::into).collect(),
-        commitments,
-    })
+    let converted =
+        convert_sequencer_block(block, state_update, class_update).context("Parsing the FGW full block format")?;
+    Ok(converted)
 }
 
 async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>
@@ -275,12 +190,12 @@ async fn fetch_state_update_with_block(
 
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_updates(
-    backend: &MadaraBackend,
+    chain_id: &ChainId,
     state_update: &starknet_providers::sequencer::models::StateUpdate,
     block_id: FetchBlockId,
     provider: &SequencerGatewayProvider,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
-    let chain_id: Felt = backend.chain_config().chain_id.to_felt();
+    let chain_id: Felt = chain_id.to_felt();
 
     // for blocks before 2597 on mainnet new classes are not declared in the state update
     // https://github.com/madara-alliance/madara/issues/233
@@ -341,14 +256,109 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<(Felt, ContractClass), ProviderError> {
     let contract_class = provider.get_class(starknet_core::types::BlockId::from(block_id), class_hash).await?;
+    log::debug!("Got the contract class {:?}", contract_class);
     Ok((class_hash, contract_class))
 }
+
+fn convert_block_header(block: &SequencerBlock) -> anyhow::Result<UnverifiedHeader> {
+    Ok(UnverifiedHeader {
+        parent_block_hash: Some(block.parent_block_hash),
+        sequencer_address: block.sequencer_address.unwrap_or_default(),
+        block_timestamp: block.timestamp,
+        protocol_version: block
+            .starknet_version
+            .as_deref()
+            .map(|v| v.parse().context("Invalid starknet version"))
+            .unwrap_or_else(|| {
+                StarknetVersion::try_from_mainnet_block_number(
+                    block.block_number.context("A block number is needed to determine the missing Starknet version")?,
+                )
+                .context("Unable to determine the Starknet version")
+            })?,
+        l1_gas_price: GasPrices {
+            eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
+            strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
+            eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei).context("Converting prices")?,
+            strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri).context("Converting prices")?,
+        },
+        l1_da_mode: block.l1_da_mode.into(),
+    })
+}
+
+fn convert_sequencer_pending_block(
+    block: SequencerBlock,
+    state_update: SequencerStateUpdate,
+    class_update: Vec<ClassUpdate>,
+) -> anyhow::Result<UnverifiedPendingFullBlock> {
+    Ok(UnverifiedPendingFullBlock {
+        header: convert_block_header(&block)?,
+        state_diff: state_update.state_diff.into(),
+        receipts: block
+            .transaction_receipts
+            .into_iter()
+            .zip(&block.transactions)
+            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .collect(),
+        transactions: block
+            .transactions
+            .into_iter()
+            .map(Transaction::try_from)
+            .collect::<Result<_, _>>()
+            .context("Converting the transactions")?,
+        declared_classes: class_update.into_iter().map(Into::into).collect(),
+    })
+}
+
+fn convert_sequencer_block(
+    block: SequencerBlock,
+    state_update: SequencerStateUpdate,
+    class_update: Vec<ClassUpdate>,
+) -> anyhow::Result<UnverifiedFullBlock> {
+    // Verify against these commitments.
+    let commitments = UnverifiedCommitments {
+        // TODO: these commitments are wrong for mainnet from block 0 to unknown. We need to figure out
+        // which blocks and handle the case directly in the block import crate.
+        // transaction_commitment: Some(block.transaction_commitment.context("No transaction commitment")?),
+        // event_commitment: Some(block.event_commitment.context("No event commitment")?),
+        state_diff_commitment: None,
+        receipt_commitment: None,
+        global_state_root: Some(block.state_root.context("No state root")?),
+        block_hash: Some(block.block_hash.context("No block hash")?),
+        ..Default::default()
+    };
+    Ok(UnverifiedFullBlock {
+        unverified_block_number: Some(
+            block.block_number.context("FGW should return a block number for closed blocks")?,
+        ),
+        header: convert_block_header(&block)?,
+        state_diff: state_update.state_diff.into(),
+        receipts: block
+            .transaction_receipts
+            .into_iter()
+            .zip(&block.transactions)
+            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .collect(),
+        transactions: block
+            .transactions
+            .into_iter()
+            .map(Transaction::try_from)
+            .collect::<Result<_, _>>()
+            .context("Converting the transactions")?,
+        declared_classes: class_update.into_iter().map(Into::into).collect(),
+        commitments,
+    })
+}
+
+#[cfg(test)]
+#[path = "fetchers_real_fgw_test.rs"]
+mod fetchers_real_fgw_test;
 
 #[cfg(test)]
 mod test_l2_fetchers {
     use super::*;
     use crate::tests::utils::gateway::{test_setup, TestContext};
     use mc_block_import::UnverifiedPendingFullBlock;
+    use mc_db::MadaraBackend;
     use mp_block::header::L1DataAvailabilityMode;
     use mp_chain_config::StarknetVersion;
     use rstest::*;
@@ -374,11 +384,9 @@ mod test_l2_fetchers {
         // Mock class hash
         ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_pending_block_and_updates(&ctx.backend, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
-        let pending_block = result
-            .expect("Failed to fetch pending block")
-            .expect("Expected Some(UnverifiedPendingFullBlock), got None");
+        let pending_block = result.expect("Failed to fetch pending block");
 
         assert!(
             matches!(pending_block, UnverifiedPendingFullBlock { .. }),
@@ -456,7 +464,7 @@ mod test_l2_fetchers {
         // Mock a "pending block not found" scenario
         ctx.mock_block_pending_not_found();
 
-        let result = fetch_pending_block_and_updates(&ctx.backend, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
         assert!(
             matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
@@ -663,9 +671,14 @@ mod test_l2_fetchers {
             .await
             .expect("Failed to fetch state update with block");
 
-        let class_updates = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider)
-            .await
-            .expect("Failed to fetch class updates");
+        let class_updates = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            &state_update,
+            FetchBlockId::BlockN(5),
+            &ctx.provider,
+        )
+        .await
+        .expect("Failed to fetch class updates");
 
         assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
 
@@ -688,7 +701,13 @@ mod test_l2_fetchers {
         let (state_update, _block) =
             fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
-        let result = fetch_class_updates(&ctx.backend, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
+        let result = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            &state_update,
+            FetchBlockId::BlockN(5),
+            &ctx.provider,
+        )
+        .await;
 
         assert!(
             matches!(

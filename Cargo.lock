@@ -5568,6 +5568,7 @@ dependencies = [
  "mp-utils",
  "rayon",
  "rstest 0.18.2",
+ "serde",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",

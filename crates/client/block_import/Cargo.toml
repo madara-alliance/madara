@@ -12,6 +12,7 @@ license.workspace = true
 bitvec.workspace = true
 log.workspace = true
 rayon.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
