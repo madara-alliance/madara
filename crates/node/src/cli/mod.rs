@@ -13,6 +13,7 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
+use starknet_api::core::ChainId;
 pub use sync::*;
 pub use telemetry::*;
 
@@ -134,7 +135,7 @@ impl RunCmd {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
                     if self.is_sequencer() {
-                        return anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`");
+                        return anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)");
                     }
                     else {
                         return anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`");
@@ -223,5 +224,14 @@ impl NetworkType {
 
     pub fn feeder_gateway(&self) -> Url {
         format!("{}/feeder_gateway", self.uri()).parse().expect("Invalid uri")
+    }
+
+    pub fn to_chain_id(&self) -> ChainId {
+        match self {
+            NetworkType::Main => ChainId::Mainnet,
+            NetworkType::Test => ChainId::Sepolia,
+            NetworkType::Integration => ChainId::IntegrationSepolia,
+            NetworkType::Devnet => ChainId::Other("MADARA_TEST".to_string()),
+        }
     }
 }
