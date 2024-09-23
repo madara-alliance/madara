@@ -5565,10 +5565,13 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "rayon",
+ "rstest 0.18.2",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

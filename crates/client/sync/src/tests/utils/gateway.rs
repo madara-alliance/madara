@@ -35,6 +35,7 @@ pub fn test_setup(_set_workdir: ()) -> Arc<MadaraBackend> {
     let chain_config = Arc::new(ChainConfig::test_config().unwrap());
     MadaraBackend::open_for_testing(chain_config.clone())
 }
+
 impl TestContext {
     pub fn new(backend: Arc<MadaraBackend>) -> Self {
         let mock_server = MockServer::start();
