@@ -40,12 +40,10 @@ async fn main() -> anyhow::Result<()> {
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
         run_cmd.get_config()?
+    } else if run_cmd.network.is_some() {
+        run_cmd.set_preset_from_network()?
     } else {
-        if run_cmd.network.is_some() {
-            run_cmd.set_preset_from_network()?
-        } else {
-            run_cmd.get_config()?
-        }
+        run_cmd.get_config()?
     };
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();

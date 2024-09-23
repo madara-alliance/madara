@@ -3,7 +3,6 @@ use anyhow::{bail, Context, Result};
 use blockifier::bouncer::BouncerWeights;
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use primitive_types::H160;
-use reqwest;
 use serde::Deserialize;
 use serde::Deserializer;
 use starknet_api::core::{ChainId, ContractAddress};
@@ -42,7 +41,10 @@ impl ChainPreset {
             ChainConfig::from_yaml(Path::new(local_path))
                 .context(format!("Failed to read local config file: {}", local_path))
         } else {
-            log::info!("📝 Local Chain config file for: {:?} not found. Fetching from remote URL.", self.get_preset_name());
+            log::info!(
+                "📝 Local Chain config file for: {:?} not found. Fetching from remote URL.",
+                self.get_preset_name()
+            );
             let remote_url = match self {
                 ChainPreset::Mainnet => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/mainnet.yaml",
                 ChainPreset::Sepolia => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/sepolia.yaml",
