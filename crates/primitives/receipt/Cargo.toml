@@ -25,7 +25,7 @@ starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 # Other
-log = "0.4.21"
+log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

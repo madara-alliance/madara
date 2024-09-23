@@ -29,6 +29,7 @@ pub mod db_metrics;
 pub mod devnet_db;
 pub mod l1_db;
 pub mod storage_updates;
+pub mod tests;
 
 pub use error::{MadaraStorageError, TrieType};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};

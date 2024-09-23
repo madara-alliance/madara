@@ -236,6 +236,7 @@ fn update_tries(
         contract_trie_root.map_err(make_db_error("updating contract trie root"))?,
         class_trie_root.map_err(make_db_error("updating class trie root"))?,
     );
+
     if let Some(expected) = block.unverified_global_state_root {
         if expected != state_root {
             return Err(BlockImportError::GlobalStateRoot { got: state_root, expected });
@@ -340,5 +341,495 @@ where
             }
         }
         write!(f, "]")
+    }
+}
+
+#[cfg(test)]
+mod verify_apply_tests {
+    use super::*;
+    use crate::tests::block_import_utils::*;
+    use mc_db::tests::common::{finalized_block_zero, finalized_state_diff_zero};
+
+    use mp_chain_config::ChainConfig;
+
+    use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
+
+    use mp_utils::tests_common::set_workdir;
+    use rstest::*;
+    use starknet_api::{core::ChainId, felt};
+    use std::sync::Arc;
+
+    /// Sets up a test backend.
+    ///
+    /// This function creates a new MadaraBackend instance with a test configuration, useful for isolated test environments.
+    #[fixture]
+    pub fn setup_test_backend(_set_workdir: ()) -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        MadaraBackend::open_for_testing(chain_config.clone())
+    }
+
+    /// Test various scenarios for the `check_parent_hash_and_num` function.
+    ///
+    /// This test covers different cases of block import, including:
+    /// - Successful import of a regular block
+    /// - Import of the genesis block
+    /// - Handling mismatched block numbers
+    /// - Handling mismatched parent hashes
+    /// - Behavior when ignoring block order
+    ///
+    /// Each case tests the function's ability to correctly validate or reject
+    /// block imports based on the given parameters and database state.
+    #[rstest]
+    #[case::success(
+        Some(felt!("0x12345")),  // Parent block hash of the new block
+        Some(2),                 // Block number of the new block
+        false,                   // Not ignoring block order
+        Ok((2, felt!("0x12345"))), // Expected result: success with correct block number and parent hash
+        true                     // Populate DB with a previous block
+    )]
+    #[case::genesis_block(
+        None,                    // No parent hash for genesis block
+        None,                    // No specific block number (should default to 0)
+        false,                   // Not ignoring block order
+        Ok((0, felt!("0x0"))),   // Expected result: success with block 0 and zero parent hash
+        false                    // Don't populate DB (simulating empty chain)
+    )]
+    #[case::mismatch_block_number(
+        Some(felt!("0x12345")),  // Correct parent hash
+        Some(3),                 // Incorrect block number (should be 2)
+        false,                   // Not ignoring block order
+        Err(BlockImportError::LatestBlockN { expected: 2, got: 3 }), // Expected error
+        true                     // Populate DB with a previous block
+    )]
+    #[case::mismatch_parent_hash(
+        Some(felt!("0x1")),      // Incorrect parent hash
+        Some(2),                 // Correct block number
+        false,                   // Not ignoring block order
+        Err(BlockImportError::ParentHash { expected: felt!("0x12345"), got: felt!("0x1") }), // Expected error
+        true                     // Populate DB with a previous block
+    )]
+    #[case::ignore_block_order(
+        Some(felt!("0x1")),      // Incorrect parent hash (but will be ignored)
+        Some(3),                 // Incorrect block number (but will be ignored)
+        true,                    // Ignoring block order
+        Ok((3, felt!("0x12345"))), // Expected result: success despite mismatches
+        true                     // Populate DB with a previous block
+    )]
+    #[tokio::test]
+    async fn test_check_parent_hash_and_num(
+        #[case] parent_block_hash: Option<Felt>,
+        #[case] unverified_block_number: Option<u64>,
+        #[case] ignore_block_order: bool,
+        #[case] expected_result: Result<(u64, Felt), BlockImportError>,
+        #[case] populate_db: bool,
+        setup_test_backend: Arc<MadaraBackend>,
+    ) {
+        // Set up a test backend (database)
+        let backend = setup_test_backend;
+
+        // Populate the database with a block in case it's not a genesis block
+        if populate_db {
+            let header = create_dummy_header();
+            let pending_block = finalized_block_zero(header);
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
+        }
+
+        // Create a validation context with the specified ignore_block_order flag
+        let validation = create_validation_context(ignore_block_order);
+
+        // Call the function under test
+        let result = check_parent_hash_and_num(&backend, parent_block_hash, unverified_block_number, &validation);
+
+        // Assert that the result matches the expected outcome
+        match (result, expected_result) {
+            (Ok(actual), Ok(expected)) => assert_eq!(actual, expected),
+            (Err(actual), Err(expected)) => assert_eq!(format!("{:?}", actual), format!("{:?}", expected)),
+            _ => panic!("Result types do not match"),
+        }
+    }
+
+    /// Test cases for the `calculate_state_root` function.
+    ///
+    /// This test uses `rstest` to parameterize different scenarios for calculating
+    /// the state root. It verifies that the function correctly handles various
+    /// input combinations and produces the expected results.
+    #[rstest]
+    #[case::non_zero_inputs(
+            felt!("0x123456"),  // Non-zero contracts trie root
+            felt!("0x789abc"),  // Non-zero classes trie root
+            // Expected result: Poseidon hash of STARKNET_STATE_PREFIX and both non-zero roots
+            felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e")
+        )]
+    #[case::zero_class_trie_root(
+            felt!("0x123456"),  // Non-zero contracts trie root
+            felt!("0x0"),       // Zero classes trie root
+            felt!("0x123456")   // Expected result: same as contracts trie root
+        )]
+    fn test_calculate_state_root(
+        #[case] contracts_trie_root: Felt,
+        #[case] classes_trie_root: Felt,
+        #[case] expected_result: Felt,
+    ) {
+        // GIVEN: We have a contracts trie root and a classes trie root
+
+        // WHEN: We calculate the state root using these inputs
+        let result = calculate_state_root(contracts_trie_root, classes_trie_root);
+
+        // THEN: The calculated state root should match the expected result
+        assert_eq!(result, expected_result, "State root should match the expected result");
+    }
+
+    /// Test cases for the `update_tries` function.
+    ///
+    /// This test uses `rstest` to parameterize different scenarios for updating the tries.
+    /// It verifies that the function correctly handles various input combinations and
+    /// produces the expected results or errors.
+    #[rstest]
+    #[case::success(
+            // A non-zero global state root
+            Some(felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a")),
+            // A non-empty state diff with deployed contracts and storage changes
+            StateDiff {
+                deployed_contracts: vec![(DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") })],
+                storage_diffs: vec![
+                    (ContractStorageDiffItem {
+                        address: felt!("0x1"),
+                        storage_entries: vec![(StorageEntry { key: felt!("0x1"), value: felt!("0x1") })],
+                    }),
+                ],
+                ..Default::default()
+            },
+            false, // Don't trust global tries
+            // Expected result: the same as the input global state root
+            Ok(felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"))
+        )]
+    #[case::trust_global_tries(
+            Some(felt!("0xa")), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            true, // Trust global tries
+            Ok(felt!("0xa")) // Expected result: the same as the input global state root
+        )]
+    #[case::missing_global_state_root(
+            None, // Missing global state root
+            StateDiff::default(), // Empty state diff
+            true, // Trust global tries (irrelevant in this case)
+            // Expected result: an Internal error
+            Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()))
+        )]
+    #[case::mismatch_global_state_root(
+            Some(felt!("0xb")), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            false, // Don't trust global tries
+            // Expected result: a GlobalStateRoot error due to mismatch
+            Err(BlockImportError::GlobalStateRoot { got: felt!("0x0"), expected: felt!("0xb") })
+        )]
+    #[case::empty_state_diff(
+            Some(felt!("0x0")), // Zero global state root
+            StateDiff::default(), // Empty state diff
+            false, // Don't trust global tries
+            Ok(felt!("0x0")) // Expected result: zero global state root
+        )]
+    #[tokio::test]
+    async fn test_update_tries(
+        #[case] unverified_global_state_root: Option<Felt>,
+        #[case] state_diff: StateDiff,
+        #[case] trust_global_tries: bool,
+        #[case] expected_result: Result<Felt, BlockImportError>,
+        setup_test_backend: Arc<MadaraBackend>,
+    ) {
+        // GIVEN: We have a test backend and a block with specified parameters
+        let backend = setup_test_backend;
+        let mut block = create_dummy_block();
+        block.unverified_global_state_root = unverified_global_state_root;
+        block.state_diff = state_diff;
+
+        // AND: We have a validation context with specified trust_global_tries
+        let validation = BlockValidationContext {
+            chain_id: ChainId::Mainnet,
+            ignore_block_order: false,
+            trust_global_tries,
+            trust_transaction_hashes: false,
+            trust_class_hashes: false,
+        };
+
+        // WHEN: We call update_tries with these parameters
+        let result = update_tries(&backend, &block, &validation, 1);
+
+        // THEN: The result should match the expected outcome
+        match (result, expected_result) {
+            (Ok(got), Ok(expected)) => {
+                // For successful cases, compare the returned Felt values
+                assert_eq!(got, expected, "Returned global state root should match expected value");
+            }
+            (Err(got), Err(expected)) => {
+                // For error cases, compare the string representations of the errors
+                assert_eq!(
+                    format!("{:?}", got),
+                    format!("{:?}", expected),
+                    "Returned error should match expected error"
+                );
+            }
+            _ => panic!("Result types do not match"),
+        }
+    }
+
+    #[rstest]
+    // Case 1: Successful block hash calculation
+    #[case::success(
+            create_dummy_block(),
+            create_validation_context(false),
+            1,
+            felt!("0x1"),
+            felt!("0xa"),
+            Ok((felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 1))
+        )]
+    // Case 2: Block hash mismatch
+    #[case::mismatch(
+            {
+                let mut block = create_dummy_block();
+                block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+                block
+            },
+            create_validation_context(false),
+            1,
+            felt!("0x1"),
+            felt!("0xa"),
+            Err(BlockImportError::BlockHash {
+                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 
+                expected: felt!("0xdeadbeef") 
+            })
+        )]
+    // Case 3: Special trusted case for Mainnet blocks 1466-2242
+    #[case::special_trusted_case(
+            {
+                let mut block = create_dummy_block();
+                block.unverified_block_hash = Some(felt!("0xdeadbeef"));
+                block.unverified_block_number = Some(1466);
+                block
+            },
+            BlockValidationContext {
+                chain_id: ChainId::Mainnet,
+                ignore_block_order: false,
+                trust_global_tries: false,
+                trust_transaction_hashes: false,
+                trust_class_hashes: false,
+            },
+            1466,
+            felt!("0x1"),
+            felt!("0xa"),
+            Ok((felt!("0xdeadbeef"), 1466))
+        )]
+    fn test_block_hash(
+        #[case] block: PreValidatedBlock,
+        #[case] validation: BlockValidationContext,
+        #[case] block_number: u64,
+        #[case] parent_block_hash: Felt,
+        #[case] global_state_root: Felt,
+        #[case] expected_result: Result<(Felt, u64), BlockImportError>,
+    ) {
+        // This test function verifies the behavior of the block_hash function
+        // under various scenarios. It uses parameterized testing to cover
+        // different cases:
+        //
+        // 1. Success case:
+        //    - Input: A default dummy block with standard validation context
+        //    - Expected: Successful calculation of block hash and number
+        //    - Purpose: Verifies correct hash calculation for a valid block
+        //
+        // 2. Mismatch case:
+        //    - Input: A block with a predefined unverified hash that doesn't match the calculated hash
+        //    - Expected: BlockImportError indicating hash mismatch
+        //    - Purpose: Ensures the function detects and reports hash mismatches correctly
+        //
+        // 3. Special trusted case: (ideally this should be removed)
+        //    - Input: A block simulating Mainnet blocks 1466-2242 with a mismatched hash
+        //    - Expected: Successful result, accepting the provided unverified hash
+        //    - Purpose: Verifies the special handling for a specific range of Mainnet blocks
+
+        // GIVEN: We have a block, validation context, block number, parent block hash, and global state root
+
+        // WHEN: We call the block_hash function with these parameters
+        let result = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root);
+
+        // THEN: We compare the result with the expected outcome
+        match (result, expected_result) {
+            (Ok((hash, header)), Ok((expected_hash, expected_block_number))) => {
+                // For successful cases:
+                // - Verify that the calculated hash matches the expected hash
+                // - Check if the block number in the header matches the expected block number
+                assert_eq!(hash, expected_hash, "Block hash should match");
+                assert_eq!(header.block_number, expected_block_number, "Block number should match");
+            }
+            (Err(got), Err(expected)) => {
+                // For error cases:
+                // - Compare the string representations of the actual and expected errors
+                // This ensures that not only the error type matches, but also the error details
+                assert_eq!(format!("{:?}", got), format!("{:?}", expected), "Errors should match");
+            }
+            _ => panic!("Result types do not match."),
+        }
+    }
+
+    mod verify_apply_inner_tests {
+        use super::*;
+
+        /// Test successful block verification and storage.
+        ///
+        /// Verifies that:
+        /// 1. The function correctly verifies and stores a new pending block.
+        /// 2. The latest block number is updated after successful storage.
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_inner_success_stores_block(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
+            let mut header = create_dummy_header();
+            header.block_number = 0;
+            let pending_block = finalized_block_zero(header);
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            let mut block = create_dummy_block();
+            block.header.parent_block_hash = Some(felt!("0x12345"));
+            block.unverified_global_state_root = Some(felt!("0x0"));
+            let validation = create_validation_context(false);
+
+            let _result = verify_apply_inner(&backend, block, validation.clone());
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
+        }
+
+        /// Test error handling during block verification.
+        ///
+        /// Verifies that:
+        /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
+        /// 2. The latest block number remains unchanged when an error occurs.
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_inner_error_does_not_store_block(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
+            let mut header = create_dummy_header();
+            header.block_number = 0;
+            let pending_block = finalized_block_zero(header);
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            let mut block = create_dummy_block();
+            block.header.parent_block_hash = Some(felt!("0x12345"));
+            block.unverified_block_number = Some(2); // Mismatch to trigger an error
+
+            let validation = create_validation_context(false);
+
+            let result = verify_apply_inner(&backend, block, validation);
+
+            assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+        }
+    }
+
+    mod verify_apply_pending_tests {
+        use mc_db::db_block_id::DbBlockId;
+
+        use super::*;
+        const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
+
+        /// Test successful pending block verification and storage.
+        ///
+        /// Verifies that:
+        /// 1. The function correctly verifies and stores a new block.
+        /// 2. The latest block number is updated after successful storage.
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_pending_success_stores_block(setup_test_backend: Arc<MadaraBackend>) {
+            // Setup
+            let backend = setup_test_backend;
+            let mut genesis_header = create_dummy_header();
+            genesis_header.block_number = 0;
+            let genesis_block = finalized_block_zero(genesis_header.clone());
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            // Create pending block
+            let mut pending_block = create_dummy_pending_block();
+            pending_block.header.parent_block_hash = Some(felt!("0x12345"));
+            let validation_context = create_validation_context(false);
+
+            // Expected pending header
+            let expected_pending_header = PendingHeader {
+                parent_block_hash: felt!("0x12345"),
+                sequencer_address: genesis_header.sequencer_address,
+                block_timestamp: genesis_header.block_timestamp,
+                protocol_version: genesis_header.protocol_version,
+                l1_gas_price: genesis_header.l1_gas_price,
+                l1_da_mode: genesis_header.l1_da_mode,
+            };
+
+            // Expected pending block info
+            let expected_pending_info = MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: expected_pending_header,
+                tx_hashes: pending_block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
+            });
+
+            // Verify and apply pending block
+            verify_apply_pending_inner(&backend, pending_block, validation_context).unwrap();
+
+            // Assert
+            let stored_pending_info = backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap();
+            assert_eq!(stored_pending_info, expected_pending_info);
+        }
+
+        /// Test error handling during pending block verification.
+        ///
+        /// Verifies that:
+        /// 1. The function returns an error for invalid block data (e.g., mismatched block number).
+        /// 2. The latest block number remains unchanged when an error occurs.
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_pending_error_does_not_store_block(setup_test_backend: Arc<MadaraBackend>) {
+            // Setup
+            let backend = setup_test_backend;
+            let mut genesis_header = create_dummy_header();
+            genesis_header.block_number = 0;
+            let genesis_block = finalized_block_zero(genesis_header.clone());
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+
+            // Create pending block with mismatched parent hash
+            let mut pending_block = create_dummy_pending_block();
+            pending_block.header.parent_block_hash = Some(felt!("0x1234")); // Mismatched parent hash
+            let validation_context = create_validation_context(false);
+
+            // Expected pending header (should not be stored)
+            let unexpected_pending_header = PendingHeader {
+                parent_block_hash: felt!("0x1234"),
+                sequencer_address: genesis_header.sequencer_address,
+                block_timestamp: genesis_header.block_timestamp,
+                protocol_version: genesis_header.protocol_version,
+                l1_gas_price: genesis_header.l1_gas_price,
+                l1_da_mode: genesis_header.l1_da_mode,
+            };
+
+            // Expected pending block info (should not be stored)
+            let unexpected_pending_info = MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: unexpected_pending_header,
+                tx_hashes: pending_block.receipts.iter().map(|tx| tx.transaction_hash()).collect(),
+            });
+
+            // Verify and apply pending block (should fail)
+            let result = verify_apply_pending_inner(&backend, pending_block, validation_context);
+
+            // Assert
+            assert!(result.is_err(), "Expected an error due to mismatched parent hash");
+
+            let stored_pending_info = backend.get_block_info(&BLOCK_ID_PENDING).unwrap();
+            assert_ne!(
+                stored_pending_info,
+                Some(unexpected_pending_info),
+                "Unexpected pending block should not be stored"
+            );
+        }
     }
 }
