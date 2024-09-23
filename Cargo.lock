@@ -5572,6 +5572,7 @@ dependencies = [
  "num-traits 0.2.19",
  "rayon",
  "rstest 0.18.2",
+ "serde",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",

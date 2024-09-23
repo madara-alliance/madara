@@ -32,7 +32,7 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(backend, block_n, &provider).await) }
+            async move { (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider).await) }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
@@ -64,7 +64,7 @@ pub async fn l2_fetch_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
-                match fetch_block_and_updates(backend, next_block, &provider).await {
+                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
                     Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                         break;
                     }

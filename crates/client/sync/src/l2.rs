@@ -146,13 +146,9 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let block =
-            fetch_pending_block_and_updates(&backend, &provider).await.context("Getting pending block from FGW")?;
-
-        let Some(block) = block else {
-            // No pending block.
-            continue;
-        };
+        let block = fetch_pending_block_and_updates(&backend.chain_config().chain_id, &provider)
+            .await
+            .context("Getting pending block from FGW")?;
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
