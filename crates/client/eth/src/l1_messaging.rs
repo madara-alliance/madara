@@ -207,7 +207,7 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 }
 
 #[cfg(test)]
-mod tests {
+mod l1_messaging_tests {
 
     use std::{sync::Arc, time::Duration};
 
@@ -231,6 +231,7 @@ mod tests {
     use mc_db::DatabaseService;
     use mc_metrics::MetricsService;
     use mp_chain_config::ChainConfig;
+    use mp_utils::tests_common::*;
     use rstest::*;
     use starknet_api::core::Nonce;
     use tempfile::TempDir;
@@ -334,7 +335,7 @@ mod tests {
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_config = Arc::new(ChainConfig::test_config());
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
@@ -385,7 +386,7 @@ mod tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -437,7 +438,7 @@ mod tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -484,7 +485,7 @@ mod tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
+    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 

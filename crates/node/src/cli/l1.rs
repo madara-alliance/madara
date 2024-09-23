@@ -12,7 +12,7 @@ pub struct L1SyncParams {
     pub sync_l1_disabled: bool,
 
     /// The L1 rpc endpoint url for state verification.
-    #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL", required_unless_present = "sync_l1_disabled")]
+    #[clap(long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]
     pub l1_endpoint: Option<Url>,
 
     /// Disable the gas price sync service. The sync service is responsible to fetch the fee history from the ethereum.

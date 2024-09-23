@@ -1,9 +1,12 @@
+use anyhow::Context;
 use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
 use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
@@ -48,21 +51,12 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_UniversalDeployer.contract_class.json");
-const UDC_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x01e947be496dfd19a635fdc32d34528c9074acf96427da4700f3fa6c933fdb02");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
-const UDC_COMPILED_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x44d7658791f01f2936b045c09df6628997437a7321c4f682dddf4ff5380993d");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
-const ERC20_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x233e7094e9e971bf0a5c0d999e7f2ae4f820dcb1304c00e3589a913423ab204");
-const ERC20_COMPILED_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x639b7f3c30a7136d13d63c16db7fa15399bd2624d60f2f3ab78d6eae3d6a4e5");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 const ERC20_ETH_CONTRACT_ADDRESS: Felt =
@@ -70,10 +64,6 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
-const ACCOUNT_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x7446579979174f1687e030b2da6a0bf41ec995a206ddf314030e504536c61c1");
-const ACCOUNT_COMPILED_CLASS_HASH: Felt =
-    Felt::from_hex_unchecked("0x138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -86,51 +76,57 @@ pub struct ChainGenesisDescription {
 }
 
 impl ChainGenesisDescription {
-    pub fn base_config() -> Self {
-        Self {
+    pub fn base_config() -> anyhow::Result<Self> {
+        let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
+        let erc20_class =
+            InitiallyDeclaredClass::new_sierra(ERC20_CLASS_DEFINITION).context("Failed to add ERC20 class")?;
+        Ok(Self {
             initial_balances: InitialBalances::default(),
-            declared_classes: InitiallyDeclaredClasses::default()
-                .with(InitiallyDeclaredClass::new_sierra(UDC_CLASS_HASH, UDC_COMPILED_CLASS_HASH, UDC_CLASS_DEFINITION))
-                .with(InitiallyDeclaredClass::new_sierra(
-                    ERC20_CLASS_HASH,
-                    ERC20_COMPILED_CLASS_HASH,
-                    ERC20_CLASS_DEFINITION,
-                )),
             deployed_contracts: InitiallyDeployedContracts::default()
-                .with(UDC_CONTRACT_ADDRESS, UDC_CLASS_HASH)
-                .with(ERC20_ETH_CONTRACT_ADDRESS, ERC20_CLASS_HASH)
-                .with(ERC20_STRK_CONTRACT_ADDRESS, ERC20_CLASS_HASH),
+                .with(UDC_CONTRACT_ADDRESS, udc_class.class_hash())
+                .with(ERC20_ETH_CONTRACT_ADDRESS, erc20_class.class_hash())
+                .with(ERC20_STRK_CONTRACT_ADDRESS, erc20_class.class_hash()),
+            declared_classes: InitiallyDeclaredClasses::default().with(udc_class).with(erc20_class),
             initial_storage: StorageDiffs::default(),
-        }
+        })
     }
 
-    pub fn add_devnet_contracts(&mut self, n_addr: u64) -> DevnetKeys {
-        self.declared_classes.insert(InitiallyDeclaredClass::new_sierra(
-            ACCOUNT_CLASS_HASH,
-            ACCOUNT_COMPILED_CLASS_HASH,
-            ACCOUNT_CLASS_DEFINITION,
-        ));
+    pub fn add_devnet_contracts(&mut self, n_addr: u64) -> anyhow::Result<DevnetKeys> {
+        let account_class =
+            InitiallyDeclaredClass::new_sierra(ACCOUNT_CLASS_DEFINITION).context("Failed to add account class")?;
+        let account_class_hash = account_class.class_hash();
+        self.declared_classes.insert(account_class);
 
         fn get_contract_pubkey_storage_address() -> StorageKey {
             get_storage_var_address("Account_public_key", &[])
         }
 
-        DevnetKeys(
+        pub fn from_seed(seed: u64) -> Felt {
+            // Use a fixed seed for deterministic RNG
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut buffer = [0u8; 32];
+            rng.fill_bytes(&mut buffer);
+
+            Felt::from_bytes_be_slice(&buffer)
+        }
+
+        Ok(DevnetKeys(
             (0..n_addr)
-                .map(|_| {
-                    let key = SigningKey::from_random();
+                .map(|addr_idx| {
+                    let secret_scalar = from_seed(addr_idx);
+                    let key = SigningKey::from_secret_scalar(secret_scalar);
                     let pubkey = key.verifying_key();
 
                     // calculating actual address w.r.t. the class hash.
                     let calculated_address =
-                        calculate_contract_address(Felt::ZERO, ACCOUNT_CLASS_HASH, &[pubkey.scalar()], Felt::ZERO);
+                        calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
 
                     let balance = ContractFeeTokensBalance {
                         fri: (10_000 * ETH_WEI_DECIMALS).into(),
                         wei: (10_000 * STRK_FRI_DECIMALS).into(),
                     };
 
-                    self.deployed_contracts.insert(calculated_address, ACCOUNT_CLASS_HASH);
+                    self.deployed_contracts.insert(calculated_address, account_class_hash);
                     self.initial_balances
                         .insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
                     self.initial_storage
@@ -142,10 +138,11 @@ impl ChainGenesisDescription {
                         pubkey: pubkey.scalar(),
                         balance,
                         address: calculated_address,
+                        class_hash: account_class_hash,
                     }
                 })
                 .collect(),
-        )
+        ))
     }
 
     pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
@@ -176,7 +173,7 @@ impl ChainGenesisDescription {
                 replaced_classes: vec![],
                 nonces: vec![],
             },
-            declared_classes: self.declared_classes.into_loaded_classes()?,
+            declared_classes: self.declared_classes.into_loaded_classes(),
             unverified_block_number: Some(0),
             ..Default::default()
         })
@@ -199,6 +196,7 @@ mod tests {
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
+    use mp_utils::tests_common::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
@@ -296,10 +294,10 @@ mod tests {
     fn chain() -> DevnetForTesting {
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let mut g = ChainGenesisDescription::base_config();
-        let contracts = g.add_devnet_contracts(10);
+        let mut g = ChainGenesisDescription::base_config().unwrap();
+        let contracts = g.add_devnet_contracts(10).unwrap();
 
-        let chain_config = Arc::new(ChainConfig::test_config());
+        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend)));
@@ -307,7 +305,12 @@ mod tests {
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(importer.add_block(block, BlockValidationContext::new(chain_config.chain_id.clone())))
+            .block_on(
+                importer.add_block(
+                    block,
+                    BlockValidationContext::new(chain_config.chain_id.clone()).trust_class_hashes(true),
+                ),
+            )
             .unwrap();
 
         log::debug!("{:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
@@ -334,8 +337,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    #[case("./cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
+    fn test_erc_20_declare(_set_workdir: (), mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -355,7 +358,7 @@ mod tests {
                 nonce: Felt::ZERO,
                 contract_class: Arc::new(flattened_class),
                 resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
                     l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 },
                 tip: 0,
@@ -395,17 +398,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_deploy(mut chain: DevnetForTesting) {
-        println!("{}", chain.contracts);
-
+    fn test_account_deploy(_set_workdir: (), mut chain: DevnetForTesting) {
         let key = SigningKey::from_random();
         log::debug!("Secret Key : {:?}", key.secret_scalar());
 
         let pubkey = key.verifying_key();
         log::debug!("Public Key : {:?}", pubkey.scalar());
 
+        // using the class hash of the first account as the account class hash
+        let account_class_hash = chain.contracts.0[0].class_hash;
         let calculated_address =
-            calculate_contract_address(Felt::ZERO, ACCOUNT_CLASS_HASH, &[pubkey.scalar()], Felt::ZERO);
+            calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
         log::debug!("Calculated Address : {:?}", calculated_address);
 
         // =====================================================================================
@@ -451,6 +454,7 @@ mod tests {
             pubkey: pubkey.scalar(),
             balance: account_balance,
             address: calculated_address,
+            class_hash: account_class_hash,
         };
 
         let deploy_account_txn = BroadcastedDeployAccountTransaction::V3(BroadcastedDeployAccountTransactionV3 {
@@ -458,7 +462,7 @@ mod tests {
             nonce: Felt::ZERO,
             contract_address_salt: Felt::ZERO,
             constructor_calldata: vec![pubkey.scalar()],
-            class_hash: ACCOUNT_CLASS_HASH,
+            class_hash: account_class_hash,
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
@@ -492,7 +496,12 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+    fn test_basic_transfer(
+        _set_workdir: (),
+        mut chain: DevnetForTesting,
+        #[case] transfer_amount: u128,
+        #[case] expect_reverted: bool,
+    ) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -542,23 +551,26 @@ mod tests {
         log::info!("receipt: {:?}", block.inner.receipts[0]);
 
         let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
-        assert_eq!(
-            receipt,
-            InvokeTransactionReceipt {
-                transaction_hash: result.transaction_hash,
-                messages_sent: vec![],
-                events: vec![Event {
-                    from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                    // TODO: do not match keys and data yet (unsure)
-                    keys: receipt.events[0].keys.clone(),
-                    data: receipt.events[0].data.clone(),
-                }],
-                // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
-                execution_resources: receipt.execution_resources.clone(),
-                actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
-                execution_result: receipt.execution_result.clone(), // matched below
-            }
-        );
+
+        if !expect_reverted {
+            assert_eq!(
+                receipt,
+                InvokeTransactionReceipt {
+                    transaction_hash: result.transaction_hash,
+                    messages_sent: vec![],
+                    events: vec![Event {
+                        from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                        // TODO: do not match keys and data yet (unsure)
+                        keys: receipt.events[0].keys.clone(),
+                        data: receipt.events[0].data.clone(),
+                    }],
+                    // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
+                    execution_resources: receipt.execution_resources.clone(),
+                    actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                    execution_result: receipt.execution_result.clone(), // matched below
+                }
+            );
+        }
 
         match expect_reverted {
             false => {

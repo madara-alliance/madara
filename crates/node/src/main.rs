@@ -2,17 +2,16 @@
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used)]
 
+mod cli;
+mod service;
+mod util;
+
 use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
 use mc_block_import::BlockImporter;
-mod cli;
-mod service;
-mod util;
 
-use crate::service::L1SyncService;
-use cli::RunCmd;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
@@ -20,8 +19,13 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, RpcService, SyncService};
+
 use starknet_providers::SequencerGatewayProvider;
+
+use cli::{NetworkType, RunCmd};
+use service::L1SyncService;
+use service::{BlockProductionService, RpcService, SyncService};
+
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
@@ -33,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    let chain_config = run_cmd.network.chain_config();
+    let chain_config = run_cmd.get_config()?;
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
@@ -76,6 +80,10 @@ async fn main() -> anyhow::Result<()> {
 
     let l1_gas_setter = GasPriceProvider::new();
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+    if run_cmd.block_production_params.devnet {
+        run_cmd.l1_sync_params.sync_l1_disabled = true;
+        run_cmd.l1_sync_params.gas_price_sync_disabled = true;
+    }
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
@@ -153,6 +161,16 @@ async fn main() -> anyhow::Result<()> {
         .with(rpc_service)
         .with(telemetry_service)
         .with(prometheus_service);
+
+    if run_cmd.block_production_params.devnet && run_cmd.network != NetworkType::Devnet {
+        if !run_cmd.block_production_params.override_devnet_chain_id {
+            panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+        } else {
+            // this log is immediately flooded with devnet accounts and so this can be missed.
+            // should we add a delay here to make this clearly visisble?
+            log::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        }
+    }
 
     app.start_and_drive_to_end().await?;
     Ok(())

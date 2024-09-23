@@ -42,6 +42,11 @@ anyhow = { workspace = true }
 futures = { workspace = true, default-features = true }
 log = { workspace = true }
 num-traits = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+regex = "1.10.5"
+reqwest = { workspace = true }
+rodio = { version = "0.17", optional = true }
 serde_json = { workspace = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = [
@@ -53,4 +58,6 @@ tokio = { workspace = true, features = [
 url = { workspace = true }
 
 [dev-dependencies]
-# test_utils = { path = "./test_utils" }
+httpmock = { workspace = true }
+tempfile = { workspace = true }
+rstest = { workspace = true }

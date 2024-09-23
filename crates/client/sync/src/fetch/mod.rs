@@ -38,8 +38,6 @@ pub async fn l2_fetch_task(
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
         while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
-            log::debug!("got {:?}", block_n);
-
             match val {
                 Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
                     log::info!("🥳 The sync process has caught up with the tip of the chain");
@@ -57,7 +55,6 @@ pub async fn l2_fetch_task(
         }
     };
 
-    log::debug!("caught up with tip");
     let _ = once_caught_up_callback.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
@@ -92,4 +89,87 @@ pub enum FetchError {
     Provider(#[from] ProviderError),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
+}
+
+#[cfg(test)]
+mod test_l2_fetch_task {
+    use super::*;
+    use crate::tests::utils::gateway::{test_setup, TestContext};
+    use rstest::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// Test the comprehensive functionality of the l2_fetch_task.
+    ///
+    /// This test verifies that:
+    /// 1. The task can fetch an initial set of blocks.
+    /// 2. The task sends the "caught up" signal after the initial fetch.
+    /// 3. The task continues to poll for new blocks at the specified interval.
+    /// 4. The task can fetch new blocks that appear after the initial sync.
+    #[rstest]
+    #[tokio::test]
+    async fn test_l2_fetch_task_comprehensive(test_setup: Arc<MadaraBackend>) {
+        let mut ctx = TestContext::new(test_setup);
+
+        for block_number in 0..8 {
+            ctx.mock_block(block_number);
+        }
+
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+
+        let polling_interval = Duration::from_millis(100);
+        let task = tokio::spawn({
+            let backend = Arc::clone(&ctx.backend);
+            let provider = Arc::clone(&ctx.provider);
+            let fetch_stream_sender = ctx.fetch_stream_sender.clone();
+            let once_caught_up_sender = ctx.once_caught_up_sender;
+            async move {
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    l2_fetch_task(
+                        backend,
+                        0,
+                        Some(5),
+                        fetch_stream_sender,
+                        provider,
+                        Some(polling_interval),
+                        once_caught_up_sender,
+                    ),
+                )
+                .await
+            }
+        });
+
+        for expected_block_number in 0..5 {
+            match tokio::time::timeout(Duration::from_secs(1), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                }
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        match tokio::time::timeout(Duration::from_secs(1), ctx.once_caught_up_receiver).await {
+            Ok(Ok(())) => println!("Caught up callback received"),
+            Ok(Err(_)) => panic!("Caught up channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for caught up callback"),
+        }
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        for expected_block_number in 5..8 {
+            match tokio::time::timeout(Duration::from_secs(1), ctx.fetch_stream_receiver.recv()).await {
+                Ok(Some(block)) => {
+                    assert_eq!(block.unverified_block_number, Some(expected_block_number));
+                }
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => panic!("Timeout waiting for block {}", expected_block_number),
+            }
+        }
+
+        assert!(!task.is_finished());
+
+        task.abort();
+    }
 }

@@ -23,6 +23,7 @@ mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
@@ -31,3 +32,5 @@ starknet_api = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+tempfile = { workspace = true }
+rstest = { workspace = true }

@@ -170,7 +170,7 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = option_env!("COVERAGE_BIN").unwrap_or("../../target/debug/madara");
+        let target_bin = option_env!("COVERAGE_BIN").unwrap_or("./target/debug/madara");
         let target_bin = PathBuf::from_str(target_bin).expect("target bin is not a path");
         if !target_bin.exists() {
             panic!("No binary to run: {:?}", target_bin)
@@ -201,8 +201,10 @@ impl MadaraCmdBuilder {
     }
 }
 
+#[allow(unused_imports)]
+use mp_utils::tests_common::set_workdir;
 #[rstest]
-fn madara_help_shows() {
+fn madara_help_shows(_set_workdir: ()) {
     let _ = env_logger::builder().is_test(true).try_init();
     let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
@@ -212,12 +214,20 @@ fn madara_help_shows() {
 
 #[rstest]
 #[tokio::test]
-async fn madara_can_sync_a_few_blocks() {
+async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
     use starknet_core::types::{BlockHashAndNumber, Felt};
 
     let _ = env_logger::builder().is_test(true).try_init();
     let mut node = MadaraCmdBuilder::new()
-        .args(["--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
+        .args([
+            "--network",
+            "sepolia",
+            "--no-sync-polling",
+            "--n-blocks-to-sync",
+            "20",
+            "--no-l1-sync",
+            "--preset=sepolia",
+        ])
         .run();
     node.wait_for_ready().await;
     node.wait_for_sync_to(19).await;

@@ -71,15 +71,21 @@ impl Service for BlockProductionService {
 
                 log::info!("⛏️  Deploying devnet genesis block");
 
-                let mut genesis_config = ChainGenesisDescription::base_config();
-                let contracts = genesis_config.add_devnet_contracts(n_devnet_contracts);
+                let mut genesis_config =
+                    ChainGenesisDescription::base_config().context("Failed to create base genesis config")?;
+                let contracts = genesis_config
+                    .add_devnet_contracts(n_devnet_contracts)
+                    .context("Failed to add devnet contracts")?;
 
                 let genesis_block = genesis_config
                     .build(backend.chain_config())
                     .context("Building genesis block from devnet config")?;
 
                 block_import
-                    .add_block(genesis_block, BlockValidationContext::new(backend.chain_config().chain_id.clone()))
+                    .add_block(
+                        genesis_block,
+                        BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true),
+                    )
                     .await
                     .context("Importing devnet genesis block")?;
 

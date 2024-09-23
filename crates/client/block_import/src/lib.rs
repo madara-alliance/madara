@@ -45,9 +45,9 @@ use std::{borrow::Cow, sync::Arc};
 
 mod pre_validate;
 mod rayon;
+pub mod tests;
 mod types;
 mod verify_apply;
-
 pub use pre_validate::*;
 pub use rayon::*;
 pub use types::*;

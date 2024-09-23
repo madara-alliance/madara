@@ -1,20 +1,22 @@
 use anyhow::Context;
 use mc_block_import::{DeclaredClass, LegacyDeclaredClass, SierraDeclaredClass};
+use mp_class::{CompressedLegacyContractClass, FlattenedSierraClass};
 use mp_state_update::DeclaredClassItem;
+use starknet_core::types::contract::{legacy::LegacyContractClass, SierraClass};
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct InitiallyDeclaredSierraClass {
+    pub contract_class: FlattenedSierraClass,
     pub class_hash: Felt,
     pub compiled_class_hash: Felt,
-    pub definition: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
 pub struct InitiallyDeclaredLegacyClass {
+    pub contract_class: CompressedLegacyContractClass,
     pub class_hash: Felt,
-    pub definition: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,11 +26,23 @@ pub enum InitiallyDeclaredClass {
 }
 
 impl InitiallyDeclaredClass {
-    pub fn new_sierra(class_hash: Felt, compiled_class_hash: Felt, definition: impl Into<Vec<u8>>) -> Self {
-        Self::Sierra(InitiallyDeclaredSierraClass { class_hash, compiled_class_hash, definition: definition.into() })
+    pub fn new_sierra(definition: impl Into<Vec<u8>>) -> anyhow::Result<Self> {
+        let class = serde_json::from_slice::<SierraClass>(&definition.into())
+            .with_context(|| "Deserializing sierra class".to_string())?;
+        let contract_class: FlattenedSierraClass =
+            class.flatten().with_context(|| "Flattening sierra class".to_string())?.into();
+        let class_hash = contract_class.compute_class_hash().context("Computing sierra class hash")?;
+        let (compiled_class_hash, _) = contract_class.compile_to_casm().context("Compiling sierra class")?;
+
+        Ok(Self::Sierra(InitiallyDeclaredSierraClass { contract_class, class_hash, compiled_class_hash }))
     }
-    pub fn new_legacy(class_hash: Felt, definition: impl Into<Vec<u8>>) -> Self {
-        Self::Legacy(InitiallyDeclaredLegacyClass { class_hash, definition: definition.into() })
+    pub fn new_legacy(definition: impl Into<Vec<u8>>) -> anyhow::Result<Self> {
+        let contract_class = serde_json::from_slice::<LegacyContractClass>(&definition.into())
+            .with_context(|| "Deserializing legacy class".to_string())?;
+        let class_hash = contract_class.class_hash().context("Computing legacy class hash")?;
+        let contract_class = contract_class.compress().context("Compressing legacy")?.into();
+
+        Ok(Self::Legacy(InitiallyDeclaredLegacyClass { contract_class, class_hash }))
     }
 
     pub fn class_hash(&self) -> Felt {
@@ -79,36 +93,19 @@ impl InitiallyDeclaredClasses {
     }
 
     /// Load the classes into `DeclaredClass`es.
-    pub fn into_loaded_classes(self) -> anyhow::Result<Vec<DeclaredClass>> {
-        use starknet_core::types::contract::{legacy::LegacyContractClass, SierraClass};
-
+    pub fn into_loaded_classes(self) -> Vec<DeclaredClass> {
         self.0
-            .into_iter()
-            .enumerate()
-            .map(|(i, (class_hash, class))| {
-                let make_err_ctx =
-                    |what: &'static str| move || format!("{what} class with hash {class_hash:#} (index {i})");
-                match class {
-                    InitiallyDeclaredClass::Sierra(c) => {
-                        let compiled_class_hash = c.compiled_class_hash;
-                        let class = serde_json::from_slice::<SierraClass>(&c.definition)
-                            .with_context(make_err_ctx("Deserializing sierra"))?;
-                        let class = class.flatten().with_context(make_err_ctx("Flattening sierra"))?;
-
-                        Ok(DeclaredClass::Sierra(SierraDeclaredClass {
-                            class_hash,
-                            contract_class: class.into(),
-                            compiled_class_hash,
-                        }))
-                    }
-                    InitiallyDeclaredClass::Legacy(c) => {
-                        let class = serde_json::from_slice::<LegacyContractClass>(&c.definition)
-                            .with_context(make_err_ctx("Deserializing legacy"))?;
-                        let class = class.compress().context("Compressing legacy")?;
-
-                        Ok(DeclaredClass::Legacy(LegacyDeclaredClass { class_hash, contract_class: class.into() }))
-                    }
-                }
+            .into_values()
+            .map(|class| match class {
+                InitiallyDeclaredClass::Sierra(c) => DeclaredClass::Sierra(SierraDeclaredClass {
+                    class_hash: c.class_hash,
+                    contract_class: c.contract_class,
+                    compiled_class_hash: c.compiled_class_hash,
+                }),
+                InitiallyDeclaredClass::Legacy(c) => DeclaredClass::Legacy(LegacyDeclaredClass {
+                    class_hash: c.class_hash,
+                    contract_class: c.contract_class,
+                }),
             })
             .collect()
     }

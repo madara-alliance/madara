@@ -9,14 +9,15 @@ pub const DEVNET_KEYS: &[u8] = b"DEVNET_KEYS";
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct DevnetPredeployedContractKey {
+pub struct DevnetPredeployedContractAccount {
     pub address: Felt,
     pub secret: Felt,
     pub pubkey: Felt,
+    pub class_hash: Felt,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractKey>);
+pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
 impl MadaraBackend {
     /// Get the devnet predeployed contracts keys.
