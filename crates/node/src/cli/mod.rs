@@ -8,7 +8,6 @@ pub mod sync;
 pub mod telemetry;
 
 use crate::cli::l1::L1SyncParams;
-use anyhow::Context;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
@@ -127,16 +126,19 @@ impl RunCmd {
 
     pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
         let chain_config = match &self.preset {
-            Some(preset_name) => {
-                ChainConfig::from_preset(preset_name.as_str()).map_err(|err| {
-                    log::error!("Failed to load config from preset '{}': {}", preset_name, err);
-                    err
-                })?
-            }
+            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str()).map_err(|err| {
+                log::error!("Failed to load config from preset '{}': {}", preset_name, err);
+                err
+            })?,
             None => {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
-                    anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`")
+                    if self.is_sequencer() {
+                        return anyhow::anyhow!("In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`");
+                    }
+                    else {
+                        return anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`");
+                    }
                 })?;
                 ChainConfig::from_yaml(&path).map_err(|err| {
                     log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
@@ -144,44 +146,33 @@ impl RunCmd {
                 })?
             }
         };
-    
+
         // Override stuff if flag is set
-        let chain_config = if self.chain_config_override {
-            self.chain_params.override_cfg(chain_config)
-        } else {
-            chain_config
-        };
-    
+        let chain_config =
+            if self.chain_config_override { self.chain_params.override_cfg(chain_config) } else { chain_config };
+
         Ok(Arc::new(chain_config))
     }
 
     /// Assigns a specific ChainConfig based on a defined network.
     pub fn set_preset_from_network(&self) -> anyhow::Result<Arc<ChainConfig>> {
         let chain_config = match self.network {
-            Some(NetworkType::Main) => {
-                ChainConfig::starknet_mainnet().map_err(|err| {
-                    log::error!("Failed to load Starknet Mainnet config: {}", err);
-                    err
-                })?
-            }
-            Some(NetworkType::Test) => {
-                ChainConfig::starknet_sepolia().map_err(|err| {
-                    log::error!("Failed to load Starknet Testnet config: {}", err);
-                    err
-                })?
-            }
-            Some(NetworkType::Integration) => {
-                ChainConfig::starknet_integration().map_err(|err| {
-                    log::error!("Failed to load Starknet Integration config: {}", err);
-                    err
-                })?
-            }
-            Some(NetworkType::Devnet) => {
-                ChainConfig::test_config().map_err(|err| {
-                    log::error!("Failed to load Madara Test Config: {}", err);
-                    err
-                })?
-            }
+            Some(NetworkType::Main) => ChainConfig::starknet_mainnet().map_err(|err| {
+                log::error!("Failed to load Starknet Mainnet config: {}", err);
+                err
+            })?,
+            Some(NetworkType::Test) => ChainConfig::starknet_sepolia().map_err(|err| {
+                log::error!("Failed to load Starknet Testnet config: {}", err);
+                err
+            })?,
+            Some(NetworkType::Integration) => ChainConfig::starknet_integration().map_err(|err| {
+                log::error!("Failed to load Starknet Integration config: {}", err);
+                err
+            })?,
+            Some(NetworkType::Devnet) => ChainConfig::test_config().map_err(|err| {
+                log::error!("Failed to load Madara Test Config: {}", err);
+                err
+            })?,
             None => {
                 log::error!("{}", "Chain config path is not set");
                 return Err(anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`"));
@@ -189,11 +180,8 @@ impl RunCmd {
         };
 
         // Override stuff if flag is set
-        let chain_config = if self.chain_config_override {
-            self.chain_params.override_cfg(chain_config)
-        } else {
-            chain_config
-        };
+        let chain_config =
+            if self.chain_config_override { self.chain_params.override_cfg(chain_config) } else { chain_config };
 
         Ok(Arc::new(chain_config))
     }

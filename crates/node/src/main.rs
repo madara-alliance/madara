@@ -37,7 +37,16 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    let chain_config = if run_cmd.is_sequencer() { run_cmd.get_config()? } else { run_cmd.set_preset_from_network() };
+    // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
+    let chain_config = if run_cmd.is_sequencer() {
+        run_cmd.get_config()?
+    } else {
+        if run_cmd.network.is_some() {
+            run_cmd.set_preset_from_network()?
+        } else {
+            run_cmd.get_config()?
+        }
+    };
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
@@ -99,50 +108,61 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.is_sequencer() {
-            // Block production service. (authority)
-            true => {
-                let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
+    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) = match run_cmd
+        .is_sequencer()
+    {
+        // Block production service. (authority)
+        true => {
+            let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
-                let block_production_service = BlockProductionService::new(
-                    &run_cmd.block_production_params,
-                    &db_service,
-                    Arc::clone(&mempool),
-                    importer,
-                    Arc::clone(&l1_data_provider),
-                    run_cmd.devnet,
-                    prometheus_service.registry(),
-                    telemetry_service.new_handle(),
-                )?;
+            let block_production_service = BlockProductionService::new(
+                &run_cmd.block_production_params,
+                &db_service,
+                Arc::clone(&mempool),
+                importer,
+                Arc::clone(&l1_data_provider),
+                run_cmd.devnet,
+                prometheus_service.registry(),
+                telemetry_service.new_handle(),
+            )?;
 
-                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-            }
-            // Block sync service. (full node)
-            false => {
-                // Feeder gateway sync service.
-                let sync_service = SyncService::new(
-                    &run_cmd.sync_params,
-                    Arc::clone(&chain_config),
-                    run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right FGW"),
-                    &db_service,
-                    prometheus_service.registry(),
-                    telemetry_service.new_handle(),
-                )
-                .await
-                .context("Initializing sync service")?;
+            (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
+        }
+        // Block sync service. (full node)
+        false => {
+            // Feeder gateway sync service.
+            let sync_service = SyncService::new(
+                &run_cmd.sync_params,
+                Arc::clone(&chain_config),
+                run_cmd
+                    .network
+                    .expect("You should provide a `--network` argument to ensure you're syncing from the right FGW"),
+                &db_service,
+                prometheus_service.registry(),
+                telemetry_service.new_handle(),
+            )
+            .await
+            .context("Initializing sync service")?;
 
-                (
-                    ServiceGroup::default().with(sync_service),
-                    // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                        run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right gateway").gateway(),
-                        run_cmd.network.expect("You should provide a `--network` argument to ensure you're syncing from the right FGW").feeder_gateway(),
-                        chain_config.chain_id.to_felt(),
-                    ))),
-                )
-            }
-        };
+            (
+                ServiceGroup::default().with(sync_service),
+                // TODO(rate-limit): we may get rate limited with this unconfigured provider?
+                Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
+                    run_cmd
+                        .network
+                        .expect(
+                            "You should provide a `--network` argument to ensure you're syncing from the right gateway",
+                        )
+                        .gateway(),
+                    run_cmd
+                        .network
+                        .expect("You should provide a `--network` argument to ensure you're syncing from the right FGW")
+                        .feeder_gateway(),
+                    chain_config.chain_id.to_felt(),
+                ))),
+            )
+        }
+    };
 
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,
@@ -165,7 +185,8 @@ async fn main() -> anyhow::Result<()> {
 
     if run_cmd.devnet && run_cmd.network != Some(NetworkType::Devnet) {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+            log::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+            panic!();
         } else {
             // this log is immediately flooded with devnet accounts and so this can be missed.
             // should we add a delay here to make this clearly visisble?
