@@ -436,6 +436,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             tokio::time::interval_at(start, self.backend.chain_config().pending_block_update_time);
         interval_pending_block_update.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
+        self.backend.chain_config().precheck_block_production()?; // check chain config for invalid config
+
         log::info!("⛏️  Starting block production at block #{}", self.block_n());
 
         loop {
