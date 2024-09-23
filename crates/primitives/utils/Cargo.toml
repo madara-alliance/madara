@@ -13,9 +13,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Orher
+# Other
 anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 rayon.workspace = true
+rstest = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }

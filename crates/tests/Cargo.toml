@@ -9,6 +9,10 @@ license.workspace = true
 
 [dependencies]
 
+# Madara
+
+mp-utils.workspace = true
+
 anyhow.workspace = true
 env_logger.workspace = true
 flate2 = "1.0.30"

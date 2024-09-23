@@ -185,7 +185,6 @@ async fn fetch_state_update_with_block(
 > {
     #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
     let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
-
     Ok((state_update_with_block.state_update, state_update_with_block.block))
 }
 
@@ -351,469 +350,486 @@ fn convert_sequencer_block(
 }
 
 #[cfg(test)]
-mod tests {
+#[path = "fetchers_real_fgw_test.rs"]
+mod fetchers_real_fgw_test;
+
+#[cfg(test)]
+mod test_l2_fetchers {
     use super::*;
-    use rstest::{fixture, rstest};
-    use starknet_core::types::{DataAvailabilityResources, L1DataAvailabilityMode, ResourcePrice};
-    use starknet_providers::sequencer::models::{
-        state_update::{StateDiff, StorageDiff},
-        BlockStatus, BuiltinInstanceCounter, ConfirmedTransactionReceipt, Event, ExecutionResources,
-        InvokeFunctionTransaction, TransactionExecutionStatus, TransactionType,
-    };
+    use crate::tests::utils::gateway::{test_setup, TestContext};
+    use mc_block_import::UnverifiedPendingFullBlock;
+    use mc_db::MadaraBackend;
+    use mp_block::header::L1DataAvailabilityMode;
+    use mp_chain_config::StarknetVersion;
+    use rstest::*;
+    use starknet_api::felt;
+    use starknet_providers::sequencer::models::BlockStatus;
+    use std::sync::Arc;
 
-    #[fixture]
-    fn sequencer_gateway_provider() -> SequencerGatewayProvider {
-        SequencerGatewayProvider::starknet_alpha_mainnet()
-    }
-
+    /// Test successful fetching of a pending block and updates.
+    ///
+    /// Verifies that:
+    /// 1. The function correctly fetches a pending block.
+    /// 2. The state update is properly retrieved.
+    /// 3. Class updates are fetched and processed correctly.
+    /// 4. The returned UnverifiedPendingFullBlock contains the expected data.
     #[rstest]
     #[tokio::test]
-    async fn test_can_fetch_pending_block(sequencer_gateway_provider: SequencerGatewayProvider) {
-        let block = fetch_pending_block_and_updates(&ChainId::Mainnet, &sequencer_gateway_provider).await.unwrap();
-        // ignore as we can't check much here :/
-        drop(block);
-    }
+    async fn test_fetch_pending_block_and_updates_success(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
 
-    #[rstest]
-    #[tokio::test]
-    async fn test_can_convert_pending_block() {
-        let felt = |s: &str| Felt::from_hex_unchecked(s);
+        // Mock the pending block
+        ctx.mock_block_pending();
 
-        let block = (
-            SequencerBlock {
-                block_hash: None,
-                block_number: None,
-                parent_block_hash: felt("0x6c3b6c94d4add68c0309218708baa09463887f51863115346d380d67269a68a"),
-                timestamp: 1726480207,
-                sequencer_address: Some(felt("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")),
-                state_root: None,
-                transaction_commitment: None,
-                event_commitment: None,
-                status: BlockStatus::Pending,
-                l1_da_mode: L1DataAvailabilityMode::Calldata,
-                l1_gas_price: ResourcePrice { price_in_fri: felt("0x993f2ef1b9f1"), price_in_wei: felt("0x6894e3020") },
-                l1_data_gas_price: ResourcePrice {
-                    price_in_fri: felt("0x375526f9a8f0f"),
-                    price_in_wei: felt("0x25c2d9f043"),
-                },
-                transactions: vec![
-                    TransactionType::InvokeFunction(InvokeFunctionTransaction {
-                        sender_address: felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"),
-                        entry_point_selector: None,
-                        calldata: vec![
-                            felt("0x2"),
-                            felt("0x0"),
-                            felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"),
-                        ],
-                        signature: vec![felt("0x3b81b87ad249504cd88f031c0b1c7a893eedb8bce50ca88c53a051014d0a25d")],
-                        transaction_hash: felt("0x40a00bf7c2ccc154b4d18e63f072f69a0ce99c5249c2b7b62076dc017408858"),
-                        max_fee: Some(felt("0x3f6c4a9a01d28")),
-                        nonce: Some(felt("0x12")),
-                        nonce_data_availability_mode: None,
-                        fee_data_availability_mode: None,
-                        resource_bounds: None,
-                        tip: None,
-                        paymaster_data: None,
-                        account_deployment_data: None,
-                        version: felt("0x1"),
-                    }),
-                    TransactionType::InvokeFunction(InvokeFunctionTransaction {
-                        sender_address: felt("0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8"),
-                        entry_point_selector: None,
-                        calldata: vec![
-                            felt("0x2"),
-                            felt("0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"),
-                        ],
-                        signature: vec![
-                            felt("0x16337397dd75f3d7f95bcca3509149b266c90ab5fdf87c7d950767b78fab231"),
-                            felt("0x7bcc57dfc8159fa54de2d2e87ea6ecd4204e7cbc2173d0b2345d43c4028f944"),
-                        ],
-                        transaction_hash: felt("0x39441f846a99c8fec3cdb328bf00a9ee3d664f732f2c9649e324e61582762e8"),
-                        max_fee: Some(felt("0x3f6c4a9191bc1")),
-                        nonce: Some(felt("0x1b")),
-                        nonce_data_availability_mode: None,
-                        fee_data_availability_mode: None,
-                        resource_bounds: None,
-                        tip: None,
-                        paymaster_data: None,
-                        account_deployment_data: None,
-                        version: felt("0x1"),
-                    }),
-                ],
-                transaction_receipts: vec![
-                    ConfirmedTransactionReceipt {
-                        transaction_hash: felt("0x40a00bf7c2ccc154b4d18e63f072f69a0ce99c5249c2b7b62076dc017408858"),
-                        transaction_index: 0,
-                        execution_status: Some(TransactionExecutionStatus::Succeeded),
-                        revert_error: None,
-                        execution_resources: Some(ExecutionResources {
-                            n_steps: 87793,
-                            n_memory_holes: 0,
-                            builtin_instance_counter: BuiltinInstanceCounter {
-                                pedersen_builtin: Some(114),
-                                range_check_builtin: Some(9393),
-                                bitwise_builtin: Some(12),
-                                output_builtin: None,
-                                ecdsa_builtin: None,
-                                ec_op_builtin: Some(6),
-                                poseidon_builtin: None,
-                                keccak_builtin: None,
-                                segment_arena_builtin: None,
-                            },
-                            data_availability: Some(DataAvailabilityResources { l1_gas: 12838, l1_data_gas: 0 }),
-                            total_gas_consumed: Some(DataAvailabilityResources { l1_gas: 13233, l1_data_gas: 0 }),
-                        }),
-                        l1_to_l2_consumed_message: None,
-                        l2_to_l1_messages: vec![],
-                        events: vec![
-                            Event {
-                                from_address: felt("0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"),
-                                keys: vec![
-                                    felt("0x134692b230b9e1ffa39098904722134159652b09c5bc41d88d6698779d228ff"),
-                                    felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"),
-                                    felt("0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"),
-                                ],
-                                data: vec![felt("0x7738106d5"), felt("0x0")],
-                            },
-                            Event {
-                                from_address: felt("0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"),
-                                keys: vec![
-                                    felt("0x134692b230b9e1ffa39098904722134159652b09c5bc41d88d6698779d228ff"),
-                                    felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"),
-                                    felt("0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"),
-                                ],
-                                data: vec![felt("0x0"), felt("0x0")],
-                            },
-                            Event {
-                                from_address: felt("0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"),
-                                keys: vec![
-                                    felt("0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"),
-                                    felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"),
-                                    felt("0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"),
-                                ],
-                                data: vec![felt("0x7738106d5"), felt("0x0")],
-                            },
-                        ],
-                        actual_fee: felt("0x151df82a5a620"),
-                    },
-                    ConfirmedTransactionReceipt {
-                        transaction_hash: felt("0x39441f846a99c8fec3cdb328bf00a9ee3d664f732f2c9649e324e61582762e8"),
-                        transaction_index: 1,
-                        execution_status: Some(TransactionExecutionStatus::Succeeded),
-                        revert_error: None,
-                        execution_resources: Some(ExecutionResources {
-                            n_steps: 59639,
-                            n_memory_holes: 0,
-                            builtin_instance_counter: BuiltinInstanceCounter {
-                                pedersen_builtin: Some(110),
-                                range_check_builtin: Some(4129),
-                                bitwise_builtin: Some(12),
-                                output_builtin: None,
-                                ecdsa_builtin: None,
-                                ec_op_builtin: Some(6),
-                                poseidon_builtin: None,
-                                keccak_builtin: None,
-                                segment_arena_builtin: None,
-                            },
-                            data_availability: Some(DataAvailabilityResources { l1_gas: 11736, l1_data_gas: 0 }),
-                            total_gas_consumed: Some(DataAvailabilityResources { l1_gas: 11921, l1_data_gas: 0 }),
-                        }),
-                        l1_to_l2_consumed_message: None,
-                        l2_to_l1_messages: vec![],
-                        events: vec![Event {
-                            from_address: felt("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                            keys: vec![felt("0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9")],
-                            data: vec![
-                                felt("0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8"),
-                                felt("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
-                                felt("0x1305fd1ef0220"),
-                                felt("0x0"),
-                            ],
-                        }],
-                        actual_fee: felt("0x1305fd1ef0220"),
-                    },
-                ],
-                starknet_version: Some("0.13.2.1".into()),
-            },
-            SequencerStateUpdate {
-                block_hash: None,
-                new_root: None,
-                old_root: felt("0x7b664bb7e0de32440cb925f3b0580a3f72d42442bd508fbe44f78956baec413"),
-                state_diff: StateDiff {
-                    storage_diffs: [
-                        (
-                            felt("0x13e48fb52751595411acd0153a04be2f9472e23cc06eb52dd991145914234ec"),
-                            vec![
-                                StorageDiff {
-                                    key: felt("0x12f1312f6092a30a200f21c6e298f5a94b3522583fe40c98c035b7fd8049b0"),
-                                    value: felt("0x25b0807ac00"),
-                                },
-                                StorageDiff {
-                                    key: felt("0x1d411efc1b91ba8ec75807861b5ba3fc72f0df8d68a1155a6b4c6717865364"),
-                                    value: felt("0x3dc5cb078c05c00"),
-                                },
-                            ],
-                        ),
-                        (
-                            felt("0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"),
-                            vec![StorageDiff {
-                                key: felt("0xbc72301fcd3b05852cc058ab4cae654f59901211906ce8eaab14eff5546aae"),
-                                value: felt("0x0"),
-                            }],
-                        ),
-                    ]
-                    .into(),
-                    deployed_contracts: vec![],
-                    old_declared_contracts: vec![],
-                    declared_classes: vec![],
-                    replaced_classes: vec![],
-                    nonces: [
-                        (felt("0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"), felt("0x13")),
-                        (felt("0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8"), felt("0x1c")),
-                        (felt("0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535"), felt("0x3af1")),
-                    ]
-                    .into(),
-                },
-            },
-            vec![],
+        // Mock class hash
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+
+        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+
+        let pending_block = result
+            .expect("Failed to fetch pending block");
+
+        assert!(
+            matches!(pending_block, UnverifiedPendingFullBlock { .. }),
+            "Expected UnverifiedPendingFullBlock, got {:?}",
+            pending_block
         );
-        let converted = convert_sequencer_pending_block(block.0, block.1, block.2).unwrap();
+
+        // Verify essential components of the pending block
         assert_eq!(
-            converted,
-            serde_json::from_value(serde_json::json!({
-              "header": {
-                "parent_block_hash": "0x6c3b6c94d4add68c0309218708baa09463887f51863115346d380d67269a68a",
-                "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                "block_timestamp": 1726480207,
-                "protocol_version": [
-                  0,
-                  13,
-                  2,
-                  1
-                ],
-                "l1_gas_price": {
-                  "eth_l1_gas_price": 28073406496u64,
-                  "strk_l1_gas_price": 168496649583089u64,
-                  "eth_l1_data_gas_price": 162182852675u64,
-                  "strk_l1_data_gas_price": 973421850300175u64
-                },
-                "l1_da_mode": "Calldata"
-              },
-              "state_diff": {
-                "storage_diffs": [
-                  {
-                    "address": "0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996",
-                    "storage_entries": [
-                      {
-                        "key": "0xbc72301fcd3b05852cc058ab4cae654f59901211906ce8eaab14eff5546aae",
-                        "value": "0x0"
-                      }
-                    ]
-                  },
-                  {
-                    "address": "0x13e48fb52751595411acd0153a04be2f9472e23cc06eb52dd991145914234ec",
-                    "storage_entries": [
-                      {
-                        "key": "0x12f1312f6092a30a200f21c6e298f5a94b3522583fe40c98c035b7fd8049b0",
-                        "value": "0x25b0807ac00"
-                      },
-                      {
-                        "key": "0x1d411efc1b91ba8ec75807861b5ba3fc72f0df8d68a1155a6b4c6717865364",
-                        "value": "0x3dc5cb078c05c00"
-                      }
-                    ]
-                  }
-                ],
-                "deprecated_declared_classes": [],
-                "declared_classes": [],
-                "deployed_contracts": [],
-                "replaced_classes": [],
-                "nonces": [
-                  {
-                    "contract_address": "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1",
-                    "nonce": "0x13"
-                  },
-                  {
-                    "contract_address": "0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8",
-                    "nonce": "0x1c"
-                  },
-                  {
-                    "contract_address": "0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535",
-                    "nonce": "0x3af1"
-                  }
-                ]
-              },
-              "transactions": [
-                {
-                  "Invoke": {
-                    "V1": {
-                      "sender_address": "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1",
-                      "calldata": [
-                        "0x2",
-                        "0x0",
-                        "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1"
-                      ],
-                      "max_fee": "0x3f6c4a9a01d28",
-                      "signature": [
-                        "0x3b81b87ad249504cd88f031c0b1c7a893eedb8bce50ca88c53a051014d0a25d"
-                      ],
-                      "nonce": "0x12"
-                    }
-                  }
-                },
-                {
-                  "Invoke": {
-                    "V1": {
-                      "sender_address": "0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8",
-                      "calldata": [
-                        "0x2",
-                        "0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996"
-                      ],
-                      "max_fee": "0x3f6c4a9191bc1",
-                      "signature": [
-                        "0x16337397dd75f3d7f95bcca3509149b266c90ab5fdf87c7d950767b78fab231",
-                        "0x7bcc57dfc8159fa54de2d2e87ea6ecd4204e7cbc2173d0b2345d43c4028f944"
-                      ],
-                      "nonce": "0x1b"
-                    }
-                  }
-                }
-              ],
-              "receipts": [
-                {
-                  "Invoke": {
-                    "transaction_hash": "0x40a00bf7c2ccc154b4d18e63f072f69a0ce99c5249c2b7b62076dc017408858",
-                    "actual_fee": {
-                      "amount": "0x151df82a5a620",
-                      "unit": "Wei"
-                    },
-                    "messages_sent": [],
-                    "events": [
-                      {
-                        "from_address": "0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996",
-                        "keys": [
-                          "0x134692b230b9e1ffa39098904722134159652b09c5bc41d88d6698779d228ff",
-                          "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1",
-                          "0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"
-                        ],
-                        "data": [
-                          "0x7738106d5",
-                          "0x0"
-                        ]
-                      },
-                      {
-                        "from_address": "0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996",
-                        "keys": [
-                          "0x134692b230b9e1ffa39098904722134159652b09c5bc41d88d6698779d228ff",
-                          "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1",
-                          "0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"
-                        ],
-                        "data": [
-                          "0x0",
-                          "0x0"
-                        ]
-                      },
-                      {
-                        "from_address": "0x2cd937c3dccd4a4e125011bbe3189a6db0419bb6dd95c4b5ce5f6d834d8996",
-                        "keys": [
-                          "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9",
-                          "0x13fbb0f1e4f795e070d6a54a618114df7d60b8e1e183afa4822db06835105b1",
-                          "0x7f39fc9465588bb783023401230d2318354b23e71e632aa7019a423d284f8c4"
-                        ],
-                        "data": [
-                          "0x7738106d5",
-                          "0x0"
-                        ]
-                      }
-                    ],
-                    "execution_resources": {
-                      "steps": 87793,
-                      "memory_holes": 0,
-                      "range_check_builtin_applications": 9393,
-                      "pedersen_builtin_applications": 114,
-                      "poseidon_builtin_applications": null,
-                      "ec_op_builtin_applications": 6,
-                      "ecdsa_builtin_applications": null,
-                      "bitwise_builtin_applications": 12,
-                      "keccak_builtin_applications": null,
-                      "segment_arena_builtin": null,
-                      "data_availability": {
-                        "l1_gas": 12838,
-                        "l1_data_gas": 0
-                      },
-                      "total_gas_consumed": {
-                        "l1_gas": 13233,
-                        "l1_data_gas": 0
-                      }
-                    },
-                    "execution_result": "Succeeded"
-                  }
-                },
-                {
-                  "Invoke": {
-                    "transaction_hash": "0x39441f846a99c8fec3cdb328bf00a9ee3d664f732f2c9649e324e61582762e8",
-                    "actual_fee": {
-                      "amount": "0x1305fd1ef0220",
-                      "unit": "Wei"
-                    },
-                    "messages_sent": [],
-                    "events": [
-                      {
-                        "from_address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-                        "keys": [
-                          "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"
-                        ],
-                        "data": [
-                          "0x1ac14b1f2986d5994afb8cbdc788f0659aaebb9a68a8f91306f60fe4856b2b8",
-                          "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                          "0x1305fd1ef0220",
-                          "0x0"
-                        ]
-                      }
-                    ],
-                    "execution_resources": {
-                      "steps": 59639,
-                      "memory_holes": 0,
-                      "range_check_builtin_applications": 4129,
-                      "pedersen_builtin_applications": 110,
-                      "poseidon_builtin_applications": null,
-                      "ec_op_builtin_applications": 6,
-                      "ecdsa_builtin_applications": null,
-                      "bitwise_builtin_applications": 12,
-                      "keccak_builtin_applications": null,
-                      "segment_arena_builtin": null,
-                      "data_availability": {
-                        "l1_gas": 11736,
-                        "l1_data_gas": 0
-                      },
-                      "total_gas_consumed": {
-                        "l1_gas": 11921,
-                        "l1_data_gas": 0
-                      }
-                    },
-                    "execution_result": "Succeeded"
-                  }
-                }
-              ],
-              "declared_classes": []
-            }))
-            .unwrap()
-        )
+            pending_block.header.parent_block_hash,
+            Some(felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75")),
+            "Parent block hash should match"
+        );
+        assert_eq!(
+            pending_block.header.sequencer_address,
+            felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
+            "Sequencer address should match"
+        );
+        assert_eq!(pending_block.header.block_timestamp, 1725950824, "Block timestamp should match");
+        assert_eq!(
+            pending_block.header.protocol_version,
+            StarknetVersion::new(0, 13, 2, 1),
+            "Protocol version should match"
+        );
+
+        // Verify L1 gas prices
+        assert_eq!(pending_block.header.l1_gas_price.eth_l1_gas_price, 0x274287586, "ETH L1 gas price should match");
+        assert_eq!(
+            pending_block.header.l1_gas_price.strk_l1_gas_price, 0x363cc34e29f8,
+            "STRK L1 gas price should match"
+        );
+        assert_eq!(
+            pending_block.header.l1_gas_price.eth_l1_data_gas_price, 0x2bc1e42413,
+            "ETH L1 data gas price should match"
+        );
+        assert_eq!(
+            pending_block.header.l1_gas_price.strk_l1_data_gas_price, 0x3c735d85586c2,
+            "STRK L1 data gas price should match"
+        );
+
+        // Verify L1 DA mode
+        assert_eq!(pending_block.header.l1_da_mode, L1DataAvailabilityMode::Calldata, "L1 DA mode should be Calldata");
+
+        // Verify state diff
+        assert!(!pending_block.state_diff.storage_diffs.is_empty(), "Storage diffs should not be empty");
+        assert_eq!(pending_block.state_diff.storage_diffs.len(), 1, "Should have 1 storage diff");
+        assert_eq!(
+            pending_block.state_diff.storage_diffs[0].address,
+            felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+            "Storage diff key should match"
+        );
+        assert_eq!(pending_block.state_diff.deployed_contracts.len(), 2, "Should have 2 deployed contracts");
+        assert_eq!(pending_block.state_diff.nonces.len(), 2, "Should have 2 nonces");
+
+        // Verify transactions and receipts
+        assert!(pending_block.transactions.is_empty(), "Transactions should be empty");
+        assert!(pending_block.receipts.is_empty(), "Receipts should be empty");
+        assert_eq!(
+            pending_block.transactions.len(),
+            pending_block.receipts.len(),
+            "Number of transactions should match number of receipts"
+        );
     }
 
-    // TODO: I'd like to have more tests for more starknt versions, but i don't want to commit multiple megabytes into the repository.
+    /// Test error handling when fetching a pending block fails due to a provider error.
+    ///
+    /// Verifies that:
+    /// 1. The function properly handles the case when a pending block is not found.
+    /// 2. It returns an appropriate FetchError.
     #[rstest]
-    #[case(0)]
-    #[case(724_130)]
     #[tokio::test]
-    async fn test_can_fetch_and_convert_block(
-        sequencer_gateway_provider: SequencerGatewayProvider,
-        #[case] block_n: u64,
-    ) {
-        let block = fetch_block_and_updates(&ChainId::Mainnet, block_n, &sequencer_gateway_provider).await.unwrap();
-        let path = &format!("test-data/block_{block_n}.json");
-        // serde_json::to_writer(std::fs::File::create(path).unwrap(), &block).unwrap();
-        let expected = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(block, expected)
+    async fn test_fetch_pending_block_and_updates_not_found(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        // Mock a "pending block not found" scenario
+        ctx.mock_block_pending_not_found();
+
+        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+
+        assert!(
+            matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
+            "Expected BlockNotFound error, but got: {:?}",
+            result
+        );
+    }
+
+    /// Test successful fetching of state update with block for the pending block.
+    ///
+    /// Verifies that:
+    /// 1. The function correctly fetches both state update and block for the pending block.
+    /// 2. The returned data matches the expected format for a pending block.
+    /// 3. Certain fields that should be None for pending blocks are indeed None.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_state_update_with_block_pending(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        // Mock the pending block
+        ctx.mock_block_pending();
+
+        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::Pending)
+            .await
+            .expect("Failed to fetch state update with block");
+
+        // Verify state update
+        assert_eq!(
+            state_update.old_root,
+            felt!("0x37817010d31db557217addb3b4357c2422c8d8de0290c3f6a867bbdc49c32a0"),
+            "Old root should match"
+        );
+
+        // Verify storage diffs
+        assert_eq!(state_update.state_diff.storage_diffs.len(), 1, "Should have 1 storage diff");
+        let storage_diff = state_update
+            .state_diff
+            .storage_diffs
+            .get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"))
+            .expect("Storage diff should exist");
+        assert_eq!(storage_diff.len(), 2, "Should have 2 storage entries");
+        assert_eq!(
+            storage_diff[0].key,
+            felt!("0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a"),
+            "First storage key should match"
+        );
+        assert_eq!(storage_diff[0].value, felt!("0x1b7622454b6cea6e76bb2"), "First storage value should match");
+        assert_eq!(
+            storage_diff[1].key,
+            felt!("0x5928e5598505749c60b49cc98e3acd5f3faa4a36910f50824395385b3c3a5c6"),
+            "Second storage key should match"
+        );
+        assert_eq!(storage_diff[1].value, felt!("0xdefb9937f1c6af5096"), "Second storage value should match");
+
+        // Verify nonces
+        assert_eq!(state_update.state_diff.nonces.len(), 2, "Should have 2 nonces");
+        assert_eq!(
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c"))
+                .unwrap(),
+            &felt!("0x2"),
+            "First nonce should match"
+        );
+        assert_eq!(
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535"))
+                .unwrap(),
+            &felt!("0x18ab"),
+            "Second nonce should match"
+        );
+
+        // Verify deployed contracts
+        assert_eq!(state_update.state_diff.deployed_contracts.len(), 2, "Should have 2 deployed contracts");
+        assert_eq!(
+            state_update.state_diff.deployed_contracts[0].address,
+            felt!("0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c"),
+            "First deployed contract address should match"
+        );
+        assert_eq!(
+            state_update.state_diff.deployed_contracts[0].class_hash,
+            felt!("0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"),
+            "First deployed contract class hash should match"
+        );
+        assert_eq!(
+            state_update.state_diff.deployed_contracts[1].address,
+            felt!("0x7ab19cc28b12535df410edd1dbaad521ee83479b5936e00decdde5dd566c8b7"),
+            "Second deployed contract address should match"
+        );
+        assert_eq!(
+            state_update.state_diff.deployed_contracts[1].class_hash,
+            felt!("0x4ccf6144da19dc18c9f109a8a46e66ea2e08b2f22b03f895a715968d26622ea"),
+            "Second deployed contract class hash should match"
+        );
+
+        assert!(state_update.state_diff.old_declared_contracts.is_empty(), "Should have no old declared contracts");
+        assert!(state_update.state_diff.declared_classes.is_empty(), "Should have no declared classes");
+        assert!(state_update.state_diff.replaced_classes.is_empty(), "Should have no replaced classes");
+
+        // Verify block
+        assert!(block.block_number.is_none(), "Pending block should not have a block number");
+        assert!(block.block_hash.is_none(), "Pending block should not have a block hash");
+        assert_eq!(
+            block.parent_block_hash,
+            felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            "Pending block should have the correct parent block hash"
+        );
+        assert!(block.state_root.is_none(), "Pending block should not have a state root");
+        assert!(block.transactions.is_empty(), "Pending block should not contain transactions");
+        assert_eq!(block.status, BlockStatus::Pending, "Pending block status should be 'PENDING'");
+        assert_eq!(
+            block.l1_da_mode,
+            starknet_core::types::L1DataAvailabilityMode::Calldata,
+            "L1 DA mode should be CALLDATA"
+        );
+        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x274287586"), "L1 gas price in wei should match");
+        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x363cc34e29f8"), "L1 gas price in fri should match");
+        assert_eq!(
+            block.l1_data_gas_price.price_in_wei,
+            felt!("0x2bc1e42413"),
+            "L1 data gas price in wei should match"
+        );
+        assert_eq!(
+            block.l1_data_gas_price.price_in_fri,
+            felt!("0x3c735d85586c2"),
+            "L1 data gas price in fri should match"
+        );
+        assert_eq!(block.timestamp, 1725950824, "Timestamp should match");
+        assert_eq!(
+            block.sequencer_address,
+            Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")),
+            "Sequencer address should match"
+        );
+        assert!(block.transaction_receipts.is_empty(), "Should have no transaction receipts");
+        assert_eq!(block.starknet_version, Some("0.13.2.1".to_string()), "Starknet version should match");
+    }
+
+    /// Test error handling when the requested block is not found.
+    ///
+    /// Verifies that:
+    /// 1. The function returns a ProviderError::StarknetError(StarknetError::BlockNotFound) when the block doesn't exist.
+    /// 2. The error is propagated correctly through the retry mechanism.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_state_update_with_block_not_found(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        // Mock a "block not found" scenario
+        ctx.mock_block_not_found(5);
+
+        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+
+        assert!(
+            matches!(result, Err(ProviderError::StarknetError(StarknetError::BlockNotFound))),
+            "Expected BlockNotFound error, but got: {:?}",
+            result
+        );
+    }
+
+    /// Test fetching with provider returning partial data.
+    ///
+    /// Verifies that:
+    /// 1. The function correctly handles cases where the provider returns incomplete data.
+    /// 2. It returns an appropriate error or retries as necessary.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_state_update_with_block_partial_data(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        // Mock partial data scenario
+        ctx.mock_block_partial_data(5);
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+
+        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(ProviderError::Other(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
+            ),
+            "Expected error about mismatched data, but got: {:?}",
+            result
+        );
+    }
+
+    /// Test fetching of class updates.
+    ///
+    /// This test ensures that:
+    /// 1. Missing classes are correctly identified and fetched.
+    /// 2. A known problematic class hash is properly handled.
+    /// 3. The function returns the expected class update data.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_class_updates(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        ctx.mock_block(5);
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+
+        let (state_update, _block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+            .await
+            .expect("Failed to fetch state update with block");
+
+        let class_updates = fetch_class_updates(&ctx.backend.chain_config().chain_id, &state_update, FetchBlockId::BlockN(5), &ctx.provider)
+            .await
+            .expect("Failed to fetch class updates");
+
+        assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
+
+        // Verify the structure of the first class update
+        let first_update = &class_updates[0];
+        assert_ne!(first_update.class_hash(), Felt::ZERO, "Class hash should not be zero");
+    }
+
+    /// Test error handling in fetch_class_updates.
+    ///
+    /// Verifies that:
+    /// 1. The function properly handles errors when checking for the classes that doesn't exist.
+    /// 2. It handles errors during class fetching.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_class_updates_error_handling(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        ctx.mock_block(5);
+        let (state_update, _block) =
+            fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
+        ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
+        let result = fetch_class_updates(&ctx.backend.chain_config().chain_id, &state_update, FetchBlockId::BlockN(5), &ctx.provider).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(ref e) if matches!(
+                    e.downcast_ref::<L2SyncError>(),
+                    Some(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::ClassHashNotFound)))
+                )
+            ),
+            "Expected ClassHashNotFound error, but got: {:?}",
+            result
+        );
+    }
+
+    /// Test fetching of individual class definitions.
+    ///
+    /// Verifies that:
+    /// 1. The function correctly fetches a class definition for a given hash.
+    /// 2. It handles different block IDs correctly.
+    /// 3. It returns the expected ContractClass structure.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_class(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        let class_hash = Felt::from_hex_unchecked("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0");
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+
+        let (fetched_hash, _contract_class) =
+            fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await.expect("Failed to fetch class");
+
+        assert_eq!(fetched_hash, class_hash, "Fetched class hash should match the requested one");
+    }
+
+    /// Test error handling in fetch_class.
+    ///
+    /// Verifies that:
+    /// 1. The function properly handles provider errors.
+    /// 2. It returns an appropriate ProviderError.
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_class_error_handling(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        let class_hash = felt!("0x1234");
+        ctx.mock_class_hash_not_found("0x1234".to_string());
+
+        let result = fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await;
+
+        assert!(
+            matches!(result, Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound))),
+            "Expected ClassHashNotFound error, but got: {:?}",
+            result
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_fetch_state_update_works(test_setup: Arc<MadaraBackend>) {
+        let ctx = TestContext::new(test_setup);
+
+        // Mock a block with a state update
+        ctx.mock_block(5);
+
+        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+            .await
+            .expect("Failed to fetch state update with block");
+
+        // Verify state update
+        assert_eq!(
+            state_update.block_hash,
+            Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"))
+        );
+        assert_eq!(
+            state_update.new_root,
+            Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"))
+        );
+        assert_eq!(state_update.old_root, felt!("0x6152bda357cb522337756c71bcab298d88c5d829a479ad8247b82b969912713"));
+
+        // Verify storage diffs
+        assert_eq!(state_update.state_diff.storage_diffs.len(), 6);
+        let storage_diff = state_update
+            .state_diff
+            .storage_diffs
+            .get(&felt!("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"))
+            .unwrap();
+        assert_eq!(storage_diff.len(), 2);
+        assert_eq!(storage_diff[0].key, felt!("0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a"));
+        assert_eq!(storage_diff[0].value, felt!("0x1b77017df88b0858c9c29"));
+
+        // Verify nonces
+        assert_eq!(state_update.state_diff.nonces.len(), 2);
+        assert_eq!(
+            state_update
+                .state_diff
+                .nonces
+                .get(&felt!("0x5005f66205d5d1c08d23b2046a9fa44f27a21dc1ea205bd33c5d7c667df2d7b"))
+                .unwrap(),
+            &felt!("0x33f0")
+        );
+
+        // Verify other state diff components
+        assert!(state_update.state_diff.deployed_contracts.is_empty());
+        assert!(state_update.state_diff.old_declared_contracts.is_empty());
+        assert_eq!(state_update.state_diff.declared_classes.len(), 1);
+        assert_eq!(
+            state_update.state_diff.declared_classes[0].class_hash,
+            felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a")
+        );
+        assert!(state_update.state_diff.replaced_classes.is_empty());
+
+        // Verify block
+        assert_eq!(block.block_number, Some(5));
+        assert_eq!(block.block_hash, Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32")));
+        assert_eq!(block.parent_block_hash, felt!("0x6dc4eb6311529b941e3963f477b1d13928b38dd4c6ec0206bfba73c8a87198d"));
+        assert_eq!(block.state_root, Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f")));
+        assert_eq!(block.status, BlockStatus::AcceptedOnL1);
+        assert_eq!(block.l1_da_mode, starknet_core::types::L1DataAvailabilityMode::Calldata);
+
+        // Verify gas prices
+        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x3bf1322e5"));
+        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x55dfe7f2de82"));
+        assert_eq!(block.l1_data_gas_price.price_in_wei, felt!("0x3f9ffec0e7"));
+        assert_eq!(block.l1_data_gas_price.price_in_fri, felt!("0x5b269552db6fa"));
+
+        assert_eq!(block.timestamp, 1725974819);
+        assert_eq!(
+            block.sequencer_address,
+            Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"))
+        );
+        assert!(block.transactions.is_empty());
+        assert!(block.transaction_receipts.is_empty());
+        assert_eq!(block.starknet_version, Some("0.13.2.1".to_string()));
     }
 }

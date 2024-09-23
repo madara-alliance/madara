@@ -18,6 +18,7 @@ mc-metrics = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
+mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
@@ -34,6 +35,7 @@ bincode = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
+rstest = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -48,7 +50,7 @@ tokio = { workspace = true, features = [
 tempfile = "3.10"
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
-mp-receipt = { workspace = true }
+
 
 [features]
 default = []
