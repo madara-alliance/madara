@@ -1,26 +1,21 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use crate::fetch::fetchers::fetch_pending_block_and_updates;
 use crate::fetch::l2_fetch_task;
-use crate::metrics::block_metrics::BlockMetrics;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
 use mc_block_import::{
     BlockImportResult, BlockImporter, BlockValidationContext, PreValidatedBlock, UnverifiedFullBlock,
 };
-use mc_db::db_metrics::DbMetrics;
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
-use mp_block::Header;
-use mp_utils::{channel_wait_or_graceful_shutdown, stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
-use num_traits::FromPrimitive;
+use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
@@ -53,30 +48,10 @@ async fn l2_verify_and_apply_task(
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
     backup_every_n_blocks: Option<u64>,
-    block_metrics: BlockMetrics,
-    db_metrics: DbMetrics,
-    starting_block: u64,
-    sync_timer: Arc<Mutex<Option<Instant>>>,
     telemetry: TelemetryHandle,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
-
-        update_sync_metrics(
-            header.block_number,
-            &header,
-            starting_block,
-            &block_metrics,
-            &db_metrics,
-            sync_timer.clone(),
-            &backend,
-        )
-        .await?;
-
-        let sw = PerfStopwatch::new();
-        if backend.maybe_flush(false)? {
-            stopwatch_end!(sw, "flush db: {:?}");
-        }
 
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
@@ -107,11 +82,6 @@ async fn l2_verify_and_apply_task(
             backend.backup().await.context("backing up database")?;
             log::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
-    }
-
-    let sw = PerfStopwatch::new();
-    if backend.maybe_flush(true)? {
-        stopwatch_end!(sw, "flush db: {:?}");
     }
 
     Ok(())
@@ -212,16 +182,13 @@ pub async fn sync(
     backend: &Arc<MadaraBackend>,
     provider: SequencerGatewayProvider,
     config: L2SyncConfig,
-    block_metrics: BlockMetrics,
-    db_metrics: DbMetrics,
-    starting_block: u64,
     chain_id: ChainId,
     telemetry: TelemetryHandle,
+    block_importer: Arc<BlockImporter>,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
     let provider = Arc::new(provider);
-    let sync_timer = Arc::new(Mutex::new(None));
     let (once_caught_up_cb_sender, once_caught_up_cb_receiver) = oneshot::channel();
 
     // [Fetch task] ==new blocks and updates=> [Block conversion task] ======> [Verification and apply
@@ -233,7 +200,6 @@ pub async fn sync(
 
     // we are using separate tasks so that fetches don't get clogged up if by any chance the verify task
     // starves the tokio worker
-    let block_importer = Arc::new(BlockImporter::new(Arc::clone(backend)));
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         trust_global_tries: config.verify,
@@ -264,10 +230,6 @@ pub async fn sync(
         Arc::clone(&block_importer),
         validation.clone(),
         config.backup_every_n_blocks,
-        block_metrics,
-        db_metrics,
-        starting_block,
-        Arc::clone(&sync_timer),
         telemetry,
     ));
     join_set.spawn(l2_pending_block_task(
@@ -281,48 +243,6 @@ pub async fn sync(
 
     while let Some(res) = join_set.join_next().await {
         res.context("task was dropped")??;
-    }
-
-    Ok(())
-}
-
-async fn update_sync_metrics(
-    block_number: u64,
-    block_header: &Header,
-    starting_block: u64,
-    block_metrics: &BlockMetrics,
-    db_metrics: &DbMetrics,
-    sync_timer: Arc<Mutex<Option<Instant>>>,
-    backend: &MadaraBackend,
-) -> anyhow::Result<()> {
-    // Update Block sync time metrics
-    let elapsed_time = {
-        let mut timer_guard = sync_timer.lock().expect("Poisoned lock");
-        *timer_guard = Some(Instant::now());
-        if let Some(start_time) = *timer_guard {
-            start_time.elapsed().as_secs_f64()
-        } else {
-            // For the first block, there is no previous timer set
-            0.0
-        }
-    };
-
-    let sync_time = block_metrics.l2_sync_time.get() + elapsed_time;
-    block_metrics.l2_sync_time.set(sync_time);
-    block_metrics.l2_latest_sync_time.set(elapsed_time);
-    block_metrics.l2_avg_sync_time.set(block_metrics.l2_sync_time.get() / (block_number - starting_block) as f64);
-
-    block_metrics.l2_block_number.set(block_header.block_number as f64);
-    block_metrics.transaction_count.set(f64::from_u64(block_header.transaction_count).unwrap_or(0f64));
-    block_metrics.event_count.set(f64::from_u64(block_header.event_count).unwrap_or(0f64));
-
-    block_metrics.l1_gas_price_wei.set(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64));
-    block_metrics.l1_gas_price_strk.set(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64));
-
-    if block_number % 200 == 0 {
-        let storage_size = backend.get_storage_size(db_metrics);
-        let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
-        block_metrics.l2_state_size.set(size_gb);
     }
 
     Ok(())

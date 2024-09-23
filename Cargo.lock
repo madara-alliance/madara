@@ -5554,10 +5554,13 @@ dependencies = [
 name = "mc-block-import"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "bitvec",
  "bonsai-trie",
+ "itertools 0.13.0",
  "log",
  "mc-db",
+ "mc-metrics",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -5566,6 +5569,7 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
+ "num-traits 0.2.19",
  "rayon",
  "rstest 0.18.2",
  "serde",
@@ -5618,6 +5622,7 @@ dependencies = [
  "mc-block-import",
  "mc-db",
  "mc-mempool",
+ "mc-metrics",
  "mockall",
  "mp-block",
  "mp-chain-config",
@@ -5958,6 +5963,7 @@ dependencies = [
 name = "mp-class"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "cairo-lang-starknet 1.0.0-alpha.6",
  "cairo-lang-starknet 1.0.0-rc0",
@@ -5974,6 +5980,7 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
+ "sha3",
  "starknet-core",
  "starknet-providers",
  "starknet-types-core",
@@ -6033,6 +6040,7 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.7.0",
  "cairo-vm",
+ "log",
  "mp-chain-config",
  "mp-class",
  "mp-convert",

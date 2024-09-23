@@ -20,12 +20,24 @@ impl MempoolAddTxProvider {
     }
 }
 
-fn make_err(err: mc_mempool::Error) -> StarknetRpcApiError {
-    if err.is_internal() {
-        display_internal_server_error(format!("{err:#}"));
-        StarknetRpcApiError::InternalServerError
-    } else {
-        StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") }
+impl From<mc_mempool::Error> for StarknetRpcApiError {
+    fn from(value: mc_mempool::Error) -> Self {
+        match value {
+            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+                StarknetRpcApiError::DuplicateTxn
+            }
+            mc_mempool::Error::Validation(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },
+            mc_mempool::Error::InnerMempool(err) => {
+                StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") }
+            }
+            mc_mempool::Error::Exec(err) => {
+                StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") }
+            }
+            err => {
+                display_internal_server_error(format!("{err:#}"));
+                StarknetRpcApiError::InternalServerError
+            }
+        }
     }
 }
 
@@ -35,18 +47,18 @@ impl AddTransactionProvider for MempoolAddTxProvider {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        Ok(self.mempool.accept_declare_tx(declare_transaction).map_err(make_err)?)
+        Ok(self.mempool.accept_declare_tx(declare_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        Ok(self.mempool.accept_deploy_account_tx(deploy_account_transaction).map_err(make_err)?)
+        Ok(self.mempool.accept_deploy_account_tx(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        Ok(self.mempool.accept_invoke_tx(invoke_transaction).map_err(make_err)?)
+        Ok(self.mempool.accept_invoke_tx(invoke_transaction).map_err(StarknetRpcApiError::from)?)
     }
 }

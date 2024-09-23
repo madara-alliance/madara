@@ -173,7 +173,7 @@ pub mod eth_client_getter_test {
         let contract = StarknetCoreContract::new(address, provider.clone());
 
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
 
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
@@ -189,7 +189,7 @@ pub mod eth_client_getter_test {
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
 
         let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");

@@ -346,6 +346,7 @@ fn convert_sequencer_block(
             .context("Converting the transactions")?,
         declared_classes: class_update.into_iter().map(Into::into).collect(),
         commitments,
+        ..Default::default()
     })
 }
 

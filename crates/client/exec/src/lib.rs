@@ -67,7 +67,7 @@ pub struct MessageFeeEstimationError {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Calling contract {contract:#} on top of {block_n:#}: {err:#}")]
+#[error("Calling contract {contract:#x} on top of {block_n:#}: {err:#}")]
 pub struct CallContractError {
     block_n: DbBlockId,
     contract: Felt,

@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(block-production): fix bouncer calculation and declared classes
 - fix: Fix pending block sync and add real FGW tests
 - test: tests added for verify and apply task in l2 sync
 - fix: UDC cairo 0 migration & events logic fix

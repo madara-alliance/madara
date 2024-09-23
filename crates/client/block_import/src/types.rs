@@ -161,6 +161,9 @@ pub struct UnverifiedFullBlock {
     pub transactions: Vec<Transaction>,
     pub receipts: Vec<TransactionReceipt>,
     pub declared_classes: Vec<DeclaredClass>,
+    /// Classes that are already compiled and hashed.
+    #[serde(skip)]
+    pub trusted_converted_classes: Vec<ConvertedClass>,
     pub commitments: UnverifiedCommitments,
 }
 
