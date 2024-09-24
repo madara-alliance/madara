@@ -31,7 +31,7 @@ RUN curl -fLS -o $SCARB_TARGET                                          \
     mv /usr/src/bin/scarb /bin
 
 # Build the application in release mode
-RUN cargo build --profile production
+RUN cargo build --release
 
 # Stage 2: Create the final runtime image
 FROM debian:bookworm-slim
@@ -47,11 +47,11 @@ RUN apt-get -y update &&                          \
 WORKDIR /usr/local/bin
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/madara/target/production/madara .
-COPY --from=builder /usr/src/madara/crates/primitives/chain_config/presets \
-    crates/primitives/chain_config/presets
-COPY --from=builder /usr/src/madara/crates/primitives/chain_config/resources \
-    crates/primitives/chain_config/resources
+COPY --from=builder /usr/src/madara/target/release/madara .
+
+# chain presets to be monted at startup
+VOLUME crates/primitives/chain_config/presets
+VOLUME crates/primitives/chain_config/resources
 
 # Set the entrypoint
 ENTRYPOINT ["./madara"]
