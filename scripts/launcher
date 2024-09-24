@@ -207,7 +207,7 @@ read -p "> " INSTALL_DIR
 # Set default directory if not provided
 INSTALL_DIR=${INSTALL_DIR:-$(pwd)}
 
-# Clone the Madara repository
+# Clone the Madara repository (this step should be removed when we have images available remotly)
 echo -e "\n${GREEN}Cloning the Madara repository into ${INSTALL_DIR}...${NC}"
 if [ -d "${INSTALL_DIR}/madara" ]; then
     echo -e "${YELLOW}Madara directory already exists. Updating...${NC}"
@@ -231,23 +231,27 @@ echo -e "\n${GREEN}Building the Docker image... (this operation will take a few 
 tput rc
 tput ed
 
+echo -e "\n${GREEN}Madara has been correctly installed here: ${BOLD}${INSTALL_DIR}${NC}${GREEN}.${NC}"
+
 # Choose the mode
-echo -e "\n🕹️ ${YELLOW}${BOLD}On which mode would you like to run Madara? (Enter a number)${NC}\n"
+echo -e "\n🕹️ ${YELLOW}${BOLD} On which mode would you like to run Madara? (Enter a number)${NC}\n"
 echo "${YELLOW}1. Full Node${NC}"
 echo "${YELLOW}2. Sequencer${NC}"
 echo "${YELLOW}3. Devnet${NC}"
 while true; do
     read -p "> " MODE_CHOICE
     case $MODE_CHOICE in
-        1) MODE="full"; break ;;
-        2) MODE="sequencer"; break ;;
-        3) MODE="devnet"; break ;;
+        1) MODE="Full"; break ;;
+        2) MODE="Sequencer"; break ;;
+        3) MODE="Devnet"; break ;;
         *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
     esac
 done
 
 tput rc
 tput ed
+
+echo -e "\n${GREEN}Madara will run in ${BOLD}${MODE}${NC}${GREEN} mode.${NC}"
 
 # Ask for the node name
 while true; do
@@ -262,6 +266,8 @@ done
 
 tput rc
 tput ed
+
+echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
 # Choose the network based on the mode
 if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
@@ -304,14 +310,35 @@ else
             2) NETWORK="test"; break ;;
             3) NETWORK="integration"; break ;;
             4)
-                echo -e "\n${YELLOW}Please provide the path to your custom chain config or preset:${NC}"
-                read -p "> " CUSTOM_CHAIN_CONFIG
-                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
-                    NETWORK="$CUSTOM_CHAIN_CONFIG"
-                    break
-                else
-                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
-                fi
+                tput rc
+                tput ed
+
+                echo -e "\n${GREEN}You have choosed to run your node under a custom Chain config.${NC}"
+
+                echo -e "\n${YELLOW}${BOLD}🌐 Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
+                echo "${YELLOW}1. Starknet Mainnet${NC}"
+                echo "${YELLOW}2. Starknet Testnet${NC}"
+                echo "${YELLOW}3. Test${NC}"
+                echo "${YELLOW}4. Custom Chain config${NC}"
+                while true; do
+                    read -p "> " NETWORK_CHOICE
+                    case $NETWORK_CHOICE in
+                        1) PRESET="starknet_mainnet"; break ;;
+                        2) PRESET="starknet_testnet"; break ;;
+                        3) PRESET="test"; break ;;
+                        4)
+                            echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                            read -p "> " CUSTOM_CHAIN_CONFIG
+                            if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                                PRESET="$CUSTOM_CHAIN_CONFIG"
+                                break
+                            else
+                                echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                            fi
+                            ;;
+                        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
+                    esac
+                done
                 ;;
             *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
         esac
@@ -320,6 +347,8 @@ fi
 
 tput rc
 tput ed
+
+echo -e "\n${GREEN}You have choosed to run your node under: ${NETWORK}.${NC}"
 
 # Set the chain config or network option
 if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
