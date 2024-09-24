@@ -88,7 +88,7 @@ ascii_art
 echo -e "${GREEN}${BOLD}Welcome to the Madara Docker Launcher!${NC}"
 echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
 echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
-echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://madara.io${NC}"
+echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://madara.build${NC}"
 # Save cursor position
 tput sc
 
@@ -106,16 +106,33 @@ if [ "$PROCEED" != "yes" ]; then
     exit 1
 fi
 
-# Define dependencies and their check commands
+# Define dependencies and their check commands (excluding Docker)
 DEPENDENCIES=(
     "curl:command -v curl"
-    "docker:command -v docker"
     "git:command -v git"
 )
 
 # Function to check for a dependency
 check_dependency() {
     eval "$1" >/dev/null 2>&1
+}
+
+# Function to check if Docker is installed
+check_docker_installed() {
+    if ! command -v docker >/dev/null 2>&1; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Function to check if Docker daemon is running
+check_docker_running() {
+    if ! docker info >/dev/null 2>&1; then
+        return 1
+    else
+        return 0
+    fi
 }
 
 # Check dependencies
@@ -128,12 +145,25 @@ for DEP in "${DEPENDENCIES[@]}"; do
     fi
 done
 
+# Check for Docker
+DOCKER_MISSING=false
+DOCKER_NOT_RUNNING=false
+
+if ! check_docker_installed; then
+    DOCKER_MISSING=true
+elif ! check_docker_running; then
+    DOCKER_NOT_RUNNING=true
+fi
+
 # Report missing dependencies
-if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
-    echo -e "${YELLOW}The following dependencies are missing:${NC}"
+if [ ${#MISSING_DEPS[@]} -ne 0 ] || [ "$DOCKER_MISSING" = true ]; then
+    echo -e "${YELLOW}\nThe following dependencies are missing or not running:${NC}"
     for DEP in "${MISSING_DEPS[@]}"; do
         echo -e "${YELLOW}- $DEP${NC}"
     done
+    if [ "$DOCKER_MISSING" = true ]; then
+        echo -e "${YELLOW}- Docker${NC}"
+    fi
 
     echo -e "\n${YELLOW}${BOLD}Do you want to install the missing dependencies? (yes/no)${NC}"
     read -p "> " INSTALL_DEPS
@@ -146,55 +176,94 @@ if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
         if [ "$OS" == "Linux" ]; then
             sudo apt update
             for DEP in "${MISSING_DEPS[@]}"; do
-                if [ "$DEP" == "docker" ]; then
-                    echo -e "${GREEN}Installing Docker...${NC}"
-                    curl -fsSL https://get.docker.com -o get-docker.sh
-                    sudo sh get-docker.sh
-                    rm get-docker.sh
-                    sudo usermod -aG docker $USER
-                    newgrp docker
-                else
-                    if ! sudo apt install -y "$DEP"; then
-                        echo -e "${RED}Failed to install $DEP.${NC}"
-                    fi
+                if ! sudo apt install -y "$DEP"; then
+                    echo -e "${RED}Failed to install $DEP.${NC}"
                 fi
             done
+            if [ "$DOCKER_MISSING" = true ]; then
+                echo -e "${GREEN}Installing Docker...${NC}"
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                rm get-docker.sh
+                sudo usermod -aG docker $USER
+                newgrp docker
+                sudo systemctl start docker
+            fi
         elif [ "$OS" == "Mac" ]; then
             for DEP in "${MISSING_DEPS[@]}"; do
-                if [ "$DEP" == "docker" ]; then
-                    echo -e "${GREEN}Please install Docker Desktop from https://www.docker.com/products/docker-desktop and run this script again.${NC}"
-                    exit 1
-                else
-                    if ! brew install "$DEP"; then
-                        echo -e "${RED}Failed to install $DEP.${NC}"
-                    fi
+                if ! brew install "$DEP"; then
+                    echo -e "${RED}Failed to install $DEP.${NC}"
                 fi
             done
-        fi
-
-        # Re-check dependencies to ensure all are installed
-        echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
-        RECHECK_MISSING_DEPS=()
-        for DEP in "${DEPENDENCIES[@]}"; do
-            DEP_NAME="${DEP%%:*}"
-            DEP_CHECK="${DEP##*:}"
-            if ! check_dependency "$DEP_CHECK"; then
-                RECHECK_MISSING_DEPS+=("$DEP_NAME")
+            if [ "$DOCKER_MISSING" = true ]; then
+                echo -e "${GREEN}Installing Docker via Homebrew...${NC}"
+                if ! brew install --cask docker; then
+                    echo -e "${RED}Failed to install Docker.${NC}"
+                else
+                    echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon (you may need to do this step yourself if not located under /Applications/Docker.app).${NC}"
+                    open /Applications/Docker.app
+                    # Wait for Docker daemon to start
+                    echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
+                    while ! docker info >/dev/null 2>&1; do
+                        sleep 1
+                    done
+                    echo -e "${GREEN}Docker daemon is running.${NC}"
+                fi
             fi
-        done
-
-        if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
-            echo -e "\n${RED}The following dependencies could not be installed:${NC}"
-            for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
-                echo -e "${RED}- $DEP${NC}"
-            done
-            exit 1
-        else
-            echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
         fi
     fi
+fi
+
+# Check if Docker daemon is running
+if [ "$DOCKER_NOT_RUNNING" = true ]; then
+    echo -e "\n${YELLOW}Docker is installed but not running.${NC}"
+    if [ "$OS" == "Linux" ]; then
+        echo -e "${GREEN}Starting Docker daemon...${NC}"
+        sudo systemctl start docker
+        if ! sudo systemctl is-active --quiet docker; then
+            echo -e "${RED}Failed to start Docker daemon.${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}Docker daemon is running.${NC}"
+        fi
+    elif [ "$OS" == "Mac" ]; then
+        echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon (you may need to do this step yourself if not located under /Applications/Docker.app).${NC}"
+        open /Applications/Docker.app
+        # Wait for Docker daemon to start
+        echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
+        while ! docker info >/dev/null 2>&1; do
+            sleep 1
+        done
+        echo -e "${GREEN}Docker daemon is running.${NC}"
+    fi
+fi
+
+# Re-check dependencies to ensure all are installed and running
+echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
+RECHECK_MISSING_DEPS=()
+for DEP in "${DEPENDENCIES[@]}"; do
+    DEP_NAME="${DEP%%:*}"
+    DEP_CHECK="${DEP##*:}"
+    if ! check_dependency "$DEP_CHECK"; then
+        RECHECK_MISSING_DEPS+=("$DEP_NAME")
+    fi
+done
+
+# Re-check Docker
+if ! check_docker_installed; then
+    RECHECK_MISSING_DEPS+=("Docker")
+elif ! check_docker_running; then
+    RECHECK_MISSING_DEPS+=("Docker daemon not running")
+fi
+
+if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
+    echo -e "\n${RED}The following dependencies could not be installed or are not running:${NC}"
+    for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
+        echo -e "${RED}- $DEP${NC}"
+    done
+    exit 1
 else
-    echo -e "\n${GREEN}All dependencies are installed.${NC}"
+    echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
 fi
 
 echo -e "\n${GREEN}We will now proceed with the download of Madara from GitHub:${NC}"
@@ -207,7 +276,7 @@ read -p "> " INSTALL_DIR
 # Set default directory if not provided
 INSTALL_DIR=${INSTALL_DIR:-$(pwd)}
 
-# Clone the Madara repository (this step should be removed when we have images available remotly)
+# Clone the Madara repository (this step should be removed when we have images available remotely)
 echo -e "\n${GREEN}Cloning the Madara repository into ${INSTALL_DIR}...${NC}"
 if [ -d "${INSTALL_DIR}/madara" ]; then
     echo -e "${YELLOW}Madara directory already exists. Updating...${NC}"
@@ -216,7 +285,6 @@ else
     git clone https://github.com/madara-alliance/madara.git "${INSTALL_DIR}/madara"
     cd "${INSTALL_DIR}/madara"
 fi
-
 
 tput rc
 tput ed
@@ -270,7 +338,7 @@ tput ed
 echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
 # Choose the network based on the mode
-if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+if [ "$MODE" == "Sequencer" ] || [ "$MODE" == "Devnet" ]; then
     # For sequencer and devnet modes
     echo -e "\n🌐 ${YELLOW}${BOLD}Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
     echo "${YELLOW}1. Starknet Mainnet${NC}"
@@ -313,7 +381,7 @@ else
                 tput rc
                 tput ed
 
-                echo -e "\n${GREEN}You have choosed to run your node under a custom Chain config.${NC}"
+                echo -e "\n${GREEN}You have chosen to run your node under a custom Chain config.${NC}"
 
                 echo -e "\n${YELLOW}${BOLD}🌐 Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
                 echo "${YELLOW}1. Starknet Mainnet${NC}"
@@ -348,10 +416,10 @@ fi
 tput rc
 tput ed
 
-echo -e "\n${GREEN}You have choosed to run your node under: ${NETWORK}.${NC}"
+echo -e "\n${GREEN}You have chosen to run your node under: ${NETWORK}.${NC}"
 
 # Set the chain config or network option
-if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+if [ "$MODE" == "Sequencer" ] || [ "$MODE" == "Devnet" ]; then
     # Use --chain-config with PRESET
     CHAIN_CONFIG_OPT="--chain-config=\"${PRESET}\""
 else
@@ -394,8 +462,27 @@ tput ed
 if [ "$RPC_ACCESS" == "yes" ]; then
     RPC_OPTS="--rpc-cors '*' --rpc-external"
     echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (default: 9944)${NC}"
-    read -p "> " RPC_PORT
-    RPC_PORT=${RPC_PORT:-9944}
+    
+    while true; do
+        read -p "> " RPC_PORT
+        RPC_PORT=${RPC_PORT:-9944}
+
+        # Check if the port is a valid number between 1 and 65535
+        if ! [[ "$RPC_PORT" =~ ^[0-9]+$ ]] || [ "$RPC_PORT" -lt 1 ] || [ "$RPC_PORT" -gt 65535 ]; then
+            echo -e "${RED}⚠️  Invalid port number. Please enter a valid port between 1 and 65535.${NC}"
+            continue
+        fi
+
+        # Check if the port is already in use
+        if lsof -i :"$RPC_PORT" &>/dev/null; then
+            echo -e "${RED}⚠️  Port $RPC_PORT is already in use. Please choose another port.${NC}"
+            continue
+        fi
+
+        # If everything is okay, break the loop
+        break
+    done
+
     RPC_OPTS="$RPC_OPTS --rpc-port $RPC_PORT"
     PORT_MAPPING="-p $RPC_PORT:$RPC_PORT"
 else
@@ -420,28 +507,12 @@ done
 tput rc
 tput ed
 
-# # Synchronize via snapshot or genesis
-# echo -e "\n🔄 ${YELLOW}${BOLD}Which sync mode would you like? (Enter a number)${NC}\n"
-# echo "${YELLOW}1. Snap sync (fast)${NC}"
-# echo "${YELLOW}2. Full sync (safe)${NC}"
-# while true; do
-#     read -p "> " SYNC_CHOICE
-#     case $SYNC_CHOICE in
-#         1) SYNC_OPT="--snap"; break ;;
-#         2) SYNC_OPT=""; break ;;
-#         *) echo -e "${YELLOW}Invalid choice, please enter 1 or 2.${NC}" ;;
-#     esac
-# done
-
-# tput rc
-# tput ed
-
 # Build the final Docker run command
 DOCKER_COMMAND="docker run -d --name madara-node \
     -v ${BASE_PATH}:/data \
     ${PORT_MAPPING} \
     madara \
-    run --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\" ${SYNC_OPT}"
+    run --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
 
 echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
 echo -e "${CYAN}$DOCKER_COMMAND${NC}"
