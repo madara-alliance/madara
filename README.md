@@ -84,14 +84,17 @@ Madara is a powerfull Starknet hybrid client written in Rust.
 To run Madara with Docker, use the following command:
 
 ```sh
-docker run -d \
-    --name madara \
-    -p 9944:9944 \
+docker run -d                          \
+    --name madara                      \
+    -p 9944:9944                       \
     -v /var/lib/madara:/var/lib/madara \
-    madara:latest \
-    --base-path ../madara-db \
-    --network main \
-    --l1-endpoint <rpc key> \
+    madara:latest                      \
+    --base-path ./madara-db            \
+    --network main                     \
+    --rpc-external                     \
+    --rpc-cors all                     \
+    --preset mainnet                   \
+    --l1-endpoint <rpc key>
 ```
 
 Check the logs of the running Madara service:
