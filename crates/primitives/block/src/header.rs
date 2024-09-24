@@ -117,7 +117,6 @@ impl GasPrices {
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum L1DataAvailabilityMode {
     Calldata,
     #[default]
