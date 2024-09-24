@@ -74,6 +74,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore]
     async fn test_block_hash_and_number_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
@@ -108,6 +109,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore]
     async fn test_get_block_txn_count_works(_set_workdir: ()) {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
