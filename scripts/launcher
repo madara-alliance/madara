@@ -50,7 +50,7 @@ BOLD=$(tput bold)
 UNDERLINE=$(tput smul)
 BLINK=$(tput blink)
 
-# ASCII Icons for social links
+# Icons for social links
 GITHUB_ICON="🔗 GitHub: "
 DOCS_ICON="📄 Documentation: "
 
@@ -85,10 +85,10 @@ echo -e "${RED}
 # Welcome message
 clear
 ascii_art
-echo -e "${GREEN}${BOLD}Welcome to the Madara Docker Launcher!${NC}"
+echo -e "${GREEN}${BOLD}Welcome to the Madara Launcher!${NC}"
 echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
 echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
-echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://madara.build${NC}"
+echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://docs.madara.build${NC}"
 # Save cursor position
 tput sc
 
