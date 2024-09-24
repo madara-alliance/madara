@@ -13,11 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          path: |
+            target/release/madara
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.78
-          path: |
-            target/release/madara
       - name: Setup build deps
         run: |
           sudo apt-get update
