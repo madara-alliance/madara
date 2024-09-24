@@ -1,0 +1,36 @@
+name: Task - Build Madara
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    permissions:
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.78
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
+
+      - uses: rui314/setup-mold@v1 # Added this step
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.2"
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build
+        run: |
+          cargo build --bin madara --profile dev
+          export COVERAGE_BIN=$(realpath target/debug/madara)
