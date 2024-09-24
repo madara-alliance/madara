@@ -40,7 +40,7 @@ case "$OS" in
   *)          echo "Unsupported OS: $OS"; exit 1;;
 esac
 
-# Couleurs et styles
+# Colors and styles
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 RED=$(tput setaf 1)
@@ -50,11 +50,11 @@ BOLD=$(tput bold)
 UNDERLINE=$(tput smul)
 BLINK=$(tput blink)
 
-# Icônes ASCII pour les liens sociaux
+# ASCII Icons for social links
 GITHUB_ICON="🔗 GitHub: "
 DOCS_ICON="📄 Documentation: "
 
-# Fonction pour la barre de progression
+# Function for progress bar
 progress_bar() {
     local duration=${1}
     already_done() { for ((done=0; done<$elapsed; done++)); do printf "▇"; done }
@@ -73,22 +73,22 @@ progress_bar() {
 # ASCII Art
 ascii_art() {
 echo -e "${RED}
-                      ____                            
-                     / __ \___  ____  _  ____  _______
-                    / / / / _ \/ __ \| |/_/ / / / ___/
-                   / /_/ /  __/ /_/ />  </ /_/ (__  ) 
-                  /_____/\___/\____/_/|_|\__, /____/  
-                                        /____/${NC}v0.1.0-alpha
+                    __  ___          __                
+                   /  |/  /___ _____/ /___ __________ _
+                  / /|_/ / __ \`/ __  / __ \`/ ___/ __ \`/
+                 / /  / / /_/ / /_/ / /_/ / /  / /_/ / 
+                /_/  /_/\__,_/\__,_/\__,_/_/   \__,_/  
+                                       ${NC}v0.7.0-alpha
 "
 }
 
 # Welcome message
 clear
 ascii_art
-echo -e "${GREEN}${BOLD}Welcome to Madara launcher!${NC}"
-echo -e "${GREEN}This script allows you to easily launch a Madara instance with your desired parameters.${NC}"
+echo -e "${GREEN}${BOLD}Welcome to the Madara Docker Launcher!${NC}"
+echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
 echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
-echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://kasar.io${NC}"
+echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://madara.io${NC}"
 # Save cursor position
 tput sc
 
@@ -107,28 +107,11 @@ if [ "$PROCEED" != "yes" ]; then
 fi
 
 # Define dependencies and their check commands
-if [ "$OS" == "Linux" ]; then
-  DEPENDENCIES=(
-      "curl:command -v curl"
-      "rustup:command -v rustup"
-      "cargo:command -v cargo"
-      "g++:command -v g++"
-      "protobuf-compiler:command -v protoc"
-      "libasound2-dev:dpkg -s libasound2-dev"
-      "pkg-config:command -v pkg-config"
-      "zstd:command -v zstd"
-  )
-elif [ "$OS" == "Mac" ]; then
-  DEPENDENCIES=(
-      "curl:command -v curl"
-      "rustup:command -v rustup"
-      "cargo:command -v cargo"
-      "g++:command -v g++"
-      "protobuf-compiler:command -v protoc"
-      "pkg-config:command -v pkg-config"
-      "zstd:command -v zstd"
-  )
-fi
+DEPENDENCIES=(
+    "curl:command -v curl"
+    "docker:command -v docker"
+    "git:command -v git"
+)
 
 # Function to check for a dependency
 check_dependency() {
@@ -151,102 +134,117 @@ if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
     for DEP in "${MISSING_DEPS[@]}"; do
         echo -e "${YELLOW}- $DEP${NC}"
     done
-    
+
     echo -e "\n${YELLOW}${BOLD}Do you want to install the missing dependencies? (yes/no)${NC}"
     read -p "> " INSTALL_DEPS
-    
+
     if [ "$INSTALL_DEPS" != "yes" ]; then
         echo -e "\n${RED}Installation aborted.${NC}"
         exit 1
     else
         echo -e "\n${GREEN}Installing missing dependencies...${NC}"
         if [ "$OS" == "Linux" ]; then
-          sudo apt update
-          for DEP in "${MISSING_DEPS[@]}"; do
-              if ! sudo apt install -y "$DEP"; then
-                  echo -e "${RED}Failed to install $DEP.${NC}"
-                  STILL_MISSING_DEPS+=("$DEP")
-              fi
-          done
+            sudo apt update
+            for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "docker" ]; then
+                    echo -e "${GREEN}Installing Docker...${NC}"
+                    curl -fsSL https://get.docker.com -o get-docker.sh
+                    sudo sh get-docker.sh
+                    rm get-docker.sh
+                    sudo usermod -aG docker $USER
+                    newgrp docker
+                else
+                    if ! sudo apt install -y "$DEP"; then
+                        echo -e "${RED}Failed to install $DEP.${NC}"
+                    fi
+                fi
+            done
         elif [ "$OS" == "Mac" ]; then
-          for DEP in "${MISSING_DEPS[@]}"; do
-              if ! brew install "$DEP"; then
-                  echo -e "${RED}Failed to install $DEP.${NC}"
-                  STILL_MISSING_DEPS+=("$DEP")
-              fi
-          done
+            for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "docker" ]; then
+                    echo -e "${GREEN}Please install Docker Desktop from https://www.docker.com/products/docker-desktop and run this script again.${NC}"
+                    exit 1
+                else
+                    if ! brew install "$DEP"; then
+                        echo -e "${RED}Failed to install $DEP.${NC}"
+                    fi
+                fi
+            done
         fi
-    fi
-    
-    # Re-check dependencies to ensure all are installed
-    echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
-    RECHECK_MISSING_DEPS=()
-    for DEP in "${MISSING_DEPS[@]}"; do
-        DEP_CHECK="${DEPENDENCIES[@]#*:}"
-        if ! check_dependency "$DEP_CHECK"; then
-            RECHECK_MISSING_DEPS+=("$DEP")
-        fi
-    done
 
-    if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
-        echo -e "\n${RED}The following dependencies could not be installed:${NC}"
-        for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
-            echo -e "${RED}- $DEP${NC}"
+        # Re-check dependencies to ensure all are installed
+        echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
+        RECHECK_MISSING_DEPS=()
+        for DEP in "${DEPENDENCIES[@]}"; do
+            DEP_NAME="${DEP%%:*}"
+            DEP_CHECK="${DEP##*:}"
+            if ! check_dependency "$DEP_CHECK"; then
+                RECHECK_MISSING_DEPS+=("$DEP_NAME")
+            fi
         done
-        exit 1
-    else
-        echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
+
+        if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
+            echo -e "\n${RED}The following dependencies could not be installed:${NC}"
+            for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
+                echo -e "${RED}- $DEP${NC}"
+            done
+            exit 1
+        else
+            echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
+        fi
     fi
 else
     echo -e "\n${GREEN}All dependencies are installed.${NC}"
 fi
 
-
-echo -e "\n${GREEN}We will now proceed with the download and installation of the binary from GitHub:${NC}"
+echo -e "\n${GREEN}We will now proceed with the download of Madara from GitHub:${NC}"
 echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/madara-alliance/madara${NC}"
 
-echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}"
-read -p "> " PROCEED
+# Ask for installation directory
+echo -e "\n${YELLOW}${BOLD}Where would you like to install Madara? (default is current directory)${NC}"
+read -p "> " INSTALL_DIR
+
+# Set default directory if not provided
+INSTALL_DIR=${INSTALL_DIR:-$(pwd)}
+
+# Clone the Madara repository
+echo -e "\n${GREEN}Cloning the Madara repository into ${INSTALL_DIR}...${NC}"
+if [ -d "${INSTALL_DIR}/madara" ]; then
+    echo -e "${YELLOW}Madara directory already exists. Updating...${NC}"
+    cd "${INSTALL_DIR}/madara" && git pull
+else
+    git clone https://github.com/madara-alliance/madara.git "${INSTALL_DIR}/madara"
+    cd "${INSTALL_DIR}/madara"
+fi
+
 
 tput rc
 tput ed
 
-if [ "$PROCEED" != "yes" ]; then
-    echo -e "${RED}Operation aborted.${NC}"
-    exit 1
-fi
+# Build the Docker image
+echo -e "\n${GREEN}Building the Docker image... (this operation will take a few minutes)${NC}"
+# if ! docker build -t madara .; then
+#     echo -e "${RED}Docker image build failed. Please check the Dockerfile and try again.${NC}"
+#     exit 1
+# fi
 
-# Function to check if a command exists
-command_exists () {
-    type "$1" &> /dev/null ;
-}
+tput rc
+tput ed
 
-# Check if curl is installed
-if ! command_exists curl ; then
-    echo -e "${RED}Error: curl is not installed. Please install curl and try again.${NC}"
-    exit 1
-fi
-
-# Check if rustup is installed
-if ! command_exists rustup ; then
-    echo -e "${YELLOW}Installing rustup...${NC}"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
-fi
-
-# Check if cargo is installed
-if ! command_exists cargo ; then
-    echo -e "${RED}Error: cargo is not installed. Please install Rust and try again.${NC}"
-    exit 1
-fi
-
-# Install the binary from a given URL
-BIN_URL="https://example.com/path/to/your/binary"  # Replace with actual URL
-BIN_NAME="madara"  # Replace with the actual name of the binary
-
-echo -e "\n${GREEN}Downloading the binary...${NC}"
-curl -L $BIN_URL -o /usr/local/bin/$BIN_NAME
-chmod +x /usr/local/bin/$BIN_NAME
+# Choose the mode
+echo -e "\n🕹️ ${YELLOW}${BOLD}On which mode would you like to run Madara? (Enter a number)${NC}\n"
+echo "${YELLOW}1. Full Node${NC}"
+echo "${YELLOW}2. Sequencer${NC}"
+echo "${YELLOW}3. Devnet${NC}"
+while true; do
+    read -p "> " MODE_CHOICE
+    case $MODE_CHOICE in
+        1) MODE="full"; break ;;
+        2) MODE="sequencer"; break ;;
+        3) MODE="devnet"; break ;;
+        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
+    esac
+done
 
 tput rc
 tput ed
@@ -265,23 +263,78 @@ done
 tput rc
 tput ed
 
-# Choose the network
-echo -e "\n🌐 ${YELLOW}${BOLD}On which network? (Enter a number)${NC}\n"
-echo "${YELLOW}1. Mainnet${NC}"
-echo "${YELLOW}2. Testnet${NC}"
-echo "${YELLOW}3. Integration${NC}"
-while true; do
-    read -p "> " NETWORK_CHOICE
-    case $NETWORK_CHOICE in
-        1) NETWORK="main"; break ;;
-        2) NETWORK="test"; break ;;
-        3) NETWORK="integration"; break ;;
-        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
-    esac
-done
+# Choose the network based on the mode
+if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+    # For sequencer and devnet modes
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Test${NC}"
+    echo "${YELLOW}4. Custom Chain config${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1) PRESET="starknet_mainnet"; break ;;
+            2) PRESET="starknet_testnet"; break ;;
+            3) PRESET="test"; break ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    PRESET="$CUSTOM_CHAIN_CONFIG"
+                    break
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
+        esac
+    done
+else
+    # For full node mode
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose a Network or provide a custom Chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Starknet Integration${NC}"
+    echo "${YELLOW}4. Custom Chain config${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1) NETWORK="main"; break ;;
+            2) NETWORK="test"; break ;;
+            3) NETWORK="integration"; break ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config or preset:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    NETWORK="$CUSTOM_CHAIN_CONFIG"
+                    break
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
+        esac
+    done
+fi
 
 tput rc
 tput ed
+
+# Set the chain config or network option
+if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+    # Use --chain-config with PRESET
+    CHAIN_CONFIG_OPT="--chain-config=\"${PRESET}\""
+else
+    # For full node mode
+    if [ "$NETWORK_CHOICE" -eq 4 ]; then
+        # Custom chain config
+        CHAIN_CONFIG_OPT="--chain-config=\"${NETWORK}\""
+    else
+        # Use --network
+        CHAIN_CONFIG_OPT="--network=\"${NETWORK}\""
+    fi
+fi
 
 # Ask for the database path
 echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/madara)${NC}"
@@ -290,6 +343,11 @@ BASE_PATH=${BASE_PATH:-/tmp/madara}
 
 tput rc
 tput ed
+
+# Create the base path directory if it doesn't exist
+if [ ! -d "$BASE_PATH" ]; then
+    mkdir -p "$BASE_PATH"
+fi
 
 # Ask for RPC access
 while true; do
@@ -306,12 +364,14 @@ tput ed
 
 if [ "$RPC_ACCESS" == "yes" ]; then
     RPC_OPTS="--rpc-cors '*' --rpc-external"
-    echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (default: 9933)${NC}"
+    echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (default: 9944)${NC}"
     read -p "> " RPC_PORT
-    RPC_PORT=${RPC_PORT:-9933}
+    RPC_PORT=${RPC_PORT:-9944}
     RPC_OPTS="$RPC_OPTS --rpc-port $RPC_PORT"
+    PORT_MAPPING="-p $RPC_PORT:$RPC_PORT"
 else
     RPC_OPTS=""
+    PORT_MAPPING=""
 fi
 
 tput rc
@@ -319,7 +379,7 @@ tput ed
 
 # Ask for the L1 endpoint URL
 while true; do
-    echo -e "\n🔗 ${YELLOW}${BOLD}Enter the URL of the L1 endpoint:${NC}"
+    echo -e "\n🔗 ${YELLOW}${BOLD}Provide an L1 RPC endpoint (URL format):${NC}"
     read -p "> " L1_ENDPOINT
     if [[ $L1_ENDPOINT =~ ^https?:// ]]; then
         break
@@ -331,34 +391,45 @@ done
 tput rc
 tput ed
 
-# Synchronize via snapshot or genesis
-echo -e "\n🔄 ${YELLOW}${BOLD}Which sync mode would you like? (Enter a number)${NC}\n"
-echo "${YELLOW}1. Snap sync (fast)${NC}"
-echo "${YELLOW}2. Full sync (safe)${NC}"
-while true; do
-    read -p "> " SYNC_CHOICE
-    case $SYNC_CHOICE in
-        1) SYNC_OPT="--snap"; break ;;
-        2) SYNC_OPT=""; break ;;
-        *) echo -e "${YELLOW}Invalid choice, please enter 1 or 2.${NC}" ;;
-    esac
-done
+# # Synchronize via snapshot or genesis
+# echo -e "\n🔄 ${YELLOW}${BOLD}Which sync mode would you like? (Enter a number)${NC}\n"
+# echo "${YELLOW}1. Snap sync (fast)${NC}"
+# echo "${YELLOW}2. Full sync (safe)${NC}"
+# while true; do
+#     read -p "> " SYNC_CHOICE
+#     case $SYNC_CHOICE in
+#         1) SYNC_OPT="--snap"; break ;;
+#         2) SYNC_OPT=""; break ;;
+#         *) echo -e "${YELLOW}Invalid choice, please enter 1 or 2.${NC}" ;;
+#     esac
+# done
 
-tput rc
-tput ed
+# tput rc
+# tput ed
 
-# Build the final command
-COMMAND="/usr/local/bin/$BIN_NAME run --name $NODE_NAME --network=$NETWORK --base-path=$BASE_PATH $RPC_OPTS --l1-endpoint $L1_ENDPOINT $SYNC_OPT"
+# Build the final Docker run command
+DOCKER_COMMAND="docker run -d --name madara-node \
+    -v ${BASE_PATH}:/data \
+    ${PORT_MAPPING} \
+    madara \
+    run --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\" ${SYNC_OPT}"
 
-echo -e "\n🔄 ${YELLOW}${BOLD}The following command will be executed:${NC}\n"
-echo -e "${CYAN}$COMMAND${NC}"
+echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
+echo -e "${CYAN}$DOCKER_COMMAND${NC}"
 
 # Confirm before executing
 echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}\n"
 read -p "> " CONFIRM
 if [ "$CONFIRM" == "yes" ]; then
-    echo -e "\n${GREEN}Starting the node...${NC}"
-    eval $COMMAND
+    echo -e "\n${GREEN}Starting the Madara node via Docker...${NC}"
+    # Stop and remove any existing container with the same name
+    if docker ps -a --format '{{.Names}}' | grep -Eq "^madara-node\$"; then
+        echo -e "\n${YELLOW}A container named 'madara-node' already exists. Stopping and removing it...${NC}"
+        docker stop madara-node
+        docker rm madara-node
+    fi
+    eval $DOCKER_COMMAND
+    echo -e "\n${GREEN}Madara node is now running in Docker container 'madara-node'.${NC}"
 else
     echo -e "${RED}Command execution aborted.${NC}"
 fi
