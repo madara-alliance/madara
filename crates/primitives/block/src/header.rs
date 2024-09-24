@@ -117,8 +117,11 @@ impl GasPrices {
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum L1DataAvailabilityMode {
+    #[serde(alias = "Calldata")]
     Calldata,
+    #[serde(alias = "Blob")]
     #[default]
     Blob,
 }
