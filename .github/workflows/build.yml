@@ -1,9 +1,7 @@
 name: Task - Build Madara
-
 on:
   workflow_dispatch:
   workflow_call:
-
 jobs:
   build:
     permissions:
@@ -11,28 +9,29 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@1.78.0
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.78
+          toolchain: 1.78.0
       - name: Setup build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
-
-      - uses: rui314/setup-mold@v1 # Added this step
-
+      - uses: rui314/setup-mold@v1
       - uses: software-mansion/setup-scarb@v1
         with:
           scarb-version: "2.8.2"
-
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
-
       - name: Build
         run: |
-          cargo build --bin madara
+          cargo build --release --bin madara
+      - name: Cache Madara binary
+        uses: actions/cache@v3
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-madara-${{ github.sha }}

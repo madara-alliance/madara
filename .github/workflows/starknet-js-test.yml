@@ -9,23 +9,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - name: Restore Madara binary
+        uses: actions/cache@v3
         with:
-          path: |
-            target/release/madara
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{
-            github.run_id }}
+          path: target/release/madara
+          key: ${{ runner.os }}-madara-${{ github.sha }}
           fail-on-cache-miss: true
-      - name: Setup dev chain
+      - name: Setup and run dev chain
         run: |
-          ls -la
-          pwd
-          ./target/release/madara -- --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test
+          chmod +x target/release/madara
+          ./target/release/madara --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
+          MADARA_PID=$!
+          echo "MADARA_PID=$MADARA_PID" >> $GITHUB_ENV
+          while ! nc -z localhost 9944; do
+            echo "Waiting for Madara to start..."
+            sleep 1
+          done
       - name: Run starknet-js test
-        run: |-
-          MADARA_RUN_PID=$!
-          while ! echo exit | nc localhost 9944; do sleep 1; done
+        run: |
           cd js_tests
           npm install
           node main.js
-          kill $MADARA_RUN_PID
+      - name: Cleanup
+        if: always()
+        run: |
+          kill $MADARA_PID || true
