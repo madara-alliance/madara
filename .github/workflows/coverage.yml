@@ -8,7 +8,7 @@ jobs:
   coverage:
     permissions:
       pull-requests: write
-    runs-on: self-hosted
+    runs-on: karnot-arc-runner-set
     steps:
       - uses: actions/checkout@v4
 
