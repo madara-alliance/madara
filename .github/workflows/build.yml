@@ -32,5 +32,5 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --bin madara --profile dev
+          cargo build --bin madara
           export COVERAGE_BIN=$(realpath target/debug/madara)

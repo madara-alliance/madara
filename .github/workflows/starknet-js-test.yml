@@ -18,6 +18,7 @@ jobs:
           fail-on-cache-miss: true
       - name: Setup dev chain
         run: |
+          ls -la
           ./target/release/madara -- --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test
       - name: Run starknet-js test
         run: |-
