@@ -7,8 +7,6 @@ on:
 jobs:
   js-test:
     runs-on: ubuntu-latest
-    env:
-      BINARY_PATH: ./target/release/madara
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
