@@ -271,28 +271,25 @@ mod tests {
     /// Test the `l2_block_conversion_task` function.
     ///
     /// Steps:
-    /// 1. Initialize necessary components (e.g., backend, provider, telemetry, metrics).
-    /// 2. Create a mock block header.
-    /// 3. Call the `l2_block_conversion_task` function with the mock data.
-    /// 4. Verify the results and ensure the function behaves as expected.
-    
+    /// 1. Initialize necessary components.
+    /// 2. Create a mock block.
+    /// 3. Send the mock block to updates_sender
+    /// 4. Call the `l2_block_conversion_task` function with the mock data.
+    /// 5. Verify the results and ensure the function behaves as expected.
     #[rstest]
     #[tokio::test]
     async fn test_l2_block_conversion_task(test_setup: Arc<MadaraBackend>) {
-        // Step 1: Initialize necessary components
         let backend = test_setup;
-        //let ctx = TestContext::new(backend);
         let (updates_sender, updates_receiver) = mpsc::channel(100);
         let (output_sender, mut output_receiver) = mpsc::channel(100);
         let block_import = Arc::new(BlockImporter::new(
             backend.clone(),
             &MetricsRegistry::dummy(),
-            None, // ou une valeur appropriée pour starting_block
-            true, // ou false selon votre besoin pour always_force_flush
+            None,
+            true,
         ).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
-        // Step 2: Create a mock block
         let mock_block = UnverifiedFullBlock {
             header: UnverifiedHeader {
                 parent_block_hash: Some(Felt::ZERO),
@@ -308,13 +305,11 @@ mod tests {
             receipts: vec![],
             declared_classes: vec![],
             commitments: UnverifiedCommitments::default(),
-            trusted_converted_classes: vec![], // Assuming an empty vector for the placeholder
+            trusted_converted_classes: vec![],
         };
 
-        // Send the mock block to the updates_sender
         updates_sender.send(mock_block).await.unwrap();
 
-        // Step 3: Call the `l2_block_conversion_task` function with the mock data
         let task_handle = tokio::spawn(l2_block_conversion_task(
             updates_receiver,
             output_sender,
@@ -322,13 +317,23 @@ mod tests {
             validation,
         ));
 
-        // Step 4: Verify the results and ensure the function behaves as expected
-        let result = output_receiver.recv().await;
-        assert!(result.is_some());
-        // Additional assertions can be added here to verify specific behavior
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), output_receiver.recv()).await;
+        match result {
+            Ok(Some(b)) => {
+                assert_eq!(b.unverified_block_number, Some(1), "Block number does not match");
+            },
+            Ok(None) => panic!("Channel closed without receiving a result"),
+            Err(_) => panic!("Timeout reached while waiting for result"),
+        }
 
-        // Ensure the task completes
-        let _ = task_handle.await.unwrap();
+        // Close the updates_sender channel to allow the task to complete
+        drop(updates_sender);
+
+        match tokio::time::timeout(std::time::Duration::from_secs(5), task_handle).await {
+            Ok(Ok(_)) => (),
+            Ok(Err(e)) => panic!("Task failed: {:?}", e),
+            Err(_) => panic!("Timeout reached while waiting for task completion"),
+        }
     }
 
     #[rstest]
