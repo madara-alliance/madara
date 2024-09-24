@@ -57,6 +57,8 @@ impl FromStr for ChainPreset {
     }
 }
 
+// TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
+// proper page about tuning the block production performance.
 #[derive(Debug)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
@@ -138,26 +140,50 @@ pub struct ChainConfig {
     pub chain_name: String,
     pub chain_id: ChainId,
 
-    /// For starknet, this is the STRK ERC-20 contract on starknet.
+    /// For Starknet, this is the STRK ERC-20 contract on L2.
     pub native_fee_token_address: ContractAddress,
-    /// For starknet, this is the ETH ERC-20 contract on starknet.
+    /// For Starknet, this is the ETH ERC-20 contract on L2.
     pub parent_fee_token_address: ContractAddress,
 
-    /// BTreeMap ensures order.
+    /// Ordered mapping from protocol version to execution constants, such as the gas cost of the built-ins and such.
+    // BTreeMap ensures order.
     pub versioned_constants: ChainVersionedConstants,
+    // TODO: document supported versions (blockifier is not fully backward compatible)
     #[serde(deserialize_with = "deserialize_starknet_version")]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
+    /// Time between every block.
+    // TODO: document what happens when block time is missed, implement different configurable behaviors.
     #[serde(deserialize_with = "deserialize_duration")]
     pub block_time: Duration,
+
     /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
+    ///
+    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
+    /// Each pending block tick will try to fill up the bouncer capacity proportionally to the tick index within the entire block time.
+    /// Note that having a low update time and bouncer capacity together, but leaving a high execution batch size will likely result in
+    /// block production suboptimally trying to execute a lot more transactions than what would fit in the bouncer capacity for a single tick.
+    /// This is especially relevant when optimistic parallelization is enabled.
+    ///
+    /// ## Why does Starknet have a pending block anyway?
+    ///
+    /// The pending block is an artifact to allow low transaction confirmation times that may go away when a peer-to-peer
+    /// consensus will be the norm.
+    /// A low block time, or a pending block with a low update time will yield the same execution performance - but the big difference is
+    /// that network sync is not optimized for very fast and very small blocks yet. On top of that, the prover may have special needs in terms
+    /// of those as well. The pending block is a stop-gap solution to these problems in the meantime.
     #[serde(deserialize_with = "deserialize_duration")]
     pub pending_block_update_time: Duration,
 
-    /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     /// Only used for block production.
+    /// Block production is handled in batches; each batch will pop this number of transactions from the mempool. This is
+    /// primarily useful for optimistic parallelization.
+    /// A value too high may have a performance impact - you will need some testing to find the best value for your network.
+    pub execution_batch_size: usize,
+
+    /// Only used for block production.
+    /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     #[serde(deserialize_with = "deserialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
 
@@ -169,7 +195,7 @@ pub struct ChainConfig {
     /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
     pub max_nonce_for_validation_skip: u64,
 
-    /// The Starknet core contract address for the L1 watcher.
+    /// The Starknet core contract address on L1, used by the L1 watcher service.
     pub eth_core_contract_address: H160,
 }
 
@@ -187,6 +213,21 @@ impl ChainConfig {
     pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
         let config_str = fs::read_to_string(path)?;
         serde_yaml::from_str(&config_str).context("While deserializing chain config")
+    }
+
+    /// Verify that the chain config is valid for block production.
+    pub fn precheck_block_production(&self) -> anyhow::Result<()> {
+        // block_time != 0 implies that n_pending_ticks_per_block != 0.
+        if self.sequencer_address == ContractAddress::default() {
+            bail!("Sequencer address cannot be 0x0 for block production.")
+        }
+        if self.block_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        if self.pending_block_update_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        Ok(())
     }
 
     /// Returns the Chain Config preset for Starknet Mainnet.
@@ -216,7 +257,9 @@ impl ChainConfig {
     }
 
     /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
+    /// The chain config needs to be checked with [`ChainConfig::precheck_block_production`] beforehand.
     pub fn n_pending_ticks_per_block(&self) -> usize {
+        // Division by zero: see [`ChainConfig::precheck_block_production`].
         (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
     }
 

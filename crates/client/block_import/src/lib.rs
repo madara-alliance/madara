@@ -38,16 +38,20 @@
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
 
+use anyhow::Context;
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_metrics::MetricsRegistry;
+use metrics::BlockMetrics;
 use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, sync::Arc};
 
+mod metrics;
 mod pre_validate;
 mod rayon;
+pub mod tests;
 mod types;
 mod verify_apply;
-
 pub use pre_validate::*;
 pub use rayon::*;
 pub use types::*;
@@ -113,13 +117,39 @@ impl BlockImportError {
 }
 pub struct BlockImporter {
     pool: Arc<RayonPool>,
+    backend: Arc<MadaraBackend>,
     verify_apply: VerifyApply,
+    metrics: BlockMetrics,
+    always_force_flush: bool,
 }
 
 impl BlockImporter {
-    pub fn new(backend: Arc<MadaraBackend>) -> Self {
+    /// The starting block is used for metrics. Setting it to None means it will look at the database latest block number.
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        metrics_registry: &MetricsRegistry,
+        starting_block: Option<u64>,
+        always_force_flush: bool,
+    ) -> anyhow::Result<Self> {
         let pool = Arc::new(RayonPool::new());
-        Self { verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)), pool }
+        let starting_block = if let Some(n) = starting_block {
+            n
+        } else {
+            backend
+                .get_latest_block_n()
+                .context("Getting latest block in database")?
+                .map(|b| /* next block */ b + 1)
+                .unwrap_or(0 /* genesis */)
+        };
+
+        Ok(Self {
+            verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)),
+            pool,
+            metrics: BlockMetrics::register(starting_block, metrics_registry)
+                .context("Registering metrics for block import")?,
+            backend,
+            always_force_flush,
+        })
     }
 
     /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block.
@@ -145,7 +175,14 @@ impl BlockImporter {
         block: PreValidatedBlock,
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
-        self.verify_apply.verify_apply(block, validation).await
+        let result = self.verify_apply.verify_apply(block, validation).await?;
+        // Flush step.
+        let force = self.always_force_flush;
+        self.backend
+            .maybe_flush(force)
+            .map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+        self.metrics.update(&result.header, &self.backend);
+        Ok(result)
     }
 
     pub async fn pre_validate_pending(

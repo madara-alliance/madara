@@ -38,17 +38,12 @@ pub fn broadcasted_to_blockifier(
     (blockifier::transaction::transaction_execution::Transaction, Option<ConvertedClass>),
     BroadcastedToBlockifierError,
 > {
-    // TODO: when class_hash computation is fixed on legacy contract classes, remove this check
-    if let starknet_core::types::BroadcastedTransaction::Declare(
-        starknet_core::types::BroadcastedDeclareTransaction::V1(_),
-    ) = &transaction
-    {
-        return Err(BroadcastedToBlockifierError::LegacyContractClassesNotSupported);
-    }
     let (class_info, class_hash, extra_class_info) = match &transaction {
         starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
-                let class_hash = Felt::ZERO;
+                let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
+                let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
+                log::debug!("Computed legacy class hash: {:?}", class_hash);
                 let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
                 let class_blockifier = compressed_legacy_class
                     .to_blockifier_class()

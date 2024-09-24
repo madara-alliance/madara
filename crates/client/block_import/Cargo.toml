@@ -9,13 +9,18 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 bitvec.workspace = true
+itertools.workspace = true
 log.workspace = true
+num-traits.workspace = true
 rayon.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 mc-db = { workspace = true }
+mc-metrics = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -23,8 +28,13 @@ mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 bonsai-trie = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rstest = { workspace = true }

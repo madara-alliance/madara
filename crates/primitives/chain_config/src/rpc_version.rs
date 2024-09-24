@@ -75,7 +75,7 @@ impl RpcVersion {
 
 impl std::fmt::Display for RpcVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}_{}_{}", self.0[0], self.0[1], self.0[2])?;
+        write!(f, "{}.{}.{}", self.0[0], self.0[1], self.0[2])?;
         Ok(())
     }
 }
@@ -114,14 +114,14 @@ mod tests {
     fn test_rpc_version_string_2() {
         let version = RpcVersion::from_str("0_11").unwrap();
         assert_eq!(version, RpcVersion::new(0, 11, 0));
-        assert_eq!(version.to_string(), "0_11_0");
+        assert_eq!(version.to_string(), "0.11.0");
     }
 
     #[test]
     fn test_rpc_version_string_3() {
         let version = RpcVersion::from_str("0_11_3").unwrap();
         assert_eq!(version, RpcVersion::new(0, 11, 3));
-        assert_eq!(version.to_string(), "0_11_3");
+        assert_eq!(version.to_string(), "0.11.3");
     }
 
     #[test]

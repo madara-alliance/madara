@@ -29,6 +29,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+pub use inner::TxInsersionError;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
@@ -47,7 +48,7 @@ pub enum Error {
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
-    InnerMempool(#[from] inner::TxInsersionError),
+    InnerMempool(#[from] TxInsersionError),
     #[error(transparent)]
     Exec(#[from] mc_exec::Error),
     #[error("Preprocessing transaction: {0:#}")]
@@ -55,7 +56,7 @@ pub enum Error {
 }
 impl Error {
     pub fn is_internal(&self) -> bool {
-        !matches!(self, Error::Validation(_))
+        matches!(self, Error::StorageError(_) | Error::BroadcastedToBlockifier(_))
     }
 }
 
@@ -67,9 +68,13 @@ pub trait MempoolProvider: Send + Sync {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error>;
-    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize);
+    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
+    where
+        Self: Sized;
     fn take_tx(&self) -> Option<MempoolTransaction>;
-    fn re_add_txs(&self, txs: Vec<MempoolTransaction>);
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I)
+    where
+        Self: Sized;
     fn chain_id(&self) -> Felt;
 }
 
@@ -123,7 +128,7 @@ impl Mempool {
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some())?;
+        let _ = validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some());
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
@@ -209,7 +214,8 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
-    fn take_txs_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) {
+    /// Warning: A lock is held while a user-supplied function (extend) is run - Callers should be careful
+    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next_chunk(dest, n)
     }
@@ -219,7 +225,8 @@ impl MempoolProvider for Mempool {
         inner.pop_next()
     }
 
-    fn re_add_txs(&self, txs: Vec<MempoolTransaction>) {
+    /// Warning: A lock is taken while a user-supplied function (iterator stuff) is run - Callers should be careful
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.re_add_txs(txs)
     }

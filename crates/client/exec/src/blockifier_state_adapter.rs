@@ -61,19 +61,21 @@ impl StateReader for BlockifierStateAdapter {
             .get_contract_storage_at(&on_top_of_block_id, &contract_address.to_felt(), &key.to_felt())
             .map_err(|err| {
                 log::warn!(
-                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}: {err:#}"
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {:#x}: {err:#}",
+                    key.to_felt()
                 );
                 StateError::StateReadError(format!(
-                    "Failed to retrieve storage value for contract {contract_address:#?} at key {key:#?}",
+                    "Failed to retrieve storage value for contract {contract_address:#?} at key {:#x}",
+                    key.to_felt()
                 ))
             })?
             .unwrap_or(Felt::ZERO);
 
         log::debug!(
-            "get_storage_at: on={:?}, contract={:?} key={:?} => {:#x}",
+            "get_storage_at: on={:?}, contract={} key={:#x} => {:#x}",
             self.on_top_of_block_id,
             contract_address,
-            key,
+            key.to_felt(),
             res
         );
 
@@ -81,22 +83,22 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
-        log::debug!("get_nonce_at for {:#?}", contract_address);
+        log::debug!("get_nonce_at for {}", contract_address);
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Nonce::default()) };
 
         Ok(Nonce(
             self.backend
                 .get_contract_nonce_at(&on_top_of_block_id, &contract_address.to_felt())
                 .map_err(|err| {
-                    log::warn!("Failed to retrieve nonce for contract {contract_address:#?}: {err:#}");
-                    StateError::StateReadError(format!("Failed to retrieve nonce for contract {contract_address:#?}",))
+                    log::warn!("Failed to retrieve nonce for contract {contract_address}: {err:#}");
+                    StateError::StateReadError(format!("Failed to retrieve nonce for contract {contract_address}",))
                 })?
                 .unwrap_or(Felt::ZERO),
         ))
     }
 
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        log::debug!("get_class_hash_at for {:#?}", contract_address);
+        log::debug!("get_class_hash_at for {}", contract_address);
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(ClassHash::default()) };
 
         // Note that blockifier is fine with us returning ZERO as a class_hash if it is not found, they do the check on their end after
@@ -105,8 +107,8 @@ impl StateReader for BlockifierStateAdapter {
                 .get_contract_class_hash_at(&on_top_of_block_id, &contract_address.to_felt())
                 .map_err(|err| {
                     StateError::StateReadError(format!(
-                        "Failed to retrieve class hash for contract {:#}: {:#}",
-                        contract_address.0.key(),
+                        "Failed to retrieve class hash for contract {:#x}: {:#}",
+                        contract_address.to_felt(),
                         err
                     ))
                 })?
@@ -115,7 +117,7 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
-        log::debug!("get_compiled_contract_class for {:#?}", class_hash);
+        log::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
@@ -136,12 +138,17 @@ impl StateReader for BlockifierStateAdapter {
                     .backend
                     .get_sierra_compiled(&on_top_of_block_id, &info.compiled_class_hash)
                     .map_err(|err| {
-                        log::warn!("Failed to retrieve sierra compiled class {class_hash:#}: {err:#}");
-                        StateError::StateReadError(format!("Failed to retrieve compiled class {class_hash:#}"))
+                        log::warn!("Failed to retrieve sierra compiled class {:#x}: {err:#}", class_hash.to_felt());
+                        StateError::StateReadError(format!(
+                            "Failed to retrieve compiled class {:#x}",
+                            class_hash.to_felt()
+                        ))
                     })?
                     .ok_or(StateError::StateReadError(format!(
-                        "Inconsistent state: compiled sierra class {class_hash:#} not found"
+                        "Inconsistent state: compiled sierra class {:#x} not found",
+                        class_hash.to_felt()
                     )))?;
+
                 // TODO: convert ClassCompilationError to StateError
                 Ok(compiled_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
             }
@@ -153,15 +160,18 @@ impl StateReader for BlockifierStateAdapter {
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        log::debug!("get_compiled_class_hash for {:#?}", class_hash);
+        log::debug!("get_compiled_class_hash for {:#x}", class_hash.to_felt());
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
         let Some(class_info) =
             self.backend.get_class_info(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
-                log::warn!("Failed to retrieve compiled class hash {class_hash:#}: {err:#}");
-                StateError::StateReadError(format!("Failed to retrieve compiled class hash {class_hash:#}",))
+                log::warn!("Failed to retrieve compiled class hash {:#x}: {err:#}", class_hash.to_felt());
+                StateError::StateReadError(format!(
+                    "Failed to retrieve compiled class hash {:#x}",
+                    class_hash.to_felt()
+                ))
             })?
         else {
             return Err(StateError::UndeclaredClassHash(class_hash));
