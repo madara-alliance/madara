@@ -22,19 +22,10 @@ jobs:
         with:
           toolchain: 1.78
 
-      # - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
-
-      - uses: sparebank1utvikling/actions-cache-s3@main
+      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: karnot-github-ci-cache
-          aws-region: us-west-1
+          cache-provider: buildjet
+          key: "coverage"
 
       - uses: rui314/setup-mold@v1
       - name: Install cargo-llvm-cov
