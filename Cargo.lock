@@ -5815,6 +5815,7 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "mp-receipt",
+ "mp-state-update",
  "mp-transactions",
  "mp-utils",
  "num-traits 0.2.19",

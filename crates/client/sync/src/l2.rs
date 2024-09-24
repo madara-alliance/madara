@@ -247,3 +247,102 @@ pub async fn sync(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mc_block_import::{UnverifiedCommitments, UnverifiedHeader};
+    use mc_db::MadaraBackend;
+    use mc_metrics::MetricsRegistry;
+    use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+    use mp_chain_config::StarknetVersion;
+    use std::sync::Arc;
+    use starknet_types_core::felt::Felt;
+    use rstest::rstest;
+    use crate::tests::utils::gateway::test_setup;
+    use mp_state_update::StateDiff;
+    use mc_block_import::BlockImporter;
+
+    #[rstest]
+    fn test_l2_verify_and_apply_task() {
+        // TODO: Implement test
+    }
+
+    /// Test the `l2_block_conversion_task` function.
+    ///
+    /// Steps:
+    /// 1. Initialize necessary components (e.g., backend, provider, telemetry, metrics).
+    /// 2. Create a mock block header.
+    /// 3. Call the `l2_block_conversion_task` function with the mock data.
+    /// 4. Verify the results and ensure the function behaves as expected.
+    
+    #[rstest]
+    #[tokio::test]
+    async fn test_l2_block_conversion_task(test_setup: Arc<MadaraBackend>) {
+        // Step 1: Initialize necessary components
+        let backend = test_setup;
+        //let ctx = TestContext::new(backend);
+        let (updates_sender, updates_receiver) = mpsc::channel(100);
+        let (output_sender, mut output_receiver) = mpsc::channel(100);
+        let block_import = Arc::new(BlockImporter::new(
+            backend.clone(),
+            &MetricsRegistry::dummy(),
+            None, // ou une valeur appropriée pour starting_block
+            true, // ou false selon votre besoin pour always_force_flush
+        ).unwrap());
+        let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
+
+        // Step 2: Create a mock block
+        let mock_block = UnverifiedFullBlock {
+            header: UnverifiedHeader {
+                parent_block_hash: Some(Felt::ZERO),
+                sequencer_address: Felt::ZERO,
+                block_timestamp: 0,
+                protocol_version: StarknetVersion::default(),
+                l1_gas_price: GasPrices::default(),
+                l1_da_mode: L1DataAvailabilityMode::Blob,
+            },
+            transactions: vec![],
+            unverified_block_number: Some(1),
+            state_diff: StateDiff::default(),
+            receipts: vec![],
+            declared_classes: vec![],
+            commitments: UnverifiedCommitments::default(),
+            trusted_converted_classes: vec![], // Assuming an empty vector for the placeholder
+        };
+
+        // Send the mock block to the updates_sender
+        updates_sender.send(mock_block).await.unwrap();
+
+        // Step 3: Call the `l2_block_conversion_task` function with the mock data
+        let task_handle = tokio::spawn(l2_block_conversion_task(
+            updates_receiver,
+            output_sender,
+            block_import,
+            validation,
+        ));
+
+        // Step 4: Verify the results and ensure the function behaves as expected
+        let result = output_receiver.recv().await;
+        assert!(result.is_some());
+        // Additional assertions can be added here to verify specific behavior
+
+        // Ensure the task completes
+        let _ = task_handle.await.unwrap();
+    }
+
+    #[rstest]
+    fn test_l2_pending_block_task() {
+        // TODO: Implement test
+    }
+
+    #[rstest]
+    fn test_sync() {
+        // TODO: Implement test
+    }
+
+    #[rstest]
+    fn test_update_sync_metrics() {
+        // TODO: Implement test
+    }
+}

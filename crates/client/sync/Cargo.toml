@@ -29,6 +29,7 @@ mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
+mp-state-update = { workspace = true }
 
 # Starknet
 starknet-core = { workspace = true }
@@ -61,3 +62,4 @@ url = { workspace = true }
 httpmock = { workspace = true }
 tempfile = { workspace = true }
 rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
