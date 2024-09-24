@@ -11,7 +11,21 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
+
+      # - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
+
+      - uses: sparebank1utvikling/actions-cache-s3@main
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+          aws-s3-bucket: karnot-github-ci-cache
+          aws-region: us-west-1
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.78
