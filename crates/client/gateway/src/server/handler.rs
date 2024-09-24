@@ -51,7 +51,7 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
         let block_provider = PendingBlockProvider::new(block);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     } else {
-        Err(GatewayError::InternalServerError.into())
+        Err(GatewayError::InternalServerError)
     }
 }
 
@@ -119,7 +119,7 @@ pub async fn handle_get_state_update(
                 .ok_or(StarknetError::block_not_found())?;
             let block_info = resolved_block
                 .as_nonpending()
-                .ok_or_internal_server_error(format!("Converting potentially pending block to non-pending"))?;
+                .ok_or_internal_server_error("Converting potentially pending block to non-pending")?;
 
             let old_root = match block_info.header.block_number.checked_sub(1) {
                 Some(val) => backend
@@ -168,7 +168,7 @@ pub async fn handle_get_class_by_hash(
     let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
 
     let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
-    let class_hash = Felt::from_hex(class_hash).map_err(|e| StarknetError::invalid_class_hash(e))?;
+    let class_hash = Felt::from_hex(class_hash).map_err(StarknetError::invalid_class_hash)?;
 
     let class_info = backend
         .get_class_info(&block_id, &class_hash)
