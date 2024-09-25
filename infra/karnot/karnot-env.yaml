@@ -2,11 +2,11 @@ environments:
   - project: devnet
     id: 5ac2bbca-b3e1-4849-b04c-116819c6c13a
     repos:
-      - madara:
-          image: apoorvsadana/madara:1b9b0d57132bb64351a600d2540af052ec23acde_manual
-          config:
-            --network: devnet
-            --devnet: ""
-            --chain-config-path: ./test.yaml
-            --override-devnet-chain-id: --chain-config-override
-            --block-time: "1"
+      madara:
+        image: apoorvsadana/madara:1b9b0d57132bb64351a600d2540af052ec23acde_manual
+        config:
+          --network: devnet
+          --devnet: ""
+          --chain-config-path: ./test.yaml
+          --override-devnet-chain-id: --chain-config-override
+          --block-time: "1"
