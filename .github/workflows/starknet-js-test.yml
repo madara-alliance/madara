@@ -18,25 +18,11 @@ jobs:
       - name: Setup and run dev chain
         run: |
           chmod +x target/release/madara
-          nohup ./target/release/madara --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
+          ./target/release/madara --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
           MADARA_PID=$!
-          echo "MADARA_PID=$MADARA_PID" >> $GITHUB_ENV
-          while ! nc -z localhost 9944; do
-            echo "Waiting for Madara to start..."
-            sleep 1
-          done
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        
-      - name: Install dependencies
-        run: |
+          while ! echo exit | nc localhost 9944; do sleep 1; done
           cd js_tests
           npm install
-      - name: Run starknet-js tests
-        run: |
-          cd js_tests
           npm test
-      - name: Cleanup
-        if: always()
-        run: |
-          kill $MADARA_PID || true
+          kill $MADARA_PID
+      
