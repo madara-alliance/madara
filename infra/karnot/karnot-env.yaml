@@ -3,9 +3,10 @@ environments:
     id: 5ac2bbca-b3e1-4849-b04c-116819c6c13a
     repos:
       - madara:
-          image: apoorvsadana/madara:latest
+          image: apoorvsadana/madara:1b9b0d57132bb64351a600d2540af052ec23acde_manual
           config:
-						ACCOUNT_CONTRACT_CLASS_HASH: "0x075cf60ff9ba89b630f64830245f04439c8749210e58d2192349b7f05d2407c0"
-						COMPILED_KAKAROT_PATH: "lib/kakarot/build"
-						EVM_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-						KAKAROT_ADDRESS: "0x11c5faab8a76b3caff6e243b8d13059a7fb723a0ca12bbaadde95fb9e501bda"
+						"--network": "devnet"
+            "--devnet": ""
+            "--chain-config-path": "./test.yaml":
+            "--override-devnet-chain-id": "--chain-config-override"
+            "--block-time": "1"
