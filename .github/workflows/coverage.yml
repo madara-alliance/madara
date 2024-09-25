@@ -49,13 +49,13 @@ jobs:
           rm -f target/madara-* lcov.info
           # cargo test --profile dev -- --test-threads=1
 
-      # - name: Generate coverage info
-      #   run: |
-      #     source <(cargo llvm-cov show-env --export-prefix)
-      #     cargo llvm-cov report --lcov --output-path lcov.info
+      - name: Generate coverage info
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov report --lcov --output-path lcov.info
 
-      # - name: Coveralls
-      #   uses: coverallsapp/github-action@v2
-      #   with:
-      #     files: lcov.info
-      #     debug: true
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          files: lcov.info
+          debug: true
