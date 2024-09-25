@@ -252,20 +252,96 @@ pub async fn sync(
 mod tests {
     use super::*;
     use mc_block_import::{UnverifiedCommitments, UnverifiedHeader};
-    use mc_db::MadaraBackend;
+    use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_metrics::MetricsRegistry;
+    use mc_telemetry::TelemetryService;
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_chain_config::StarknetVersion;
     use std::sync::Arc;
     use starknet_types_core::felt::Felt;
     use rstest::rstest;
-    use crate::tests::utils::gateway::test_setup;
+    use crate::tests::utils::gateway::{test_setup, TestContext};
     use mp_state_update::StateDiff;
     use mc_block_import::BlockImporter;
+    use tokio::sync::mpsc;
 
+    /// Test the `l2_verify_and_apply_task` function.
+    ///
+    /// This test verifies the behavior of the `l2_verify_and_apply_task` by simulating
+    /// a block verification and application process.
+    ///
+    /// # Test Steps
+    /// 1. Initialize the backend and necessary components.
+    /// 2. Create a mock block.
+    /// 3. Spawn the `l2_verify_and_apply_task` in a new thread.
+    /// 4. Send the mock block for verification and application.
+    /// 5. Wait for the task to complete or for a timeout to occur.
+    /// 6. Verify that the block has been correctly applied to the backend.
+    ///
+    /// # Panics
+    /// - If the task fails or if the waiting timeout is exceeded.
+    /// - If the block is not correctly applied to the backend.
     #[rstest]
-    fn test_l2_verify_and_apply_task() {
-        // TODO: Implement test
+    #[tokio::test]
+    async fn test_l2_verify_and_apply_task(test_setup: Arc<MadaraBackend>) {
+        let backend = test_setup;
+        let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
+        let block_importer = Arc::new(BlockImporter::new(
+            backend.clone(),
+            &MetricsRegistry::dummy(),
+            None,
+            true,
+        ).unwrap());
+        let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
+        let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
+
+        // Create a simulated block
+        let mock_block = UnverifiedFullBlock {
+            header: UnverifiedHeader {
+                parent_block_hash: Some(Felt::ZERO),
+                sequencer_address: Felt::ZERO,
+                block_timestamp: 0,
+                protocol_version: StarknetVersion::default(),
+                l1_gas_price: GasPrices::default(),
+                l1_da_mode: L1DataAvailabilityMode::Blob,
+            },
+            transactions: vec![],
+            unverified_block_number: Some(0),
+            state_diff: StateDiff::default(),
+            receipts: vec![],
+            declared_classes: vec![],
+            commitments: UnverifiedCommitments::default(),
+            trusted_converted_classes: vec![],
+        };
+
+        // Launch the verification and application task
+        let task_handle = tokio::spawn(l2_verify_and_apply_task(
+            backend.clone(),
+            block_conv_receiver,
+            block_importer.clone(),
+            validation.clone(),
+            Some(1),
+            telemetry,
+        ));
+
+        let mock_pre_validated_block = block_importer.pre_validate(mock_block, validation.clone()).await.unwrap();
+        block_conv_sender.send(mock_pre_validated_block).await.unwrap();
+
+        // Close the channel to allow the task to terminate
+        drop(block_conv_sender);
+
+        // Wait for the task to complete or for a timeout to occur
+        match tokio::time::timeout(std::time::Duration::from_secs(120), task_handle).await {
+            Ok(Ok(_)) => (),
+            Ok(Err(e)) => panic!("Task failed: {:?}", e),
+            Err(_) => panic!("Timeout reached while waiting for task completion"),
+        }
+
+        // Verify that the block has been correctly applied
+        let applied_block = backend.get_block(&DbBlockId::BlockN(0)).unwrap();
+        assert!(applied_block.is_some(), "The block was not applied correctly");
+        let applied_block = applied_block.unwrap();
+        println!("applied_block: {:?}", applied_block);
     }
 
     /// Test the `l2_block_conversion_task` function.
@@ -336,18 +412,133 @@ mod tests {
         }
     }
 
+    /// Test the `l2_pending_block_task` function.
+    ///
+    /// This test function verifies the behavior of the `l2_pending_block_task`.
+    /// It simulates the necessary environment and checks that the task executes correctly
+    /// within a specified timeout.
+    ///
+    /// # Test Steps
+    /// 1. Initialize the backend and test context.
+    /// 2. Create a `BlockImporter` and a `BlockValidationContext`.
+    /// 3. Spawn the `l2_pending_block_task` in a new thread.
+    /// 4. Simulate the "once_caught_up" signal.
+    /// 5. Wait for the task to complete or for a timeout to occur.
+    ///
+    /// # Panics
+    /// - If the task fails or if the waiting timeout is exceeded.
     #[rstest]
-    fn test_l2_pending_block_task() {
-        // TODO: Implement test
+    #[tokio::test]
+    async fn test_l2_pending_block_task(test_setup: Arc<MadaraBackend>) {
+        let backend = test_setup;
+        let ctx = TestContext::new(backend.clone());
+        let block_import = Arc::new(BlockImporter::new(
+            backend.clone(),
+            &MetricsRegistry::dummy(),
+            None,
+            true,
+        ).unwrap());
+        let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
+
+        let task_handle = tokio::spawn(l2_pending_block_task(
+            backend.clone(),
+            block_import.clone(),
+            validation.clone(),
+            ctx.once_caught_up_receiver,
+            ctx.provider.clone(),
+            std::time::Duration::from_secs(5),
+        ));
+
+        // Simulate the "once_caught_up" signal
+        ctx.once_caught_up_sender.send(()).unwrap();
+
+        // Wait for the task to complete
+        match tokio::time::timeout(std::time::Duration::from_secs(120), task_handle).await {
+            Ok(Ok(_)) => (),
+            Ok(Err(e)) => panic!("Task failed: {:?}", e),
+            Err(_) => panic!("Timeout reached while waiting for task completion"),
+        }
     }
 
+    /// Test the `sync` function.
+    ///
+    /// This test verifies the behavior of the `sync` function by simulating
+    /// a synchronization process with mock data.
+    ///
+    /// # Test Steps
+    /// 1. Initialize the test context and necessary components.
+    /// 2. Create mock blocks and set up the mock server to return them.
+    /// 3. Call the `sync` function with appropriate parameters.
+    /// 4. Verify that the blocks are correctly synchronized and stored in the backend.
+    ///
+    /// # Panics
+    /// - If the synchronization process fails or if the expected blocks are not found in the backend.
     #[rstest]
-    fn test_sync() {
-        // TODO: Implement test
-    }
+    #[tokio::test]
+    async fn test_sync(test_setup: Arc<MadaraBackend>) {
+        let backend = test_setup;
+        let ctx = TestContext::new(backend.clone());
+        let block_importer = Arc::new(BlockImporter::new(
+            backend.clone(),
+            &MetricsRegistry::dummy(),
+            None,
+            true,
+        ).unwrap());
 
-    #[rstest]
-    fn test_update_sync_metrics() {
-        // TODO: Implement test
+        // Create simulated blocks
+        let mock_blocks = (1..=5).map(|i| {
+            UnverifiedFullBlock {
+                header: UnverifiedHeader {
+                    parent_block_hash: Some(Felt::from(i - 1)),
+                    sequencer_address: Felt::ZERO,
+                    block_timestamp: i * 1000,
+                    protocol_version: StarknetVersion::default(),
+                    l1_gas_price: GasPrices::default(),
+                    l1_da_mode: L1DataAvailabilityMode::Blob,
+                },
+                transactions: vec![],
+                unverified_block_number: Some(i),
+                state_diff: StateDiff::default(),
+                receipts: vec![],
+                declared_classes: vec![],
+                commitments: UnverifiedCommitments::default(),
+                trusted_converted_classes: vec![],
+            }
+        }).collect::<Vec<_>>();
+
+        // Configure the mock server to return the simulated blocks
+        for block in &mock_blocks {
+            ctx.mock_block(block.unverified_block_number.unwrap());
+        }
+
+        // Call the sync function
+        let config = L2SyncConfig {
+            first_block: 1,
+            n_blocks_to_sync: Some(5),
+            verify: true,
+            ignore_block_order: false,
+            sync_polling_interval: Some(std::time::Duration::from_millis(100)),
+            pending_block_poll_interval: std::time::Duration::from_secs(5),
+            backup_every_n_blocks: None,
+        };
+
+        let sync_result = sync(
+            &backend,
+            (ctx.provider).clone(),
+            config,
+            backend.chain_config().chain_id.clone(),
+            TelemetryService::new(true, vec![]).unwrap().new_handle(),
+            block_importer,
+        ).await;
+
+        assert!(sync_result.is_ok(), "Synchronization failed: {:?}", sync_result.err());
+
+        // Verify that the blocks have been correctly synchronized
+        for i in 0..=5 {
+            let block = backend.get_block_n(&DbBlockId::BlockN(i)).unwrap();
+            assert!(block.is_some(), "Block {} was not found in the backend", i);
+            //let block = block.unwrap();
+            //assert_eq!(block.block_number(), i, "Block number does not match");
+        }
     }
 }
