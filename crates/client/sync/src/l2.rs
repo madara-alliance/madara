@@ -524,7 +524,7 @@ mod tests {
 
         let sync_result = sync(
             &backend,
-            (ctx.provider).clone(),
+            (*ctx.provider).clone(),
             config,
             backend.chain_config().chain_id.clone(),
             TelemetryService::new(true, vec![]).unwrap().new_handle(),
@@ -537,8 +537,6 @@ mod tests {
         for i in 0..=5 {
             let block = backend.get_block_n(&DbBlockId::BlockN(i)).unwrap();
             assert!(block.is_some(), "Block {} was not found in the backend", i);
-            //let block = block.unwrap();
-            //assert_eq!(block.block_number(), i, "Block number does not match");
         }
     }
 }
