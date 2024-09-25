@@ -18,7 +18,7 @@ jobs:
       - name: Setup and run dev chain
         run: |
           ls
-          ls cairo
+          ls cairo/target/dev
           chmod +x target/release/madara
           ./target/release/madara --name madara --base-path ../madara3 --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
           MADARA_PID=$!
