@@ -18,7 +18,7 @@ jobs:
       - name: Setup and run dev chain
         run: |
           chmod +x target/release/madara
-          ./target/release/madara --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
+          nohup ./target/release/madara --name madara --base-path ../madara-db --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
           MADARA_PID=$!
           echo "MADARA_PID=$MADARA_PID" >> $GITHUB_ENV
           while ! nc -z localhost 9944; do
