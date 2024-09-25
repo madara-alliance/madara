@@ -6,8 +6,7 @@ on:
         required: true
         type: choice
         options:
-          - sepolia
-          - staging
+          - devnet
 jobs:
   my_job:
     runs-on: ubuntu-latest
