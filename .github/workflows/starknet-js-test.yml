@@ -25,30 +25,8 @@ jobs:
         run: |
           ./target/release/madara --name madara --base-path ../madara3 --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
           MADARA_PID=$!
-          
-          # Wait for Madara to initialize (increase timeout if needed)
-          for i in {1..30}; do
-            if curl -s -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' http://localhost:9944; then
-              echo "Madara is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "Timeout waiting for Madara to start"
-              exit 1
-            fi
-            sleep 2
-          done
-          
+          while ! echo exit | nc localhost 9944; do sleep 1; done
           cd js_tests
           npm install
-          npm test || { echo "Tests failed"; kill $MADARA_PID; exit 1; }
+          npm test
           kill $MADARA_PID
-      - name: Debug info
-        if: failure()
-        run: |
-          echo "Madara logs:"
-          cat ../madara3/madara.log
-          echo "Network status:"
-          netstat -tuln
-          echo "Process list:"
-          ps aux | grep madara

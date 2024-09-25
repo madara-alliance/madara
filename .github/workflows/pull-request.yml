@@ -13,9 +13,34 @@ permissions:
   pull-requests: write
 
 jobs:
+  changelog:
+    name: Enforce CHANGELOG
+    uses: ./.github/workflows/changelog.yml
+
+  linters:
+    name: Run linters
+    uses: ./.github/workflows/linters.yml
+    needs: changelog
+
+  rust_check:
+    name: Run check
+    uses: ./.github/workflows/rust-check.yml
+    needs: changelog
+
+  linters_cargo:
+    name: Run Cargo linters
+    uses: ./.github/workflows/linters-cargo.yml
+    needs: rust_check
+
+  coverage:
+    name: Run Coverage
+    uses: ./.github/workflows/coverage.yml
+    needs: changelog
+
   build:
     name: Build Madara
     uses: ./.github/workflows/build.yml
+    needs: changelog
 
   js_test:
     name: Run JS Tests

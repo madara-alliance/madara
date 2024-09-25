@@ -7,7 +7,7 @@ jobs:
     permissions:
       pull-requests: write
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v3
         with:
@@ -34,9 +34,6 @@ jobs:
         run: |
           cd cairo
           scarb build
-      - name: Build Cairo contracts
-        run: |
-          ls cairo/target
       - name: Build
         run: |
           cargo build --release --bin madara
