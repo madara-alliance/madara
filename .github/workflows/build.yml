@@ -34,6 +34,9 @@ jobs:
         run: |
           cd cairo
           scarb build
+      - name: Build Cairo contracts
+        run: |
+          ls cairo/target
       - name: Build
         run: |
           cargo build --release --bin madara
