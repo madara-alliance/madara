@@ -32,7 +32,13 @@ describe('Starknet Contract Tests', () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: "http://localhost:9944" });
     account = new Account(provider, SIGNER_PUBLIC, SIGNER_PRIVATE);
-    nonce = Number(await account.getNonce());
+    try {
+      nonce = Number(await account.getNonce());
+      console.log("Nonce retrieved successfully:", nonce);
+    } catch (error) {
+      console.error("Error getting nonce:", error);
+      throw error;
+    }
   });
 
   // Run tests in specified order
@@ -40,7 +46,7 @@ describe('Starknet Contract Tests', () => {
     test(name, async () => {
       const result = await fn({ provider, account, nonce });
       nonce++;  // Increment nonce after each test
-      
+
       // TODO: this is a workaround to wait for the block to be produced
       // given we have block time of 3 seconds, we wait for 5 seconds so that 
       // nonce gets updated. Remove this when we have a way to get the updated nonce
@@ -64,7 +70,6 @@ async function declareContract({ provider, account, nonce }: TestContext) {
     contract: sierra,
     casm: casm,
   }, {
-    maxFee: 0,
     nonce,
   });
 
