@@ -5,39 +5,41 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
+use crate::block::{ProviderBlock, ProviderBlockPending};
+
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
-pub enum ProviderMaybePendingStateUpdate {
-    Update(StateUpdateProvider),
-    Pending(PendingStateUpdateProvider),
+pub enum ProviderStateUpdatePendingMaybe {
+    Update(ProviderStateUpdate),
+    Pending(ProviderStateUpdatePending),
 }
 
-impl ProviderMaybePendingStateUpdate {
-    pub fn state_update(&self) -> Option<&StateUpdateProvider> {
+impl ProviderStateUpdatePendingMaybe {
+    pub fn state_update(&self) -> Option<&ProviderStateUpdate> {
         match self {
-            ProviderMaybePendingStateUpdate::Update(state_update) => Some(state_update),
-            ProviderMaybePendingStateUpdate::Pending(_) => None,
+            ProviderStateUpdatePendingMaybe::Update(state_update) => Some(state_update),
+            ProviderStateUpdatePendingMaybe::Pending(_) => None,
         }
     }
 
-    pub fn pending(&self) -> Option<&PendingStateUpdateProvider> {
+    pub fn pending(&self) -> Option<&ProviderStateUpdatePending> {
         match self {
-            ProviderMaybePendingStateUpdate::Update(_) => None,
-            ProviderMaybePendingStateUpdate::Pending(pending) => Some(pending),
+            ProviderStateUpdatePendingMaybe::Update(_) => None,
+            ProviderStateUpdatePendingMaybe::Pending(pending) => Some(pending),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct StateUpdateProvider {
+pub struct ProviderStateUpdate {
     pub block_hash: Felt,
     pub new_root: Felt,
     pub old_root: Felt,
     pub state_diff: StateDiff,
 }
 
-impl From<mp_state_update::StateUpdate> for StateUpdateProvider {
+impl From<mp_state_update::StateUpdate> for ProviderStateUpdate {
     fn from(state_update: mp_state_update::StateUpdate) -> Self {
         Self {
             block_hash: state_update.block_hash,
@@ -50,12 +52,12 @@ impl From<mp_state_update::StateUpdate> for StateUpdateProvider {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct PendingStateUpdateProvider {
+pub struct ProviderStateUpdatePending {
     pub old_root: Felt,
     pub state_diff: StateDiff,
 }
 
-impl From<mp_state_update::PendingStateUpdate> for PendingStateUpdateProvider {
+impl From<mp_state_update::PendingStateUpdate> for ProviderStateUpdatePending {
     fn from(pending_state_update: mp_state_update::PendingStateUpdate) -> Self {
         Self { old_root: pending_state_update.old_root, state_diff: pending_state_update.state_diff.into() }
     }
@@ -99,4 +101,43 @@ impl From<mp_state_update::StateDiff> for StateDiff {
                 .collect(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
+#[serde(untagged)]
+pub enum ProviderStateUpdateWithBlockPendingMaybe {
+    UpdateWithBlock(ProviderStateUpdateWithBlock),
+    Pending(ProviderStateUpdateWithBlockPending),
+}
+
+impl ProviderStateUpdateWithBlockPendingMaybe {
+    pub fn state_update_with_block(&self) -> Option<&ProviderStateUpdateWithBlock> {
+        match self {
+            ProviderStateUpdateWithBlockPendingMaybe::UpdateWithBlock(state_update_with_block) => {
+                Some(state_update_with_block)
+            }
+            ProviderStateUpdateWithBlockPendingMaybe::Pending(_) => None,
+        }
+    }
+
+    pub fn pending(&self) -> Option<&ProviderStateUpdateWithBlockPending> {
+        match self {
+            ProviderStateUpdateWithBlockPendingMaybe::UpdateWithBlock(_) => None,
+            ProviderStateUpdateWithBlockPendingMaybe::Pending(pending) => Some(pending),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderStateUpdateWithBlock {
+    pub state_update: ProviderStateUpdate,
+    pub block: ProviderBlock,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderStateUpdateWithBlockPending {
+    pub state_update: ProviderStateUpdatePending,
+    pub block: ProviderBlockPending,
 }

@@ -14,27 +14,28 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-db = { workspace = true }
-mc-rpc = { workspace = true }
-mp-block = { workspace = true }
-mp-class = { workspace = true }
-mp-gateway = { workspace = true }
-mp-utils = { workspace = true }
+mc-db.workspace = true
+mc-rpc.workspace = true
+mp-block.workspace = true
+mp-class.workspace = true
+mp-gateway.workspace = true
+mp-utils.workspace = true
 
 # Starknet
-starknet-core = { workspace = true }
-starknet-types-core = { workspace = true }
+starknet-core.workspace = true
+starknet-types-core.workspace = true
 
 # Other
-anyhow = { workspace = true }
-hyper = { workspace = true }
-log = { workspace = true }
-reqwest = { workspace = true }
+anyhow.workspace = true
+hyper.workspace = true
+log.workspace = true
+reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-url = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true }
+tokio.workspace = true
+rstest.workspace = true

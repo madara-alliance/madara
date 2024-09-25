@@ -7,6 +7,7 @@ use starknet_types_core::felt::Felt;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
 pub enum Transaction {
     #[serde(rename = "INVOKE_FUNCTION")]
     Invoke(InvokeTransaction),
@@ -71,6 +72,7 @@ impl Transaction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "version")]
+#[cfg_attr(test, derive(Eq))]
 pub enum InvokeTransaction {
     #[serde(rename = "0x0")]
     V0(InvokeTransactionV0),
@@ -192,6 +194,7 @@ impl L1HandlerTransaction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "version")]
+#[cfg_attr(test, derive(Eq))]
 pub enum DeclareTransaction {
     #[serde(rename = "0x0")]
     V0(DeclareTransactionV0),
@@ -346,6 +349,7 @@ impl DeployTransaction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
+#[cfg_attr(test, derive(Eq))]
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),

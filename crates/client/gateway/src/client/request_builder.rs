@@ -42,7 +42,7 @@ impl<'a> RequestBuilder<'a> {
     pub fn with_block_id(mut self, block_id: BlockId) -> Self {
         match block_id {
             BlockId::Hash(hash) => {
-                self = self.add_param(Cow::from("blockHash"), &format!("0x{:x}", hash));
+                self = self.add_param(Cow::from("blockHash"), &format!("0x{hash:x}"));
             }
             BlockId::Number(number) => {
                 self = self.add_param(Cow::from("blockNumber"), &number.to_string());
@@ -59,7 +59,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     pub fn with_class_hash(mut self, class_hash: Felt) -> Self {
-        self = self.add_param(Cow::from("classHash"), &format!("0x{:x}", class_hash));
+        self = self.add_param(Cow::from("classHash"), &format!("0x{class_hash:x}"));
         self
     }
 

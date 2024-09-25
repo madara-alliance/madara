@@ -6,8 +6,8 @@ use mc_rpc::providers::AddTransactionProvider;
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraPendingBlock};
 use mp_class::ContractClass;
 use mp_gateway::{
-    block::{BlockProvider, BlockStatus, PendingBlockProvider},
-    state_update::{PendingStateUpdateProvider, StateUpdateProvider},
+    block::{BlockStatus, ProviderBlock, ProviderBlockPending},
+    state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
 use serde_json::json;
 use starknet_core::types::{
@@ -45,10 +45,10 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
             BlockStatus::AcceptedOnL2
         };
 
-        let block_provider = BlockProvider::new(block, status);
+        let block_provider = ProviderBlock::new(block, status);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     } else if let Ok(block) = MadaraPendingBlock::try_from(block) {
-        let block_provider = PendingBlockProvider::new(block);
+        let block_provider = ProviderBlockPending::new(block);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     } else {
         Err(GatewayError::InternalServerError)
@@ -95,12 +95,12 @@ pub async fn handle_get_state_update(
                 })
                 .unwrap_or(Ok(Felt::ZERO))?;
 
-            let state_update = PendingStateUpdateProvider { old_root, state_diff: state_diff.into() };
+            let state_update = ProviderStateUpdatePending { old_root, state_diff: state_diff.into() };
 
             let json_response = if let Some(block) = with_block {
                 let block = MadaraPendingBlock::try_from(block.clone())
                     .or_internal_server_error("Attempting to convert pending block to non-pending")?;
-                let block_provider = PendingBlockProvider::new(block);
+                let block_provider = ProviderBlockPending::new(block);
 
                 create_json_response(
                     hyper::StatusCode::OK,
@@ -135,7 +135,7 @@ pub async fn handle_get_state_update(
                 None => Felt::ZERO,
             };
 
-            let state_update = StateUpdateProvider {
+            let state_update = ProviderStateUpdate {
                 block_hash: block_info.block_hash,
                 old_root,
                 new_root: block_info.header.global_state_root,
@@ -145,7 +145,7 @@ pub async fn handle_get_state_update(
             let json_response = if let Some(block) = with_block {
                 let block = MadaraBlock::try_from(block.clone())
                     .or_internal_server_error("Attempting to convert pending block to non-pending")?;
-                let block_provider = BlockProvider::new(block, BlockStatus::AcceptedOnL2);
+                let block_provider = ProviderBlock::new(block, BlockStatus::AcceptedOnL2);
 
                 create_json_response(
                     hyper::StatusCode::OK,

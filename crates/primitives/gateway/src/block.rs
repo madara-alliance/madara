@@ -10,37 +10,38 @@ use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
-pub enum ProviderMaybePendingBlock {
-    Block(BlockProvider),
-    Pending(PendingBlockProvider),
+pub enum ProviderBlockPendingMaybe {
+    Block(ProviderBlock),
+    Pending(ProviderBlockPending),
 }
 
-impl ProviderMaybePendingBlock {
-    pub fn block(&self) -> Option<&BlockProvider> {
+impl ProviderBlockPendingMaybe {
+    pub fn block(&self) -> Option<&ProviderBlock> {
         match self {
-            ProviderMaybePendingBlock::Block(block) => Some(block),
-            ProviderMaybePendingBlock::Pending(_) => None,
+            ProviderBlockPendingMaybe::Block(block) => Some(block),
+            ProviderBlockPendingMaybe::Pending(_) => None,
         }
     }
 
-    pub fn pending(&self) -> Option<&PendingBlockProvider> {
+    pub fn pending(&self) -> Option<&ProviderBlockPending> {
         match self {
-            ProviderMaybePendingBlock::Block(_) => None,
-            ProviderMaybePendingBlock::Pending(pending) => Some(pending),
+            ProviderBlockPendingMaybe::Block(_) => None,
+            ProviderBlockPendingMaybe::Pending(pending) => Some(pending),
         }
     }
 
     pub fn parent_block_hash(&self) -> Felt {
         match self {
-            ProviderMaybePendingBlock::Block(block) => block.parent_block_hash,
-            ProviderMaybePendingBlock::Pending(pending) => pending.parent_block_hash,
+            ProviderBlockPendingMaybe::Block(block) => block.parent_block_hash,
+            ProviderBlockPendingMaybe::Pending(pending) => pending.parent_block_hash,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BlockProvider {
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlock {
     pub block_hash: Felt,
     pub block_number: u64,
     pub parent_block_hash: Felt,
@@ -66,7 +67,7 @@ pub struct BlockProvider {
     pub starknet_version: Option<String>,
 }
 
-impl BlockProvider {
+impl ProviderBlock {
     pub fn new(block: mp_block::MadaraBlock, status: BlockStatus) -> Self {
         let starknet_version = starknet_version(block.info.header.protocol_version);
 
@@ -120,7 +121,8 @@ impl BlockProvider {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PendingBlockProvider {
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPending {
     pub parent_block_hash: Felt,
     pub status: BlockStatus,
     pub l1_da_mode: L1DataAvailabilityMode,
@@ -135,7 +137,7 @@ pub struct PendingBlockProvider {
     pub starknet_version: Option<String>,
 }
 
-impl PendingBlockProvider {
+impl ProviderBlockPending {
     pub fn new(block: mp_block::MadaraPendingBlock) -> Self {
         let starknet_version = starknet_version(block.info.header.protocol_version);
 
@@ -176,6 +178,7 @@ impl PendingBlockProvider {
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
 pub struct ResourcePrice {
     #[serde_as(as = "U128AsHex")]
     pub price_in_wei: u128,
