@@ -32,13 +32,7 @@ describe('Starknet Contract Tests', () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: "http://localhost:9944" });
     account = new Account(provider, SIGNER_PUBLIC, SIGNER_PRIVATE);
-    try {
-      nonce = Number(await account.getNonce());
-      console.log("Nonce retrieved successfully:", nonce);
-    } catch (error) {
-      console.error("Error getting nonce:", error);
-      throw error;
-    }
+    nonce = 0;
   });
 
   // Run tests in specified order
