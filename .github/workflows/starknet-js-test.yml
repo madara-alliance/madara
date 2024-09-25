@@ -25,11 +25,17 @@ jobs:
             echo "Waiting for Madara to start..."
             sleep 1
           done
-      - name: Run starknet-js test
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        
+      - name: Install dependencies
         run: |
           cd js_tests
           npm install
-          node main.js
+      - name: Run starknet-js tests
+        run: |
+          cd js_tests
+          npm test
       - name: Cleanup
         if: always()
         run: |
