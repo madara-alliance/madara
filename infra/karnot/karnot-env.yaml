@@ -5,8 +5,8 @@ environments:
       - madara:
           image: apoorvsadana/madara:1b9b0d57132bb64351a600d2540af052ec23acde_manual
           config:
-						"--network": "devnet"
-            "--devnet": ""
-            "--chain-config-path": "./test.yaml":
-            "--override-devnet-chain-id": "--chain-config-override"
-            "--block-time": "1"
+            --network: devnet
+            --devnet: ""
+            --chain-config-path: ./test.yaml
+            --override-devnet-chain-id: --chain-config-override
+            --block-time: "1"
