@@ -1,5 +1,5 @@
 import { RpcProvider, Account, Contract, CallData, cairo } from "starknet";
-import { SIGNER_PRIVATE, SIGNER_PUBLIC } from "./constant";
+import { RPC_URL, SIGNER_PRIVATE, SIGNER_PUBLIC } from "./constant";
 import { readContractSierra, readContractSierraCasm, readContract } from "./utils";
 import { hash } from "starknet";
 
@@ -30,7 +30,7 @@ describe('Starknet Contract Tests', () => {
 
   beforeAll(async () => {
     // Initialize provider and account
-    provider = new RpcProvider({ nodeUrl: "http://localhost:9944" });
+    provider = new RpcProvider({ nodeUrl: RPC_URL });
     account = new Account(provider, SIGNER_PUBLIC, SIGNER_PRIVATE);
     nonce = 0;
   });
