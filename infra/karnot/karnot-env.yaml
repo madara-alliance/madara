@@ -8,5 +8,5 @@ environments:
           --network: "devnet"
           --chain-config-path: "./test.yaml"
           --chain-config-override: ""
-          --block-time: "5"
+          --block-time: "10"
           --devnet: ""
