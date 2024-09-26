@@ -20,7 +20,7 @@ jobs:
             ls -R
 
       - name: Run Karnot Cloud Pro
-        uses: karnotxyz/kcloud-pro-github-action@node-js-script
+        uses: karnotxyz/kcloud-pro-github-action@v1.1
         with:
           input_file: './infra/karnot/karnot-env.yaml' # Specify your file
           environment: ${{ github.event.inputs.environment }}
