@@ -46,8 +46,16 @@ pub async fn estimate_fee(
 
     let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
 
-    let fee_estimates =
-        execution_results.iter().map(|result| exec_context.execution_result_to_fee_estimate(result)).collect();
+    let fee_estimates = execution_results.iter().enumerate().try_fold(Vec::new(), |mut acc, (index, result)| {
+        if result.execution_info.is_reverted() {
+            return Err(StarknetRpcApiError::TxnExecutionError {
+                tx_index: index,
+                error: result.execution_info.revert_error.clone().unwrap_or_default(),
+            });
+        }
+        acc.push(exec_context.execution_result_to_fee_estimate(result));
+        Ok(acc)
+    })?;
 
     Ok(fee_estimates)
 }

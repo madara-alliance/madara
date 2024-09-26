@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: estimate_fee should through an error if any txn fails
 - fix: docker file fixes for devnet
 - fix(block-production): fix bouncer calculation and declared classes
 - fix: Fix pending block sync and add real FGW tests
