@@ -486,34 +486,14 @@ mod tests {
         ).unwrap());
 
         // Create simulated blocks
-        let mock_blocks = (1..=5).map(|i| {
-            UnverifiedFullBlock {
-                header: UnverifiedHeader {
-                    parent_block_hash: Some(Felt::from(i - 1)),
-                    sequencer_address: Felt::ZERO,
-                    block_timestamp: i * 1000,
-                    protocol_version: StarknetVersion::default(),
-                    l1_gas_price: GasPrices::default(),
-                    l1_da_mode: L1DataAvailabilityMode::Blob,
-                },
-                transactions: vec![],
-                unverified_block_number: Some(i),
-                state_diff: StateDiff::default(),
-                receipts: vec![],
-                declared_classes: vec![],
-                commitments: UnverifiedCommitments::default(),
-                trusted_converted_classes: vec![],
-            }
-        }).collect::<Vec<_>>();
-
-        // Configure the mock server to return the simulated blocks
-        for block in &mock_blocks {
-            ctx.mock_block(block.unverified_block_number.unwrap());
+        for block_number in 0..8 {
+            ctx.mock_block(block_number);
         }
+        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         // Call the sync function
         let config = L2SyncConfig {
-            first_block: 1,
+            first_block: 0,
             n_blocks_to_sync: Some(5),
             verify: true,
             ignore_block_order: false,
