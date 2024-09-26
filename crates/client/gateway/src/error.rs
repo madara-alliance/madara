@@ -8,6 +8,10 @@ pub enum SequencerError {
     StarknetError(#[from] StarknetError),
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
+    #[error(transparent)]
+    SerdeError(#[from] serde_json::Error),
+    #[error(transparent)]
+    CompressError(#[from] starknet_core::types::contract::CompressProgramError),
     #[error("error decoding response body: invalid error variant")]
     InvalidStarknetErrorVariant,
 }

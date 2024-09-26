@@ -1,10 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use mp_block::{BlockId, BlockTag};
-use mp_class::ContractClass;
-use starknet_core::types::Felt;
+use mp_class::{CompressedLegacyContractClass, ContractClass, FlattenedSierraClass};
+use starknet_core::types::{contract::legacy::LegacyContractClass, Felt};
 
-use crate::error::SequencerError;
+use crate::error::{SequencerError, StarknetError};
 
 use super::{builder::FeederClient, request_builder::RequestBuilder};
 
@@ -65,7 +65,7 @@ impl FeederClient {
         }
     }
 
-    pub async fn get_class_by_hash(
+    pub async fn get_class_by_hash_block_0(
         &self,
         class_hash: Felt,
         block_id: BlockId,
@@ -76,7 +76,26 @@ impl FeederClient {
             .with_block_id(block_id)
             .with_class_hash(class_hash);
 
-        Ok(request.send_get::<ContractClass>().await?)
+        let response = request.send_get_raw().await?;
+        let status = response.status();
+        if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR || status == reqwest::StatusCode::BAD_REQUEST {
+            let error = match response.json::<StarknetError>().await {
+                Ok(e) => SequencerError::StarknetError(e),
+                Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant,
+                Err(e) => SequencerError::ReqwestError(e),
+            };
+            return Err(error);
+        }
+
+        let bytes = response.bytes().await?;
+        match serde_json::from_slice::<FlattenedSierraClass>(&bytes) {
+            Ok(class_sierra) => Ok(ContractClass::Sierra(Arc::new(class_sierra))),
+            Err(_) => {
+                let class_legacy = serde_json::from_slice::<LegacyContractClass>(&bytes)?;
+                let class_compressed: CompressedLegacyContractClass = class_legacy.compress()?.into();
+                Ok(ContractClass::Legacy(Arc::new(class_compressed)))
+            }
+        }
     }
 }
 
@@ -88,9 +107,45 @@ mod tests {
     use starknet_core::types::Felt;
     use std::fs::File;
     use std::io::BufReader;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use super::*;
+
+    const CLASS_BLOCK_0: &str = "0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8";
+
+    const CLASS_ACCOUNT: &str = "0x07595b4f7d50010ceb00230d8b5656e3c3dd201b6df35d805d3f2988c69a1432";
+    const CLASS_ACCOUNT_BLOCK: u64 = 1342;
+
+    const CLASS_PROXY: &str = "0x071c3c99f5cf76fc19945d4b8b7d34c7c5528f22730d56192b50c6bbfd338a64";
+    const CLASS_PROXY_BLOCK: u64 = 1343;
+
+    const CLASS_ERC20: &str = "0x07543f8eb21f10b1827a495084697a519274ac9c1a1fbf931bac40133a6b9c15";
+    const CLASS_ERC20_BLOCK: u64 = 1981;
+
+    const CLASS_ERC721: &str = "0x074a7ed7f1236225600f355efe70812129658c82c295ff0f8307b3fad4bf09a9";
+    const CLASS_ERC721_BLOCK: u64 = 3125;
+
+    const CLASS_ERC1155: &str = "0x04be7f1bace6f593abd8e56947c11151f45498030748a950fdaf0b79ac3dc03f";
+    const CLASS_ERC1155_BLOCK: u64 = 18507;
+
+    /// Loads a json file, deserializing it into the target type.
+    ///
+    /// This should NOT be used for mocking behavior, but is fine for loading
+    /// golden files to validate the output of a function, as long as this
+    /// function is deterministic.
+    ///
+    /// * `path`: path to the file to deserialize
+    fn load_from_file<T>(path: &str) -> T
+    where
+        T: DeserializeOwned,
+    {
+        let mut path_abs = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path_abs.push(path);
+        let file = File::open(&path_abs).expect(&format!("loading test mock from {path_abs:?}"));
+        let reader = BufReader::new(file);
+
+        serde_json::from_reader(reader).expect(&format!("deserializing test mock from {path_abs:?}"))
+    }
 
     #[fixture]
     fn client_mainnet_fixture() -> FeederClient {
@@ -139,9 +194,20 @@ mod tests {
         let _block = client_mainnet_fixture.get_state_update(BlockId::Tag(BlockTag::Pending)).await.unwrap();
     }
 
+    // INFO:
+    // These next few tests work by loading a golden file representing the
+    // expected output of the feeder gateway. This is then manually
+    // deserialized and compared to the result obtained by the fgw provider.
+    //
+    // Why not write down the expected results in Rust directly? Because this
+    // would be error-prone and a pain to manage if the structures were updated.
+    // Ideally we would want to perform this as an integration test against a
+    // local devnet where we have total control over the testing environment,
+    // removing the need for golden files. However, this is not yet possible.
+
     #[rstest]
     #[tokio::test]
-    async fn get_state_update_with_block(client_mainnet_fixture: FeederClient) {
+    async fn get_state_update_with_block_first_few_blocks(client_mainnet_fixture: FeederClient) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(0))
             .await
@@ -177,7 +243,11 @@ mod tests {
             load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_2.json");
 
         assert_eq!(state_update_with_block_2, &state_update_with_block_2_reference);
+    }
 
+    #[rstest]
+    #[tokio::test]
+    async fn get_state_update_with_block_latest(client_mainnet_fixture: FeederClient) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Tag(BlockTag::Latest))
             .await
@@ -187,7 +257,11 @@ mod tests {
             .expect("State update with block at block latest should not be pending");
 
         assert!(matches!(state_update_with_block_latest, ProviderStateUpdateWithBlock));
+    }
 
+    #[rstest]
+    #[tokio::test]
+    async fn get_state_update_with_block_pending(client_mainnet_fixture: FeederClient) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Tag(BlockTag::Pending))
             .await
@@ -198,15 +272,98 @@ mod tests {
         assert!(matches!(state_update_with_block_pending, ProviderStateUpdateWithBlockPending));
     }
 
-    fn load_from_file<T>(path: &str) -> T
-    where
-        T: DeserializeOwned,
-    {
-        let mut path_abs = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path_abs.push(path);
-        let file = File::open(&path_abs).expect(&format!("loading test mock from {path_abs:?}"));
-        let reader = BufReader::new(file);
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_block_0(client_mainnet_fixture: FeederClient) {
+        let class = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
+            .await
+            .expect(&format!("Getting class {CLASS_BLOCK_0} at block number 0"));
+        let class_reference =
+            load_from_file::<LegacyContractClass>(&format!("src/client/mocks/class_block_0_{CLASS_BLOCK_0}.json"));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
 
-        serde_json::from_reader(reader).expect(&format!("deserializing test mock from {path_abs:?}"))
+        assert_eq!(class, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_account(client_mainnet_fixture: FeederClient) {
+        let class_account = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
+            .await
+            .expect(&format!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
+        let class_reference = load_from_file::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.json"
+        ));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
+
+        assert_eq!(class_account, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_proxy(client_mainnet_fixture: FeederClient) {
+        let class_proxy = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
+            .await
+            .expect(&format!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
+        let class_reference = load_from_file::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.json"
+        ));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
+
+        assert_eq!(class_proxy, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_erc20(client_mainnet_fixture: FeederClient) {
+        let class_erc20 = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
+            .await
+            .expect(&format!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
+        let class_reference = load_from_file::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.json"
+        ));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
+
+        assert_eq!(class_erc20, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_erc721(client_mainnet_fixture: FeederClient) {
+        let class_erc721 = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
+            .await
+            .expect(&format!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
+        let class_reference = load_from_file::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.json"
+        ));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
+
+        assert_eq!(class_erc721, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_erc1155(client_mainnet_fixture: FeederClient) {
+        let class_erc1155 = client_mainnet_fixture
+            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
+            .await
+            .expect(&format!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
+        let class_reference = load_from_file::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.json"
+        ));
+        let class_compressed_reference: CompressedLegacyContractClass =
+            class_reference.compress().expect("Compressing legacy contract class").into();
+
+        assert_eq!(class_erc1155, class_compressed_reference.into());
     }
 }

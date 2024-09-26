@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use mp_block::{BlockId, BlockTag};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
-    Client,
+    Client, Response,
 };
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
@@ -67,15 +67,11 @@ impl<'a> RequestBuilder<'a> {
     where
         T: DeserializeOwned,
     {
-        let mut request = self.client.get(self.url);
+        unpack(self.send_get_raw().await?).await
+    }
 
-        for (key, value) in self.headers.iter() {
-            request = request.header(key, value);
-        }
-
-        let response = request.query(&self.params).send().await?;
-
-        unpack(response).await
+    pub async fn send_get_raw(self) -> Result<Response, SequencerError> {
+        self.client.get(self.url).headers(self.headers).query(&self.params).send().await.map_err(Into::into)
     }
 
     pub async fn send_post<T>(self) -> Result<T, SequencerError>
