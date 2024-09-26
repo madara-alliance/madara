@@ -101,6 +101,8 @@ where
             Err(e) => SequencerError::ReqwestError(e),
         };
         return Err(error);
+    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
     }
 
     Ok(response.json::<T>().await?)

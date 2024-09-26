@@ -27,7 +27,7 @@ impl FeederClient {
             BlockId::Tag(BlockTag::Pending) => {
                 Ok(ProviderBlockPendingMaybe::Pending(request.send_get::<ProviderBlockPending>().await?))
             }
-            _ => Ok(ProviderBlockPendingMaybe::Block(request.send_get::<ProviderBlock>().await?)),
+            _ => Ok(ProviderBlockPendingMaybe::NonPending(request.send_get::<ProviderBlock>().await?)),
         }
     }
 
@@ -41,7 +41,7 @@ impl FeederClient {
             BlockId::Tag(BlockTag::Pending) => {
                 Ok(ProviderStateUpdatePendingMaybe::Pending(request.send_get::<ProviderStateUpdatePending>().await?))
             }
-            _ => Ok(ProviderStateUpdatePendingMaybe::Update(request.send_get::<ProviderStateUpdate>().await?)),
+            _ => Ok(ProviderStateUpdatePendingMaybe::NonPending(request.send_get::<ProviderStateUpdate>().await?)),
         }
     }
 
@@ -59,13 +59,13 @@ impl FeederClient {
             BlockId::Tag(BlockTag::Pending) => Ok(ProviderStateUpdateWithBlockPendingMaybe::Pending(
                 request.send_get::<ProviderStateUpdateWithBlockPending>().await?,
             )),
-            _ => Ok(ProviderStateUpdateWithBlockPendingMaybe::UpdateWithBlock(
+            _ => Ok(ProviderStateUpdateWithBlockPendingMaybe::NonPending(
                 request.send_get::<ProviderStateUpdateWithBlock>().await?,
             )),
         }
     }
 
-    pub async fn get_class_by_hash_block_0(
+    pub async fn get_class_by_hash(
         &self,
         class_hash: Felt,
         block_id: BlockId,
@@ -157,9 +157,9 @@ mod tests {
     async fn get_block(client_mainnet_fixture: FeederClient) {
         let block = client_mainnet_fixture.get_block(BlockId::Number(0)).await.unwrap();
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
-        assert!(matches!(block, ProviderBlockPendingMaybe::Block(_)));
-        assert_eq!(block.block().unwrap().block_number, 0);
-        assert_eq!(block.block().unwrap().parent_block_hash, Felt::from_hex_unchecked("0x0"));
+        assert!(matches!(block, ProviderBlockPendingMaybe::NonPending(_)));
+        assert_eq!(block.non_pending().unwrap().block_number, 0);
+        assert_eq!(block.non_pending().unwrap().parent_block_hash, Felt::from_hex_unchecked("0x0"));
 
         let block = client_mainnet_fixture
             .get_block(BlockId::Hash(Felt::from_hex_unchecked(
@@ -178,9 +178,9 @@ mod tests {
     #[tokio::test]
     async fn get_state_update(client_mainnet_fixture: FeederClient) {
         let state_update = client_mainnet_fixture.get_state_update(BlockId::Number(0)).await.unwrap();
-        assert!(matches!(state_update, ProviderStateUpdatePendingMaybe::Update(_)));
+        assert!(matches!(state_update, ProviderStateUpdatePendingMaybe::NonPending(_)));
         assert_eq!(
-            state_update.state_update().unwrap().block_hash,
+            state_update.non_pending().unwrap().block_hash,
             Felt::from_hex_unchecked("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943")
         );
 
@@ -276,7 +276,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_block_0(client_mainnet_fixture: FeederClient) {
         let class = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
             .await
             .expect(&format!("Getting class {CLASS_BLOCK_0} at block number 0"));
         let class_reference =
@@ -291,7 +291,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_account(client_mainnet_fixture: FeederClient) {
         let class_account = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
             .await
             .expect(&format!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
         let class_reference = load_from_file::<LegacyContractClass>(&format!(
@@ -307,7 +307,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_proxy(client_mainnet_fixture: FeederClient) {
         let class_proxy = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
         let class_reference = load_from_file::<LegacyContractClass>(&format!(
@@ -323,7 +323,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_erc20(client_mainnet_fixture: FeederClient) {
         let class_erc20 = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
         let class_reference = load_from_file::<LegacyContractClass>(&format!(
@@ -339,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_erc721(client_mainnet_fixture: FeederClient) {
         let class_erc721 = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
         let class_reference = load_from_file::<LegacyContractClass>(&format!(
@@ -355,7 +355,7 @@ mod tests {
     #[tokio::test]
     async fn get_class_by_hash_erc1155(client_mainnet_fixture: FeederClient) {
         let class_erc1155 = client_mainnet_fixture
-            .get_class_by_hash_block_0(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
         let class_reference = load_from_file::<LegacyContractClass>(&format!(

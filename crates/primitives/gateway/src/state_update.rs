@@ -5,27 +5,48 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
-use crate::block::{ProviderBlock, ProviderBlockPending};
+use crate::block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
 pub enum ProviderStateUpdatePendingMaybe {
-    Update(ProviderStateUpdate),
+    NonPending(ProviderStateUpdate),
     Pending(ProviderStateUpdatePending),
 }
 
 impl ProviderStateUpdatePendingMaybe {
-    pub fn state_update(&self) -> Option<&ProviderStateUpdate> {
+    pub fn non_pending(&self) -> Option<&ProviderStateUpdate> {
         match self {
-            ProviderStateUpdatePendingMaybe::Update(state_update) => Some(state_update),
-            ProviderStateUpdatePendingMaybe::Pending(_) => None,
+            Self::NonPending(non_pending) => Some(non_pending),
+            Self::Pending(_) => None,
+        }
+    }
+
+    pub fn non_pending_ownded(self) -> Option<ProviderStateUpdate> {
+        match self {
+            Self::NonPending(non_pending) => Some(non_pending),
+            Self::Pending(_) => None,
         }
     }
 
     pub fn pending(&self) -> Option<&ProviderStateUpdatePending> {
         match self {
-            ProviderStateUpdatePendingMaybe::Update(_) => None,
-            ProviderStateUpdatePendingMaybe::Pending(pending) => Some(pending),
+            Self::NonPending(_) => None,
+            Self::Pending(pending) => Some(pending),
+        }
+    }
+
+    pub fn pending_owned(self) -> Option<ProviderStateUpdatePending> {
+        match self {
+            Self::NonPending(_) => None,
+            Self::Pending(pending) => Some(pending),
+        }
+    }
+
+    pub fn state_diff(&self) -> &StateDiff {
+        match self {
+            Self::NonPending(non_pending) => &non_pending.state_diff,
+            Self::Pending(pending) => &pending.state_diff,
         }
     }
 }
@@ -103,27 +124,64 @@ impl From<mp_state_update::StateDiff> for StateDiff {
     }
 }
 
+impl From<StateDiff> for mp_state_update::StateDiff {
+    fn from(state_diff: StateDiff) -> Self {
+        Self {
+            storage_diffs: state_diff
+                .storage_diffs
+                .into_iter()
+                .map(|(address, storage_entries)| mp_state_update::ContractStorageDiffItem { address, storage_entries })
+                .collect(),
+            deprecated_declared_classes: state_diff.old_declared_contracts,
+            declared_classes: state_diff.declared_classes,
+            deployed_contracts: state_diff.deployed_contracts,
+            replaced_classes: state_diff
+                .replaced_classes
+                .into_iter()
+                .map(|DeployedContractItem { address: contract_address, class_hash }| {
+                    mp_state_update::ReplacedClassItem { contract_address, class_hash }
+                })
+                .collect(),
+            nonces: state_diff
+                .nonces
+                .into_iter()
+                .map(|(contract_address, nonce)| mp_state_update::NonceUpdate { contract_address, nonce })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
 pub enum ProviderStateUpdateWithBlockPendingMaybe {
-    UpdateWithBlock(ProviderStateUpdateWithBlock),
+    NonPending(ProviderStateUpdateWithBlock),
     Pending(ProviderStateUpdateWithBlockPending),
 }
 
 impl ProviderStateUpdateWithBlockPendingMaybe {
-    pub fn state_update_with_block(&self) -> Option<&ProviderStateUpdateWithBlock> {
+    pub fn state_update(self) -> ProviderStateUpdatePendingMaybe {
         match self {
-            ProviderStateUpdateWithBlockPendingMaybe::UpdateWithBlock(state_update_with_block) => {
-                Some(state_update_with_block)
-            }
-            ProviderStateUpdateWithBlockPendingMaybe::Pending(_) => None,
+            Self::NonPending(non_pending) => ProviderStateUpdatePendingMaybe::NonPending(non_pending.state_update),
+            Self::Pending(pending) => ProviderStateUpdatePendingMaybe::Pending(pending.state_update),
         }
     }
 
-    pub fn pending(&self) -> Option<&ProviderStateUpdateWithBlockPending> {
+    pub fn block(self) -> ProviderBlockPendingMaybe {
         match self {
-            ProviderStateUpdateWithBlockPendingMaybe::UpdateWithBlock(_) => None,
-            ProviderStateUpdateWithBlockPendingMaybe::Pending(pending) => Some(pending),
+            Self::NonPending(non_pending) => ProviderBlockPendingMaybe::NonPending(non_pending.block),
+            Self::Pending(pending) => ProviderBlockPendingMaybe::Pending(pending.block),
+        }
+    }
+
+    pub fn as_update_and_block(self) -> (ProviderStateUpdatePendingMaybe, ProviderBlockPendingMaybe) {
+        match self {
+            Self::NonPending(ProviderStateUpdateWithBlock { state_update, block }) => (
+                ProviderStateUpdatePendingMaybe::NonPending(state_update),
+                ProviderBlockPendingMaybe::NonPending(block),
+            ),
+            Self::Pending(ProviderStateUpdateWithBlockPending { state_update, block }) => {
+                (ProviderStateUpdatePendingMaybe::Pending(state_update), ProviderBlockPendingMaybe::Pending(block))
+            }
         }
     }
 }

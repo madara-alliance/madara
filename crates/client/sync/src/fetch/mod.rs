@@ -4,8 +4,11 @@ use std::time::Duration;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
+use mc_gateway::{
+    client::builder::FeederClient,
+    error::{SequencerError, StarknetError, StarknetErrorCode},
+};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
-use starknet_core::types::StarknetError;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
 
@@ -19,7 +22,7 @@ pub async fn l2_fetch_task(
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
-    provider: Arc<SequencerGatewayProvider>,
+    provider: Arc<FeederClient>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
@@ -39,7 +42,10 @@ pub async fn l2_fetch_task(
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
         while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
             match val {
-                Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                    code: StarknetErrorCode::BlockNotFound,
+                    ..
+                }))) => {
                     log::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
@@ -65,7 +71,10 @@ pub async fn l2_fetch_task(
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
                 match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
-                    Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                    Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                        code: StarknetErrorCode::BlockNotFound,
+                        ..
+                    }))) => {
                         break;
                     }
                     val => {
@@ -86,7 +95,7 @@ pub async fn l2_fetch_task(
 #[derive(thiserror::Error, Debug)]
 pub enum FetchError {
     #[error(transparent)]
-    Provider(#[from] ProviderError),
+    Sequencer(#[from] SequencerError),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }

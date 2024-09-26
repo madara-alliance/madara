@@ -1,6 +1,7 @@
 //! Step 1. pre-validate: [`UnverifiedFullBlock`] ====[`crate::pre_validate`]===> [`PreValidatedBlock`]
 //! Step 2. verify_apply: [`PreValidatedBlock`] ====[`crate::verify_apply`]===> [`BlockImportResult`]
 
+use anyhow::Context;
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
     Header,

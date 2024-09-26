@@ -3,6 +3,7 @@ use anyhow::Context;
 use fetch::fetchers::FetchConfig;
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
+use mc_gateway::client::builder::FeederClient;
 use mc_telemetry::TelemetryHandle;
 use mp_convert::ToFelt;
 use starknet_providers::SequencerGatewayProvider;
@@ -40,15 +41,10 @@ pub async fn sync(
 
     log::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-    let provider = SequencerGatewayProvider::new(
-        fetch_config.gateway.clone(),
-        fetch_config.feeder_gateway.clone(),
-        fetch_config.chain_id.to_felt(),
-    );
-    let provider = match &fetch_config.api_key {
-        Some(api_key) => provider.with_header("X-Throttling-Bypass".to_string(), api_key.clone()),
-        None => provider,
-    };
+    let mut provider = FeederClient::new(fetch_config.gateway.clone(), fetch_config.feeder_gateway.clone());
+    if let Some(api_key) = fetch_config.api_key {
+        provider.add_header("X-Throttling-Bypass", &api_key)
+    }
 
     l2::sync(
         backend,

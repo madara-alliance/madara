@@ -225,7 +225,7 @@ async fn test_can_convert_pending_block() {
         },
         vec![],
     );
-    let converted = convert_sequencer_pending_block(block.0, block.1, block.2).unwrap();
+    let converted = convert_sequencer_block_pending(block.0, block.1, block.2).unwrap();
     assert_eq!(
         converted,
         serde_json::from_value(serde_json::json!({

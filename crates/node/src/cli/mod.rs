@@ -201,7 +201,7 @@ impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
-            NetworkType::Test => "https://alpha-sepolia.starknet.io",
+            NetworkType::Test => "http://127.0.0.1:8080",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
             NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
         }

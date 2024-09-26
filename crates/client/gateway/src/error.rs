@@ -28,6 +28,10 @@ impl StarknetError {
         Self { code, message }
     }
 
+    pub fn rate_limited() -> Self {
+        Self { code: StarknetErrorCode::RateLimited, message: "Too many requests".to_string() }
+    }
+
     pub fn block_not_found() -> Self {
         Self { code: StarknetErrorCode::BlockNotFound, message: "Block not found".to_string() }
     }
@@ -127,4 +131,6 @@ pub enum StarknetErrorCode {
     DuplicatedTransaction,
     #[serde(rename = "StarknetErrorCode.INVALID_CONTRACT_CLASS_VERSION")]
     InvalidContractClassVersion,
+    #[serde(rename = "StarknetErrorCode.RATE_LIMITED")]
+    RateLimited,
 }

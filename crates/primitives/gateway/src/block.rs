@@ -1,6 +1,7 @@
+use anyhow::Context;
 use mp_block::header::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
-use mp_convert::hex_serde::U128AsHex;
+use mp_convert::{felt_to_u128, hex_serde::U128AsHex};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
@@ -11,28 +12,42 @@ use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProviderBlockPendingMaybe {
-    Block(ProviderBlock),
+    NonPending(ProviderBlock),
     Pending(ProviderBlockPending),
 }
 
 impl ProviderBlockPendingMaybe {
-    pub fn block(&self) -> Option<&ProviderBlock> {
+    pub fn non_pending(&self) -> Option<&ProviderBlock> {
         match self {
-            ProviderBlockPendingMaybe::Block(block) => Some(block),
+            ProviderBlockPendingMaybe::NonPending(non_pending) => Some(non_pending),
+            ProviderBlockPendingMaybe::Pending(_) => None,
+        }
+    }
+
+    pub fn non_pending_owned(self) -> Option<ProviderBlock> {
+        match self {
+            ProviderBlockPendingMaybe::NonPending(non_pending) => Some(non_pending),
             ProviderBlockPendingMaybe::Pending(_) => None,
         }
     }
 
     pub fn pending(&self) -> Option<&ProviderBlockPending> {
         match self {
-            ProviderBlockPendingMaybe::Block(_) => None,
+            ProviderBlockPendingMaybe::NonPending(_) => None,
+            ProviderBlockPendingMaybe::Pending(pending) => Some(pending),
+        }
+    }
+
+    pub fn pending_owned(self) -> Option<ProviderBlockPending> {
+        match self {
+            ProviderBlockPendingMaybe::NonPending(_) => None,
             ProviderBlockPendingMaybe::Pending(pending) => Some(pending),
         }
     }
 
     pub fn parent_block_hash(&self) -> Felt {
         match self {
-            ProviderBlockPendingMaybe::Block(block) => block.parent_block_hash,
+            ProviderBlockPendingMaybe::NonPending(non_pending) => non_pending.parent_block_hash,
             ProviderBlockPendingMaybe::Pending(pending) => pending.parent_block_hash,
         }
     }
@@ -117,6 +132,29 @@ impl ProviderBlock {
             starknet_version,
         }
     }
+
+    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
+        Ok(mc_block_import::UnverifiedHeader {
+            parent_block_hash: Some(self.parent_block_hash),
+            sequencer_address: self.sequencer_address.unwrap_or_default(),
+            block_timestamp: self.timestamp,
+            protocol_version: self
+                .starknet_version
+                .as_deref()
+                .map(|version| version.parse().context("Invalid Starknet version"))
+                .unwrap_or_else(|| {
+                    StarknetVersion::try_from_mainnet_block_number(self.block_number)
+                        .context(format!("Unable to determine Starknet version for block {:#x}", self.block_hash))
+                })?,
+            l1_gas_price: mp_block::header::GasPrices {
+                eth_l1_gas_price: self.l1_gas_price.price_in_wei,
+                strk_l1_gas_price: self.l1_gas_price.price_in_fri,
+                eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
+                strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+            },
+            l1_da_mode: self.l1_da_mode,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -172,6 +210,30 @@ impl ProviderBlockPending {
             transaction_receipts,
             starknet_version,
         }
+    }
+
+    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
+        Ok(mc_block_import::UnverifiedHeader {
+            parent_block_hash: Some(self.parent_block_hash),
+            sequencer_address: self.sequencer_address,
+            block_timestamp: self.timestamp,
+            protocol_version: self
+                .starknet_version
+                .as_deref()
+                .context(format!(
+                    "Unable to determine Starknet version for pending block with parent hash {:#x}",
+                    self.parent_block_hash
+                ))?
+                .parse()
+                .context("Invalid Starknet version")?,
+            l1_gas_price: mp_block::header::GasPrices {
+                eth_l1_gas_price: self.l1_gas_price.price_in_wei,
+                strk_l1_gas_price: self.l1_gas_price.price_in_fri,
+                eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
+                strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+            },
+            l1_da_mode: self.l1_da_mode,
+        })
     }
 }
 
