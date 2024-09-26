@@ -1,20 +1,50 @@
-use crate::StarknetVersion;
-use anyhow::{bail, Context, Result};
-use blockifier::bouncer::BouncerWeights;
-use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
-use primitive_types::H160;
-use serde::Deserialize;
-use serde::Deserializer;
-use starknet_api::core::{ChainId, ContractAddress};
-use std::io::Write;
+// Note: We are NOT using fs read for constants, as they NEED to be included in the resulting
+// binary. Otherwise, using the madara binary without cloning the repo WILL crash, and that's very very bad.
+// The binary needs to be self contained! We need to be able to ship madara as a single binary, without
+// the user needing to clone the repo.
+// Only use `fs` for constants when writing tests.
 use std::str::FromStr;
 use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
     time::Duration,
 };
+
+use anyhow::{bail, Context, Result};
+use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
+use lazy_static::__Deref;
+use primitive_types::H160;
+use serde::{Deserialize, Deserializer};
+use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
+use starknet_types_core::felt::Felt;
+
+use crate::StarknetVersion;
+
+pub mod eth_core_contract_address {
+    pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+    pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
+    pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
+}
+
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
+    include_bytes!("../resources/versioned_constants_13_1_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2: &[u8] = include_bytes!("../resources/versioned_constants_13_2.json");
+
+lazy_static::lazy_static! {
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2).unwrap();
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
@@ -24,51 +54,17 @@ pub enum ChainPreset {
     Mainnet,
     Sepolia,
     IntegrationSepolia,
-    Test,
+    Devnet,
 }
 
 impl ChainPreset {
     /// If the local file exists, read it. Otherwise, fetch the remote file and save it locally under "crates/primitives/chain_config/presets/" .
-    pub fn get_config(self) -> Result<ChainConfig> {
-        let local_path = match self {
-            ChainPreset::Mainnet => "crates/primitives/chain_config/presets/mainnet.yaml",
-            ChainPreset::Sepolia => "crates/primitives/chain_config/presets/sepolia.yaml",
-            ChainPreset::IntegrationSepolia => "crates/primitives/chain_config/presets/integration.yaml",
-            ChainPreset::Test => "crates/primitives/chain_config/presets/test.yaml",
-        };
-
-        if Path::new(local_path).exists() {
-            ChainConfig::from_yaml(Path::new(local_path))
-                .context(format!("Failed to read local config file: {}", local_path))
-        } else {
-            log::info!(
-                "📝 Local Chain config file for: {:?} not found. Fetching from remote URL.",
-                self.get_preset_name()
-            );
-            let remote_url = match self {
-                ChainPreset::Mainnet => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/mainnet.yaml",
-                ChainPreset::Sepolia => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/sepolia.yaml",
-                ChainPreset::IntegrationSepolia => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/integration.yaml",
-                ChainPreset::Test => "https://raw.githubusercontent.com/madara-alliance/madara/main/crates/primitives/chain_config/presets/test.yaml",
-            };
-
-            let response = reqwest::blocking::get(remote_url)
-                .context(format!("Failed to fetch config from remote URL: {}", remote_url))?;
-
-            if response.status().is_success() {
-                let content = response.text().context("Failed to read response text")?;
-
-                // Save the content to the local file for future use
-                let mut file = fs::File::create(local_path)
-                    .context(format!("Failed to create local config file: {}", local_path))?;
-                file.write_all(content.as_bytes())
-                    .context(format!("Failed to write to local config file: {}", local_path))?;
-
-                ChainConfig::from_yaml(Path::new(local_path))
-                    .context(format!("Failed to parse config from remote file: {}", local_path))
-            } else {
-                Err(anyhow::anyhow!("Failed to fetch config. HTTP status: {}", response.status()))
-            }
+    pub fn get_config(self) -> ChainConfig {
+        match self {
+            ChainPreset::Mainnet => ChainConfig::starknet_mainnet(),
+            ChainPreset::Sepolia => ChainConfig::starknet_sepolia(),
+            ChainPreset::IntegrationSepolia => ChainConfig::starknet_integration(),
+            ChainPreset::Devnet => ChainConfig::madara_devnet(),
         }
     }
 
@@ -78,7 +74,7 @@ impl ChainPreset {
             ChainPreset::Mainnet => "Mainnet",
             ChainPreset::Sepolia => "Sepolia",
             ChainPreset::IntegrationSepolia => "Integration",
-            ChainPreset::Test => "Test",
+            ChainPreset::Devnet => "Devnet",
         }
     }
 }
@@ -91,13 +87,183 @@ impl FromStr for ChainPreset {
             "mainnet" => Ok(ChainPreset::Mainnet),
             "sepolia" => Ok(ChainPreset::Sepolia),
             "integration-sepolia" => Ok(ChainPreset::IntegrationSepolia),
-            "test" => Ok(ChainPreset::Test),
+            "devnet" => Ok(ChainPreset::Devnet),
             _ => bail!("Failed to get preset {}", preset_name),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+pub struct ChainConfig {
+    /// Human readable chain name, for displaying to the console.
+    pub chain_name: String,
+    pub chain_id: ChainId,
+
+    /// For starknet, this is the STRK ERC-20 contract on starknet.
+    pub native_fee_token_address: ContractAddress,
+    /// For starknet, this is the ETH ERC-20 contract on starknet.
+    pub parent_fee_token_address: ContractAddress,
+
+    /// BTreeMap ensures order.
+    pub versioned_constants: ChainVersionedConstants,
+
+    #[serde(deserialize_with = "deserialize_starknet_version")]
+    pub latest_protocol_version: StarknetVersion,
+
+    /// Only used for block production.
+    pub block_time: Duration,
+
+    /// Only used for block production.
+    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
+    pub pending_block_update_time: Duration,
+
+    /// Only used for block production.
+    /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
+    #[serde(deserialize_with = "deserialize_bouncer_config")]
+    pub bouncer_config: BouncerConfig,
+
+    /// Only used for block production.
+    pub sequencer_address: ContractAddress,
+
+    /// Only used when mempool is enabled.
+    /// When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
+    /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
+    pub max_nonce_for_validation_skip: u64,
+
+    /// The Starknet core contract address for the L1 watcher.
+    pub eth_core_contract_address: H160,
+}
+
+impl ChainConfig {
+    pub fn from_preset_name(preset_name: &str) -> anyhow::Result<Self> {
+        Ok(ChainPreset::from_str(preset_name)?.get_config())
+    }
+
+    pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
+        let config_str = fs::read_to_string(path)?;
+        serde_yaml::from_str(&config_str).context("While deserializing chain config")
+    }
+
+    /// Returns the Chain Config preset for Starknet Mainnet.
+    pub fn starknet_mainnet() -> Self {
+        // Sources:
+        // - https://docs.starknet.io/tools/important-addresses
+        // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
+        // - state_diff_size is the blob size limit of ethereum
+        // - pending_block_update_time: educated guess
+        // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
+        Self {
+            chain_name: "Starknet Mainnet".into(),
+            chain_id: ChainId::Mainnet,
+            native_fee_token_address: ContractAddress(
+                PatriciaKey::try_from(Felt::from_hex_unchecked(
+                    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+                ))
+                .unwrap(),
+            ),
+            parent_fee_token_address: ContractAddress(
+                PatriciaKey::try_from(Felt::from_hex_unchecked(
+                    "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                ))
+                .unwrap(),
+            ),
+            versioned_constants: [
+                (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
+                (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
+                (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
+                (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
+            ]
+            .into(),
+
+            eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
+
+            latest_protocol_version: StarknetVersion::V0_13_2,
+            block_time: Duration::from_secs(6 * 60),
+            pending_block_update_time: Duration::from_secs(2),
+
+            bouncer_config: BouncerConfig {
+                block_max_capacity: BouncerWeights {
+                    builtin_count: BuiltinCount {
+                        add_mod: usize::MAX,
+                        bitwise: usize::MAX,
+                        ecdsa: usize::MAX,
+                        ec_op: usize::MAX,
+                        keccak: usize::MAX,
+                        mul_mod: usize::MAX,
+                        pedersen: usize::MAX,
+                        poseidon: usize::MAX,
+                        range_check: usize::MAX,
+                        range_check96: usize::MAX,
+                    },
+                    gas: 5_000_000,
+                    n_steps: 40_000_000,
+                    message_segment_length: usize::MAX,
+                    n_events: usize::MAX,
+                    state_diff_size: 131072,
+                },
+            },
+            // We are not producing blocks for these chains.
+            sequencer_address: ContractAddress::default(),
+            max_nonce_for_validation_skip: 2,
+        }
+    }
+
+    /// Returns the Chain Config preset for Starknet Sepolia.
+    pub fn starknet_sepolia() -> Self {
+        Self {
+            chain_name: "Starknet Sepolia".into(),
+            chain_id: ChainId::Sepolia,
+            eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
+            ..Self::starknet_mainnet()
+        }
+    }
+
+    /// Returns the Chain Config preset for Starknet Integration.
+    pub fn starknet_integration() -> Self {
+        Self {
+            chain_name: "Starknet Sepolia Integration".into(),
+            chain_id: ChainId::IntegrationSepolia,
+            eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
+                .parse()
+                .expect("parsing a constant"),
+            ..Self::starknet_mainnet()
+        }
+    }
+
+    /// Returns the Chain Config preset for the Devnet.
+    pub fn madara_devnet() -> Self {
+        Self {
+            chain_name: "MADARA".into(),
+            chain_id: ChainId::Other("MADARA_DEVNET".into()),
+            // A random sequencer address for fee transfers to work in block production.
+            sequencer_address: Felt::from_hex_unchecked(
+                "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
+            )
+            .try_into()
+            .unwrap(),
+            ..ChainConfig::starknet_sepolia()
+        }
+    }
+
+    /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
+    pub fn n_pending_ticks_per_block(&self) -> usize {
+        (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
+    }
+
+    pub fn exec_constants_by_protocol_version(
+        &self,
+        version: StarknetVersion,
+    ) -> Result<VersionedConstants, UnsupportedProtocolVersion> {
+        for (k, constants) in self.versioned_constants.0.iter().rev() {
+            if k <= &version {
+                return Ok(constants.clone());
+            }
+        }
+        Err(UnsupportedProtocolVersion(version))
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
 impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainVersionedConstants {
@@ -142,20 +308,12 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
     }
 }
 
-fn deserialize_starknet_version<'de, D>(deserializer: D) -> Result<StarknetVersion, D::Error>
+pub fn deserialize_starknet_version<'de, D>(deserializer: D) -> Result<StarknetVersion, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
     StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
-}
-
-fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let duration = u64::deserialize(deserializer)?;
-    Ok(Duration::from_secs(duration))
 }
 
 // TODO: this is workaround because BouncerConfig doesn't derive Deserialize in blockifier
@@ -172,111 +330,9 @@ where
     Ok(BouncerConfig { block_max_capacity: helper.block_max_capacity })
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ChainConfig {
-    /// Human readable chain name, for displaying to the console.
-    pub chain_name: String,
-    pub chain_id: ChainId,
-
-    /// For starknet, this is the STRK ERC-20 contract on starknet.
-    pub native_fee_token_address: ContractAddress,
-    /// For starknet, this is the ETH ERC-20 contract on starknet.
-    pub parent_fee_token_address: ContractAddress,
-
-    /// BTreeMap ensures order.
-    pub versioned_constants: ChainVersionedConstants,
-    #[serde(deserialize_with = "deserialize_starknet_version")]
-    pub latest_protocol_version: StarknetVersion,
-
-    /// Only used for block production.
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub block_time: Duration,
-    /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub pending_block_update_time: Duration,
-
-    /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
-    /// Only used for block production.
-    #[serde(deserialize_with = "deserialize_bouncer_config")]
-    pub bouncer_config: BouncerConfig,
-
-    /// Only used for block production.
-    pub sequencer_address: ContractAddress,
-
-    /// Only used when mempool is enabled.
-    /// When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
-    /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
-    pub max_nonce_for_validation_skip: u64,
-
-    /// The Starknet core contract address for the L1 watcher.
-    pub eth_core_contract_address: H160,
-}
-
-impl Default for ChainConfig {
-    fn default() -> Self {
-        ChainConfig::starknet_mainnet().expect("Invalid preset configuration for mainnet.")
-    }
-}
-
-impl ChainConfig {
-    pub fn from_preset(preset_name: &str) -> anyhow::Result<Self> {
-        ChainPreset::from_str(preset_name)?.get_config()
-    }
-
-    pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
-        let config_str = fs::read_to_string(path)?;
-        serde_yaml::from_str(&config_str).context("While deserializing chain config")
-    }
-
-    /// Returns the Chain Config preset for Starknet Mainnet.
-    pub fn starknet_mainnet() -> anyhow::Result<Self> {
-        // Sources:
-        // - https://docs.starknet.io/tools/important-addresses
-        // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
-        // - state_diff_size is the blob size limit of ethereum
-        // - pending_block_update_time: educated guess
-        // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
-        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/mainnet.yaml")?)
-    }
-
-    /// Returns the Chain Config preset for Starknet Sepolia.
-    pub fn starknet_sepolia() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/sepolia.yaml")?)
-    }
-
-    /// Returns the Chain Config preset for Starknet Integration.
-    pub fn starknet_integration() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/integration.yaml")?)
-    }
-
-    /// Returns the Chain Config preset for our Madara tests.
-    pub fn test_config() -> anyhow::Result<Self> {
-        Self::from_yaml(&PathBuf::from_str("crates/primitives/chain_config/presets/test.yaml")?)
-    }
-
-    /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
-    pub fn n_pending_ticks_per_block(&self) -> usize {
-        (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
-    }
-
-    pub fn exec_constants_by_protocol_version(
-        &self,
-        version: StarknetVersion,
-    ) -> Result<VersionedConstants, UnsupportedProtocolVersion> {
-        for (k, constants) in self.versioned_constants.0.iter().rev() {
-            if k <= &version {
-                return Ok(constants.clone());
-            }
-        }
-        Err(UnsupportedProtocolVersion(version))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
-    use mp_utils::tests_common::*;
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
@@ -284,10 +340,9 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_mainnet_from_yaml(_set_workdir: ()) {
+    fn test_mainnet_from_yaml() {
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(Path::new("crates/primitives/chain_config/presets/mainnet.yaml"))
-                .expect("failed to get cfg");
+            ChainConfig::from_yaml(Path::new("chain_configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
@@ -373,8 +428,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_preset(_set_workdir: ()) {
-        let chain_config: ChainConfig = ChainConfig::from_preset("mainnet").expect("failed to get cfg");
+    fn test_from_preset() {
+        let chain_config: ChainConfig = ChainConfig::from_preset_name("mainnet").expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
@@ -466,7 +521,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_exec_constants(_set_workdir: ()) {
+    fn test_exec_constants() {
         let chain_config = ChainConfig {
             versioned_constants: [
                 (StarknetVersion::new(0, 1, 5, 0), {
@@ -481,7 +536,7 @@ mod tests {
                 }),
             ]
             .into(),
-            ..ChainConfig::test_config().unwrap()
+            ..ChainConfig::madara_devnet()
         };
 
         assert_eq!(

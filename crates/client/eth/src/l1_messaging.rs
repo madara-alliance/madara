@@ -231,7 +231,6 @@ mod l1_messaging_tests {
     use mc_db::DatabaseService;
     use mc_metrics::MetricsService;
     use mp_chain_config::ChainConfig;
-    use mp_utils::tests_common::*;
     use rstest::*;
     use starknet_api::core::Nonce;
     use tempfile::TempDir;
@@ -335,7 +334,7 @@ mod l1_messaging_tests {
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        let chain_config = Arc::new(ChainConfig::madara_devnet());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
@@ -386,7 +385,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
+    async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -438,7 +437,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
+    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 
@@ -485,7 +484,7 @@ mod l1_messaging_tests {
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner, _set_workdir: ()) {
+    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
         let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
             setup_test_env.await;
 

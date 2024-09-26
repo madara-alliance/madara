@@ -103,13 +103,9 @@ pub struct RunCmd {
     #[clap(long, value_name = "PRESET NAME", group = "chain_config")]
     pub preset: Option<String>,
 
-    /// Allow overriding parameters present in preset or configuration file.
-    #[clap(long, action = clap::ArgAction::SetTrue, value_name = "OVERRIDE CONFIG FLAG")]
-    pub chain_config_override: bool,
-
-    #[allow(missing_docs)]
+    /// Overrides parameters from the Chain Config.
     #[clap(flatten)]
-    pub chain_params: ChainConfigOverrideParams,
+    pub chain_config_override: ChainConfigOverrideParams,
 }
 
 impl RunCmd {
@@ -125,9 +121,9 @@ impl RunCmd {
         self.name.as_ref().expect("Name was just set")
     }
 
-    pub fn get_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
-        let chain_config = match &self.preset {
-            Some(preset_name) => ChainConfig::from_preset(preset_name.as_str()).map_err(|err| {
+    pub fn chain_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
+        let mut chain_config = match &self.preset {
+            Some(preset_name) => ChainConfig::from_preset_name(preset_name.as_str()).map_err(|err| {
                 log::error!("Failed to load config from preset '{}': {}", preset_name, err);
                 anyhow::anyhow!(err)
             })?,
@@ -135,9 +131,9 @@ impl RunCmd {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
                     anyhow::anyhow!(if self.is_sequencer() {
-                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)"
+                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (chain_configs/presets/mainnet.yml)\n- 'sepolia' - (chain_configs/presets/sepolia.yml)\n- 'integration' - (chain_configs/presets/integration.yml)"
                     } else {
-                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (crates/primitives/chain_config/presets/mainnet.yml)\n- 'sepolia' - (crates/primitives/chain_config/presets/sepolia.yml)\n- 'integration' - (crates/primitives/chain_config/presets/integration.yml)\n- 'test' - (crates/primitives/chain_config/presets/test.yml)"
+                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (chain_configs/presets/mainnet.yml)\n- 'sepolia' - (chain_configs/presets/sepolia.yml)\n- 'integration' - (chain_configs/presets/integration.yml)"
                     })
                 })?;
                 ChainConfig::from_yaml(&path).map_err(|err| {
@@ -147,41 +143,29 @@ impl RunCmd {
             }
         };
 
-        // Override stuff if flag is set
-        let chain_config =
-            if self.chain_config_override { self.chain_params.override_cfg(chain_config) } else { chain_config };
+        if !self.chain_config_override.overrides.is_empty() {
+            chain_config = self.chain_config_override.override_chain_config(chain_config)?;
+        }
 
         Ok(Arc::new(chain_config))
     }
 
     /// Assigns a specific ChainConfig based on a defined network.
     pub fn set_preset_from_network(&self) -> anyhow::Result<Arc<ChainConfig>> {
-        let chain_config = match self.network {
-            Some(NetworkType::Main) => ChainConfig::starknet_mainnet().map_err(|err| {
-                log::error!("Failed to load Starknet Mainnet config: {}", err);
-                err
-            })?,
-            Some(NetworkType::Test) => ChainConfig::starknet_sepolia().map_err(|err| {
-                log::error!("Failed to load Starknet Testnet config: {}", err);
-                err
-            })?,
-            Some(NetworkType::Integration) => ChainConfig::starknet_integration().map_err(|err| {
-                log::error!("Failed to load Starknet Integration config: {}", err);
-                err
-            })?,
-            Some(NetworkType::Devnet) => ChainConfig::test_config().map_err(|err| {
-                log::error!("Failed to load Madara Test Config: {}", err);
-                err
-            })?,
+        let mut chain_config = match self.network {
+            Some(NetworkType::Main) => ChainConfig::starknet_mainnet(),
+            Some(NetworkType::Test) => ChainConfig::starknet_sepolia(),
+            Some(NetworkType::Integration) => ChainConfig::starknet_integration(),
+            Some(NetworkType::Devnet) => ChainConfig::madara_devnet(),
             None => {
                 log::error!("{}", "Chain config path is not set");
-                return Err(anyhow::anyhow!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`"));
+                anyhow::bail!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`")
             }
         };
 
-        // Override stuff if flag is set
-        let chain_config =
-            if self.chain_config_override { self.chain_params.override_cfg(chain_config) } else { chain_config };
+        if !self.chain_config_override.overrides.is_empty() {
+            chain_config = self.chain_config_override.override_chain_config(chain_config)?;
+        }
 
         Ok(Arc::new(chain_config))
     }

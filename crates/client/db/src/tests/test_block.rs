@@ -7,21 +7,20 @@ mod block_tests {
     use mp_block::BlockId;
     use mp_block::Header;
     use mp_chain_config::ChainConfig;
-    use mp_utils::tests_common::set_workdir;
     use rstest::*;
     use starknet_api::felt;
 
     #[rstest]
     #[tokio::test]
-    async fn test_chain_info(_set_workdir: ()) {
+    async fn test_chain_info() {
         let db = temp_db().await;
         let chain_config = db.backend().chain_config();
-        assert_eq!(chain_config.chain_id, ChainConfig::test_config().unwrap().chain_id);
+        assert_eq!(chain_config.chain_id, ChainConfig::madara_devnet().chain_id);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_block_id(_set_workdir: ()) {
+    async fn test_block_id() {
         let db = temp_db().await;
         let backend = db.backend();
 
@@ -39,7 +38,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_block_id_not_found(_set_workdir: ()) {
+    async fn test_block_id_not_found() {
         let db = temp_db().await;
         let backend = db.backend();
 
@@ -48,7 +47,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_store_block(_set_workdir: ()) {
+    async fn test_store_block() {
         const BLOCK_ID_0: DbBlockId = DbBlockId::BlockN(0);
 
         let db = temp_db().await;
@@ -72,7 +71,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_store_pending_block(_set_workdir: ()) {
+    async fn test_store_pending_block() {
         const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
 
         let db = temp_db().await;
@@ -94,7 +93,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_erase_pending_block(_set_workdir: ()) {
+    async fn test_erase_pending_block() {
         const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
 
         let db = temp_db().await;
@@ -126,7 +125,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_store_latest_block(_set_workdir: ()) {
+    async fn test_store_latest_block() {
         let db = temp_db().await;
         let backend = db.backend();
 
@@ -140,7 +139,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_latest_confirmed_block(_set_workdir: ()) {
+    async fn test_latest_confirmed_block() {
         let db = temp_db().await;
         let backend = db.backend();
 
@@ -153,7 +152,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_store_block_transactions(_set_workdir: ()) {
+    async fn test_store_block_transactions() {
         let db = temp_db().await;
         let backend = db.backend();
 
@@ -169,7 +168,7 @@ mod block_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_store_block_transactions_pending(_set_workdir: ()) {
+    async fn test_store_block_transactions_pending() {
         let db = temp_db().await;
         let backend = db.backend();
 

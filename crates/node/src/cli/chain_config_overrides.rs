@@ -1,85 +1,103 @@
-use std::{str::FromStr, time::Duration};
-
+use anyhow::Context;
 use mp_block::H160;
 use mp_chain_config::{ChainConfig, StarknetVersion};
-use starknet_api::{
-    contract_address,
-    core::{ChainId, ContractAddress, PatriciaKey},
-    felt, patricia_key,
-};
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+use starknet_api::core::{ChainId, ContractAddress};
+use std::time::Duration;
 
-/// Parameters used to override chain config.
-#[derive(Clone, Debug, clap::Parser)]
+/// Override chain config parameters.
+/// Format: "--chain-config-override key1=value1 key2=value2"
+#[derive(clap::Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
-    //Overrideable args
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN NAME")]
-    pub chain_name: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN ID")]
-    pub chain_id: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED NATIVE FEE TOKEN")]
-    pub native_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PARENT FEE TOKEN")]
-    pub parent_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED LATEST PROTOCOL VERSION")]
-    pub latest_protocol_version: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED BLOCK TIME")]
-    pub block_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PENDING BLOCK UPDATE")]
-    pub pending_block_update_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED SEQUENCER ADDRESS")]
-    pub sequencer_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED MAX NONCE VALIDATION FOR SKIP")]
-    pub max_nonce_for_validation_skip: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED ETH CORE CONTRACT")]
-    pub eth_core_contract_address: Option<String>,
+    #[clap(long = "chain-config-override", value_parser = parse_key_value, number_of_values = 1)]
+    pub overrides: Vec<(String, String)>,
 }
 
 impl ChainConfigOverrideParams {
-    pub fn override_cfg(&self, mut chain_config: ChainConfig) -> ChainConfig {
-        let params = self.clone();
+    pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
+        let overridable = OverridableChainConfig::from(&chain_config);
+        let mut config_value =
+            serde_yaml::to_value(overridable).context("Converting OverridableChainConfig to Value")?;
 
-        if let Some(name) = params.chain_name {
-            chain_config.chain_name = name;
+        if let Value::Mapping(ref mut map) = config_value {
+            for (key, value) in &self.overrides {
+                let value = serde_yaml::from_str(value).with_context(|| format!("Parsing value for key '{}'", key))?;
+                map.insert(Value::String(key.clone()), value);
+            }
         }
 
-        if let Some(id) = params.chain_id {
-            chain_config.chain_id = ChainId::from(id);
-        }
+        log::info!("{:?}", config_value);
 
-        if let Some(address) = params.native_fee_token_address {
-            chain_config.native_fee_token_address = contract_address!(address.as_str());
-        }
+        let updated_overridable: OverridableChainConfig =
+            serde_yaml::from_value(config_value).context("Converting Value to OverridableChainConfig")?;
 
-        if let Some(address) = params.parent_fee_token_address {
-            chain_config.parent_fee_token_address = contract_address!(address.as_str());
-        }
+        Ok(ChainConfig {
+            versioned_constants: chain_config.versioned_constants,
+            bouncer_config: chain_config.bouncer_config,
+            ..updated_overridable.into()
+        })
+    }
+}
 
-        if let Some(version) = params.latest_protocol_version {
-            chain_config.latest_protocol_version =
-                StarknetVersion::from_str(version.as_str()).expect("failed to retrieve version");
-        }
+fn parse_key_value(s: &str) -> anyhow::Result<(String, String)> {
+    let mut parts = s.splitn(2, '=');
+    let key = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
+    let value = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
+    Ok((key.to_string(), value.to_string()))
+}
 
-        if let Some(time) = params.block_time {
-            chain_config.block_time = Duration::from_secs(time);
-        }
+/// Part of the Chain Config that we can override.
+// We need this proxy structure to implement Serialize -
+// which is not possible on the original ChainConfig because the bouncer config and
+// the versioned constants don't implement it.
+// Since we don't want to override those values anyway, we can create this wrapper.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OverridableChainConfig {
+    pub chain_name: String,
+    pub chain_id: ChainId,
+    pub native_fee_token_address: ContractAddress,
+    pub parent_fee_token_address: ContractAddress,
+    pub latest_protocol_version: StarknetVersion,
+    pub block_time: Duration,
+    pub pending_block_update_time: Duration,
+    pub sequencer_address: ContractAddress,
+    pub max_nonce_for_validation_skip: u64,
+    pub eth_core_contract_address: H160,
+}
 
-        if let Some(time) = self.pending_block_update_time {
-            chain_config.pending_block_update_time = Duration::from_secs(time);
+impl From<&ChainConfig> for OverridableChainConfig {
+    fn from(config: &ChainConfig) -> Self {
+        OverridableChainConfig {
+            chain_name: config.chain_name.clone(),
+            chain_id: config.chain_id.clone(),
+            native_fee_token_address: config.native_fee_token_address,
+            parent_fee_token_address: config.parent_fee_token_address,
+            latest_protocol_version: config.latest_protocol_version,
+            block_time: config.block_time,
+            pending_block_update_time: config.pending_block_update_time,
+            sequencer_address: config.sequencer_address,
+            max_nonce_for_validation_skip: config.max_nonce_for_validation_skip,
+            eth_core_contract_address: config.eth_core_contract_address,
         }
+    }
+}
 
-        if let Some(address) = params.sequencer_address {
-            chain_config.sequencer_address = contract_address!(address.as_str());
+impl From<OverridableChainConfig> for ChainConfig {
+    fn from(overridable: OverridableChainConfig) -> Self {
+        ChainConfig {
+            chain_name: overridable.chain_name,
+            chain_id: overridable.chain_id,
+            native_fee_token_address: overridable.native_fee_token_address,
+            parent_fee_token_address: overridable.parent_fee_token_address,
+            latest_protocol_version: overridable.latest_protocol_version,
+            block_time: overridable.block_time,
+            pending_block_update_time: overridable.pending_block_update_time,
+            sequencer_address: overridable.sequencer_address,
+            max_nonce_for_validation_skip: overridable.max_nonce_for_validation_skip,
+            eth_core_contract_address: overridable.eth_core_contract_address,
+            versioned_constants: Default::default(),
+            bouncer_config: Default::default(),
         }
-
-        if let Some(max_nonce) = params.max_nonce_for_validation_skip {
-            chain_config.max_nonce_for_validation_skip = max_nonce;
-        }
-
-        if let Some(address) = params.eth_core_contract_address {
-            chain_config.eth_core_contract_address =
-                H160::from_str(address.as_str()).expect("failed to parse core contract");
-        }
-
-        chain_config
     }
 }
