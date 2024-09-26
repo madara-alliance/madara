@@ -3,6 +3,9 @@
 ## Next release
 
 - fix: cleaned cli settings for sequencer, devnet and full
+- fix: docker file fixes for devnet
+- fix(block-production): fix bouncer calculation and declared classes
+- fix: Fix pending block sync and add real FGW tests
 - test: tests added for verify and apply task in l2 sync
 - fix: UDC cairo 0 migration & events logic fix
 - fix: response of spec version rpc call fixed

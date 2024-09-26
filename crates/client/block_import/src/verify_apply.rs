@@ -1,26 +1,25 @@
-use std::{borrow::Cow, sync::Arc};
-
+use crate::{
+    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
+    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
+};
+use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::{
     header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
-use mp_convert::ToFelt;
+use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-
-use crate::{
-    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
-    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
-};
+use std::{borrow::Cow, sync::Arc};
 
 mod classes;
 mod contracts;
 
 pub struct VerifyApply {
     pool: Arc<RayonPool>,
-    backend: Arc<MadaraBackend>,
+    pub(crate) backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
     mutex: tokio::sync::Mutex<()>,
@@ -199,10 +198,25 @@ fn update_tries(
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
         let Some(global_state_root) = block.unverified_global_state_root else {
-            return Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()));
+            return Err(BlockImportError::Internal(
+                "Trying to import a block without a global state root when using trust_global_tries".into(),
+            ));
         };
         return Ok(global_state_root);
     }
+
+    log::debug!(
+        "Deployed contracts: [{:?}]",
+        block.state_diff.deployed_contracts.iter().map(|c| c.address.hex_display()).format(", ")
+    );
+    log::debug!(
+        "Declared classes: [{:?}]",
+        block.state_diff.declared_classes.iter().map(|c| c.class_hash.hex_display()).format(", ")
+    );
+    log::debug!(
+        "Deprecated declared classes: [{:?}]",
+        block.state_diff.deprecated_declared_classes.iter().map(|c| c.hex_display()).format(", ")
+    );
 
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
@@ -464,7 +478,7 @@ mod verify_apply_tests {
             StateDiff::default(), // Empty state diff
             true, // Trust global tries (irrelevant in this case)
             // Expected result: an Internal error
-            Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()))
+            Err(BlockImportError::Internal("Trying to import a block without a global state root when using trust_global_tries".into()))
         )]
     #[case::mismatch_global_state_root(
             Some(felt!("0xb")), // A non-zero global state root

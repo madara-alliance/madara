@@ -19,6 +19,7 @@ pub use prometheus::{
 };
 
 #[derive(Clone, Debug)]
+/// This sturct can be cloned cheaply, and will still point to the same registry.
 pub struct MetricsRegistry(Option<Registry>); // Registry is already an Arc
 
 impl MetricsRegistry {
@@ -33,6 +34,11 @@ impl MetricsRegistry {
 
     pub fn is_enabled(&self) -> bool {
         self.0.is_some()
+    }
+
+    /// Make a dummy registry that does nothing. Useful for wiring up metrics in tests.
+    pub fn dummy() -> Self {
+        Self(None)
     }
 }
 
@@ -82,8 +88,8 @@ impl MetricsService {
         })
     }
 
-    pub fn registry(&self) -> MetricsRegistry {
-        self.registry.clone()
+    pub fn registry(&self) -> &MetricsRegistry {
+        &self.registry
     }
 }
 

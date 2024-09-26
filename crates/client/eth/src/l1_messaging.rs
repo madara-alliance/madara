@@ -229,7 +229,7 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
-    use mc_metrics::MetricsService;
+    use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
@@ -343,14 +343,14 @@ mod l1_messaging_tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), &MetricsRegistry::dummy())
                 .await
                 .expect("Failed to create database service"),
         );
 
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");

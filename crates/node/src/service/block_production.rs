@@ -6,6 +6,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use mc_metrics::MetricsRegistry;
+use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;
 
@@ -25,6 +26,7 @@ pub struct BlockProductionService {
     enabled: bool,
 }
 impl BlockProductionService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
@@ -32,7 +34,8 @@ impl BlockProductionService {
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
         devnet: bool,
-        _metrics_handle: MetricsRegistry,
+        _metrics_handle: &MetricsRegistry,
+        _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         if config.block_production_disabled {
             return Ok(Self { start: None, enabled: false });
@@ -65,7 +68,7 @@ impl Service for BlockProductionService {
         if is_devnet {
             // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
 
-            let keys = if (backend.get_latest_block_n().context("Getting the latest block number in db")?).is_none() {
+            let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
                 // deploy devnet genesis
 
                 log::info!("⛏️  Deploying devnet genesis block");

@@ -30,6 +30,7 @@ starknet_api = { workspace = true }
 
 # Other
 anyhow = { workspace = true }
+log = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

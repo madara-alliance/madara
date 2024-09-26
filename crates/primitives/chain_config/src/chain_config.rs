@@ -118,6 +118,12 @@ pub struct ChainConfig {
     pub pending_block_update_time: Duration,
 
     /// Only used for block production.
+    /// Block production is handled in batches; each batch will pop this number of transactions from the mempool. This is
+    /// primarily useful for optimistic parallelization.
+    /// A value too high may have a performance impact - you will need some testing to find the best value for your network.
+    pub execution_batch_size: usize,
+
+    /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     #[serde(deserialize_with = "deserialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
@@ -142,6 +148,21 @@ impl ChainConfig {
     pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
         let config_str = fs::read_to_string(path)?;
         serde_yaml::from_str(&config_str).context("While deserializing chain config")
+    }
+
+    /// Verify that the chain config is valid for block production.
+    pub fn precheck_block_production(&self) -> anyhow::Result<()> {
+        // block_time != 0 implies that n_pending_ticks_per_block != 0.
+        if self.sequencer_address == ContractAddress::default() {
+            bail!("Sequencer address cannot be 0x0 for block production.")
+        }
+        if self.block_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        if self.pending_block_update_time.as_millis() == 0 {
+            bail!("Block time cannot be zero for block production.")
+        }
+        Ok(())
     }
 
     /// Returns the Chain Config preset for Starknet Mainnet.
@@ -180,6 +201,8 @@ impl ChainConfig {
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(6 * 60),
             pending_block_update_time: Duration::from_secs(2),
+
+            execution_batch_size: 16,
 
             bouncer_config: BouncerConfig {
                 block_max_capacity: BouncerWeights {
@@ -263,6 +286,8 @@ impl ChainConfig {
     }
 }
 
+// TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
+// proper page about tuning the block production performance.
 #[derive(Debug, Default)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
