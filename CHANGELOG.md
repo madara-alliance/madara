@@ -2,6 +2,7 @@
 
 ## Next release
 
+- test: add block conversion task test
 - fix(block-production): fix bouncer calculation and declared classes
 - fix: Fix pending block sync and add real FGW tests
 - test: tests added for verify and apply task in l2 sync

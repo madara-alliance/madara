@@ -251,18 +251,18 @@ pub async fn sync(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::utils::gateway::{test_setup, TestContext};
+    use mc_block_import::BlockImporter;
     use mc_block_import::{UnverifiedCommitments, UnverifiedHeader};
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_metrics::MetricsRegistry;
     use mc_telemetry::TelemetryService;
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_chain_config::StarknetVersion;
-    use std::sync::Arc;
-    use starknet_types_core::felt::Felt;
-    use rstest::rstest;
-    use crate::tests::utils::gateway::{test_setup, TestContext};
     use mp_state_update::StateDiff;
-    use mc_block_import::BlockImporter;
+    use rstest::rstest;
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
     use tokio::sync::mpsc;
 
     /// Test the `l2_verify_and_apply_task` function.
@@ -286,12 +286,8 @@ mod tests {
     async fn test_l2_verify_and_apply_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
-        let block_importer = Arc::new(BlockImporter::new(
-            backend.clone(),
-            &MetricsRegistry::dummy(),
-            None,
-            true,
-        ).unwrap());
+        let block_importer =
+            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
         let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
 
@@ -358,12 +354,8 @@ mod tests {
         let backend = test_setup;
         let (updates_sender, updates_receiver) = mpsc::channel(100);
         let (output_sender, mut output_receiver) = mpsc::channel(100);
-        let block_import = Arc::new(BlockImporter::new(
-            backend.clone(),
-            &MetricsRegistry::dummy(),
-            None,
-            true,
-        ).unwrap());
+        let block_import =
+            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let mock_block = UnverifiedFullBlock {
@@ -386,18 +378,14 @@ mod tests {
 
         updates_sender.send(mock_block).await.unwrap();
 
-        let task_handle = tokio::spawn(l2_block_conversion_task(
-            updates_receiver,
-            output_sender,
-            block_import,
-            validation,
-        ));
+        let task_handle =
+            tokio::spawn(l2_block_conversion_task(updates_receiver, output_sender, block_import, validation));
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), output_receiver.recv()).await;
         match result {
             Ok(Some(b)) => {
                 assert_eq!(b.unverified_block_number, Some(1), "Block number does not match");
-            },
+            }
             Ok(None) => panic!("Channel closed without receiving a result"),
             Err(_) => panic!("Timeout reached while waiting for result"),
         }
@@ -432,12 +420,8 @@ mod tests {
     async fn test_l2_pending_block_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let ctx = TestContext::new(backend.clone());
-        let block_import = Arc::new(BlockImporter::new(
-            backend.clone(),
-            &MetricsRegistry::dummy(),
-            None,
-            true,
-        ).unwrap());
+        let block_import =
+            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let task_handle = tokio::spawn(l2_pending_block_task(
