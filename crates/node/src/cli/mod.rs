@@ -14,6 +14,7 @@ pub use db::*;
 pub use prometheus::*;
 pub use rpc::*;
 use starknet_api::core::ChainId;
+use std::str::FromStr;
 pub use sync::*;
 pub use telemetry::*;
 
@@ -101,7 +102,7 @@ pub struct RunCmd {
 
     /// Use preset as chain Config
     #[clap(long, value_name = "PRESET NAME", group = "chain_config")]
-    pub preset: Option<String>,
+    pub preset: Option<ChainPreset>,
 
     /// Overrides parameters from the Chain Config.
     #[clap(flatten)]
@@ -123,10 +124,7 @@ impl RunCmd {
 
     pub fn chain_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
         let mut chain_config = match &self.preset {
-            Some(preset_name) => ChainConfig::from_preset_name(preset_name.as_str()).map_err(|err| {
-                log::error!("Failed to load config from preset '{}': {}", preset_name, err);
-                anyhow::anyhow!(err)
-            })?,
+            Some(chain_preset) => ChainConfig::from(chain_preset),
             None => {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
@@ -215,6 +213,43 @@ impl NetworkType {
             NetworkType::Test => ChainId::Sepolia,
             NetworkType::Integration => ChainId::IntegrationSepolia,
             NetworkType::Devnet => ChainId::Other("MADARA_TEST".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum ChainPreset {
+    Mainnet,
+    Sepolia,
+    Integration,
+    Devnet,
+    Test,
+}
+
+impl FromStr for ChainPreset {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "mainnet" => Ok(ChainPreset::Mainnet),
+            "sepolia" => Ok(ChainPreset::Sepolia),
+            "integration" => Ok(ChainPreset::Integration),
+            "devnet" => Ok(ChainPreset::Devnet),
+            "test" => Ok(ChainPreset::Test),
+            _ => Err(format!("Unknown preset: {}", s)),
+        }
+    }
+}
+
+impl From<&ChainPreset> for ChainConfig {
+    fn from(value: &ChainPreset) -> Self {
+        match value {
+            ChainPreset::Mainnet => ChainConfig::starknet_mainnet(),
+            ChainPreset::Sepolia => ChainConfig::starknet_sepolia(),
+            ChainPreset::Integration => ChainConfig::starknet_integration(),
+            ChainPreset::Devnet => ChainConfig::madara_devnet(),
+            ChainPreset::Test => ChainConfig::madara_test(),
         }
     }
 }
