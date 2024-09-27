@@ -101,13 +101,16 @@ mod eth_client_gas_price_worker_test {
     use tokio::time::{timeout, Duration};
     const ANOTHER_ANVIL_PORT: u16 = 8546;
     const L1_BLOCK_NUMBER: u64 = 20395662;
-    const FORK_URL: &str = "https://eth.merkle.io";
+
+    lazy_static::lazy_static! {
+        static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
+    }
 
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
         let anvil = Anvil::new()
-            .fork(FORK_URL)
+            .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
             .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
@@ -148,7 +151,7 @@ mod eth_client_gas_price_worker_test {
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
         let anvil = Anvil::new()
-            .fork(FORK_URL)
+            .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
             .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
@@ -231,7 +234,7 @@ mod eth_client_gas_price_worker_test {
     #[tokio::test]
     async fn update_gas_price_works() {
         let anvil = Anvil::new()
-            .fork(FORK_URL)
+            .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
             .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
