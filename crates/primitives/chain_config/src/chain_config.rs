@@ -211,6 +211,7 @@ impl ChainConfig {
         Self {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
+            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }
