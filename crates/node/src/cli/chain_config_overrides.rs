@@ -21,19 +21,23 @@ impl ChainConfigOverrideParams {
     pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
         let overridable = OverridableChainConfig::from(&chain_config);
         let mut config_value =
-            serde_yaml::to_value(overridable).context("Converting OverridableChainConfig to Value")?;
+            serde_yaml::to_value(overridable).context("Failed to convert OverridableChainConfig to Value")?;
 
         if let Value::Mapping(ref mut map) = config_value {
             for (key, value) in &self.overrides {
-                let value = serde_yaml::from_str(value).with_context(|| format!("Parsing value for key '{}'", key))?;
-                map.insert(Value::String(key.clone()), value);
+                if !map.contains_key(Value::String(key.clone())) {
+                    return Err(anyhow::anyhow!("The field '{}' is not overridable for the Chain Config.", key));
+                }
+                let parsed_value = serde_yaml::from_str(value)
+                    .with_context(|| format!("Failed to parse value '{}' for field '{}'", value, key))?;
+                map.insert(Value::String(key.clone()), parsed_value);
             }
+        } else {
+            return Err(anyhow::anyhow!("Unexpected config_value structure"));
         }
 
-        log::info!("{:?}", config_value);
-
         let updated_overridable: OverridableChainConfig =
-            serde_yaml::from_value(config_value).context("Converting Value to OverridableChainConfig")?;
+            serde_yaml::from_value(config_value).context("Failed to convert Value back to OverridableChainConfig")?;
 
         Ok(ChainConfig {
             versioned_constants: chain_config.versioned_constants,
