@@ -37,7 +37,6 @@ use url::Url;
         ArgGroup::new("chain_config")
             .args(&["chain_config_path", "preset"])
             .requires("sequencer")
-            .requires("devnet")
     ),
     group(
         ArgGroup::new("full_mode_config")
@@ -123,27 +122,30 @@ impl RunCmd {
     }
 
     pub fn chain_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
-        let mut chain_config = match &self.preset {
-            Some(chain_preset) => ChainConfig::from(chain_preset),
-            None => {
-                let path = self.chain_config_path.clone().ok_or_else(|| {
-                    log::error!("{}", "Chain config path is not set");
-                    anyhow::anyhow!(if self.is_sequencer() {
-                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (configs/presets/mainnet.yml)\n- 'sepolia' - (configs/presets/sepolia.yml)\n- 'integration' - (configs/presets/integration.yml)"
-                    } else {
-                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (configs/presets/mainnet.yml)\n- 'sepolia' - (configs/presets/sepolia.yml)\n- 'integration' - (configs/presets/integration.yml)"
-                    })
-                })?;
-                ChainConfig::from_yaml(&path).map_err(|err| {
-                    log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
-                    anyhow::anyhow!(err)
-                })?
+        let mut chain_config = match (self.preset.as_ref(), self.chain_config_path.as_ref(), self.devnet) {
+            // Read from the preset if provided
+            (Some(preset), _, _) => ChainConfig::from(preset),
+            // Read the config path if provided
+            (_, Some(path), _) => ChainConfig::from_yaml(path).map_err(|err| {
+                log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
+                anyhow::anyhow!("Failed to load chain config from file")
+            })?,
+            // Devnet default preset is Devnet if not provided by CLI
+            (_, _, true) => ChainConfig::from(&ChainPreset::Devnet),
+            _ => {
+                let error_message = if self.is_sequencer() {
+                    "In Sequencer mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`."
+                } else {
+                    "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`."
+                };
+                let preset_info = "\nThe default presets are:\n- 'mainnet' - (configs/presets/mainnet.yaml)\n- 'sepolia' - (configs/presets/sepolia.yaml)\n- 'integration' - (configs/presets/integration.yaml)\n- 'devnet' - (configs/presets/devnet.yaml)";
+                return Err(anyhow::anyhow!("{}{}", error_message, preset_info));
             }
         };
 
         if !self.chain_config_override.overrides.is_empty() {
             chain_config = self.chain_config_override.override_chain_config(chain_config)?;
-        }
+        };
 
         Ok(Arc::new(chain_config))
     }
@@ -212,7 +214,7 @@ impl NetworkType {
             NetworkType::Main => ChainId::Mainnet,
             NetworkType::Test => ChainId::Sepolia,
             NetworkType::Integration => ChainId::IntegrationSepolia,
-            NetworkType::Devnet => ChainId::Other("MADARA_TEST".to_string()),
+            NetworkType::Devnet => ChainId::Other("MADARA_DEVNET".to_string()),
         }
     }
 }
