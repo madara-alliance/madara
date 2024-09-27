@@ -5675,6 +5675,7 @@ dependencies = [
  "dotenv",
  "futures",
  "httpmock",
+ "lazy_static",
  "log",
  "mc-db",
  "mc-mempool",

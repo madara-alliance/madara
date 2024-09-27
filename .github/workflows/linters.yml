@@ -7,7 +7,7 @@ on:
 
 jobs:
   prettier:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Run prettier
@@ -15,7 +15,7 @@ jobs:
           npx prettier --check .
 
   markdown-lint:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: avto-dev/markdown-lint@v1
@@ -25,7 +25,7 @@ jobs:
           ignore: "./target"
 
   toml-lint:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout toml files
         uses: actions/checkout@v4
