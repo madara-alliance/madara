@@ -377,7 +377,7 @@ mod tests {
     #[rstest]
     fn test_mainnet_from_yaml() {
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(Path::new("chain_configs/presets/mainnet.yaml")).expect("failed to get cfg");
+            ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);

@@ -131,9 +131,9 @@ impl RunCmd {
                 let path = self.chain_config_path.clone().ok_or_else(|| {
                     log::error!("{}", "Chain config path is not set");
                     anyhow::anyhow!(if self.is_sequencer() {
-                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (chain_configs/presets/mainnet.yml)\n- 'sepolia' - (chain_configs/presets/sepolia.yml)\n- 'integration' - (chain_configs/presets/integration.yml)"
+                        "In Sequencer or Devnet mode, you must define a Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (configs/presets/mainnet.yml)\n- 'sepolia' - (configs/presets/sepolia.yml)\n- 'integration' - (configs/presets/integration.yml)"
                     } else {
-                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (chain_configs/presets/mainnet.yml)\n- 'sepolia' - (chain_configs/presets/sepolia.yml)\n- 'integration' - (chain_configs/presets/integration.yml)"
+                        "No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`.\nThe default presets are:\n- 'mainnet' - (configs/presets/mainnet.yml)\n- 'sepolia' - (configs/presets/sepolia.yml)\n- 'integration' - (configs/presets/integration.yml)"
                     })
                 })?;
                 ChainConfig::from_yaml(&path).map_err(|err| {
