@@ -217,15 +217,7 @@ async fn madara_can_sync_a_few_blocks() {
 
     let _ = env_logger::builder().is_test(true).try_init();
     let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--network",
-            "sepolia",
-            "--no-sync-polling",
-            "--n-blocks-to-sync",
-            "20",
-            "--no-l1-sync",
-            "--preset=sepolia",
-        ])
+        .args(["--full", "--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
         .run();
     node.wait_for_ready().await;
     node.wait_for_sync_to(19).await;

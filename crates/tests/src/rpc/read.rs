@@ -36,15 +36,7 @@ mod test_rpc_read_calls {
 
     async fn setup_madara() -> MadaraCmd {
         let mut madara = MadaraCmdBuilder::new()
-            .args([
-                "--network",
-                "sepolia",
-                "--no-sync-polling",
-                "--n-blocks-to-sync",
-                "20",
-                "--no-l1-sync",
-                "--preset=sepolia",
-            ])
+            .args(["--full", "--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
             .run();
 
         madara.wait_for_ready().await;
@@ -1157,12 +1149,12 @@ mod test_rpc_read_calls {
 
         let decompressed_program = decompress_to_string(contract_program.unwrap());
 
-        let mut class_program_file = File::open("crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
+        let mut class_program_file = File::open("../../crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
 
         let mut original_program = String::new();
         class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
 
-        let contract_class_file = File::open("crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
+        let contract_class_file = File::open("../../crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
         let reader = BufReader::new(contract_class_file);
 
         let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
