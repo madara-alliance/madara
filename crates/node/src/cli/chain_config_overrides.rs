@@ -33,7 +33,7 @@ impl ChainConfigOverrideParams {
                 map.insert(Value::String(key.clone()), parsed_value);
             }
         } else {
-            return Err(anyhow::anyhow!("Unexpected config_value structure"));
+            return Err(anyhow::anyhow!("Unexpected chain config structure."));
         }
 
         let updated_overridable: OverridableChainConfig =
