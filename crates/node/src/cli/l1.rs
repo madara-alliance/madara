@@ -1,9 +1,8 @@
-use url::Url;
-const DEFAULT_GAS_PRICE_POLL_MS: u64 = 10_000;
+use std::time::Duration;
 
-fn parse_url(s: &str) -> Result<Url, url::ParseError> {
-    s.parse()
-}
+use url::Url;
+
+use mp_utils::parsers::{parse_duration, parse_url};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct L1SyncParams {
@@ -19,7 +18,11 @@ pub struct L1SyncParams {
     #[clap(long, alias = "no-gas-price-sync")]
     pub gas_price_sync_disabled: bool,
 
-    /// Time in milliseconds in which the gas price worker will fetch the gas price.
-    #[clap(long, default_value_t = DEFAULT_GAS_PRICE_POLL_MS, alias = "gas-price-poll")]
-    pub gas_price_poll_ms: u64,
+    /// Time in which the gas price worker will fetch the gas price.
+    #[clap(
+        long,
+        default_value = "10s",
+        value_parser = parse_duration,
+    )]
+    pub gas_price_poll: Duration,
 }

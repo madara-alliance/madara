@@ -41,7 +41,7 @@ impl SyncService {
             block_importer,
             start_params: Some(telemetry),
             disabled: config.sync_disabled,
-            pending_block_poll_interval: Duration::from_secs(config.pending_block_poll_interval),
+            pending_block_poll_interval: config.pending_block_poll_interval,
         })
     }
 }

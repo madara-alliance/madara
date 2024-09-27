@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use anyhow::Context;
-use mp_block::H160;
-use mp_chain_config::{ChainConfig, StarknetVersion};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
-use std::time::Duration;
+
+use mp_block::H160;
+use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_utils::parsers::parse_key_value;
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override key1=value1 --chain-config-override key2=value2"
@@ -38,13 +41,6 @@ impl ChainConfigOverrideParams {
             ..updated_overridable.into()
         })
     }
-}
-
-fn parse_key_value(s: &str) -> anyhow::Result<(String, String)> {
-    let mut parts = s.splitn(2, '=');
-    let key = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
-    let value = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
-    Ok((key.to_string(), value.to_string()))
 }
 
 /// Part of the Chain Config that we can override.

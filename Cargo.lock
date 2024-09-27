@@ -6066,7 +6066,9 @@ dependencies = [
  "futures",
  "rayon",
  "rstest 0.18.2",
+ "serde",
  "tokio",
+ "url",
 ]
 
 [[package]]
