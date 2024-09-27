@@ -68,10 +68,12 @@ pub struct ChainConfig {
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
+    #[serde(deserialize_with = "deserialize_duration")]
     pub block_time: Duration,
 
     /// Only used for block production.
     /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
+    #[serde(deserialize_with = "deserialize_duration")]
     pub pending_block_update_time: Duration,
 
     /// Only used for block production.
@@ -292,6 +294,27 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
     }
 }
 
+fn parse_duration(s: &str) -> anyhow::Result<Duration> {
+    let len = s.len();
+    let (value, suffix) = s.split_at(len - 2);
+
+    let number: u64 = value.parse().map_err(|_| anyhow::anyhow!("Invalid duration: {}", s))?;
+    match suffix {
+        "ms" => Ok(Duration::from_millis(number)),
+        "s" => Ok(Duration::from_secs(number)),
+        "min" => Ok(Duration::from_secs(number * 60)),
+        _ => bail!("Invalid duration suffix: {}", suffix),
+    }
+}
+
+pub fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    parse_duration(&s).map_err(serde::de::Error::custom)
+}
+
 pub fn deserialize_starknet_version<'de, D>(deserializer: D) -> Result<StarknetVersion, D::Error>
 where
     D: Deserializer<'de>,
@@ -316,6 +339,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::env::current_dir;
+
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
     use rstest::*;
     use serde_json::Value;
@@ -325,8 +350,9 @@ mod tests {
 
     #[rstest]
     fn test_mainnet_from_yaml() {
+        println!("{}", current_dir().unwrap().to_str().unwrap());
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("failed to get cfg");
+            ChainConfig::from_yaml(Path::new("../../../configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
