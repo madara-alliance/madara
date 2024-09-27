@@ -226,7 +226,6 @@ pub enum ChainPreset {
     Sepolia,
     Integration,
     Devnet,
-    Test,
 }
 
 impl FromStr for ChainPreset {
@@ -238,7 +237,6 @@ impl FromStr for ChainPreset {
             "sepolia" => Ok(ChainPreset::Sepolia),
             "integration" => Ok(ChainPreset::Integration),
             "devnet" => Ok(ChainPreset::Devnet),
-            "test" => Ok(ChainPreset::Test),
             _ => Err(format!("Unknown preset: {}", s)),
         }
     }
@@ -251,7 +249,6 @@ impl From<&ChainPreset> for ChainConfig {
             ChainPreset::Sepolia => ChainConfig::starknet_sepolia(),
             ChainPreset::Integration => ChainConfig::starknet_integration(),
             ChainPreset::Devnet => ChainConfig::madara_devnet(),
-            ChainPreset::Test => ChainConfig::madara_test(),
         }
     }
 }
