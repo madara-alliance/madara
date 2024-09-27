@@ -10,7 +10,7 @@ use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_utils::parsers::parse_key_value;
 
 /// Override chain config parameters.
-/// Format: "--chain-config-override key1=value1 --chain-config-override key2=value2"
+/// Format: "--chain-config-override chain_id=NEW_MADARA --chain-config-override chain_name=NEW_NAME"
 #[derive(clap::Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
     #[clap(long = "chain-config-override", value_parser = parse_key_value, number_of_values = 1)]
