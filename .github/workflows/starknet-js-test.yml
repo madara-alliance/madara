@@ -13,15 +13,15 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-madara-${{ github.sha }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Scarb.lock') }}
           fail-on-cache-miss: true
       - name: Restore Cairo build artifacts
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-cairo-${{ github.sha }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Scarb.lock') }}
           fail-on-cache-miss: true
-      - name: Setup and run dev chain
+      - name: Setup dev chain and run tests
         run: |
           ./target/release/madara --name madara --base-path ../madara3 --network devnet --authority --telemetry-disabled --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset test &
           MADARA_PID=$!

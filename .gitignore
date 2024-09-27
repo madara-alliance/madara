@@ -61,6 +61,3 @@ tmp/
 
 *.info
 *.profraw
-
-# js_tests
-js_tests/lib
