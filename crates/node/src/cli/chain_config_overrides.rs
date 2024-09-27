@@ -7,7 +7,7 @@ use starknet_api::core::{ChainId, ContractAddress};
 use std::time::Duration;
 
 /// Override chain config parameters.
-/// Format: "--chain-config-override key1=value1 key2=value2"
+/// Format: "--chain-config-override key1=value1 --chain-config-override key2=value2"
 #[derive(clap::Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
     #[clap(long = "chain-config-override", value_parser = parse_key_value, number_of_values = 1)]
