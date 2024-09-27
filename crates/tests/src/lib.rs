@@ -218,7 +218,7 @@ async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
     use starknet_core::types::{BlockHashAndNumber, Felt};
 
     let _ = env_logger::builder().is_test(true).try_init();
-    let mut node = MadaraCmdBuilder::new()
+    let mut cmd_builder = MadaraCmdBuilder::new()
         .args([
             "--network",
             "sepolia",
@@ -227,8 +227,14 @@ async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
             "20",
             "--no-l1-sync",
             "--preset=sepolia",
-        ])
-        .run();
+        ]);
+
+    // This is an optional argument to sync faster from the FGW if gateway_key is set
+    if let Ok(gateway_key) = std::env::var("GATEWAY_KEY") {
+        cmd_builder = cmd_builder.args(["--gateway-key", &gateway_key]);
+    }
+
+    let mut node = cmd_builder.run();
     node.wait_for_ready().await;
     node.wait_for_sync_to(19).await;
 
