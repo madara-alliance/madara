@@ -8,6 +8,9 @@ repository.workspace = true
 version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+testing = []
 [dependencies]
 anyhow.workspace = true
 bitvec.workspace = true

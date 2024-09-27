@@ -252,15 +252,14 @@ pub async fn sync(
 mod tests {
     use super::*;
     use crate::tests::utils::gateway::{test_setup, TestContext};
+    use mc_block_import::tests::block_import_utils::create_dummy_unverified_full_block;
     use mc_block_import::BlockImporter;
-    use mc_block_import::{UnverifiedCommitments, UnverifiedHeader};
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_metrics::MetricsRegistry;
     use mc_telemetry::TelemetryService;
-    use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+    use mp_block::header::L1DataAvailabilityMode;
     use mp_block::MadaraBlock;
     use mp_chain_config::StarknetVersion;
-    use mp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
@@ -293,23 +292,7 @@ mod tests {
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
         let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
 
-        let mock_block = UnverifiedFullBlock {
-            header: UnverifiedHeader {
-                parent_block_hash: Some(Felt::ZERO),
-                sequencer_address: Felt::ZERO,
-                block_timestamp: 0,
-                protocol_version: StarknetVersion::default(),
-                l1_gas_price: GasPrices::default(),
-                l1_da_mode: L1DataAvailabilityMode::Blob,
-            },
-            transactions: vec![],
-            unverified_block_number: Some(0),
-            state_diff: StateDiff::default(),
-            receipts: vec![],
-            declared_classes: vec![],
-            commitments: UnverifiedCommitments::default(),
-            trusted_converted_classes: vec![],
-        };
+        let mock_block = create_dummy_unverified_full_block();
 
         let task_handle = tokio::spawn(l2_verify_and_apply_task(
             backend.clone(),
@@ -368,23 +351,7 @@ mod tests {
             Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
-        let mock_block = UnverifiedFullBlock {
-            header: UnverifiedHeader {
-                parent_block_hash: Some(Felt::ZERO),
-                sequencer_address: Felt::ZERO,
-                block_timestamp: 0,
-                protocol_version: StarknetVersion::default(),
-                l1_gas_price: GasPrices::default(),
-                l1_da_mode: L1DataAvailabilityMode::Blob,
-            },
-            transactions: vec![],
-            unverified_block_number: Some(1),
-            state_diff: StateDiff::default(),
-            receipts: vec![],
-            declared_classes: vec![],
-            commitments: UnverifiedCommitments::default(),
-            trusted_converted_classes: vec![],
-        };
+        let mock_block = create_dummy_unverified_full_block();
 
         updates_sender.send(mock_block).await.unwrap();
 
@@ -394,7 +361,7 @@ mod tests {
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), output_receiver.recv()).await;
         match result {
             Ok(Some(b)) => {
-                assert_eq!(b.unverified_block_number, Some(1), "Block number does not match");
+                assert_eq!(b.unverified_block_number, Some(0), "Block number does not match");
             }
             Ok(None) => panic!("Channel closed without receiving a result"),
             Err(_) => panic!("Timeout reached while waiting for result"),

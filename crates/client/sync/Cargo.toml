@@ -63,3 +63,4 @@ httpmock = { workspace = true }
 tempfile = { workspace = true }
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
+mc-block-import = { workspace = true , features = ["testing"]}
