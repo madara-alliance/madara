@@ -258,6 +258,7 @@ mod tests {
     use mc_metrics::MetricsRegistry;
     use mc_telemetry::TelemetryService;
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+    use mp_block::MadaraBlock;
     use mp_chain_config::StarknetVersion;
     use mp_state_update::StateDiff;
     use rstest::rstest;
@@ -338,6 +339,17 @@ mod tests {
         assert!(applied_block.is_some(), "The block was not applied correctly");
         let applied_block = applied_block.unwrap();
         println!("applied_block: {:?}", applied_block);
+        let applied_block = MadaraBlock::try_from(applied_block).unwrap();
+        
+        assert_eq!(applied_block.info.header.block_number, 0, "Block number does not match");
+        assert_eq!(applied_block.info.header.block_timestamp, 0, "Block timestamp does not match");
+        assert_eq!(applied_block.info.header.parent_block_hash, Felt::ZERO, "Parent block hash does not match");
+        assert!(applied_block.inner.transactions.is_empty(), "Block should not contain any transactions");
+        assert_eq!(applied_block.info.header.protocol_version, StarknetVersion::default(), "Protocol version does not match");
+        assert_eq!(applied_block.info.header.sequencer_address, Felt::ZERO, "Sequencer address does not match");
+        assert_eq!(applied_block.info.header.l1_gas_price.eth_l1_gas_price, 0, "L1 gas price (ETH) does not match");
+        assert_eq!(applied_block.info.header.l1_gas_price.strk_l1_gas_price, 0, "L1 gas price (STRK) does not match");
+        assert_eq!(applied_block.info.header.l1_da_mode, L1DataAvailabilityMode::Blob, "L1 DA mode does not match");
     }
 
     /// Test the `l2_block_conversion_task` function.
