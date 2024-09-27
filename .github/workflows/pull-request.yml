@@ -47,4 +47,3 @@ jobs:
     uses: ./.github/workflows/starknet-js-test.yml
     needs: build
 
-    secrets: inherit
