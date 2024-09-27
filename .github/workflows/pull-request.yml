@@ -37,7 +37,7 @@ jobs:
     uses: ./.github/workflows/coverage.yml
     needs: changelog
     secrets: inherit
-    
+
   build:
     name: Build Madara
     uses: ./.github/workflows/build.yml
@@ -47,4 +47,3 @@ jobs:
     name: Run JS Tests
     uses: ./.github/workflows/starknet-js-test.yml
     needs: build
-
