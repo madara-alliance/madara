@@ -201,18 +201,19 @@ impl NetworkType {
     pub fn uri(&self) -> &'static str {
         match self {
             NetworkType::Main => "https://alpha-mainnet.starknet.io",
-            NetworkType::Test => "http://127.0.0.1:8080",
+            // NetworkType::Test => "http://127.0.0.1:8080",
+            NetworkType::Test => "https://alpha-sepolia.starknet.io",
             NetworkType::Integration => "https://integration-sepolia.starknet.io",
             NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
         }
     }
 
     pub fn gateway(&self) -> Url {
-        format!("{}/gateway", self.uri()).parse().expect("Invalid uri")
+        Url::parse(&format!("{}/gateway/", self.uri())).expect("Invalid uri")
     }
 
     pub fn feeder_gateway(&self) -> Url {
-        format!("{}/feeder_gateway", self.uri()).parse().expect("Invalid uri")
+        Url::parse(&format!("{}/feeder_gateway/", self.uri())).expect("Invalid uri")
     }
 
     pub fn chain_id(&self) -> ChainId {

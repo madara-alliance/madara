@@ -18,10 +18,11 @@ use mp_gateway::{
 
 impl FeederClient {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone())
-            .add_uri_segment("get_block")
-            .unwrap()
-            .with_block_id(block_id);
+        let request =
+            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_block")
+                .unwrap()
+                .with_block_id(block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -32,10 +33,11 @@ impl FeederClient {
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone())
-            .add_uri_segment("get_state_update")
-            .unwrap()
-            .with_block_id(block_id);
+        let request =
+            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .unwrap()
+                .with_block_id(block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -49,11 +51,12 @@ impl FeederClient {
         &self,
         block_id: BlockId,
     ) -> Result<ProviderStateUpdateWithBlockPendingMaybe, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone())
-            .add_uri_segment("get_state_update")
-            .unwrap()
-            .with_block_id(block_id)
-            .add_param(Cow::from("includeBlock"), "true");
+        let request =
+            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .unwrap()
+                .with_block_id(block_id)
+                .add_param(Cow::from("includeBlock"), "true");
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => Ok(ProviderStateUpdateWithBlockPendingMaybe::Pending(
@@ -70,18 +73,19 @@ impl FeederClient {
         class_hash: Felt,
         block_id: BlockId,
     ) -> Result<ContractClass, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone())
-            .add_uri_segment("get_class_by_hash")
-            .unwrap()
-            .with_block_id(block_id)
-            .with_class_hash(class_hash);
+        let request =
+            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_class_by_hash")
+                .unwrap()
+                .with_block_id(block_id)
+                .with_class_hash(class_hash);
 
         let response = request.send_get_raw().await?;
         let status = response.status();
         if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR || status == reqwest::StatusCode::BAD_REQUEST {
             let error = match response.json::<StarknetError>().await {
                 Ok(e) => SequencerError::StarknetError(e),
-                Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant,
+                Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant(e),
                 Err(e) => SequencerError::ReqwestError(e),
             };
             return Err(error);
@@ -212,37 +216,43 @@ mod tests {
             .get_state_update_with_block(BlockId::Number(0))
             .await
             .expect("Getting state update and block at block number 0");
-        let state_update_with_block_0 = let_binding
-            .state_update_with_block()
-            .expect("State update with block at block number 0 should not be pending");
-        let state_update_with_block_0_reference =
+        let (state_update_0, block_0) = let_binding.as_update_and_block();
+        let state_update_0 =
+            state_update_0.non_pending_ownded().expect("State update at block number 0 should not be pending");
+        let block_0 = block_0.non_pending_owned().expect("Block at block number 0 should not be pending");
+        let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
             load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_0.json");
 
-        assert_eq!(state_update_with_block_0, &state_update_with_block_0_reference);
+        assert_eq!(state_update_0, state_update_0_reference);
+        assert_eq!(block_0, block_0_reference);
 
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(1))
             .await
             .expect("Getting state update and block at block number 1");
-        let state_update_with_block_1 = let_binding
-            .state_update_with_block()
-            .expect("State update with block at block number 1 should not be pending");
-        let state_update_with_block_1_reference =
+        let (state_update_1, block_1) = let_binding.as_update_and_block();
+        let state_update_1 =
+            state_update_1.non_pending_ownded().expect("State update at block number 1 should not be pending");
+        let block_1 = block_1.non_pending_owned().expect("Block at block number 1 should not be pending");
+        let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
             load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_1.json");
 
-        assert_eq!(state_update_with_block_1, &state_update_with_block_1_reference);
+        assert_eq!(state_update_1, state_update_1_reference);
+        assert_eq!(block_1, block_1_reference);
 
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(2))
             .await
             .expect("Getting state update and block at block number 2");
-        let state_update_with_block_2 = let_binding
-            .state_update_with_block()
-            .expect("State update with block at block number 2 should not be pending");
-        let state_update_with_block_2_reference =
+        let (state_update_2, block_2) = let_binding.as_update_and_block();
+        let state_update_2 =
+            state_update_2.non_pending_ownded().expect("State update at block number 0 should not be pending");
+        let block_2 = block_2.non_pending_owned().expect("Block at block number 0 should not be pending");
+        let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
             load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_2.json");
 
-        assert_eq!(state_update_with_block_2, &state_update_with_block_2_reference);
+        assert_eq!(state_update_2, state_update_2_reference);
+        assert_eq!(block_2, block_2_reference);
     }
 
     #[rstest]
@@ -252,11 +262,10 @@ mod tests {
             .get_state_update_with_block(BlockId::Tag(BlockTag::Latest))
             .await
             .expect("Getting state update and block at block latest");
-        let state_update_with_block_latest = let_binding
-            .state_update_with_block()
-            .expect("State update with block at block latest should not be pending");
+        let (state_update_latest, block_latest) = let_binding.as_update_and_block();
 
-        assert!(matches!(state_update_with_block_latest, ProviderStateUpdateWithBlock));
+        assert!(matches!(state_update_latest, ProviderStateUpdatePendingMaybe::NonPending(_)));
+        assert!(matches!(block_latest, ProviderBlockPendingMaybe::NonPending(_)));
     }
 
     #[rstest]
@@ -266,10 +275,10 @@ mod tests {
             .get_state_update_with_block(BlockId::Tag(BlockTag::Pending))
             .await
             .expect("Getting state update and block at block latest");
-        let state_update_with_block_pending =
-            let_binding.pending().expect("State update with block at block latest should be pending");
+        let (state_update_pending, block_pending) = let_binding.as_update_and_block();
 
-        assert!(matches!(state_update_with_block_pending, ProviderStateUpdateWithBlockPending));
+        assert!(matches!(state_update_pending, ProviderStateUpdatePendingMaybe::Pending(_)));
+        assert!(matches!(block_pending, ProviderBlockPendingMaybe::Pending(_)))
     }
 
     #[rstest]

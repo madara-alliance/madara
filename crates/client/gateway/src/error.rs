@@ -4,16 +4,16 @@ use starknet_types_core::felt::FromStrError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SequencerError {
-    #[error(transparent)]
+    #[error("starknet error: {0}")]
     StarknetError(#[from] StarknetError),
-    #[error(transparent)]
+    #[error("reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
-    #[error(transparent)]
+    #[error("error deserializing response: {0}")]
     SerdeError(#[from] serde_json::Error),
-    #[error(transparent)]
+    #[error("error compressing class: {0}")]
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
-    #[error("error decoding response body: invalid error variant")]
-    InvalidStarknetErrorVariant,
+    #[error("invalid error variant: {0}")]
+    InvalidStarknetErrorVariant(reqwest::Error),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

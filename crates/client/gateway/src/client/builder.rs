@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use reqwest::Client;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client,
+};
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -8,25 +11,25 @@ pub struct FeederClient {
     pub(crate) client: Client,
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
-    pub(crate) headers: HashMap<String, String>,
+    pub(crate) headers: HeaderMap,
 }
 
 impl FeederClient {
     pub fn new(gateway_url: Url, feeder_gateway_url: Url) -> Self {
-        Self { client: Client::new(), gateway_url, feeder_gateway_url, headers: HashMap::new() }
+        Self { client: Client::new(), gateway_url, feeder_gateway_url, headers: HeaderMap::new() }
     }
 
-    pub fn new_with_headers(gateway_url: Url, feeder_gateway_url: Url, headers: &[(String, String)]) -> Self {
+    pub fn new_with_headers(gateway_url: Url, feeder_gateway_url: Url, headers: &[(HeaderName, HeaderValue)]) -> Self {
         let headers = headers.iter().cloned().collect();
         Self { client: Client::new(), gateway_url, feeder_gateway_url, headers }
     }
 
-    pub fn add_header(&mut self, key: &str, value: &str) {
-        self.headers.insert(key.to_string(), value.to_string());
+    pub fn add_header(&mut self, name: HeaderName, value: HeaderValue) {
+        self.headers.insert(name, value);
     }
 
-    pub fn remove_header(&mut self, key: &str) -> Option<String> {
-        self.headers.remove(key)
+    pub fn remove_header(&mut self, name: HeaderName) -> Option<HeaderValue> {
+        self.headers.remove(name)
     }
 
     pub fn starknet_alpha_mainnet() -> Self {

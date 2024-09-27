@@ -24,6 +24,10 @@ impl<'a> RequestBuilder<'a> {
         Self { client, url: base_url, params: HashMap::new(), headers: HeaderMap::new() }
     }
 
+    pub fn new_with_headers(client: &'a Client, base_url: Url, headers: HeaderMap) -> Self {
+        Self { client, url: base_url, params: HashMap::new(), headers }
+    }
+
     pub fn add_uri_segment(mut self, segment: &str) -> Result<Self, url::ParseError> {
         self.url = self.url.join(segment)?;
         Ok(self)
@@ -97,7 +101,7 @@ where
     if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR || status == reqwest::StatusCode::BAD_REQUEST {
         let error = match response.json::<StarknetError>().await {
             Ok(e) => SequencerError::StarknetError(e),
-            Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant,
+            Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant(e),
             Err(e) => SequencerError::ReqwestError(e),
         };
         return Err(error);

@@ -280,14 +280,9 @@ fn convert_sequencer_block_pending(
             .transaction_receipts
             .into_iter()
             .zip(&block.transactions)
-            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .map(|(receipt, tx)| receipt.into_mp(tx))
             .collect(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(Transaction::try_from)
-            .collect::<Result<_, _>>()
-            .context("Converting the transactions")?,
+        transactions: block.transactions.into_iter().map(Into::into).collect(),
         declared_classes: class_update.into_iter().map(Into::into).collect(),
     })
 }
@@ -311,20 +306,15 @@ fn convert_sequencer_block_non_pending(
     };
     Ok(UnverifiedFullBlock {
         unverified_block_number: Some(block.block_number),
-        header: convert_block_header(&block)?,
+        header: block.header()?,
         state_diff: state_update.state_diff.into(),
         receipts: block
             .transaction_receipts
             .into_iter()
             .zip(&block.transactions)
-            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .map(|(receipt, tx)| receipt.into_mp(tx))
             .collect(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(Transaction::try_from)
-            .collect::<Result<_, _>>()
-            .context("Converting the transactions")?,
+        transactions: block.transactions.into_iter().map(Into::into).collect(),
         declared_classes: class_update.into_iter().map(Into::into).collect(),
         commitments,
         ..Default::default()

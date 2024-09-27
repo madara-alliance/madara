@@ -1,7 +1,10 @@
 use mp_block::H160;
-use mp_receipt::{Event, L1Gas};
+use mp_convert::felt_to_u64;
+use mp_receipt::{Event, L1Gas, MsgToL1};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+
+use crate::transaction::{DeployAccountTransaction, DeployTransaction, L1HandlerTransaction, Transaction};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +46,96 @@ impl ConfirmedReceipt {
             revert_error,
         }
     }
+
+    pub fn into_mp(self, tx: &Transaction) -> mp_receipt::TransactionReceipt {
+        match tx {
+            Transaction::Invoke(_) => mp_receipt::TransactionReceipt::Invoke(self.into_mp_invoke()),
+            Transaction::L1Handler(tx) => mp_receipt::TransactionReceipt::L1Handler(self.into_mp_l1_handler(tx)),
+            Transaction::Declare(_) => mp_receipt::TransactionReceipt::Declare(self.into_mp_declare()),
+            Transaction::Deploy(tx) => mp_receipt::TransactionReceipt::Deploy(self.into_mp_deploy(tx)),
+            Transaction::DeployAccount(tx) => {
+                mp_receipt::TransactionReceipt::DeployAccount(self.into_mp_deploy_account(tx))
+            }
+        }
+    }
+
+    fn into_mp_invoke(self) -> mp_receipt::InvokeTransactionReceipt {
+        mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: self.transaction_hash,
+            actual_fee: self.actual_fee.into(),
+            messages_sent: self.l2_to_l1_messages,
+            events: self.events,
+            execution_resources: self.execution_resources.into(),
+            execution_result: execution_result(self.execution_status, self.revert_error),
+        }
+    }
+
+    fn into_mp_l1_handler(self, tx: &L1HandlerTransaction) -> mp_receipt::L1HandlerTransactionReceipt {
+        let (from_address, payload) = tx.calldata.split_first().map(|(a, b)| (*a, b)).unwrap_or((Felt::ZERO, &[]));
+        let message_to_l2 = starknet_core::types::MsgToL2 {
+            from_address: from_address.try_into().unwrap_or(Felt::ZERO.try_into().unwrap()),
+            to_address: tx.contract_address,
+            selector: tx.entry_point_selector,
+            payload: payload.to_vec(),
+            nonce: felt_to_u64(&tx.nonce).unwrap_or_default(),
+        };
+        let message_hash = message_to_l2.hash();
+
+        mp_receipt::L1HandlerTransactionReceipt {
+            message_hash: message_hash.try_into().unwrap_or_default(),
+            transaction_hash: self.transaction_hash,
+            actual_fee: self.actual_fee.into(),
+            messages_sent: self.l2_to_l1_messages,
+            events: self.events,
+            execution_resources: self.execution_resources.into(),
+            execution_result: execution_result(self.execution_status, self.revert_error),
+        }
+    }
+
+    fn into_mp_declare(self) -> mp_receipt::DeclareTransactionReceipt {
+        mp_receipt::DeclareTransactionReceipt {
+            transaction_hash: self.transaction_hash,
+            actual_fee: self.actual_fee.into(),
+            messages_sent: self.l2_to_l1_messages,
+            events: self.events,
+            execution_resources: self.execution_resources.into(),
+            execution_result: execution_result(self.execution_status, self.revert_error),
+        }
+    }
+
+    fn into_mp_deploy(self, tx: &DeployTransaction) -> mp_receipt::DeployTransactionReceipt {
+        mp_receipt::DeployTransactionReceipt {
+            transaction_hash: self.transaction_hash,
+            actual_fee: self.actual_fee.into(),
+            messages_sent: self.l2_to_l1_messages,
+            events: self.events,
+            execution_resources: self.execution_resources.into(),
+            execution_result: execution_result(self.execution_status, self.revert_error),
+            contract_address: tx.contract_address,
+        }
+    }
+
+    fn into_mp_deploy_account(self, tx: &DeployAccountTransaction) -> mp_receipt::DeployAccountTransactionReceipt {
+        mp_receipt::DeployAccountTransactionReceipt {
+            transaction_hash: self.transaction_hash,
+            actual_fee: self.actual_fee.into(),
+            messages_sent: self.l2_to_l1_messages,
+            events: self.events,
+            execution_resources: self.execution_resources.into(),
+            execution_result: execution_result(self.execution_status, self.revert_error),
+            contract_address: match tx {
+                DeployAccountTransaction::V1(tx) => tx.contract_address,
+                DeployAccountTransaction::V3(tx) => Felt::default(),
+            },
+        }
+    }
+}
+
+fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_receipt::ExecutionResult {
+    match status {
+        ExecutionStatus::Succeeded => mp_receipt::ExecutionResult::Succeeded,
+        ExecutionStatus::Reverted => mp_receipt::ExecutionResult::Reverted { reason: reason.unwrap_or_default() },
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -79,6 +172,47 @@ impl From<mp_receipt::ExecutionResources> for ExecutionResources {
     }
 }
 
+impl From<ExecutionResources> for mp_receipt::ExecutionResources {
+    fn from(resources: ExecutionResources) -> Self {
+        fn none_if_zero(n: u64) -> Option<u64> {
+            if n == 0 {
+                None
+            } else {
+                Some(n)
+            }
+        }
+
+        let BuiltinCounters {
+            output_builtin,
+            pedersen_builtin,
+            range_check_builtin,
+            ecdsa_builtin,
+            bitwise_builtin,
+            ec_op_builtin,
+            keccak_builtin,
+            poseidon_builtin,
+            segment_arena_builtin,
+            add_mod_builtin,
+            mul_mod_builtin,
+        } = resources.builtin_instance_counter;
+
+        Self {
+            steps: resources.n_steps,
+            memory_holes: none_if_zero(resources.n_memory_holes),
+            range_check_builtin_applications: none_if_zero(range_check_builtin),
+            pedersen_builtin_applications: none_if_zero(pedersen_builtin),
+            poseidon_builtin_applications: none_if_zero(poseidon_builtin),
+            ec_op_builtin_applications: none_if_zero(ec_op_builtin),
+            ecdsa_builtin_applications: none_if_zero(ecdsa_builtin),
+            bitwise_builtin_applications: none_if_zero(bitwise_builtin),
+            keccak_builtin_applications: none_if_zero(keccak_builtin),
+            segment_arena_builtin: none_if_zero(segment_arena_builtin),
+            data_availability: resources.data_availability.unwrap_or_default(),
+            total_gas_consumed: resources.total_gas_consumed.unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct BuiltinCounters {
@@ -108,23 +242,6 @@ pub struct BuiltinCounters {
 
 fn is_zero(value: &u64) -> bool {
     *value == 0
-}
-
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct MsgToL1 {
-    pub from_address: Felt,
-    pub to_address: H160,
-    pub payload: Vec<Felt>,
-}
-
-impl From<mp_receipt::MsgToL1> for MsgToL1 {
-    fn from(msg: mp_receipt::MsgToL1) -> Self {
-        let mut bytes = [0u8; 20];
-        bytes.copy_from_slice(&msg.to_address.to_bytes_be()[..20]);
-        let to_address = H160::from_slice(&bytes);
-        Self { from_address: msg.from_address, to_address, payload: msg.payload }
-    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]

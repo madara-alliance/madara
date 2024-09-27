@@ -1,4 +1,4 @@
-use mp_convert::hex_serde::U64AsHex;
+use mp_convert::{felt_to_u64, hex_serde::U64AsHex};
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -19,6 +19,18 @@ pub enum Transaction {
     Deploy(DeployTransaction),
     #[serde(rename = "DEPLOY_ACCOUNT")]
     DeployAccount(DeployAccountTransaction),
+}
+
+impl From<Transaction> for mp_transactions::Transaction {
+    fn from(tx: Transaction) -> Self {
+        match tx {
+            Transaction::Invoke(tx) => Self::Invoke(tx.into()),
+            Transaction::L1Handler(tx) => Self::L1Handler(tx.into()),
+            Transaction::Declare(tx) => Self::Declare(tx.into()),
+            Transaction::Deploy(tx) => Self::Deploy(tx.into()),
+            Transaction::DeployAccount(tx) => Self::DeployAccount(tx.into()),
+        }
+    }
 }
 
 impl Transaction {
@@ -82,6 +94,16 @@ pub enum InvokeTransaction {
     V3(InvokeTransactionV3),
 }
 
+impl From<InvokeTransaction> for mp_transactions::InvokeTransaction {
+    fn from(tx: InvokeTransaction) -> Self {
+        match tx {
+            InvokeTransaction::V0(tx) => Self::V0(tx.into()),
+            InvokeTransaction::V1(tx) => Self::V1(tx.into()),
+            InvokeTransaction::V3(tx) => Self::V3(tx.into()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct InvokeTransactionV0 {
@@ -107,6 +129,18 @@ impl InvokeTransactionV0 {
     }
 }
 
+impl From<InvokeTransactionV0> for mp_transactions::InvokeTransactionV0 {
+    fn from(tx: InvokeTransactionV0) -> Self {
+        Self {
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            contract_address: tx.sender_address,
+            entry_point_selector: tx.entry_point_selector,
+            calldata: tx.calldata,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct InvokeTransactionV1 {
@@ -127,6 +161,18 @@ impl InvokeTransactionV1 {
             max_fee: transaction.max_fee,
             nonce: transaction.nonce,
             transaction_hash: hash,
+        }
+    }
+}
+
+impl From<InvokeTransactionV1> for mp_transactions::InvokeTransactionV1 {
+    fn from(tx: InvokeTransactionV1) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            calldata: tx.calldata,
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            nonce: tx.nonce,
         }
     }
 }
@@ -167,6 +213,23 @@ impl InvokeTransactionV3 {
     }
 }
 
+impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
+    fn from(tx: InvokeTransactionV3) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            calldata: tx.calldata,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            resource_bounds: tx.resource_bounds,
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            account_deployment_data: tx.account_deployment_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode,
+            fee_data_availability_mode: tx.fee_data_availability_mode,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct L1HandlerTransaction {
@@ -192,6 +255,18 @@ impl L1HandlerTransaction {
     }
 }
 
+impl From<L1HandlerTransaction> for mp_transactions::L1HandlerTransaction {
+    fn from(tx: L1HandlerTransaction) -> Self {
+        Self {
+            version: tx.version,
+            nonce: felt_to_u64(&tx.nonce).unwrap_or_default(),
+            contract_address: tx.contract_address,
+            entry_point_selector: tx.entry_point_selector,
+            calldata: tx.calldata,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "version")]
 #[cfg_attr(test, derive(Eq))]
@@ -204,6 +279,17 @@ pub enum DeclareTransaction {
     V2(DeclareTransactionV2),
     #[serde(rename = "0x3")]
     V3(DeclareTransactionV3),
+}
+
+impl From<DeclareTransaction> for mp_transactions::DeclareTransaction {
+    fn from(tx: DeclareTransaction) -> Self {
+        match tx {
+            DeclareTransaction::V0(tx) => Self::V0(tx.into()),
+            DeclareTransaction::V1(tx) => Self::V1(tx.into()),
+            DeclareTransaction::V2(tx) => Self::V2(tx.into()),
+            DeclareTransaction::V3(tx) => Self::V3(tx.into()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -227,6 +313,17 @@ impl DeclareTransactionV0 {
             sender_address: transaction.sender_address,
             signature: transaction.signature,
             transaction_hash: hash,
+        }
+    }
+}
+
+impl From<DeclareTransactionV0> for mp_transactions::DeclareTransactionV0 {
+    fn from(tx: DeclareTransactionV0) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            class_hash: tx.class_hash,
         }
     }
 }
@@ -256,6 +353,18 @@ impl DeclareTransactionV1 {
     }
 }
 
+impl From<DeclareTransactionV1> for mp_transactions::DeclareTransactionV1 {
+    fn from(tx: DeclareTransactionV1) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            class_hash: tx.class_hash,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DeclareTransactionV2 {
@@ -279,6 +388,19 @@ impl DeclareTransactionV2 {
             signature: transaction.signature,
             transaction_hash: hash,
             compiled_class_hash: transaction.compiled_class_hash,
+        }
+    }
+}
+
+impl From<DeclareTransactionV2> for mp_transactions::DeclareTransactionV2 {
+    fn from(tx: DeclareTransactionV2) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            compiled_class_hash: tx.compiled_class_hash,
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            class_hash: tx.class_hash,
         }
     }
 }
@@ -322,6 +444,24 @@ impl DeclareTransactionV3 {
     }
 }
 
+impl From<DeclareTransactionV3> for mp_transactions::DeclareTransactionV3 {
+    fn from(tx: DeclareTransactionV3) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            compiled_class_hash: tx.compiled_class_hash,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            class_hash: tx.class_hash,
+            resource_bounds: tx.resource_bounds,
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            account_deployment_data: tx.account_deployment_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode,
+            fee_data_availability_mode: tx.fee_data_availability_mode,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DeployTransaction {
@@ -347,12 +487,32 @@ impl DeployTransaction {
     }
 }
 
+impl From<DeployTransaction> for mp_transactions::DeployTransaction {
+    fn from(tx: DeployTransaction) -> Self {
+        Self {
+            version: tx.version,
+            contract_address_salt: tx.contract_address_salt,
+            constructor_calldata: tx.constructor_calldata,
+            class_hash: tx.class_hash,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 #[cfg_attr(test, derive(Eq))]
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),
+}
+
+impl From<DeployAccountTransaction> for mp_transactions::DeployAccountTransaction {
+    fn from(tx: DeployAccountTransaction) -> Self {
+        match tx {
+            DeployAccountTransaction::V1(tx) => Self::V1(tx.into()),
+            DeployAccountTransaction::V3(tx) => Self::V3(tx.into()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -381,6 +541,19 @@ impl DeployAccountTransactionV1 {
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
             class_hash: transaction.class_hash,
+        }
+    }
+}
+
+impl From<DeployAccountTransactionV1> for mp_transactions::DeployAccountTransactionV1 {
+    fn from(tx: DeployAccountTransactionV1) -> Self {
+        Self {
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            contract_address_salt: tx.contract_address_salt,
+            constructor_calldata: tx.constructor_calldata,
+            class_hash: tx.class_hash,
         }
     }
 }
@@ -421,6 +594,23 @@ impl DeployAccountTransactionV3 {
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
             class_hash: transaction.class_hash,
+        }
+    }
+}
+
+impl From<DeployAccountTransactionV3> for mp_transactions::DeployAccountTransactionV3 {
+    fn from(tx: DeployAccountTransactionV3) -> Self {
+        Self {
+            signature: tx.signature,
+            nonce: tx.nonce,
+            contract_address_salt: tx.contract_address_salt,
+            constructor_calldata: tx.constructor_calldata,
+            class_hash: tx.class_hash,
+            resource_bounds: tx.resource_bounds,
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode,
+            fee_data_availability_mode: tx.fee_data_availability_mode,
         }
     }
 }
