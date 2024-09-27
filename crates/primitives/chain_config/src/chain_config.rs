@@ -155,7 +155,7 @@ impl ChainConfig {
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
             latest_protocol_version: StarknetVersion::V0_13_2,
-            block_time: Duration::from_secs(6 * 60),
+            block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
 
             execution_batch_size: 16,
@@ -211,12 +211,6 @@ impl ChainConfig {
         Self {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
-            // A random sequencer address for fee transfers to work in block production.
-            sequencer_address: Felt::from_hex_unchecked(
-                "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
-            )
-            .try_into()
-            .unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }
@@ -225,8 +219,12 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
-            // We need a sequencer address for fee transfers to work in block production.
-            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
+            // A random sequencer address for fee transfers to work in block production.
+            sequencer_address: Felt::from_hex_unchecked(
+                "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
+            )
+            .try_into()
+            .unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }
