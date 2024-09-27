@@ -294,16 +294,19 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
     }
 }
 
-fn parse_duration(s: &str) -> anyhow::Result<Duration> {
-    let len = s.len();
-    let (value, suffix) = s.split_at(len - 2);
+fn parse_duration(s: &str) -> Result<Duration> {
+    let s = s.trim();
+    let split_index =
+        s.find(|c: char| !c.is_ascii_digit()).ok_or_else(|| anyhow::anyhow!("Invalid duration format: {}", s))?;
 
-    let number: u64 = value.parse().map_err(|_| anyhow::anyhow!("Invalid duration: {}", s))?;
-    match suffix {
-        "ms" => Ok(Duration::from_millis(number)),
-        "s" => Ok(Duration::from_secs(number)),
-        "min" => Ok(Duration::from_secs(number * 60)),
-        _ => bail!("Invalid duration suffix: {}", suffix),
+    let (value_str, suffix) = s.split_at(split_index);
+    let value: u64 = value_str.parse().map_err(|_| anyhow::anyhow!("Invalid duration value: {}", value_str))?;
+
+    match suffix.trim() {
+        "ms" => Ok(Duration::from_millis(value)),
+        "s" => Ok(Duration::from_secs(value)),
+        "min" => Ok(Duration::from_secs(value * 60)),
+        _ => bail!("Invalid duration suffix: {}. Expected 'ms', 's', or 'min'.", suffix),
     }
 }
 
@@ -499,5 +502,20 @@ mod tests {
             10
         );
         assert!(chain_config.exec_constants_by_protocol_version(StarknetVersion::new(0, 0, 0, 0)).is_err(),);
+    }
+
+    #[rstest]
+    fn test_parse_duration() {
+        assert_eq!(parse_duration("2s").unwrap(), Duration::from_secs(2));
+        assert_eq!(parse_duration("200ms").unwrap(), Duration::from_millis(200));
+        assert_eq!(parse_duration("5min").unwrap(), Duration::from_secs(300));
+        assert_eq!(parse_duration("1 min").unwrap(), Duration::from_secs(60));
+        assert_eq!(parse_duration("10 s").unwrap(), Duration::from_secs(10));
+        assert!(parse_duration("2x").is_err());
+        assert!(parse_duration("200").is_err());
+        assert!(parse_duration("5h").is_err());
+        assert!(parse_duration("ms200").is_err());
+        assert!(parse_duration("-5s").is_err());
+        assert!(parse_duration("5.5s").is_err());
     }
 }
