@@ -83,7 +83,7 @@ impl SyncParams {
             feeder_gateway,
             chain_id,
             sound,
-            verify: !self.disable_root,
+            verify: self.disable_root,
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
