@@ -267,7 +267,7 @@ mod tests {
 
     /// Test the `l2_verify_and_apply_task` function.
     ///
-    /// 
+    ///
     /// This test verifies the behavior of the `l2_verify_and_apply_task` by simulating
     /// a block verification and application process.
     ///

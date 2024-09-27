@@ -5,7 +5,8 @@ use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
 
 use crate::{
-    BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, ValidatedCommitments
+    BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedCommitments, UnverifiedFullBlock,
+    UnverifiedHeader, ValidatedCommitments,
 };
 use starknet_api::{core::ChainId, felt};
 
