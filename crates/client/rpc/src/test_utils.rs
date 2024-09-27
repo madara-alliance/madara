@@ -51,7 +51,7 @@ impl AddTransactionProvider for TestTransactionProvider {
 
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
-    let chain_config = Arc::new(ChainConfig::madara_devnet());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let rpc = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
     (backend, rpc)

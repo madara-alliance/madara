@@ -55,6 +55,7 @@ pub enum ChainPreset {
     Sepolia,
     IntegrationSepolia,
     Devnet,
+    Test,
 }
 
 impl ChainPreset {
@@ -65,6 +66,7 @@ impl ChainPreset {
             ChainPreset::Sepolia => ChainConfig::starknet_sepolia(),
             ChainPreset::IntegrationSepolia => ChainConfig::starknet_integration(),
             ChainPreset::Devnet => ChainConfig::madara_devnet(),
+            ChainPreset::Test => ChainConfig::madara_test(),
         }
     }
 
@@ -75,6 +77,7 @@ impl ChainPreset {
             ChainPreset::Sepolia => "Sepolia",
             ChainPreset::IntegrationSepolia => "Integration",
             ChainPreset::Devnet => "Devnet",
+            ChainPreset::Test => "Test",
         }
     }
 }
@@ -88,6 +91,7 @@ impl FromStr for ChainPreset {
             "sepolia" => Ok(ChainPreset::Sepolia),
             "integration-sepolia" => Ok(ChainPreset::IntegrationSepolia),
             "devnet" => Ok(ChainPreset::Devnet),
+            "test" => Ok(ChainPreset::Test),
             _ => bail!("Failed to get preset {}", preset_name),
         }
     }
@@ -165,7 +169,6 @@ impl ChainConfig {
         Ok(())
     }
 
-    /// Returns the Chain Config preset for Starknet Mainnet.
     pub fn starknet_mainnet() -> Self {
         // Sources:
         // - https://docs.starknet.io/tools/important-addresses
@@ -231,7 +234,6 @@ impl ChainConfig {
         }
     }
 
-    /// Returns the Chain Config preset for Starknet Sepolia.
     pub fn starknet_sepolia() -> Self {
         Self {
             chain_name: "Starknet Sepolia".into(),
@@ -241,7 +243,6 @@ impl ChainConfig {
         }
     }
 
-    /// Returns the Chain Config preset for Starknet Integration.
     pub fn starknet_integration() -> Self {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
@@ -253,10 +254,9 @@ impl ChainConfig {
         }
     }
 
-    /// Returns the Chain Config preset for the Devnet.
     pub fn madara_devnet() -> Self {
         Self {
-            chain_name: "MADARA".into(),
+            chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
             // A random sequencer address for fee transfers to work in block production.
             sequencer_address: Felt::from_hex_unchecked(
@@ -264,6 +264,16 @@ impl ChainConfig {
             )
             .try_into()
             .unwrap(),
+            ..ChainConfig::starknet_sepolia()
+        }
+    }
+
+    pub fn madara_test() -> Self {
+        Self {
+            chain_name: "Test".into(),
+            chain_id: ChainId::Other("MADARA_TEST".into()),
+            // We need a sequencer address for fee transfers to work in block production.
+            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
     }
@@ -561,7 +571,7 @@ mod tests {
                 }),
             ]
             .into(),
-            ..ChainConfig::madara_devnet()
+            ..ChainConfig::madara_test()
         };
 
         assert_eq!(

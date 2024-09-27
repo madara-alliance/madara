@@ -334,7 +334,7 @@ mod l1_messaging_tests {
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_config = Arc::new(ChainConfig::madara_devnet());
+        let chain_config = Arc::new(ChainConfig::madara_test());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");

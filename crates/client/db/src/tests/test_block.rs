@@ -15,7 +15,7 @@ mod block_tests {
     async fn test_chain_info() {
         let db = temp_db().await;
         let chain_config = db.backend().chain_config();
-        assert_eq!(chain_config.chain_id, ChainConfig::madara_devnet().chain_id);
+        assert_eq!(chain_config.chain_id, ChainConfig::madara_test().chain_id);
     }
 
     #[rstest]

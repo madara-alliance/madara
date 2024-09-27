@@ -19,6 +19,6 @@ async fn test_open_different_chain_id() {
         let _db =
             DatabaseService::new(temp_dir.path(), None, false, chain_config, &MetricsRegistry::dummy()).await.unwrap();
     }
-    let chain_config = std::sync::Arc::new(ChainConfig::madara_devnet());
+    let chain_config = std::sync::Arc::new(ChainConfig::madara_test());
     assert!(DatabaseService::new(temp_dir.path(), None, false, chain_config, &MetricsRegistry::dummy()).await.is_err());
 }

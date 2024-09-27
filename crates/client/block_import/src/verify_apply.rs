@@ -328,7 +328,7 @@ mod verify_apply_tests {
     /// This function creates a new MadaraBackend instance with a test configuration, useful for isolated test environments.
     #[fixture]
     pub fn setup_test_backend() -> Arc<MadaraBackend> {
-        let chain_config = Arc::new(ChainConfig::madara_devnet());
+        let chain_config = Arc::new(ChainConfig::madara_test());
         MadaraBackend::open_for_testing(chain_config.clone())
     }
 

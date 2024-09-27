@@ -23,7 +23,7 @@ pub struct TestContext {
 
 impl Default for TestContext {
     fn default() -> Self {
-        let chain_config = Arc::new(ChainConfig::madara_devnet());
+        let chain_config = Arc::new(ChainConfig::madara_test());
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
         Self::new(backend)
     }
@@ -31,7 +31,7 @@ impl Default for TestContext {
 
 #[fixture]
 pub fn test_setup() -> Arc<MadaraBackend> {
-    let chain_config = Arc::new(ChainConfig::madara_devnet());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     MadaraBackend::open_for_testing(chain_config.clone())
 }
 
