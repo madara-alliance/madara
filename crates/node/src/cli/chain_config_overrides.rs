@@ -28,9 +28,7 @@ impl ChainConfigOverrideParams {
                 if !map.contains_key(Value::String(key.clone())) {
                     return Err(anyhow::anyhow!("The field '{}' is not overridable for the Chain Config.", key));
                 }
-                let parsed_value = serde_yaml::from_str(value)
-                    .with_context(|| format!("Failed to parse value '{}' for field '{}'", value, key))?;
-                map.insert(Value::String(key.clone()), parsed_value);
+                map.insert(Value::String(key.clone()), Value::String(value.clone()));
             }
         } else {
             return Err(anyhow::anyhow!("Unexpected chain config structure."));
