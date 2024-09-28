@@ -105,12 +105,18 @@ impl FeederClient {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
+    use flate2::{
+        bufread::{GzDecoder, GzEncoder},
+        Compression,
+    };
     use mp_block::BlockTag;
     use rstest::*;
     use serde::de::DeserializeOwned;
     use starknet_core::types::Felt;
-    use std::fs::File;
-    use std::io::BufReader;
+    use std::fs::{remove_file, File};
+    use std::io::{BufReader, BufWriter, Read, Write};
+    use std::ops::Drop;
     use std::path::PathBuf;
 
     use super::*;
@@ -132,23 +138,83 @@ mod tests {
     const CLASS_ERC1155: &str = "0x04be7f1bace6f593abd8e56947c11151f45498030748a950fdaf0b79ac3dc03f";
     const CLASS_ERC1155_BLOCK: u64 = 18507;
 
-    /// Loads a json file, deserializing it into the target type.
+    /// Loads a gz file, deserializing it into the target type.
     ///
     /// This should NOT be used for mocking behavior, but is fine for loading
     /// golden files to validate the output of a function, as long as this
     /// function is deterministic.
     ///
     /// * `path`: path to the file to deserialize
-    fn load_from_file<T>(path: &str) -> T
+    fn load_from_file_compressed<T>(path: &str) -> T
     where
         T: DeserializeOwned,
     {
+        let path_abs = to_absolute_path(path);
+        let file = File::open(&path_abs).expect(&format!("Loading test mock from {path_abs:?}"));
+        let reader = BufReader::new(file);
+        let gz = GzDecoder::new(reader);
+
+        serde_json::from_reader(gz).expect(&format!("Deserializing test mock from {path_abs:?}"))
+    }
+
+    struct FileCleanupGuard<'a> {
+        is_active: bool,
+        path: &'a PathBuf,
+    }
+
+    impl<'a> FileCleanupGuard<'a> {
+        fn new(path: &'a PathBuf) -> Self {
+            Self { is_active: false, path }
+        }
+
+        fn deactivate(&mut self) {
+            self.is_active = false;
+        }
+    }
+
+    impl<'a> Drop for FileCleanupGuard<'a> {
+        fn drop(&mut self) {
+            if self.is_active {
+                let _ = remove_file(self.path);
+            }
+        }
+    }
+
+    #[allow(unused)]
+    fn file_compress(path: &str) -> anyhow::Result<()> {
+        let path_in = to_absolute_path(path);
+        let f_in = File::open(&path_in).with_context(|| format!("Failed to load file at: {path_in:?}"))?;
+
+        let path_out = path_in.with_extension("gz");
+        let f_out = File::create_new(&path_out).with_context(|| format!("Failed to write file at: {path_out:?}"))?;
+
+        let b_in = BufReader::new(f_in);
+        let mut b_out = BufWriter::with_capacity(16 * 1024, f_out);
+        let mut gz = GzEncoder::new(b_in, Compression::best());
+        let mut buffer = [0u8; 16 * 1024];
+
+        let mut guard = FileCleanupGuard::new(&path_out);
+        loop {
+            let bytes_read = gz.read(&mut buffer).with_context(|| "Failed to compress file")?;
+            if bytes_read == 0 {
+                break;
+            } else {
+                b_out.write_all(&buffer[..bytes_read]).with_context(|| "Failed to write to file")?;
+            }
+        }
+        guard.deactivate();
+
+        Ok(())
+    }
+
+    /// Converts a crate-relative path to an absolute system path.
+    ///
+    /// * `path`: path to the local file, relative to the current crate
+    /// `Cargo.tom`
+    fn to_absolute_path(path: &str) -> PathBuf {
         let mut path_abs = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path_abs.push(path);
-        let file = File::open(&path_abs).expect(&format!("loading test mock from {path_abs:?}"));
-        let reader = BufReader::new(file);
-
-        serde_json::from_reader(reader).expect(&format!("deserializing test mock from {path_abs:?}"))
+        path_abs
     }
 
     #[fixture]
@@ -221,7 +287,7 @@ mod tests {
             state_update_0.non_pending_ownded().expect("State update at block number 0 should not be pending");
         let block_0 = block_0.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
-            load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_0.json");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_0.gz");
 
         assert_eq!(state_update_0, state_update_0_reference);
         assert_eq!(block_0, block_0_reference);
@@ -235,7 +301,7 @@ mod tests {
             state_update_1.non_pending_ownded().expect("State update at block number 1 should not be pending");
         let block_1 = block_1.non_pending_owned().expect("Block at block number 1 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
-            load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_1.json");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_1.gz");
 
         assert_eq!(state_update_1, state_update_1_reference);
         assert_eq!(block_1, block_1_reference);
@@ -249,7 +315,7 @@ mod tests {
             state_update_2.non_pending_ownded().expect("State update at block number 0 should not be pending");
         let block_2 = block_2.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
-            load_from_file::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_2.json");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_2.gz");
 
         assert_eq!(state_update_2, state_update_2_reference);
         assert_eq!(block_2, block_2_reference);
@@ -288,8 +354,9 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
             .await
             .expect(&format!("Getting class {CLASS_BLOCK_0} at block number 0"));
-        let class_reference =
-            load_from_file::<LegacyContractClass>(&format!("src/client/mocks/class_block_0_{CLASS_BLOCK_0}.json"));
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_0_{CLASS_BLOCK_0}.gz"
+        ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
 
@@ -303,8 +370,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
             .await
             .expect(&format!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
-        let class_reference = load_from_file::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.json"
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -319,8 +386,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
-        let class_reference = load_from_file::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.json"
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -335,8 +402,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
-        let class_reference = load_from_file::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.json"
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -351,8 +418,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
-        let class_reference = load_from_file::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.json"
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -367,8 +434,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
             .await
             .expect(&format!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
-        let class_reference = load_from_file::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.json"
+        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
+            "src/client/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();

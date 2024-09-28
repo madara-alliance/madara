@@ -39,3 +39,4 @@ url.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 rstest.workspace = true
+flate2.workspace = true
