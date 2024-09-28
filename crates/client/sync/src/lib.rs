@@ -5,9 +5,7 @@ use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_gateway::client::builder::FeederClient;
 use mc_telemetry::TelemetryHandle;
-use mp_convert::ToFelt;
 use reqwest::header::{HeaderName, HeaderValue};
-use starknet_providers::SequencerGatewayProvider;
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;

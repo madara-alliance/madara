@@ -1,7 +1,7 @@
 use anyhow::Context;
 use mp_block::header::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
-use mp_convert::{felt_to_u128, hex_serde::U128AsHex};
+use mp_convert::hex_serde::U128AsHex;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;

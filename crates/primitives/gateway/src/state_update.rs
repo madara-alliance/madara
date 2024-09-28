@@ -151,8 +151,9 @@ impl From<StateDiff> for mp_state_update::StateDiff {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProviderStateUpdateWithBlockPendingMaybe {
     NonPending(ProviderStateUpdateWithBlock),
     Pending(ProviderStateUpdateWithBlockPending),

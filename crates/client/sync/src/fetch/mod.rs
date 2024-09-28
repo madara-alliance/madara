@@ -9,7 +9,6 @@ use mc_gateway::{
     error::{SequencerError, StarknetError, StarknetErrorCode},
 };
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
-use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fetch::fetchers::fetch_block_and_updates;

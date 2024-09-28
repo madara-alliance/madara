@@ -14,7 +14,6 @@ use mc_gateway::error::SequencerError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_providers::SequencerGatewayProvider;
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
 use std::sync::Arc;

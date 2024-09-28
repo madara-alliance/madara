@@ -5,26 +5,18 @@ use anyhow::Context;
 use core::fmt;
 use core::time::Duration;
 use futures::FutureExt;
-use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock};
+use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedPendingFullBlock};
 use mc_gateway::client::builder::FeederClient;
 use mc_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
-use mp_block::header::GasPrices;
-use mp_chain_config::StarknetVersion;
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
 use mp_class::{ContractClass, MISSED_CLASS_HASHES};
-use mp_convert::{felt_to_u128, ToFelt};
+use mp_convert::ToFelt;
 use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
-use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self, NonPending, Pending};
-use mp_gateway::state_update::{
-    ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
-    ProviderStateUpdateWithBlockPending, StateDiff,
-};
-use mp_receipt::TransactionReceipt;
-use mp_transactions::{Transaction, MAIN_CHAIN_ID};
+use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
+use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
+use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_providers::sequencer::models::{Block as SequencerBlock, StateUpdate as SequencerStateUpdate};
-use starknet_providers::Provider;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;

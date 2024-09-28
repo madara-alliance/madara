@@ -1,7 +1,6 @@
 //! Step 1. pre-validate: [`UnverifiedFullBlock`] ====[`crate::pre_validate`]===> [`PreValidatedBlock`]
 //! Step 2. verify_apply: [`PreValidatedBlock`] ====[`crate::verify_apply`]===> [`BlockImportResult`]
 
-use anyhow::Context;
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
     Header,
@@ -106,7 +105,7 @@ pub struct LegacyDeclaredClass {
 
 impl From<LegacyClassUpdate> for LegacyDeclaredClass {
     fn from(value: LegacyClassUpdate) -> Self {
-        Self { class_hash: value.class_hash, contract_class: value.contract_class.into() }
+        Self { class_hash: value.class_hash, contract_class: value.contract_class }
     }
 }
 
@@ -121,7 +120,7 @@ impl From<SierraClassUpdate> for SierraDeclaredClass {
     fn from(value: SierraClassUpdate) -> Self {
         Self {
             class_hash: value.class_hash,
-            contract_class: value.contract_class.into(),
+            contract_class: value.contract_class,
             compiled_class_hash: value.compiled_class_hash,
         }
     }

@@ -39,7 +39,7 @@ impl ConfirmedReceipt {
             transaction_index: index,
             actual_fee: transaction_receipt.actual_fee().amount,
             execution_resources: transaction_receipt.execution_resources().clone().into(),
-            l2_to_l1_messages: transaction_receipt.messages_sent().iter().map(|msg| msg.clone().into()).collect(),
+            l2_to_l1_messages: transaction_receipt.messages_sent().to_vec(),
             l1_to_l2_consumed_message,
             events: transaction_receipt.events().to_vec(),
             execution_status,
@@ -125,7 +125,7 @@ impl ConfirmedReceipt {
             execution_result: execution_result(self.execution_status, self.revert_error),
             contract_address: match tx {
                 DeployAccountTransaction::V1(tx) => tx.contract_address,
-                DeployAccountTransaction::V3(tx) => Felt::default(),
+                DeployAccountTransaction::V3(_) => Felt::default(),
             },
         }
     }
@@ -183,7 +183,7 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
         }
 
         let BuiltinCounters {
-            output_builtin,
+            output_builtin: _,
             pedersen_builtin,
             range_check_builtin,
             ecdsa_builtin,
@@ -192,8 +192,8 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
             keccak_builtin,
             poseidon_builtin,
             segment_arena_builtin,
-            add_mod_builtin,
-            mul_mod_builtin,
+            add_mod_builtin: _,
+            mul_mod_builtin: _,
         } = resources.builtin_instance_counter;
 
         Self {

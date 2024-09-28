@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     Client,
