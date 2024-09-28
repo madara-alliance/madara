@@ -4,6 +4,7 @@ use reqwest::{Certificate, ClientBuilder, Identity};
 use std::clone::Clone;
 use url::Url;
 use utils::env_utils::get_env_var_or_panic;
+use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::error::SharpError;
@@ -26,15 +27,17 @@ impl SharpClient {
     /// and then copy it and paste it into .env file :
     ///
     /// `cat <file_name> | base64`
-    pub fn new(url: Url) -> Self {
+    pub fn new_with_settings(url: Url, settings: &impl Settings) -> Self {
         // Getting the cert files from the .env and then decoding it from base64
-        let cert = general_purpose::STANDARD.decode(get_env_var_or_panic("SHARP_USER_CRT")).unwrap();
-        let key = general_purpose::STANDARD.decode(get_env_var_or_panic("SHARP_USER_KEY")).unwrap();
-        let server_cert = general_purpose::STANDARD.decode(get_env_var_or_panic("SHARP_SERVER_CRT")).unwrap();
+
+        let cert = general_purpose::STANDARD.decode(settings.get_settings_or_panic("SHARP_USER_CRT")).unwrap();
+        let key = general_purpose::STANDARD.decode(settings.get_settings_or_panic("SHARP_USER_KEY")).unwrap();
+        let server_cert = general_purpose::STANDARD.decode(settings.get_settings_or_panic("SHARP_SERVER_CRT")).unwrap();
 
         // Adding Customer ID to the url
+
         let mut url_mut = url.clone();
-        let customer_id = get_env_var_or_panic("SHARP_CUSTOMER_ID");
+        let customer_id = settings.get_settings_or_panic("SHARP_CUSTOMER_ID");
         url_mut.query_pairs_mut().append_pair("customer_id", customer_id.as_str());
 
         Self {
@@ -107,11 +110,5 @@ fn add_params_to_url(url: &mut Url, params: Vec<(&str, &str)>) {
     let mut pairs = url.query_pairs_mut();
     for (key, value) in params {
         pairs.append_pair(key, value);
-    }
-}
-
-impl Default for SharpClient {
-    fn default() -> Self {
-        Self::new(get_env_var_or_panic("SHARP_URL").parse().unwrap())
     }
 }

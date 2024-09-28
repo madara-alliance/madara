@@ -75,7 +75,7 @@ impl SharpProverService {
     pub fn new_with_settings(settings: &impl Settings) -> Self {
         let sharp_config = SharpConfig::new_with_settings(settings)
             .expect("Not able to create SharpProverService from given settings.");
-        let sharp_client = SharpClient::new(sharp_config.service_url);
+        let sharp_client = SharpClient::new_with_settings(sharp_config.service_url, settings);
         let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
         Self::new(sharp_client, fact_checker)
     }
@@ -83,7 +83,8 @@ impl SharpProverService {
     pub fn with_test_settings(settings: &impl Settings, port: u16) -> Self {
         let sharp_config = SharpConfig::new_with_settings(settings)
             .expect("Not able to create SharpProverService from given settings.");
-        let sharp_client = SharpClient::new(format!("http://127.0.0.1:{}", port).parse().unwrap());
+        let sharp_client =
+            SharpClient::new_with_settings(format!("http://127.0.0.1:{}", port).parse().unwrap(), settings);
         let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
         Self::new(sharp_client, fact_checker)
     }
