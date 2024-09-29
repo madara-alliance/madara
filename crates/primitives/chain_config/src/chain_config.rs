@@ -271,7 +271,6 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
 
         for (version, path) in file_paths {
             // Change the current directory to Madara root
-            let path = format!("../../../{}", path);
             let mut file = File::open(Path::new(&path))
                 .with_context(|| format!("Failed to open file: {}", path))
                 .map_err(serde::de::Error::custom)?;
@@ -330,8 +329,10 @@ mod tests {
 
     #[rstest]
     fn test_mainnet_from_yaml() {
+        // Change the current directory
+        std::env::set_current_dir("../../../").expect("Failed to change directory");
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(Path::new("../../../configs/presets/mainnet.yaml")).expect("failed to get cfg");
+            ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
@@ -345,9 +346,8 @@ mod tests {
 
         // Check versioned constants
         // Load and parse the JSON file
-        let json_content =
-            fs::read_to_string("../../../crates/primitives/chain_config/resources/versioned_constants_13_0.json")
-                .expect("Failed to read JSON file");
+        let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
+            .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
         // Get the VersionedConstants for version 0.13.0
