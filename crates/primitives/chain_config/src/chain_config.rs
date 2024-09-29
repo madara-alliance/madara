@@ -270,6 +270,8 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
         let mut result = BTreeMap::new();
 
         for (version, path) in file_paths {
+            // Change the current directory to Madara root
+            let path = format!("../../../{}", path);
             let mut file = File::open(Path::new(&path))
                 .with_context(|| format!("Failed to open file: {}", path))
                 .map_err(serde::de::Error::custom)?;
@@ -319,8 +321,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::env::current_dir;
-
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
     use rstest::*;
     use serde_json::Value;
@@ -330,7 +330,6 @@ mod tests {
 
     #[rstest]
     fn test_mainnet_from_yaml() {
-        println!("{}", current_dir().unwrap().to_str().unwrap());
         let chain_config: ChainConfig =
             ChainConfig::from_yaml(Path::new("../../../configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
@@ -346,8 +345,9 @@ mod tests {
 
         // Check versioned constants
         // Load and parse the JSON file
-        let json_content = fs::read_to_string("crates/primitives/chain_config/resources/versioned_constants_13_0.json")
-            .expect("Failed to read JSON file");
+        let json_content =
+            fs::read_to_string("../../../crates/primitives/chain_config/resources/versioned_constants_13_0.json")
+                .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
         // Get the VersionedConstants for version 0.13.0
@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(vm_costs.get("keccak_builtin").unwrap(), &ResourceCost::new(1024, 100));
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
-        assert_eq!(chain_config.block_time, Duration::from_secs(360));
+        assert_eq!(chain_config.block_time, Duration::from_secs(30));
         assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
 
         // Check bouncer config
