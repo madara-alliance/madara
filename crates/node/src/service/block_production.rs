@@ -26,12 +26,14 @@ pub struct BlockProductionService {
     enabled: bool,
 }
 impl BlockProductionService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        is_devnet: bool,
         _metrics_handle: &MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
@@ -46,7 +48,7 @@ impl BlockProductionService {
                 mempool,
                 block_import,
                 n_devnet_contracts: config.devnet_contracts,
-                is_devnet: config.devnet,
+                is_devnet,
             }),
             enabled: true,
         })
