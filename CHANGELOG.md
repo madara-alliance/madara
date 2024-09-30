@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
 - fix: docker file fixes for devnet
 - fix(block-production): fix bouncer calculation and declared classes
