@@ -1,17 +1,10 @@
 import {
   CompiledSierra,
   CompiledSierraCasm,
-  json,
-  LegacyCompiledContract,
+  json
 } from "starknet";
 const fs = require("node:fs");
 const path = require("node:path");
-export const readContract = (name: string): LegacyCompiledContract =>
-  json.parse(
-    fs
-      .readFileSync(path.resolve(__dirname, `./mocks/${name}.json`))
-      .toString("ascii"),
-  );
 
 export const readContractCasm = (name: string): CompiledSierraCasm =>
   json.parse(
@@ -19,7 +12,7 @@ export const readContractCasm = (name: string): CompiledSierraCasm =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../cairo/target/dev/${name}.compiled_contract_class.json`,
+          `../../cairo/target/dev/${name}.compiled_contract_class.json`,
         ),
       )
       .toString("ascii"),
@@ -31,7 +24,7 @@ export const readContractSierra = (name: string): CompiledSierra =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../cairo/target/dev/${name}.contract_class.json`,
+          `../../cairo/target/dev/${name}.contract_class.json`,
         ),
       )
       .toString("ascii"),
