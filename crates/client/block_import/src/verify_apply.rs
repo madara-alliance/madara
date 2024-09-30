@@ -319,7 +319,6 @@ mod verify_apply_tests {
 
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
 
-    use mp_utils::tests_common::set_workdir;
     use rstest::*;
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
@@ -328,8 +327,8 @@ mod verify_apply_tests {
     ///
     /// This function creates a new MadaraBackend instance with a test configuration, useful for isolated test environments.
     #[fixture]
-    pub fn setup_test_backend(_set_workdir: ()) -> Arc<MadaraBackend> {
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    pub fn setup_test_backend() -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(ChainConfig::madara_test());
         MadaraBackend::open_for_testing(chain_config.clone())
     }
 

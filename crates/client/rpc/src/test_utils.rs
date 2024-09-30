@@ -14,7 +14,6 @@ use mp_state_update::{
     StorageEntry,
 };
 use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
-use mp_utils::tests_common::*;
 use rstest::fixture;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -51,8 +50,8 @@ impl AddTransactionProvider for TestTransactionProvider {
 }
 
 #[fixture]
-pub fn rpc_test_setup(_set_workdir: ()) -> (Arc<MadaraBackend>, Starknet) {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let rpc = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
     (backend, rpc)

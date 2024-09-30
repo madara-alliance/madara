@@ -383,7 +383,7 @@ mod test_l2_fetchers {
         ctx.mock_block_pending();
 
         // Mock class hash
-        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
@@ -640,7 +640,7 @@ mod test_l2_fetchers {
 
         // Mock partial data scenario
         ctx.mock_block_partial_data(5);
-        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
 
@@ -666,7 +666,7 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
-        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         let (state_update, _block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
             .await
@@ -735,7 +735,7 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         let class_hash = Felt::from_hex_unchecked("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0");
-        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
         let (fetched_hash, _contract_class) =
             fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await.expect("Failed to fetch class");

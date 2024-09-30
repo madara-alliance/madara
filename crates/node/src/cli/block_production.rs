@@ -6,10 +6,6 @@ pub struct BlockProductionParams {
     #[arg(long, alias = "no-block-production")]
     pub block_production_disabled: bool,
 
-    /// Launch in block production mode, with devnet contracts.
-    #[arg(long)]
-    pub devnet: bool,
-
     /// Launch a devnet with a producton chain id (like SN_MAINNET, SN_SEPOLIA).
     /// This in unsafe because your devnet transactiosn can be replayed on the actual network.
     #[arg(long, default_value_t = false)]

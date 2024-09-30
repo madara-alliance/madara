@@ -2,7 +2,6 @@ use httpmock::MockServer;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
-use mp_utils::tests_common::set_workdir;
 use rstest::*;
 use serde_json::{json, Value};
 use starknet_providers::SequencerGatewayProvider;
@@ -24,15 +23,15 @@ pub struct TestContext {
 
 impl Default for TestContext {
     fn default() -> Self {
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        let chain_config = Arc::new(ChainConfig::madara_test());
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
         Self::new(backend)
     }
 }
 
 #[fixture]
-pub fn test_setup(_set_workdir: ()) -> Arc<MadaraBackend> {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+pub fn test_setup() -> Arc<MadaraBackend> {
+    let chain_config = Arc::new(ChainConfig::madara_test());
     MadaraBackend::open_for_testing(chain_config.clone())
 }
 
