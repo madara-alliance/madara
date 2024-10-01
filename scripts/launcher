@@ -283,6 +283,7 @@ if [ -d "${INSTALL_DIR}/madara" ]; then
     cd "${INSTALL_DIR}/madara" && git pull
 else
     git clone https://github.com/madara-alliance/madara.git "${INSTALL_DIR}/madara"
+    git checkout fix/launcher-script
     cd "${INSTALL_DIR}/madara"
 fi
 
@@ -309,9 +310,9 @@ echo "${YELLOW}3. Devnet${NC}"
 while true; do
     read -p "> " MODE_CHOICE
     case $MODE_CHOICE in
-        1) MODE="Full"; break ;;
-        2) MODE="Sequencer"; break ;;
-        3) MODE="Devnet"; break ;;
+        1) MODE="full"; break ;;
+        2) MODE="sequencer"; break ;;
+        3) MODE="devnet"; break ;;
         *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
     esac
 done
@@ -512,7 +513,7 @@ DOCKER_COMMAND="docker run -d --name madara-node \
     -v ${BASE_PATH}:/data \
     ${PORT_MAPPING} \
     madara \
-    run --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+    run --${MODE} --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
 
 echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
 echo -e "${CYAN}$DOCKER_COMMAND${NC}"
