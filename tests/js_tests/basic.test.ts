@@ -116,7 +116,6 @@ async function deployContract({ provider, account }: TestContext) {
   // Retrieve the class hash for the deployed contract
   let response = await provider.getClassHashAt(
     deployResult.contract_address[0],
-    "latest",
   );
 
   // Verify that the retrieved class hash matches the computed class hash
@@ -176,7 +175,7 @@ async function deployAccount({ provider, account }: TestContext) {
   let transactionReceipt = await provider.waitForTransaction(transaction_hash);
 
   // Retrieve the class hash for the deployed account contract
-  let response = await provider.getClassHashAt(contract_address, "latest");
+  let response = await provider.getClassHashAt(contract_address);
 
   // Verify that the deployed contract's class hash matches the expected class hash
   expect(response).toEqual(classHash);
