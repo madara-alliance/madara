@@ -129,7 +129,10 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_receipts_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
-        let block = { json_client.get_block_with_receipts(BlockId::Number(2)).await.unwrap() };
+        let block = json_client
+            .get_block_with_receipts(BlockId::Number(2))
+            .await
+            .expect("Failed to get block with receipts for block number 2");
 
         let expected_block = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
@@ -161,7 +164,7 @@ mod test_rpc_read_calls {
                         execution_resources: ExecutionResources {
                             computation_resources: ComputationResources {
                                 steps: 2711,
-                                memory_holes: Some(0),
+                                memory_holes: None,
                                 range_check_builtin_applications: Some(63),
                                 pedersen_builtin_applications: Some(15),
                                 poseidon_builtin_applications: None,
@@ -472,7 +475,7 @@ mod test_rpc_read_calls {
                 execution_resources: ExecutionResources {
                     computation_resources: ComputationResources {
                         steps: 2711,
-                        memory_holes: Some(0),
+                        memory_holes: None,
                         range_check_builtin_applications: Some(63),
                         pedersen_builtin_applications: Some(15),
                         poseidon_builtin_applications: None,
@@ -599,7 +602,10 @@ mod test_rpc_read_calls {
     async fn test_get_state_update_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
-        let state_update = { json_client.get_state_update(BlockId::Number(13)).await.unwrap() };
+        let state_update = json_client
+            .get_state_update(BlockId::Number(13))
+            .await
+            .expect("Failed to get state update for block number 13");
 
         let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
             block_hash: felt!("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
