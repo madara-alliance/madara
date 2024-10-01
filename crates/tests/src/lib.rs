@@ -10,6 +10,7 @@ use std::ops::Range;
 use std::sync::Mutex;
 use std::{
     collections::HashMap,
+    env,
     future::Future,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
@@ -170,6 +171,17 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
+        let output = std::process::Command::new("cargo")
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .expect("Failed to execute command");
+
+        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
+
+        env::set_current_dir(&project_root).expect("Failed to set working directory");
         let target_bin = option_env!("COVERAGE_BIN").unwrap_or("./target/debug/madara");
         let target_bin = PathBuf::from_str(target_bin).expect("target bin is not a path");
         if !target_bin.exists() {
