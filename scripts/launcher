@@ -266,42 +266,6 @@ else
     echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
 fi
 
-echo -e "\n${GREEN}We will now proceed with the download of Madara from GitHub:${NC}"
-echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/madara-alliance/madara${NC}"
-
-# Ask for installation directory
-echo -e "\n${YELLOW}${BOLD}Where would you like to install Madara? (default is current directory)${NC}"
-read -p "> " INSTALL_DIR
-
-# Set default directory if not provided
-INSTALL_DIR=${INSTALL_DIR:-$(pwd)}
-
-# Clone the Madara repository (this step should be removed when we have images available remotely)
-echo -e "\n${GREEN}Cloning the Madara repository into ${INSTALL_DIR}...${NC}"
-if [ -d "${INSTALL_DIR}/madara" ]; then
-    echo -e "${YELLOW}Madara directory already exists. Updating...${NC}"
-    cd "${INSTALL_DIR}/madara" && git pull
-else
-    git clone https://github.com/madara-alliance/madara.git "${INSTALL_DIR}/madara"
-    git checkout fix/launcher-script
-    cd "${INSTALL_DIR}/madara"
-fi
-
-tput rc
-tput ed
-
-# Build the Docker image
-echo -e "\n${GREEN}Building the Docker image... (this operation will take a few minutes)${NC}"
-# if ! docker build -t madara .; then
-#     echo -e "${RED}Docker image build failed. Please check the Dockerfile and try again.${NC}"
-#     exit 1
-# fi
-
-tput rc
-tput ed
-
-echo -e "\n${GREEN}Madara has been correctly installed here: ${BOLD}${INSTALL_DIR}${NC}${GREEN}.${NC}"
-
 # Choose the mode
 echo -e "\n🕹️ ${YELLOW}${BOLD} On which mode would you like to run Madara? (Enter a number)${NC}\n"
 echo "${YELLOW}1. Full Node${NC}"
@@ -519,7 +483,7 @@ else
 fi
 
 # Build the final Docker run command
-DOCKER_COMMAND="docker run -d --name madara-node \
+DOCKER_COMMAND="docker run -d --name madara-client \
     -v ${BASE_PATH}:/data \
     ${PORT_MAPPING} \
     $IMAGE_NAME \
@@ -534,13 +498,41 @@ read -p "> " CONFIRM
 if [ "$CONFIRM" == "yes" ]; then
     echo -e "\n${GREEN}Starting the Madara node via Docker...${NC}"
     # Stop and remove any existing container with the same name
-    if docker ps -a --format '{{.Names}}' | grep -Eq "^madara-node\$"; then
-        echo -e "\n${YELLOW}A container named 'madara-node' already exists. Stopping and removing it...${NC}"
-        docker stop madara-node
-        docker rm madara-node
+    if docker ps -a --format '{{.Names}}' | grep -Eq "^madara-client\$"; then
+        echo -e "\n${YELLOW}A container named 'madara-client' already exists. Stopping and removing it...${NC}"
+        docker stop madara-client
+        docker rm madara-client
     fi
     eval $DOCKER_COMMAND
-    echo -e "\n${GREEN}Madara node is now running in Docker container 'madara-node'.${NC}"
+    tput rc
+    tput ed
+    # Check if the Madara Docker container is running
+    if docker ps --format '{{.Names}}' | grep -q '^madara-client$'; then
+        echo -e "\n${GREEN}Madara client is running.${NC}"
+        echo -e "${YELLOW}Container details:${NC}"
+        docker inspect madara-client --format '
+        Name: {{.Name}}
+        ID: {{.Id}}
+        Image: {{.Config.Image}}
+        Status: {{.State.Status}}
+        StartedAt: {{.State.StartedAt}}
+        Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
+        
+        echo -e "\n${YELLOW}Client Logs (last 10 lines):${NC}"
+        docker logs --tail 10 madara-client
+        
+        # Ask the user whether to quit or display more logs
+        echo -e "\n${YELLOW}${BOLD}Would you like to display the full logs of the running instance or quit? (logs/quit)${NC}\n"
+        read -p "> " USER_CHOICE
+        if [ "$USER_CHOICE" == "logs" ]; then
+            echo -e "\n${YELLOW}Displaying full logs...${NC}"
+            docker logs -f madara-client
+        else
+            echo -e "\n${GREEN}Exiting...${NC}"
+        fi
+    else
+        echo -e "${RED}Madara client is not running.${NC}"
+    fi
 else
     echo -e "${RED}Command execution aborted.${NC}"
 fi
