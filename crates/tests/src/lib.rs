@@ -201,10 +201,8 @@ impl MadaraCmdBuilder {
     }
 }
 
-#[allow(unused_imports)]
-use mp_utils::tests_common::set_workdir;
 #[rstest]
-fn madara_help_shows(_set_workdir: ()) {
+fn madara_help_shows() {
     let _ = env_logger::builder().is_test(true).try_init();
     let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
@@ -214,30 +212,22 @@ fn madara_help_shows(_set_workdir: ()) {
 
 #[rstest]
 #[tokio::test]
-async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
+async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::{BlockHashAndNumber, Felt};
 
     let _ = env_logger::builder().is_test(true).try_init();
     let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--network",
-            "sepolia",
-            "--no-sync-polling",
-            "--n-blocks-to-sync",
-            "10",
-            "--no-l1-sync",
-            "--preset=sepolia",
-        ])
+        .args(["--full", "--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
         .run();
     node.wait_for_ready().await;
-    node.wait_for_sync_to(9).await;
+    node.wait_for_sync_to(19).await;
 
     assert_eq!(
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/9
-            block_hash: Felt::from_hex_unchecked("0x4174555d24718e8225a3d536ca96d2c4cc8a31bff6a6c758ab84a16a9e92d6c"),
-            block_number: 9
+            // https://sepolia.voyager.online/block/19
+            block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
+            block_number: 19
         }
     );
 }
