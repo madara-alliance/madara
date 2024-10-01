@@ -1,6 +1,6 @@
 use crate::{
     global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
-    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
+    PreValidatedBlock, PreValidatedPendingBlock, ReorgResult, UnverifiedHeader, ValidatedCommitments,
 };
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -76,8 +76,26 @@ pub fn verify_apply_inner(
     validation: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
-    let (block_number, parent_block_hash) =
-        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number, &validation)?;
+    let (block_number, parent_block_hash) = match check_parent_hash_and_num(
+        backend,
+        block.header.parent_block_hash,
+        block.unverified_block_number,
+        &validation,
+    ) {
+        Ok((block_number, parent_block_hash)) => (block_number, parent_block_hash),
+        Err(BlockImportError::ParentHash { got, expected }) => {
+            let reorg_result = reorg(expected, got)?;
+            tracing::warn!("Reorg from {} to {}", reorg_result.from, reorg_result.to);
+            // attempt check again
+            check_parent_hash_and_num(
+                backend,
+                block.header.parent_block_hash,
+                block.unverified_block_number,
+                &validation,
+            )?
+        }
+        Err(err) => return Err(err),
+    };
 
     // Update contract and its storage tries
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
@@ -323,6 +341,10 @@ fn block_hash(
     }
 
     Ok((block_hash, header))
+}
+
+fn reorg(from: Felt, to: Felt) -> Result<ReorgResult, BlockImportError> {
+    todo!("Should perform reorg here, from: {}, to: {}", from, to);
 }
 
 #[cfg(test)]
@@ -705,6 +727,52 @@ mod verify_apply_tests {
 
             assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+        }
+
+        /// TODO: document
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_reorg(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
+            let mut header = create_dummy_header();
+            header.block_number = 0;
+            let pending_block = finalized_block_zero(header);
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
+
+            // insert a block at height 1 that will be reorged away from
+            let mut header = create_dummy_header();
+            header.parent_block_hash = felt!("0x12345");
+            header.block_number = 1;
+            backend
+                .store_block(
+                    MadaraMaybePendingBlock {
+                        info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                            header: header.clone(),
+                            block_hash: felt!("0x1a"),
+                            // get tx hashes from receipts, they have been validated in pre_validate.
+                            tx_hashes: Default::default(),
+                        }),
+                        inner: Default::default(),
+                    },
+                    finalized_state_diff_zero(),
+                    vec![],
+                )
+                .unwrap();
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
+
+            let mut block = create_dummy_block();
+            block.header.parent_block_hash = Some(felt!("0x12345"));
+            block.unverified_global_state_root = Some(felt!("0x0"));
+            block.unverified_block_hash = Some(felt!("0x1b"));
+            let validation = create_validation_context(false);
+
+            let _result = verify_apply_inner(&backend, block, validation.clone());
+
+            let mabye_block_1_hash = backend.get_block_hash(&BlockId::Number(1)).unwrap();
+            assert_eq!(mabye_block_1_hash, Some(felt!("0x1b")));
+
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
         }
     }
 
