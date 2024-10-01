@@ -150,11 +150,11 @@ mod tests {
         T: DeserializeOwned,
     {
         let path_abs = to_absolute_path(path);
-        let file = File::open(&path_abs).expect(&format!("Loading test mock from {path_abs:?}"));
+        let file = File::open(&path_abs).unwrap_or_else(|_| panic!("Loading test mock from {path_abs:?}"));
         let reader = BufReader::new(file);
         let gz = GzDecoder::new(reader);
 
-        serde_json::from_reader(gz).expect(&format!("Deserializing test mock from {path_abs:?}"))
+        serde_json::from_reader(gz).unwrap_or_else(|_| panic!("Deserializing test mock from {path_abs:?}"))
     }
 
     struct FileCleanupGuard<'a> {
@@ -210,7 +210,7 @@ mod tests {
     /// Converts a crate-relative path to an absolute system path.
     ///
     /// * `path`: path to the local file, relative to the current crate
-    /// `Cargo.tom`
+    ///     `Cargo.tom`
     fn to_absolute_path(path: &str) -> PathBuf {
         let mut path_abs = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path_abs.push(path);
@@ -353,7 +353,7 @@ mod tests {
         let class = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
             .await
-            .expect(&format!("Getting class {CLASS_BLOCK_0} at block number 0"));
+            .unwrap_or_else(|_| panic!("Getting class {CLASS_BLOCK_0} at block number 0"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_0_{CLASS_BLOCK_0}.gz"
         ));
@@ -369,7 +369,7 @@ mod tests {
         let class_account = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
             .await
-            .expect(&format!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
+            .unwrap_or_else(|_| panic!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.gz"
         ));
@@ -385,7 +385,7 @@ mod tests {
         let class_proxy = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
             .await
-            .expect(&format!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
+            .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.gz"
         ));
@@ -401,7 +401,7 @@ mod tests {
         let class_erc20 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
             .await
-            .expect(&format!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
+            .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.gz"
         ));
@@ -417,7 +417,7 @@ mod tests {
         let class_erc721 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
             .await
-            .expect(&format!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
+            .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.gz"
         ));
@@ -433,7 +433,7 @@ mod tests {
         let class_erc1155 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
             .await
-            .expect(&format!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
+            .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
             "src/client/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.gz"
         ));

@@ -218,7 +218,7 @@ async fn fetch_class_updates(
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
             };
             let contract_class = Arc::try_unwrap(contract_class)
-                .expect("Contract class should only have one referenced when it is fetchd");
+                .expect("Contract class should only have one referenced when it is fetched");
 
             Ok::<_, L2SyncError>(ClassUpdate::Legacy(LegacyClassUpdate { class_hash, contract_class }))
         }
@@ -325,9 +325,9 @@ mod test_l2_fetchers {
     use mc_db::MadaraBackend;
     use mp_block::header::L1DataAvailabilityMode;
     use mp_chain_config::StarknetVersion;
+    use mp_gateway::block::BlockStatus;
     use rstest::*;
     use starknet_api::felt;
-    use starknet_providers::sequencer::models::BlockStatus;
     use std::sync::Arc;
 
     /// Test successful fetching of a pending block and updates.
@@ -431,7 +431,13 @@ mod test_l2_fetchers {
         let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
         assert!(
-            matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
+            matches!(
+                result,
+                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                    code: StarknetErrorCode::BlockNotFound,
+                    ..
+                })))
+            ),
             "Expected BlockNotFound error, but got: {:?}",
             result
         );
@@ -451,9 +457,16 @@ mod test_l2_fetchers {
         // Mock the pending block
         ctx.mock_block_pending();
 
-        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::Pending)
+        let (state_update, block) = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::Pending.into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update with block on tag pending")
+            .as_update_and_block();
+        let (state_update, block) = (
+            state_update.pending().expect("State update called on tag 'pending' should be pending"),
+            block.pending().expect("Block called on tag 'pending' should be pending"),
+        );
 
         // Verify state update
         assert_eq!(
@@ -532,37 +545,17 @@ mod test_l2_fetchers {
         assert!(state_update.state_diff.replaced_classes.is_empty(), "Should have no replaced classes");
 
         // Verify block
-        assert!(block.block_number.is_none(), "Pending block should not have a block number");
-        assert!(block.block_hash.is_none(), "Pending block should not have a block hash");
-        assert_eq!(
-            block.parent_block_hash,
-            felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
-            "Pending block should have the correct parent block hash"
-        );
-        assert!(block.state_root.is_none(), "Pending block should not have a state root");
         assert!(block.transactions.is_empty(), "Pending block should not contain transactions");
         assert_eq!(block.status, BlockStatus::Pending, "Pending block status should be 'PENDING'");
-        assert_eq!(
-            block.l1_da_mode,
-            starknet_core::types::L1DataAvailabilityMode::Calldata,
-            "L1 DA mode should be CALLDATA"
-        );
-        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x274287586"), "L1 gas price in wei should match");
-        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x363cc34e29f8"), "L1 gas price in fri should match");
-        assert_eq!(
-            block.l1_data_gas_price.price_in_wei,
-            felt!("0x2bc1e42413"),
-            "L1 data gas price in wei should match"
-        );
-        assert_eq!(
-            block.l1_data_gas_price.price_in_fri,
-            felt!("0x3c735d85586c2"),
-            "L1 data gas price in fri should match"
-        );
+        assert_eq!(block.l1_da_mode, L1DataAvailabilityMode::Calldata, "L1 DA mode should be CALLDATA");
+        assert_eq!(block.l1_gas_price.price_in_wei, 10538743174, "L1 gas price in wei should match");
+        assert_eq!(block.l1_gas_price.price_in_fri, 59634602617336, "L1 gas price in fri should match");
+        assert_eq!(block.l1_data_gas_price.price_in_wei, 187936547859, "L1 data gas price in wei should match");
+        assert_eq!(block.l1_data_gas_price.price_in_fri, 1063459006809794, "L1 data gas price in fri should match");
         assert_eq!(block.timestamp, 1725950824, "Timestamp should match");
         assert_eq!(
             block.sequencer_address,
-            Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")),
+            felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             "Sequencer address should match"
         );
         assert!(block.transaction_receipts.is_empty(), "Should have no transaction receipts");
@@ -582,10 +575,13 @@ mod test_l2_fetchers {
         // Mock a "block not found" scenario
         ctx.mock_block_not_found(5);
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+        let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(result, Err(ProviderError::StarknetError(StarknetError::BlockNotFound))),
+            matches!(
+                result,
+                Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::BlockNotFound, .. }))
+            ),
             "Expected BlockNotFound error, but got: {:?}",
             result
         );
@@ -605,12 +601,12 @@ mod test_l2_fetchers {
         ctx.mock_block_partial_data(5);
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+        let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
             matches!(
                 result,
-                Err(ProviderError::Other(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
+                Err(SequencerError::InvalidStarknetErrorVariant(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
             ),
             "Expected error about mismatched data, but got: {:?}",
             result
@@ -631,13 +627,16 @@ mod test_l2_fetchers {
         ctx.mock_block(5);
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let (state_update, _block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+        let state_update = ctx
+            .provider
+            .get_state_update(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update at block number 5");
+        let state_diff = state_update.state_diff();
 
         let class_updates = fetch_class_updates(
             &ctx.backend.chain_config().chain_id,
-            &state_update,
+            state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
         )
@@ -662,28 +661,28 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
-        let (state_update, _block) =
-            fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
+        let state_update = ctx
+            .provider
+            .get_state_update(FetchBlockId::BlockN(5).into())
+            .await
+            .expect("Failed to fetch state update at block number 5");
+        let state_diff = state_update.state_diff();
+
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
         let result = fetch_class_updates(
             &ctx.backend.chain_config().chain_id,
-            &state_update,
+            state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
         )
         .await;
 
-        assert!(
-            matches!(
-                result,
-                Err(ref e) if matches!(
-                    e.downcast_ref::<L2SyncError>(),
-                    Some(L2SyncError::SequencerError(ProviderError::StarknetError(StarknetError::ClassHashNotFound)))
-                )
-            ),
-            "Expected ClassHashNotFound error, but got: {:?}",
-            result
-        );
+        assert!(matches!(
+        result,
+        Err(ref e) if matches!(
+            e.downcast_ref::<L2SyncError>(),
+            Some(L2SyncError::SequencerError(SequencerError::StarknetError(StarknetError {code: StarknetErrorCode::UndeclaredClass, ..}))))
+        ));
     }
 
     /// Test fetching of individual class definitions.
@@ -722,7 +721,10 @@ mod test_l2_fetchers {
         let result = fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await;
 
         assert!(
-            matches!(result, Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound))),
+            matches!(
+                result,
+                Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::UndeclaredClass, .. }))
+            ),
             "Expected ClassHashNotFound error, but got: {:?}",
             result
         );
@@ -736,19 +738,20 @@ mod test_l2_fetchers {
         // Mock a block with a state update
         ctx.mock_block(5);
 
-        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+        let (state_update, block) = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update with block at block number 5")
+            .as_update_and_block();
+        let (state_update, block) = (
+            state_update.non_pending().expect("State update at block number 5 should not be pending"),
+            block.non_pending().expect("Block at block number 5 should not be pending"),
+        );
 
         // Verify state update
-        assert_eq!(
-            state_update.block_hash,
-            Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"))
-        );
-        assert_eq!(
-            state_update.new_root,
-            Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"))
-        );
+        assert_eq!(state_update.block_hash, felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"));
+        assert_eq!(state_update.new_root, felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"));
         assert_eq!(state_update.old_root, felt!("0x6152bda357cb522337756c71bcab298d88c5d829a479ad8247b82b969912713"));
 
         // Verify storage diffs
@@ -784,18 +787,18 @@ mod test_l2_fetchers {
         assert!(state_update.state_diff.replaced_classes.is_empty());
 
         // Verify block
-        assert_eq!(block.block_number, Some(5));
-        assert_eq!(block.block_hash, Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32")));
+        assert_eq!(block.block_number, 5);
+        assert_eq!(block.block_hash, felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"));
         assert_eq!(block.parent_block_hash, felt!("0x6dc4eb6311529b941e3963f477b1d13928b38dd4c6ec0206bfba73c8a87198d"));
-        assert_eq!(block.state_root, Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f")));
+        assert_eq!(block.state_root, felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"));
         assert_eq!(block.status, BlockStatus::AcceptedOnL1);
-        assert_eq!(block.l1_da_mode, starknet_core::types::L1DataAvailabilityMode::Calldata);
+        assert_eq!(block.l1_da_mode, L1DataAvailabilityMode::Calldata);
 
         // Verify gas prices
-        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x3bf1322e5"));
-        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x55dfe7f2de82"));
-        assert_eq!(block.l1_data_gas_price.price_in_wei, felt!("0x3f9ffec0e7"));
-        assert_eq!(block.l1_data_gas_price.price_in_fri, felt!("0x5b269552db6fa"));
+        assert_eq!(block.l1_gas_price.price_in_wei, 16090604261);
+        assert_eq!(block.l1_gas_price.price_in_fri, 94420157521538);
+        assert_eq!(block.l1_data_gas_price.price_in_wei, 273267212519);
+        assert_eq!(block.l1_data_gas_price.price_in_fri, 1603540353922810);
 
         assert_eq!(block.timestamp, 1725974819);
         assert_eq!(

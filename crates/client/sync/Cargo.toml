@@ -20,17 +20,17 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mc-block-import.workspace = true
 mc-db.workspace = true
+mc-gateway.workspace = true
 mc-metrics.workspace = true
 mc-telemetry.workspace = true
-mc-gateway.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
+mp-gateway.workspace = true
 mp-receipt.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
-mp-gateway.workspace = true
 
 # Starknet
 starknet-core.workspace = true
