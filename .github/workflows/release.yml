@@ -11,7 +11,8 @@ permissions:
 jobs:
   create_release:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -19,7 +20,7 @@ jobs:
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_ACTION }}
           tag: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           commit: ${{ github.sha }}
