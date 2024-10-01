@@ -65,7 +65,7 @@ impl MadaraCmd {
                 res.error_for_status()?;
                 anyhow::Ok(())
             },
-            Duration::from_millis(1000),
+            Duration::from_millis(2000),
         )
         .await;
         self.ready = true;
@@ -86,7 +86,7 @@ impl MadaraCmd {
                     Err(err) => bail!(err),
                 }
             },
-            Duration::from_millis(5000),
+            Duration::from_millis(20000),
         )
         .await;
         self

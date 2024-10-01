@@ -25,7 +25,6 @@ const testOrder = [
 interface TestContext {
   provider: RpcProvider;
   account: Account;
-  nonce: number;
 }
 
 describe("Starknet Contract Tests", () => {
@@ -37,14 +36,12 @@ describe("Starknet Contract Tests", () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: RPC_URL });
     account = new Account(provider, SIGNER_PUBLIC, SIGNER_PRIVATE);
-    nonce = Number(await account.getNonce());
   });
 
   // Run tests in specified order
   testOrder.forEach(({ name, fn }) => {
     test(name, async () => {
-      const result = await fn({ provider, account, nonce });
-      nonce++; // Increment nonce after each test
+      const result = await fn({ provider, account });
 
       // TODO: this is a workaround to wait for the block to be produced
       // given we have block time of 3 seconds, we wait for 5 seconds so that
@@ -61,21 +58,16 @@ describe("Starknet Contract Tests", () => {
  * @param {TestContext} context - The test context
  * @returns {Promise<{classHash: string}>} The declared class hash
  */
-async function declareContract({ provider, account, nonce }: TestContext) {
+async function declareContract({ provider, account }: TestContext) {
   // Read the Sierra and CASM representations of the HelloStarknet contract
   const sierra = readContractSierra("madara_contracts_HelloStarknet");
   const casm = readContractCasm("madara_contracts_HelloStarknet");
 
   // Declare the contract on the network
-  const declareResponse = await account.declare(
-    {
-      contract: sierra,
-      casm: casm,
-    },
-    {
-      nonce,
-    },
-  );
+  const declareResponse = await account.declare({
+    contract: sierra,
+    casm: casm,
+  });
 
   // Wait for the declaration transaction to be confirmed
   await provider.waitForTransaction(declareResponse.transaction_hash);
@@ -104,21 +96,16 @@ async function declareContract({ provider, account, nonce }: TestContext) {
  *
  * @param {TestContext} context - The test context
  */
-async function deployContract({ provider, account, nonce }: TestContext) {
+async function deployContract({ provider, account }: TestContext) {
   // Read the Sierra representation of the HelloStarknet contract
   const sierra = readContractSierra("madara_contracts_HelloStarknet");
   // Compute the class hash of the contract
   let classHash = hash.computeContractClassHash(sierra);
 
   // Deploy the contract
-  const deployResult = await account.deploy(
-    {
-      classHash: classHash,
-    },
-    {
-      nonce,
-    },
-  );
+  const deployResult = await account.deploy({
+    classHash: classHash,
+  });
 
   // Wait for the deployment transaction to be confirmed
   await provider.waitForTransaction(deployResult.transaction_hash);
@@ -146,7 +133,7 @@ async function deployContract({ provider, account, nonce }: TestContext) {
  *
  * @param {TestContext} context - The test context containing provider, account, and nonce
  */
-async function deployAccount({ provider, account, nonce }: TestContext) {
+async function deployAccount({ provider, account }: TestContext) {
   // Read the Sierra contract class for the account
   const sierra = readContractSierra("madara_contracts_AccountUpgradeable");
 
@@ -200,7 +187,7 @@ async function deployAccount({ provider, account, nonce }: TestContext) {
  *
  * @param {TestContext} context - The test context
  */
-async function transferFunds({ provider, account, nonce }: TestContext) {
+async function transferFunds({ provider, account }: TestContext) {
   // Constants for the transfer operation
   // Note: These addresses are specific to the devnet environment
   const RECEIVER_ADDRESS =
@@ -240,7 +227,6 @@ async function transferFunds({ provider, account, nonce }: TestContext) {
       }),
     },
     {
-      nonce,
       maxFee: 0,
     },
   );
