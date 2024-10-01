@@ -3,7 +3,8 @@ use std::time::Duration;
 use starknet_api::core::ChainId;
 
 use mc_sync::fetch::fetchers::FetchConfig;
-use mp_utils::parsers::parse_duration;
+use mp_utils::parsers::{parse_duration, parse_url};
+use url::Url;
 
 use crate::cli::NetworkType;
 
@@ -17,11 +18,6 @@ pub struct SyncParams {
     #[clap(long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
 
-    /// This will produce sound interpreted from the block hashes.
-    #[cfg(feature = "sound")]
-    #[clap(long)]
-    pub sound: bool,
-
     /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
     /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
     // TODO(docs): explain the security cost
@@ -31,6 +27,10 @@ pub struct SyncParams {
     /// Gateway api key to avoid rate limiting (optional).
     #[clap(long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
+
+    /// Feeder gateway url used to sync blocks, state updates and classes
+    #[clap(long, value_parser = parse_url, value_name = "URL")]
+    pub gateway_url: Option<Url>,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
@@ -68,21 +68,20 @@ pub struct SyncParams {
 
 impl SyncParams {
     pub fn block_fetch_config(&self, chain_id: ChainId, network: NetworkType) -> FetchConfig {
-        let gateway = network.gateway();
-        let feeder_gateway = network.feeder_gateway();
+        let (gateway, feeder_gateway) = match &self.gateway_url {
+            Some(url) => (
+                url.join("/gateway/").expect("Error parsing url (this should not panic)"),
+                url.join("/feeder_gateway/").expect("Error parsing url (this should not panic)"),
+            ),
+            None => (network.gateway(), network.feeder_gateway()),
+        };
 
         let polling = if self.no_sync_polling { None } else { Some(self.sync_polling_interval) };
-
-        #[cfg(feature = "sound")]
-        let sound = self.sound;
-        #[cfg(not(feature = "sound"))]
-        let sound = false;
 
         FetchConfig {
             gateway,
             feeder_gateway,
             chain_id,
-            sound,
             verify: self.disable_root,
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
