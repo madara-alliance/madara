@@ -12,6 +12,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -35,6 +38,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.repository.html_url }}
             org.opencontainers.image.version=${{ github.event.release.tag_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Post successful message
         run: echo "Docker image built and pushed successfully"
