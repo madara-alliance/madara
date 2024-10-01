@@ -4,6 +4,7 @@ use std::str::FromStr;
 lazy_static::lazy_static! {
     pub static ref SUPPORTED_RPC_VERSIONS: Vec<RpcVersion> = vec![
         RpcVersion::RPC_VERSION_0_7_1,
+        RpcVersion::RPC_VERSION_0_8_0,
     ];
 }
 
@@ -70,7 +71,8 @@ impl RpcVersion {
     }
 
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
-    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_7_1;
+    pub const RPC_VERSION_0_8_0: RpcVersion = RpcVersion([0, 8, 0]);
+    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_8_0;
 }
 
 impl std::fmt::Display for RpcVersion {

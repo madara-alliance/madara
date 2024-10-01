@@ -1358,7 +1358,6 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/cchudant/bonsai-trie.git?branch=fix_inserts_remove_leaks#1a77166d1a3c9afa590b337d8d70670b8d43eadd"
 dependencies = [
  "bitvec",
  "derive_more",
@@ -1367,6 +1366,7 @@ dependencies = [
  "parity-scale-codec",
  "rayon",
  "serde",
+ "slotmap",
  "smallvec",
  "starknet-types-core",
 ]
@@ -5773,6 +5773,7 @@ name = "mc-rpc"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "bitvec",
  "blockifier",
  "env_logger 0.11.3",
  "jsonrpsee",
@@ -5791,6 +5792,7 @@ dependencies = [
  "mp-utils",
  "paste",
  "rstest 0.18.2",
+ "serde",
  "serde_json",
  "starknet-core",
  "starknet-providers",
@@ -7954,6 +7956,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "slotmap"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbff4acf519f630b3a3ddcfaea6c06b42174d9a44bc70c620e9ed1649d58b82a"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]

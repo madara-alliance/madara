@@ -34,7 +34,7 @@ use crate::Starknet;
 #[async_trait]
 impl StarknetReadRpcApiV0_7_1Server for Starknet {
     fn spec_version(&self) -> RpcResult<String> {
-        Ok(self.current_spec_version().to_string())
+        Ok("0.7.1".into())
     }
 
     fn block_number(&self) -> RpcResult<u64> {

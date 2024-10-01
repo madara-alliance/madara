@@ -146,9 +146,12 @@ async fn l2_pending_block_task(
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
         log::debug!("getting pending block...");
 
-        let block = fetch_pending_block_and_updates(&backend.chain_config().chain_id, &provider)
+        let Some(block) = fetch_pending_block_and_updates(&backend.chain_config().chain_id, &provider)
             .await
-            .context("Getting pending block from FGW")?;
+            .context("Getting pending block from FGW")?
+        else {
+            continue;
+        };
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
@@ -202,7 +205,7 @@ pub async fn sync(
     // starves the tokio worker
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
-        trust_global_tries: config.verify,
+        trust_global_tries: !config.verify,
         chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,

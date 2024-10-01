@@ -1,9 +1,9 @@
+use crate::error::DbError;
+use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, ByteVec, DatabaseKey};
 use rocksdb::{Direction, IteratorMode, WriteOptions};
-
-use crate::error::DbError;
-use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
+use std::fmt;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DatabaseKeyMapping {
@@ -35,6 +35,12 @@ impl<'db> BonsaiDb<'db> {
         let mut write_opt = WriteOptions::default();
         write_opt.disable_wal(true);
         Self { db, column_mapping, write_opt }
+    }
+}
+
+impl<'db> fmt::Debug for BonsaiDb<'db> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<database>")
     }
 }
 

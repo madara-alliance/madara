@@ -76,7 +76,9 @@ rocksdb = { version = "0.22", features = [
 ] }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
+bonsai-trie = { default-features = false, path = "../bonsai-trie", features = [
+  # bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "iterator", features = [
+  # bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
   "std",
 ] }
 
@@ -150,7 +152,12 @@ hyper = { version = "0.14", features = ["server"] }
 ip_network = "0.4"
 lazy_static = { version = "1.4", default-features = false }
 once_cell = "1.19"
-log = { version = "0.4", features = ["std", "kv_std"] }
+log = { version = "0.4", features = [
+  "std",
+  "kv_std",
+  # Statically disable trace logs in release builds.
+  "release_max_level_debug",
+] }
 num-traits = "0.2"
 num-bigint = "0.4"
 primitive-types = "0.12"
