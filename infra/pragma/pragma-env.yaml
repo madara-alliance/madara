@@ -7,6 +7,4 @@ environments:
         config:
           --network: "devnet"
           --chain-config-path: "./pragma-devnet.yaml"
-          --chain-config-override: ""
-          --block-time: "2"
           --devnet: ""
