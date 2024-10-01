@@ -6,7 +6,7 @@ environments:
         image: apoorvsadana/madara:85fb08e3cfec70a47999c4b2909ff1e4536040ad
         config:
           --network: "devnet"
-          --chain-config-path: "./test.yaml"
+          --chain-config-path: "./pragma-devnet.yaml"
           --chain-config-override: ""
           --block-time: "2"
           --devnet: ""
