@@ -7,6 +7,7 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
 use mc_metrics::MetricsRegistry;
 use mc_telemetry::TelemetryHandle;
+use mp_exex::ExExManagerHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;
 
@@ -19,6 +20,7 @@ struct StartParams {
     l1_data_provider: Arc<dyn L1DataProvider>,
     is_devnet: bool,
     n_devnet_contracts: u64,
+    exex_manager: Option<ExExManagerHandle>,
 }
 
 pub struct BlockProductionService {
@@ -34,6 +36,7 @@ impl BlockProductionService {
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
         is_devnet: bool,
+        exex_manager: Option<ExExManagerHandle>,
         _metrics_handle: &MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
@@ -49,6 +52,7 @@ impl BlockProductionService {
                 block_import,
                 n_devnet_contracts: config.devnet_contracts,
                 is_devnet,
+                exex_manager,
             }),
             enabled: true,
         })
@@ -62,8 +66,15 @@ impl Service for BlockProductionService {
         if !self.enabled {
             return Ok(());
         }
-        let StartParams { backend, l1_data_provider, mempool, is_devnet, n_devnet_contracts, block_import } =
-            self.start.take().expect("Service already started");
+        let StartParams {
+            backend,
+            l1_data_provider,
+            mempool,
+            is_devnet,
+            n_devnet_contracts,
+            block_import,
+            exex_manager,
+        } = self.start.take().expect("Service already started");
 
         if is_devnet {
             // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
@@ -107,7 +118,9 @@ impl Service for BlockProductionService {
         }
 
         join_set.spawn(async move {
-            BlockProductionTask::new(backend, block_import, mempool, l1_data_provider)?.block_production_task().await?;
+            BlockProductionTask::new(backend, block_import, mempool, l1_data_provider, exex_manager)?
+                .block_production_task()
+                .await?;
             Ok(())
         });
 

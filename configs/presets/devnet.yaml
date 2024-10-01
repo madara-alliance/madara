@@ -9,8 +9,8 @@ versioned_constants:
   "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
 eth_core_contract_address: "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057"
 latest_protocol_version: "0.13.2"
-block_time: "30s"
-pending_block_update_time: "2s"
+block_time: "1s"
+pending_block_update_time: "500ms"
 execution_batch_size: 16
 bouncer_config:
   block_max_capacity:

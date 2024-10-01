@@ -10,7 +10,10 @@ use mc_block_import::{
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
+use mp_exex::ExExManagerHandle;
+use mp_exex::ExExNotification;
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
+use starknet_api::block::BlockNumber;
 use starknet_api::core::ChainId;
 use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
@@ -41,6 +44,16 @@ pub struct L2StateUpdate {
     pub block_hash: Felt,
 }
 
+/// Sends a notification to the ExExs that a block has been imported.
+fn notify_exexs(exex_manager: &Option<ExExManagerHandle>, block_n: u64) -> anyhow::Result<()> {
+    let Some(manager) = exex_manager.as_ref() else {
+        return Ok(());
+    };
+
+    let notification = ExExNotification::BlockClosed { new: BlockNumber(block_n) };
+    manager.send(notification).map_err(|e| anyhow::anyhow!("Could not send ExEx notification: {}", e))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
@@ -49,6 +62,7 @@ async fn l2_verify_and_apply_task(
     validation: BlockValidationContext,
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
+    exex_manager: Option<ExExManagerHandle>,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
@@ -65,6 +79,8 @@ async fn l2_verify_and_apply_task(
             block_hash,
             header.global_state_root
         );
+
+        notify_exexs(&exex_manager, header.block_number)?;
 
         telemetry.send(
             VerbosityLevel::Info,
@@ -185,6 +201,7 @@ pub async fn sync(
     chain_id: ChainId,
     telemetry: TelemetryHandle,
     block_importer: Arc<BlockImporter>,
+    exex_manager: Option<ExExManagerHandle>,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
@@ -231,6 +248,7 @@ pub async fn sync(
         validation.clone(),
         config.backup_every_n_blocks,
         telemetry,
+        exex_manager,
     ));
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),

@@ -1,5 +1,6 @@
 // TODO: Move this into its own crate.
 
+use anyhow::Context;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -13,6 +14,7 @@ use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
+use mp_exex::{ExExManagerHandle, ExExNotification};
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -20,6 +22,7 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use starknet_api::block::BlockNumber;
 use starknet_types_core::felt::Felt;
 use std::collections::VecDeque;
 use std::mem;
@@ -176,6 +179,7 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
+    exex_manager: Option<ExExManagerHandle>,
 }
 
 impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
@@ -189,6 +193,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        exex_manager: Option<ExExManagerHandle>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
@@ -218,6 +223,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             block: pending_block,
             declared_classes: vec![],
             l1_data_provider,
+            exex_manager,
         })
     }
 
@@ -396,7 +402,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // Convert the pending block to a closed block and save to db.
-
         let parent_block_hash = Felt::ZERO; // temp parent block hash
         let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
@@ -427,6 +432,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = 0;
 
         log::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, start_time.elapsed());
+        let _ = self.notify_exexs(block_n).context("Sending notification to ExExs");
 
         Ok(())
     }
@@ -478,5 +484,15 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     fn block_n(&self) -> u64 {
         self.executor.block_context.block_info().block_number.0
+    }
+
+    /// Sends a notification to the ExExs that a block has been closed.
+    fn notify_exexs(&self, block_n: u64) -> anyhow::Result<()> {
+        let Some(manager) = self.exex_manager.as_ref() else {
+            return Ok(());
+        };
+
+        let notification = ExExNotification::BlockClosed { new: BlockNumber(block_n) };
+        manager.send(notification).map_err(|e| anyhow::anyhow!("Could not send ExEx notification: {}", e))
     }
 }

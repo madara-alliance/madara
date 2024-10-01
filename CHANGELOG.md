@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: Madara ExExs proof of concept
 - feat(cli): launcher script and release workflows
 - fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner

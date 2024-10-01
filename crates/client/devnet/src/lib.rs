@@ -331,6 +331,7 @@ mod tests {
             Arc::clone(&importer),
             Arc::clone(&mempool),
             Arc::clone(&l1_data_provider),
+            Option::None,
         )
         .unwrap();
 

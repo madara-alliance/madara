@@ -5515,6 +5515,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-convert",
+ "mp-exex",
  "mp-utils",
  "primitive-types",
  "rand",
@@ -5741,6 +5742,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-exex",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -5816,6 +5818,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-exex",
  "mp-receipt",
  "mp-transactions",
  "mp-utils",
@@ -6002,6 +6005,26 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+]
+
+[[package]]
+name = "mp-exex"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "log",
+ "mc-block-import",
+ "mp-block",
+ "mp-chain-config",
+ "rayon",
+ "rstest 0.18.2",
+ "serde",
+ "starknet_api",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]
@@ -8930,9 +8953,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.15"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "267ac89e0bec6e691e5813911606935d77c476ff49024f98abcea3e7b15e37af"
+checksum = "4f4e6ce100d0eb49a2734f8c0812bcd324cf357d21810932c5df6b96ef2b86f1"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -8942,9 +8965,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.11"
+version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf6b47b3771c49ac75ad09a6162f53ad4b8088b76ac60e8ec1455b31a189fe1"
+checksum = "61e7c3654c13bcd040d4a03abee2c75b1d14a37b423cf5a813ceae1cc903ec6a"
 dependencies = [
  "bytes",
  "futures-core",

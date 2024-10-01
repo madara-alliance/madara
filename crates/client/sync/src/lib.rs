@@ -5,6 +5,7 @@ use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_telemetry::TelemetryHandle;
 use mp_convert::ToFelt;
+use mp_exex::ExExManagerHandle;
 use starknet_providers::SequencerGatewayProvider;
 use std::{sync::Arc, time::Duration};
 
@@ -23,6 +24,7 @@ pub async fn sync(
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
     pending_block_poll_interval: Duration,
+    exex_manager: Option<ExExManagerHandle>,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
         log::warn!("Forcing unordered state. This will most probably break your database.");
@@ -65,6 +67,7 @@ pub async fn sync(
         backend.chain_config().chain_id.clone(),
         telemetry,
         block_importer,
+        exex_manager,
     )
     .await?;
 

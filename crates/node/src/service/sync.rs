@@ -5,6 +5,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_sync::fetch::fetchers::FetchConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
+use mp_exex::ExExManagerHandle;
 use mp_utils::service::Service;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +21,7 @@ pub struct SyncService {
     start_params: Option<TelemetryHandle>,
     disabled: bool,
     pending_block_poll_interval: Duration,
+    exex_manager: Option<ExExManagerHandle>,
 }
 
 impl SyncService {
@@ -29,6 +31,7 @@ impl SyncService {
         network: NetworkType,
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
+        exex_manager: Option<ExExManagerHandle>,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
@@ -42,6 +45,7 @@ impl SyncService {
             start_params: Some(telemetry),
             disabled: config.sync_disabled,
             pending_block_poll_interval: config.pending_block_poll_interval,
+            exex_manager,
         })
     }
 }
@@ -58,6 +62,7 @@ impl Service for SyncService {
             starting_block,
             pending_block_poll_interval,
             block_importer,
+            exex_manager,
             ..
         } = self.clone();
         let telemetry = self.start_params.take().context("Service already started")?;
@@ -73,6 +78,7 @@ impl Service for SyncService {
                 backup_every_n_blocks,
                 telemetry,
                 pending_block_poll_interval,
+                exex_manager,
             )
             .await
         });

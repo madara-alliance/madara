@@ -19,6 +19,7 @@ members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/primitives/exex",
   "crates/proc-macros",
   "crates/tests",
 ]
@@ -43,6 +44,7 @@ default-members = [
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
+  "crates/primitives/exex",
   "crates/proc-macros",
   "crates/tests",
 ]
@@ -92,6 +94,7 @@ mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+mp-exex = { path = "crates/primitives/exex", default-features = false }
 
 # Madara client
 mc-telemetry = { path = "crates/client/telemetry" }
@@ -176,6 +179,8 @@ env_logger = "0.11.3"
 mockall = "0.13.0"
 serial_test = "3.1.1"
 itertools = "0.13.0"
+tokio-stream = "0.1.16"
+tokio-util = "0.7.12"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
