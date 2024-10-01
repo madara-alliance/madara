@@ -82,6 +82,13 @@ echo -e "${RED}
 "
 }
 
+# Preset Chain Config URLs
+declare -A PRESET_URLS
+PRESET_URLS["starknet_mainnet"]="https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/mainnet.yaml"
+PRESET_URLS["starknet_testnet"]="https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/testnet.yaml"
+PRESET_URLS["test"]="https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/test.yaml"
+PRESET_URLS["devnet"]="https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/devnet.yaml"
+
 # Welcome message
 clear
 ascii_art
@@ -110,6 +117,7 @@ fi
 DEPENDENCIES=(
     "curl:command -v curl"
     "git:command -v git"
+    "yq:command -v yq"
 )
 
 # Function to check for a dependency
@@ -176,6 +184,12 @@ if [ ${#MISSING_DEPS[@]} -ne 0 ] || [ "$DOCKER_MISSING" = true ]; then
         if [ "$OS" == "Linux" ]; then
             sudo apt update
             for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "yq" ]; then
+                    echo -e "${GREEN}Installing yq...${NC}"
+                    sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+                    sudo chmod +x /usr/local/bin/yq
+                    continue
+                fi
                 if ! sudo apt install -y "$DEP"; then
                     echo -e "${RED}Failed to install $DEP.${NC}"
                 fi
@@ -191,6 +205,13 @@ if [ ${#MISSING_DEPS[@]} -ne 0 ] || [ "$DOCKER_MISSING" = true ]; then
             fi
         elif [ "$OS" == "Mac" ]; then
             for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "yq" ]; then
+                    echo -e "${GREEN}Installing yq via Homebrew...${NC}"
+                    if ! brew install yq; then
+                        echo -e "${RED}Failed to install yq.${NC}"
+                    fi
+                    continue
+                fi
                 if ! brew install "$DEP"; then
                     echo -e "${RED}Failed to install $DEP.${NC}"
                 fi
@@ -200,7 +221,7 @@ if [ ${#MISSING_DEPS[@]} -ne 0 ] || [ "$DOCKER_MISSING" = true ]; then
                 if ! brew install --cask docker; then
                     echo -e "${RED}Failed to install Docker.${NC}"
                 else
-                    echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon (you may need to do this step yourself if not located under /Applications/Docker.app).${NC}"
+                    echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon.${NC}"
                     open /Applications/Docker.app
                     # Wait for Docker daemon to start
                     echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
@@ -227,7 +248,7 @@ if [ "$DOCKER_NOT_RUNNING" = true ]; then
             echo -e "${GREEN}Docker daemon is running.${NC}"
         fi
     elif [ "$OS" == "Mac" ]; then
-        echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon (you may need to do this step yourself if not located under /Applications/Docker.app).${NC}"
+        echo -e "${GREEN}Trying to open /Applications/Docker.app to start the Docker daemon.${NC}"
         open /Applications/Docker.app
         # Wait for Docker daemon to start
         echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
@@ -267,7 +288,7 @@ else
 fi
 
 # Choose the mode
-echo -e "\n🕹️ ${YELLOW}${BOLD} On which mode would you like to run Madara? (Enter a number)${NC}\n"
+echo -e "\n🕹️ ${YELLOW}${BOLD}On which mode would you like to run Madara? (Enter a number)${NC}\n"
 echo "${YELLOW}1. Full Node${NC}"
 echo "${YELLOW}2. Sequencer${NC}"
 echo "${YELLOW}3. Devnet${NC}"
@@ -302,102 +323,6 @@ tput ed
 
 echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
-# Choose the network based on the mode
-if [ "$MODE" == "Sequencer" ] || [ "$MODE" == "Devnet" ]; then
-    # For sequencer and devnet modes
-    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
-    echo "${YELLOW}1. Starknet Mainnet${NC}"
-    echo "${YELLOW}2. Starknet Testnet${NC}"
-    echo "${YELLOW}3. Test${NC}"
-    echo "${YELLOW}4. Custom Chain config${NC}"
-    while true; do
-        read -p "> " NETWORK_CHOICE
-        case $NETWORK_CHOICE in
-            1) PRESET="starknet_mainnet"; break ;;
-            2) PRESET="starknet_testnet"; break ;;
-            3) PRESET="test"; break ;;
-            4)
-                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
-                read -p "> " CUSTOM_CHAIN_CONFIG
-                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
-                    PRESET="$CUSTOM_CHAIN_CONFIG"
-                    break
-                else
-                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
-                fi
-                ;;
-            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
-        esac
-    done
-else
-    # For full node mode
-    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose a Network or provide a custom Chain config path: (Enter a number)${NC}\n"
-    echo "${YELLOW}1. Starknet Mainnet${NC}"
-    echo "${YELLOW}2. Starknet Testnet${NC}"
-    echo "${YELLOW}3. Starknet Integration${NC}"
-    echo "${YELLOW}4. Custom Chain config${NC}"
-    while true; do
-        read -p "> " NETWORK_CHOICE
-        case $NETWORK_CHOICE in
-            1) NETWORK="main"; break ;;
-            2) NETWORK="test"; break ;;
-            3) NETWORK="integration"; break ;;
-            4)
-                tput rc
-                tput ed
-
-                echo -e "\n${GREEN}You have chosen to run your node under a custom Chain config.${NC}"
-
-                echo -e "\n${YELLOW}${BOLD}🌐 Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
-                echo "${YELLOW}1. Starknet Mainnet${NC}"
-                echo "${YELLOW}2. Starknet Testnet${NC}"
-                echo "${YELLOW}3. Test${NC}"
-                echo "${YELLOW}4. Custom Chain config${NC}"
-                while true; do
-                    read -p "> " NETWORK_CHOICE
-                    case $NETWORK_CHOICE in
-                        1) PRESET="starknet_mainnet"; break ;;
-                        2) PRESET="starknet_testnet"; break ;;
-                        3) PRESET="test"; break ;;
-                        4)
-                            echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
-                            read -p "> " CUSTOM_CHAIN_CONFIG
-                            if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
-                                PRESET="$CUSTOM_CHAIN_CONFIG"
-                                break
-                            else
-                                echo -e "${RED}File not found. Please provide a valid path.${NC}"
-                            fi
-                            ;;
-                        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
-                    esac
-                done
-                ;;
-            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}" ;;
-        esac
-    done
-fi
-
-tput rc
-tput ed
-
-echo -e "\n${GREEN}You have chosen to run your node under: ${NETWORK}.${NC}"
-
-# Set the chain config or network option
-if [ "$MODE" == "Sequencer" ] || [ "$MODE" == "Devnet" ]; then
-    # Use --chain-config with PRESET
-    CHAIN_CONFIG_OPT="--chain-config=\"${PRESET}\""
-else
-    # For full node mode
-    if [ "$NETWORK_CHOICE" -eq 4 ]; then
-        # Custom chain config
-        CHAIN_CONFIG_OPT="--chain-config=\"${NETWORK}\""
-    else
-        # Use --network
-        CHAIN_CONFIG_OPT="--network=\"${NETWORK}\""
-    fi
-fi
-
 # Ask for the database path
 echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/madara)${NC}"
 read -p "> " BASE_PATH
@@ -410,6 +335,207 @@ tput ed
 if [ ! -d "$BASE_PATH" ]; then
     mkdir -p "$BASE_PATH"
 fi
+
+# Modify Chain Config Function
+modify_chain_config() {
+    local config_file="$1"
+    local OVERRIDES_FILE="$BASE_PATH/overrides.txt"
+    > "$OVERRIDES_FILE"  # Empty the overrides file
+
+    # Read all leaf nodes with their paths and values
+    config_entries=()
+    while IFS= read -r line; do
+        config_entries+=("$line")
+    done < <(yq eval '.. | select(tag != "!!map" and tag != "!!seq") | [path | join("."), .] | @tsv' "$config_file")
+
+    tput rc
+    tput ed
+
+    # Display all parameters with improved formatting
+    echo -e "\n${YELLOW}${BOLD}Here are all the parameters of your chosen configuration:${NC}\n"
+
+    prev_prefix=""
+    for i in "${!config_entries[@]}"; do
+        entry="${config_entries[$i]}"
+        path=$(echo "$entry" | cut -f1)
+        value=$(echo "$entry" | cut -f2-)
+
+        # Extract the top-level prefix for grouping
+        prefix=$(echo "$path" | cut -d'.' -f1)
+
+        # Add a new line and header when a new group starts
+        if [[ "$prefix" != "$prev_prefix" ]]; then
+            echo -e "${BLUE}${BOLD}$prefix:${NC}"
+            prev_prefix="$prefix"
+        fi
+
+        # Indent sub-parameters
+        sub_path=$(echo "$path" | cut -d'.' -f2-)
+        if [[ -n "$sub_path" ]]; then
+            display_path="  - ${sub_path}"
+        else
+            display_path="  - $prefix"
+        fi
+
+        echo -e "${YELLOW}$((i+1)). ${display_path} = ${value}${NC}"
+    done
+
+    # Ask user which parameters to modify
+    echo -e "\n${YELLOW}Enter the numbers of the parameters you wish to modify, separated by spaces (e.g., 1 3 5).${NC}"
+    echo -e "${YELLOW}Press Enter to continue without modifying any parameters.${NC}"
+    read -p "> " MODIFY_NUMBERS
+
+    # Check if the user wants to skip modifications
+    if [[ -z "$MODIFY_NUMBERS" ]]; then
+        echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
+    else
+        selected_indices=($MODIFY_NUMBERS)
+
+        for index in "${selected_indices[@]}"; do
+            # Subtract 1 to convert to zero-based index
+            idx=$((index - 1))
+            if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#config_entries[@]}" ]; then
+                entry="${config_entries[$idx]}"
+                path=$(echo "$entry" | cut -f1)
+                value=$(echo "$entry" | cut -f2-)
+                echo -e "\n${YELLOW}Parameter: ${path}${NC}"
+                echo -e "${GREEN}Current value: ${value}${NC}"
+                echo -e "${YELLOW}Enter new value for ${path}:${NC}"
+                read -p "> " NEW_VALUE
+                echo "${path}=${NEW_VALUE}" >> "$OVERRIDES_FILE"
+            else
+                echo -e "${RED}Invalid selection: $index${NC}"
+            fi
+        done
+    fi
+
+    # Apply the overrides to the original config file and write to $BASE_PATH/chain_config.yaml
+    MODIFIED_CONFIG_PATH="$BASE_PATH/chain_config.yaml"
+    cp "$config_file" "$MODIFIED_CONFIG_PATH"
+
+    if [[ -s "$OVERRIDES_FILE" ]]; then
+        while IFS= read -r line; do
+            key=$(echo "$line" | cut -d'=' -f1)
+            val=$(echo "$line" | cut -d'=' -f2-)
+            yq eval -i ".${key} = \"${val}\"" "$MODIFIED_CONFIG_PATH"
+        done < "$OVERRIDES_FILE"
+    fi
+
+    # Set CHAIN_CONFIG_FILE to the path of the modified chain config
+    CHAIN_CONFIG_FILE="$MODIFIED_CONFIG_PATH"
+}
+
+# Choose the network based on the mode
+if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+    # For sequencer and devnet modes
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Devnet${NC}"
+    echo "${YELLOW}4. Custom Chain config${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1)
+                PRESET="starknet_mainnet"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            2)
+                PRESET="starknet_testnet"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            3)
+                PRESET="devnet"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    PRESET="custom"
+                    PRESET_PATH="$CUSTOM_CHAIN_CONFIG"
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                    continue
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}"; continue ;;
+        esac
+
+        # Now, if a preset was selected (options 1-3), download the chain config file
+        if [ "$PRESET" != "custom" ]; then
+            # Download the chain config file to a temporary location
+            PRESET_PATH=$(mktemp)
+            curl -s -o "$PRESET_PATH" "$PRESET_URL"
+            if [ $? -ne 0 ] || [ ! -s "$PRESET_PATH" ]; then
+                echo -e "${RED}Failed to download the chain config file from $PRESET_URL.${NC}"
+                exit 1
+            fi
+        fi
+
+        # Call modify_chain_config with the chain config file
+        modify_chain_config "$PRESET_PATH"
+        break
+    done
+else
+    # For full node mode
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose a Network or provide a custom Chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Test${NC}"
+    echo "${YELLOW}4. Custom Chain config${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1)
+                NETWORK="main"
+                PRESET="starknet_mainnet"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            2)
+                NETWORK="test"
+                PRESET="starknet_testnet"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            3)
+                NETWORK="test"
+                PRESET="test"
+                PRESET_URL="${PRESET_URLS[$PRESET]}"
+                ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    NETWORK="custom"
+                    PRESET_PATH="$CUSTOM_CHAIN_CONFIG"
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                    continue
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}"; continue ;;
+        esac
+
+        # For options 1-3, download the chain config file and call modify_chain_config
+        if [ "$NETWORK" != "custom" ]; then
+            PRESET_PATH=$(mktemp)
+            curl -s -o "$PRESET_PATH" "$PRESET_URL"
+            if [ $? -ne 0 ] || [ ! -s "$PRESET_PATH" ]; then
+                echo -e "${RED}Failed to download the chain config file from $PRESET_URL.${NC}"
+                exit 1
+            fi
+        fi
+
+        # Call modify_chain_config with the chain config file
+        modify_chain_config "$PRESET_PATH"
+        break
+    done
+fi
+
+tput rc
+tput ed
+
+echo -e "\n${GREEN}You have chosen to run your node under the preset or custom chain config.${NC}"
 
 # Ask for RPC access
 while true; do
@@ -471,14 +597,12 @@ done
 tput rc
 tput ed
 
-
 # Check if the image is available locally
 IMAGE_NAME="ghcr.io/madara-alliance/madara/madara:latest"
 if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
     echo -e "\n📦 ${GREEN}Docker image '$IMAGE_NAME' is already available locally.${NC}"
 else
     echo -e "\n🚢 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
-    docker login ghcr.io -u GITHUB_USERNAME -p GITHUB_TOKEN
     docker pull $IMAGE_NAME
 fi
 
@@ -487,7 +611,7 @@ DOCKER_COMMAND="docker run -d --name madara-client \
     -v ${BASE_PATH}:/data \
     ${PORT_MAPPING} \
     $IMAGE_NAME \
-    --${MODE} --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+    --${MODE} --name \"${NODE_NAME}\" --chain-config=\"/data/chain_config.yaml\" --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
 
 echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
 echo -e "${CYAN}$DOCKER_COMMAND${NC}"
