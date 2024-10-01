@@ -5,6 +5,9 @@ on:
     tags:
       - "v*.*.*" # Triggers on version tags like v1.0.0
 
+permissions:
+  contents: write  # Add this line to grant write permissions to contents
+
 jobs:
   create_release:
     runs-on: ubuntu-latest
