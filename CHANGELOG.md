@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: new crate gateway client & server
+- feat(cli): launcher script and release workflows
 - fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
 - fix: docker file fixes for devnet
