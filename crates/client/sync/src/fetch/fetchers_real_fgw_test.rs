@@ -449,9 +449,21 @@ async fn test_can_fetch_pending_block(client_mainnet_fixture: FeederClient) {
 #[case(0)]
 #[case(724_130)]
 async fn test_can_fetch_and_convert_block(client_mainnet_fixture: FeederClient, #[case] block_n: u64) {
-    let block = fetch_block_and_updates(&ChainId::Mainnet, block_n, &client_mainnet_fixture).await.unwrap();
+    // Sorting is necessary since we store storage diffs and nonces in a
+    // hashmap in the fgw types before converting them to a Vec in the mp
+    // types, resulting in unpredictable ordering
+    let mut block = fetch_block_and_updates(&ChainId::Mainnet, block_n, &client_mainnet_fixture).await.unwrap();
+    block.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+    block.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+
     let path = &format!("test-data/block_{block_n}.json");
     // serde_json::to_writer(std::fs::File::create(path).unwrap(), &block).unwrap();
-    let expected = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut expected: UnverifiedFullBlock = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    expected.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+    expected.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+
+    // let path = &format!("test-data/block_{block_n}_actual.json");
+    // serde_json::to_writer(std::fs::File::create(path).unwrap(), &block).unwrap();
+
     assert_eq!(block, expected)
 }

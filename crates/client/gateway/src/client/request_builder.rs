@@ -109,5 +109,5 @@ where
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
     }
 
-    Ok(response.json::<T>().await?)
+    response.json::<T>().await.map_err(|e| SequencerError::InvalidStarknetErrorVariant(e))
 }

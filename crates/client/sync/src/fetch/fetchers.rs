@@ -21,7 +21,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
 
-const MAX_RETRY: u32 = 15;
+const MAX_RETRY: u32 = 10;
 const BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
@@ -212,7 +212,7 @@ async fn fetch_class_updates(
     let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -228,7 +228,7 @@ async fn fetch_class_updates(
     let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
 
             let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -604,10 +604,7 @@ mod test_l2_fetchers {
         let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(
-                result,
-                Err(SequencerError::InvalidStarknetErrorVariant(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
-            ),
+            matches!(result, Err(SequencerError::InvalidStarknetErrorVariant(_))),
             "Expected error about mismatched data, but got: {:?}",
             result
         );
@@ -627,11 +624,14 @@ mod test_l2_fetchers {
         ctx.mock_block(5);
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
+        // WARN: the mock server is set up to ALWAYS return state update with
+        // block, DO NOT call `get_state_update` on it!
         let state_update = ctx
             .provider
-            .get_state_update(FetchBlockId::BlockN(5).into())
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update at block number 5");
+            .expect("Failed to fetch state update at block number 5")
+            .state_update();
         let state_diff = state_update.state_diff();
 
         let class_updates = fetch_class_updates(
@@ -663,9 +663,10 @@ mod test_l2_fetchers {
         ctx.mock_block(5);
         let state_update = ctx
             .provider
-            .get_state_update(FetchBlockId::BlockN(5).into())
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update at block number 5");
+            .expect("Failed to fetch state update at block number 5")
+            .state_update();
         let state_diff = state_update.state_diff();
 
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());

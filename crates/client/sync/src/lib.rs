@@ -11,6 +11,7 @@ use std::{sync::Arc, time::Duration};
 pub mod fetch;
 pub mod l2;
 pub mod metrics;
+#[cfg(test)]
 pub mod tests;
 pub mod utils;
 
