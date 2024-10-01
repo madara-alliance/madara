@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix:(tests): Add testing feature to mc-db dev dependency (#294)
 - feat(cli): launcher script and release workflows
 - fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
