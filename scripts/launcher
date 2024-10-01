@@ -480,7 +480,6 @@ if [ "$RPC_ACCESS" == "yes" ]; then
             continue
         fi
 
-        # If everything is okay, break the loop
         break
     done
 
@@ -508,12 +507,23 @@ done
 tput rc
 tput ed
 
+
+# Check if the image is available locally
+IMAGE_NAME="ghcr.io/madara-alliance/madara/madara:latest"
+if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
+    echo -e "\n📦 ${GREEN}Docker image '$IMAGE_NAME' is already available locally.${NC}"
+else
+    echo -e "\n🚢 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
+    docker login ghcr.io -u GITHUB_USERNAME -p GITHUB_TOKEN
+    docker pull $IMAGE_NAME
+fi
+
 # Build the final Docker run command
 DOCKER_COMMAND="docker run -d --name madara-node \
     -v ${BASE_PATH}:/data \
     ${PORT_MAPPING} \
-    madara \
-    run --${MODE} --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+    $IMAGE_NAME \
+    --${MODE} --name \"${NODE_NAME}\" ${CHAIN_CONFIG_OPT} --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
 
 echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
 echo -e "${CYAN}$DOCKER_COMMAND${NC}"
