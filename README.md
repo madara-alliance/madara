@@ -9,491 +9,214 @@
 [![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/push.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
 [![Project license](https://img.shields.io/github/license/madara-alliance/madara.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-<a href="https://twitter.com/madara_alliance">
-<img src="https://img.shields.io/twitter/follow/madara_alliance?style=social"/> </a>
+<a href="https://twitter.com/madara-alliance">
+<img src="https://img.shields.io/twitter/follow/madara-alliance?style=social"/> </a>
 <a href="https://github.com/madara-alliance/madara">
 <img src="https://img.shields.io/github/stars/madara-alliance/madara?style=social"/>
 </a>
 
 </div>
 
-# 🥷 Madara: Starknet Client
+# 🥷 Madara: Starknet client
 
-Madara is a powerful Starknet hybrid client written in Rust.
+Madara is a powerfull Starknet hybrid client written in Rust.
 
 ## Table of Contents
 
 - ⬇️ Installation
   - [Run from Source](#run-from-source)
-  - [Run with Docker (Recommended)](#run-with-docker-recommended)
+  - [Run with Docker](#run-with-docker)
   - [Run with Docker Compose](#run-with-docker-compose)
-  - [Run with Installation Script](#run-with-installation-script)
 - ⚙️ Configuration
-  - [Priority of Configuration](#priority-of-configuration)
-  - [Command-Line Options](#command-line-options)
-    - [Basic Command-Line Options](#basic-command-line-options)
-    - [Advanced Command-Line Options by Namespace](#advanced-command-line-options-by-namespace)
-  - [Environment Variables](#environment-variables)
-  - [Configuration File](#configuration-file)
+  - [Basic Command-Line Options](#basic-command-line-options)
+  - [Advanced Command-Line Options](#advanced-command-line-options)
 - 📸 Snapshots
 - 🌐 Interactions
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
-- ✔ Supported Features
+- Supported Features
 - 👍 Contribute
-- 🤝 Partnerships
-- ⚠️ License
 
 ## ⬇️ Installation
 
-In this section, we will guide you through the build and run process so that you can run your own Madara client and query the Starknet blockchain as smoothly as possible.
-
-We have divided this section into three difficulty levels:
-
-- [**Low-level**](#run-from-source) (from source by building the Rust binary locally)
-- [**Mid-level**](#run-with-docker-recommended) (from Docker **recommended** via the available Docker images)
-- [**High-level**](#run-with-installation-script) (from a high-level interactive menu)
-
 ### Run from Source
 
-This installation process will help you build the binary directly from the source code locally on your machine.
+1. **Install dependencies**
 
-1. **Install Dependencies**
+   Ensure you have the necessary dependencies:
 
-   Ensure you have everything needed to complete this tutorial.
+   ```sh
+   sudo apt-get update && sudo apt-get install -y \
+     clang \
+     protobuf-compiler \
+     build-essential
+   ```
 
-   | Dependency | Version    | Installation Command                                                              |
-   | ---------- | ---------- | --------------------------------------------------------------------------------- |
-   | Rust       | rustc 1.78 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`                 |
-   | Clang      | Latest     | `sudo apt-get install clang`                                                      |
-   | Scarb      | v2.8.2     | `curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh \| sh` |
+   Install Rust:
 
-2. **Get Code**
+   ```sh
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
+   ```
 
-   Fetch the code from the official [Madara](https://github.com/madara-alliance/madara) repository in the folder of your choice.
+   Clone the Madara repository:
 
-   ```bash
+   ```sh
    cd <your-destination-path>
    git clone https://github.com/madara-alliance/madara .
    ```
 
-3. **Build Program**
+2. **Run Madara**
 
-   Choose one of the following build modes:
+   Start the Madara client with synchronization to Starknet mainnet:
 
-   - **Debug** (fastest build mode, but lower performance, for testing purposes only)
-
-     ```bash
-     cargo build
-     ```
-
-   - **Release** (the recommended build mode)
-
-     ```bash
-     cargo build --release
-     ```
-
-   - **Production** (the recommended build mode for production performance)
-
-     ```bash
-     cargo build --profile=production
-     ```
-
-4. **Run Madara**
-
-   Start the Madara client with a basic set of arguments, depending on your chosen mode:
-
-   **Full Node**
-
-   ```bash
+   ```sh
    cargo run --release -- \
-     --name Madara \
-     --full \
-     --base-path /var/lib/madara \
-     --network mainnet \
-     --l1-endpoint ${ETHEREUM_API_URL}
-   ```
-
-   **Sequencer**
-
-   ```bash
-   cargo run --release -- \
-     --name Madara \
-     --sequencer \
-     --base-path /var/lib/madara \
-     --preset test \
-     --l1-endpoint ${ETHEREUM_API_URL}
-   ```
-
-   **Devnet**
-
-   ```bash
-   cargo run --release -- \
-     --name Madara \
-     --devnet \
-     --base-path /var/lib/madara \
-     --preset test
-   ```
-
-   > ℹ️ **Note:** We recommend visiting the [Configuration](#configuration) section to customize your node parameters.
-
-   > ℹ️ **Note:** If you don't have an L1 endpoint URL, we recommend heading to the [Verification](#verification) section to get one.
-
-### Run with Docker (Recommended)
-
-This is the recommended way to easily install and run Madara as it only requires terminal access and Docker installed.
-
-1. **Install Docker**
-
-   Ensure Docker is installed on your system. If not, you can install it by following the instructions for your operating system:
-
-   - **MacOS**:
-
-     Download and install Docker Desktop for Mac from [Docker Hub](https://hub.docker.com/editions/community/docker-ce-desktop-mac/).
-
-   - **Linux**:
-
-     Install Docker using the package manager for your distribution. For example, on Ubuntu:
-
-     ```bash
-     sudo apt-get update
-     sudo apt-get install \
-       ca-certificates \
-       curl \
-       gnupg \
-       lsb-release
-
-     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-     echo \
-       "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
-       https://download.docker.com/linux/ubuntu \
-       $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-     sudo apt-get update
-     sudo apt-get install docker-ce docker-ce-cli containerd.io
-     ```
-
-   - **Windows**:
-
-     Download and install Docker Desktop for Windows from [Docker Hub](https://hub.docker.com/editions/community/docker-ce-desktop-windows/).
-
-2. **Run Docker Image**
-
-   Once you have successfully installed Docker, you can now run Madara using the available Docker images.
-
-   ```bash
-   docker run -d \
-     --name Madara \
-     -p 9944:9944 \
-     -v /var/lib/madara:/var/lib/madara \
-     madara:latest \
-     --base-path /var/lib/Madara \
+     --name madara \
+     --base-path ../madara-db \
      --network main \
-     --l1-endpoint ${ETHEREUM_API_URL}
+     --l1-endpoint ${ETHEREUM_API_URL} \
    ```
 
-   > ℹ️ **Note:** This is a default configuration. For more information on possible configurations, please visit the [Configuration](#configuration) section.
+### Run with Docker
 
-   > ⚠️ **Warning:** Make sure to change the volume `-v` of your container if you change the `--base-path`.
+1 **Run docker image**
 
-   If you don't have an L1 endpoint URL, we recommend heading to the [Verification](#verification) section to get one.
+To run Madara with Docker, use the following command:
 
-3. **Check Logs**
+```sh
+docker run -d                          \
+    --name madara                      \
+    -p 9944:9944                       \
+    -v /var/lib/madara:/var/lib/madara \
+    madara:latest                      \
+    --base-path ./madara-db            \
+    --network main                     \
+    --rpc-external                     \
+    --rpc-cors all                     \
+    --preset mainnet                   \
+    --l1-endpoint <rpc key>
+```
 
-   To check the logs of the running Madara service:
+Check the logs of the running Madara service:
 
-   ```bash
-   docker logs -f Madara
-   ```
-
-   Now you can head up to the [Metrics](#metrics) section to easily deploy a Grafana and Prometheus dashboard.
+```sh
+docker logs -f madara
+```
 
 ### Run with Docker Compose
 
-1. **Prerequisites**
-
-   Ensure you have Docker and Docker Compose installed on your machine.
-
-2. **Prepare the Environment**
+1. **Ensure environment variable**
 
    Set the necessary environment variable:
 
-   ```bash
-   export ETHEREUM_API_URL="your-ethereum-api-url"
+   ```sh
+   export L1_ENDPOINT="your-ethereum-api-url"
    ```
 
    Or create a `.env` file in the same directory as your `docker-compose.yml` file:
 
-   ```
-   ETHEREUM_API_URL=your-ethereum-api-url
-   ```
-
-   > ⚠️ **Note:** When running with `sudo`, environment variables set in the current session might not be carried over. You can pass the variable directly to sudo using the `-E` option to preserve the environment.
-
-   If you don't have an L1 endpoint URL, we recommend heading to the [Verification](#verification) section to get one.
-
-3. **Build and Run the Container**
-
-   Navigate to the directory with your `docker-compose.yml` file and run the following command:
-
-   ```bash
-   docker-compose up -d
+   ```sh
+   L1_ENDPOINT=your-ethereum-api-url
    ```
 
-   This command will build the Docker image and start the container in detached mode.
+2. **Build and Run the Container**
 
-4. **Check Logs**
+   Navigate to the directory with your `docker-compose.yml` file and run one of the following commands:
 
-   You can view the logs of the running Madara service using the following command:
+   - Mainnet:
 
-   ```bash
-   docker-compose logs -f Madara
+     ```sh
+     docker-compose --profile mainnet up -d
+     ```
+
+   - Testnet:
+
+     ```sh
+     docker-compose --profile testnet up -d
+     ```
+
+   Check the logs of the running Madara service:
+
+   ```sh
+   docker-compose logs -f madara
    ```
-
-   Now you can head up to the [Metrics](#metrics) section to easily deploy a Grafana and Prometheus dashboard.
-
-### Run with Installation Script
-
-This is the highest-level way to install Madara with some custom features. For advanced configuration, we recommend using the source or Docker methods.
-
-1. **Download Script**
-
-   You will need to download and run the installer script using the following command:
-
-   ```bash
-   # Installation script command line (to be provided)
-   ```
-
-2. **Follow Instructions**
-
-   Follow the interactive instructions provided by the installation script to set up your Madara client.
-
-   > **Note:** This method is under development. For more advanced configurations, please use the source or Docker methods.
-
-> ℹ️ **Note:** Now that you know how to launch a Madara client, you might want to set some parameters to customize it. Therefore, you can go to the following [Configuration](#configuration) section.
 
 ## ⚙️ Configuration
 
-Configuring your Madara client properly ensures that it meets your specific needs. Configuration can be done through three main avenues:
+Configuring your Madara node properly ensures it meets your specific needs
 
-- **Command-line arguments**
-- **Environment variables**
-- **Configuration files**
+### Basic Command-Line Options
 
-### Priority of Configuration
-
-> ℹ️ **Note:** Configuration priority is as follows: command-line arguments > environment variables > configuration files. When the same setting is configured in multiple places, the source with the highest priority takes effect.
-
-### Command-Line Options
-
-For a comprehensive list of command-line options:
-
-```bash
-cargo run -- --help
-```
-
-Below are some essential command-line options and a categorized list of advanced configurations:
-
-#### Basic Command-Line Options
-
-Here are the recommended options for a quick and simple configuration of your Madara client:
+Here are the recommended options for a quick and simple configuration of your Madara full node:
 
 - **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
-- **`--base-path <PATH>`**: Set the directory for Madara data (default is `/tmp/madara`).
-- **`--network <NETWORK>`**: The network type to connect to (`main`, `test`, `integration`, or `devnet`).
+- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/madara`).
+- **`--network <NETWORK>`**: The network type to connect to (`main`, `test`, or `integration`).
 - **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
 - **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
-- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WebSocket RPC servers.
+- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
 - **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
+- **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block (default is highest).
 
-> ℹ️ **Note:** For more information regarding synchronization configuration, please refer to the next section.
+### Advanced Command-Line Options
 
-#### Advanced Command-Line Options by Namespace
-
-Toggle details for each namespace to view additional settings:
+Here are more advanced command-line options, organized by namespace, for running and development purposes:
 
 <details>
-<summary><strong>Network</strong></summary>
+<summary>Network</summary>
 
-- **`--network <NETWORK>`**: The network type to connect to.
-  - [default: main]
-
-  Possible values:
-
-  - `main`: The main network (mainnet). Alias: mainnet
-  - `test`: The test network (testnet). Alias: sepolia
-  - `integration`: The integration network
-  - `devnet`: A devnet for local testing
-
-- **`--l1-endpoint <ETHEREUM RPC URL>`**: Specify the Layer 1 RPC endpoint for state verification.
-
-- **`--gateway-key <API KEY>`**: Gateway API key to avoid rate limiting (optional).
-
-- **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds. This affects the sync service after catching up with the blockchain tip.
-  - [default: 4]
-
-- **`--pending-block-poll-interval <SECONDS>`**: Pending block polling interval in seconds.
-  - [default: 2]
-
-- **`--no-sync-polling`**: Disable sync polling. Sync service will not import new blocks after catching up with the blockchain tip.
-
-- **`--n-blocks-to-sync <NUMBER OF BLOCKS>`**: Number of blocks to sync, useful for benchmarking.
-
-- **`--unsafe-starting-block <BLOCK NUMBER>`**: Start syncing from a specific block. May cause database inconsistency.
-
-- **`--sync-disabled`**: Disable the sync service.
-
-- **`--sync-l1-disabled`**: Disable L1 sync service.
-
-- **`--gas-price-sync-disabled`**: Disable the gas price sync service.
-
-- **`--gas-price-poll-ms <MILLISECONDS>`**: Interval in milliseconds for the gas price sync service to fetch the gas price.
-  - [default: 10000]
+- **`-n, --network <NETWORK>`**: The network type to connect to (default: `integration`).
+- **`--port <PORT>`**: Set the network listening port.
+- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
+- **`--gateway-key <GATEWAY_KEY>`**: Gateway API key to avoid rate limiting (optional).
+- **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds (default: 2).
+- **`--no-sync-polling`**: Stop sync polling.
+- **`--n-blocks-to-sync <NUMBER>`**: Number of blocks to sync.
+- **`--starting-block <BLOCK>`**: The block to start syncing from (make sure to set `--disable-root`).
 
 </details>
 
 <details>
-<summary><strong>RPC</strong></summary>
+<summary>RPC</summary>
 
-- **`--rpc-disabled`**: Disable the RPC server.
-
-- **`--rpc-external`**: Listen to all network interfaces.
-
-- **`--rpc-methods <METHOD>`**: RPC methods to expose.
-  - [default: auto]
-
-  Possible values:
-
-  - `auto`: Expose all methods if RPC is on localhost, otherwise serve only safe methods.
-  - `safe`: Allow only a safe subset of RPC methods.
-  - `unsafe`: Expose all RPC methods (even potentially unsafe ones).
-
-- **`--rpc-rate-limit <CALLS/MIN>`**: RPC rate limiting per connection.
-
-- **`--rpc-rate-limit-whitelisted-ips <IP ADDRESSES>`**: Disable RPC rate limiting for specific IP addresses or ranges.
-
-- **`--rpc-rate-limit-trust-proxy-headers`**: Trust proxy headers for disabling rate limiting in reverse proxy setups.
-
-- **`--rpc-max-request-size <MEGABYTES>`**: Maximum RPC request payload size.
-  - [default: 15]
-
-- **`--rpc-max-response-size <MEGABYTES>`**: Maximum RPC response payload size.
-  - [default: 15]
-
-- **`--rpc-max-subscriptions-per-connection <COUNT>`**: Maximum concurrent subscriptions per connection.
-  - [default: 1024]
-
-- **`--rpc-port <PORT>`**: The RPC port to listen on.
-  - [default: 9944]
-
-- **`--rpc-max-connections <COUNT>`**: Maximum number of RPC server connections at a given time.
-  - [default: 100]
-
-- **`--rpc-disable-batch-requests`**: Disable RPC batch requests.
-
-- **`--rpc-max-batch-request-len <LEN>`**: Limit the max length for an RPC batch request.
-
-- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WebSocket RPC servers. A comma-separated list of origins, or the special `all` value.
-
-- **`--rpc-message-buffer-capacity-per-connection <CAPACITY>`**: Maximum number of messages in memory per connection.
-  - [default: 64]
+- **`--rpc-external`**: Listen to all RPC interfaces. Note: not all RPC methods are safe to be exposed publicly.
+  Use an RPC proxy server to filter out dangerous methods.
+- **`--rpc-methods <METHOD_SET>`**: RPC methods to expose (`auto`, `safe`, `unsafe`).
+- **`--rpc-max-request-size <SIZE>`**: Set the maximum RPC request payload size in megabytes (default: 15).
+- **`--rpc-max-response-size <SIZE>`**: Set the maximum RPC response payload size in megabytes (default: 15).
+- **`--rpc-max-subscriptions-per-connection <NUMBER>`**: Set the maximum concurrent subscriptions per connection (default: 1024).
+- **`--rpc-port <PORT>`**: Specify JSON-RPC server TCP port.
+- **`--rpc-max-connections <NUMBER>`**: Maximum number of RPC server connections (default: 100).
+- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
 
 </details>
 
 <details>
-<summary><strong>Database</strong></summary>
+<summary>Database</summary>
 
-- **`--base-path <PATH>`**: The path where Madara will store the database.
-  - [default: /tmp/madara]
-
-- **`--backup-dir <PATH>`**: Directory for backups.
-
-- **`--backup-every-n-blocks <NUMBER OF BLOCKS>`**: Periodically create a backup, useful for debugging.
-
-- **`--restore-from-latest-backup`**: Restore the database from the latest backup version.
-
-</details>
-
-<details>
-<summary><strong>Block Production</strong></summary>
-
-- **`--block-production-disabled`**: Disable the block production service.
-
-- **`--devnet`**: Launch in block production mode, with devnet contracts.
-
-- **`--devnet-contracts <DEVNET_CONTRACTS>`**: Create this number of contracts in the genesis block for the devnet configuration.
-  - [default: 10]
-
-- **`--override-devnet-chain-id`**: Launch a devnet with a production chain ID. This is unsafe because your devnet transactions can be replayed on the actual network.
-
-- **`--authority`**: Enable authority mode; the node will run as a sequencer and try to produce its own blocks.
+- **`--base-path <PATH>`**: Specify custom base path (default: `/tmp/madara`).
+- **`--snap <BLOCK_NUMBER>`**: Start syncing from the closest snapshot available for the desired block.
+- **`--tmp`**: Run a temporary node. A temporary directory will be created and deleted at the end of the process.
+- **`--cache`**: Enable caching of blocks and transactions to improve response times.
+- **`--db-cache <MiB>`**: Limit the memory the database cache can use.
+- **`--trie-cache-size <Bytes>`**: Specify the state cache size (default: 67108864).
+- **`--backup-every-n-blocks <NUMBER>`**: Specify the number of blocks after which a backup should be created.
+- **`--backup-dir <DIR>`**: Specify the directory where backups should be stored.
+- **`--restore-from-latest-backup`**: Restore the database from the latest backup available.
 
 </details>
 
-<details>
-<summary><strong>Metrics</strong></summary>
-
-- **`--telemetry-disabled`**: Disable connection to the Madara telemetry server.
-
-- **`--telemetry-url <URL VERBOSITY>`**: The URL of the telemetry server with verbosity level.
-  - [default: "wss://starknodes.com/submit 0"]
-
-- **`--prometheus-port <PORT>`**: The port used by the Prometheus RPC service.
-  - [default: 9615]
-
-- **`--prometheus-external`**: Listen on all network interfaces for Prometheus.
-
-- **`--prometheus-disabled`**: Disable the Prometheus service.
-
-</details>
-
-<details>
-<summary><strong>P2P</strong></summary>
-
-**Coming soon**
-
-</details>
-
-### Environment Variables
-
-Set up your node's environment variables using the `STARKNET_` prefix. For example:
-
-- `STARKNET_BASE_PATH=/path/to/data`
-- `STARKNET_LOG=info`
-
-These variables allow you to adjust the node's configuration without using command-line arguments.
-
-### Configuration File
-
-You can use a JSON, TOML, or YAML file to structure your configuration settings. Specify your configuration file on startup with the `-c` option. Here's a basic example in JSON format:
-
-```json
-{
-  "name": "Deoxys",
-  "base_path": "../deoxys-db",
-  "network": "mainnet",
-  "l1_endpoint": "your-ethereum-api-url",
-  "rpc_port": 9944,
-  "rpc_cors": "*",
-  "rpc_external": true,
-  "prometheus_external": true
-}
-```
-
-> 💡 **Tip:** Review settings carefully for optimal performance and refer to Starknet's official documentation for detailed configuration guidelines.
-
-Always test your configuration in a non-production environment before rolling it out to a live node to prevent downtime and other potential issues.
-
-> ℹ️ **Note:** For a custom chain configuration, you can head to the configuration section of chain operators deployments.
+> ℹ️ **Info:** Note that not all parameters may be referenced here.
+> Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ## 📸 Snapshots
 
-Snapshots are under development and will be available through the `--snap <BLOCK_NUMBER>` parameter.
+Snapshots are under developpement and will be available through the `--snap <block_number>` parameter.
 
 ## 🌐 Interactions
 
-Madara fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs). These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
+Madara fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
 
 ### Supported JSON-RPC Methods
 
@@ -552,7 +275,7 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
-> ℹ️ **Info:** Madara currently supports the latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) up to version `v0.7.1`.
+> ℹ️ **Info:** Madara currently supports latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) specs up to version v0.7.1
 
 ### Example of Calling a JSON-RPC Method
 
@@ -569,9 +292,12 @@ Here is an example of how to call a JSON-RPC method using Madara:
 }
 ```
 
-You can use any JSON-RPC client to interact with the Madara node, such as `curl`, `httpie`, or a custom client in your preferred programming language. For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+You can use any JSON-RPC client to interact with the Madara node, such as `curl`, `httpie`,
+or a custom client in your preferred programming language.
+For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
-> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution. Ensure you handle errors appropriately as per the JSON-RPC schema.
+> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution.
+> Ensure you handle errors appropriately as per the JSON-RPC schema.
 
 ## ✔ Supported Features
 
@@ -588,14 +314,15 @@ Each feature is designed to ensure optimal performance and seamless integration 
 
 ## 👍 Contribute
 
-We welcome contributions from the community! Please read our [contributing guidelines](CONTRIBUTING.md) to get started.
-
 ## 🤝 Partnerships
 
-To establish a partnership with the Madara team, or if you have any suggestions or special requests, feel free to reach us on [Telegram](https://t.me/madara_alliance).
+To establish a partnership with the Kasar team, or if you have any suggestion or
+special request, feel free to reach us on [telegram](https://t.me/madara-alliance).
 
 ## ⚠️ License
 
-Copyright (c) 2022-present.
+Copyright (c) 2022-present, with the following
+[contributors](https://github.com/madara-alliance/madara/graphs/contributors).
 
-Madara is open-source software licensed under the [Apache-2.0 License](https://github.com/madara-alliance/madara/blob/main/LICENSE).
+Madara is open-source software licensed under the
+[Apache-2.0 License](https://github.com/madara-alliance/madara/blob/main/LICENSE).
