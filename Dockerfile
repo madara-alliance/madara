@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM rust:1.78 as builder
+FROM rust:1.78 AS builder
 # Install build dependencies
 RUN apt-get -y update && \
     apt-get install -y clang && \
@@ -17,7 +17,7 @@ COPY cairo_0 cairo_0
 
 # Installing scarb, new since devnet integration
 ENV SCARB_VERSION="v2.8.2"
-ENV SHELL /bin/bash
+ENV SHELL="/bin/bash"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh -s -- ${SCARB_VERSION}
 ENV PATH="/root/.local/bin:${PATH}"
 RUN scarb --version

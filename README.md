@@ -43,11 +43,11 @@ Madara is a powerful Starknet client written in Rust.
 
    Ensure you have the necessary dependencies:
 
-   | Dependency | Version    | Installation                                                                            |
-   | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
-   | Rust       | rustc 1.78 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`                        |
-   | Clang      | Latest     | `sudo apt-get install clang`                                                             |
-   | Scarb      | v2.8.2     | `curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh`  |
+   | Dependency | Version    | Installation                                                                      |
+   | ---------- | ---------- | --------------------------------------------------------------------------------- | --- |
+   | Rust       | rustc 1.78 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs                        | sh` |
+   | Clang      | Latest     | `sudo apt-get install clang`                                                      |
+   | Scarb      | v2.8.2     | `curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh` |
 
    Clone the Madara repository:
 
@@ -142,7 +142,7 @@ Madara is a powerful Starknet client written in Rust.
 
    > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant section to obtain one.
 
-3. **Check Logs**
+2. **Check Logs**
 
    ```bash
    docker logs -f Madara
@@ -192,6 +192,7 @@ Toggle details for each namespace to view additional settings:
 <summary><strong>Network</strong></summary>
 
 - **`-n, --network <NETWORK>`**: The network type to connect to.
+
   - [default: mainnet]
 
   Possible values:
@@ -206,9 +207,11 @@ Toggle details for each namespace to view additional settings:
 - **`--gateway-key <API KEY>`**: Gateway API key to avoid rate limiting (optional).
 
 - **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds.
+
   - [default: 4]
 
 - **`--pending-block-poll-interval <SECONDS>`**: Pending block polling interval in seconds.
+
   - [default: 2]
 
 - **`--no-sync-polling`**: Disable sync polling.
@@ -236,6 +239,7 @@ Toggle details for each namespace to view additional settings:
 - **`--rpc-external`**: Listen to all network interfaces.
 
 - **`--rpc-methods <METHOD>`**: RPC methods to expose.
+
   - [default: auto]
 
   Possible values:
@@ -251,18 +255,23 @@ Toggle details for each namespace to view additional settings:
 - **`--rpc-rate-limit-trust-proxy-headers`**: Trust proxy headers for disabling rate limiting in reverse proxy setups.
 
 - **`--rpc-max-request-size <MEGABYTES>`**: Maximum RPC request payload size for both HTTP and WebSockets.
+
   - [default: 15]
 
 - **`--rpc-max-response-size <MEGABYTES>`**: Maximum RPC response payload size for both HTTP and WebSockets.
+
   - [default: 15]
 
 - **`--rpc-max-subscriptions-per-connection <COUNT>`**: Maximum concurrent subscriptions per connection.
+
   - [default: 1024]
 
 - **`--rpc-port <PORT>`**: The RPC port to listen on.
+
   - [default: 9944]
 
 - **`--rpc-max-connections <COUNT>`**: Maximum number of RPC server connections at a given time.
+
   - [default: 100]
 
 - **`--rpc-disable-batch-requests`**: Disable RPC batch requests.
@@ -280,6 +289,7 @@ Toggle details for each namespace to view additional settings:
 <summary><strong>Database</strong></summary>
 
 - **`--base-path <PATH>`**: The path where Madara will store the database.
+
   - [default: /tmp/madara]
 
 - **`--backup-dir <PATH>`**: Directory for backups.
@@ -298,6 +308,7 @@ Toggle details for each namespace to view additional settings:
 - **`--devnet`**: Launch in block production mode, with devnet contracts.
 
 - **`--devnet-contracts <DEVNET_CONTRACTS>`**: Create this number of contracts in the genesis block for the devnet configuration.
+
   - [default: 10]
 
 - **`--override-devnet-chain-id`**: Launch a devnet with a production chain ID.
@@ -312,9 +323,11 @@ Toggle details for each namespace to view additional settings:
 - **`--telemetry-disabled`**: Disable connection to the Madara telemetry server.
 
 - **`--telemetry-url <URL VERBOSITY>`**: The URL of the telemetry server with verbosity level.
+
   - [default: "wss://starknodes.com/submit 0"]
 
 - **`--prometheus-port <PORT>`**: The port used by the Prometheus RPC service.
+
   - [default: 9615]
 
 - **`--prometheus-external`**: Listen on all network interfaces for Prometheus.
