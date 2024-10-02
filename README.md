@@ -115,9 +115,9 @@ Madara is a powerful Starknet client written in Rust.
    ```
 
    > ℹ️ **Info:** We recommend you to head to the [Configuration](https://docs.madara.build/fundamentals/configuration)
-   section to customize your node parameters.
+   > section to customize your node parameters.
    > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant
-   section to obtain one.
+   > section to obtain one.
 
 ### Run with Docker
 
@@ -138,8 +138,8 @@ Madara is a powerful Starknet client written in Rust.
    ```
 
    > ℹ️ **Info:** This is a default configuration for a Full Node on Starknet mainnet.
-   For more information on possible configurations, please visit the
-   [Configuration](https://docs.madara.build/fundamentals/configuration) section.
+   > For more information on possible configurations, please visit the
+   > [Configuration](https://docs.madara.build/fundamentals/configuration) section.
    > ⚠️ **Warning:** Make sure to change the volume `-v` of your container if you change the `--base-path`.
    > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant section to obtain one.
 
@@ -150,7 +150,7 @@ Madara is a powerful Starknet client written in Rust.
    ```
 
    > ℹ️ **Info:** Now you can head to the [Metrics](https://docs.madara.build/monitoring/grafana)
-   section to deploy a Grafana and Prometheus dashboard.
+   > section to deploy a Grafana and Prometheus dashboard.
 
 ## ⚙️ Configuration
 
@@ -183,7 +183,7 @@ Here are the recommended options for a quick and simple configuration of your Ma
 - **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
 
 > ℹ️ **Info:** For more information regarding synchronization configuration, please refer to the
-[Configuration](https://docs.madara.build/fundamentals/configuration) section.
+> [Configuration](https://docs.madara.build/fundamentals/configuration) section.
 
 ### Advanced Command-Line Options
 
@@ -338,7 +338,7 @@ Toggle details for each namespace to view additional settings:
 </details>
 
 > ℹ️ **Info:** Note that not all parameters may be referenced here.
-Please refer to the `cargo run -- --help` command for the full list of parameters.
+> Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ### Environment Variables
 
@@ -368,7 +368,7 @@ Specify your configuration file on startup with the `-c` option. Here's a basic 
 ```
 
 > 💡 **Tip:** Review settings carefully for optimal performance and refer to Starknet's
-official documentation for detailed configuration guidelines.
+> official documentation for detailed configuration guidelines.
 
 Always test your configuration in a non-production environment before rolling it out to a live node to prevent downtime
 and other potential issues.
