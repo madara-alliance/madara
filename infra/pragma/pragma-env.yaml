@@ -4,7 +4,9 @@ environments:
     repos:
       madara:
         image: apoorvsadana/madara:85fb08e3cfec70a47999c4b2909ff1e4536040ad
+        files:
+          chain_config_url: "https://github.com/astraly-labs/madara/blob/main/infra/pragma/pragma-devnet.yaml"
         config:
           --network: "devnet"
-          --chain-config-path: "./pragma-devnet.yaml"
+          --chain-config-path: "/var/madara/presets/config.yaml"
           --devnet: ""
