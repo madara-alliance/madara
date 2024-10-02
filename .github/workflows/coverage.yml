@@ -42,6 +42,7 @@ jobs:
       - name: Build and run tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
           cargo build --bin madara --profile dev
