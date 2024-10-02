@@ -11,14 +11,14 @@ use super::helpers::internal_error_response;
 pub enum GatewayError {
     #[error(transparent)]
     StarknetError(#[from] StarknetError),
-    #[error("Internal server error")]
-    InternalServerError,
+    #[error("Internal server error: {0}")]
+    InternalServerError(String),
 }
 
 impl From<MadaraStorageError> for GatewayError {
     fn from(e: MadaraStorageError) -> Self {
         log::error!(target: "gateway_errors", "Storage error: {}", e);
-        Self::InternalServerError
+        Self::InternalServerError(e.to_string())
     }
 }
 
@@ -26,7 +26,7 @@ impl From<GatewayError> for Response<Body> {
     fn from(e: GatewayError) -> Response<Body> {
         match e {
             GatewayError::StarknetError(e) => e.into(),
-            GatewayError::InternalServerError => internal_error_response(),
+            GatewayError::InternalServerError(msg) => internal_error_response(&msg),
         }
     }
 }
@@ -41,7 +41,7 @@ impl<T, E: Display> ResultExt<T, E> for Result<T, E> {
             Ok(val) => Ok(val),
             Err(err) => {
                 log::error!(target: "gateway_errors", "{context}: {err:#}");
-                Err(GatewayError::InternalServerError)
+                Err(GatewayError::InternalServerError(err.to_string()))
             }
         }
     }
@@ -57,7 +57,7 @@ impl<T> OptionExt<T> for Option<T> {
             Some(val) => Ok(val),
             None => {
                 log::error!(target: "gateway_errors", "{context}");
-                Err(GatewayError::InternalServerError)
+                Err(GatewayError::InternalServerError(context.to_string()))
             }
         }
     }

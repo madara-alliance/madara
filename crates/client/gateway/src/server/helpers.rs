@@ -21,10 +21,10 @@ pub(crate) fn not_found_response() -> Response<Body> {
         .expect("Failed to build NOT_FOUND response with a valid status and body")
 }
 
-pub(crate) fn internal_error_response() -> Response<Body> {
+pub(crate) fn internal_error_response(msg: &str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::from("Internal Server Error"))
+        .body(Body::from(format!("Internal Server Error: {msg}")))
         .expect("Failed to build INTERNAL_SERVER_ERROR response with a valid status and body")
 }
 
@@ -40,7 +40,7 @@ where
         Ok(body) => body,
         Err(e) => {
             log::error!("Failed to serialize response body: {}", e);
-            return internal_error_response();
+            return internal_error_response(&e.to_string());
         }
     };
 
@@ -49,7 +49,7 @@ where
         Ok(response) => response,
         Err(e) => {
             log::error!("Failed to build response: {}", e);
-            internal_error_response()
+            internal_error_response(&e.to_string())
         }
     }
 }
@@ -65,7 +65,7 @@ pub(crate) fn create_response_with_json_body(status: StatusCode, body: &str) -> 
         Ok(response) => response,
         Err(e) => {
             log::error!("Failed to build response: {}", e);
-            internal_error_response()
+            internal_error_response(&e.to_string())
         }
     }
 }

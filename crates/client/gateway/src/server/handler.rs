@@ -47,11 +47,11 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
 
         let block_provider = ProviderBlock::new(block, status);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
-    } else if let Ok(block) = MadaraPendingBlock::try_from(block) {
+    } else {
+        let block =
+            MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
         let block_provider = ProviderBlockPending::new(block);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
-    } else {
-        Err(GatewayError::InternalServerError)
     }
 }
 

@@ -33,15 +33,19 @@ impl FeederClient {
 
     pub fn starknet_alpha_mainnet() -> Self {
         Self::new(
-            Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
-            Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
+            Url::parse("https://alpha-mainnet.starknet.io/gateway/")
+                .expect("Failed to parse Starknet Alpha Mainnet gateway url. This should not fail in prod."),
+            Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/")
+                .expect("Failed to parse Starknet Alpha Mainnet feeder gateway url. This should not fail in prod."),
         )
     }
 
     pub fn starknet_alpha_sepolia() -> Self {
         Self::new(
-            Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
-            Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            Url::parse("https://alpha-sepolia.starknet.io/gateway/")
+                .expect("Failed to parse Starknet Alpha Sepolia gateway url. This should not fail in prod."),
+            Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/")
+                .expect("Failed to parse Starknet Alpha Sepolia feeder gateway url. This should not fail in prod."),
         )
     }
 }

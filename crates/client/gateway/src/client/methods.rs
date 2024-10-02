@@ -20,7 +20,7 @@ impl FeederClient {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block")
-            .unwrap()
+            .expect("Failed to add URI segment. This should not fail in prod.")
             .with_block_id(block_id);
 
         match block_id {
@@ -34,7 +34,7 @@ impl FeederClient {
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
-            .unwrap()
+            .expect("Failed to add URI segment. This should not fail in prod.")
             .with_block_id(block_id);
 
         match block_id {
@@ -51,7 +51,7 @@ impl FeederClient {
     ) -> Result<ProviderStateUpdateWithBlockPendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
-            .unwrap()
+            .expect("Failed to add URI segment. This should not fail in prod.")
             .with_block_id(block_id)
             .add_param(Cow::from("includeBlock"), "true");
 
@@ -72,7 +72,7 @@ impl FeederClient {
     ) -> Result<ContractClass, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_class_by_hash")
-            .unwrap()
+            .expect("Failed to add URI segment. This should not fail in prod.")
             .with_block_id(block_id)
             .with_class_hash(class_hash);
 
