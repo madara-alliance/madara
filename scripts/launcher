@@ -324,7 +324,7 @@ tput ed
 echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
 # Ask for the database path
-echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/madara)${NC}"
+echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (it will be located inside your docker container) (default: /tmp/madara)${NC}"
 read -p "> " BASE_PATH
 BASE_PATH=${BASE_PATH:-/tmp/madara}
 
@@ -387,7 +387,7 @@ modify_chain_config() {
 
     # Check if the user wants to skip modifications
     if [[ -z "$MODIFY_NUMBERS" ]]; then
-        echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
+    echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
     else
         selected_indices=($MODIFY_NUMBERS)
 
