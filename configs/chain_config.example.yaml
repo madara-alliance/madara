@@ -1,13 +1,12 @@
-# Name of the blockchain network
+# Human readable chain name, for displaying to the console.
 chain_name: "Starknet Mainnet"
 
-# Unique identifier for the blockchain network
 chain_id: "SN_MAIN"
 
-# Contract address of the token used to pay transaction fees on this network (STRK)
+# For starknet, this is the STRK ERC-20 contract on starknet.
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 
-# Contract address of the token used for fees on the parent chain (ETH)
+# For starknet, this is the ETH ERC-20 contract on starknet.
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
 # Paths to JSON files containing blockifier's constants for different versions
@@ -17,22 +16,30 @@ versioned_constants:
   "0.13.1.1": "crates/primitives/chain_config/resources/versioned_constants_13_1_1.json"
   "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
 
-# Address of the core contract on the L1 network that interacts with this L2 network
+# The Starknet core contract address for the L1 watcher.
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 
-# Most recent version supported
+# Most recent Starknet version supported
 latest_protocol_version: "0.13.2"
 
+# /!\ Only used for block production.
 # Target time interval between blocks, in seconds
-block_time: 360
+block_time: "30s"
 
-# How often the pending block is updated, in seconds
-pending_block_update_time: 2
+# /!\ Only used for block production.
+# Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
+pending_block_update_time: "2s"
 
-# Settings for the transaction bouncer
+# /!\ Only used for block production.
+# Block production is handled in batches; each batch will pop this number of transactions from the mempool. This is
+# primarily useful for optimistic parallelization.
+# A value too high may have a performance impact - you will need some testing to find the best value for your network.
+execution_batch_size: 16
+
+# /!\ Only used for block production.
+# The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
 bouncer_config:
   block_max_capacity:
-    # Limits for various built-in operations (set to max uint64 value)
     builtin_count:
       add_mod: 18446744073709551615
       bitwise: 18446744073709551615
@@ -55,8 +62,11 @@ bouncer_config:
     # Maximum size of state differences per block
     state_diff_size: 131072
 
+# /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
 sequencer_address: "0x0"
 
-# Maximum nonce difference allowed for skipping validation of intermediate transactions
+# /!\ Only used for block production.
+# When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
+# This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
 max_nonce_for_validation_skip: 2

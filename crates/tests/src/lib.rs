@@ -201,10 +201,8 @@ impl MadaraCmdBuilder {
     }
 }
 
-#[allow(unused_imports)]
-use mp_utils::tests_common::set_workdir;
 #[rstest]
-fn madara_help_shows(_set_workdir: ()) {
+fn madara_help_shows() {
     let _ = env_logger::builder().is_test(true).try_init();
     let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
@@ -214,18 +212,18 @@ fn madara_help_shows(_set_workdir: ()) {
 
 #[rstest]
 #[tokio::test]
-async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
+async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::{BlockHashAndNumber, Felt};
 
     let _ = env_logger::builder().is_test(true).try_init();
     let mut cmd_builder = MadaraCmdBuilder::new().args([
+        "--full",
         "--network",
         "sepolia",
         "--no-sync-polling",
         "--n-blocks-to-sync",
         "20",
         "--no-l1-sync",
-        "--preset=sepolia",
     ]);
 
     // This is an optional argument to sync faster from the FGW if gateway_key is set
