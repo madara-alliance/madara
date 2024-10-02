@@ -16,8 +16,6 @@ COPY cairo_0 cairo_0
 
 
 # Installing scarb, new since devnet integration
-# Installation steps are taken from the scarb build script
-# https://github.com/software-mansion/scarb/blob/main/install.sh
 ENV SCARB_VERSION="v2.8.2"
 ENV SHELL /bin/bash
 RUN curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh -s -- ${SCARB_VERSION}
