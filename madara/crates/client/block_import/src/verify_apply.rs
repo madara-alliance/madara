@@ -768,49 +768,34 @@ mod verify_apply_tests {
         #[tokio::test]
         async fn test_verify_apply_reorg(setup_test_backend: Arc<MadaraBackend>) {
             let backend = setup_test_backend;
-            let mut header = create_dummy_header();
-            header.block_number = 0;
-            let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
-
-            // TODO: need to call update_tries, but this takes PreValidatedBlock, not MadaraMaybePendingBlocks...
-            // update_tries(&backend, ...)
-
-            // insert a block at height 1 that will be reorged away from
-            let mut header = create_dummy_header();
-            header.parent_block_hash = felt!("0x12345");
-            header.block_number = 1;
-            backend
-                .store_block(
-                    MadaraMaybePendingBlock {
-                        info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
-                            header: header.clone(),
-                            block_hash: felt!("0x1a"),
-                            // get tx hashes from receipts, they have been validated in pre_validate.
-                            tx_hashes: Default::default(),
-                        }),
-                        inner: Default::default(),
-                    },
-                    finalized_state_diff_zero(),
-                    vec![],
-                )
-                .unwrap();
-
-            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
-
-            let mut block = create_dummy_block();
-            block.header.parent_block_hash = Some(felt!("0x12345"));
-            block.unverified_block_number = Some(1);
-            block.unverified_global_state_root = Some(felt!("0x0"));
-            block.unverified_block_hash = Some(felt!("0x1b"));
             let validation = create_validation_context(false);
 
-            let result = verify_apply_inner(&backend, block, validation.clone());
-            assert!(result.is_ok(), "verify_apply_inner failed: {:?}", result.err());
+            let mut block_0 = create_dummy_block();
+            // block_0.unverified_block_hash = Some(felt!("0xf0"));
+            block_0.unverified_block_number = Some(0);
+            block_0.header.parent_block_hash = None;
+            block_0.unverified_global_state_root = Some(felt!("0x0"));
+            let block_0_import = verify_apply_inner(&backend, block_0, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_0 hash: {:x}", block_0_import.block_hash);
+
+            // add a block that will be reorged away from
+            let mut block_1a = create_dummy_block();
+            block_1a.unverified_block_number = Some(1);
+            block_1a.unverified_global_state_root = Some(felt!("0x0"));
+            block_1a.header.parent_block_hash = Some(block_0_import.block_hash);
+            let block_1a_import = verify_apply_inner(&backend, block_1a, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_1a hash: {:x}", block_1a_import.block_hash);
+
+            // reorg from 1a to 1b
+            let mut block_1b = create_dummy_block();
+            block_1b.unverified_block_number = Some(1);
+            block_1b.unverified_global_state_root = Some(felt!("0x0"));
+            block_1b.header.parent_block_hash = Some(block_0_import.block_hash);
+            let block_1b_import = verify_apply_inner(&backend, block_1b, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_1b hash: {:x}", block_1b_import.block_hash);
 
             let mabye_block_1_hash = backend.get_block_hash(&BlockId::Number(1)).unwrap();
-            assert_eq!(mabye_block_1_hash, Some(felt!("0x1b")));
-
+            assert_eq!(mabye_block_1_hash, Some(block_1b_import.block_hash));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
         }
     }
