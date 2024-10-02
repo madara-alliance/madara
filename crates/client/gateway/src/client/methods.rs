@@ -18,11 +18,10 @@ use mp_gateway::{
 
 impl FeederClient {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
-        let request =
-            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_block")
-                .unwrap()
-                .with_block_id(block_id);
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_block")
+            .unwrap()
+            .with_block_id(block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -33,11 +32,10 @@ impl FeederClient {
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
-        let request =
-            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_state_update")
-                .unwrap()
-                .with_block_id(block_id);
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_state_update")
+            .unwrap()
+            .with_block_id(block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -51,12 +49,11 @@ impl FeederClient {
         &self,
         block_id: BlockId,
     ) -> Result<ProviderStateUpdateWithBlockPendingMaybe, SequencerError> {
-        let request =
-            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_state_update")
-                .unwrap()
-                .with_block_id(block_id)
-                .add_param(Cow::from("includeBlock"), "true");
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_state_update")
+            .unwrap()
+            .with_block_id(block_id)
+            .add_param(Cow::from("includeBlock"), "true");
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => Ok(ProviderStateUpdateWithBlockPendingMaybe::Pending(
@@ -73,12 +70,11 @@ impl FeederClient {
         class_hash: Felt,
         block_id: BlockId,
     ) -> Result<ContractClass, SequencerError> {
-        let request =
-            RequestBuilder::new_with_headers(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_class_by_hash")
-                .unwrap()
-                .with_block_id(block_id)
-                .with_class_hash(class_hash);
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_class_by_hash")
+            .unwrap()
+            .with_block_id(block_id)
+            .with_class_hash(class_hash);
 
         let response = request.send_get_raw().await?;
         let status = response.status();

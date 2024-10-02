@@ -20,11 +20,7 @@ pub struct RequestBuilder<'a> {
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(client: &'a Client, base_url: Url) -> Self {
-        Self { client, url: base_url, params: HashMap::new(), headers: HeaderMap::new() }
-    }
-
-    pub fn new_with_headers(client: &'a Client, base_url: Url, headers: HeaderMap) -> Self {
+    pub fn new(client: &'a Client, base_url: Url, headers: HeaderMap) -> Self {
         Self { client, url: base_url, params: HashMap::new(), headers }
     }
 
@@ -33,6 +29,7 @@ impl<'a> RequestBuilder<'a> {
         Ok(self)
     }
 
+    #[allow(dead_code)]
     pub fn add_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
         self.headers.insert(name, value);
         self
@@ -78,6 +75,7 @@ impl<'a> RequestBuilder<'a> {
         self.client.get(self.url).headers(self.headers).query(&self.params).send().await.map_err(Into::into)
     }
 
+    #[allow(dead_code)]
     pub async fn send_post<T>(self) -> Result<T, SequencerError>
     where
         T: DeserializeOwned,

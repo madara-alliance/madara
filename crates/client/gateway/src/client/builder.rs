@@ -7,6 +7,7 @@ use url::Url;
 #[derive(Debug, Clone)]
 pub struct FeederClient {
     pub(crate) client: Client,
+    #[allow(dead_code)]
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
     pub(crate) headers: HeaderMap,
