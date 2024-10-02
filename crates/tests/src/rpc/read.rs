@@ -606,6 +606,13 @@ mod test_rpc_read_calls {
             .get_state_update(BlockId::Number(13))
             .await
             .expect("Failed to get state update for block number 13");
+        let state_update = match state_update {
+            MaybePendingStateUpdate::Update(mut state_update) => {
+                state_update.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+                MaybePendingStateUpdate::Update(state_update)
+            }
+            _ => unreachable!("State update at block 13 should not be pending"),
+        };
 
         let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
             block_hash: felt!("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
