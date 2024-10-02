@@ -114,9 +114,10 @@ Madara is a powerful Starknet client written in Rust.
      --preset test
    ```
 
-   > ℹ️ **Info:** We recommend you to head to the [Configuration](#configuration) section to customize your node parameters.
-
-   > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant section to obtain one.
+   > ℹ️ **Info:** We recommend you to head to the [Configuration](https://docs.madara.build/fundamentals/configuration)
+   section to customize your node parameters.
+   > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant
+   section to obtain one.
 
 ### Run with Docker
 
@@ -136,10 +137,10 @@ Madara is a powerful Starknet client written in Rust.
      --l1-endpoint ${ETHEREUM_API_URL}
    ```
 
-   > ℹ️ **Info:** This is a default configuration for a Full Node on Starknet mainnet. For more information on possible configurations, please visit the [Configuration](#configuration) section.
-
+   > ℹ️ **Info:** This is a default configuration for a Full Node on Starknet mainnet.
+   For more information on possible configurations, please visit the
+   [Configuration](https://docs.madara.build/fundamentals/configuration) section.
    > ⚠️ **Warning:** Make sure to change the volume `-v` of your container if you change the `--base-path`.
-
    > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant section to obtain one.
 
 2. **Check Logs**
@@ -148,7 +149,8 @@ Madara is a powerful Starknet client written in Rust.
    docker logs -f Madara
    ```
 
-   > ℹ️ **Info:** Now you can head to the [Metrics](#metrics) section to deploy a Grafana and Prometheus dashboard.
+   > ℹ️ **Info:** Now you can head to the [Metrics](https://docs.madara.build/monitoring/grafana)
+   section to deploy a Grafana and Prometheus dashboard.
 
 ## ⚙️ Configuration
 
@@ -166,13 +168,11 @@ Below are some essential command-line options and a categorized list of advanced
 
 Here are the recommended options for a quick and simple configuration of your Madara client:
 
-**Full Node**
-
 - **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
 
 - **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/madara`).
 
-- **`--full `**: The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`).
+- **`--full`**: The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`).
 
 - **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
 
@@ -182,9 +182,10 @@ Here are the recommended options for a quick and simple configuration of your Ma
 
 - **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
 
-> ℹ️ **Info:** For more information regarding synchronization configuration, please refer to the [Configuration](#configuration) section.
+> ℹ️ **Info:** For more information regarding synchronization configuration, please refer to the
+[Configuration](https://docs.madara.build/fundamentals/configuration) section.
 
-### Advanced Command-Line Options by Namespace
+### Advanced Command-Line Options
 
 Toggle details for each namespace to view additional settings:
 
@@ -336,7 +337,8 @@ Toggle details for each namespace to view additional settings:
 
 </details>
 
-> ℹ️ **Info:** Note that not all parameters may be referenced here. Please refer to the `cargo run -- --help` command for the full list of parameters.
+> ℹ️ **Info:** Note that not all parameters may be referenced here.
+Please refer to the `cargo run -- --help` command for the full list of parameters.
 
 ### Environment Variables
 
@@ -349,7 +351,8 @@ These variables allow you to adjust the node's configuration without using comma
 
 ### Configuration File
 
-You can use a JSON, TOML, or YAML file to structure your configuration settings. Specify your configuration file on startup with the `-c` option. Here's a basic example in JSON format:
+You can use a JSON, TOML, or YAML file to structure your configuration settings.
+Specify your configuration file on startup with the `-c` option. Here's a basic example in JSON format:
 
 ```json
 {
@@ -364,9 +367,11 @@ You can use a JSON, TOML, or YAML file to structure your configuration settings.
 }
 ```
 
-> 💡 **Tip:** Review settings carefully for optimal performance and refer to Starknet's official documentation for detailed configuration guidelines.
+> 💡 **Tip:** Review settings carefully for optimal performance and refer to Starknet's
+official documentation for detailed configuration guidelines.
 
-Always test your configuration in a non-production environment before rolling it out to a live node to prevent downtime and other potential issues.
+Always test your configuration in a non-production environment before rolling it out to a live node to prevent downtime
+and other potential issues.
 
 > ℹ️ **Info:** For a custom chain configuration, you can refer to the configuration section of chain operator deployments.
 
