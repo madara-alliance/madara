@@ -4,6 +4,7 @@
 
 - feat: `exex_pragma_dispatch` implementation
 - feat: Madara ExExs proof of concept
+- test: add block conversion task test
 - fix(docs): updated readme and fixed launcher
 - fix(ci): added gateway key to fix rate limit on tests
 - feat(cli): launcher script and release workflows

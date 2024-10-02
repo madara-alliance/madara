@@ -5827,6 +5827,7 @@ dependencies = [
  "mp-convert",
  "mp-exex",
  "mp-receipt",
+ "mp-state-update",
  "mp-transactions",
  "mp-utils",
  "num-traits 0.2.19",
