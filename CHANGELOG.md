@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: new crate gateway client & server
+- fix(ci): added gateway key to fix rate limit on tests
 - feat(cli): launcher script and release workflows
 - fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
