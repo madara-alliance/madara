@@ -319,6 +319,7 @@ mod tests {
             validation.clone(),
             Some(1),
             telemetry,
+            None,
         ));
 
         let mock_pre_validated_block = block_importer.pre_validate(mock_block, validation.clone()).await.unwrap();
