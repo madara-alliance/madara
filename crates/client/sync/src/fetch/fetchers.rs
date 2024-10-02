@@ -21,7 +21,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
 
-const MAX_RETRY: u32 = 10;
+const MAX_RETRY: u32 = 15;
 const BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// The configuration of the worker responsible for fetching new blocks and state updates from the
