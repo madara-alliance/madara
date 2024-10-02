@@ -47,6 +47,7 @@ RED=$(tput setaf 1)
 CYAN=$(tput setaf 6)
 NC=$(tput sgr0) # No Color
 BOLD=$(tput bold)
+ITALIC=$(tput sitm)
 UNDERLINE=$(tput smul)
 BLINK=$(tput blink)
 
@@ -289,9 +290,9 @@ fi
 
 # Choose the mode
 echo -e "\n🕹️ ${YELLOW}${BOLD}On which mode would you like to run Madara? (Enter a number)${NC}\n"
-echo "${YELLOW}1. Full Node${NC}"
-echo "${YELLOW}2. Sequencer${NC}"
-echo "${YELLOW}3. Devnet${NC}"
+echo "${YELLOW}1. Full Node ${ITALIC}(Syncronize state from a specific Network)${NC}"
+echo "${YELLOW}2. Sequencer ${ITALIC}(Produce state for a specific Network)${NC}"
+echo "${YELLOW}3. Devnet ${ITALIC}(Launch a test network with pre-funded accounts) ${NC}"
 while true; do
     read -p "> " MODE_CHOICE
     case $MODE_CHOICE in
@@ -324,7 +325,7 @@ tput ed
 echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
 # Ask for the database path
-echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (it will be located inside your docker container) (default: /tmp/madara)${NC}"
+echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database?${NC}${YELLOW} (it will be located inside your docker container) (default: /tmp/madara)${NC}"
 read -p "> " BASE_PATH
 BASE_PATH=${BASE_PATH:-/tmp/madara}
 
@@ -482,8 +483,8 @@ else
     echo -e "\n🌐 ${YELLOW}${BOLD}Please choose a Network or provide a custom Chain config path: (Enter a number)${NC}\n"
     echo "${YELLOW}1. Starknet Mainnet${NC}"
     echo "${YELLOW}2. Starknet Testnet${NC}"
-    echo "${YELLOW}3. Test${NC}"
-    echo "${YELLOW}4. Custom Chain config${NC}"
+    echo "${YELLOW}3. Test Network${NC}"
+    echo "${YELLOW}4. Custom Network${NC}"
     while true; do
         read -p "> " NETWORK_CHOICE
         case $NETWORK_CHOICE in
