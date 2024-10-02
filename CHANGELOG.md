@@ -3,6 +3,10 @@
 ## Next release
 
 - test: add block conversion task test
+- fix(docs): updated readme and fixed launcher
+- fix(ci): added gateway key to fix rate limit on tests
+- feat(cli): launcher script and release workflows
+- fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
 - fix: docker file fixes for devnet
 - fix(block-production): fix bouncer calculation and declared classes
