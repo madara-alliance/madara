@@ -15,8 +15,7 @@ pub enum StarknetTransactionExecutionError {
 
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227
-#[cfg_attr(test, derive(PartialEq, Eq))]
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
     FailedToReceiveTxn,
@@ -134,12 +133,6 @@ impl StarknetRpcApiError {
             })),
             _ => None,
         }
-    }
-}
-
-impl From<mc_exec::Error> for StarknetRpcApiError {
-    fn from(err: mc_exec::Error) -> Self {
-        Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
 

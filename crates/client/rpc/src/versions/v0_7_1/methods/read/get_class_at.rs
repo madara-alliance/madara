@@ -1,8 +1,8 @@
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use mp_rpc::utils::{OptionExt, ResultExt};
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block
 ///

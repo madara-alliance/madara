@@ -1,10 +1,10 @@
 use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::transaction::to_blockifier_transactions;
-use crate::utils::ResultExt;
 use crate::Starknet;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_convert::ToFelt;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
+use mp_rpc::utils::ResultExt;
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::{BlockId, TransactionTraceWithHash};
 use std::sync::Arc;
@@ -20,7 +20,6 @@ pub async fn trace_block_transactions(
     }
 
     let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block.info)?;
-
     let transactions: Vec<_> = block
         .inner
         .transactions

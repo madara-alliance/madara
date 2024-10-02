@@ -5,10 +5,9 @@ use starknet_types_core::felt::Felt;
 
 use mc_exec::ExecutionContext;
 
-use crate::errors::StarknetRpcApiError;
-use crate::errors::StarknetRpcResult;
 use crate::versions::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
 
 /// Call a Function in a Contract Without Creating a Transaction
 ///

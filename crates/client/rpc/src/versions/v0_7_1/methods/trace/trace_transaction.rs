@@ -1,11 +1,11 @@
-use crate::errors::StarknetRpcApiError;
-use crate::errors::StarknetRpcResult;
 use crate::utils::transaction::to_blockifier_transactions;
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 use mc_exec::execution_result_to_tx_trace;
 use mc_exec::ExecutionContext;
 use mp_chain_config::StarknetVersion;
+use mp_rpc::errors::StarknetRpcApiError;
+use mp_rpc::errors::StarknetRpcResult;
+use mp_rpc::utils::{OptionExt, ResultExt};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::TransactionTraceWithHash;
 use starknet_types_core::felt::Felt;

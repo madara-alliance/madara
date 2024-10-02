@@ -7,6 +7,7 @@ use blockifier::{
     },
 };
 use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
+use mp_rpc::errors::StarknetRpcApiError;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
@@ -37,6 +38,27 @@ pub enum Error {
     Storage(#[from] MadaraStorageError),
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
+}
+
+impl From<Error> for StarknetRpcApiError {
+    fn from(val: Error) -> Self {
+        match val {
+            Error::UnsupportedProtocolVersion(_) => {
+                StarknetRpcApiError::ErrUnexpectedError { data: "Unsupported protocol version".to_string() }
+            }
+            Error::Reexecution(_) => StarknetRpcApiError::TxnExecutionError {
+                tx_index: 0,
+                error: "Transaction reexecution error".to_string(),
+            },
+            Error::FeeEstimation(_) => StarknetRpcApiError::InsufficientMaxFee,
+            Error::MessageFeeEstimation(_) => StarknetRpcApiError::InsufficientMaxFee,
+            Error::CallContract(_) => StarknetRpcApiError::ContractError,
+            Error::Storage(_) => StarknetRpcApiError::ErrUnexpectedError { data: "Storage error".to_string() },
+            Error::InvalidSequencerAddress(_) => {
+                StarknetRpcApiError::ErrUnexpectedError { data: "Invalid sequencer address".to_string() }
+            }
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]

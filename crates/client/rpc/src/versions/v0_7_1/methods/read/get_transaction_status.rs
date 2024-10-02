@@ -2,9 +2,9 @@ use mp_block::MadaraMaybePendingBlockInfo;
 use mp_receipt::ExecutionResult;
 use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
 use crate::Starknet;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
+use mp_rpc::utils::ResultExt;
 
 /// Gets the Transaction Status, Including Mempool Status and Execution Details
 ///

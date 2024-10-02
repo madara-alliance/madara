@@ -1,9 +1,9 @@
 use starknet_core::types::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
 use crate::Starknet;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
+use mp_rpc::utils::ResultExt;
 
 /// Get the value of the storage at the given address and key.
 ///

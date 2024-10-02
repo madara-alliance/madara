@@ -4,26 +4,17 @@ use std::{
 };
 
 use futures::Stream;
+use mp_block::MadaraPendingBlock;
 use starknet_api::block::BlockNumber;
 use tokio::sync::mpsc::Receiver;
 
 /// Notifications sent to an `ExEx`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ExExNotification {
-    /// Chain got committed without a reorg, and only the new chain is returned.
-    BlockClosed {
-        /// The new chain after commit.
-        new: BlockNumber,
-    },
-}
-
-impl ExExNotification {
-    /// Returns the committed chain.
-    pub fn closed_block(&self) -> BlockNumber {
-        match self {
-            Self::BlockClosed { new } => *new,
-        }
-    }
+    /// A new block got produced by the Block Production task.
+    BlockProduced { block: Box<MadaraPendingBlock>, block_number: BlockNumber },
+    /// A new block got synced by the full node.
+    BlockSynced { block_number: BlockNumber },
 }
 
 /// A stream of [`ExExNotification`]s. The stream will emit notifications for all blocks.

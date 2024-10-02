@@ -1,7 +1,6 @@
 use mp_block::MadaraMaybePendingBlockInfo;
+use mp_rpc::{errors::StarknetRpcResult, Starknet};
 use starknet_core::types::BlockId;
-
-use crate::{errors::StarknetRpcResult, Starknet};
 
 /// Get the Number of Transactions in a Given Block
 ///
@@ -32,10 +31,8 @@ pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        errors::StarknetRpcApiError,
-        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
-    };
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use mp_rpc::errors::StarknetRpcApiError;
     use rstest::rstest;
     use starknet_core::types::{BlockTag, Felt};
 

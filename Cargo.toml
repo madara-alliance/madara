@@ -20,6 +20,7 @@ members = [
   "crates/primitives/chain_config",
   "crates/primitives/utils",
   "crates/primitives/exex",
+  "crates/primitives/rpc_provider",
   "crates/proc-macros",
   "crates/tests",
 ]
@@ -45,6 +46,7 @@ default-members = [
   "crates/primitives/chain_config",
   "crates/primitives/utils",
   "crates/primitives/exex",
+  "crates/primitives/rpc_provider",
   "crates/proc-macros",
   "crates/tests",
 ]
@@ -95,6 +97,7 @@ mp-state-update = { path = "crates/primitives/state_update", default-features = 
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 mp-exex = { path = "crates/primitives/exex", default-features = false }
+mp-rpc = { path = "crates/primitives/rpc_provider", default-features = false }
 
 # Madara client
 mc-telemetry = { path = "crates/client/telemetry" }

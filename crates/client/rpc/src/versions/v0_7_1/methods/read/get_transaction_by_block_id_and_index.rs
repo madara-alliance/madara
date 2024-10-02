@@ -1,7 +1,7 @@
 use starknet_core::types::{BlockId, Transaction};
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
 
 /// Get the details of a transaction by a given block id and index.
 ///

@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
+use mp_rpc::Starknet;
 use tokio::sync::mpsc::UnboundedSender;
-
-use mp_chain_config::ChainConfig;
 
 use crate::{notification::ExExNotifications, ExExEvent};
 
 /// Captures the context that an `ExEx` has access to.
 pub struct ExExContext {
-    /// The chain config
-    pub chain_config: Arc<ChainConfig>,
+    /// Starknet RPC
+    pub starknet: Arc<Starknet>,
 
     /// Channel used to send [`ExExEvent`]s to the rest of the node.
     ///

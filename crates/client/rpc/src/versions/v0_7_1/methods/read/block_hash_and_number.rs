@@ -1,8 +1,8 @@
 use mp_block::{BlockId, BlockTag};
+use mp_rpc::{errors::StarknetRpcResult, Starknet};
 use starknet_core::types::BlockHashAndNumber;
 
-use crate::errors::StarknetRpcResult;
-use crate::{utils::OptionExt, Starknet};
+use mp_rpc::utils::OptionExt;
 
 /// Get the Most Recent Accepted Block Hash and Number
 ///
@@ -26,12 +26,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
+    use crate::test_utils::rpc_test_setup;
     use mc_db::MadaraBackend;
     use mp_block::{
         header::PendingHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
         MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
     };
+    use mp_rpc::errors::StarknetRpcApiError;
     use mp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_core::types::Felt;

@@ -1,0 +1,33 @@
+[package]
+name = "mp-rpc"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+# Starknet
+starknet-core.workspace = true
+starknet_api.workspace = true
+
+# Madara
+mc-db.workspace = true
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-convert.workspace = true
+
+# Other
+anyhow = { workspace = true }
+jsonrpsee = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+primitive-types.workspace = true
+reqwest = { workspace = true }
+rstest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }

@@ -417,7 +417,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // This is compute heavy as it does the commitments and trie computations.
         let import_result = close_block(
             &self.importer,
-            block_to_close,
+            block_to_close.clone(),
             &new_state_diff,
             self.backend.chain_config().chain_id.clone(),
             block_n,
@@ -432,7 +432,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = 0;
 
         log::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, start_time.elapsed());
-        let _ = self.notify_exexs(block_n).context("Sending notification to ExExs");
+        let _ = self.notify_exexs(block_to_close, block_n).context("Sending notification to ExExs");
 
         Ok(())
     }
@@ -487,12 +487,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     /// Sends a notification to the ExExs that a block has been closed.
-    fn notify_exexs(&self, block_n: u64) -> anyhow::Result<()> {
+    fn notify_exexs(&self, block_produced: MadaraPendingBlock, block_number: u64) -> anyhow::Result<()> {
         let Some(manager) = self.exex_manager.as_ref() else {
             return Ok(());
         };
-
-        let notification = ExExNotification::BlockClosed { new: BlockNumber(block_n) };
+        let notification = ExExNotification::BlockProduced {
+            block: Box::new(block_produced),
+            block_number: BlockNumber(block_number),
+        };
         manager.send(notification).map_err(|e| anyhow::anyhow!("Could not send ExEx notification: {}", e))
     }
 }

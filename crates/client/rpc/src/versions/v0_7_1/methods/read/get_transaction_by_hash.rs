@@ -1,8 +1,8 @@
 use starknet_core::types::{Felt, Transaction};
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
+use mp_rpc::utils::{OptionExt, ResultExt};
 
 /// Get the details and status of a submitted transaction.
 ///

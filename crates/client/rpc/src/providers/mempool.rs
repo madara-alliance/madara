@@ -1,8 +1,8 @@
-use super::AddTransactionProvider;
-use crate::{errors::StarknetRpcApiError, utils::display_internal_server_error};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_mempool::Mempool;
 use mc_mempool::MempoolProvider;
+use mp_rpc::errors::StarknetRpcApiError;
+use mp_rpc::AddTransactionProvider;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
@@ -17,27 +17,6 @@ pub struct MempoolAddTxProvider {
 impl MempoolAddTxProvider {
     pub fn new(mempool: Arc<Mempool>) -> Self {
         Self { mempool }
-    }
-}
-
-impl From<mc_mempool::Error> for StarknetRpcApiError {
-    fn from(value: mc_mempool::Error) -> Self {
-        match value {
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
-                StarknetRpcApiError::DuplicateTxn
-            }
-            mc_mempool::Error::Validation(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },
-            mc_mempool::Error::InnerMempool(err) => {
-                StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") }
-            }
-            mc_mempool::Error::Exec(err) => {
-                StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") }
-            }
-            err => {
-                display_internal_server_error(format!("{err:#}"));
-                StarknetRpcApiError::InternalServerError
-            }
-        }
     }
 }
 

@@ -2,10 +2,11 @@ use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
 use mp_block::BlockId;
 use mp_convert::ToFelt;
+use mp_rpc::{
+    errors::{StarknetRpcApiError, StarknetRpcResult},
+    Starknet,
+};
 use starknet_api::transaction::{Transaction, TransactionHash};
-
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::Starknet;
 
 /// Convert an starknet-api Transaction to a blockifier Transaction
 ///

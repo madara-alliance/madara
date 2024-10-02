@@ -1,8 +1,8 @@
+use mp_rpc::errors::{StarknetRpcApiError, StarknetRpcResult};
 use starknet_core::types::{BlockId, ContractClass, Felt};
 
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
 use crate::Starknet;
+use mp_rpc::utils::ResultExt;
 
 pub fn get_class(starknet: &Starknet, block_id: BlockId, class_hash: Felt) -> StarknetRpcResult<ContractClass> {
     let class_data = starknet

@@ -1,7 +1,7 @@
 use starknet_core::types::{BlockId, MaybePendingBlockWithTxHashes};
 
-use crate::errors::StarknetRpcResult;
 use mp_block::MadaraMaybePendingBlockInfo;
+use mp_rpc::errors::StarknetRpcResult;
 use starknet_core::types::{BlockStatus, BlockWithTxHashes, PendingBlockWithTxHashes};
 
 use crate::Starknet;
@@ -67,10 +67,8 @@ pub fn get_block_with_tx_hashes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        errors::StarknetRpcApiError,
-        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
-    };
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use mp_rpc::errors::StarknetRpcApiError;
     use rstest::rstest;
     use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
 

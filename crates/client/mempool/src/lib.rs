@@ -14,6 +14,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
+use mp_rpc::errors::StarknetRpcApiError;
 use mp_transactions::broadcasted_to_blockifier;
 use mp_transactions::BroadcastedToBlockifierError;
 use starknet_api::core::{ContractAddress, Nonce};
@@ -57,6 +58,23 @@ pub enum Error {
 impl Error {
     pub fn is_internal(&self) -> bool {
         matches!(self, Error::StorageError(_) | Error::BroadcastedToBlockifier(_))
+    }
+}
+
+impl From<Error> for StarknetRpcApiError {
+    fn from(val: Error) -> Self {
+        match val {
+            Error::InnerMempool(TxInsersionError::NonceConflict) => StarknetRpcApiError::DuplicateTxn,
+            Error::Validation(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },
+            Error::InnerMempool(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },
+            Error::Exec(err) => StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") },
+            Error::StorageError(err) => {
+                StarknetRpcApiError::ErrUnexpectedError { data: format!("Storage error: {err:#}") }
+            }
+            Error::BroadcastedToBlockifier(err) => {
+                StarknetRpcApiError::ErrUnexpectedError { data: format!("Preprocessing transaction: {err:#}") }
+            }
+        }
     }
 }
 

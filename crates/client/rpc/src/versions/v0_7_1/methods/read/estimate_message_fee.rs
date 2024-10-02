@@ -7,11 +7,11 @@ use starknet_types_core::felt::Felt;
 use mc_exec::ExecutionContext;
 use mp_transactions::L1HandlerTransaction;
 
-use crate::errors::StarknetRpcApiError;
-use crate::errors::StarknetRpcResult;
-use crate::utils::OptionExt;
 use crate::versions::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
+use mp_rpc::errors::StarknetRpcApiError;
+use mp_rpc::errors::StarknetRpcResult;
+use mp_rpc::utils::OptionExt;
 
 /// Estimate the L2 fee of a message sent on L1
 ///

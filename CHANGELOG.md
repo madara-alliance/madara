@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: `exex_pragma_dispatch` implementation
 - feat: Madara ExExs proof of concept
 - fix(docs): updated readme and fixed launcher
 - fix(ci): added gateway key to fix rate limit on tests

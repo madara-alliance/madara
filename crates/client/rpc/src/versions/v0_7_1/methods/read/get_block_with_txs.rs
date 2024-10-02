@@ -71,10 +71,8 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        errors::StarknetRpcApiError,
-        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
-    };
+    use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use mp_rpc::errors::StarknetRpcApiError;
     use rstest::rstest;
     use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
 

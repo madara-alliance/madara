@@ -4,8 +4,8 @@ use starknet_core::types::{
     TransactionFinalityStatus, TransactionWithReceipt,
 };
 
-use crate::errors::StarknetRpcResult;
 use crate::Starknet;
+use mp_rpc::errors::StarknetRpcResult;
 
 pub fn get_block_with_receipts(
     starknet: &Starknet,
@@ -68,16 +68,14 @@ pub fn get_block_with_receipts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        errors::StarknetRpcApiError,
-        test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
-    };
+    use crate::test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters};
     use mc_db::MadaraBackend;
     use mp_block::{header::GasPrices, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock};
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
+    use mp_rpc::errors::StarknetRpcApiError;
     use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;

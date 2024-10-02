@@ -1,9 +1,9 @@
 use mp_block::{BlockId, BlockTag};
 use starknet_core::types::{SyncStatus, SyncStatusType};
 
-use crate::errors::StarknetRpcResult;
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use mp_rpc::errors::StarknetRpcResult;
+use mp_rpc::utils::{OptionExt, ResultExt};
 
 /// Returns an object about the sync status, or false if the node is not synching
 ///

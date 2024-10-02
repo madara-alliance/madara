@@ -50,7 +50,7 @@ fn notify_exexs(exex_manager: &Option<ExExManagerHandle>, block_n: u64) -> anyho
         return Ok(());
     };
 
-    let notification = ExExNotification::BlockClosed { new: BlockNumber(block_n) };
+    let notification = ExExNotification::BlockSynced { block_number: BlockNumber(block_n) };
     manager.send(notification).map_err(|e| anyhow::anyhow!("Could not send ExEx notification: {}", e))
 }
 
