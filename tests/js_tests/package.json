@@ -1,0 +1,20 @@
+{
+  "name": "js_tests",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "tsc --noEmit && jest --config=jest.config.cjs --runInBand"
+  },
+  "author": "",
+  "license": "MIT",
+  "description": "starknet js test for the madara",
+  "dependencies": {
+    "starknet": "^6.11.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.13",
+    "@types/node": "^22.7.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  }
+}
