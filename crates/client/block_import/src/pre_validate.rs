@@ -359,7 +359,8 @@ fn compute_merkle_root<H: StarkHash + Send + Sync>(values: &[Felt]) -> Felt {
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
     let mut bonsai_storage =
-        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config, /* max tree height */ 64)
+            .expect("Failed to create bonsai storage");
 
     values.iter().enumerate().for_each(|(id, value)| {
         let key = BitVec::from_vec(id.to_be_bytes().to_vec());

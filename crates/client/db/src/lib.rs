@@ -14,6 +14,8 @@ use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
+use tokio::sync::{mpsc, oneshot};
 
 pub mod block_db;
 mod error;
@@ -31,9 +33,9 @@ pub mod l1_db;
 pub mod storage_updates;
 pub mod tests;
 
-pub use error::{MadaraStorageError, TrieType};
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use tokio::sync::{mpsc, oneshot};
+pub use bonsai_trie::{MultiProof, ProofNode};
+pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
+pub type GlobalTrie<'a, H> = BonsaiStorage<BasicId, BonsaiDb<'a>, H>;
 
 pub type DB = DBWithThreadMode<MultiThreaded>;
 
@@ -140,9 +142,6 @@ pub enum Column {
     // contract_address history block_number => nonce
     ContractToNonces,
 
-    // Class hash => compiled class hash
-    ContractClassHashes,
-
     // Pending columns for contract db
     PendingContractToClassHashes,
     PendingContractToNonces,
@@ -151,8 +150,6 @@ pub enum Column {
     // History of contract key => values
     // (contract_address, storage_key) history block_number => felt
     ContractStorage,
-    /// Block number to state diff
-    BlockStateDiff,
 
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
@@ -202,9 +199,7 @@ impl Column {
             PendingClassCompiled,
             ContractToClassHashes,
             ContractToNonces,
-            ContractClassHashes,
             ContractStorage,
-            BlockStateDiff,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -242,14 +237,12 @@ impl Column {
             BonsaiClassesTrie => "bonsai_classes_trie",
             BonsaiClassesFlat => "bonsai_classes_flat",
             BonsaiClassesLog => "bonsai_classes_log",
-            BlockStateDiff => "block_state_diff",
             ClassInfo => "class_info",
             ClassCompiled => "class_compiled",
             PendingClassInfo => "pending_class_info",
             PendingClassCompiled => "pending_class_compiled",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
-            ContractClassHashes => "contract_class_hashes",
             ContractStorage => "contract_storage",
             L1Messaging => "l1_messaging",
             L1MessagingNonce => "l1_messaging_nonce",
@@ -436,6 +429,7 @@ impl MadaraBackend {
             _temp_dir: None,
         });
         backend.check_configuration()?;
+        backend.update_metrics();
         Ok(backend)
     }
 
@@ -485,6 +479,8 @@ impl MadaraBackend {
                 max_saved_snapshots: Some(0),
                 snapshot_interval: u64::MAX,
             },
+            // Every global tree has keys of 251 bits.
+            251,
         )
         // TODO(bonsai-trie): change upstream to reflect that.
         .expect("New bonsai storage can never error");
@@ -492,7 +488,7 @@ impl MadaraBackend {
         bonsai
     }
 
-    pub fn contract_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiContractsFlat,
             trie: Column::BonsaiContractsTrie,
@@ -500,7 +496,7 @@ impl MadaraBackend {
         })
     }
 
-    pub fn contract_storage_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    pub fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiContractsStorageFlat,
             trie: Column::BonsaiContractsStorageTrie,
@@ -508,7 +504,7 @@ impl MadaraBackend {
         })
     }
 
-    pub fn class_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
+    pub fn class_trie(&self) -> GlobalTrie<Poseidon> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiClassesFlat,
             trie: Column::BonsaiClassesTrie,

@@ -29,6 +29,9 @@ impl DbMetrics {
             self.column_sizes.with_label_values(&[column.rocksdb_name()]).set(column_size as i64);
         }
 
+        let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
+        self.db_size.set(size_gb);
+
         storage_size
     }
 }

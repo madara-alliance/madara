@@ -90,29 +90,22 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 pub async fn fetch_pending_block_and_updates(
     chain_id: &ChainId,
     provider: &SequencerGatewayProvider,
-) -> Result<UnverifiedPendingFullBlock, FetchError> {
+) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
-    let (state_update, block) = retry(
-        || async {
-            let (state_update, block) = fetch_state_update_with_block(provider, block_id).await?;
-            if let Some(block_hash) = block.block_hash {
-                // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
-                log::debug!(
-                    "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
-                    block.block_number,
-                    block_hash,
-                );
-                Err(ProviderError::StarknetError(StarknetError::BlockNotFound))
-            } else {
-                Ok((state_update, block))
-            }
-        },
-        MAX_RETRY,
-        BASE_DELAY,
-    )
-    .await?;
+    let (state_update, block) =
+        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
+
+    if let Some(block_hash) = block.block_hash {
+        // When the FGW does not have a pending block, it will return the latest block. Ignore it in this case.
+        log::debug!(
+            "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
+            block.block_number,
+            block_hash,
+        );
+        return Ok(None)
+    }
 
     let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
 
@@ -120,7 +113,7 @@ pub async fn fetch_pending_block_and_updates(
 
     let converted = convert_sequencer_pending_block(block, state_update, class_update)
         .context("Parsing the FGW pending block format")?;
-    Ok(converted)
+    Ok(Some(converted))
 }
 
 pub async fn fetch_block_and_updates(
@@ -387,7 +380,7 @@ mod test_l2_fetchers {
 
         let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
-        let pending_block = result.expect("Failed to fetch pending block");
+        let pending_block = result.expect("Failed to fetch pending block").expect("No pending block");
 
         assert!(
             matches!(pending_block, UnverifiedPendingFullBlock { .. }),
