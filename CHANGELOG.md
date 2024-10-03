@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: gas fee flag added
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
 - test: add block conversion task test
