@@ -1,7 +1,7 @@
 use crate::{
-    DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt,
-    Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, L1HandlerTransactionReceipt,
-    MsgToL1, PriceUnit, TransactionReceipt,
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, Event, ExecutionResources,
+    ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
+    TransactionReceipt,
 };
 
 impl From<starknet_core::types::TransactionReceipt> for TransactionReceipt {
@@ -297,15 +297,15 @@ impl From<ExecutionResources> for starknet_core::types::ExecutionResources {
     }
 }
 
-impl From<starknet_core::types::DataAvailabilityResources> for DataAvailabilityResources {
+impl From<starknet_core::types::DataAvailabilityResources> for L1Gas {
     fn from(resources: starknet_core::types::DataAvailabilityResources) -> Self {
-        Self { l1_gas: resources.l1_gas, l1_data_gas: resources.l1_data_gas }
+        Self { l1_gas: resources.l1_gas.into(), l1_data_gas: resources.l1_data_gas.into() }
     }
 }
 
-impl From<DataAvailabilityResources> for starknet_core::types::DataAvailabilityResources {
-    fn from(resources: DataAvailabilityResources) -> Self {
-        Self { l1_gas: resources.l1_gas, l1_data_gas: resources.l1_data_gas }
+impl From<L1Gas> for starknet_core::types::DataAvailabilityResources {
+    fn from(resources: L1Gas) -> Self {
+        Self { l1_gas: resources.l1_gas as u64, l1_data_gas: resources.l1_data_gas as u64 }
     }
 }
 

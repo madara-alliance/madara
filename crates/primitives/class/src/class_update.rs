@@ -18,12 +18,12 @@ impl ClassUpdate {
 #[derive(Clone, Debug)]
 pub struct LegacyClassUpdate {
     pub class_hash: Felt,
-    pub contract_class: starknet_core::types::CompressedLegacyContractClass,
+    pub contract_class: crate::CompressedLegacyContractClass,
 }
 
 #[derive(Clone, Debug)]
 pub struct SierraClassUpdate {
     pub class_hash: Felt,
-    pub contract_class: starknet_core::types::FlattenedSierraClass,
+    pub contract_class: crate::FlattenedSierraClass,
     pub compiled_class_hash: Felt,
 }

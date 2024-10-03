@@ -70,7 +70,7 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn data_availability(&self) -> &DataAvailabilityResources {
+    pub fn data_availability(&self) -> &L1Gas {
         match self {
             TransactionReceipt::Invoke(receipt) => &receipt.execution_resources.data_availability,
             TransactionReceipt::L1Handler(receipt) => &receipt.execution_resources.data_availability,
@@ -80,7 +80,7 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn total_gas_consumed(&self) -> &DataAvailabilityResources {
+    pub fn total_gas_consumed(&self) -> &L1Gas {
         match self {
             TransactionReceipt::Invoke(receipt) => &receipt.execution_resources.total_gas_consumed,
             TransactionReceipt::L1Handler(receipt) => &receipt.execution_resources.total_gas_consumed,
@@ -117,6 +117,24 @@ impl TransactionReceipt {
             TransactionReceipt::Declare(receipt) => receipt.execution_result.clone(),
             TransactionReceipt::Deploy(receipt) => receipt.execution_result.clone(),
             TransactionReceipt::DeployAccount(receipt) => receipt.execution_result.clone(),
+        }
+    }
+
+    pub fn execution_resources(&self) -> &ExecutionResources {
+        match self {
+            TransactionReceipt::Invoke(receipt) => &receipt.execution_resources,
+            TransactionReceipt::L1Handler(receipt) => &receipt.execution_resources,
+            TransactionReceipt::Declare(receipt) => &receipt.execution_resources,
+            TransactionReceipt::Deploy(receipt) => &receipt.execution_resources,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.execution_resources,
+        }
+    }
+
+    pub fn contract_address(&self) -> Option<Felt> {
+        match self {
+            TransactionReceipt::Deploy(receipt) => Some(receipt.contract_address),
+            TransactionReceipt::DeployAccount(receipt) => Some(receipt.contract_address),
+            _ => None,
         }
     }
 
@@ -217,6 +235,7 @@ pub enum PriceUnit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MsgToL1 {
     pub from_address: Felt,
     pub to_address: Felt,
@@ -224,6 +243,7 @@ pub struct MsgToL1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Event {
     pub from_address: Felt,
     pub keys: Vec<Felt>,
@@ -264,14 +284,15 @@ pub struct ExecutionResources {
     pub bitwise_builtin_applications: Option<u64>,
     pub keccak_builtin_applications: Option<u64>,
     pub segment_arena_builtin: Option<u64>,
-    pub data_availability: DataAvailabilityResources,
-    pub total_gas_consumed: DataAvailabilityResources,
+    pub data_availability: L1Gas,
+    pub total_gas_consumed: L1Gas,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct DataAvailabilityResources {
-    pub l1_gas: u64,
-    pub l1_data_gas: u64,
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct L1Gas {
+    pub l1_gas: u128,
+    pub l1_data_gas: u128,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -318,8 +339,8 @@ mod tests {
                 bitwise_builtin_applications: Some(16),
                 keccak_builtin_applications: Some(17),
                 segment_arena_builtin: Some(18),
-                data_availability: DataAvailabilityResources { l1_gas: 19, l1_data_gas: 20 },
-                total_gas_consumed: DataAvailabilityResources { l1_gas: 21, l1_data_gas: 22 },
+                data_availability: L1Gas { l1_gas: 19, l1_data_gas: 20 },
+                total_gas_consumed: L1Gas { l1_gas: 21, l1_data_gas: 22 },
             },
             execution_result: ExecutionResult::Succeeded,
         });
@@ -453,7 +474,7 @@ mod tests {
             bitwise_builtin_applications: Some(8),
             keccak_builtin_applications: Some(9),
             segment_arena_builtin: Some(10),
-            data_availability: DataAvailabilityResources { l1_gas: 11, l1_data_gas: 12 },
+            data_availability: L1Gas { l1_gas: 11, l1_data_gas: 12 },
             // TODO: Change with non-default values when starknet-rs supports it.
             total_gas_consumed: Default::default(),
         }
