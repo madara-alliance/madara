@@ -14,7 +14,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
-use mp_transactions::broadcasted_to_blockifier;
+use mp_transactions::{broadcasted_to_blockifier, BroadcastedDeclareTransactionV0, broadcasted_to_blockifier_v0};
 use mp_transactions::BroadcastedToBlockifierError;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
@@ -63,6 +63,7 @@ impl Error {
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error>;
+    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error>;
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error>;
     fn accept_deploy_account_tx(
         &self,
@@ -177,6 +178,22 @@ impl MempoolProvider for Mempool {
         )?;
 
         let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
+        self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
+        log::info!("Checkpoint 3: accept_declare_v0_tx: {:?}", tx);
+        let (tx, classes) = broadcasted_to_blockifier_v0(
+            tx,
+            self.chain_id(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
+
+        let res = DeclareTransactionResult {
+            transaction_hash: transaction_hash(&tx),
+            class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
+        };
         self.accept_tx(tx, classes)?;
         Ok(res)
     }

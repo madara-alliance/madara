@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use starknet_types_core::felt::Felt;
 
+
 pub mod class_hash;
 pub mod class_update;
 pub mod compile;
@@ -178,6 +179,7 @@ pub struct LegacyContractEntryPoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
 pub enum LegacyContractAbiEntry {
     Function(LegacyFunctionAbiEntry),
     Event(LegacyEventAbiEntry),
@@ -190,6 +192,7 @@ pub struct LegacyFunctionAbiEntry {
     pub name: String,
     pub inputs: Vec<LegacyTypedParameter>,
     pub outputs: Vec<LegacyTypedParameter>,
+    #[serde(rename = "stateMutability")]
     pub state_mutability: Option<FunctionStateMutability>,
 }
 
@@ -224,23 +227,29 @@ pub struct LegacyTypedParameter {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LegacyFunctionAbiType {
+    #[serde(rename = "function")]
     Function,
+    #[serde(rename = "l1_handler")]
     L1Handler,
+    #[serde(rename = "constructor")]
     Constructor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LegacyEventAbiType {
+    #[serde(rename = "event")]
     Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LegacyStructAbiType {
+    #[serde(rename = "struct")]
     Struct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FunctionStateMutability {
+    #[serde(rename = "view")]
     View,
 }
 

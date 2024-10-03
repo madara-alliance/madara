@@ -8,6 +8,7 @@ use starknet_core::types::{
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
 use std::sync::Arc;
+use mp_transactions::BroadcastedDeclareTransactionV0;
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.
 pub struct MempoolAddTxProvider {
@@ -43,6 +44,11 @@ impl From<mc_mempool::Error> for StarknetRpcApiError {
 
 #[async_trait]
 impl AddTransactionProvider for MempoolAddTxProvider {
+
+    async fn add_declare_v0_transaction(&self, declare_v0_transaction: BroadcastedDeclareTransactionV0) -> RpcResult<DeclareTransactionResult> {
+        log::info!("Checkpoint 2: add_declare_v0_transaction: {:?}", declare_v0_transaction);
+        Ok(self.mempool.accept_declare_v0_tx(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
+    }
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTransaction,

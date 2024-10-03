@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use mp_convert::ToFelt;
 use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
@@ -12,7 +13,8 @@ mod to_starknet_core;
 
 pub mod compute_hash;
 pub mod utils;
-pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
+pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError, broadcasted_to_blockifier_v0};
+use mp_class::CompressedLegacyContractClass;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -36,6 +38,20 @@ impl TransactionWithHash {
     pub fn new(transaction: Transaction, hash: Felt) -> Self {
         Self { transaction, hash }
     }
+}
+
+#[derive(Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BroadcastedDeclareTransactionV0 {
+    /// The address of the account contract sending the declaration transaction
+    pub sender_address: Felt,
+    /// The maximal fee that can be charged for including the transaction
+    pub max_fee: Felt,
+    /// Signature
+    pub signature: Vec<Felt>,
+    /// The class to be declared
+    pub contract_class: Arc<CompressedLegacyContractClass>,
+    /// If set to `true`, uses a query-only transaction version that's invalid for execution
+    pub is_query: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

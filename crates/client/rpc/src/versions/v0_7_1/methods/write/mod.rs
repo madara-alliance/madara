@@ -3,11 +3,28 @@ use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
-
+use mp_transactions::BroadcastedDeclareTransactionV0;
 use crate::{versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet};
 
 #[async_trait]
 impl StarknetWriteRpcApiV0_7_1Server for Starknet {
+    /// Submit a new declare transaction to be added to the chain
+    ///
+    /// # Arguments
+    ///
+    /// * `declare_v0_transaction` - the declare v0 transaction to be added to the chain
+    ///
+    /// # Returns
+    ///
+    /// * `declare_transaction_result` - the result of the declare transaction
+    async fn add_declare_v0_transaction(
+        &self,
+        declare_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult> {
+        log::info!("add_declare_v0_transaction: {:?}", declare_transaction);
+        Ok(self.add_transaction_provider.add_declare_v0_transaction(declare_transaction).await?)
+    }
+
     /// Submit a new declare transaction to be added to the chain
     ///
     /// # Arguments

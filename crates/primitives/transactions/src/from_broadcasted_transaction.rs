@@ -1,11 +1,7 @@
 use mp_chain_config::StarknetVersion;
 use starknet_types_core::felt::Felt;
 
-use crate::{
-    DeclareTransaction, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
-    DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransaction, InvokeTransactionV1,
-    InvokeTransactionV3, Transaction, TransactionWithHash,
-};
+use crate::{BroadcastedDeclareTransactionV0, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransaction, InvokeTransactionV1, InvokeTransactionV3, Transaction, TransactionWithHash};
 
 // class_hash is required for DeclareTransaction
 impl TransactionWithHash {
@@ -23,6 +19,18 @@ impl TransactionWithHash {
             }
             starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
+        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
+        Self { hash, transaction }
+    }
+
+    pub fn from_broadcasted_v0(
+        tx: BroadcastedDeclareTransactionV0,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+        class_hash: Option<Felt>,
+    ) -> Self {
+        let is_query = tx.is_query;
+        let transaction: Transaction = Transaction::Declare(DeclareTransaction::from_broadcasted_v0(tx, class_hash.unwrap()));
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
@@ -78,6 +86,21 @@ impl DeclareTransaction {
             starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => {
                 DeclareTransaction::V3(DeclareTransactionV3::from_broadcasted(tx, class_hash))
             }
+        }
+    }
+
+    fn from_broadcasted_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+        DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted(tx, class_hash))
+    }
+}
+
+impl DeclareTransactionV0 {
+    fn from_broadcasted(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            max_fee: tx.max_fee,
+            signature: tx.signature,
+            class_hash,
         }
     }
 }
