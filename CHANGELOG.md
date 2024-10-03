@@ -2,6 +2,7 @@
 
 ## Next release
 
+- test: Starknet-js basic tests added
 - test: add block conversion task test
 - fix(docs): updated readme and fixed launcher
 - fix(ci): added gateway key to fix rate limit on tests
