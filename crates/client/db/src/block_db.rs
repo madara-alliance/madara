@@ -264,9 +264,9 @@ impl MadaraBackend {
 
     pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {
         match id {
-            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(DbBlockId::BlockN)),
-            BlockId::Number(block_n) => Ok(Some(DbBlockId::BlockN(*block_n))),
-            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(DbBlockId::BlockN)),
+            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(DbBlockId::Number)),
+            BlockId::Number(block_n) => Ok(Some(DbBlockId::Number(*block_n))),
+            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(DbBlockId::Number)),
             BlockId::Tag(BlockTag::Pending) => Ok(Some(DbBlockId::Pending)),
         }
     }
@@ -274,7 +274,7 @@ impl MadaraBackend {
     fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
             DbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
-            DbBlockId::BlockN(block_n) => {
+            DbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
         }
@@ -283,7 +283,7 @@ impl MadaraBackend {
     fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<MadaraBlockInner>> {
         match id {
             DbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
-            DbBlockId::BlockN(block_n) => self.get_block_inner_from_block_n(*block_n),
+            DbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
 
@@ -292,7 +292,7 @@ impl MadaraBackend {
     pub fn get_block_n(&self, id: &impl DbBlockIdResolvable) -> Result<Option<u64>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
-            DbBlockId::BlockN(block_id) => Ok(Some(*block_id)),
+            DbBlockId::Number(block_id) => Ok(Some(*block_id)),
             DbBlockId::Pending => Ok(None),
         }
     }
@@ -301,7 +301,7 @@ impl MadaraBackend {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
             // TODO: fast path if id is already a block hash..
-            DbBlockId::BlockN(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
+            DbBlockId::Number(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
             DbBlockId::Pending => Ok(None),
         }
     }
@@ -310,7 +310,7 @@ impl MadaraBackend {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
             DbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
-            DbBlockId::BlockN(block_n) => self.get_state_update(block_n),
+            DbBlockId::Number(block_n) => self.get_state_update(block_n),
         }
     }
 

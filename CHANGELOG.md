@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(clean): dc_db: rename `DbBlockId::BlockN` to `DbBlockId::Number`
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
 - test: add block conversion task test
