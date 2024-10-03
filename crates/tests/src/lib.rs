@@ -238,7 +238,7 @@ async fn madara_can_sync_a_few_blocks() {
         "20",
         "--no-l1-sync",
         "--gas-price",
-        "0"
+        "0",
     ]);
 
     // This is an optional argument to sync faster from the FGW if gateway_key is set
