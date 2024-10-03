@@ -58,8 +58,9 @@ tokio = { workspace = true, features = [
 url.workspace = true
 
 [dev-dependencies]
-mc-db = { workspace = true, features = ["testing"] }
 httpmock.workspace = true
 tempfile.workspace = true
 rstest.workspace = true
 regex.workspace = true
+mc-db = { workspace = true, features = ["testing"] }
+mc-block-import = { workspace = true, features = ["testing"] }

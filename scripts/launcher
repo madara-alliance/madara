@@ -599,7 +599,7 @@ tput rc
 tput ed
 
 # Check if the image is available locally
-IMAGE_NAME="ghcr.io/madara-alliance/madara/madara:latest"
+IMAGE_NAME="ghcr.io/madara-alliance/madara:latest"
 if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
     echo -e "\n📦 ${GREEN}Docker image '$IMAGE_NAME' is already available locally.${NC}"
 else
