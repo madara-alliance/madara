@@ -2,7 +2,11 @@
 
 ## Next release
 
+<<<<<<< HEAD
 - fix(sync): pending block retrying mechanism
+=======
+- feat: new crate gateway client & server
+>>>>>>> origin/main
 - test: Starknet-js basic tests added
 - test: add block conversion task test
 - fix(docs): updated readme and fixed launcher

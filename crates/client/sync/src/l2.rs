@@ -9,12 +9,13 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
+use mc_gateway::client::builder::FeederClient;
+use mc_gateway::error::SequencerError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ use tokio::time::Duration;
 #[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
     #[error("Provider error: {0:#}")]
-    Provider(#[from] ProviderError),
+    SequencerError(#[from] SequencerError),
     #[error("Database error: {0:#}")]
     Db(#[from] MadaraStorageError),
     #[error(transparent)]
@@ -126,7 +127,7 @@ async fn l2_pending_block_task(
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
-    provider: Arc<SequencerGatewayProvider>,
+    provider: Arc<FeederClient>,
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     // clear pending status
@@ -190,7 +191,7 @@ pub struct L2SyncConfig {
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
-    provider: SequencerGatewayProvider,
+    provider: FeederClient,
     config: L2SyncConfig,
     chain_id: ChainId,
     telemetry: TelemetryHandle,
@@ -212,7 +213,7 @@ pub async fn sync(
     // starves the tokio worker
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
-        trust_global_tries: config.verify,
+        trust_global_tries: !config.verify,
         chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,

@@ -18,37 +18,36 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-block-import = { workspace = true }
-mc-db = { workspace = true }
-mc-metrics = { workspace = true }
-mc-telemetry = { workspace = true }
-mp-block = { workspace = true }
-mp-chain-config = { workspace = true }
-mp-class = { workspace = true }
-mp-convert = { workspace = true }
-mp-receipt = { workspace = true }
-mp-state-update = { workspace = true }
-mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
+mc-block-import.workspace = true
+mc-db.workspace = true
+mc-gateway.workspace = true
+mc-metrics.workspace = true
+mc-telemetry.workspace = true
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-gateway.workspace = true
+mp-receipt.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
-starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
-starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
+starknet-core.workspace = true
+starknet-providers.workspace = true
+starknet-types-core.workspace = true
+starknet_api.workspace = true
 
 
 # Other
-anyhow = { workspace = true }
+anyhow.workspace = true
 futures = { workspace = true, default-features = true }
-log = { workspace = true }
-num-traits = { workspace = true }
-rand = { workspace = true }
-rayon = { workspace = true }
-regex = "1.10.5"
-reqwest = { workspace = true }
-rodio = { version = "0.17", optional = true }
-serde_json = { workspace = true }
+log.workspace = true
+num-traits.workspace = true
+rand.workspace = true
+rayon.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = [
   "macros",
@@ -56,11 +55,12 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
-url = { workspace = true }
+url.workspace = true
 
 [dev-dependencies]
-httpmock = { workspace = true }
-tempfile = { workspace = true }
-rstest = { workspace = true }
+httpmock.workspace = true
+tempfile.workspace = true
+rstest.workspace = true
+regex.workspace = true
 mc-db = { workspace = true, features = ["testing"] }
 mc-block-import = { workspace = true, features = ["testing"] }

@@ -1,4 +1,5 @@
 mod felt;
+pub mod hex_serde;
 mod to_felt;
 
 pub use felt::{felt_to_u128, felt_to_u64};
