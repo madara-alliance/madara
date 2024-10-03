@@ -57,3 +57,4 @@ prometheus = { workspace = true }
 httpmock = { workspace = true }
 tracing-test = "0.2.5"
 serial_test = { workspace = true }
+lazy_static = { workspace = true }

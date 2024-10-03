@@ -1,4 +1,3 @@
----
 name: Workflow - Pull Request
 
 on:
@@ -37,3 +36,14 @@ jobs:
     name: Run Coverage
     uses: ./.github/workflows/coverage.yml
     needs: changelog
+    secrets: inherit
+
+  build:
+    name: Build Madara
+    uses: ./.github/workflows/build.yml
+    needs: changelog
+
+  js_test:
+    name: Run JS Tests
+    uses: ./.github/workflows/starknet-js-test.yml
+    needs: build

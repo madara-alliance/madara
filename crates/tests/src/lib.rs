@@ -10,6 +10,7 @@ use std::ops::Range;
 use std::sync::Mutex;
 use std::{
     collections::HashMap,
+    env,
     future::Future,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
@@ -64,7 +65,7 @@ impl MadaraCmd {
                 res.error_for_status()?;
                 anyhow::Ok(())
             },
-            Duration::from_millis(1000),
+            Duration::from_millis(2000),
         )
         .await;
         self.ready = true;
@@ -85,7 +86,7 @@ impl MadaraCmd {
                     Err(err) => bail!(err),
                 }
             },
-            Duration::from_millis(5000),
+            Duration::from_millis(20000),
         )
         .await;
         self
@@ -170,6 +171,17 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
+        let output = std::process::Command::new("cargo")
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .expect("Failed to execute command");
+
+        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
+
+        env::set_current_dir(&project_root).expect("Failed to set working directory");
         let target_bin = option_env!("COVERAGE_BIN").unwrap_or("./target/debug/madara");
         let target_bin = PathBuf::from_str(target_bin).expect("target bin is not a path");
         if !target_bin.exists() {
@@ -201,10 +213,8 @@ impl MadaraCmdBuilder {
     }
 }
 
-#[allow(unused_imports)]
-use mp_utils::tests_common::set_workdir;
 #[rstest]
-fn madara_help_shows(_set_workdir: ()) {
+fn madara_help_shows() {
     let _ = env_logger::builder().is_test(true).try_init();
     let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
@@ -214,30 +224,36 @@ fn madara_help_shows(_set_workdir: ()) {
 
 #[rstest]
 #[tokio::test]
-async fn madara_can_sync_a_few_blocks(_set_workdir: ()) {
+async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::{BlockHashAndNumber, Felt};
 
     let _ = env_logger::builder().is_test(true).try_init();
-    let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--network",
-            "sepolia",
-            "--no-sync-polling",
-            "--n-blocks-to-sync",
-            "20",
-            "--no-l1-sync",
-            "--preset=sepolia",
-        ])
-        .run();
+
+    let mut cmd_builder = MadaraCmdBuilder::new().args([
+        "--full",
+        "--network",
+        "sepolia",
+        "--no-sync-polling",
+        "--n-blocks-to-sync",
+        "20",
+        "--no-l1-sync",
+    ]);
+
+    // This is an optional argument to sync faster from the FGW if gateway_key is set
+    if let Ok(gateway_key) = std::env::var("GATEWAY_KEY") {
+        cmd_builder = cmd_builder.args(["--gateway-key", &gateway_key]);
+    }
+
+    let mut node = cmd_builder.run();
     node.wait_for_ready().await;
-    node.wait_for_sync_to(19).await;
+    node.wait_for_sync_to(9).await;
 
     assert_eq!(
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/19
-            block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
-            block_number: 19
+            // https://sepolia.voyager.online/block/0x4174555d24718e8225a3d536ca96d2c4cc8a31bff6a6c758ab84a16a9e92d6c
+            block_hash: Felt::from_hex_unchecked("0x4174555d24718e8225a3d536ca96d2c4cc8a31bff6a6c758ab84a16a9e92d6c"),
+            block_number: 9
         }
     );
 }
