@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(sync): pending block retrying mechanism
 - test: Starknet-js basic tests added
 - test: add block conversion task test
 - fix(docs): updated readme and fixed launcher

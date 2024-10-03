@@ -476,11 +476,7 @@ mod test_l2_fetchers {
         )
         .await;
 
-        assert!(
-            matches!(result, Ok(None)),
-            "Expected BlockNotFound error, but got: {:?}",
-            result
-        );
+        assert!(matches!(result, Ok(None)), "Expected BlockNotFound error, but got: {:?}", result);
     }
 
     /// Test successful fetching of state update with block for the pending block.
