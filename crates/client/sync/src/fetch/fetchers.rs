@@ -96,7 +96,7 @@ pub async fn fetch_pending_block_and_updates(
         || async {
             match provider.get_state_update_with_block(block_id.into()).await {
                 Ok(block) => Ok(Some(block)),
-                // Ignore (this is the case where we returned a full block when we asked for a closed one)
+                // Ignore (this is the case where we returned a closed block when we asked for a pending one)
                 // When the FGW does not have a pending block, it can return the latest block instead
                 Err(SequencerError::ReqwestError(err)) => {
                     log::debug!("Serde error when fetching the pending block: {err:#}");
