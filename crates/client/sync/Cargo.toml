@@ -27,6 +27,7 @@ mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
+mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 
@@ -61,3 +62,5 @@ url = { workspace = true }
 httpmock = { workspace = true }
 tempfile = { workspace = true }
 rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+mc-block-import = { workspace = true, features = ["testing"] }
