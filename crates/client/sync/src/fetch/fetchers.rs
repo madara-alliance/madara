@@ -88,31 +88,30 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 }
 
 pub async fn fetch_pending_block_and_updates(
+    parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &SequencerGatewayProvider,
-) -> Result<UnverifiedPendingFullBlock, FetchError> {
+) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
-    let (state_update, block) = retry(
-        || async {
-            let (state_update, block) = fetch_state_update_with_block(provider, block_id).await?;
-            if let Some(block_hash) = block.block_hash {
-                // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
-                log::debug!(
-                    "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
-                    block.block_number,
-                    block_hash,
-                );
-                Err(ProviderError::StarknetError(StarknetError::BlockNotFound))
-            } else {
-                Ok((state_update, block))
-            }
-        },
-        MAX_RETRY,
-        BASE_DELAY,
-    )
-    .await?;
+    let (state_update, block) =
+        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
+
+    if let Some(block_hash) = block.block_hash {
+        // When the FGW does not have a pending block, it can return the latest block instead. Ignore it in that case.
+        log::debug!(
+            "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
+            block.block_number,
+            block_hash,
+        );
+        return Ok(None);
+    }
+    if block.parent_block_hash != parent_block_hash {
+        // When the FGW does not have a pending block, it can return the latest block instead. Ignore it in that case.
+        log::debug!("Fetched a pending block, but mismatched parent block hash: block_number={:?}", block.block_number);
+        return Ok(None);
+    }
 
     let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
 
@@ -120,7 +119,7 @@ pub async fn fetch_pending_block_and_updates(
 
     let converted = convert_sequencer_pending_block(block, state_update, class_update)
         .context("Parsing the FGW pending block format")?;
-    Ok(converted)
+    Ok(Some(converted))
 }
 
 pub async fn fetch_block_and_updates(
@@ -256,7 +255,7 @@ async fn fetch_class(
     provider: &SequencerGatewayProvider,
 ) -> Result<(Felt, ContractClass), ProviderError> {
     let contract_class = provider.get_class(starknet_core::types::BlockId::from(block_id), class_hash).await?;
-    log::debug!("Got the contract class {:?}", contract_class);
+    log::debug!("Got the contract class {:#x}", class_hash);
     Ok((class_hash, contract_class))
 }
 
@@ -385,9 +384,14 @@ mod test_l2_fetchers {
         // Mock class hash
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(
+            Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            &ctx.backend.chain_config().chain_id,
+            &ctx.provider,
+        )
+        .await;
 
-        let pending_block = result.expect("Failed to fetch pending block");
+        let pending_block = result.expect("Failed to fetch pending block").expect("No pending block");
 
         assert!(
             matches!(pending_block, UnverifiedPendingFullBlock { .. }),
@@ -465,10 +469,15 @@ mod test_l2_fetchers {
         // Mock a "pending block not found" scenario
         ctx.mock_block_pending_not_found();
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(
+            Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            &ctx.backend.chain_config().chain_id,
+            &ctx.provider,
+        )
+        .await;
 
         assert!(
-            matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
+            matches!(result, Ok(None)),
             "Expected BlockNotFound error, but got: {:?}",
             result
         );
