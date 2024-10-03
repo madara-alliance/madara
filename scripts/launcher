@@ -91,14 +91,18 @@ PRESET_URLS["test"]="https://raw.githubusercontent.com/madara-alliance/madara/ma
 PRESET_URLS["devnet"]="https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/devnet.yaml"
 
 # Welcome message
-clear
-ascii_art
-echo -e "${GREEN}${BOLD}Welcome to the Madara Launcher!${NC}"
-echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
-echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
-echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://docs.madara.build${NC}"
-# Save cursor position
-tput sc
+welcome_message() {
+    clear
+    ascii_art
+    echo -e "${GREEN}${BOLD}Welcome to the Madara Launcher!${NC}"
+    echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
+    echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
+    echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://docs.madara.build${NC}"
+    # Save cursor position
+    tput sc
+}
+
+welcome_message
 
 # Check for dependencies
 echo -e "\n${GREEN}We will now proceed to a dependency check${NC}"
@@ -388,8 +392,10 @@ modify_chain_config() {
 
     # Check if the user wants to skip modifications
     if [[ -z "$MODIFY_NUMBERS" ]]; then
-    echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
+        echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
+        CONFIG_MODIFIED="false"
     else
+        CONFIG_MODIFIED="true"
         selected_indices=($MODIFY_NUMBERS)
 
         for index in "${selected_indices[@]}"; do
@@ -414,7 +420,7 @@ modify_chain_config() {
     MODIFIED_CONFIG_PATH="$BASE_PATH/chain_config.yaml"
     cp "$config_file" "$MODIFIED_CONFIG_PATH"
 
-    if [[ -s "$OVERRIDES_FILE" ]]; then
+    if [[ "$CONFIG_MODIFIED" == "true" ]]; then
         while IFS= read -r line; do
             key=$(echo "$line" | cut -d'=' -f1)
             val=$(echo "$line" | cut -d'=' -f2-)
@@ -489,12 +495,12 @@ else
         read -p "> " NETWORK_CHOICE
         case $NETWORK_CHOICE in
             1)
-                NETWORK="main"
+                NETWORK="mainnet"
                 PRESET="starknet_mainnet"
                 PRESET_URL="${PRESET_URLS[$PRESET]}"
                 ;;
             2)
-                NETWORK="test"
+                NETWORK="testnet"
                 PRESET="starknet_testnet"
                 PRESET_URL="${PRESET_URLS[$PRESET]}"
                 ;;
@@ -516,7 +522,6 @@ else
                 ;;
             *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}"; continue ;;
         esac
-
         # For options 1-3, download the chain config file and call modify_chain_config
         if [ "$NETWORK" != "custom" ]; then
             PRESET_PATH=$(mktemp)
@@ -533,8 +538,9 @@ else
     done
 fi
 
-tput rc
-tput ed
+# Exeptional clear of screen
+clear
+welcome_message
 
 echo -e "\n${GREEN}You have chosen to run your node under the preset or custom chain config.${NC}"
 
@@ -603,16 +609,31 @@ IMAGE_NAME="ghcr.io/madara-alliance/madara:latest"
 if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
     echo -e "\n📦 ${GREEN}Docker image '$IMAGE_NAME' is already available locally.${NC}"
 else
-    echo -e "\n🚢 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
+    echo -e "\n🐳 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
     docker pull $IMAGE_NAME
 fi
 
 # Build the final Docker run command
-DOCKER_COMMAND="docker run -d --name madara-client \
-    -v ${BASE_PATH}:/data \
-    ${PORT_MAPPING} \
-    $IMAGE_NAME \
-    --${MODE} --name \"${NODE_NAME}\" --chain-config=\"/data/chain_config.yaml\" --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+if [ "$MODE" == "full" ] && [ "$CONFIG_MODIFIED" == "false" ] && [ "$NETWORK" != "custom" ]; then
+    # Use --network option
+    DOCKER_COMMAND="docker run -d --name madara-client \
+        -v ${BASE_PATH}:/data \
+        ${PORT_MAPPING} \
+        $IMAGE_NAME \
+        --${MODE} --name \"${NODE_NAME}\" --network \"${NETWORK}\" --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+else
+    # Use --chain-config-path option
+    DOCKER_COMMAND="docker run -d --name madara-client \
+        -v ${BASE_PATH}:/data \
+        ${PORT_MAPPING} \
+        $IMAGE_NAME \
+        --${MODE} --name \"${NODE_NAME}\" --chain-config-path=\"/data/chain_config.yaml\" --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+fi
+
+echo -e "\n${GREEN}Your docker image is ready to be used.${NC}"
+
+tput rc
+tput ed
 
 echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
 echo -e "${CYAN}$DOCKER_COMMAND${NC}"
