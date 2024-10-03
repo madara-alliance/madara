@@ -56,7 +56,11 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
     let (_, blob_fee_history_one_hour) =
         fee_history.base_fee_per_blob_gas.split_at(fee_history.base_fee_per_blob_gas.len().max(300) - 300);
 
-    let avg_blob_base_fee = blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128;
+    let avg_blob_base_fee = if !blob_fee_history_one_hour.is_empty() {
+        blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128
+    } else {
+        0 // in case blob_fee_history_one_hour has 0 length
+    };
 
     let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
 
@@ -78,6 +82,8 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
     // Get the current gas price
     let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
+
+    log::debug!("Gas prices fetched is: {:?}", eth_gas_price);
 
     // Update the metrics
     eth_client.l1_block_metrics.l1_block_number.set(latest_block_number as f64);

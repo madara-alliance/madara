@@ -15,8 +15,8 @@ pub struct L1SyncParams {
     pub l1_endpoint: Option<Url>,
 
     /// Disable the gas price sync service. The sync service is responsible to fetch the fee history from the ethereum.
-    #[clap(long, alias = "no-gas-price-sync")]
-    pub gas_price_sync_disabled: bool,
+    #[clap(long, alias = "gas-price")]
+    pub gas_price: Option<u64>,
 
     /// Time in which the gas price worker will fetch the gas price.
     #[clap(

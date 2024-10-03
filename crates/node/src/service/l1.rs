@@ -33,6 +33,7 @@ impl L1SyncService {
         l1_core_address: H160,
         authority: bool,
     ) -> anyhow::Result<Self> {
+        log::info!("url for the endpoint is: {:?}", config.l1_endpoint);
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
@@ -52,13 +53,15 @@ impl L1SyncService {
             None
         };
 
-        let gas_price_sync_enabled = authority && !config.gas_price_sync_disabled;
+        log::info!("eth_client created successfully");
+
+        let gas_price_sync_enabled = authority && config.gas_price.is_none();
         let gas_price_poll = config.gas_price_poll;
 
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
-                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--no-gas-price-sync`, or remove the `--no-l1-sync` argument.")?;
+                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or remove the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             log::info!("⏳ Getting initial L1 gas prices");
             mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)
