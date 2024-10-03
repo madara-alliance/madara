@@ -33,7 +33,6 @@ impl L1SyncService {
         l1_core_address: H160,
         authority: bool,
     ) -> anyhow::Result<Self> {
-        log::info!("url for the endpoint is: {:?}", config.l1_endpoint);
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
@@ -52,8 +51,6 @@ impl L1SyncService {
         } else {
             None
         };
-
-        log::info!("eth_client created successfully");
 
         let gas_price_sync_enabled = authority && config.gas_price.is_none();
         let gas_price_poll = config.gas_price_poll;
