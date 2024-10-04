@@ -4,7 +4,9 @@ use hyper::{Body, Method, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 
-use super::handler::{handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_state_update};
+use super::handler::{
+    handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_signature, handle_get_state_update,
+};
 use super::helpers::{not_found_response, service_unavailable_response};
 
 // Main router to redirect to the appropriate sub-router
@@ -30,6 +32,9 @@ async fn feeder_gateway_router(req: Request<Body>, backend: Arc<MadaraBackend>) 
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/feeder_gateway/get_block") => {
             Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "/feeder_gateway/get_signature") => {
+            Ok(handle_get_signature(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "/feeder_gateway/get_state_update") => {
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))

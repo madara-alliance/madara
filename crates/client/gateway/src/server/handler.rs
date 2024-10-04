@@ -3,10 +3,10 @@ use std::sync::Arc;
 use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraPendingBlock};
+use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ContractClass;
 use mp_gateway::{
-    block::{BlockStatus, ProviderBlock, ProviderBlockPending},
+    block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
 use serde_json::json;
@@ -52,6 +52,34 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
             MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
         let block_provider = ProviderBlockPending::new(block);
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+    }
+}
+
+pub async fn handle_get_signature(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+
+    if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+        return Err(GatewayError::StarknetError(StarknetError::no_signature_for_pending_block()));
+    }
+
+    let block_info = backend
+        .get_block_info(&block_id)
+        .or_internal_server_error(format!("Retrieving block info for block {block_id}"))?
+        .ok_or(StarknetError::block_not_found())?;
+
+    match block_info {
+        MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+            "Retrieved pending block info from db for non-pending block {block_id}"
+        ))),
+        MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+            let signature =
+                ProviderBlockSignature { block_hash: block_info.block_hash, signature: block_info.signature };
+            Ok(create_json_response(hyper::StatusCode::OK, &signature))
+        }
     }
 }
 
