@@ -4,7 +4,7 @@ use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
-use mp_class::ContractClass;
+use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
@@ -217,6 +217,36 @@ pub async fn handle_get_class_by_hash(
     };
 
     Ok(json_response)
+}
+
+pub async fn handle_get_compiled_class_by_class_hash(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
+
+    let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
+    let class_hash = Felt::from_hex(class_hash).map_err(StarknetError::invalid_class_hash)?;
+
+    let class_info = backend
+        .get_class_info(&block_id, &class_hash)
+        .or_internal_server_error(format!("Retrieving class info from class hash {class_hash:x}"))?
+        .ok_or(StarknetError::class_not_found(class_hash))?;
+
+    let compiled_class_hash = match class_info {
+        ClassInfo::Sierra(class_info) => class_info.compiled_class_hash,
+        ClassInfo::Legacy(_) => {
+            return Err(GatewayError::StarknetError(StarknetError::sierra_class_not_found(class_hash)))
+        }
+    };
+
+    let class_compiled = backend
+        .get_sierra_compiled(&block_id, &compiled_class_hash)
+        .or_internal_server_error(format!("Retrieving compiled Sierra class from class hash {class_hash:x}"))?
+        .ok_or(StarknetError::class_not_found(class_hash))?;
+
+    Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.as_ref()))
 }
 
 pub async fn handle_add_transaction(

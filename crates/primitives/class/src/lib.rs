@@ -253,6 +253,12 @@ pub enum FunctionStateMutability {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledSierra(String);
 
+impl AsRef<str> for CompiledSierra {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 const MISSED_CLASS_HASHES_JSON: &[u8] = include_bytes!("../resources/missed_classes.json");
 
 lazy_static::lazy_static! {

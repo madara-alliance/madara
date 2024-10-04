@@ -66,6 +66,13 @@ impl StarknetError {
         }
     }
 
+    pub fn sierra_class_not_found(class_hash: Felt) -> Self {
+        Self {
+            code: StarknetErrorCode::UndeclaredClass,
+            message: format!("Class with hash {:#x} is not a sierra class", class_hash),
+        }
+    }
+
     pub fn malformed_request(e: serde_json::Error) -> Self {
         Self { code: StarknetErrorCode::MalformedRequest, message: format!("Failed to parse transaction: {}", e) }
     }

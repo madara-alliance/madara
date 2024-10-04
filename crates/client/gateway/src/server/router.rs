@@ -5,7 +5,8 @@ use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 
 use super::handler::{
-    handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_signature, handle_get_state_update,
+    handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_compiled_class_by_class_hash,
+    handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
 
@@ -41,6 +42,9 @@ async fn feeder_gateway_router(req: Request<Body>, backend: Arc<MadaraBackend>) 
         }
         (&Method::GET, "/feeder_gateway/get_class_by_hash") => {
             Ok(handle_get_class_by_hash(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "/feeder_gateway/get_compiled_class_by_class_hash") => {
+            Ok(handle_get_compiled_class_by_class_hash(req, backend).await.unwrap_or_else(Into::into))
         }
         _ => Ok(not_found_response()),
     }
