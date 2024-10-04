@@ -5,20 +5,20 @@ use anyhow::Context;
 use core::fmt;
 use core::time::Duration;
 use futures::FutureExt;
-use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedHeader, UnverifiedPendingFullBlock};
-use mp_block::header::GasPrices;
-use mp_chain_config::StarknetVersion;
+use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedPendingFullBlock};
+use mc_gateway::client::builder::FeederClient;
+use mc_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
-use mp_class::MISSED_CLASS_HASHES;
-use mp_convert::{felt_to_u128, ToFelt};
-use mp_receipt::TransactionReceipt;
-use mp_transactions::{Transaction, MAIN_CHAIN_ID};
+use mp_class::{ContractClass, MISSED_CLASS_HASHES};
+use mp_convert::ToFelt;
+use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
+use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
+use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
+use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
-use starknet_core::types::{ContractClass, StarknetError};
-use starknet_providers::sequencer::models::{Block as SequencerBlock, StateUpdate as SequencerStateUpdate};
-use starknet_providers::{Provider, ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 use url::Url;
 
 const MAX_RETRY: u32 = 15;
@@ -34,8 +34,6 @@ pub struct FetchConfig {
     pub feeder_gateway: Url,
     /// The ID of the chain served by the sequencer gateway.
     pub chain_id: ChainId,
-    /// Whether to play a sound when a new block is fetched.
-    pub sound: bool,
     /// Whether to check the root of the state update.
     pub verify: bool,
     /// The optional API_KEY to avoid rate limiting from the sequencer gateway.
@@ -70,11 +68,11 @@ impl fmt::Debug for FetchBlockId {
     }
 }
 
-impl From<FetchBlockId> for starknet_providers::sequencer::models::BlockId {
+impl From<FetchBlockId> for mp_block::BlockId {
     fn from(value: FetchBlockId) -> Self {
         match value {
-            FetchBlockId::BlockN(block_n) => starknet_providers::sequencer::models::BlockId::Number(block_n),
-            FetchBlockId::Pending => starknet_providers::sequencer::models::BlockId::Pending,
+            FetchBlockId::BlockN(block_n) => mp_block::BlockId::Number(block_n),
+            FetchBlockId::Pending => mp_block::BlockId::Tag(mp_block::BlockTag::Pending),
         }
     }
 }
@@ -89,70 +87,80 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 
 pub async fn fetch_pending_block_and_updates(
     chain_id: &ChainId,
-    provider: &SequencerGatewayProvider,
+    provider: &FeederClient,
 ) -> Result<UnverifiedPendingFullBlock, FetchError> {
     let block_id = FetchBlockId::Pending;
 
     let sw = PerfStopwatch::new();
     let (state_update, block) = retry(
         || async {
-            let (state_update, block) = fetch_state_update_with_block(provider, block_id).await?;
-            if let Some(block_hash) = block.block_hash {
-                // HACK: Apparently the FGW sometimes returns a closed block when fetching the pending block. Interesting..?
-                log::debug!(
-                    "Fetched a pending block, got a closed one: block_number={:?} block_hash={:#x}",
-                    block.block_number,
-                    block_hash,
-                );
-                Err(ProviderError::StarknetError(StarknetError::BlockNotFound))
-            } else {
-                Ok((state_update, block))
-            }
+            let (state_update, block) = provider
+                .get_state_update_with_block(block_id.into())
+                .await
+                .map(ProviderStateUpdateWithBlockPendingMaybe::as_update_and_block)?;
+            Ok((state_update, block))
         },
         MAX_RETRY,
         BASE_DELAY,
     )
     .await?;
 
-    let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
+    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
-    let converted = convert_sequencer_pending_block(block, state_update, class_update)
-        .context("Parsing the FGW pending block format")?;
+    let converted = convert_sequencer_block_pending(
+        block.pending_owned().expect("Block called on block tag pending should be pending"),
+        state_update.pending_owned().expect("State update called on block tag pending should be pending"),
+        class_update,
+    )
+    .context("Parsing the FGW pending block format")?;
     Ok(converted)
 }
 
 pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
-    provider: &SequencerGatewayProvider,
+    provider: &FeederClient,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = FetchBlockId::BlockN(block_n);
 
     let sw = PerfStopwatch::new();
-    let (state_update, block) =
-        retry(|| fetch_state_update_with_block(provider, block_id), MAX_RETRY, BASE_DELAY).await?;
-    let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
+    let (state_update, block) = retry(
+        || async {
+            provider
+                .get_state_update_with_block(block_id.into())
+                .await
+                .map(ProviderStateUpdateWithBlockPendingMaybe::as_update_and_block)
+        },
+        MAX_RETRY,
+        BASE_DELAY,
+    )
+    .await?;
+    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
 
-    stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
+    stopwatch_end!(sw, "fetching {:?}: {:?}", block_n);
 
-    let converted =
-        convert_sequencer_block(block, state_update, class_update).context("Parsing the FGW full block format")?;
+    let converted = convert_sequencer_block_non_pending(
+        block.non_pending_owned().expect("Block called on block number should not be pending"),
+        state_update.non_pending_ownded().expect("State update called on block number should not be pending"),
+        class_update,
+    )
+    .context("Parsing the FGW full block format")?;
     Ok(converted)
 }
 
-async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, ProviderError>
+async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, SequencerError>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, ProviderError>>,
+    Fut: std::future::Future<Output = Result<T, SequencerError>>,
 {
     let mut attempt = 0;
     loop {
         match f().await {
             Ok(res) => return Ok(res),
-            Err(ProviderError::StarknetError(StarknetError::BlockNotFound)) => {
-                break Err(ProviderError::StarknetError(StarknetError::BlockNotFound));
+            Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::BlockNotFound, .. })) => {
+                break Err(SequencerError::StarknetError(StarknetError::block_not_found()));
             }
             Err(err) => {
                 let delay = base_delay * 2_u32.pow(attempt).min(6); // Cap to prevent overly long delays
@@ -160,40 +168,27 @@ where
                 if attempt > max_retries {
                     break Err(err);
                 }
-                match err {
-                    ProviderError::RateLimited => {
-                        log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
-                    }
-                    _ => log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay),
+
+                if let SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::RateLimited, .. }) = err {
+                    log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
+                } else {
+                    log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
+
                 if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
-                    return Err(ProviderError::StarknetError(StarknetError::BlockNotFound));
-                    // :/
+                    return Err(SequencerError::StarknetError(StarknetError::block_not_found()));
                 }
             }
         }
     }
 }
 
-/// retrieves state update with block from Starknet sequencer in only one request
-async fn fetch_state_update_with_block(
-    provider: &SequencerGatewayProvider,
-    block_id: FetchBlockId,
-) -> Result<
-    (starknet_providers::sequencer::models::StateUpdate, starknet_providers::sequencer::models::Block),
-    ProviderError,
-> {
-    #[allow(deprecated)] // Sequencer-specific functions are deprecated. Use it via the Provider trait instead.
-    let state_update_with_block = provider.get_state_update_with_block(block_id.into()).await?;
-    Ok((state_update_with_block.state_update, state_update_with_block.block))
-}
-
 /// retrieves class updates from Starknet sequencer
 async fn fetch_class_updates(
     chain_id: &ChainId,
-    state_update: &starknet_providers::sequencer::models::StateUpdate,
+    state_diff: &StateDiff,
     block_id: FetchBlockId,
-    provider: &SequencerGatewayProvider,
+    provider: &FeederClient,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     let chain_id: Felt = chain_id.to_felt();
 
@@ -203,11 +198,10 @@ async fn fetch_class_updates(
         let block_number = block_id.block_n().unwrap(); // Safe to unwrap because of the condition above
         MISSED_CLASS_HASHES.get(&block_number).cloned().unwrap_or_default()
     } else {
-        state_update.state_diff.old_declared_contracts.clone()
+        state_diff.old_declared_contracts.clone()
     };
 
-    let sierra_classes: Vec<_> = state_update
-        .state_diff
+    let sierra_classes: Vec<_> = state_diff
         .declared_classes
         .iter()
         .map(|declared_class| (declared_class.class_hash, &declared_class.compiled_class_hash))
@@ -216,11 +210,13 @@ async fn fetch_class_updates(
     let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
 
-            let starknet_core::types::ContractClass::Legacy(contract_class) = contract_class else {
+            let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
             };
+            let contract_class = Arc::try_unwrap(contract_class)
+                .expect("Contract class should only have one referenced when it is fetched");
 
             Ok::<_, L2SyncError>(ClassUpdate::Legacy(LegacyClassUpdate { class_hash, contract_class }))
         }
@@ -230,11 +226,13 @@ async fn fetch_class_updates(
     let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), 15, Duration::from_secs(1)).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
 
-            let starknet_core::types::ContractClass::Sierra(contract_class) = contract_class else {
+            let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
             };
+            let contract_class = Arc::try_unwrap(contract_class)
+                .expect("Contract class should only have one referenced when it is fetchd");
 
             Ok::<_, L2SyncError>(ClassUpdate::Sierra(SierraClassUpdate {
                 class_hash,
@@ -253,65 +251,35 @@ async fn fetch_class_updates(
 async fn fetch_class(
     class_hash: Felt,
     block_id: FetchBlockId,
-    provider: &SequencerGatewayProvider,
-) -> Result<(Felt, ContractClass), ProviderError> {
-    let contract_class = provider.get_class(starknet_core::types::BlockId::from(block_id), class_hash).await?;
+    provider: &FeederClient,
+) -> Result<(Felt, ContractClass), SequencerError> {
+    let contract_class = provider.get_class_by_hash(class_hash, block_id.into()).await?;
     log::debug!("Got the contract class {:?}", contract_class);
     Ok((class_hash, contract_class))
 }
 
-fn convert_block_header(block: &SequencerBlock) -> anyhow::Result<UnverifiedHeader> {
-    Ok(UnverifiedHeader {
-        parent_block_hash: Some(block.parent_block_hash),
-        sequencer_address: block.sequencer_address.unwrap_or_default(),
-        block_timestamp: block.timestamp,
-        protocol_version: block
-            .starknet_version
-            .as_deref()
-            .map(|v| v.parse().context("Invalid starknet version"))
-            .unwrap_or_else(|| {
-                StarknetVersion::try_from_mainnet_block_number(
-                    block.block_number.context("A block number is needed to determine the missing Starknet version")?,
-                )
-                .context("Unable to determine the Starknet version")
-            })?,
-        l1_gas_price: GasPrices {
-            eth_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_wei).context("Converting prices")?,
-            strk_l1_gas_price: felt_to_u128(&block.l1_gas_price.price_in_fri).context("Converting prices")?,
-            eth_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_wei).context("Converting prices")?,
-            strk_l1_data_gas_price: felt_to_u128(&block.l1_data_gas_price.price_in_fri).context("Converting prices")?,
-        },
-        l1_da_mode: block.l1_da_mode.into(),
-    })
-}
-
-fn convert_sequencer_pending_block(
-    block: SequencerBlock,
-    state_update: SequencerStateUpdate,
+fn convert_sequencer_block_pending(
+    block: ProviderBlockPending,
+    state_update: ProviderStateUpdatePending,
     class_update: Vec<ClassUpdate>,
 ) -> anyhow::Result<UnverifiedPendingFullBlock> {
     Ok(UnverifiedPendingFullBlock {
-        header: convert_block_header(&block)?,
+        header: block.header()?,
         state_diff: state_update.state_diff.into(),
         receipts: block
             .transaction_receipts
             .into_iter()
             .zip(&block.transactions)
-            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .map(|(receipt, tx)| receipt.into_mp(tx))
             .collect(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(Transaction::try_from)
-            .collect::<Result<_, _>>()
-            .context("Converting the transactions")?,
+        transactions: block.transactions.into_iter().map(Into::into).collect(),
         declared_classes: class_update.into_iter().map(Into::into).collect(),
     })
 }
 
-fn convert_sequencer_block(
-    block: SequencerBlock,
-    state_update: SequencerStateUpdate,
+fn convert_sequencer_block_non_pending(
+    block: ProviderBlock,
+    state_update: ProviderStateUpdate,
     class_update: Vec<ClassUpdate>,
 ) -> anyhow::Result<UnverifiedFullBlock> {
     // Verify against these commitments.
@@ -322,28 +290,21 @@ fn convert_sequencer_block(
         // event_commitment: Some(block.event_commitment.context("No event commitment")?),
         state_diff_commitment: None,
         receipt_commitment: None,
-        global_state_root: Some(block.state_root.context("No state root")?),
-        block_hash: Some(block.block_hash.context("No block hash")?),
+        global_state_root: Some(block.state_root),
+        block_hash: Some(block.block_hash),
         ..Default::default()
     };
     Ok(UnverifiedFullBlock {
-        unverified_block_number: Some(
-            block.block_number.context("FGW should return a block number for closed blocks")?,
-        ),
-        header: convert_block_header(&block)?,
+        unverified_block_number: Some(block.block_number),
+        header: block.header()?,
         state_diff: state_update.state_diff.into(),
         receipts: block
             .transaction_receipts
             .into_iter()
             .zip(&block.transactions)
-            .map(|(receipt, tx)| TransactionReceipt::from_provider(receipt, tx))
+            .map(|(receipt, tx)| receipt.into_mp(tx))
             .collect(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(Transaction::try_from)
-            .collect::<Result<_, _>>()
-            .context("Converting the transactions")?,
+        transactions: block.transactions.into_iter().map(Into::into).collect(),
         declared_classes: class_update.into_iter().map(Into::into).collect(),
         commitments,
         ..Default::default()
@@ -362,9 +323,9 @@ mod test_l2_fetchers {
     use mc_db::MadaraBackend;
     use mp_block::header::L1DataAvailabilityMode;
     use mp_chain_config::StarknetVersion;
+    use mp_gateway::block::BlockStatus;
     use rstest::*;
     use starknet_api::felt;
-    use starknet_providers::sequencer::models::BlockStatus;
     use std::sync::Arc;
 
     /// Test successful fetching of a pending block and updates.
@@ -468,7 +429,13 @@ mod test_l2_fetchers {
         let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
         assert!(
-            matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),
+            matches!(
+                result,
+                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                    code: StarknetErrorCode::BlockNotFound,
+                    ..
+                })))
+            ),
             "Expected BlockNotFound error, but got: {:?}",
             result
         );
@@ -488,9 +455,16 @@ mod test_l2_fetchers {
         // Mock the pending block
         ctx.mock_block_pending();
 
-        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::Pending)
+        let (state_update, block) = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::Pending.into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update with block on tag pending")
+            .as_update_and_block();
+        let (state_update, block) = (
+            state_update.pending().expect("State update called on tag 'pending' should be pending"),
+            block.pending().expect("Block called on tag 'pending' should be pending"),
+        );
 
         // Verify state update
         assert_eq!(
@@ -569,37 +543,17 @@ mod test_l2_fetchers {
         assert!(state_update.state_diff.replaced_classes.is_empty(), "Should have no replaced classes");
 
         // Verify block
-        assert!(block.block_number.is_none(), "Pending block should not have a block number");
-        assert!(block.block_hash.is_none(), "Pending block should not have a block hash");
-        assert_eq!(
-            block.parent_block_hash,
-            felt!("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
-            "Pending block should have the correct parent block hash"
-        );
-        assert!(block.state_root.is_none(), "Pending block should not have a state root");
         assert!(block.transactions.is_empty(), "Pending block should not contain transactions");
         assert_eq!(block.status, BlockStatus::Pending, "Pending block status should be 'PENDING'");
-        assert_eq!(
-            block.l1_da_mode,
-            starknet_core::types::L1DataAvailabilityMode::Calldata,
-            "L1 DA mode should be CALLDATA"
-        );
-        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x274287586"), "L1 gas price in wei should match");
-        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x363cc34e29f8"), "L1 gas price in fri should match");
-        assert_eq!(
-            block.l1_data_gas_price.price_in_wei,
-            felt!("0x2bc1e42413"),
-            "L1 data gas price in wei should match"
-        );
-        assert_eq!(
-            block.l1_data_gas_price.price_in_fri,
-            felt!("0x3c735d85586c2"),
-            "L1 data gas price in fri should match"
-        );
+        assert_eq!(block.l1_da_mode, L1DataAvailabilityMode::Calldata, "L1 DA mode should be CALLDATA");
+        assert_eq!(block.l1_gas_price.price_in_wei, 10538743174, "L1 gas price in wei should match");
+        assert_eq!(block.l1_gas_price.price_in_fri, 59634602617336, "L1 gas price in fri should match");
+        assert_eq!(block.l1_data_gas_price.price_in_wei, 187936547859, "L1 data gas price in wei should match");
+        assert_eq!(block.l1_data_gas_price.price_in_fri, 1063459006809794, "L1 data gas price in fri should match");
         assert_eq!(block.timestamp, 1725950824, "Timestamp should match");
         assert_eq!(
             block.sequencer_address,
-            Some(felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")),
+            felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             "Sequencer address should match"
         );
         assert!(block.transaction_receipts.is_empty(), "Should have no transaction receipts");
@@ -619,10 +573,13 @@ mod test_l2_fetchers {
         // Mock a "block not found" scenario
         ctx.mock_block_not_found(5);
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+        let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(result, Err(ProviderError::StarknetError(StarknetError::BlockNotFound))),
+            matches!(
+                result,
+                Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::BlockNotFound, .. }))
+            ),
             "Expected BlockNotFound error, but got: {:?}",
             result
         );
@@ -642,13 +599,10 @@ mod test_l2_fetchers {
         ctx.mock_block_partial_data(5);
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await;
+        let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(
-                result,
-                Err(ProviderError::Other(ref e)) if e.to_string().contains("data did not match any variant of enum GatewayResponse")
-            ),
+            matches!(result, Err(SequencerError::InvalidStarknetErrorVariant(_))),
             "Expected error about mismatched data, but got: {:?}",
             result
         );
@@ -668,13 +622,19 @@ mod test_l2_fetchers {
         ctx.mock_block(5);
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let (state_update, _block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+        // WARN: the mock server is set up to ALWAYS return state update with
+        // block, DO NOT call `get_state_update` on it!
+        let state_update = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update at block number 5")
+            .state_update();
+        let state_diff = state_update.state_diff();
 
         let class_updates = fetch_class_updates(
             &ctx.backend.chain_config().chain_id,
-            &state_update,
+            state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
         )
@@ -699,28 +659,29 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
-        let (state_update, _block) =
-            fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5)).await.unwrap();
+        let state_update = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
+            .await
+            .expect("Failed to fetch state update at block number 5")
+            .state_update();
+        let state_diff = state_update.state_diff();
+
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
         let result = fetch_class_updates(
             &ctx.backend.chain_config().chain_id,
-            &state_update,
+            state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
         )
         .await;
 
-        assert!(
-            matches!(
-                result,
-                Err(ref e) if matches!(
-                    e.downcast_ref::<L2SyncError>(),
-                    Some(L2SyncError::Provider(ProviderError::StarknetError(StarknetError::ClassHashNotFound)))
-                )
-            ),
-            "Expected ClassHashNotFound error, but got: {:?}",
-            result
-        );
+        assert!(matches!(
+        result,
+        Err(ref e) if matches!(
+            e.downcast_ref::<L2SyncError>(),
+            Some(L2SyncError::SequencerError(SequencerError::StarknetError(StarknetError {code: StarknetErrorCode::UndeclaredClass, ..}))))
+        ));
     }
 
     /// Test fetching of individual class definitions.
@@ -759,7 +720,10 @@ mod test_l2_fetchers {
         let result = fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await;
 
         assert!(
-            matches!(result, Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound))),
+            matches!(
+                result,
+                Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::UndeclaredClass, .. }))
+            ),
             "Expected ClassHashNotFound error, but got: {:?}",
             result
         );
@@ -773,19 +737,20 @@ mod test_l2_fetchers {
         // Mock a block with a state update
         ctx.mock_block(5);
 
-        let (state_update, block) = fetch_state_update_with_block(&ctx.provider, FetchBlockId::BlockN(5))
+        let (state_update, block) = ctx
+            .provider
+            .get_state_update_with_block(FetchBlockId::BlockN(5).into())
             .await
-            .expect("Failed to fetch state update with block");
+            .expect("Failed to fetch state update with block at block number 5")
+            .as_update_and_block();
+        let (state_update, block) = (
+            state_update.non_pending().expect("State update at block number 5 should not be pending"),
+            block.non_pending().expect("Block at block number 5 should not be pending"),
+        );
 
         // Verify state update
-        assert_eq!(
-            state_update.block_hash,
-            Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"))
-        );
-        assert_eq!(
-            state_update.new_root,
-            Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"))
-        );
+        assert_eq!(state_update.block_hash, felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"));
+        assert_eq!(state_update.new_root, felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"));
         assert_eq!(state_update.old_root, felt!("0x6152bda357cb522337756c71bcab298d88c5d829a479ad8247b82b969912713"));
 
         // Verify storage diffs
@@ -821,18 +786,18 @@ mod test_l2_fetchers {
         assert!(state_update.state_diff.replaced_classes.is_empty());
 
         // Verify block
-        assert_eq!(block.block_number, Some(5));
-        assert_eq!(block.block_hash, Some(felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32")));
+        assert_eq!(block.block_number, 5);
+        assert_eq!(block.block_hash, felt!("0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32"));
         assert_eq!(block.parent_block_hash, felt!("0x6dc4eb6311529b941e3963f477b1d13928b38dd4c6ec0206bfba73c8a87198d"));
-        assert_eq!(block.state_root, Some(felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f")));
+        assert_eq!(block.state_root, felt!("0x704b7fe29fa070cf3737173acd1d0790fe318f68cc07a49ddfa9c1cd94c804f"));
         assert_eq!(block.status, BlockStatus::AcceptedOnL1);
-        assert_eq!(block.l1_da_mode, starknet_core::types::L1DataAvailabilityMode::Calldata);
+        assert_eq!(block.l1_da_mode, L1DataAvailabilityMode::Calldata);
 
         // Verify gas prices
-        assert_eq!(block.l1_gas_price.price_in_wei, felt!("0x3bf1322e5"));
-        assert_eq!(block.l1_gas_price.price_in_fri, felt!("0x55dfe7f2de82"));
-        assert_eq!(block.l1_data_gas_price.price_in_wei, felt!("0x3f9ffec0e7"));
-        assert_eq!(block.l1_data_gas_price.price_in_fri, felt!("0x5b269552db6fa"));
+        assert_eq!(block.l1_gas_price.price_in_wei, 16090604261);
+        assert_eq!(block.l1_gas_price.price_in_fri, 94420157521538);
+        assert_eq!(block.l1_data_gas_price.price_in_wei, 273267212519);
+        assert_eq!(block.l1_data_gas_price.price_in_fri, 1603540353922810);
 
         assert_eq!(block.timestamp, 1725974819);
         assert_eq!(

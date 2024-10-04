@@ -143,6 +143,7 @@ impl FlattenedSierraClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub struct EntryPointsByType {
     pub constructor: Vec<SierraEntryPoint>,
     pub external: Vec<SierraEntryPoint>,

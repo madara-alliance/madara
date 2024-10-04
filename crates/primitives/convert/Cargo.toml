@@ -11,6 +11,8 @@ homepage.workspace = true
 [dependencies]
 
 # Starknet
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
