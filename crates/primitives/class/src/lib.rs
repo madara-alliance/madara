@@ -191,6 +191,7 @@ pub struct LegacyFunctionAbiEntry {
     pub name: String,
     pub inputs: Vec<LegacyTypedParameter>,
     pub outputs: Vec<LegacyTypedParameter>,
+    #[serde(rename = "stateMutability")]
     pub state_mutability: Option<FunctionStateMutability>,
 }
 
@@ -224,6 +225,7 @@ pub struct LegacyTypedParameter {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyFunctionAbiType {
     Function,
     L1Handler,
@@ -231,16 +233,19 @@ pub enum LegacyFunctionAbiType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyEventAbiType {
     Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyStructAbiType {
     Struct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FunctionStateMutability {
     View,
 }
