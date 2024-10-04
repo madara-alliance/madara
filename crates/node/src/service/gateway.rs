@@ -1,6 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
+use mp_block::H160;
 use mp_utils::service::Service;
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -13,6 +14,8 @@ pub struct GatewayService {
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
+    eth_core_contract_address: H160,
+    eth_gps_statement_verifier: H160,
 }
 
 impl GatewayService {
@@ -20,6 +23,8 @@ impl GatewayService {
         config: &GatewayParams,
         db: &DatabaseService,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        eth_core_contract_address: H160,
+        eth_gps_statement_verifier: H160,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
@@ -28,6 +33,8 @@ impl GatewayService {
             gateway_enable: config.gateway_enable,
             gateway_external: config.gateway_external,
             gateway_port: config.gateway_port,
+            eth_core_contract_address,
+            eth_gps_statement_verifier,
         })
     }
 }
@@ -43,6 +50,8 @@ impl Service for GatewayService {
                 gateway_enable,
                 gateway_external,
                 gateway_port,
+                eth_core_contract_address,
+                eth_gps_statement_verifier,
             } = self.clone();
 
             join_set.spawn(async move {
@@ -53,6 +62,8 @@ impl Service for GatewayService {
                     gateway_enable,
                     gateway_external,
                     gateway_port,
+                    eth_core_contract_address,
+                    eth_gps_statement_verifier,
                 )
                 .await
             });

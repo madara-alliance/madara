@@ -63,6 +63,7 @@ pub struct OverridableChainConfig {
     pub sequencer_address: ContractAddress,
     pub max_nonce_for_validation_skip: u64,
     pub eth_core_contract_address: H160,
+    pub eth_gps_statement_verifier: H160,
 }
 
 impl From<&ChainConfig> for OverridableChainConfig {
@@ -79,6 +80,7 @@ impl From<&ChainConfig> for OverridableChainConfig {
             sequencer_address: config.sequencer_address,
             max_nonce_for_validation_skip: config.max_nonce_for_validation_skip,
             eth_core_contract_address: config.eth_core_contract_address,
+            eth_gps_statement_verifier: config.eth_gps_statement_verifier,
         }
     }
 }
@@ -99,6 +101,7 @@ impl From<OverridableChainConfig> for ChainConfig {
             eth_core_contract_address: overridable.eth_core_contract_address,
             versioned_constants: Default::default(),
             bouncer_config: Default::default(),
+            eth_gps_statement_verifier: overridable.eth_gps_statement_verifier,
         }
     }
 }

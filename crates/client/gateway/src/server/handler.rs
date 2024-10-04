@@ -3,7 +3,7 @@ use std::sync::Arc;
 use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock, H160};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
@@ -247,6 +247,19 @@ pub async fn handle_get_compiled_class_by_class_hash(
         .ok_or(StarknetError::class_not_found(class_hash))?;
 
     Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.as_ref()))
+}
+
+pub async fn handle_get_contract_addresses(
+    eth_core_contract_address: H160,
+    eth_gps_statement_verifier: H160,
+) -> Result<Response<Body>, GatewayError> {
+    Ok(create_json_response(
+        hyper::StatusCode::OK,
+        &json!({
+            "Starknet": eth_core_contract_address,
+            "GpsStatementVerifier": eth_gps_statement_verifier
+        }),
+    ))
 }
 
 pub async fn handle_add_transaction(

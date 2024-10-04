@@ -31,6 +31,12 @@ pub mod eth_core_contract_address {
     pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
 }
 
+pub mod eth_gps_statement_verifier {
+    pub const MAINNET: &str = "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60";
+    pub const SEPOLIA_TESTNET: &str = "0xf294781D719D2F4169cE54469C28908E6FA752C1";
+    pub const SEPOLIA_INTEGRATION: &str = "0x2046B966994Adcb88D83f467a41b75d64C2a619F";
+}
+
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
@@ -74,7 +80,7 @@ pub struct ChainConfig {
     pub block_time: Duration,
 
     /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
+    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
     #[serde(deserialize_with = "deserialize_duration")]
     pub pending_block_update_time: Duration,
 
@@ -99,6 +105,10 @@ pub struct ChainConfig {
 
     /// The Starknet core contract address for the L1 watcher.
     pub eth_core_contract_address: H160,
+
+    /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
+    /// for more information
+    pub eth_gps_statement_verifier: H160,
 }
 
 impl ChainConfig {
@@ -154,6 +164,8 @@ impl ChainConfig {
 
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
+            eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
+
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
@@ -192,6 +204,9 @@ impl ChainConfig {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
+            eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
+                .parse()
+                .expect("parsing a constant"),
             ..Self::starknet_mainnet()
         }
     }
@@ -201,6 +216,9 @@ impl ChainConfig {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
+                .parse()
+                .expect("parsing a constant"),
+            eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
             ..Self::starknet_mainnet()
