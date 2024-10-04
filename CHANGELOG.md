@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(cli): Environment variables can be used to specify Madara parameters
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
 - test: add block conversion task test
