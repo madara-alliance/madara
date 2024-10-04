@@ -232,6 +232,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // This does not need to be outside the loop, but that saves an allocation
         let mut executed_txs = Vec::with_capacity(batch_size);
 
+        log::debug!("just before the loop on the transactions");
+
         loop {
             // Take transactions from mempool.
             let to_take = batch_size.saturating_sub(txs_to_process.len());
@@ -249,6 +251,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             txs_to_process_blockifier
                 .extend(txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))));
 
+            log::debug!("just before executing the transactions");
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
@@ -389,6 +392,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
+
+
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();

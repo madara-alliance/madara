@@ -229,7 +229,12 @@ impl MempoolInner {
     pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction, force: bool) -> Result<(), TxInsersionError> {
         // Get the nonce chain for the contract
 
+        log::debug!("Checkpoint: inside the insert tx");
+
+
         let contract_addr = mempool_tx.contract_address();
+        log::debug!("Checkpoint: contract address here is: {:?}", contract_addr);
+
         let arrived_at = mempool_tx.arrived_at;
 
         let deployed_contract_address =

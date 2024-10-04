@@ -28,10 +28,12 @@ impl MadaraBackend {
         log::debug!("get encoded {key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
+        log::debug!("serailization passed, issue somewhere");
         // Get from pending db, then normal db if not found.
         if is_pending {
             let col = self.db.get_column(pending_col);
             if let Some(res) = self.db.get_pinned_cf(&col, &key_encoded)? {
+                log::debug!("got some result and next step is to deserialize");
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
@@ -60,6 +62,7 @@ impl MadaraBackend {
             Column::ClassInfo,
         )?
         else {
+            log::debug!("returning none because some error with getting the class");
             return Ok(None);
         };
 

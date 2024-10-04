@@ -93,6 +93,8 @@ impl Mempool {
     fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
         let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
 
+        log::debug!("Checkpoint: we are inside the accept tx and we made sure that we have account txn only");
+
         // The timestamp *does not* take the transaction validation time into account.
         let arrived_at = ArrivedAtTimestamp::now();
 
@@ -101,6 +103,8 @@ impl Mempool {
             block
         } else {
             // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
+            log::debug!("Checkpoint: this should be triggered because we are trying for a genesis block/ or maybe not");
+
             let parent_block_hash = self
                 .backend
                 .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
@@ -125,11 +129,15 @@ impl Mempool {
         } else {
             None
         };
+        log::debug!("Checkpoint: now sending the tx for the execution context");
 
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
         let _ = validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some());
+
+        log::debug!("Checkpoint: validation performed");
+
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
@@ -183,17 +191,22 @@ impl MempoolProvider for Mempool {
     }
 
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
-        log::info!("Checkpoint 3: accept_declare_v0_tx: {:?}", tx);
+        log::debug!("Checkpoint 3: accept_declare_v0_tx");
         let (tx, classes) = broadcasted_to_blockifier_v0(
             tx,
             self.chain_id(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
+        log::debug!("Checkpoint declare v0 tx");
+
+
         let res = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),
             class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
         };
+        log::debug!("sending txn to the accept tx");
+
         self.accept_tx(tx, classes)?;
         Ok(res)
     }
