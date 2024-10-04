@@ -1,11 +1,11 @@
 environments:
-  - project: devnet
-    id: 5ac2bbca-b3e1-4849-b04c-116819c6c13a
+  - project: karnot-internal
+    id: f5e7112d-ab5e-46a7-8ecb-6d2f8efc2044
     repos:
       madara:
         image: apoorvsadana/madara:85fb08e3cfec70a47999c4b2909ff1e4536040ad
         files: 
-          chain_config_url: "https://github.com/astraly-labs/madara/blob/main/infra/pragma/pragma-devnet.yaml"
+          chain_config_url: "https://github.com/karnotxyz/madara/blob/main/crates/primitives/chain_config/presets/test.yaml"
         config:
           --network: "devnet"
           --chain-config-path: "/var/madara/presets/config.yaml"
