@@ -157,14 +157,15 @@ impl MadaraPendingBlockInfo {
 // Light version of the block with block_hash
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MadaraBlockInfo {
+    pub signature: Vec<Felt>,
     pub header: Header,
     pub block_hash: Felt,
     pub tx_hashes: Vec<Felt>,
 }
 
 impl MadaraBlockInfo {
-    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
-        Self { header, block_hash, tx_hashes }
+    pub fn new(signature: Vec<Felt>, header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
+        Self { signature, header, block_hash, tx_hashes }
     }
 }
 
@@ -294,7 +295,12 @@ mod tests {
         let pending = MadaraPendingBlockInfo::new(PendingHeader::default(), tx_hashes_pending.clone());
         let pending_as_maybe_pending: MadaraMaybePendingBlockInfo = pending.clone().into();
         let tx_hashes_not_pending = vec![Felt::from(3), Felt::from(4)];
-        let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
+        let not_pending = MadaraBlockInfo::new(
+            vec![Felt::from_hex_unchecked("0x0")],
+            Header::default(),
+            tx_hashes_not_pending.clone(),
+            Felt::from(5),
+        );
         let not_pending_as_maybe_pending: MadaraMaybePendingBlockInfo = not_pending.clone().into();
 
         assert_eq!(not_pending_as_maybe_pending.as_nonpending(), Some(&not_pending));

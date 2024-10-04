@@ -80,6 +80,7 @@ pub fn verify_apply_inner(
         .store_block(
             MadaraMaybePendingBlock {
                 info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    signature: block.signature,
                     header: header.clone(),
                     block_hash,
                     // get tx hashes from receipts, they have been validated in pre_validate.
@@ -559,8 +560,8 @@ mod verify_apply_tests {
             felt!("0x1"),
             felt!("0xa"),
             Err(BlockImportError::BlockHash {
-                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 
-                expected: felt!("0xdeadbeef") 
+                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
+                expected: felt!("0xdeadbeef")
             })
         )]
     // Case 3: Special trusted case for Mainnet blocks 1466-2242

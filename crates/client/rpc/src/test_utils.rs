@@ -170,6 +170,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x0")],
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,
@@ -223,6 +224,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x1")],
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             block_number: 1,
@@ -246,6 +248,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x2")],
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             block_number: 2,
@@ -492,6 +495,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x0")],
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
@@ -514,6 +518,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x1")],
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
@@ -536,6 +541,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                        signature: vec![Felt::from_hex_unchecked("0x2")],
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],

@@ -11,7 +11,7 @@ use mc_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
 use mp_class::{ContractClass, MISSED_CLASS_HASHES};
 use mp_convert::ToFelt;
-use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
+use mp_gateway::block::{ProviderBlock, ProviderBlockPending, ProviderBlockSignature};
 use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
 use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
 use mp_transactions::MAIN_CHAIN_ID;
@@ -126,12 +126,16 @@ pub async fn fetch_block_and_updates(
     let block_id = FetchBlockId::BlockN(block_n);
 
     let sw = PerfStopwatch::new();
-    let (state_update, block) = retry(
+    let (state_update, block, block_signature) = retry(
         || async {
-            provider
+            let (state_update, block) = provider
                 .get_state_update_with_block(block_id.into())
                 .await
-                .map(ProviderStateUpdateWithBlockPendingMaybe::as_update_and_block)
+                .map(ProviderStateUpdateWithBlockPendingMaybe::as_update_and_block)?;
+
+            let block_signature = provider.get_signature(block_id.into()).await?;
+
+            Ok((state_update, block, block_signature))
         },
         MAX_RETRY,
         BASE_DELAY,
@@ -143,6 +147,7 @@ pub async fn fetch_block_and_updates(
 
     let converted = convert_sequencer_block_non_pending(
         block.non_pending_owned().expect("Block called on block number should not be pending"),
+        block_signature,
         state_update.non_pending_ownded().expect("State update called on block number should not be pending"),
         class_update,
     )
@@ -279,6 +284,7 @@ fn convert_sequencer_block_pending(
 
 fn convert_sequencer_block_non_pending(
     block: ProviderBlock,
+    block_signature: ProviderBlockSignature,
     state_update: ProviderStateUpdate,
     class_update: Vec<ClassUpdate>,
 ) -> anyhow::Result<UnverifiedFullBlock> {
@@ -295,6 +301,7 @@ fn convert_sequencer_block_non_pending(
         ..Default::default()
     };
     Ok(UnverifiedFullBlock {
+        signature: block_signature.signature,
         unverified_block_number: Some(block.block_number),
         header: block.header()?,
         state_diff: state_update.state_diff.into(),

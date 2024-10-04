@@ -154,6 +154,7 @@ pub struct UnverifiedPendingFullBlock {
 /// An unverified full block as input for the block import pipeline.
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedFullBlock {
+    pub signature: Vec<Felt>,
     /// When set to None, it will be deduced from the latest block in storage.
     pub unverified_block_number: Option<u64>,
     pub header: UnverifiedHeader,
@@ -183,13 +184,13 @@ pub struct ValidatedCommitments {
 /// Output of the [`crate::pre_validate`] step.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreValidatedBlock {
+    pub signature: Vec<Felt>,
     pub header: UnverifiedHeader,
     pub transactions: Vec<Transaction>,
     pub state_diff: StateDiff,
     pub receipts: Vec<TransactionReceipt>,
     pub commitments: ValidatedCommitments,
     pub converted_classes: Vec<ConvertedClass>,
-
     pub unverified_global_state_root: Option<Felt>,
     pub unverified_block_hash: Option<Felt>,
     pub unverified_block_number: Option<u64>,

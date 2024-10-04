@@ -241,8 +241,8 @@ impl ProviderBlockPending {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockSignature {
-    block_hash: Felt,
-    signature: Vec<Felt>,
+    pub block_hash: Felt,
+    pub signature: Vec<Felt>,
 }
 
 #[serde_as]

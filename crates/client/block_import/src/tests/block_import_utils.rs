@@ -95,6 +95,7 @@ pub fn create_dummy_header() -> Header {
 /// useful for testing update_tries scenarios.
 pub fn create_dummy_block() -> PreValidatedBlock {
     PreValidatedBlock {
+        signature: vec![Felt::from_hex_unchecked("0x1")],
         header: create_dummy_unverified_header(),
         unverified_block_hash: None,
         unverified_block_number: Some(1),
@@ -113,6 +114,7 @@ pub fn create_dummy_block() -> PreValidatedBlock {
 /// useful for testing update_tries scenarios.
 pub fn create_dummy_unverified_full_block() -> UnverifiedFullBlock {
     UnverifiedFullBlock {
+        signature: vec![Felt::from_hex_unchecked("0x0")],
         header: UnverifiedHeader {
             parent_block_hash: Some(Felt::ZERO),
             sequencer_address: Felt::ZERO,
