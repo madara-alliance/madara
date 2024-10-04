@@ -237,6 +237,14 @@ impl ProviderBlockPending {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockSignature {
+    block_hash: Felt,
+    signature: Vec<Felt>,
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
