@@ -75,7 +75,7 @@ impl FeederClient {
             .expect("Failed to add URI segment. This should not fail in prod")
             .with_block_id(block_id);
 
-        Ok(request.send_get::<ProviderBlockSignature>().await?)
+        request.send_get::<ProviderBlockSignature>().await
     }
 
     pub async fn get_class_by_hash(
