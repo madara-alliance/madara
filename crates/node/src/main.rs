@@ -185,6 +185,7 @@ async fn main() -> anyhow::Result<()> {
         rpc_add_txs_method_provider,
         chain_config.eth_core_contract_address,
         chain_config.eth_gps_statement_verifier,
+        chain_config.public_key,
     )
     .await
     .context("Initializing gateway service")?;

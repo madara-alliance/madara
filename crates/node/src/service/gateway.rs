@@ -3,6 +3,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
 use mp_block::H160;
 use mp_utils::service::Service;
+use starknet_core::types::Felt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -16,6 +17,7 @@ pub struct GatewayService {
     gateway_port: u16,
     eth_core_contract_address: H160,
     eth_gps_statement_verifier: H160,
+    public_key: Felt,
 }
 
 impl GatewayService {
@@ -25,6 +27,7 @@ impl GatewayService {
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
         eth_core_contract_address: H160,
         eth_gps_statement_verifier: H160,
+        public_key: Felt,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
@@ -35,6 +38,7 @@ impl GatewayService {
             gateway_port: config.gateway_port,
             eth_core_contract_address,
             eth_gps_statement_verifier,
+            public_key,
         })
     }
 }
@@ -52,6 +56,7 @@ impl Service for GatewayService {
                 gateway_port,
                 eth_core_contract_address,
                 eth_gps_statement_verifier,
+                public_key,
             } = self.clone();
 
             join_set.spawn(async move {
@@ -64,6 +69,7 @@ impl Service for GatewayService {
                     gateway_port,
                     eth_core_contract_address,
                     eth_gps_statement_verifier,
+                    public_key,
                 )
                 .await
             });

@@ -21,8 +21,8 @@ use crate::error::StarknetError;
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
     helpers::{
-        block_id_from_params, create_json_response, create_response_with_json_body, get_params_from_request,
-        include_block_params,
+        block_id_from_params, create_json_response, create_response_with_json_body, create_string_response,
+        get_params_from_request, include_block_params,
     },
 };
 
@@ -260,6 +260,10 @@ pub async fn handle_get_contract_addresses(
             "GpsStatementVerifier": eth_gps_statement_verifier
         }),
     ))
+}
+
+pub async fn handle_get_publick_key(public_key: Felt) -> Result<Response<Body>, GatewayError> {
+    Ok(create_string_response(hyper::StatusCode::OK, public_key.to_string()))
 }
 
 pub async fn handle_add_transaction(

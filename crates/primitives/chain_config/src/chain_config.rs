@@ -37,6 +37,12 @@ pub mod eth_gps_statement_verifier {
     pub const SEPOLIA_INTEGRATION: &str = "0x2046B966994Adcb88D83f467a41b75d64C2a619F";
 }
 
+pub mod public_key {
+    pub const MAINNET: &str = "0x48253ff2c3bed7af18bde0b611b083b39445959102d4947c51c4db6aa4f4e58";
+    pub const SEPOLIA_TESTNET: &str = "0x1252b6bce1351844c677869c6327e80eae1535755b611c66b8f46e595b40eea";
+    pub const SEPOLIA_INTEGRATION: &str = "0x4e4856eb36dbd5f4a7dca29f7bb5232974ef1fb7eb5b597c58077174c294da1";
+}
+
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
@@ -109,6 +115,10 @@ pub struct ChainConfig {
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
     pub eth_gps_statement_verifier: H160,
+
+    /// The public key of the sequencer, used to sign blocks. Currently this is
+    /// not yet implemented in Madara so we leave it in the chain config
+    pub public_key: Felt,
 }
 
 impl ChainConfig {
@@ -166,6 +176,8 @@ impl ChainConfig {
 
             eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
 
+            public_key: Felt::from_hex_unchecked(public_key::MAINNET),
+
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
@@ -207,6 +219,7 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
                 .expect("parsing a constant"),
+            public_key: Felt::from_hex_unchecked(public_key::SEPOLIA_TESTNET),
             ..Self::starknet_mainnet()
         }
     }
@@ -221,6 +234,7 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
+            public_key: Felt::from_hex_unchecked(public_key::SEPOLIA_INTEGRATION),
             ..Self::starknet_mainnet()
         }
     }
