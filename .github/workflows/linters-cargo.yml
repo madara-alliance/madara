@@ -13,10 +13,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "cache"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.78
-          components: rustfmt, clippy
+      - run: rustup show
 
       - uses: software-mansion/setup-scarb@v1
         with:
