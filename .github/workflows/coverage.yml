@@ -8,7 +8,7 @@ on:
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
 
     services:
       localstack:
@@ -30,7 +30,10 @@ jobs:
 
       # selecting a toolchain either by action or manual `rustup` calls should happen
       # before the plugin, as the cache uses the current rustc version as its cache key
-      - run: rustup show
+      - name: Install necessary dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libclang-dev
 
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -38,6 +41,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+          default: true
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -62,6 +66,34 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
+      - name: Setup scarb
+        uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.2"
+
+      - name: Build Mock Contracts using Scarb
+        run: |
+          cd crates/settlement-clients/starknet/src/tests/mock_contracts
+          scarb fmt --check
+          scarb build
+
+      - name: Checkout Madara
+        uses: actions/checkout@v4
+        with:
+          repository: madara-alliance/madara
+          ref: "0c821aecd1cafc516d00548473fcaddaa4dc0ce4"
+          path: madara
+
+      - name: Build Madara
+        working-directory: madara
+        run: |
+          cargo build
+          mv target/debug/madara ../madara-binary
+          cd ..
+          echo -e "
+          MADARA_BINARY_PATH=\"$(pwd)/madara-binary\"" >> .env.test
+          cat .env.test
+
       - name: Getting neccesary files for testing
         run: |
           wget -P ./crates/prover-services/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
@@ -69,7 +101,7 @@ jobs:
       - name: Run llvm-cov tests
         env:
           ETHEREUM_BLAST_RPC_URL: ${{ secrets.ETHEREUM_BLAST_RPC_URL }}
-        run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests
+        run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests --no-fail-fast
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2

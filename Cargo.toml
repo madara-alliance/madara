@@ -55,11 +55,11 @@ reqwest = { version = "0.12.7", features = [
   "native-tls",
   "json",
 ] }
-rstest = "0.18.2"
+rstest = "0.22.0"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
-starknet = "0.9.0"
-tempfile = "3.8.1"
+starknet = "0.11.0"
+tempfile = "3.12.0"
 thiserror = "1.0.57"
 tokio = { version = "1.37.0" }
 tokio-stream = "0.1.15"
@@ -75,6 +75,8 @@ hex = "0.4"
 itertools = "0.13.0"
 mockall = "0.13.0"
 testcontainers = "0.18.0"
+appchain-core-contract-client = { git = "https://github.com/byteZorvin/zaun", branch = "type-update" }
+crypto-bigint = { version = "0.5.5" }
 
 
 # Instrumentation
@@ -108,6 +110,7 @@ cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", features = [
 # TODO: update back to the main repo once it's merged
 # Sharp (Starkware)
 snos = { git = "https://github.com/keep-starknet-strange/snos" }
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }

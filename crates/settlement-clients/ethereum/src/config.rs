@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use settlement_client_interface::SettlementConfig;
 use url::Url;
 use utils::settings::Settings;
 
@@ -15,8 +14,8 @@ pub struct EthereumSettlementConfig {
     pub core_contract_address: String,
 }
 
-impl SettlementConfig for EthereumSettlementConfig {
-    fn new_with_settings(settings: &impl Settings) -> Self {
+impl EthereumSettlementConfig {
+    pub fn new_with_settings(settings: &impl Settings) -> Self {
         let rpc_url = settings.get_settings_or_panic(SETTLEMENT_RPC_URL);
         let rpc_url = Url::from_str(&rpc_url).unwrap_or_else(|_| panic!("Failed to parse {}", SETTLEMENT_RPC_URL));
         let core_contract_address = settings.get_settings_or_panic(ENV_CORE_CONTRACT_ADDRESS);

@@ -9,9 +9,10 @@ use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
 use num_traits::{Num, Zero};
-use starknet::core::types::{BlockId, FieldElement, MaybePendingStateUpdate, StateUpdate};
+use starknet::core::types::{
+    BlockId, ContractStorageDiffItem, DeclaredClassItem, Felt, MaybePendingStateUpdate, StateUpdate,
+};
 use starknet::providers::Provider;
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem};
 use thiserror::Error;
 use tracing::log;
 use uuid::Uuid;
@@ -193,7 +194,7 @@ pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
     transform
 }
 
-pub fn convert_to_biguint(elements: Vec<FieldElement>) -> Vec<BigUint> {
+pub fn convert_to_biguint(elements: Vec<Felt>) -> Vec<BigUint> {
     // Initialize the vector with 4096 BigUint zeros
     let mut biguint_vec = vec![BigUint::zero(); 4096];
 
@@ -243,16 +244,16 @@ pub async fn state_update_to_blob_data(
     block_no: u64,
     state_update: StateUpdate,
     config: Arc<Config>,
-) -> color_eyre::Result<Vec<FieldElement>> {
+) -> color_eyre::Result<Vec<Felt>> {
     let mut state_diff = state_update.state_diff;
 
-    let mut blob_data: Vec<FieldElement> = vec![FieldElement::from(state_diff.storage_diffs.len())];
+    let mut blob_data: Vec<Felt> = vec![Felt::from(state_diff.storage_diffs.len())];
 
-    let deployed_contracts: HashMap<FieldElement, FieldElement> =
+    let deployed_contracts: HashMap<Felt, Felt> =
         state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
-    let replaced_classes: HashMap<FieldElement, FieldElement> =
+    let replaced_classes: HashMap<Felt, Felt> =
         state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
-    let mut nonces: HashMap<FieldElement, FieldElement> =
+    let mut nonces: HashMap<Felt, Felt> =
         state_diff.nonces.into_iter().map(|item| (item.contract_address, item.nonce)).collect();
 
     // sort storage diffs
@@ -267,7 +268,7 @@ pub async fn state_update_to_blob_data(
         // @note: if nonce is null and there is some len of writes, make an api call to get the contract
         // nonce for the block
 
-        if nonce.is_none() && !storage_entries.is_empty() && address != FieldElement::ONE {
+        if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE {
             let get_current_nonce_result = config
                 .starknet_client()
                 .get_nonce(BlockId::Number(block_no), address)
@@ -291,7 +292,7 @@ pub async fn state_update_to_blob_data(
         }
     }
     // Handle declared classes
-    blob_data.push(FieldElement::from(state_diff.declared_classes.len()));
+    blob_data.push(Felt::from(state_diff.declared_classes.len()));
 
     // sort storage diffs
     state_diff.declared_classes.sort_by_key(|class| class.class_hash);
@@ -321,7 +322,7 @@ async fn store_blob_data(blob_data: Vec<BigUint>, block_number: u64, config: Arc
 /// DA word encoding:
 /// |---padding---|---class flag---|---new nonce---|---num changes---|
 ///     127 bits        1 bit           64 bits          64 bits
-fn da_word(class_flag: bool, nonce_change: Option<FieldElement>, num_changes: u64) -> FieldElement {
+fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Felt {
     // padding of 127 bits
     let mut binary_string = "0".repeat(127);
 
@@ -353,7 +354,7 @@ fn da_word(class_flag: bool, nonce_change: Option<FieldElement>, num_changes: u6
     // Now convert the BigUint to a decimal string
     let decimal_string = biguint.to_str_radix(10);
 
-    FieldElement::from_dec_str(&decimal_string).expect("issue while converting to fieldElement")
+    Felt::from_dec_str(&decimal_string).expect("issue while converting to fieldElement")
 }
 
 #[cfg(test)]
@@ -370,9 +371,9 @@ pub mod test {
     use majin_blob_types::serde;
     use rstest::rstest;
     use serde_json::json;
+    use starknet::core::types::{Felt, StateUpdate};
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::JsonRpcClient;
-    use starknet_core::types::{FieldElement, StateUpdate};
     use url::Url;
 
     use da_client_interface::MockDaClient;
@@ -380,9 +381,9 @@ pub mod test {
     use crate::jobs::da_job::da_word;
 
     /// Tests `da_word` function with various inputs for class flag, new nonce, and number of changes.
-    /// Verifies that `da_word` produces the correct FieldElement based on the provided parameters.
+    /// Verifies that `da_word` produces the correct Felt based on the provided parameters.
     /// Uses test cases with different combinations of inputs and expected output strings.
-    /// Asserts the function's correctness by comparing the computed and expected FieldElements.
+    /// Asserts the function's correctness by comparing the computed and expected Felts.
     #[rstest]
     #[case(false, 1, 1, "18446744073709551617")]
     #[case(false, 1, 0, "18446744073709551616")]
@@ -394,9 +395,9 @@ pub mod test {
         #[case] num_changes: u64,
         #[case] expected: String,
     ) {
-        let new_nonce = if new_nonce > 0 { Some(FieldElement::from(new_nonce)) } else { None };
+        let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
         let da_word = da_word(class_flag, new_nonce, num_changes);
-        let expected = FieldElement::from_dec_str(expected.as_str()).unwrap();
+        let expected = Felt::from_dec_str(expected.as_str()).unwrap();
         assert_eq!(da_word, expected);
     }
 
@@ -544,7 +545,7 @@ pub mod test {
             let nonce = entry.nonce.clone();
             let response = json!({ "id": 1,"jsonrpc":"2.0","result": nonce });
             let field_element =
-                FieldElement::from_dec_str(&address).expect("issue while converting the hex to field").to_bytes_be();
+                Felt::from_dec_str(&address).expect("issue while converting the hex to field").to_bytes_be();
             let hex_field_element = vec_u8_to_hex_string(&field_element);
 
             server.mock(|when, then| {

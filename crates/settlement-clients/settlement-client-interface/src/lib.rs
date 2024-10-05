@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use mockall::automock;
 use mockall::predicate::*;
-use utils::settings::Settings;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
 
@@ -26,7 +25,7 @@ pub trait SettlementClient: Send + Sync {
         &self,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
-        onchain_data_size: usize,
+        onchain_data_size: [u8; 32],
     ) -> Result<String>;
 
     /// Should be used to update state on contract and publish the blob on ethereum.
@@ -48,10 +47,4 @@ pub trait SettlementClient: Send + Sync {
 
     /// Should retrieve the latest transaction count to be used as nonce.
     async fn get_nonce(&self) -> Result<u64>;
-}
-
-/// Trait for every new SettlementConfig to implement
-pub trait SettlementConfig {
-    /// Should create a new instance of the SettlementConfig from the environment variables
-    fn new_with_settings(settings: &impl Settings) -> Self;
 }

@@ -27,10 +27,7 @@ use mockall::{automock, predicate::*};
 
 use alloy::providers::ProviderBuilder;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
-#[cfg(feature = "testing")]
-use settlement_client_interface::{SettlementClient, SettlementConfig, SettlementVerificationStatus};
-#[cfg(not(feature = "testing"))]
-use settlement_client_interface::{SettlementClient, SettlementConfig, SettlementVerificationStatus};
+use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
 #[cfg(feature = "testing")]
 use url::Url;
 use utils::env_utils::get_env_var_or_panic;
@@ -164,11 +161,11 @@ impl SettlementClient for EthereumSettlementClient {
         &self,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
-        onchain_data_size: usize,
+        onchain_data_size: [u8; 32],
     ) -> Result<String> {
         let program_output: Vec<U256> = vec_u8_32_to_vec_u256(program_output.as_slice())?;
         let onchain_data_hash: U256 = slice_u8_to_u256(&onchain_data_hash)?;
-        let onchain_data_size: U256 = onchain_data_size.try_into()?;
+        let onchain_data_size = U256::from_be_bytes(onchain_data_size);
         let tx_receipt =
             self.core_contract_client.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
         Ok(format!("0x{:x}", tx_receipt.transaction_hash))

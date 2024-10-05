@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use settlement_client_interface::SettlementConfig;
 use url::Url;
 use utils::env_utils::get_env_var_or_default;
 use utils::settings::Settings;
@@ -19,9 +18,9 @@ pub struct StarknetSettlementConfig {
     pub tx_finality_retry_delay_in_seconds: u64,
 }
 
-impl SettlementConfig for StarknetSettlementConfig {
+impl StarknetSettlementConfig {
     /// Should create a new instance of the DaConfig from the environment variables
-    fn new_with_settings(settings: &impl Settings) -> Self {
+    pub fn new_with_settings(settings: &impl Settings) -> Self {
         let rpc_url = settings.get_settings_or_panic(ENV_STARKNET_RPC_URL);
         let rpc_url = Url::from_str(&rpc_url).unwrap_or_else(|_| panic!("Failed to parse {}", ENV_STARKNET_RPC_URL));
         let core_contract_address = settings.get_settings_or_panic(ENV_CORE_CONTRACT_ADDRESS);

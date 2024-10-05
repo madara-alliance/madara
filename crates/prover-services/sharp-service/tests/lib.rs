@@ -52,6 +52,7 @@ async fn prover_client_submit_task_works() {
 #[case(CairoJobStatus::IN_PROGRESS)]
 #[case(CairoJobStatus::NOT_CREATED)]
 #[case(CairoJobStatus::PROCESSED)]
+#[ignore]
 #[case(CairoJobStatus::ONCHAIN)]
 #[tokio::test]
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {

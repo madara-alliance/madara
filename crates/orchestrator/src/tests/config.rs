@@ -157,7 +157,7 @@ impl TestConfigBuilder {
     }
 
     pub async fn build(self) -> TestConfigBuilderReturns {
-        dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
         let settings_provider = EnvSettingsProvider {};
         let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));

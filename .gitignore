@@ -6,6 +6,7 @@
 *.code-workspace
 .vscode
 
+
 lcov.info
 
 **/*-SN.zip

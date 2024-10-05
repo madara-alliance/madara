@@ -4,16 +4,22 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+anyhow = "1.0.89"
+appchain-core-contract-client = { workspace = true }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
 color-eyre = { workspace = true }
+crypto-bigint = { workspace = true }
+dotenvy.workspace = true
 lazy_static = { workspace = true }
+log = { workspace = true }
 mockall = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 settlement-client-interface = { workspace = true }
 starknet = { workspace = true }
+tempfile.workspace = true
 tokio = { workspace = true }
 url = { workspace = true }
 utils = { workspace = true }
@@ -35,4 +41,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 
 [dev-dependencies]
+async-std = { version = "1.13.0", features = ["attributes"] }
+serde_json.workspace = true
 tokio-test = "*"

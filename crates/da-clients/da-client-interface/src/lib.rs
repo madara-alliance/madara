@@ -27,11 +27,3 @@ pub trait DaClient: Send + Sync {
     /// Should return the max bytes per blob
     async fn max_bytes_per_blob(&self) -> u64;
 }
-
-/// Trait for every new DaConfig to implement
-#[async_trait]
-pub trait DaConfig<T> {
-    /// Should create a new instance of the DaConfig from the environment variables
-    fn new_from_env() -> Self;
-    async fn build_client(&self) -> T;
-}

@@ -1,0 +1,16 @@
+services:
+  localstack:
+    image: localstack/localstack
+    container_name: localstack
+    environment:
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+    ports:
+      - "4566:4566"
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"

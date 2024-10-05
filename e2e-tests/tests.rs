@@ -13,11 +13,10 @@ use orchestrator::queue::job_queue::WorkerTriggerType;
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use starknet::core::types::{FieldElement, MaybePendingStateUpdate};
+use starknet::core::types::{Felt, MaybePendingStateUpdate};
 use std::collections::HashMap;
 use std::fs::{read, File};
 use std::io::Read;
-use std::str::FromStr;
 use std::time::{Duration, Instant};
 use utils::env_utils::get_env_var_or_panic;
 use uuid::Uuid;
@@ -327,7 +326,7 @@ pub async fn mock_starknet_get_nonce(starknet_client: &mut StarknetClient, l2_bl
     let vec: Vec<NonceAddress> = serde_json::from_str(&contents).unwrap();
 
     for ele in vec {
-        let address = FieldElement::from_str(&ele.address).unwrap();
+        let address = Felt::from_dec_str(&ele.address).expect("Failed to convert to felt");
         let hex_field_element = vec_u8_to_hex_string(&address.to_bytes_be());
 
         let response = json!({ "id": 640641,"jsonrpc":"2.0","result": ele.nonce });
