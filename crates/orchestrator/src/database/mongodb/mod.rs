@@ -60,6 +60,7 @@ impl MongoDb {
     /// Updates the job in the database optimistically. This means that the job is updated only if
     /// the version of the job in the database is the same as the version of the job passed in.
     /// If the version is different, the update fails.
+    #[tracing::instrument(skip(self, update), fields(function_type = "db_call"))]
     async fn update_job_optimistically(&self, current_job: &JobItem, update: Document) -> Result<()> {
         let filter = doc! {
             "id": current_job.id,
@@ -71,12 +72,14 @@ impl MongoDb {
             return Err(eyre!("Failed to update job. Job version is likely outdated"));
         }
         self.post_job_update(current_job).await?;
+
         Ok(())
     }
 
     // TODO : remove this function
     // Do this process in single db transaction.
     /// To update the document version
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn post_job_update(&self, current_job: &JobItem) -> Result<()> {
         let filter = doc! {
             "id": current_job.id,
@@ -98,11 +101,13 @@ impl MongoDb {
 
 #[async_trait]
 impl Database for MongoDb {
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn create_job(&self, job: JobItem) -> Result<JobItem> {
         self.get_job_collection().insert_one(&job, None).await?;
         Ok(job)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>> {
         let filter = doc! {
             "id":  id
@@ -110,6 +115,7 @@ impl Database for MongoDb {
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_job_by_internal_id_and_type(&self, internal_id: &str, job_type: &JobType) -> Result<Option<JobItem>> {
         let filter = doc! {
             "internal_id": internal_id,
@@ -118,6 +124,7 @@ impl Database for MongoDb {
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn update_job(&self, job: &JobItem) -> Result<()> {
         let job_doc = bson::to_document(job)?;
         let update = doc! {
@@ -127,6 +134,7 @@ impl Database for MongoDb {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn update_job_status(&self, job: &JobItem, new_status: JobStatus) -> Result<()> {
         let update = doc! {
             "$set": {
@@ -137,6 +145,7 @@ impl Database for MongoDb {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn update_metadata(&self, job: &JobItem, metadata: HashMap<String, String>) -> Result<()> {
         let update = doc! {
             "$set": {
@@ -147,6 +156,7 @@ impl Database for MongoDb {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
         let filter = doc! {
             "job_type": mongodb::bson::to_bson(&job_type)?,
@@ -176,6 +186,7 @@ impl Database for MongoDb {
     /// job_b_type : ProofCreation
     ///
     /// TODO : For now Job B status implementation is pending so we can pass None
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
@@ -275,6 +286,7 @@ impl Database for MongoDb {
         Ok(vec_jobs)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_latest_job_by_type_and_status(
         &self,
         job_type: JobType,
@@ -289,6 +301,7 @@ impl Database for MongoDb {
         Ok(self.get_job_collection().find_one(filter, find_options).await?)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
         job_type: JobType,
@@ -306,6 +319,7 @@ impl Database for MongoDb {
         Ok(jobs)
     }
 
+    #[tracing::instrument(skip(self, limit), fields(function_type = "db_call"))]
     async fn get_jobs_by_statuses(&self, job_status: Vec<JobStatus>, limit: Option<i64>) -> Result<Vec<JobItem>> {
         let filter = doc! {
             "status": {

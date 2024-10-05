@@ -16,6 +16,7 @@ pub struct SnosJob;
 
 #[async_trait]
 impl Job for SnosJob {
+    #[tracing::instrument(fields(category = "snos"), skip(self, _config, metadata))]
     async fn create_job(
         &self,
         _config: Arc<Config>,
@@ -35,6 +36,7 @@ impl Job for SnosJob {
         })
     }
 
+    #[tracing::instrument(fields(category = "snos"), skip(self, _config))]
     async fn process_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<String, JobError> {
         // 1. Fetch SNOS input data from Madara
         // 2. Import SNOS in Rust and execute it with the input data
@@ -42,6 +44,7 @@ impl Job for SnosJob {
         todo!()
     }
 
+    #[tracing::instrument(fields(category = "snos"), skip(self, _config))]
     async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job

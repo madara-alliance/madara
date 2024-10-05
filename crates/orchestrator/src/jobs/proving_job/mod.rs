@@ -34,6 +34,7 @@ pub struct ProvingJob;
 
 #[async_trait]
 impl Job for ProvingJob {
+    #[tracing::instrument(fields(category = "proving"), skip(self, _config, metadata))]
     async fn create_job(
         &self,
         _config: Arc<Config>,
@@ -53,14 +54,17 @@ impl Job for ProvingJob {
         })
     }
 
+    #[tracing::instrument(fields(category = "proving"), skip(self, config))]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         // Cairo Pie path in s3 storage client
         let cairo_pie_path = job.internal_id.to_string() + "/pie.zip";
+
         let cairo_pie_file = config
             .storage()
             .get_data(&cairo_pie_path)
             .await
             .map_err(|e| ProvingError::CairoPIEFileFetchFailed(e.to_string()))?;
+
         let cairo_pie = CairoPie::from_bytes(cairo_pie_file.to_vec().as_slice())
             .map_err(|e| ProvingError::CairoPIENotReadable(e.to_string()))?;
 
@@ -74,6 +78,7 @@ impl Job for ProvingJob {
         Ok(external_id)
     }
 
+    #[tracing::instrument(fields(category = "proving"), skip(self, config))]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let task_id: String = job.external_id.unwrap_string().map_err(|e| JobError::Other(OtherError(e)))?.into();
         let task_status = config

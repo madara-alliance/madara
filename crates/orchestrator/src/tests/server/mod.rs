@@ -34,8 +34,6 @@ pub async fn setup_server() -> SocketAddr {
         axum::serve(listener, app).await.expect("Failed to start axum server");
     });
 
-    tracing::info!("Listening on http://{}", address);
-
     addr
 }
 

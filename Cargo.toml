@@ -64,8 +64,6 @@ thiserror = "1.0.57"
 tokio = { version = "1.37.0" }
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18" }
 url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 httpmock = { version = "0.7.0", features = ["remote"] }
@@ -77,6 +75,27 @@ hex = "0.4"
 itertools = "0.13.0"
 mockall = "0.13.0"
 testcontainers = "0.18.0"
+
+
+# Instrumentation
+opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
+opentelemetry-stdout = { version = "0.25.0" }
+opentelemetry-otlp = { version = "0.25.0", features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { version = "0.25.0" }
+opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
+tracing = { version = "0.1.40", default-features = false }
+tracing-core = { version = "0.1.32", default-features = false }
+tracing-subscriber = { version = "0.3.18", features = [
+  "env-filter",
+  "registry",
+  "std",
+] }
+tracing-opentelemetry = "0.26.0"
 
 # Cairo VM
 cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", features = [

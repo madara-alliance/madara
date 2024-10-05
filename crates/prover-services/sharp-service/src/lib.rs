@@ -28,6 +28,7 @@ pub struct SharpProverService {
 
 #[async_trait]
 impl ProverClient for SharpProverService {
+    #[tracing::instrument(skip(self, task))]
     async fn submit_task(&self, task: Task) -> Result<TaskId, ProverClientError> {
         match task {
             Task::CairoPie(cairo_pie) => {
@@ -40,6 +41,7 @@ impl ProverClient for SharpProverService {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn get_task_status(&self, task_id: &TaskId) -> Result<TaskStatus, ProverClientError> {
         let (job_key, fact) = split_task_id(task_id)?;
         let res = self.sharp_client.get_job_status(&job_key).await?;

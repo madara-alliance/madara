@@ -6,12 +6,14 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_queue, ConsumptionError};
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
 use da_job::DaError;
 use mockall::automock;
 use mockall_double::double;
+use opentelemetry::KeyValue;
 use proving_job::ProvingError;
 use state_update_job::StateUpdateError;
 use tracing::log;
@@ -124,6 +126,7 @@ pub trait Job: Send + Sync {
 }
 
 /// Creates the job in the DB in the created state and adds it to the process queue
+#[tracing::instrument(fields(category = "general"), skip(config))]
 pub async fn create_job(
     job_type: JobType,
     internal_id: String,
@@ -135,22 +138,36 @@ pub async fn create_job(
         .get_job_by_internal_id_and_type(internal_id.as_str(), &job_type)
         .await
         .map_err(|e| JobError::Other(OtherError(e)))?;
+
     if existing_job.is_some() {
         return Err(JobError::JobAlreadyExists { internal_id, job_type });
     }
 
     let job_handler = factory::get_job_handler(&job_type).await;
-    let job_item = job_handler.create_job(config.clone(), internal_id, metadata).await?;
+    let job_item = job_handler.create_job(config.clone(), internal_id.clone(), metadata).await?;
     config.database().create_job(job_item.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
 
     add_job_to_process_queue(job_item.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+    let attributes = [
+        KeyValue::new("job_type", format!("{:?}", job_type)),
+        KeyValue::new("type", "create_job"),
+        KeyValue::new("job", format!("{:?}", job_item)),
+    ];
+
+    ORCHESTRATOR_METRICS.block_gauge.record(internal_id.parse::<f64>().unwrap(), &attributes);
     Ok(())
 }
 
 /// Processes the job, increments the process attempt count and updates the status of the job in the
 /// DB. It then adds the job to the verification queue.
+#[tracing::instrument(skip(config), fields(category = "general", job, job_type, internal_id))]
 pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let mut job = get_job(id, config.clone()).await?;
+
+    tracing::Span::current().record("job", format!("{:?}", job.clone()));
+    tracing::Span::current().record("job_type", format!("{:?}", job.job_type.clone()));
+    tracing::Span::current().record("internal_id", job.internal_id.clone());
 
     match job.status {
         // we only want to process jobs that are in the created or verification failed state.
@@ -192,6 +209,14 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     .await
     .map_err(|e| JobError::Other(OtherError(e)))?;
 
+    let attributes = [
+        KeyValue::new("job_type", format!("{:?}", job.job_type)),
+        KeyValue::new("type", "process_job"),
+        KeyValue::new("job", format!("{:?}", job)),
+    ];
+
+    ORCHESTRATOR_METRICS.block_gauge.record(job.internal_id.parse::<f64>().unwrap(), &attributes);
+
     Ok(())
 }
 
@@ -199,8 +224,13 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
 /// retries processing the job if the max attempts have not been exceeded. If the max attempts have
 /// been exceeded, it marks the job as timed out. If the verification is still pending, it pushes the
 /// job back to the queue.
+#[tracing::instrument(skip(config), fields(category = "general", job, job_type, internal_id, verification_status))]
 pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let mut job = get_job(id, config.clone()).await?;
+
+    tracing::Span::current().record("job", format!("{:?}", job.clone()));
+    tracing::Span::current().record("job_type", format!("{:?}", job.job_type.clone()));
+    tracing::Span::current().record("internal_id", job.internal_id.clone());
 
     match job.status {
         JobStatus::PendingVerification => {
@@ -213,6 +243,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
 
     let job_handler = factory::get_job_handler(&job.job_type).await;
     let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
+    tracing::Span::current().record("verification_status", format!("{:?}", verification_status.clone()));
 
     match verification_status {
         JobVerificationStatus::Verified => {
@@ -269,14 +300,26 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         }
     };
 
+    let attributes = [
+        KeyValue::new("job_type", format!("{:?}", job.job_type)),
+        KeyValue::new("type", "verify_job"),
+        KeyValue::new("job", format!("{:?}", job)),
+    ];
+
+    ORCHESTRATOR_METRICS.block_gauge.record(job.internal_id.parse::<f64>().unwrap(), &attributes);
+
     Ok(())
 }
 
 /// Terminates the job and updates the status of the job in the DB.
 /// Logs error if the job status `Completed` is existing on DL queue.
+#[tracing::instrument(skip(config), fields(job_status, job_type))]
 pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let mut job = get_job(id, config.clone()).await?.clone();
     let mut metadata = job.metadata.clone();
+
+    tracing::Span::current().record("job_status", format!("{:?}", job.status));
+    tracing::Span::current().record("job_type", format!("{:?}", job.job_type));
 
     if job.status == JobStatus::Completed {
         log::error!("Invalid state exists on DL queue: {}", job.status.to_string());

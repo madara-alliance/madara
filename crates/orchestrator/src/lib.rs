@@ -14,10 +14,14 @@ pub mod database;
 /// contains the root level functions for which detect the job
 /// type and call the corresponding job
 pub mod jobs;
+/// contains trait level metrics.
+pub mod metrics;
 /// Contains the trait that all queues must implement
 pub mod queue;
 /// Contains the routes for the service
 pub mod routes;
+/// Contains telemetry collection services. (Metrics/Logs/Traces)
+pub mod telemetry;
 #[cfg(test)]
 pub mod tests;
 /// Contains workers which act like cron jobs

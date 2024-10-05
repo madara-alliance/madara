@@ -236,7 +236,6 @@ where
     F: FnOnce(Box<dyn Worker>, Arc<Config>) -> Fut,
     Fut: Future<Output = color_eyre::Result<()>>,
 {
-    log::info!("Handling worker trigger for worker type : {:?}", job_message.worker);
     let worker_handler = get_worker_handler_from_worker_trigger_type(job_message.worker.clone());
 
     match handler(worker_handler, config.clone()).await {
@@ -314,7 +313,6 @@ async fn spawn_worker(worker: Box<dyn Worker>, config: Arc<Config>) -> color_eyr
     worker.run_worker_if_enabled(config).await.expect("Error in running the worker.");
     Ok(())
 }
-
 async fn add_job_to_queue(id: Uuid, queue: String, delay: Option<Duration>, config: Arc<Config>) -> EyreResult<()> {
     let message = JobQueueMessage { id };
     config.queue().send_message_to_queue(queue, serde_json::to_string(&message)?, delay).await?;

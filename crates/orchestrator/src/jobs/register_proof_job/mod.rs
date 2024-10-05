@@ -16,6 +16,7 @@ pub struct RegisterProofJob;
 
 #[async_trait]
 impl Job for RegisterProofJob {
+    #[tracing::instrument(fields(category = "proof_registry"), skip(self, _config, metadata))]
     async fn create_job(
         &self,
         _config: Arc<Config>,
@@ -37,6 +38,7 @@ impl Job for RegisterProofJob {
         })
     }
 
+    #[tracing::instrument(fields(category = "proof_registry"), skip(self, _config))]
     async fn process_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<String, JobError> {
         // Get proof from storage and submit on chain for verification
         // We need to implement a generic trait for this to support multiple
@@ -44,6 +46,7 @@ impl Job for RegisterProofJob {
         todo!()
     }
 
+    #[tracing::instrument(fields(category = "proof_registry"), skip(self, _config))]
     async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         // verify that the proof transaction has been included on chain
         todo!()
