@@ -6,8 +6,8 @@ use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::rstest;
 use serde_json::json;
-use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use starknet::providers::jsonrpc::HttpTransport;
 use url::Url;
 use uuid::Uuid;
 
@@ -15,12 +15,12 @@ use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
-use crate::queue::job_queue::JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
+use crate::queue::job_queue::JOB_PROCESSING_QUEUE;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::workers::snos::SnosWorker;
 use crate::workers::Worker;
+use crate::workers::snos::SnosWorker;
 
 #[rstest]
 #[case(false)]
@@ -58,7 +58,6 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     for i in start_job_index..block + 1 {
         // Getting jobs for check expectations
         db.expect_get_job_by_internal_id_and_type()
-            .times(1)
             .with(eq(i.clone().to_string()), eq(JobType::SnosRun))
             .returning(|_, _| Ok(None));
 

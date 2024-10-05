@@ -1,15 +1,24 @@
+use std::str::FromStr;
+
 use dotenvy::dotenv;
 use orchestrator::config::init_config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::app_router;
 use orchestrator::telemetry::{setup_analytics, shutdown_analytics};
-
+use tracing::Level;
 use utils::env_utils::get_env_var_or_default;
 
 /// Start the server
 #[tokio::main]
+// not sure why clippy gives this error on the latest rust
+// version but have added it for now
+#[allow(clippy::needless_return)]
 async fn main() {
     dotenv().ok();
+    let log_level = get_env_var_or_default("RUST_LOG", "INFO");
+    let level = Level::from_str(&log_level).unwrap_or(Level::INFO);
+
+    tracing_subscriber::fmt().with_max_level(level).with_target(false).init();
 
     // Analytics Setup
 

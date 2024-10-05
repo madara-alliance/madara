@@ -1,11 +1,13 @@
-use crate::EthereumDaClient;
+use std::str::FromStr;
+
 use alloy::network::Ethereum;
 use alloy::providers::ProviderBuilder;
 use alloy::rpc::client::RpcClient;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use url::Url;
 use utils::settings::Settings;
+
+use crate::EthereumDaClient;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumDaConfig {
@@ -19,7 +21,7 @@ impl EthereumDaConfig {
         Ok(Self {
             rpc_url: settings.get_settings_or_panic("SETTLEMENT_RPC_URL"),
             memory_pages_contract: settings.get_settings_or_panic("MEMORY_PAGES_CONTRACT_ADDRESS"),
-            private_key: settings.get_settings_or_panic("PRIVATE_KEY"),
+            private_key: settings.get_settings_or_panic("ETHEREUM_PRIVATE_KEY"),
         })
     }
 

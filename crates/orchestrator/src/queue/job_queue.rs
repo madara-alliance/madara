@@ -3,8 +3,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use color_eyre::eyre::Context;
 use color_eyre::Result as EyreResult;
+use color_eyre::eyre::Context;
 use omniqueue::{Delivery, QueueError};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
@@ -13,13 +13,13 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::jobs::{handle_job_failure, process_job, verify_job, JobError, OtherError};
+use crate::jobs::{JobError, OtherError, handle_job_failure, process_job, verify_job};
+use crate::workers::Worker;
 use crate::workers::data_submission_worker::DataSubmissionWorker;
 use crate::workers::proof_registration::ProofRegistrationWorker;
 use crate::workers::proving::ProvingWorker;
 use crate::workers::snos::SnosWorker;
 use crate::workers::update_state::UpdateStateWorker;
-use crate::workers::Worker;
 
 pub const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 pub const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
@@ -46,7 +46,7 @@ pub enum ConsumptionError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobQueueMessage {
-    pub(crate) id: Uuid,
+    pub id: Uuid,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -286,7 +286,7 @@ async fn get_delivery_from_queue(queue: &str, config: Arc<Config>) -> Result<Del
 }
 
 macro_rules! spawn_consumer {
-    ($queue_type :expr, $handler : expr, $consume_function: expr, $config :expr) => {
+    ($queue_type:expr, $handler:expr, $consume_function:expr, $config:expr) => {
         let config_clone = $config.clone();
         tokio::spawn(async move {
             loop {

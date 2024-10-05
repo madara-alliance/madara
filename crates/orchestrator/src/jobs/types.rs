@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use color_eyre::eyre::eyre;
-use color_eyre::Result;
-use da_client_interface::DaVerificationStatus;
 // TODO: job types shouldn't depend on mongodb
 use chrono::{DateTime, Utc};
+use color_eyre::Result;
+use color_eyre::eyre::eyre;
+use da_client_interface::DaVerificationStatus;
 #[cfg(feature = "with_mongodb")]
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
 use serde::{Deserialize, Serialize};
@@ -89,20 +89,16 @@ pub enum JobType {
 pub enum JobStatus {
     /// An acknowledgement that the job has been received by the
     /// orchestrator and is waiting to be processed
-
     #[strum(to_string = "Created")]
     Created,
     /// Some system has taken a lock over the job for processing and no
     /// other system to process the job
-
     #[strum(to_string = "Locked for Processing")]
     LockedForProcessing,
     /// The job has been processed and is pending verification
-
     #[strum(to_string = "Pending Verification")]
     PendingVerification,
     /// The job has been processed and verified. No other actions needs to be taken
-
     #[strum(to_string = "Completed")]
     Completed,
     /// The job was processed but the was unable to be verified under the given time

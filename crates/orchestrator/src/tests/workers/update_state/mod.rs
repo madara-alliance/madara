@@ -5,8 +5,8 @@ use da_client_interface::MockDaClient;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::rstest;
-use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use starknet::providers::jsonrpc::HttpTransport;
 use url::Url;
 use uuid::Uuid;
 
@@ -17,8 +17,8 @@ use crate::jobs::{Job, MockJob};
 use crate::queue::MockQueueProvider;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{get_job_by_mock_id_vector, get_job_item_mock_by_id};
-use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
+use crate::workers::update_state::UpdateStateWorker;
 
 #[rstest]
 #[case(false, 0)]

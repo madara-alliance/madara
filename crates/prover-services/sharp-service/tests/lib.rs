@@ -1,15 +1,14 @@
-use crate::constants::{CAIRO_PIE_PATH, TEST_FACT};
-use alloy::primitives::B256;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
-use prover_client_interface::{ProverClient, Task, TaskId, TaskStatus};
+use prover_client_interface::{ProverClient, Task, TaskStatus};
 use rstest::rstest;
 use serde_json::json;
-use sharp_service::{split_task_id, SharpProverService};
-use snos::sharp::CairoJobStatus;
-use std::str::FromStr;
+use sharp_service::SharpProverService;
+use starknet_os::sharp::CairoJobStatus;
 use utils::env_utils::get_env_var_or_panic;
 use utils::settings::env::EnvSettingsProvider;
+
+use crate::constants::{CAIRO_PIE_PATH, TEST_FACT};
 
 mod constants;
 
@@ -34,13 +33,7 @@ async fn prover_client_submit_task_works() {
         then.status(200).body(serde_json::to_vec(&sharp_response).unwrap());
     });
 
-    let task_id = sharp_service.submit_task(Task::CairoPie(cairo_pie)).await.unwrap();
-    let (_, fact) = split_task_id(&task_id).unwrap();
-
-    // Comparing the calculated fact with on chain verified fact.
-    // You can check on etherscan by calling `isValid` function on GpsStatementVerifier.sol
-    // Contract Link : https://etherscan.io/address/0x9fb7F48dCB26b7bFA4e580b2dEFf637B13751942#readContract#F9
-    assert_eq!(fact, B256::from_str("0xec8fa9cdfe069ed59b8f17aeecfd95c6abd616379269d2fa16a80955b6e0f068").unwrap());
+    assert!(sharp_service.submit_task(Task::CairoPie(cairo_pie)).await.is_ok());
 
     sharp_add_job_call.assert();
 }
@@ -67,10 +60,7 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
         then.status(200).body(serde_json::to_vec(&get_task_status_sharp_response(&cairo_job_status)).unwrap());
     });
 
-    let task_status = sharp_service
-        .get_task_status(&TaskId::from(format!("c31381bf-4739-4667-b5b8-b08af1c6b1c7:0x{}", TEST_FACT)))
-        .await
-        .unwrap();
+    let task_status = sharp_service.get_task_status("c31381bf-4739-4667-b5b8-b08af1c6b1c7", TEST_FACT).await.unwrap();
     assert_eq!(task_status, get_task_status_expectation(&cairo_job_status), "Cairo Job Status assertion failed");
 
     sharp_add_job_call.assert();

@@ -8,7 +8,9 @@ alloy-primitives = { version = "0.7.7", default-features = false }
 
 alloy = { workspace = true, features = ["full", "node-bindings"] }
 async-trait = { workspace = true }
+bytes = "1.7.2"
 c-kzg = { workspace = true }
+cairo-vm = { workspace = true }
 color-eyre = { workspace = true }
 dotenvy = { workspace = true }
 lazy_static = { workspace = true }
@@ -16,9 +18,9 @@ log.workspace = true
 mockall = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
-serde = { workspace = true, default-features = false, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 settlement-client-interface = { workspace = true }
-snos = { workspace = true }
+starknet-os = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 utils = { workspace = true }

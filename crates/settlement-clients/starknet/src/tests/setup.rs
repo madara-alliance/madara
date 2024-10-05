@@ -1,13 +1,12 @@
+use std::collections::HashMap;
 use std::env;
+use std::future::Future;
 use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use std::{
-    collections::HashMap,
-    future::Future,
-    path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    time::Duration,
-};
+use std::time::Duration;
+
 use tempfile::TempDir;
 use url::Url;
 

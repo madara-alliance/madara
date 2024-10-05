@@ -3,19 +3,17 @@ use std::collections::HashMap;
 use assert_matches::assert_matches;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
+use da_client_interface::MockDaClient;
 use mockall::predicate::always;
 use rstest::rstest;
 use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
-use da_client_interface::MockDaClient;
-
 use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
 use crate::jobs::da_job::{DaError, DaJob};
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::jobs::Job;
-use crate::jobs::JobError;
+use crate::jobs::{Job, JobError};
 use crate::tests::common::drop_database;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 
@@ -66,20 +64,17 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     let max_blob_per_txn = services.config.da_client().max_blob_per_txn().await;
 
     let response = DaJob
-        .process_job(
-            services.config,
-            &mut JobItem {
-                id: Uuid::default(),
-                internal_id: internal_id.to_string(),
-                job_type: JobType::DataSubmission,
-                status: JobStatus::Created,
-                external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
-                metadata: HashMap::default(),
-                version: 0,
-                created_at: Utc::now().round_subsecs(0),
-                updated_at: Utc::now().round_subsecs(0),
-            },
-        )
+        .process_job(services.config, &mut JobItem {
+            id: Uuid::default(),
+            internal_id: internal_id.to_string(),
+            job_type: JobType::DataSubmission,
+            status: JobStatus::Created,
+            external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
+            metadata: HashMap::default(),
+            version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
+        })
         .await;
 
     assert_matches!(response,
@@ -130,20 +125,17 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     });
 
     let response = DaJob
-        .process_job(
-            services.config,
-            &mut JobItem {
-                id: Uuid::default(),
-                internal_id: internal_id.to_string(),
-                job_type: JobType::DataSubmission,
-                status: JobStatus::Created,
-                external_id: ExternalId::String("1".to_string().into_boxed_str()),
-                metadata: HashMap::default(),
-                version: 0,
-                created_at: Utc::now().round_subsecs(0),
-                updated_at: Utc::now().round_subsecs(0),
-            },
-        )
+        .process_job(services.config, &mut JobItem {
+            id: Uuid::default(),
+            internal_id: internal_id.to_string(),
+            job_type: JobType::DataSubmission,
+            status: JobStatus::Created,
+            external_id: ExternalId::String("1".to_string().into_boxed_str()),
+            metadata: HashMap::default(),
+            version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
+        })
         .await;
 
     assert_matches!(response,
@@ -213,20 +205,17 @@ async fn test_da_job_process_job_success(
     });
 
     let response = DaJob
-        .process_job(
-            services.config,
-            &mut JobItem {
-                id: Uuid::default(),
-                internal_id: internal_id.to_string(),
-                job_type: JobType::DataSubmission,
-                status: JobStatus::Created,
-                external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
-                metadata: HashMap::default(),
-                version: 0,
-                created_at: Utc::now().round_subsecs(0),
-                updated_at: Utc::now().round_subsecs(0),
-            },
-        )
+        .process_job(services.config, &mut JobItem {
+            id: Uuid::default(),
+            internal_id: internal_id.to_string(),
+            job_type: JobType::DataSubmission,
+            status: JobStatus::Created,
+            external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
+            metadata: HashMap::default(),
+            version: 0,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
+        })
         .await;
 
     assert_matches!(response,

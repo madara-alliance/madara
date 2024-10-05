@@ -12,6 +12,8 @@ use crate::jobs::types::{JobItem, JobStatus, JobType};
 /// MongoDB
 pub mod mongodb;
 
+/// Database Trait
+///
 /// The Database trait is used to define the methods that a database
 /// should implement to be used as a storage for the orchestrator. The
 /// purpose of this trait is to allow developers to use any DB of their choice

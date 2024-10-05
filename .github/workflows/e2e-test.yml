@@ -2,10 +2,13 @@ name: E2E test
 
 on:
   workflow_call:
+    secrets:
+      RPC_FOR_SNOS:
+        required: true
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
 
     services:
       localstack:
@@ -24,16 +27,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # selecting a toolchain either by action or manual `rustup` calls should happen
-      # before the plugin, as the cache uses the current rustc version as its cache key
-      - run: rustup show
+      - name: Install necessary dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libclang-dev
 
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
+          default: true
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -41,19 +46,59 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Check Anvil Installation
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Display Python version
+        run: python --version
+
+      - name: Install cairo 0
+        run: |
+          # Creating venv
+          python3.9 -m venv ~/cairo_venv
+          source ~/cairo_venv/bin/activate
+
+          # Installing deps
+          sudo apt install -y libgmp3-dev
+          pip3 install ecdsa fastecdsa sympy
+
+          # Installing cairo lang
+          pip3 install cairo-lang
+
+      - name: Check Anvil Installation & run Anvil
         run: |
           if command -v anvil &> /dev/null
           then
               echo "Anvil is installed. Version information:"
               anvil --version
+              anvil &
           else
               echo "Anvil is not installed or not in PATH"
               exit 1
           fi
 
+      - name: Build SNOS files
+        run: |
+          # Downloading all the deps
+          cargo fetch
+          # Navigate to checkouts folder
+          cd /home/runner/.cargo/git/checkouts
+          # Navigating to snos
+          cd snos-*
+          # Navigating to the build
+          cd 71bd0a1
+          # Activating the venv
+          source ~/cairo_venv/bin/activate
+          # Building the cairo lang repo requirements
+          ./scripts/setup-tests.sh
+
       - name: Run e2e test
         env:
-          ETHEREUM_BLAST_RPC_URL: ${{ secrets.ETHEREUM_BLAST_RPC_URL }}
+          SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
         run: |
-          RUST_LOG=trace cargo test --features testing test_orchestrator_workflow -- --nocapture
+          RUST_LOG=info  cargo test --features testing test_orchestrator_workflow -- --nocapture

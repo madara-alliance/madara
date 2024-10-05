@@ -1,10 +1,12 @@
+use std::fmt::Write;
+
 use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::primitives::U256;
 use alloy_primitives::FixedBytes;
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::{eyre::ContextCompat, Result as EyreResult};
-use std::fmt::Write;
+use color_eyre::Result as EyreResult;
+use color_eyre::eyre::ContextCompat;
 
 /// Converts a `&[[u8; 32]]` to `Vec<U256>`.
 /// Pads with zeros if any inner slice is shorter than 32 bytes.
@@ -19,26 +21,30 @@ pub(crate) fn slice_u8_to_u256(slice: &[u8]) -> EyreResult<U256> {
 
 /// Function to convert a slice of u8 to a padded hex string
 /// Function only takes a slice of length up to 32 elements
-/// Pads the value on the right side with zeros only if the converted string has lesser than 64 characters.
+/// Pads the value on the right side with zeros only if the converted string has lesser than 64
+/// characters.
 pub(crate) fn to_padded_hex(slice: &[u8]) -> String {
     assert!(slice.len() <= 32, "Slice length must not exceed 32");
     let hex = slice.iter().fold(String::new(), |mut output, byte| {
         // 0: pads with zeros
         // 2: specifies the minimum width (2 characters)
         // x: formats the number as lowercase hexadecimal
-        // writes a byte value as a two-digit hexadecimal number (padded with a leading zero if necessary) to the specified output.
+        // writes a byte value as a two-digit hexadecimal number (padded with a leading zero if necessary)
+        // to the specified output.
         let _ = write!(output, "{byte:02x}");
         output
     });
     format!("{:0<64}", hex)
 }
 
-/// Function to construct the transaction's `input data` for updating the state in the core contract.
-/// HEX Concatenation: MethodId, Offset, length for program_output, lines count, program_output, length for kzg_proof, kzg_proof
-/// All 64 chars, if lesser padded from left with 0s
+/// To get the input data
+///
+/// Function to construct the transaction's `input data` for updating the state in the core
+/// contract. HEX Concatenation: MethodId, Offset, length for program_output, lines count,
+/// program_output, length for kzg_proof, kzg_proof All 64 chars, if lesser padded from left with 0s
 pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String, Error> {
-    // bytes4(keccak256(bytes("updateStateKzgDA(uint256[],bytes)")))
-    let method_id_hex = "0xb72d42a1";
+    // bytes4(keccak256(bytes("updateStateKzgDA(uint256[],bytes[])")))
+    let method_id_hex = "0x507ee528";
 
     // offset for updateStateKzgDA is 64
     let offset: u64 = 64;
@@ -48,7 +54,8 @@ pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proof: [u8
     let program_output_length = program_output.len();
     let program_output_hex = u8_32_slice_to_hex_string(&program_output);
 
-    // length for program_output: 3*64 [offset, length, lines all have 64 char length] + length of program_output
+    // length for program_output: 3*64 [offset, length, lines all have 64 char length] + length of
+    // program_output
     let length_program_output = (3 * 64 + program_output_hex.len()) / 2;
     let length_program_output_hex = format!("{:0>64x}", length_program_output);
 
@@ -58,6 +65,13 @@ pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proof: [u8
     // length of KZG proof
     let length_kzg_hex = format!("{:0>64x}", kzg_proof.len());
 
+    // length of total kzg inputs in the vec
+    // hardcoded as of now
+    // TODO : need to update this when we are integrating the 0.13.2 updated spec with AR (Applicative
+    // recursion)
+    let length_kzg_output = format!("{:0>64x}", 1);
+    // Offset for 1st KZG proof starts at 32 in our case
+    let kzg_proof_offset = format!("{:0>64x}", 32);
     // KZG proof
     let kzg_proof_hex = u8_48_to_hex_string(kzg_proof);
 
@@ -66,6 +80,8 @@ pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proof: [u8
         + &length_program_output_hex
         + &lines_count_hex
         + &program_output_hex
+        + &length_kzg_output
+        + &kzg_proof_offset
         + &length_kzg_hex
         + &kzg_proof_hex;
 
@@ -127,10 +143,13 @@ pub(crate) async fn prepare_sidecar(
 #[cfg(test)]
 mod tests {
 
-    use super::*;
+    use std::fs;
+    use std::path::Path;
+
     use color_eyre::eyre::eyre;
     use rstest::rstest;
-    use std::{fs, path::Path};
+
+    use super::*;
 
     #[rstest]
     #[case::typical(&[

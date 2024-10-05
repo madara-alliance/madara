@@ -1,11 +1,7 @@
-use cairo_vm::program_hash::ProgramHashError;
-
-#[derive(Debug, thiserror::Error)]
-pub enum FactCheckerError {
-    #[error("Fact registry call failed: {0}")]
-    FactRegistry(#[source] alloy::contract::Error),
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum FactError {
     #[error("Failed to compute program hash: {0}")]
-    ProgramHashCompute(#[from] ProgramHashError),
+    ProgramHashCompute(String),
     #[error("There is no additional data for the output builtin in Cairo PIE")]
     OutputBuiltinNoAdditionalData,
     #[error("There is no segment info for the output builtin in Cairo PIE")]

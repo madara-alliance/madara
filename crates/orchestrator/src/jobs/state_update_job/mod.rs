@@ -8,24 +8,22 @@ use async_trait::async_trait;
 use cairo_vm::Felt252;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
-use snos::io::output::StarknetOsOutput;
+use settlement_client_interface::SettlementVerificationStatus;
+use starknet_os::io::output::StarknetOsOutput;
 use thiserror::Error;
 use uuid::Uuid;
-
-use settlement_client_interface::SettlementVerificationStatus;
 
 use super::constants::{
     JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX, JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO,
     JOB_PROCESS_ATTEMPT_METADATA_KEY,
 };
 use super::{JobError, OtherError};
-
 use crate::config::Config;
-use crate::constants::SNOS_OUTPUT_FILE_NAME;
-use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
-use crate::jobs::state_update_job::utils::{fetch_blob_data_for_block, fetch_program_data_for_block};
-use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use crate::constants::{PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::jobs::Job;
+use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
+use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
+use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum StateUpdateError {
@@ -47,7 +45,10 @@ pub enum StateUpdateError {
     #[error("Tx {tx_hash:?} should not be pending.")]
     TxnShouldNotBePending { tx_hash: String },
 
-    #[error("Last number in block_numbers array returned as None. Possible Error : Delay in job processing or Failed job execution.")]
+    #[error(
+        "Last number in block_numbers array returned as None. Possible Error : Delay in job processing or Failed job \
+         execution."
+    )]
     LastNumberReturnedError,
 
     #[error("No block numbers found.")]
@@ -150,7 +151,8 @@ impl Job for StateUpdateJob {
     /// Returns the status of the passed job.
     /// Status will be verified if:
     /// 1. the last settlement tx hash is successful,
-    /// 2. the expected last settled block from our configuration is indeed the one found in the provider.
+    /// 2. the expected last settled block from our configuration is indeed the one found in the
+    ///    provider.
     #[tracing::instrument(fields(category = "state_update"), skip(self, config))]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let attempt_no = job
@@ -293,9 +295,7 @@ impl StateUpdateJob {
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?;
 
-            let program_output = fetch_program_data_for_block(block_no, config.clone())
-                .await
-                .map_err(|e| JobError::Other(OtherError(e)))?;
+            let program_output = self.fetch_program_output_for_block(block_no, config.clone()).await;
             // TODO :
             // Fetching nonce before the transaction is run
             // Sending update_state transaction from the settlement client
@@ -316,6 +316,15 @@ impl StateUpdateJob {
         let snos_output_bytes = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");
         serde_json::from_slice(snos_output_bytes.iter().as_slice())
             .expect("Unable to convert the data into snos output")
+    }
+
+    async fn fetch_program_output_for_block(&self, block_number: u64, config: Arc<Config>) -> Vec<[u8; 32]> {
+        let storage_client = config.storage();
+        let key = block_number.to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
+        let program_output = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");
+        let decode_data: Vec<[u8; 32]> =
+            bincode::deserialize(&program_output).expect("Unable to decode the fetched data from storage provider.");
+        decode_data
     }
 
     /// Insert the tx hashes into the the metadata for the attempt number - will be used later by

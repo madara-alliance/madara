@@ -1,7 +1,7 @@
+use axum::Router;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Router;
 
 pub fn app_router() -> Router {
     Router::new().route("/health", get(root)).nest("/v1/dev", dev_routes()).fallback(handler_404)

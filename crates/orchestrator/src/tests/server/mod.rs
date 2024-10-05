@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
-use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use starknet::providers::jsonrpc::HttpTransport;
 use url::Url;
 use utils::env_utils::get_env_var_or_default;
 

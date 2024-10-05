@@ -44,7 +44,7 @@ bincode = "1.3.3"
 bytes = "1.6.0"
 color-eyre = "0.6.2"
 chrono = "0.4.0"
-c-kzg = "1.0.0"
+c-kzg = "1.0.3"
 dotenvy = "0.15.7"
 futures = "0.3.30"
 log = "0.4.21"
@@ -75,6 +75,7 @@ hex = "0.4"
 itertools = "0.13.0"
 mockall = "0.13.0"
 testcontainers = "0.18.0"
+once_cell = "1.8"
 appchain-core-contract-client = { git = "https://github.com/byteZorvin/zaun", branch = "type-update" }
 crypto-bigint = { version = "0.5.5" }
 
@@ -100,17 +101,16 @@ tracing-subscriber = { version = "0.3.18", features = [
 tracing-opentelemetry = "0.26.0"
 
 # Cairo VM
-cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", features = [
-  "extensive_hints",
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "notlesh/segment-arena-relocation-fix", features = [
   "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
 ] }
 
-# TODO: we currently use the Moonsong fork & the os-output-serde branch so we
-# can deserialize our snos input json into a StarknetOsInput struct.
-# TODO: update back to the main repo once it's merged
-# Sharp (Starkware)
-snos = { git = "https://github.com/keep-starknet-strange/snos" }
-starknet-os = { git = "https://github.com/keep-starknet-strange/snos" }
+# Snos & Sharp (Starkware)
+# TODO: Update branch to main once the PR is merged (PR #368 in the snos repository)
+starknet-os = { git = "https://github.com/ocdbytes/snos", rev = "71bd0a102735f690c503b8e708773a2db843ef59" }
+prove_block = { git = "https://github.com/ocdbytes/snos", rev = "71bd0a102735f690c503b8e708773a2db843ef59" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }

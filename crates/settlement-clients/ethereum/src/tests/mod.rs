@@ -1,11 +1,12 @@
-use alloy::node_bindings::AnvilInstance;
-use alloy::providers::{ext::AnvilApi, ProviderBuilder};
-use alloy::{node_bindings::Anvil, sol};
-use alloy_primitives::Address;
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use alloy::node_bindings::{Anvil, AnvilInstance};
+use alloy::providers::ProviderBuilder;
+use alloy::providers::ext::AnvilApi;
+use alloy::sol;
+use alloy_primitives::Address;
 use utils::env_utils::get_env_var_or_panic;
 
 // Using the Pipe trait to write chained operations easier
@@ -31,11 +32,13 @@ lazy_static! {
         .to_str()
         .expect("Path contains invalid Unicode")
         .to_string();
-    static ref ETH_RPC: String = get_env_var_or_panic("ETHEREUM_BLAST_RPC_URL");
+    static ref ETH_RPC: String = get_env_var_or_panic("SETTLEMENT_RPC_URL");
     pub static ref STARKNET_OPERATOR_ADDRESS: Address =
-        Address::from_str("0x2C169DFe5fBbA12957Bdd0Ba47d9CEDbFE260CA7").expect("Unable to parse address");
+        Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str())
+            .expect("Could not parse STARKNET_OPERATOR_ADDRESS");
     static ref STARKNET_CORE_CONTRACT_ADDRESS: Address =
-        Address::from_str("0xc662c410c0ecf747543f5ba90660f6abebd9c8c4").expect("Could not impersonate account.");
+        Address::from_str(get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS").as_str())
+            .expect("Could not parse L1_CORE_CONTRACT_ADDRESS");
     pub static ref TEST_NONCE: u64 = 666068;
 }
 
@@ -49,9 +52,9 @@ sol!(
 
 sol! {
     #[allow(missing_docs)]
-    #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506101c18061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063b72d42a11461002d575b5f80fd5b6100476004803603810190610042919061010d565b610049565b005b50505050565b5f80fd5b5f80fd5b5f80fd5b5f80fd5b5f80fd5b5f8083601f84011261007857610077610057565b5b8235905067ffffffffffffffff8111156100955761009461005b565b5b6020830191508360208202830111156100b1576100b061005f565b5b9250929050565b5f8083601f8401126100cd576100cc610057565b5b8235905067ffffffffffffffff8111156100ea576100e961005b565b5b6020830191508360018202830111156101065761010561005f565b5b9250929050565b5f805f80604085870312156101255761012461004f565b5b5f85013567ffffffffffffffff81111561014257610141610053565b5b61014e87828801610063565b9450945050602085013567ffffffffffffffff81111561017157610170610053565b5b61017d878288016100b8565b92509250509295919450925056fea2646970667358221220fa7488d5a2a9e6c21e6f46145a831b0f04fdebab83868dc2b996c17f8cba4d8064736f6c634300081a0033")]
+    #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506101c18061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063507ee5281461002d575b5f80fd5b6100476004803603810190610042919061010d565b610049565b005b50505050565b5f80fd5b5f80fd5b5f80fd5b5f80fd5b5f80fd5b5f8083601f84011261007857610077610057565b5b8235905067ffffffffffffffff8111156100955761009461005b565b5b6020830191508360208202830111156100b1576100b061005f565b5b9250929050565b5f8083601f8401126100cd576100cc610057565b5b8235905067ffffffffffffffff8111156100ea576100e961005b565b5b6020830191508360208202830111156101065761010561005f565b5b9250929050565b5f805f80604085870312156101255761012461004f565b5b5f85013567ffffffffffffffff81111561014257610141610053565b5b61014e87828801610063565b9450945050602085013567ffffffffffffffff81111561017157610170610053565b5b61017d878288016100b8565b92509250509295919450925056fea2646970667358221220a4f885f02f3fe00b96deaedfe0b727380694ef82ad021223472395e757405c1b64736f6c634300081a0033")]
     contract DummyCoreContract {
-        function updateStateKzgDA(uint256[] calldata programOutput, bytes calldata kzgProof)  external {
+        function updateStateKzgDA(uint256[] calldata programOutput, bytes[] calldata kzgProof)  external {
         }
     }
 }
@@ -112,12 +115,12 @@ impl EthereumTestBuilder {
 #[cfg(test)]
 #[cfg(feature = "testing")]
 mod settlement_client_tests {
-    use crate::conversion::to_padded_hex;
-    use crate::tests::{
-        DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, STARKNET_CORE_CONTRACT,
-        STARKNET_CORE_CONTRACT_ADDRESS, STARKNET_OPERATOR_ADDRESS,
-    };
-    use crate::EthereumSettlementClient;
+    use std::fs;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    use std::str::FromStr;
+    use std::time::Duration;
+
     use alloy::eips::eip4844::BYTES_PER_BLOB;
     use alloy::providers::Provider;
     use alloy::sol_types::private::U256;
@@ -125,20 +128,24 @@ mod settlement_client_tests {
     use color_eyre::eyre::eyre;
     use rstest::rstest;
     use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
-    use std::fs;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    use std::str::FromStr;
-    use std::time::Duration;
     use tokio::time::sleep;
+
+    use super::ENV_FILE_PATH;
+    use crate::EthereumSettlementClient;
+    use crate::conversion::to_padded_hex;
+    use crate::tests::{
+        CURRENT_PATH, DummyCoreContract, EthereumTestBuilder, Pipe, STARKNET_CORE_CONTRACT,
+        STARKNET_CORE_CONTRACT_ADDRESS, STARKNET_OPERATOR_ADDRESS,
+    };
 
     #[rstest]
     #[tokio::test]
-    /// Tests if the method is able to do a transaction with same function selector on a dummy contract.
-    /// If we impersonate starknet operator then we loose out on testing for validity of signature in the transaction.
-    /// Starknet core contract has a modifier `onlyOperator` that restricts anyone but the operator to send transaction to `updateStateKzgDa` method
-    /// And hence to test the signature and transaction via a dummy contract that has same function selector as `updateStateKzgDa`.
-    /// and anvil is for testing on fork Eth.
+    /// Tests if the method is able to do a transaction with same function selector on a dummy
+    /// contract. If we impersonate starknet operator then we loose out on testing for validity
+    /// of signature in the transaction. Starknet core contract has a modifier `onlyOperator`
+    /// that restricts anyone but the operator to send transaction to `updateStateKzgDa` method
+    /// And hence to test the signature and transaction via a dummy contract that has same function
+    /// selector as `updateStateKzgDa`. and anvil is for testing on fork Eth.
     async fn update_state_blob_with_dummy_contract_works() {
         let setup = EthereumTestBuilder::new().build().await;
 
@@ -154,8 +161,8 @@ mod settlement_client_tests {
         // Getting latest nonce after deployment
         let nonce = ethereum_settlement_client.get_nonce().await.expect("Unable to fetch nonce");
 
-        // keeping 9 elements because the code accesses 8th index as program output
-        let program_output = vec![[0; 32]; 9];
+        // keeping 11 elements because the code accesses 10th index as program output
+        let program_output = vec![[0; 32]; 11];
         // keeping one element as we've a check in build_proof
         let blob_data_vec = vec![vec![0; BYTES_PER_BLOB]];
 
@@ -194,11 +201,12 @@ mod settlement_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[case::basic(20468827)]
-    /// tests if the method is able to impersonate the`Starknet Operator` and do an `update_state` transaction.
-    /// We impersonate the Starknet Operator to send a transaction to the Core contract
-    /// Here signature checks are bypassed and anvil is for testing on fork Eth.
+    #[case::basic(6806847)]
+    /// tests if the method is able to impersonate the`Starknet Operator` and do an `update_state`
+    /// transaction. We impersonate the Starknet Operator to send a transaction to the Core
+    /// contract Here signature checks are bypassed and anvil is for testing on fork Eth.
     async fn update_state_blob_with_impersonation_works(#[case] fork_block_no: u64) {
+        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
         let setup = EthereumTestBuilder::new()
             .with_fork_block(fork_block_no)
             .with_impersonator(*STARKNET_OPERATOR_ADDRESS)
@@ -224,16 +232,13 @@ mod settlement_client_tests {
         // Create a contract instance.
         let contract = STARKNET_CORE_CONTRACT::new(*STARKNET_CORE_CONTRACT_ADDRESS, setup.provider.clone());
 
-        // Call the contract, retrieve the current stateBlockNumber.
-        let prev_block_number = contract.stateBlockNumber().call().await.unwrap();
-
         // generating program output and blob vector
         let program_output = get_program_output(fork_block_no + 1);
         let blob_data_vec = get_blob_data(fork_block_no + 1);
 
         // Calling update_state_with_blobs
         let update_state_result = ethereum_settlement_client
-            .update_state_with_blobs(program_output, blob_data_vec, nonce)
+            .update_state_with_blobs(program_output.clone(), blob_data_vec, nonce)
             .await
             .expect("Could not go through update_state_with_blobs.");
 
@@ -255,12 +260,13 @@ mod settlement_client_tests {
         // Call the contract, retrieve the latest stateBlockNumber.
         let latest_block_number = contract.stateBlockNumber().call().await.unwrap();
 
-        assert_eq!(prev_block_number._0.as_u32() + 1, latest_block_number._0.as_u32());
+        let expected_latest_block_number = bytes_to_u32(program_output[3].as_slice()).unwrap();
+        assert_eq!(expected_latest_block_number, latest_block_number._0.as_u32());
     }
 
     #[rstest]
     #[tokio::test]
-    #[case::typical(20468827)]
+    #[case::typical(6806847)]
     async fn get_last_settled_block_typical_works(#[case] fork_block_no: u64) {
         let setup = EthereumTestBuilder::new().with_fork_block(fork_block_no).build().await;
         let ethereum_settlement_client = EthereumSettlementClient::with_test_settings(
@@ -271,13 +277,13 @@ mod settlement_client_tests {
         );
         assert_eq!(
             ethereum_settlement_client.get_last_settled_block().await.expect("Could not get last settled block."),
-            666039
+            218378
         );
     }
 
     #[rstest]
     #[tokio::test]
-    #[case::basic(20468828)]
+    #[case::basic(6806848)]
     async fn creating_input_data_works(#[case] fork_block_no: u64) {
         use c_kzg::Bytes32;
 
@@ -286,14 +292,14 @@ mod settlement_client_tests {
         let program_output = get_program_output(fork_block_no);
         let blob_data_vec = get_blob_data(fork_block_no);
 
-        let x_0_value_bytes32 = Bytes32::from(program_output[8]);
+        let x_0_value_bytes32 = Bytes32::from(program_output[10]);
 
         let kzg_proof = EthereumSettlementClient::build_proof(blob_data_vec, x_0_value_bytes32)
             .expect("Unable to build KZG proof for given params.")
             .to_owned();
 
         let input_bytes = get_input_data_for_eip_4844(program_output, kzg_proof).expect("unable to create input data");
-        let expected = "0xb72d42a100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000001706ac7b2661801b4c0733da6ed1d2910b3b97259534ca95a63940932513111fba028bccc051eaae1b9a69b53e64a68021233b4dee2030aeda4be886324b3fbb3e00000000000000000000000000000000000000000000000000000000000a29b8070626a88de6a77855ecd683757207cdd18ba56553dca6c0c98ec523b827bee005ba2078240f1585f96424c2d1ee48211da3b3f9177bf2b9880b4fc91d59e9a2000000000000000000000000000000000000000000000000000000000000000100000000000000002b4e335bc41dc46c71f29928a5094a8c96a0c3536cabe53e0000000000000000810abb1929a0d45cdd62a20f9ccfd5807502334e7deb35d404c86d8b63a5741770fefca2f9b8efb7e663d89097edb3c60595b236f6e78e6f000000000000000000000000000000004a4b8a979fefc4d6b82e030fb082ca98000000000000000000000000000000004e8371c6774260e87b92447d4a2b0e170000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000bf67f59d2988a46fbff7ed79a621778a3cd3985b0088eedbe2fe3918b69ccb411713b7fa72079d4eddf291103ccbe41e78a9615c0000000000000000000000000000000000000000000000000000000000194fe601b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1900000000000000000000000000000000000000000000000000000000000000050000000000000000000000007f39c581f595b53c5cb19bd0b3f8da6c935e2ca000000000000000000000000012ccc443d39da45e5f640b3e71f0c7502152dbac01d4988e248d342439aa025b302e1f07595f6a5c810dcce23e7379e48f05d4cf000000000000000000000000000000000000000000000007f189b5374ad2a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030ab015987628cffee3ef99b9768ef8ca12c6244525f0cd10310046eaa21291b5aca164d044c5b4ad7212c767b165ed5e300000000000000000000000000000000";
+        let expected = "0x507ee52800000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000001701159ac740283722faa4471b19bd217faf0cc51f1b999308b8fc88785934bab4065bf49c042ee1779db664138a3e7e749ac221e5ea7b645717afee0707671d1a000000000000000000000000000000000000000000000000000000000003550a000000000000000000000000000000000000000000000000000000000003552200dee83a5fc2a2bdc20e74a55394fe5d8701148b6d3e95057e03d54b5053370104f67725b439c46eaaae6af772cf254706f6c0ebe870d8b3bbd5e40a5226148e01e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70000504fa6e5eb930c0d8329d4a77d98391f2730dab8516600aeaf733a6123432000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000277d5eca17f14b34dc8ca9e87d0f88fb0a5b6f71a5580b19244e6426c63b453000000000000000000000000000000000000000000000000000000000000000100000000000000009c2e6b2dce7fc7bcce9d4351c65bb7221755f09ee6f37c00000000000000000092dd12a200752ae9e63b5985ce6ab169e41ce94dac0ed03e00000000000000000000000000000000bdde84d7e9b9947c940b47083d320d330000000000000000000000000000000016bcc30c68f19429e08cc07b5a63ce6f000000000000000000000000000000000000000000000000000000000000000500daf7c17ae6ecc0379a2a1a5a19d7fa2db03dd7ae98d15f2c5ae22b877c84c90000000000000000000000009bdbfca4fefb51f83e9c5dbcfa53661b3b3deba30000000000000000000000000000000000000000000000000000000000000002069e95c78dd84fe0706b39476b0454ff1f9ecbbce43b9456c1bbf18d54469af405b3e92711ef23d62955df1f6975e0db2a360c5f34ab2532bb1c89a48e25f2720000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000030b773cc46ff56ace65907afc646b5822808c0a01b223afa4f7bc8d9a8d73f3f398d3098fe69255956599d9c2d565b083400000000000000000000000000000000";
         assert_eq!(input_bytes, expected);
     }
 
@@ -350,5 +356,18 @@ mod settlement_client_tests {
         }
 
         Ok(result)
+    }
+
+    fn bytes_to_u32(bytes: &[u8]) -> Result<u32, &'static str> {
+        // Ensure we have at least 4 bytes
+        if bytes.len() < 4 {
+            return Err("Input slice must be at least 4 bytes long");
+        }
+
+        // Take the last 4 bytes, regardless of the total length
+        let last_four_bytes = &bytes[bytes.len() - 4..];
+
+        // Convert to u32
+        Ok(u32::from_be_bytes(last_four_bytes.try_into().unwrap()))
     }
 }

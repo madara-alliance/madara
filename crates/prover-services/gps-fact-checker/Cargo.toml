@@ -14,12 +14,18 @@ alloy = { workspace = true, features = [
   "reqwest",
 ] }
 async-trait.workspace = true
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
+bincode = { workspace = true }
 cairo-vm.workspace = true
+dotenvy.workspace = true
 itertools.workspace = true
 log.workspace = true
 num-bigint = "0.4.5"
+serde = { version = "1.0", features = ["derive"] }
 starknet.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 url.workspace = true
 utils.workspace = true
 

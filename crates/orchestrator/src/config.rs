@@ -1,44 +1,46 @@
 #[cfg(feature = "testing")]
+use std::str::FromStr;
+use std::sync::Arc;
+
+#[cfg(feature = "testing")]
 use alloy::primitives::Address;
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
-#[cfg(feature = "testing")]
-use std::str::FromStr;
-
-use std::sync::Arc;
-
-use aws_config::SdkConfig;
+use aws_config::meta::region::RegionProviderChain;
+use aws_config::{Region, SdkConfig};
+use aws_credential_types::Credentials;
+use da_client_interface::DaClient;
 use dotenvy::dotenv;
 use ethereum_da_client::config::EthereumDaConfig;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Url};
-
-use da_client_interface::DaClient;
 use ethereum_settlement_client::EthereumSettlementClient;
 use prover_client_interface::ProverClient;
 use settlement_client_interface::SettlementClient;
 use sharp_service::SharpProverService;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Url};
 use starknet_settlement_client::StarknetSettlementClient;
 use utils::env_utils::get_env_var_or_panic;
-
-use crate::alerts::aws_sns::AWSSNS;
-use crate::alerts::Alerts;
-use crate::data_storage::aws_s3::AWSS3;
-use crate::data_storage::DataStorage;
-use aws_config::meta::region::RegionProviderChain;
-use aws_config::Region;
-use aws_credential_types::Credentials;
-use utils::settings::env::EnvSettingsProvider;
 use utils::settings::Settings;
+use utils::settings::env::EnvSettingsProvider;
 
-use crate::database::mongodb::MongoDb;
+use crate::alerts::Alerts;
+use crate::alerts::aws_sns::AWSSNS;
+use crate::data_storage::DataStorage;
+use crate::data_storage::aws_s3::AWSS3;
 use crate::database::Database;
-use crate::queue::sqs::SqsQueue;
+use crate::database::mongodb::MongoDb;
 use crate::queue::QueueProvider;
+use crate::queue::sqs::SqsQueue;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
 pub struct Config {
+    /// The RPC url used by the [starknet_client]
+    starknet_rpc_url: Url,
+    /// The RPC url to be used when running SNOS
+    /// When Madara supports getProof, we can re use
+    /// starknet_rpc_url for SNOS as well
+    snos_url: Url,
     /// The starknet client to get data from the node
     starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -95,9 +97,9 @@ pub async fn init_config() -> Arc<Config> {
     let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));
 
     // init starknet client
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(settings_provider.get_settings_or_panic("MADARA_RPC_URL").as_str()).expect("Failed to parse URL"),
-    ));
+    let rpc_url = Url::parse(&settings_provider.get_settings_or_panic("MADARA_RPC_URL")).expect("Failed to parse URL");
+    let snos_url = Url::parse(&settings_provider.get_settings_or_panic("RPC_FOR_SNOS")).expect("Failed to parse URL");
+    let provider = JsonRpcClient::new(HttpTransport::new(rpc_url.clone()));
 
     // init database
     let database = build_database_client(&settings_provider).await;
@@ -114,6 +116,8 @@ pub async fn init_config() -> Arc<Config> {
     let queue = build_queue_client();
 
     Arc::new(Config::new(
+        rpc_url,
+        snos_url,
         Arc::new(provider),
         da_client,
         prover_client,
@@ -129,6 +133,8 @@ impl Config {
     /// Create a new config
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        starknet_rpc_url: Url,
+        snos_url: Url,
         starknet_client: Arc<JsonRpcClient<HttpTransport>>,
         da_client: Box<dyn DaClient>,
         prover_client: Box<dyn ProverClient>,
@@ -138,7 +144,28 @@ impl Config {
         storage: Box<dyn DataStorage>,
         alerts: Box<dyn Alerts>,
     ) -> Self {
-        Self { starknet_client, da_client, prover_client, settlement_client, database, queue, storage, alerts }
+        Self {
+            starknet_rpc_url,
+            snos_url,
+            starknet_client,
+            da_client,
+            prover_client,
+            settlement_client,
+            database,
+            queue,
+            storage,
+            alerts,
+        }
+    }
+
+    /// Returns the starknet rpc url
+    pub fn starknet_rpc_url(&self) -> &Url {
+        &self.starknet_rpc_url
+    }
+
+    /// Returns the snos rpc url
+    pub fn snos_url(&self) -> &Url {
+        &self.snos_url
     }
 
     /// Returns the starknet client
@@ -214,7 +241,7 @@ pub async fn build_settlement_client(settings_provider: &impl Settings) -> Box<d
             {
                 Box::new(EthereumSettlementClient::with_test_settings(
                     RootProvider::new_http(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str().parse().unwrap()),
-                    Address::from_str(&get_env_var_or_panic("DEFAULT_L1_CORE_CONTRACT_ADDRESS")).unwrap(),
+                    Address::from_str(&get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS")).unwrap(),
                     Url::from_str(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str()).unwrap(),
                     Some(Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str()).unwrap()),
                 ))

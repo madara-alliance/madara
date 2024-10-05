@@ -2,18 +2,18 @@
 //!
 //! Port of https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/cairo/bootloaders/generate_fact.py
 
-use alloy::primitives::{keccak256, B256};
+use alloy::primitives::{B256, keccak256};
+use cairo_vm::Felt252;
 use cairo_vm::program_hash::compute_program_hash_chain;
 use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::types::relocatable::MaybeRelocatable;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use cairo_vm::Felt252;
 use starknet::core::types::Felt;
-// use starknet::core::types::FieldElement;
 
-use super::error::FactCheckerError;
+// use starknet::core::types::FieldElement;
+use super::error::FactError;
 use super::fact_node::generate_merkle_root;
-use super::fact_topology::{get_fact_topology, FactTopology};
+use super::fact_topology::{FactTopology, get_fact_topology};
 
 /// Default bootloader program version.
 ///
@@ -26,13 +26,16 @@ pub struct FactInfo {
     pub fact: B256,
 }
 
-pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result<FactInfo, FactCheckerError> {
+pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result<FactInfo, FactError> {
     let program_output = get_program_output(cairo_pie)?;
+
     let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
     let program_hash = match program_hash {
         Some(hash) => hash,
         None => Felt::from_bytes_be(
-            &compute_program_hash_chain(&cairo_pie.metadata.program, BOOTLOADER_VERSION)?.to_bytes_be(),
+            &compute_program_hash_chain(&cairo_pie.metadata.program, BOOTLOADER_VERSION)
+                .map_err(|e| FactError::ProgramHashCompute(e.to_string()))?
+                .to_bytes_be(),
         ),
     };
     let output_root = generate_merkle_root(&program_output, &fact_topology)?;
@@ -40,12 +43,9 @@ pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result
     Ok(FactInfo { program_output, fact_topology, fact })
 }
 
-pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactCheckerError> {
-    let segment_info = cairo_pie
-        .metadata
-        .builtin_segments
-        .get(&BuiltinName::output)
-        .ok_or(FactCheckerError::OutputBuiltinNoSegmentInfo)?;
+pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactError> {
+    let segment_info =
+        cairo_pie.metadata.builtin_segments.get(&BuiltinName::output).ok_or(FactError::OutputBuiltinNoSegmentInfo)?;
 
     let mut output = vec![Felt252::from(0); segment_info.size];
     let mut insertion_count = 0;
@@ -59,14 +59,14 @@ pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactChec
                     insertion_count += 1;
                 }
                 MaybeRelocatable::RelocatableValue(_) => {
-                    return Err(FactCheckerError::OutputSegmentUnexpectedRelocatable(*offset));
+                    return Err(FactError::OutputSegmentUnexpectedRelocatable(*offset));
                 }
             }
         }
     }
 
     if insertion_count != segment_info.size {
-        return Err(FactCheckerError::InvalidSegment);
+        return Err(FactError::InvalidSegment);
     }
 
     Ok(output)
@@ -77,15 +77,17 @@ mod tests {
     use std::path::PathBuf;
 
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
+    use rstest::rstest;
 
     use super::get_fact_info;
 
-    #[test]
-    fn test_fact_info() {
-        // Generated using the get_fact.py script
-        let expected_fact = "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782";
+    #[rstest]
+    #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
+    #[case("238996-SN.zip", "0xec8fa9cdfe069ed59b8f17aeecfd95c6abd616379269d2fa16a80955b6e0f068")]
+    async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
+        dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
         let cairo_pie_path: PathBuf =
-            [env!("CARGO_MANIFEST_DIR"), "tests", "artifacts", "fibonacci.zip"].iter().collect();
+            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
         let fact_info = get_fact_info(&cairo_pie, None).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());

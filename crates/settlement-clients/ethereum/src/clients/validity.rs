@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use alloy::{network::Ethereum, primitives::Address, transports::http::Http};
+use alloy::network::Ethereum;
+use alloy::primitives::Address;
+use alloy::transports::http::Http;
 
 use crate::clients::interfaces::validity_interface::StarknetValidityContract;
 use crate::types::LocalWalletSignerMiddleware;

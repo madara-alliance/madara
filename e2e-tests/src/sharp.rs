@@ -1,6 +1,6 @@
-use crate::mock_server::MockServerGlobal;
 use httpmock::MockServer;
-use serde_json::Value;
+
+use crate::mock_server::{MockResponseBodyType, MockServerGlobal};
 
 /// Starknet Client struct (has mock server inside)
 pub struct SharpClient {
@@ -29,7 +29,7 @@ impl SharpClient {
         path: &str,
         body_contains: Vec<String>,
         status: Option<u16>,
-        response_body: &Value,
+        response_body: MockResponseBodyType,
     ) {
         self.client.add_mock_on_endpoint(path, body_contains, status, response_body);
     }

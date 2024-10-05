@@ -1,7 +1,8 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use crate::config::EthereumDaConfig;
+use std::str::FromStr;
+
 use alloy::network::Ethereum;
 use alloy::providers::{ProviderBuilder, RootProvider};
 use alloy::rpc::client::RpcClient;
@@ -12,9 +13,10 @@ use da_client_interface::{DaClient, DaVerificationStatus};
 use mockall::automock;
 use mockall::predicate::*;
 use reqwest::Client;
-use std::str::FromStr;
 use url::Url;
 use utils::settings::Settings;
+
+use crate::config::EthereumDaConfig;
 
 pub const DA_SETTINGS_NAME: &str = "ethereum";
 
@@ -28,8 +30,8 @@ pub struct EthereumDaClient {
 #[async_trait]
 impl DaClient for EthereumDaClient {
     async fn publish_state_diff(&self, _state_diff: Vec<Vec<u8>>, _to: &[u8; 32]) -> Result<String> {
-        // Here in case of ethereum we are not publishing the state diff because we are doing it all together in update_state job.
-        // So we don't need to send the blob here.
+        // Here in case of ethereum we are not publishing the state diff because we are doing it all
+        // together in update_state job. So we don't need to send the blob here.
         Ok("NA".to_string())
     }
 

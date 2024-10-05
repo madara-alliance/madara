@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use gps_fact_checker::FactCheckerError;
 use mockall::automock;
 
 /// Prover client provides an abstraction over different proving services that do the following:
@@ -13,15 +14,13 @@ use mockall::automock;
 #[automock]
 #[async_trait]
 pub trait ProverClient: Send + Sync {
-    async fn submit_task(&self, task: Task) -> Result<TaskId, ProverClientError>;
-    async fn get_task_status(&self, task_id: &TaskId) -> Result<TaskStatus, ProverClientError>;
+    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError>;
+    async fn get_task_status(&self, task_id: &str, fact: &str) -> Result<TaskStatus, ProverClientError>;
 }
 
 pub enum Task {
     CairoPie(CairoPie),
 }
-
-pub type TaskId = String;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -37,9 +36,13 @@ pub enum ProverClientError {
     #[error("Settings provider error: {0}")]
     SettingsProvider(#[from] utils::settings::SettingsProviderError),
     #[error("Task is invalid: {0}")]
-    TaskInvalid(TaskId),
+    TaskInvalid(String),
     #[error("Fact checker error: {0}")]
-    FactChecker(#[from] gps_fact_checker::error::FactCheckerError),
+    FactChecker(#[from] FactCheckerError),
     #[error("Failed to encode Cairo PIE: {0}")]
-    PieEncoding(#[source] snos::error::SnOsError),
+    PieEncoding(#[source] starknet_os::error::SnOsError),
+    #[error("Failed to convert job key to UUID: {0}")]
+    InvalidJobKey(String),
+    #[error("Failed to convert fact to B256: {0}")]
+    FailedToConvertFact(String),
 }

@@ -13,7 +13,7 @@ impl AWSSNSConfig {
     pub fn new_with_settings(settings: &impl Settings) -> color_eyre::Result<Self> {
         Ok(Self {
             sns_arn: settings.get_settings_or_panic("AWS_SNS_ARN"),
-            sns_arn_region: settings.get_settings_or_panic("AWS_SNS_REGION"),
+            sns_arn_region: settings.get_settings_or_panic("AWS_REGION"),
         })
     }
 }

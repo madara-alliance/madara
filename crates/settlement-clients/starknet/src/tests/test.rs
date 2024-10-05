@@ -1,25 +1,26 @@
-use super::setup::{wait_for_cond, MadaraCmd, MadaraCmdBuilder};
-use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient};
-use rstest::{fixture, rstest};
-use settlement_client_interface::SettlementClient;
-use starknet::{
-    accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount},
-    contract::ContractFactory,
-    core::types::{
-        contract::{CompiledClass, SierraClass},
-        BlockId, BlockTag, DeclareTransactionResult, Felt, FunctionCall, InvokeTransactionResult, StarknetError,
-        TransactionExecutionStatus, TransactionStatus,
-    },
-    macros::{felt, selector},
-    providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, Url},
-    signers::{LocalWallet, SigningKey},
-};
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use utils::settings::env::EnvSettingsProvider;
+
+use rstest::{fixture, rstest};
+use settlement_client_interface::SettlementClient;
+use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::contract::ContractFactory;
+use starknet::core::types::contract::{CompiledClass, SierraClass};
+use starknet::core::types::{
+    BlockId, BlockTag, DeclareTransactionResult, Felt, FunctionCall, InvokeTransactionResult, StarknetError,
+    TransactionExecutionStatus, TransactionStatus,
+};
+use starknet::macros::{felt, selector};
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
+use starknet::signers::{LocalWallet, SigningKey};
 use utils::settings::Settings;
+use utils::settings::env::EnvSettingsProvider;
+
+use super::setup::{MadaraCmd, MadaraCmdBuilder, wait_for_cond};
+use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient};
 
 #[fixture]
 pub async fn spin_up_madara() -> MadaraCmd {

@@ -1,6 +1,9 @@
-use crate::mock_server::MockServerGlobal;
+use std::collections::HashMap;
+
 use httpmock::MockServer;
 use serde_json::Value;
+
+use crate::mock_server::{MockResponseBodyType, MockServerGlobal};
 
 /// Starknet Client struct (has mock server inside)
 pub struct StarknetClient {
@@ -11,6 +14,10 @@ impl StarknetClient {
     /// To create a new client
     pub fn new() -> Self {
         Self { client: MockServerGlobal::new() }
+    }
+
+    pub fn new_with_proxy(rpc_url: String, method_response_hashmap: HashMap<String, Value>) -> Self {
+        Self { client: MockServerGlobal::proxy(rpc_url, method_response_hashmap) }
     }
 
     /// To get mutable mock server ref for adding expects for URLs
@@ -29,7 +36,7 @@ impl StarknetClient {
         path: &str,
         body_contains: Vec<String>,
         status: Option<u16>,
-        response_body: &Value,
+        response_body: MockResponseBodyType,
     ) {
         self.client.add_mock_on_endpoint(path, body_contains, status, response_body);
     }

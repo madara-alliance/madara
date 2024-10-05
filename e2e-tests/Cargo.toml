@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 alloy.workspace = true
+alloy-sol-types = "0.8.5"
 async-trait.workspace = true
 aws-config.workspace = true
 aws-sdk-eventbridge.workspace = true
@@ -15,7 +16,7 @@ chrono = { workspace = true }
 color-eyre.workspace = true
 dotenvy.workspace = true
 ethereum-settlement-client.workspace = true
-httpmock.workspace = true
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy"] }
 log.workspace = true
 mongodb.workspace = true
 orchestrator.workspace = true

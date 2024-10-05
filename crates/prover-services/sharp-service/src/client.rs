@@ -1,7 +1,8 @@
-use base64::engine::general_purpose;
-use base64::Engine;
-use reqwest::{Certificate, ClientBuilder, Identity};
 use std::clone::Clone;
+
+use base64::Engine;
+use base64::engine::general_purpose;
+use reqwest::{Certificate, ClientBuilder, Identity};
 use url::Url;
 use utils::env_utils::get_env_var_or_panic;
 use utils::settings::Settings;

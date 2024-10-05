@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+
 use crate::config::Config;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::workers::Worker;
-use async_trait::async_trait;
-use std::collections::HashMap;
-use std::error::Error;
-use std::sync::Arc;
 
 pub struct DataSubmissionWorker;
 
@@ -37,7 +39,8 @@ impl Worker for DataSubmissionWorker {
         let latest_data_submission_id: u64 = latest_data_submission_job_id.parse()?;
         let latest_proven_id: u64 = latest_proven_job_id.parse()?;
 
-        // creating data submission jobs for latest blocks that don't have existing data submission jobs yet.
+        // creating data submission jobs for latest blocks that don't have existing data submission jobs
+        // yet.
         for new_job_id in latest_data_submission_id + 1..latest_proven_id + 1 {
             create_job(JobType::DataSubmission, new_job_id.to_string(), HashMap::new(), config.clone()).await?;
         }

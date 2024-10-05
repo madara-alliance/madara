@@ -1,8 +1,10 @@
-use std::{error::Error, sync::Arc};
+use std::error::Error;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{config::Config, workers::Worker};
+use crate::config::Config;
+use crate::workers::Worker;
 
 pub struct ProofRegistrationWorker;
 

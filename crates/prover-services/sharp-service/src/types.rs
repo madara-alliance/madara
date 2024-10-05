@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use snos::sharp::{CairoJobStatus, InvalidReason};
+use starknet_os::sharp::{CairoJobStatus, InvalidReason};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SharpAddJobResponse {

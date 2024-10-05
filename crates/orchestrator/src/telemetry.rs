@@ -1,26 +1,19 @@
-use opentelemetry::global;
-use opentelemetry::trace::TracerProvider;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::ExportConfig;
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::metrics::reader::DefaultAggregationSelector;
-use opentelemetry_sdk::metrics::reader::DefaultTemporalitySelector;
-use opentelemetry_sdk::metrics::PeriodicReader;
-use opentelemetry_sdk::metrics::SdkMeterProvider;
-use opentelemetry_sdk::trace::BatchConfigBuilder;
-use opentelemetry_sdk::trace::Config;
-use opentelemetry_sdk::trace::Tracer;
-use opentelemetry_sdk::{runtime, Resource};
 use std::str::FromStr as _;
 use std::time::Duration;
-use tracing::Level;
 
+use lazy_static::lazy_static;
+use opentelemetry::trace::TracerProvider;
+use opentelemetry::{KeyValue, global};
+use opentelemetry_otlp::{ExportConfig, WithExportConfig};
+use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemporalitySelector};
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
+use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
+use opentelemetry_sdk::{Resource, runtime};
+use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use utils::env_utils::get_env_var_or_panic;
-
-use lazy_static::lazy_static;
 
 lazy_static! {
     #[derive(Debug)]
@@ -89,7 +82,8 @@ pub fn init_metric_provider(otel_endpoint: &str) -> SdkMeterProvider {
 
     // Creates and builds the OTLP exporter
     let exporter = opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
-        // TODO: highly likely that changing these configs will result in correct collection of traces, inhibiting full channel issue
+        // TODO: highly likely that changing these configs will result in correct collection of traces, inhibiting full
+        // channel issue
         Box::new(DefaultAggregationSelector::new()),
         Box::new(DefaultTemporalitySelector::new()),
     );
@@ -112,14 +106,17 @@ pub fn init_metric_provider(otel_endpoint: &str) -> SdkMeterProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::OrchestratorMetrics;
-    use once_cell::sync::Lazy;
-    use utils::{metrics::lib::Metrics, register_metric};
-
-    use super::*;
     use std::env;
 
+    use once_cell::sync::Lazy;
+    use utils::metrics::lib::Metrics;
+    use utils::register_metric;
+
+    use super::*;
+    use crate::metrics::OrchestratorMetrics;
+
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn test_init_metric_provider() {
         // Set up necessary environment variables
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
@@ -135,10 +132,11 @@ mod tests {
 
         // Check if the global meter provider is set
         let _global_provider = global::meter_provider();
-        assert!(result.is_ok(), "init_metric_provider() panicked");
+        assert!(result.is_ok(), "init_metric_provider() panicked")
     }
 
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn test_init_tracer_provider() {
         // Set up necessary environment variables
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
@@ -155,6 +153,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn test_init_analytics() {
         // This test just ensures that the function doesn't panic
 
@@ -168,6 +167,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::needless_return)]
     async fn test_gauge_setter() {
         // This test just ensures that the function doesn't panic
 

@@ -1,14 +1,14 @@
-use std::sync::Arc;
-
-use crate::config::Config;
 use std::fmt::Write;
 use std::io::{BufRead, Cursor};
 use std::str::FromStr;
+use std::sync::Arc;
 
-use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME};
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
 use num_bigint::BigUint;
+
+use crate::config::Config;
+use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME};
 
 /// Fetching the blob data (stored in remote storage during DA job) for a particular block
 pub async fn fetch_blob_data_for_block(block_number: u64, config: Arc<Config>) -> color_eyre::Result<Vec<Vec<u8>>> {
@@ -75,7 +75,8 @@ fn to_padded_hex(slice: &[u8]) -> String {
         // 0: pads with zeros
         // 2: specifies the minimum width (2 characters)
         // x: formats the number as lowercase hexadecimal
-        // writes a byte value as a two-digit hexadecimal number (padded with a leading zero if necessary) to the specified output.
+        // writes a byte value as a two-digit hexadecimal number (padded with a leading zero if necessary)
+        // to the specified output.
         let _ = write!(output, "{byte:02x}");
         output
     });

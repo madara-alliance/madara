@@ -1,15 +1,8 @@
-pub mod error;
-pub mod fact_info;
-pub mod fact_node;
-pub mod fact_topology;
-
 use alloy::primitives::{Address, B256};
 use alloy::providers::{ProviderBuilder, RootProvider};
 use alloy::sol;
 use alloy::transports::http::{Client, Http};
 use url::Url;
-
-use self::error::FactCheckerError;
 
 sol!(
     #[allow(missing_docs)]
@@ -17,6 +10,12 @@ sol!(
     FactRegistry,
     "tests/artifacts/FactRegistry.json"
 );
+
+#[derive(Debug, thiserror::Error)]
+pub enum FactCheckerError {
+    #[error("Fact registry call failed: {0}")]
+    InvalidFact(#[source] alloy::contract::Error),
+}
 
 pub struct FactChecker {
     fact_registry: FactRegistry::FactRegistryInstance<TransportT, ProviderT>,
@@ -34,7 +33,7 @@ impl FactChecker {
 
     pub async fn is_valid(&self, fact: &B256) -> Result<bool, FactCheckerError> {
         let FactRegistry::isValidReturn { _0 } =
-            self.fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::FactRegistry)?;
+            self.fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)?;
         Ok(_0)
     }
 }

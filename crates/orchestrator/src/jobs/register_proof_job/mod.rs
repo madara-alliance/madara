@@ -6,11 +6,10 @@ use chrono::{SubsecRound, Utc};
 use color_eyre::Result;
 use uuid::Uuid;
 
-use crate::config::Config;
-use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::Job;
-
 use super::JobError;
+use crate::config::Config;
+use crate::jobs::Job;
+use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 
 pub struct RegisterProofJob;
 

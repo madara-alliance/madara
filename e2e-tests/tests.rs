@@ -1,23 +1,25 @@
-use bytes::Bytes;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::time::{Duration, Instant};
+
 use chrono::{SubsecRound, Utc};
+use e2e_tests::anvil::AnvilSetup;
 use e2e_tests::localstack::LocalStack;
+use e2e_tests::mock_server::MockResponseBodyType;
 use e2e_tests::sharp::SharpClient;
 use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
-use ethereum_settlement_client::tests::{EthereumTest, EthereumTestBuilder, STARKNET_OPERATOR_ADDRESS};
 use mongodb::bson::doc;
 use orchestrator::data_storage::DataStorage;
+use orchestrator::jobs::constants::JOB_METADATA_SNOS_BLOCK;
 use orchestrator::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use orchestrator::queue::job_queue::WorkerTriggerType;
+use orchestrator::queue::job_queue::{JobQueueMessage, WorkerTriggerType};
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate};
-use std::collections::HashMap;
-use std::fs::{read, File};
-use std::io::Read;
-use std::time::{Duration, Instant};
 use utils::env_utils::get_env_var_or_panic;
 use uuid::Uuid;
 
@@ -32,34 +34,31 @@ struct ExpectedDBState {
     version: i32,
 }
 
+#[allow(dead_code)]
 /// Initial setup for e2e tests
 struct Setup {
     mongo_db_instance: MongoDbServer,
     starknet_client: StarknetClient,
-    _ethereum_client: EthereumTest,
     sharp_client: SharpClient,
     env_vector: Vec<(String, String)>,
     localstack_instance: LocalStack,
 }
-
-const L1_BLOCK_TO_FORK: u64 = 20607627;
 
 impl Setup {
     /// Initialise a new setup
     pub async fn new() -> Self {
         let mongo_db_instance = MongoDbServer::run().await;
         println!("✅ Mongo DB setup completed");
+
         let starknet_client = StarknetClient::new();
         println!("✅ Starknet/Madara client setup completed");
-        let ethereum_client = EthereumTestBuilder::new()
-            .with_fork_block(L1_BLOCK_TO_FORK)
-            .with_impersonator(*STARKNET_OPERATOR_ADDRESS)
-            .build()
-            .await;
-        println!("✅ Ethereum client setup completed");
 
         let sharp_client = SharpClient::new();
         println!("✅ Sharp client setup completed");
+
+        let anvil_setup = AnvilSetup::new();
+        let (starknet_core_contract_address, verifier_contract_address) = anvil_setup.deploy_contracts().await;
+        println!("✅ Anvil setup completed");
 
         // Setting up LocalStack
         let localstack_instance = LocalStack::new().await;
@@ -75,8 +74,8 @@ impl Setup {
             vec![("MONGODB_CONNECTION_STRING".to_string(), mongo_db_instance.endpoint().to_string())];
 
         // Adding other values to the environment variables vector
-        env_vec.push(("MADARA_RPC_URL".to_string(), starknet_client.url()));
-        env_vec.push(("SETTLEMENT_RPC_URL".to_string(), ethereum_client.rpc_url.clone().to_string()));
+        env_vec.push(("MADARA_RPC_URL".to_string(), get_env_var_or_panic("RPC_FOR_SNOS")));
+        env_vec.push(("SETTLEMENT_RPC_URL".to_string(), anvil_setup.rpc_url.to_string()));
         env_vec.push(("SHARP_URL".to_string(), sharp_client.url()));
 
         // Sharp envs
@@ -85,20 +84,24 @@ impl Setup {
         env_vec.push(("SHARP_USER_KEY".to_string(), get_env_var_or_panic("SHARP_USER_KEY")));
         env_vec.push(("SHARP_SERVER_CRT".to_string(), get_env_var_or_panic("SHARP_SERVER_CRT")));
 
-        Self {
-            mongo_db_instance,
-            starknet_client,
-            _ethereum_client: ethereum_client,
-            sharp_client,
-            env_vector: env_vec,
-            localstack_instance,
-        }
+        // Adding impersonation for operator as our own address here.
+        // As we are using test contracts thus we don't need any impersonation.
+        // But that logic is being used in integration tests so to keep that. We
+        // add this address here.
+        // Anvil.addresses[0]
+        env_vec
+            .push(("STARKNET_OPERATOR_ADDRESS".to_string(), "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string()));
+        env_vec.push(("MEMORY_PAGES_CONTRACT_ADDRESS".to_string(), verifier_contract_address.to_string()));
+        env_vec.push(("L1_CORE_CONTRACT_ADDRESS".to_string(), starknet_core_contract_address.to_string()));
+
+        Self { mongo_db_instance, starknet_client, sharp_client, env_vector: env_vec, localstack_instance }
     }
 
     pub fn mongo_db_instance(&self) -> &MongoDbServer {
         &self.mongo_db_instance
     }
 
+    #[allow(dead_code)]
     pub fn starknet_client(&mut self) -> &mut StarknetClient {
         &mut self.starknet_client
     }
@@ -117,7 +120,7 @@ impl Setup {
 }
 
 #[rstest]
-#[case("671070".to_string())]
+#[case("66645".to_string())]
 #[tokio::test]
 async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Fetching the env vars from the test env file as these will be used in
@@ -126,24 +129,21 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     let mut setup_config = Setup::new().await;
     // Setup S3
-    setup_s3(setup_config.localstack().s3_client(), l2_block_number.clone()).await.unwrap();
+    setup_s3(setup_config.localstack().s3_client()).await.unwrap();
 
     // Step 1 : SNOS job runs =========================================
-    // TODO : Update the code with actual SNOS implementation
     // Updates the job in the db
-    put_job_data_in_db_snos(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
+    let job_id = put_job_data_in_db_snos(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
+    put_snos_job_in_processing_queue(setup_config.localstack(), job_id).await.unwrap();
 
     // Step 2: Proving Job ============================================
     // Mocking the endpoint
     mock_proving_job_endpoint_output(setup_config.sharp_client()).await;
+    put_job_data_in_db_proving(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
 
     // Step 3: DA job =================================================
-    // mocking get_block_call from starknet client
-
     // Adding a mock da job so that worker does not create 60k+ jobs
     put_job_data_in_db_da(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
-    mock_starknet_get_state_update(setup_config.starknet_client(), l2_block_number.clone()).await;
-    mock_starknet_get_nonce(setup_config.starknet_client(), l2_block_number.clone()).await;
 
     // Step 4: State Update job =======================================
     put_job_data_in_db_update_state(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
@@ -164,7 +164,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 3,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(900),
+        Duration::from_secs(1500),
         l2_block_number.clone(),
         setup_config.mongo_db_instance(),
         expected_state_after_proving_job,
@@ -254,14 +254,14 @@ async fn get_database_state(
 // ======================================
 
 /// Puts after SNOS job state into the database
-pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: String) {
+pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: String) -> Uuid {
     let job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: l2_block_number,
+        internal_id: l2_block_number.clone(),
         job_type: JobType::SnosRun,
-        status: JobStatus::Completed,
+        status: JobStatus::Created,
         external_id: ExternalId::Number(0),
-        metadata: HashMap::new(),
+        metadata: HashMap::from([(JOB_METADATA_SNOS_BLOCK.to_string(), l2_block_number)]),
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
@@ -269,7 +269,17 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 
     let mongo_db_client = get_mongo_db_client(mongo_db).await;
     mongo_db_client.database("orchestrator").drop(None).await.unwrap();
-    mongo_db_client.database("orchestrator").collection("jobs").insert_one(job_item, None).await.unwrap();
+    mongo_db_client.database("orchestrator").collection("jobs").insert_one(job_item.clone(), None).await.unwrap();
+
+    job_item.id
+}
+
+/// Adding SNOS job in JOB_PROCESSING_QUEUE so that the job is triggered
+/// as soon as it is picked up by orchestrator
+pub async fn put_snos_job_in_processing_queue(local_stack: &LocalStack, id: Uuid) -> color_eyre::Result<()> {
+    let message = JobQueueMessage { id };
+    local_stack.put_message_in_queue(message, get_env_var_or_panic("SQS_JOB_PROCESSING_QUEUE_URL")).await?;
+    Ok(())
 }
 
 /// Mocks the endpoint for sharp client
@@ -280,7 +290,12 @@ pub async fn mock_proving_job_endpoint_output(sharp_client: &mut SharpClient) {
             "code" : "JOB_RECEIVED_SUCCESSFULLY"
         }
     );
-    sharp_client.add_mock_on_endpoint("/add_job", vec!["".to_string()], Some(200), &add_job_response);
+    sharp_client.add_mock_on_endpoint(
+        "/add_job",
+        vec!["".to_string()],
+        Some(200),
+        MockResponseBodyType::Json(add_job_response),
+    );
 
     // Getting job response
     let get_job_response = json!(
@@ -289,7 +304,12 @@ pub async fn mock_proving_job_endpoint_output(sharp_client: &mut SharpClient) {
                 "validation_done": true
         }
     );
-    sharp_client.add_mock_on_endpoint("/get_status", vec!["".to_string()], Some(200), &get_job_response);
+    sharp_client.add_mock_on_endpoint(
+        "/get_status",
+        vec!["".to_string()],
+        Some(200),
+        MockResponseBodyType::Json(get_job_response),
+    );
 }
 
 /// Puts after SNOS job state into the database
@@ -334,7 +354,7 @@ pub async fn mock_starknet_get_nonce(starknet_client: &mut StarknetClient, l2_bl
             "/",
             vec!["starknet_getNonce".to_string(), hex_field_element],
             Some(200),
-            &response,
+            MockResponseBodyType::Json(response),
         );
     }
 }
@@ -345,10 +365,27 @@ pub async fn mock_starknet_get_state_update(starknet_client: &mut StarknetClient
         .expect("issue while reading");
 
     let state_update = MaybePendingStateUpdate::Update(state_update);
-    let state_update = serde_json::to_value(&state_update).unwrap();
+    let state_update = serde_json::to_value(state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
 
-    starknet_client.add_mock_on_endpoint("/", vec!["starknet_getStateUpdate".to_string()], Some(200), &response);
+    starknet_client.add_mock_on_endpoint(
+        "/",
+        vec!["starknet_getStateUpdate".to_string()],
+        Some(200),
+        MockResponseBodyType::Json(response),
+    );
+}
+
+/// Mocks the starknet get state update call (happens in da client for ethereum)
+pub async fn mock_starknet_get_latest_block(starknet_client: &mut StarknetClient, l2_block_number: String) {
+    starknet_client.add_mock_on_endpoint(
+        "/",
+        vec!["starknet_blockNumber".to_string()],
+        Some(200),
+        MockResponseBodyType::Json(json!({
+                "id": 640641,"jsonrpc":"2.0","result": l2_block_number.parse::<u64>().unwrap()
+        })),
+    );
 }
 
 /// Puts after SNOS job state into the database
@@ -369,39 +406,31 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
     mongo_db_client.database("orchestrator").collection("jobs").insert_one(job_item, None).await.unwrap();
 }
 
+/// Puts after SNOS job state into the database
+pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_number: String) {
+    let job_item = JobItem {
+        id: Uuid::new_v4(),
+        internal_id: (l2_block_number.parse::<u32>().unwrap() - 1).to_string(),
+        job_type: JobType::ProofCreation,
+        status: JobStatus::Completed,
+        external_id: ExternalId::Number(0),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: Utc::now().round_subsecs(0),
+        updated_at: Utc::now().round_subsecs(0),
+    };
+
+    let mongo_db_client = get_mongo_db_client(mongo_db).await;
+    mongo_db_client.database("orchestrator").collection("jobs").insert_one(job_item, None).await.unwrap();
+}
+
 // ======================================
 // Tests specific functions
 // ======================================
 
 /// To set up s3 files needed for e2e test (test_orchestrator_workflow)
 #[allow(clippy::borrowed_box)]
-pub async fn setup_s3(
-    s3_client: &Box<dyn DataStorage + Send + Sync>,
-    l2_block_number: String,
-) -> color_eyre::Result<()> {
+pub async fn setup_s3(s3_client: &Box<dyn DataStorage + Send + Sync>) -> color_eyre::Result<()> {
     s3_client.build_test_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap();
-
-    // putting the snos output and program output for the given block into localstack s3
-    let snos_output_key = l2_block_number.clone() + "/snos_output.json";
-    let snos_output_json = read("artifacts/snos_output.json").unwrap();
-    s3_client.put_data(Bytes::from(snos_output_json), &snos_output_key).await?;
-    println!("✅ snos output file uploaded to localstack s3.");
-
-    let program_output_key = l2_block_number.clone() + "/program_output.txt";
-    let program_output = read(format!("artifacts/program_output_{}.txt", l2_block_number.clone())).unwrap();
-    s3_client.put_data(Bytes::from(program_output), &program_output_key).await?;
-    println!("✅ program output file uploaded to localstack s3.");
-
-    // getting the PIE file from s3 bucket using URL provided
-    let file =
-        reqwest::get(format!("https://madara-orchestrator-sharp-pie.s3.amazonaws.com/{}-SN.zip", l2_block_number))
-            .await?;
-    let file_bytes = file.bytes().await?;
-
-    // putting the pie file into localstack s3
-    let s3_file_key = l2_block_number + "/pie.zip";
-    s3_client.put_data(file_bytes, &s3_file_key).await?;
-    println!("✅ PIE file uploaded to localstack s3");
-
     Ok(())
 }

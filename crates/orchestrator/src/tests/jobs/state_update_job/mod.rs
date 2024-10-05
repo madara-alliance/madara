@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -8,12 +9,12 @@ use color_eyre::eyre::eyre;
 use httpmock::prelude::*;
 use lazy_static::lazy_static;
 use mockall::predicate::{always, eq};
+use num_bigint::BigUint;
 use rstest::*;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
-use url::Url;
-
 use settlement_client_interface::MockSettlementClient;
+use starknet::providers::JsonRpcClient;
+use starknet::providers::jsonrpc::HttpTransport;
+use url::Url;
 
 use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::data_storage::MockDataStorage;
@@ -21,7 +22,7 @@ use crate::jobs::constants::{
     JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY, JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS,
     JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO, JOB_PROCESS_ATTEMPT_METADATA_KEY,
 };
-use crate::jobs::state_update_job::utils::{bytes_to_vec_u8, hex_string_to_u8_vec};
+use crate::jobs::state_update_job::utils::hex_string_to_u8_vec;
 use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, JobError};
@@ -48,10 +49,12 @@ async fn test_process_job_attempt_not_present_fails() {
     assert_eq!(res, JobError::StateUpdateJobError(StateUpdateError::AttemptNumberNotFound));
 }
 
+// TODO : make this test work
 #[rstest]
 #[case(None, String::from("651053,651054,651055"), 0)]
 #[case(Some(651054), String::from("651053,651054,651055"), 1)]
 #[tokio::test]
+// #[ignore]
 async fn test_process_job_works(
     #[case] failed_block_number: Option<u64>,
     #[case] blocks_to_process: String,
@@ -64,7 +67,7 @@ async fn test_process_job_works(
     let aws_region = env::var("AWS_REGION").unwrap();
     println!("AWS_REGION: {}", aws_region);
 
-    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
     let aws_region = env::var("AWS_REGION").unwrap();
     println!("AWS_REGION: {}", aws_region);
@@ -86,19 +89,15 @@ async fn test_process_job_works(
         .unwrap();
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
+
         // Getting the program output data from file.
-        let program_output_data = fs::read_to_string(
+        let program_output_data_vec = read_file_to_vec_u8_32(
             CURRENT_PATH
-                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)),
+                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME))
+                .to_str()
+                .unwrap(),
         )
         .unwrap();
-
-        let program_output_bytes = Bytes::from(program_output_data);
-        let program_output_bytes_ref = program_output_bytes.as_ref();
-
-        let program_output_data_vec = bytes_to_vec_u8(program_output_bytes_ref);
-
-        println!("Mine {:?}", program_output_data_vec);
 
         settlement_client
             .expect_update_state_with_blobs()
@@ -110,8 +109,8 @@ async fn test_process_job_works(
     // Setting random nonce
     settlement_client.expect_get_nonce().with().returning(move || Ok(2));
 
-    // Building a temp config that will be used by `fetch_blob_data_for_block` and `fetch_snos_for_block`
-    // functions while fetching the blob data from storage client.
+    // Building a temp config that will be used by `fetch_blob_data_for_block` and
+    // `fetch_snos_for_block` functions while fetching the blob data from storage client.
     let services = TestConfigBuilder::new()
         .configure_storage_client(ConfigType::Actual)
         .configure_settlement_client(settlement_client.into())
@@ -138,15 +137,18 @@ async fn test_process_job_works(
 
         // Getting the program output data from file.
         let program_output_key = block.to_owned().to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
-        let program_output_data = fs::read_to_string(
+        let program_output_data = read_file_to_vec_u8_32(
             CURRENT_PATH
-                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)),
+                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME))
+                .to_str()
+                .unwrap(),
         )
         .unwrap();
+        let program_output_data_serialized = bincode::serialize(&program_output_data).unwrap();
 
         storage_client.put_data(Bytes::from(snos_output_data), &snos_output_key).await.unwrap();
         storage_client.put_data(Bytes::from(blob_data_vec), &blob_data_key).await.unwrap();
-        storage_client.put_data(Bytes::from(program_output_data), &program_output_key).await.unwrap();
+        storage_client.put_data(Bytes::from(program_output_data_serialized), &program_output_key).await.unwrap();
     }
 
     // setting last failed block number as 651053.
@@ -235,23 +237,29 @@ async fn process_job_works_unit_test() {
         storage_client.expect_get_data().with(eq(x_0_key)).returning(move |_| Ok(Bytes::from(x_0.clone())));
 
         let program_output_key = block_no.to_owned() + "/" + PROGRAM_OUTPUT_FILE_NAME;
-        let program_output = fs::read_to_string(
+        let program_output = read_file_to_vec_u8_32(
             CURRENT_PATH
-                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, PROGRAM_OUTPUT_FILE_NAME)),
+                .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, PROGRAM_OUTPUT_FILE_NAME))
+                .to_str()
+                .unwrap(),
         )
-        .expect("Failed to read the blob data txt file");
+        .unwrap();
         let program_output_clone = program_output.clone();
         storage_client
             .expect_get_data()
             .with(eq(program_output_key))
-            .returning(move |_| Ok(Bytes::from(program_output.clone())));
+            .returning(move |_| Ok(Bytes::from(bincode::serialize(&program_output).unwrap())));
 
-        // let nonce = settlement_client.get_nonce().await.expect("Unable to fetch nonce for settlement client.");
+        // let nonce = settlement_client.get_nonce().await.expect("Unable to fetch nonce for settlement
+        // client.");
         settlement_client.expect_get_nonce().returning(|| Ok(1));
+
+        let deserialized_program_output: Vec<[u8; 32]> =
+            bincode::deserialize(&bincode::serialize(&program_output_clone).unwrap()).unwrap();
 
         settlement_client
             .expect_update_state_with_blobs()
-            .with(eq(bytes_to_vec_u8(&Bytes::from(program_output_clone))), eq(vec![blob_data_vec_clone]), always())
+            .with(eq(deserialized_program_output), eq(vec![blob_data_vec_clone]), always())
             .returning(|_, _, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
     }
 
@@ -362,4 +370,20 @@ fn parse_block_numbers(blocks_to_settle: &str) -> color_eyre::Result<Vec<u64>> {
         .collect::<color_eyre::Result<Vec<u64>, _>>()
         .map_err(|e| eyre!("Block numbers to settle list is not correctly formatted: {e}"))?;
     Ok(block_numbers)
+}
+
+fn read_file_to_vec_u8_32(filename: &str) -> std::io::Result<Vec<[u8; 32]>> {
+    let content = read_to_string(filename)?;
+    let numbers: Vec<BigUint> = content.lines().filter_map(|line| line.parse().ok()).collect();
+
+    Ok(numbers
+        .into_iter()
+        .map(|num| {
+            let bytes = num.to_bytes_be();
+            let mut array = [0u8; 32];
+            let start = 32usize.saturating_sub(bytes.len());
+            array[start..].copy_from_slice(&bytes);
+            array
+        })
+        .collect())
 }

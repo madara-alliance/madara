@@ -21,14 +21,15 @@
 //!
 //! Port of https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/cairo/bootloaders/compute_fact.py
 
-use alloy::primitives::{keccak256, B256};
+use std::ops::Add;
+
+use alloy::primitives::{B256, keccak256};
 use cairo_vm::Felt252;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use std::ops::Add;
 use utils::ensure;
 
-use super::error::FactCheckerError;
+use super::error::FactError;
 use super::fact_topology::FactTopology;
 
 /// Node of the fact tree
@@ -48,10 +49,7 @@ pub struct FactNode {
 ///
 /// Basically it transforms the flat fact topology into a non-binary Merkle tree and then computes
 /// its root, enriching the nodes with metadata such as page sizes and hashes.
-pub fn generate_merkle_root(
-    program_output: &[Felt252],
-    fact_topology: &FactTopology,
-) -> Result<FactNode, FactCheckerError> {
+pub fn generate_merkle_root(program_output: &[Felt252], fact_topology: &FactTopology) -> Result<FactNode, FactError> {
     let FactTopology { tree_structure, mut page_sizes } = fact_topology.clone();
 
     let mut end_offset: usize = 0;
@@ -59,10 +57,7 @@ pub fn generate_merkle_root(
     let mut output_iter = program_output.iter();
 
     for (n_pages, n_nodes) in tree_structure.into_iter().tuples() {
-        ensure!(
-            n_pages <= page_sizes.len(),
-            FactCheckerError::TreeStructurePagesCountOutOfRange(n_pages, page_sizes.len())
-        );
+        ensure!(n_pages <= page_sizes.len(), FactError::TreeStructurePagesCountOutOfRange(n_pages, page_sizes.len()));
 
         // Push n_pages (leaves) to the stack
         for _ in 0..n_pages {
@@ -75,10 +70,7 @@ pub fn generate_merkle_root(
             node_stack.push(FactNode { node_hash, end_offset, page_size, children: vec![] })
         }
 
-        ensure!(
-            n_nodes <= node_stack.len(),
-            FactCheckerError::TreeStructureNodesCountOutOfRange(n_nodes, node_stack.len())
-        );
+        ensure!(n_nodes <= node_stack.len(), FactError::TreeStructureNodesCountOutOfRange(n_nodes, node_stack.len()));
 
         if n_nodes > 0 {
             // Create a parent node to the last n_nodes in the head of the stack.
@@ -104,15 +96,15 @@ pub fn generate_merkle_root(
         }
     }
 
-    ensure!(node_stack.len() == 1, FactCheckerError::TreeStructureRootInvalid);
-    ensure!(page_sizes.is_empty(), FactCheckerError::TreeStructurePagesNotProcessed(page_sizes.len()));
+    ensure!(node_stack.len() == 1, FactError::TreeStructureRootInvalid);
+    ensure!(page_sizes.is_empty(), FactError::TreeStructurePagesNotProcessed(page_sizes.len()));
     ensure!(
         end_offset == program_output.len(),
-        FactCheckerError::TreeStructureEndOffsetInvalid(end_offset, program_output.len())
+        FactError::TreeStructureEndOffsetInvalid(end_offset, program_output.len())
     );
     ensure!(
         node_stack[0].end_offset == program_output.len(),
-        FactCheckerError::TreeStructureRootOffsetInvalid(node_stack[0].end_offset, program_output.len(),)
+        FactError::TreeStructureRootOffsetInvalid(node_stack[0].end_offset, program_output.len(),)
     );
 
     Ok(node_stack.remove(0))
@@ -131,11 +123,13 @@ fn calculate_node_hash(node_data: &[u8]) -> B256 {
 
 #[cfg(test)]
 mod test {
-    use crate::fact_node::generate_merkle_root;
-    use crate::fact_topology::FactTopology;
+    use std::str::FromStr;
+
     use alloy::primitives::B256;
     use cairo_vm::Felt252;
-    use std::str::FromStr;
+
+    use crate::jobs::snos_job::fact_node::generate_merkle_root;
+    use crate::jobs::snos_job::fact_topology::FactTopology;
 
     /// Here we are comparing our output with the same function run in the
     /// `generate_output_root` function in cairo-lang repo.

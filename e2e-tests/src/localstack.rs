@@ -1,22 +1,24 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use aws_config::Region;
+use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target};
 use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::types::QueueAttributeName::VisibilityTimeout;
 use orchestrator::config::ProviderConfig;
-use orchestrator::data_storage::aws_s3::AWSS3;
 use orchestrator::data_storage::DataStorage;
+use orchestrator::data_storage::aws_s3::AWSS3;
 use orchestrator::queue::job_queue::{
-    WorkerTriggerMessage, WorkerTriggerType, JOB_HANDLE_FAILURE_QUEUE, JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE,
-    WORKER_TRIGGER_QUEUE,
+    JOB_HANDLE_FAILURE_QUEUE, JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE, JobQueueMessage, WORKER_TRIGGER_QUEUE,
+    WorkerTriggerMessage, WorkerTriggerType,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
 use utils::env_utils::get_env_var_or_panic;
 use utils::settings::env::EnvSettingsProvider;
 
 /// LocalStack struct
 pub struct LocalStack {
-    sqs_client: aws_sdk_sqs::Client,
+    pub sqs_client: aws_sdk_sqs::Client,
     pub s3_client: Box<dyn DataStorage + Send + Sync>,
     event_bridge_client: aws_sdk_eventbridge::Client,
 }
@@ -163,5 +165,18 @@ impl LocalStack {
             }
             Err(_) => Ok(()),
         }
+    }
+
+    pub async fn put_message_in_queue(&self, message: JobQueueMessage, queue_url: String) -> color_eyre::Result<()> {
+        let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+        let config = aws_config::from_env().region(region_provider).load().await;
+        let client = aws_sdk_sqs::Client::new(&config);
+
+        let rsp =
+            client.send_message().queue_url(queue_url).message_body(serde_json::to_string(&message)?).send().await?;
+
+        println!("Successfully sent message with ID: {:?}", rsp.message_id());
+
+        Ok(())
     }
 }

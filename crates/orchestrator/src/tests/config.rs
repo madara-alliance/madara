@@ -1,28 +1,28 @@
 use std::sync::Arc;
 
-use crate::config::{get_aws_config, Config, ProviderConfig};
-use crate::data_storage::DataStorage;
-use da_client_interface::DaClient;
+use da_client_interface::{DaClient, MockDaClient};
 use httpmock::MockServer;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
-
-use da_client_interface::MockDaClient;
 use prover_client_interface::{MockProverClient, ProverClient};
 use settlement_client_interface::{MockSettlementClient, SettlementClient};
+use starknet::providers::JsonRpcClient;
+use starknet::providers::jsonrpc::HttpTransport;
+use url::Url;
+use utils::settings::Settings;
+use utils::settings::env::EnvSettingsProvider;
 
 use crate::alerts::Alerts;
-use crate::data_storage::MockDataStorage;
+use crate::config::{Config, ProviderConfig, get_aws_config};
+use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::{Database, MockDatabase};
 use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::tests::common::{create_sns_arn, create_sqs_queues, drop_database};
-use utils::settings::env::EnvSettingsProvider;
 
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
 
 pub enum MockType {
+    RpcUrl(Url),
     StarknetClient(Arc<JsonRpcClient<HttpTransport>>),
     DaClient(Box<dyn DaClient>),
     ProverClient(Box<dyn ProverClient>),
@@ -72,6 +72,8 @@ impl_mock_from! {
 
 // TestBuilder for Config
 pub struct TestConfigBuilder {
+    /// The RPC url used by the starknet client
+    starknet_rpc_url_type: ConfigType,
     /// The starknet client to get data from the node
     starknet_client_type: ConfigType,
     /// The DA client to interact with the DA layer
@@ -106,6 +108,7 @@ impl TestConfigBuilder {
     /// Create a new config
     pub fn new() -> TestConfigBuilder {
         TestConfigBuilder {
+            starknet_rpc_url_type: ConfigType::default(),
             starknet_client_type: ConfigType::default(),
             da_client_type: ConfigType::default(),
             prover_client_type: ConfigType::default(),
@@ -115,6 +118,11 @@ impl TestConfigBuilder {
             storage_type: ConfigType::default(),
             alerts_type: ConfigType::default(),
         }
+    }
+
+    pub fn configure_rpc_url(mut self, starknet_rpc_url_type: ConfigType) -> TestConfigBuilder {
+        self.starknet_rpc_url_type = starknet_rpc_url_type;
+        self
     }
 
     pub fn configure_da_client(mut self, da_client_type: ConfigType) -> TestConfigBuilder {
@@ -157,7 +165,7 @@ impl TestConfigBuilder {
     }
 
     pub async fn build(self) -> TestConfigBuilderReturns {
-        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+        dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
 
         let settings_provider = EnvSettingsProvider {};
         let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));
@@ -165,6 +173,7 @@ impl TestConfigBuilder {
         use std::sync::Arc;
 
         let TestConfigBuilder {
+            starknet_rpc_url_type,
             starknet_client_type,
             alerts_type,
             da_client_type,
@@ -175,7 +184,8 @@ impl TestConfigBuilder {
             storage_type,
         } = self;
 
-        let (starknet_client, server) = implement_client::init_starknet_client(starknet_client_type).await;
+        let (starknet_rpc_url, starknet_client, server) =
+            implement_client::init_starknet_client(starknet_rpc_url_type, starknet_client_type).await;
         let alerts = implement_client::init_alerts(alerts_type, &settings_provider, provider_config.clone()).await;
         let da_client = implement_client::init_da_client(da_client_type, &settings_provider).await;
 
@@ -183,6 +193,9 @@ impl TestConfigBuilder {
             implement_client::init_settlement_client(settlement_client_type, &settings_provider).await;
 
         let prover_client = implement_client::init_prover_client(prover_client_type, &settings_provider).await;
+
+        let snos_url =
+            Url::parse(&settings_provider.get_settings_or_panic("RPC_FOR_SNOS")).expect("Failed to parse URL");
 
         // External Dependencies
         let storage = implement_client::init_storage_client(storage_type, provider_config.clone()).await;
@@ -196,6 +209,8 @@ impl TestConfigBuilder {
         create_sns_arn(provider_config.clone()).await.expect("Unable to create the sns arn");
 
         let config = Arc::new(Config::new(
+            starknet_rpc_url,
+            snos_url,
             starknet_client,
             da_client,
             prover_client,
@@ -213,15 +228,6 @@ impl TestConfigBuilder {
 pub mod implement_client {
     use std::sync::Arc;
 
-    use crate::alerts::{Alerts, MockAlerts};
-    use crate::config::{
-        build_alert_client, build_da_client, build_database_client, build_prover_service, build_queue_client,
-        build_settlement_client, ProviderConfig,
-    };
-    use crate::data_storage::{DataStorage, MockDataStorage};
-    use crate::database::{Database, MockDatabase};
-    use crate::queue::{MockQueueProvider, QueueProvider};
-    use crate::tests::common::get_storage_client;
     use da_client_interface::{DaClient, MockDaClient};
     use httpmock::MockServer;
     use prover_client_interface::{MockProverClient, ProverClient};
@@ -229,11 +235,19 @@ pub mod implement_client {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::{JsonRpcClient, Url};
     use utils::env_utils::get_env_var_or_panic;
-    use utils::settings::env::EnvSettingsProvider;
     use utils::settings::Settings;
+    use utils::settings::env::EnvSettingsProvider;
 
-    use super::ConfigType;
-    use super::MockType;
+    use super::{ConfigType, MockType};
+    use crate::alerts::{Alerts, MockAlerts};
+    use crate::config::{
+        ProviderConfig, build_alert_client, build_da_client, build_database_client, build_prover_service,
+        build_queue_client, build_settlement_client,
+    };
+    use crate::data_storage::{DataStorage, MockDataStorage};
+    use crate::database::{Database, MockDatabase};
+    use crate::queue::{MockQueueProvider, QueueProvider};
+    use crate::tests::common::get_storage_client;
 
     macro_rules! implement_mock_client_conversion {
         ($client_type:ident, $mock_variant:ident) => {
@@ -339,36 +353,42 @@ pub mod implement_client {
     }
 
     pub(crate) async fn init_starknet_client(
+        starknet_rpc_url_type: ConfigType,
         service: ConfigType,
-    ) -> (Arc<JsonRpcClient<HttpTransport>>, Option<MockServer>) {
-        fn get_provider() -> (Arc<JsonRpcClient<HttpTransport>>, Option<MockServer>) {
+    ) -> (Url, Arc<JsonRpcClient<HttpTransport>>, Option<MockServer>) {
+        fn get_rpc_url() -> (Url, Option<MockServer>) {
             let server = MockServer::start();
             let port = server.port();
-            let service = Arc::new(JsonRpcClient::new(HttpTransport::new(
-                Url::parse(format!("http://localhost:{}", port).as_str()).expect("Failed to parse URL"),
-            )));
-            (service, Some(server))
+            let rpc_url = Url::parse(format!("http://localhost:{}", port).as_str()).expect("Failed to parse URL");
+            (rpc_url, Some(server))
         }
 
-        fn get_dummy_provider() -> (Arc<JsonRpcClient<HttpTransport>>, Option<MockServer>) {
-            // Assigning a random port number since this mock will be never used.
-            let port: u16 = 3000;
-            let service = Arc::new(JsonRpcClient::new(HttpTransport::new(
-                Url::parse(format!("http://localhost:{}", port).as_str()).expect("Failed to parse URL"),
-            )));
-            (service, None)
+        fn get_provider(rpc_url: &Url) -> Arc<JsonRpcClient<HttpTransport>> {
+            Arc::new(JsonRpcClient::new(HttpTransport::new(rpc_url.clone())))
         }
 
-        match service {
+        let (rpc_url, server) = match starknet_rpc_url_type {
+            ConfigType::Mock(url_type) => {
+                if let MockType::RpcUrl(starknet_rpc_url) = url_type {
+                    (starknet_rpc_url, None)
+                } else {
+                    panic!("Mock Rpc URL is not an URL");
+                }
+            }
+            ConfigType::Actual | ConfigType::Dummy => get_rpc_url(),
+        };
+
+        let starknet_client = match service {
             ConfigType::Mock(client) => {
                 if let MockType::StarknetClient(starknet_client) = client {
-                    (starknet_client, None)
+                    starknet_client
                 } else {
                     panic!("Mock client is not a Starknet Client");
                 }
             }
-            ConfigType::Actual => get_provider(),
-            ConfigType::Dummy => get_dummy_provider(),
-        }
+            ConfigType::Actual | ConfigType::Dummy => get_provider(&rpc_url),
+        };
+
+        (rpc_url, starknet_client, server)
     }
 }

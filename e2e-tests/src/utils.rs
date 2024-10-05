@@ -1,10 +1,12 @@
-use crate::MongoDbServer;
-use mongodb::bson::doc;
-use mongodb::options::{ClientOptions, ServerApi, ServerApiVersion};
-use starknet::core::types::StateUpdate;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+
+use mongodb::bson::doc;
+use mongodb::options::{ClientOptions, ServerApi, ServerApiVersion};
+use starknet::core::types::StateUpdate;
+
+use crate::MongoDbServer;
 
 pub fn get_repository_root() -> PathBuf {
     let manifest_path = Path::new(&env!("CARGO_MANIFEST_DIR"));
@@ -40,9 +42,5 @@ pub fn vec_u8_to_hex_string(data: &[u8]) -> String {
 
     let mut new_hex_chars = hex_chars.join("");
     new_hex_chars = new_hex_chars.trim_start_matches('0').to_string();
-    if new_hex_chars.is_empty() {
-        "0x0".to_string()
-    } else {
-        format!("0x{}", new_hex_chars)
-    }
+    if new_hex_chars.is_empty() { "0x0".to_string() } else { format!("0x{}", new_hex_chars) }
 }

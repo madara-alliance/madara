@@ -11,6 +11,31 @@
       {
         "indexed": false,
         "internalType": "uint256",
+        "name": "oldAggregatorProgramHash",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newAggregatorProgramHash",
+        "type": "uint256"
+      }
+    ],
+    "name": "AggregatorProgramHashChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "changedBy",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
         "name": "oldConfigHash",
         "type": "uint256"
       },
@@ -364,6 +389,13 @@
     "type": "event"
   },
   {
+    "inputs": [],
+    "name": "aggregatorProgramHash",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       { "internalType": "uint256", "name": "toAddress", "type": "uint256" },
       { "internalType": "uint256", "name": "selector", "type": "uint256" },
@@ -516,6 +548,19 @@
   },
   {
     "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "newAggregatorProgramHash",
+        "type": "uint256"
+      }
+    ],
+    "name": "setAggregatorProgramHash",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
       { "internalType": "uint256", "name": "newConfigHash", "type": "uint256" }
     ],
     "name": "setConfigHash",
@@ -606,15 +651,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "bytes32", "name": "msgHash", "type": "bytes32" }
-    ],
-    "name": "l1ToL2Messages",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "stateBlockNumber",
     "outputs": [{ "internalType": "int256", "name": "", "type": "int256" }],
@@ -671,7 +707,7 @@
         "name": "programOutput",
         "type": "uint256[]"
       },
-      { "internalType": "bytes", "name": "kzgProof", "type": "bytes" }
+      { "internalType": "bytes[]", "name": "kzgProofs", "type": "bytes[]" }
     ],
     "name": "updateStateKzgDA",
     "outputs": [],

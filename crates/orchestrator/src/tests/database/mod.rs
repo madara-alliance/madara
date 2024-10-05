@@ -1,8 +1,8 @@
-use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use chrono::{SubsecRound, Utc};
 use rstest::*;
 use uuid::Uuid;
 
+use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 #[rstest]
