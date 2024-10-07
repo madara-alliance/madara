@@ -1,5 +1,5 @@
 use super::{builder::FeederClient, request_builder::RequestBuilder};
-use crate::error::SequencerError;
+use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{CompressedLegacyContractClass, ContractClass, FlattenedSierraClass};
 use mp_gateway::{
