@@ -7,10 +7,8 @@ mod block_tests {
     use mp_block::BlockId;
     use mp_block::Header;
     use mp_chain_config::ChainConfig;
-    use rstest::*;
     use starknet_api::felt;
 
-    #[rstest]
     #[tokio::test]
     async fn test_chain_info() {
         let db = temp_db().await;
@@ -18,7 +16,6 @@ mod block_tests {
         assert_eq!(chain_config.chain_id, ChainConfig::madara_test().chain_id);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_block_id() {
         let db = temp_db().await;
@@ -36,7 +33,6 @@ mod block_tests {
         assert_eq!(backend.resolve_block_id(&DbBlockId::Pending).unwrap().unwrap(), DbBlockId::Pending);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_block_id_not_found() {
         let db = temp_db().await;
@@ -45,7 +41,6 @@ mod block_tests {
         assert!(backend.resolve_block_id(&BlockId::Hash(felt!("0x0"))).unwrap().is_none());
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_store_block() {
         const BLOCK_ID_0: DbBlockId = DbBlockId::BlockN(0);
@@ -69,7 +64,6 @@ mod block_tests {
         assert_eq!(backend.get_block_state_diff(&BLOCK_ID_0).unwrap().unwrap(), state_diff);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_store_pending_block() {
         const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
@@ -91,7 +85,6 @@ mod block_tests {
         assert_eq!(backend.get_block_state_diff(&BLOCK_ID_PENDING).unwrap().unwrap(), state_diff);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_erase_pending_block() {
         const BLOCK_ID_PENDING: DbBlockId = DbBlockId::Pending;
@@ -123,7 +116,6 @@ mod block_tests {
         assert_eq!(backend.get_block_state_diff(&BLOCK_ID_PENDING).unwrap().unwrap(), state_diff);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_store_latest_block() {
         let db = temp_db().await;
@@ -137,7 +129,6 @@ mod block_tests {
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_latest_confirmed_block() {
         let db = temp_db().await;
@@ -150,7 +141,6 @@ mod block_tests {
         assert_eq!(backend.get_l1_last_confirmed_block().unwrap().unwrap(), 0);
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_store_block_transactions() {
         let db = temp_db().await;
@@ -166,7 +156,6 @@ mod block_tests {
         assert_eq!(backend.find_tx_hash_block(&tx_hash_1).unwrap().unwrap(), (block, TxIndex(1)));
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_store_block_transactions_pending() {
         let db = temp_db().await;

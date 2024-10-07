@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use jsonrpsee::server::ServerHandle;
+use mp_rpc::{AddTransactionProvider, Starknet};
 use tokio::task::JoinSet;
 
+use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
 use mc_rpc::versioned_rpc_api;
-use mp_rpc::Starknet;
+use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 
 use metrics::RpcMetrics;
@@ -22,7 +24,13 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
 }
 impl RpcService {
-    pub fn new(starknet: Arc<Starknet>, config: &RpcParams, metrics_handle: &MetricsRegistry) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &RpcParams,
+        db: &DatabaseService,
+        chain_config: Arc<ChainConfig>,
+        metrics_handle: &MetricsRegistry,
+        add_txs_method_provider: Arc<dyn AddTransactionProvider>,
+    ) -> anyhow::Result<Self> {
         if config.rpc_disabled {
             return Ok(Self { server_config: None, server_handle: None });
         }
@@ -40,6 +48,7 @@ impl RpcService {
             }
         };
         let (read, write, trace) = (rpcs, rpcs, rpcs);
+        let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
         let metrics = RpcMetrics::register(metrics_handle)?;
 
         Ok(Self {

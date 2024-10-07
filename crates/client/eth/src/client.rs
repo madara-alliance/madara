@@ -143,11 +143,13 @@ pub mod eth_client_getter_test {
     };
     use mc_metrics::MetricsService;
     use serial_test::serial;
+    use std::ops::Range;
+    use std::sync::Mutex;
     use tokio;
+
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
-    const ANVIL_PORT: u16 = 8545;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
@@ -157,11 +159,38 @@ pub mod eth_client_getter_test {
         static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
     }
 
+    const PORT_RANGE: Range<u16> = 19500..20000;
+
+    struct AvailablePorts<I: Iterator<Item = u16>> {
+        to_reuse: Vec<u16>,
+        next: I,
+    }
+
+    lazy_static::lazy_static! {
+        static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE });
+    }
+    pub struct AnvilPortNum(pub u16);
+    impl Drop for AnvilPortNum {
+        fn drop(&mut self) {
+            let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+            guard.to_reuse.push(self.0);
+        }
+    }
+
+    pub fn get_port() -> AnvilPortNum {
+        let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+        if let Some(el) = guard.to_reuse.pop() {
+            return AnvilPortNum(el);
+        }
+        AnvilPortNum(guard.next.next().expect("no more port to use"))
+    }
+
     fn create_anvil_instance() -> AnvilInstance {
+        let port = get_port();
         let anvil = Anvil::new()
             .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANVIL_PORT)
+            .port(port.0)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());

@@ -3,12 +3,9 @@
 
 #[cfg(test)]
 mod test_rpc_read_calls {
-    use once_cell::sync::Lazy;
-    use rstest::rstest;
-    use std::any::Any;
-
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
+    use rstest::rstest;
     use starknet::macros::felt;
     use starknet_core::types::{
         BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
@@ -26,27 +23,64 @@ mod test_rpc_read_calls {
     };
     use starknet_providers::jsonrpc::HttpTransport;
     use starknet_providers::{JsonRpcClient, Provider};
+    use std::any::Any;
     use std::fmt::Write;
     use std::fs::File;
     use std::io::BufReader;
     use std::io::Read;
-    use tokio::sync::OnceCell;
+    use std::ops::Deref;
+    use std::sync::{Arc, Mutex};
 
-    static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(OnceCell::new);
+    static MADARA: tokio::sync::Mutex<Option<Arc<MadaraCmd>>> = tokio::sync::Mutex::const_new(None);
+    static MADARA_HANDLE_COUNT: Mutex<usize> = Mutex::new(0);
 
-    async fn setup_madara() -> MadaraCmd {
-        let mut madara = MadaraCmdBuilder::new()
-            .args(["--full", "--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
-            .run();
-
-        madara.wait_for_ready().await;
-        madara.wait_for_sync_to(19).await;
-
-        madara
+    struct SharedMadaraInstance(Arc<MadaraCmd>);
+    impl Deref for SharedMadaraInstance {
+        type Target = MadaraCmd;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
     }
+    impl Drop for SharedMadaraInstance {
+        fn drop(&mut self) {
+            let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
+            *guard -= 1;
+            if *guard == 0 {
+                // :/
+                tokio::task::spawn_blocking(|| *MADARA.blocking_lock() = None);
+            }
+        }
+    }
+    #[allow(clippy::await_holding_lock)]
+    async fn get_shared_state() -> SharedMadaraInstance {
+        let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
+        let mut madara_guard = MADARA.lock().await;
 
-    async fn get_shared_state<'a>() -> &'a MadaraCmd {
-        MADARA.get_or_init(setup_madara).await
+        let instance = if *guard == 0 {
+            let mut madara = MadaraCmdBuilder::new()
+                .args([
+                    "--full",
+                    "--network",
+                    "sepolia",
+                    "--no-sync-polling",
+                    "--n-blocks-to-sync",
+                    "20",
+                    "--no-l1-sync",
+                ])
+                .run();
+
+            madara.wait_for_ready().await;
+            madara.wait_for_sync_to(19).await;
+
+            let madara = Arc::new(madara);
+            *madara_guard = Some(madara.clone());
+            SharedMadaraInstance(madara)
+        } else {
+            SharedMadaraInstance(madara_guard.clone().unwrap())
+        };
+
+        *guard += 1;
+        instance
     }
 
     /// Fetches the latest block hash and number.
@@ -129,7 +163,10 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_receipts_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
-        let block = { json_client.get_block_with_receipts(BlockId::Number(2)).await.unwrap() };
+        let block = json_client
+            .get_block_with_receipts(BlockId::Number(2))
+            .await
+            .expect("Failed to get block with receipts for block number 2");
 
         let expected_block = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
@@ -161,7 +198,7 @@ mod test_rpc_read_calls {
                         execution_resources: ExecutionResources {
                             computation_resources: ComputationResources {
                                 steps: 2711,
-                                memory_holes: Some(0),
+                                memory_holes: None,
                                 range_check_builtin_applications: Some(63),
                                 pedersen_builtin_applications: Some(15),
                                 poseidon_builtin_applications: None,
@@ -472,7 +509,7 @@ mod test_rpc_read_calls {
                 execution_resources: ExecutionResources {
                     computation_resources: ComputationResources {
                         steps: 2711,
-                        memory_holes: Some(0),
+                        memory_holes: None,
                         range_check_builtin_applications: Some(63),
                         pedersen_builtin_applications: Some(15),
                         poseidon_builtin_applications: None,
@@ -599,7 +636,17 @@ mod test_rpc_read_calls {
     async fn test_get_state_update_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
-        let state_update = { json_client.get_state_update(BlockId::Number(13)).await.unwrap() };
+        let state_update = json_client
+            .get_state_update(BlockId::Number(13))
+            .await
+            .expect("Failed to get state update for block number 13");
+        let state_update = match state_update {
+            MaybePendingStateUpdate::Update(mut state_update) => {
+                state_update.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+                MaybePendingStateUpdate::Update(state_update)
+            }
+            _ => unreachable!("State update at block 13 should not be pending"),
+        };
 
         let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
             block_hash: felt!("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
@@ -1149,12 +1196,12 @@ mod test_rpc_read_calls {
 
         let decompressed_program = decompress_to_string(contract_program.unwrap());
 
-        let mut class_program_file = File::open("../../crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
+        let mut class_program_file = File::open("crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
 
         let mut original_program = String::new();
         class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
 
-        let contract_class_file = File::open("../../crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
+        let contract_class_file = File::open("crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
         let reader = BufReader::new(contract_class_file);
 
         let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();

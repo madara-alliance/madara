@@ -9,13 +9,16 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
+use mc_gateway::client::builder::FeederClient;
+use mc_gateway::error::SequencerError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
+use mp_block::BlockId;
+use mp_block::BlockTag;
 use mp_exex::ExExManagerHandle;
 use mp_exex::ExExNotification;
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::block::BlockNumber;
 use starknet_api::core::ChainId;
-use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
 use std::sync::Arc;
@@ -27,7 +30,7 @@ use tokio::time::Duration;
 #[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
     #[error("Provider error: {0:#}")]
-    Provider(#[from] ProviderError),
+    SequencerError(#[from] SequencerError),
     #[error("Database error: {0:#}")]
     Db(#[from] MadaraStorageError),
     #[error(transparent)]
@@ -74,7 +77,7 @@ async fn l2_verify_and_apply_task(
             trim_hash(&header.global_state_root)
         );
         log::debug!(
-            "Block import #{} ({}) has state root {}",
+            "Block import #{} ({:#x}) has state root {:#x}",
             header.block_number,
             block_hash,
             header.global_state_root
@@ -140,7 +143,7 @@ async fn l2_pending_block_task(
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
-    provider: Arc<SequencerGatewayProvider>,
+    provider: Arc<FeederClient>,
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     // clear pending status
@@ -155,16 +158,24 @@ async fn l2_pending_block_task(
         return Ok(());
     }
 
-    log::debug!("start pending block poll");
+    log::debug!("Start pending block poll");
 
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
-        log::debug!("getting pending block...");
+        log::debug!("Getting pending block...");
 
-        let block = fetch_pending_block_and_updates(&backend.chain_config().chain_id, &provider)
-            .await
-            .context("Getting pending block from FGW")?;
+        let current_block_hash = backend
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))
+            .context("Getting latest block hash")?
+            .unwrap_or(/* genesis parent block hash */ Felt::ZERO);
+        let Some(block) =
+            fetch_pending_block_and_updates(current_block_hash, &backend.chain_config().chain_id, &provider)
+                .await
+                .context("Getting pending block from FGW")?
+        else {
+            continue;
+        };
 
         // HACK(see issue #239): The latest block in db may not match the pending parent block hash
         // Just silently ignore it for now and move along.
@@ -196,7 +207,7 @@ pub struct L2SyncConfig {
 #[allow(clippy::too_many_arguments)]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
-    provider: SequencerGatewayProvider,
+    provider: FeederClient,
     config: L2SyncConfig,
     chain_id: ChainId,
     telemetry: TelemetryHandle,
@@ -219,7 +230,7 @@ pub async fn sync(
     // starves the tokio worker
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
-        trust_global_tries: config.verify,
+        trust_global_tries: !config.verify,
         chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,

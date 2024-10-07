@@ -11,9 +11,10 @@ use anyhow::Context;
 use clap::Parser;
 use extensions::madara_exexs;
 use mc_block_import::BlockImporter;
-use mp_rpc::Starknet;
+use mp_rpc::{AddTransactionProvider, Starknet};
 use std::sync::Arc;
 
+use cli::{NetworkType, RunCmd};
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
@@ -22,12 +23,8 @@ use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_exex::ExExLauncher;
 use mp_utils::service::{Service, ServiceGroup};
-
+use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
-
-use cli::{NetworkType, RunCmd};
-use service::L1SyncService;
-use service::{BlockProductionService, RpcService, SyncService};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -120,16 +117,21 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, starknet): (_, Arc<Starknet>) = match run_cmd.is_sequencer() {
+    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) = match run_cmd
+        .is_sequencer()
+    {
         // Block production service. (authority)
         true => {
             let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
             let mempool_provider = Arc::new(MempoolAddTxProvider::new(Arc::clone(&mempool)));
-            let starknet =
-                Arc::new(Starknet::new(Arc::clone(db_service.backend()), chain_config.clone(), mempool_provider));
+            let starknet = Arc::new(Starknet::new(
+                Arc::clone(db_service.backend()),
+                chain_config.clone(),
+                mempool_provider.clone(),
+            ));
 
             // Launch the ExEx manager for configured ExExs - if any.
-            let exex_manager = ExExLauncher::new(madara_exexs(), starknet.clone()).launch().await?;
+            let exex_manager = ExExLauncher::new(madara_exexs(), starknet).launch().await?;
 
             let block_production_service = BlockProductionService::new(
                 &run_cmd.block_production_params,
@@ -143,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
                 telemetry_service.new_handle(),
             )?;
 
-            (ServiceGroup::default().with(block_production_service), starknet)
+            (ServiceGroup::default().with(block_production_service), mempool_provider)
         }
         // Block sync service. (full node)
         false => {
@@ -161,11 +163,14 @@ async fn main() -> anyhow::Result<()> {
                     .feeder_gateway(),
                 chain_config.chain_id.to_felt(),
             )));
-            let starknet =
-                Arc::new(Starknet::new(Arc::clone(db_service.backend()), chain_config.clone(), gateway_provider));
+            let starknet = Arc::new(Starknet::new(
+                Arc::clone(db_service.backend()),
+                chain_config.clone(),
+                gateway_provider.clone(),
+            ));
 
             // Launch the ExEx manager for configured ExExs - if any.
-            let exex_manager = ExExLauncher::new(madara_exexs(), starknet.clone()).launch().await?;
+            let exex_manager = ExExLauncher::new(madara_exexs(), starknet).launch().await?;
 
             // Feeder gateway sync service.
             let sync_service = SyncService::new(
@@ -182,12 +187,22 @@ async fn main() -> anyhow::Result<()> {
             .await
             .context("Initializing sync service")?;
 
-            (ServiceGroup::default().with(sync_service), starknet)
+            (ServiceGroup::default().with(sync_service), gateway_provider)
         }
     };
 
-    let rpc_service = RpcService::new(starknet, &run_cmd.rpc_params, prometheus_service.registry())
-        .context("Initializing rpc service")?;
+    let rpc_service = RpcService::new(
+        &run_cmd.rpc_params,
+        &db_service,
+        Arc::clone(&chain_config),
+        prometheus_service.registry(),
+        Arc::clone(&rpc_add_txs_method_provider),
+    )
+    .context("Initializing rpc service")?;
+
+    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+        .await
+        .context("Initializing gateway service")?;
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
@@ -196,6 +211,7 @@ async fn main() -> anyhow::Result<()> {
         .with(l1_service)
         .with(block_provider_service)
         .with(rpc_service)
+        .with(gateway_service)
         .with(telemetry_service)
         .with(prometheus_service);
 

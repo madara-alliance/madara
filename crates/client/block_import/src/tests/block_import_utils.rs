@@ -74,9 +74,9 @@ pub fn create_dummy_header() -> Header {
         transaction_commitment: felt!("0x0"),
         event_count: 0,
         event_commitment: felt!("0x0"),
-        state_diff_length: 0,
-        state_diff_commitment: felt!("0x0"),
-        receipt_commitment: felt!("0x0"),
+        state_diff_length: Some(0),
+        state_diff_commitment: Some(felt!("0x0")),
+        receipt_commitment: Some(felt!("0x0")),
         block_timestamp: 12345,
         protocol_version: StarknetVersion::new(0, 13, 2, 0),
         l1_gas_price: GasPrices {
