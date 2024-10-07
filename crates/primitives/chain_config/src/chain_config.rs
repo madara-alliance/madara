@@ -1,3 +1,4 @@
+use std::fmt;
 // Note: We are NOT using fs read for constants, as they NEED to be included in the resulting
 // binary. Otherwise, using the madara binary without cloning the repo WILL crash, and that's very very bad.
 // The binary needs to be self contained! We need to be able to ship madara as a single binary, without
@@ -17,7 +18,8 @@ use blockifier::bouncer::{BouncerWeights, BuiltinCount};
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use primitive_types::H160;
-use serde::{Deserialize, Deserializer};
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 
@@ -64,6 +66,7 @@ pub struct ChainConfig {
     pub parent_fee_token_address: ContractAddress,
 
     /// BTreeMap ensures order.
+    #[serde(default)]
     pub versioned_constants: ChainVersionedConstants,
 
     #[serde(deserialize_with = "deserialize_starknet_version")]
@@ -104,7 +107,24 @@ pub struct ChainConfig {
 impl ChainConfig {
     pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
         let config_str = fs::read_to_string(path)?;
-        serde_yaml::from_str(&config_str).context("While deserializing chain config")
+        let config_value: serde_yaml::Value =
+            serde_yaml::from_str(&config_str).context("While deserializing chain config")?;
+
+        let versioned_constants_file_paths: BTreeMap<String, String> =
+            serde_yaml::from_value(config_value.get("versioned_constants_path").cloned().unwrap_or_default())
+                .context("While deserializing versioned constants file paths")?;
+
+        let versioned_constants = {
+            // add the defaults VersionedConstants
+            let mut versioned_constants = ChainVersionedConstants::default();
+            versioned_constants.merge(ChainVersionedConstants::from_file(versioned_constants_file_paths)?);
+            versioned_constants
+        };
+
+        let chain_config: ChainConfig =
+            serde_yaml::from_str(&config_str).context("While deserializing chain config")?;
+
+        Ok(ChainConfig { versioned_constants, ..chain_config })
     }
 
     /// Verify that the chain config is valid for block production.
@@ -247,6 +267,36 @@ impl ChainConfig {
 #[derive(Debug)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
+impl<'de> Deserialize<'de> for ChainVersionedConstants {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ChainVersionedConstantsVisitor;
+
+        impl<'de> Visitor<'de> for ChainVersionedConstantsVisitor {
+            type Value = ChainVersionedConstants;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map of StarknetVersion to VersionedConstants")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut map = BTreeMap::new();
+                while let Some((key, value)) = access.next_entry::<String, VersionedConstants>()? {
+                    map.insert(key.parse().map_err(serde::de::Error::custom)?, value);
+                }
+                Ok(ChainVersionedConstants(map))
+            }
+        }
+
+        deserializer.deserialize_map(ChainVersionedConstantsVisitor)
+    }
+}
+
 impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainVersionedConstants {
     fn from(arr: [(StarknetVersion, VersionedConstants); N]) -> Self {
         ChainVersionedConstants(arr.into())
@@ -273,49 +323,27 @@ impl ChainVersionedConstants {
     pub fn merge(&mut self, other: Self) {
         self.0.extend(other.0);
     }
-}
 
-/// Replaces the versioned_constants files definition in the yaml by the content of the
-/// jsons.
-impl<'de> Deserialize<'de> for ChainVersionedConstants {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let file_paths: BTreeMap<String, String> = Deserialize::deserialize(deserializer)?;
+    pub fn from_file(version_with_path: BTreeMap<String, String>) -> Result<Self> {
         let mut result = BTreeMap::new();
 
-        for (version, path) in file_paths {
+        for (version, path) in version_with_path {
             // Change the current directory to Madara root
-            let mut file = File::open(Path::new(&path))
-                .with_context(|| format!("Failed to open file: {}", path))
-                .map_err(serde::de::Error::custom)?;
+            let mut file = File::open(Path::new(&path)).with_context(|| format!("Failed to open file: {}", path))?;
 
             let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .with_context(|| format!("Failed to read contents of file: {}", path))
-                .map_err(serde::de::Error::custom)?;
+            file.read_to_string(&mut contents).with_context(|| format!("Failed to read contents of file: {}", path))?;
 
-            let constants: VersionedConstants = serde_json::from_str(&contents)
-                .with_context(|| format!("Failed to parse JSON in file: {}", path))
-                .map_err(serde::de::Error::custom)?;
+            let constants: VersionedConstants =
+                serde_json::from_str(&contents).with_context(|| format!("Failed to parse JSON in file: {}", path))?;
 
-            let parsed_version = version
-                .parse()
-                .with_context(|| format!("Failed to parse version string: {}", version))
-                .map_err(serde::de::Error::custom)?;
+            let parsed_version =
+                version.parse().with_context(|| format!("Failed to parse version string: {}", version))?;
 
             result.insert(parsed_version, constants);
         }
 
-        // insert the default versioned constants
-        let all_versionned_constants = {
-            let mut all_versionned_constants = ChainVersionedConstants::default();
-            all_versionned_constants.merge(ChainVersionedConstants(result));
-            all_versionned_constants
-        };
-
-        Ok(all_versionned_constants)
+        Ok(ChainVersionedConstants(result))
     }
 }
 
@@ -325,6 +353,13 @@ where
 {
     let s = String::deserialize(deserializer)?;
     StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+pub fn serialize_starknet_version<S>(version: &StarknetVersion, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    version.to_string().serialize(serializer)
 }
 
 // TODO: this is workaround because BouncerConfig doesn't derive Deserialize in blockifier
@@ -339,6 +374,18 @@ where
 
     let helper = BouncerConfigHelper::deserialize(deserializer)?;
     Ok(BouncerConfig { block_max_capacity: helper.block_max_capacity })
+}
+
+pub fn serialize_bouncer_config<S>(config: &BouncerConfig, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    #[derive(Serialize)]
+    struct BouncerConfigHelper<'a> {
+        block_max_capacity: &'a BouncerWeights,
+    }
+
+    BouncerConfigHelper { block_max_capacity: &config.block_max_capacity }.serialize(serializer)
 }
 
 #[cfg(test)]
@@ -432,7 +479,13 @@ mod tests {
         assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 131072);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);
 
-        assert_eq!(chain_config.sequencer_address, ContractAddress::try_from(Felt::from_str("0x0").unwrap()).unwrap());
+        assert_eq!(
+            chain_config.sequencer_address,
+            ContractAddress::try_from(
+                Felt::from_str("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8").unwrap()
+            )
+            .unwrap()
+        );
         assert_eq!(chain_config.max_nonce_for_validation_skip, 2);
         assert_eq!(
             chain_config.eth_core_contract_address,
