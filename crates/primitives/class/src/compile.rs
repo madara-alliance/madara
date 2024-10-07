@@ -25,7 +25,7 @@ pub enum ClassCompilationError {
 }
 
 impl CompressedLegacyContractClass {
-    fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
+    pub fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
         let mut decompressor = flate2::read::GzDecoder::new(Cursor::new(&self.program));
         let mut program = Vec::new();
         decompressor.read_to_end(&mut program)?;
