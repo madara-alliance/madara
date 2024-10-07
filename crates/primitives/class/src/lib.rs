@@ -180,7 +180,6 @@ pub struct LegacyContractEntryPoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(untagged)]
 pub enum LegacyContractAbiEntry {
     Function(LegacyFunctionAbiEntry),
     Event(LegacyEventAbiEntry),

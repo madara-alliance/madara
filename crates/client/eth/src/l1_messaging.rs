@@ -2,13 +2,15 @@ use alloy::eips::BlockNumberOrTag;
 use anyhow::Context;
 use futures::StreamExt;
 use std::sync::Arc;
-
+use std::thread::sleep;
+use std::time::Duration;
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
+use log::Level::Debug;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
@@ -17,6 +19,7 @@ use starknet_api::transaction::{
 };
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
+use url::ParseError::SetHostOnCannotBeABaseUrl;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -62,7 +65,9 @@ pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &C
         .into_stream();
 
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+        log::debug!("inside the l1 messages");
         if let Ok((event, meta)) = event_result {
+            log::debug!("we got some logs");
             tracing::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
                 meta.block_number,

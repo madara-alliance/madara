@@ -172,10 +172,6 @@ impl MadaraBackend {
                     Ok::<_, MadaraStorageError>(())
                 },
             )?;
-        
-        // get the class info from the db, class hash is here: [Legacy(LegacyConvertedClass { class_hash: 0x5c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6, offset: 0, r#type: "legacy_contract_class" })]
-        let class_info = self.get_class_info(&block_id, &Felt::from_hex("0x5c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6").unwrap())?;
-        log::debug!("class info: {:?}", class_info);
 
         Ok(())
     }
