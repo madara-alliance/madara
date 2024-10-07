@@ -239,7 +239,6 @@ async fn madara_can_sync_a_few_blocks() {
 
     let _ = env_logger::builder().is_test(true).try_init();
 
-
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--full",
         "--network",
