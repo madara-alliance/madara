@@ -350,6 +350,11 @@ Set up your node's environment variables using the `MADARA_` prefix. For example
 These variables allow you to adjust the node's configuration without using command-line arguments. If the command-line
 argument is specified then it takes precedent over the environment variable.
 
+> [!CAUTION]
+> Environment variables can be visible beyond the current process and are not
+> encrypted. You should take special care when setting _secrets_ through
+> environment variables, such as `MADARA_L1_ENDPOINT` or `MADARA_GATEWAY_KEY`
+
 ### Configuration File
 
 You can use a JSON, TOML, or YAML file to structure your configuration settings.
