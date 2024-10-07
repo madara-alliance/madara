@@ -3,6 +3,7 @@
 ## Next release
 
 - fix: estimate_fee should through an error if any txn fails
+- fix(sync): pending block retrying mechanism
 - fix:(tests): Add testing feature to mc-db dev dependency (#294)
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
