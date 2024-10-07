@@ -212,7 +212,7 @@ impl ChainConfig {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
-            block_time: Duration::from_secs(3),
+            block_time: Duration::from_secs(10),
             pending_block_update_time: Duration::from_secs(2),
             ..ChainConfig::starknet_sepolia()
         }

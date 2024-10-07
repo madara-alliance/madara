@@ -43,6 +43,8 @@ impl MadaraBackend {
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
         let val = bincode::deserialize(&val)?;
 
+        log::debug!("got some value of class hash");
+
         Ok(Some(val))
     }
 
@@ -117,6 +119,9 @@ impl MadaraBackend {
         col_info: Column,
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
+        log::debug!("store classes has been called");
+        log::debug!("converted classes length: {:?}", converted_classes.len());
+        
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
@@ -158,7 +163,7 @@ impl MadaraBackend {
                 |col, chunk| {
                     let mut batch = WriteBatchWithTransaction::default();
                     for (key, value) in chunk {
-                        log::trace!("Class compiled store key={key:#x}");
+                        log::debug!("Class compiled store key={key:#x}");
                         let key_bin = bincode::serialize(key)?;
                         // TODO: find a way to avoid this allocation
                         batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
@@ -167,6 +172,10 @@ impl MadaraBackend {
                     Ok::<_, MadaraStorageError>(())
                 },
             )?;
+        
+        // get the class info from the db, class hash is here: [Legacy(LegacyConvertedClass { class_hash: 0x5c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6, offset: 0, r#type: "legacy_contract_class" })]
+        let class_info = self.get_class_info(&block_id, &Felt::from_hex("0x5c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6").unwrap())?;
+        log::debug!("class info: {:?}", class_info);
 
         Ok(())
     }
