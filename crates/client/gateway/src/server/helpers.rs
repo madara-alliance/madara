@@ -60,7 +60,7 @@ where
 pub(crate) fn create_string_response(status: StatusCode, body: String) -> Response<Body> {
     let body = Body::from(body);
     // Build the response with the specified status code and serialized body
-    match Response::builder().status(status).header(header::CONTENT_TYPE, "application/json").body(body) {
+    match Response::builder().status(status).body(body) {
         Ok(response) => response,
         Err(e) => {
             log::error!("Failed to build response: {}", e);

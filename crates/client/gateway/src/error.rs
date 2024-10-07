@@ -28,6 +28,7 @@ mod err {
     pub(crate) const BLOCK_NOT_FOUND: &str = "Block not found";
     pub(crate) const NO_SIGNATURE_FOR_PENDING_BLOCK: &str =
         "BlockSignature is not supported for pending blocks; try querying with a concrete block identifier";
+    pub(crate) const NO_BLOCK_HEADER_FOR_PENDING_BLOCK: &str = "Block header is not supported for the pending block";
     pub(crate) const MISSING_CLASS_HASH: &str = "Missing class_hash parameter";
 }
 
@@ -49,6 +50,10 @@ impl StarknetError {
             code: StarknetErrorCode::NoSignatureForPendingBlock,
             message: err::NO_SIGNATURE_FOR_PENDING_BLOCK.to_string(),
         }
+    }
+
+    pub fn no_block_header_for_pending_block() -> Self {
+        Self { code: StarknetErrorCode::NoBlockHeader, message: err::NO_BLOCK_HEADER_FOR_PENDING_BLOCK.to_string() }
     }
 
     pub fn missing_class_hash() -> Self {
@@ -91,6 +96,8 @@ impl std::fmt::Display for StarknetError {
 pub enum StarknetErrorCode {
     #[serde(rename = "StarknetErrorCode.BLOCK_NOT_FOUND")]
     BlockNotFound,
+    #[serde(rename = "StarknetErrorCode.NO_BLOCK_HEADER")]
+    NoBlockHeader,
     #[serde(rename = "StarknetErrorCode.ENTRY_POINT_NOT_FOUND_IN_CONTRACT")]
     EntryPointNotFound,
     #[serde(rename = "StarknetErrorCode.OUT_OF_RANGE_CONTRACT_ADDRESS")]

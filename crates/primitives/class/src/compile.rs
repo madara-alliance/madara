@@ -50,7 +50,12 @@ impl CompressedLegacyContractClass {
             .map(|abi| {
                 abi.iter()
                     .map(|entry| match entry {
-                        LegacyContractAbiEntry::Function(entry) => serde_json::to_value(entry),
+                        LegacyContractAbiEntry::Function(entry) => serde_json::to_value(entry).map(|mut v| {
+                            if entry.state_mutability.is_none() {
+                                v.as_object_mut().unwrap().remove("stateMutability");
+                            }
+                            v
+                        }),
                         LegacyContractAbiEntry::Event(entry) => serde_json::to_value(entry),
                         LegacyContractAbiEntry::Struct(entry) => serde_json::to_value(entry),
                     })

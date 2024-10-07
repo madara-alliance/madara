@@ -18,6 +18,7 @@ use tokio::net::TcpListener;
 
 use super::router::main_router;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_server(
     db_backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,

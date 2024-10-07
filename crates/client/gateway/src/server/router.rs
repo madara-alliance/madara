@@ -13,6 +13,7 @@ use super::handler::{
 use super::helpers::{not_found_response, service_unavailable_response};
 
 // Main router to redirect to the appropriate sub-router
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn main_router(
     req: Request<Body>,
     backend: Arc<MadaraBackend>,
@@ -27,17 +28,10 @@ pub(crate) async fn main_router(
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
         ("health", _, _) => Ok(Response::new(Body::from("OK"))),
         (path, true, _) if path.starts_with("feeder_gateway/") => {
-            feeder_gateway_router(
-                req,
-                &path,
-                backend,
-                eth_core_contract_address,
-                eth_gps_statement_verifier,
-                public_key,
-            )
-            .await
+            feeder_gateway_router(req, path, backend, eth_core_contract_address, eth_gps_statement_verifier, public_key)
+                .await
         }
-        (path, _, true) if path.starts_with("feeder/") => gateway_router(req, &path, add_transaction_provider).await,
+        (path, _, true) if path.starts_with("feeder/") => gateway_router(req, path, add_transaction_provider).await,
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("feeder/") => Ok(service_unavailable_response("Feeder")),
         _ => {
@@ -56,7 +50,7 @@ async fn feeder_gateway_router(
     eth_gps_statement_verifier: H160,
     public_key: Felt,
 ) -> Result<Response<Body>, Infallible> {
-    match (req.method(), path.as_ref()) {
+    match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_block") => {
             Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
         }

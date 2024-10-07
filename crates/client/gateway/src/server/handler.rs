@@ -30,28 +30,52 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
-    let block = backend
-        .get_block(&block_id)
-        .or_internal_server_error(format!("Retrieving block {block_id}"))?
-        .ok_or(StarknetError::block_not_found())?;
+    if params.get("headerOnly").map(|s| s.as_ref()) == Some("true") {
+        if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+            return Err(GatewayError::StarknetError(StarknetError::no_block_header_for_pending_block()));
+        }
 
-    if let Ok(block) = MadaraBlock::try_from(block.clone()) {
-        let last_l1_confirmed_block =
-            backend.get_l1_last_confirmed_block().or_internal_server_error("Retrieving last l1 confirmed block")?;
+        let block_info = backend
+            .get_block_info(&block_id)
+            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .ok_or(StarknetError::block_not_found())?;
 
-        let status = if Some(block.info.header.block_number) <= last_l1_confirmed_block {
-            BlockStatus::AcceptedOnL1
-        } else {
-            BlockStatus::AcceptedOnL2
-        };
-
-        let block_provider = ProviderBlock::new(block, status);
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        match block_info {
+            MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+                "Retrieved pending block info from db for non-pending block {block_id}"
+            ))),
+            MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+                let body = json!({
+                    "block_hash": block_info.block_hash,
+                    "block_number": block_info.header.block_number
+                });
+                Ok(create_json_response(hyper::StatusCode::OK, &body))
+            }
+        }
     } else {
-        let block =
-            MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
-        let block_provider = ProviderBlockPending::new(block);
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        let block = backend
+            .get_block(&block_id)
+            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .ok_or(StarknetError::block_not_found())?;
+
+        if let Ok(block) = MadaraBlock::try_from(block.clone()) {
+            let last_l1_confirmed_block =
+                backend.get_l1_last_confirmed_block().or_internal_server_error("Retrieving last l1 confirmed block")?;
+
+            let status = if Some(block.info.header.block_number) <= last_l1_confirmed_block {
+                BlockStatus::AcceptedOnL1
+            } else {
+                BlockStatus::AcceptedOnL2
+            };
+
+            let block_provider = ProviderBlock::new(block, status);
+            Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        } else {
+            let block =
+                MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
+            let block_provider = ProviderBlockPending::new(block);
+            Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        }
     }
 }
 
@@ -263,7 +287,7 @@ pub async fn handle_get_contract_addresses(
 }
 
 pub async fn handle_get_publick_key(public_key: Felt) -> Result<Response<Body>, GatewayError> {
-    Ok(create_string_response(hyper::StatusCode::OK, public_key.to_string()))
+    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{public_key:#x}\"")))
 }
 
 pub async fn handle_add_transaction(
