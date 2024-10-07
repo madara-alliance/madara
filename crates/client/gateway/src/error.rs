@@ -1,19 +1,21 @@
+use bytes::Bytes;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::Felt;
 use starknet_types_core::felt::FromStrError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SequencerError {
-    #[error("starknet error: {0}")]
+    #[error("Starknet error: {0:#}")]
     StarknetError(#[from] StarknetError),
-    #[error("reqwest error: {0}")]
+    #[error("Reqwest error: {0:#}")]
     ReqwestError(#[from] reqwest::Error),
-    #[error("error deserializing response: {0}")]
-    SerdeError(#[from] serde_json::Error),
-    #[error("error compressing class: {0}")]
+    #[error("Error deserializing response: {serde_error:#}")]
+    DeserializeBody { serde_error: serde_json::Error, body: Bytes },
+    #[error("Error compressing class: {0:#}")]
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
-    #[error("invalid error variant: {0}")]
-    InvalidStarknetErrorVariant(reqwest::Error),
+    #[error("Failed to parse returned error with http status {http_status}: {serde_error:#}")]
+    InvalidStarknetError { http_status: StatusCode, serde_error: serde_json::Error, body: Bytes },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
