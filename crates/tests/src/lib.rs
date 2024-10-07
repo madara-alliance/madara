@@ -78,6 +78,8 @@ impl MadaraCmd {
             || async {
                 match rpc.block_hash_and_number().await {
                     Ok(got) => {
+                        println!("got block_n {}", got.block_number);
+                        println!("expected block_n {}", block_n);
                         if got.block_number < block_n {
                             bail!("got block_n {}, expected {block_n}", got.block_number);
                         }
