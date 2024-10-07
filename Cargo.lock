@@ -5582,6 +5582,7 @@ name = "mc-gateway"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "flate2",
  "hyper 0.14.29",
  "log",
