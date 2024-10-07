@@ -144,13 +144,7 @@ impl ChainConfig {
                 ))
                 .unwrap(),
             ),
-            versioned_constants: [
-                (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
-                (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
-                (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-                (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
-            ]
-            .into(),
+            versioned_constants: ChainVersionedConstants::default(),
 
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
@@ -250,12 +244,34 @@ impl ChainConfig {
 
 // TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
 // proper page about tuning the block production performance.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
 impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainVersionedConstants {
     fn from(arr: [(StarknetVersion, VersionedConstants); N]) -> Self {
-        ChainVersionedConstants(arr.into_iter().collect())
+        ChainVersionedConstants(arr.into())
+    }
+}
+
+impl Default for ChainVersionedConstants {
+    fn default() -> Self {
+        [
+            (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
+            (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
+            (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
+            (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
+        ]
+        .into()
+    }
+}
+
+impl ChainVersionedConstants {
+    pub fn add(&mut self, version: StarknetVersion, constants: VersionedConstants) {
+        self.0.insert(version, constants);
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.0.extend(other.0);
     }
 }
 
@@ -292,7 +308,14 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
             result.insert(parsed_version, constants);
         }
 
-        Ok(ChainVersionedConstants(result))
+        // insert the default versioned constants
+        let all_versionned_constants = {
+            let mut all_versionned_constants = ChainVersionedConstants::default();
+            all_versionned_constants.merge(ChainVersionedConstants(result));
+            all_versionned_constants
+        };
+
+        Ok(all_versionned_constants)
     }
 }
 
