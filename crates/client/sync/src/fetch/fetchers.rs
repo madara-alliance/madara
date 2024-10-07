@@ -629,7 +629,7 @@ mod test_l2_fetchers {
         let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(result, Err(SequencerError::InvalidStarknetError { .. })),
+            matches!(result, Err(SequencerError::DeserializeBody { .. })),
             "Expected error about mismatched data, but got: {:?}",
             result
         );
