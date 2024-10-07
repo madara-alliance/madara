@@ -27,6 +27,7 @@ starknet-types-core.workspace = true
 
 # Other
 anyhow.workspace = true
+bytes.workspace = true
 hyper.workspace = true
 log.workspace = true
 reqwest.workspace = true
@@ -35,7 +36,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
-bytes.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

@@ -81,7 +81,7 @@ impl FeederClient {
                 let class_compressed: CompressedLegacyContractClass = class_legacy.compress()?.into();
                 Ok(ContractClass::Legacy(Arc::new(class_compressed)))
             }
-            Err(err) => return Err(err),
+            Err(err) => Err(err),
         }
     }
 }
