@@ -345,7 +345,7 @@ Toggle details for each namespace to view additional settings:
 Set up your node's environment variables using the `MADARA_` prefix. For example:
 
 - `MADARA_BASE_PATH=/path/to/data`
-- `MADARA_RPC_PORT=1111=1111`
+- `MADARA_RPC_PORT=1111`
 
 These variables allow you to adjust the node's configuration without using command-line arguments. If the command-line
 argument is specified then it takes precedent over the environment variable.
