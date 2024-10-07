@@ -95,17 +95,20 @@ async fn unpack<T>(response: reqwest::Response) -> Result<T, SequencerError>
 where
     T: ::serde::de::DeserializeOwned,
 {
-    let status = response.status();
-    if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR || status == reqwest::StatusCode::BAD_REQUEST {
-        let error = match response.json::<StarknetError>().await {
-            Ok(e) => SequencerError::StarknetError(e),
-            Err(e) if e.is_decode() => SequencerError::InvalidStarknetErrorVariant(e),
-            Err(e) => SequencerError::ReqwestError(e),
-        };
-        return Err(error);
-    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+    let http_status = response.status();
+    if http_status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
+    } else if !http_status.is_success() {
+        let body = response.bytes().await?;
+        let starknet_error = serde_json::from_slice::<StarknetError>(&body)
+            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error, body })?;
+
+        return Err(starknet_error.into());
     }
 
-    response.json::<T>().await.map_err(SequencerError::InvalidStarknetErrorVariant)
+    let body = response.bytes().await?;
+    let res =
+        serde_json::from_slice(&body).map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
+
+    Ok(res)
 }
