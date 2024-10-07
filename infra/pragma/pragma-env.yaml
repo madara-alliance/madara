@@ -7,6 +7,5 @@ environments:
         files:
           chain_config_url: "https://github.com/astraly-labs/madara/blob/main/infra/pragma/pragma-devnet.yaml"
         config:
-          --network: "devnet"
           --chain-config-path: "/var/madara/presets/config.yaml"
           --devnet: ""
