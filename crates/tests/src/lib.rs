@@ -230,7 +230,6 @@ async fn madara_can_sync_a_few_blocks() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let mut cmd_builder = MadaraCmdBuilder::new().args([
-        "--full",
         "--network",
         "sepolia",
         "--no-sync-polling",
@@ -239,6 +238,7 @@ async fn madara_can_sync_a_few_blocks() {
         "--no-l1-sync",
         "--gas-price",
         "0",
+        "--full",
     ]);
 
     // This is an optional argument to sync faster from the FGW if gateway_key is set
