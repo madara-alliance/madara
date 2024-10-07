@@ -2,7 +2,9 @@
 
 ## Next release
 
-- fix: fgw json format error when acting as a provider
+- fix: fgw now works with Juno and Pathfinder
+- fix(sync): pending block retrying mechanism
+- fix:(tests): Add testing feature to mc-db dev dependency (#294)
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
 - test: add block conversion task test
