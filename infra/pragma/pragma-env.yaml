@@ -3,7 +3,7 @@ environments:
     id: 5ac2bbca-b3e1-4849-b04c-116819c6c13a
     repos:
       madara:
-        image: evolvez/madara:7db7cc0ec41d5ce74eb9c86077be1f68e6559a67
+        image: evolvez/madara:latest
         files:
           chain_config_url: "https://github.com/astraly-labs/madara/blob/main/infra/pragma/pragma-devnet.yaml"
         config:
