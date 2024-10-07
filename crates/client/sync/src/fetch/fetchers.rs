@@ -455,7 +455,17 @@ mod test_l2_fetchers {
         )
         .await;
 
-        assert!(matches!(result, Ok(None)), "Expected no block, but got: {:?}", result);
+        assert!(
+            matches!(
+                result,
+                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                    code: StarknetErrorCode::BlockNotFound,
+                    ..
+                })))
+            ),
+            "Expected no block, but got: {:?}",
+            result
+        );
     }
 
     /// Test successful fetching of state update with block for the pending block.
