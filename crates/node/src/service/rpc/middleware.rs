@@ -170,8 +170,6 @@ enum VersionMiddlewareError {
     BodyReadError(#[from] hyper::Error),
     #[error("Failed to parse JSON: {0}")]
     JsonParseError(#[from] serde_json::Error),
-    #[error("Invalid request format")]
-    InvalidRequestFormat,
     #[error("Invalid URL format")]
     InvalidUrlFormat,
     #[error("Invalid version specified")]
@@ -248,7 +246,7 @@ where
                     let body = json!({
                         "jsonrpc": "2.0",
                         "error": error,
-                        "id": 0
+                        "id": null
                     })
                     .to_string();
 
@@ -284,9 +282,8 @@ async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(),
                 format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
 
             item["method"] = Value::String(new_method);
-        } else {
-            return Err(VersionMiddlewareError::InvalidRequestFormat);
         }
+        // we don't need to throw an error here, the request will be rejected later if the method is not supported
     }
 
     let response = if batched_request { serde_json::to_vec(&items)? } else { serde_json::to_vec(&items[0])? };
