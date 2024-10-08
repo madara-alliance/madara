@@ -38,7 +38,6 @@ mp-utils = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
-starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
@@ -47,7 +46,7 @@ alloy = { workspace = true }
 anyhow.workspace = true
 async-trait = { workspace = true }
 chrono = "0.4.38"
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
 fdlimit.workspace = true
 forwarded-header-value = "0.1.1"
@@ -58,7 +57,6 @@ ip_network.workspace = true
 jsonrpsee.workspace = true
 lazy_static = { workspace = true }
 log = { workspace = true }
-primitive-types.workspace = true
 rand = { workspace = true }
 rayon.workspace = true
 reqwest = { workspace = true }

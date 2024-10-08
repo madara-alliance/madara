@@ -344,7 +344,7 @@ mod tests {
             Err(_) => panic!("Timeout reached while waiting for task completion"),
         }
 
-        let applied_block = backend.get_block(&DbBlockId::BlockN(0)).unwrap();
+        let applied_block = backend.get_block(&DbBlockId::Number(0)).unwrap();
         assert!(applied_block.is_some(), "The block was not applied correctly");
         let applied_block = MadaraBlock::try_from(applied_block.unwrap()).unwrap();
 
