@@ -6,7 +6,7 @@
 //! TODO: mempool size limits
 //! TODO(perf): should we box the MempoolTransaction?
 
-use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
+use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
 use mp_class::ConvertedClass;
 use starknet_api::{
@@ -19,12 +19,13 @@ use std::{
     iter,
     time::SystemTime,
 };
+use blockifier::transaction::transaction_execution::Transaction;
 
 pub type ArrivedAtTimestamp = SystemTime;
 
 #[derive(Debug)]
 pub struct MempoolTransaction {
-    pub tx: AccountTransaction,
+    pub tx: Transaction,
     pub arrived_at: ArrivedAtTimestamp,
     pub converted_class: Option<ConvertedClass>,
 }
@@ -32,7 +33,7 @@ pub struct MempoolTransaction {
 impl Clone for MempoolTransaction {
     fn clone(&self) -> Self {
         Self {
-            tx: clone_account_tx(&self.tx),
+            tx: clone_transaction(&self.tx),
             arrived_at: self.arrived_at,
             converted_class: self.converted_class.clone(),
         }

@@ -7,7 +7,8 @@ use std::time::Duration;
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
-use alloy::primitives::{keccak256, FixedBytes, U256};
+use alloy::primitives::{keccak256, FixedBytes, U256, b256, address};
+use alloy::rpc::types::Filter;
 use alloy::sol_types::SolValue;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use log::Level::Debug;
@@ -17,9 +18,12 @@ use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{
     Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,
 };
+use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use url::ParseError::SetHostOnCannotBeABaseUrl;
+use mc_mempool::Mempool;
+use alloy::providers::Provider;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -42,7 +46,7 @@ impl EthereumClient {
     }
 }
 
-pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
+pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &ChainId, mempool: Arc<Mempool>) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
@@ -55,15 +59,30 @@ pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &C
             return Err(e.into());
         }
     };
+    log::debug!("we are inside sync and we will be calling the event filter now and last synced event block is: {:?}", last_synced_event_block);
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
+    log::debug!("event filter here is: {:?}", event_filter);
+
+    let address = client.l1_core_contract.address().clone();
+    let transfer_event_signature =
+        b256!("db80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b");
+    let filter = Filter::new().event_signature(transfer_event_signature).from_block(BlockNumberOrTag::Number(last_synced_event_block.block_number)).address(address);
+    // You could also use the event name instead of the event signature like so:
+    // .event("Transfer(address,address,uint256)")
+
+    // Get all logs from the latest block that match the filter.
+    let logs = client.provider.get_logs(&filter).await?;
+
+    for log in logs {
+        log::debug!("Transfer event: {log:?}");
+    }
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
-        .select(BlockNumberOrTag::Finalized)
         .watch()
         .await
         .context("Failed to watch event filter")?
         .into_stream();
-
+    // log::debug!("event stream here is: {:?}", event_stream);
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         log::debug!("inside the l1 messages");
         if let Ok((event, meta)) = event_result {
@@ -97,7 +116,7 @@ pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &C
                 continue;
             }
 
-            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id).await {
+            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id, mempool.clone()).await {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
                         "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
@@ -132,6 +151,7 @@ async fn process_l1_message(
     l1_block_number: &Option<u64>,
     event_index: &Option<u64>,
     chain_id: &ChainId,
+    mempool: Arc<Mempool>
 ) -> anyhow::Result<Option<TransactionHash>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
@@ -152,9 +172,10 @@ async fn process_l1_message(
     };
 
     let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction: BlockifierL1HandlerTransaction =
+    let blockifier_transaction =
         BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
 
+    mempool.accept_tx(BlockifierTransation::L1HandlerTransaction(blockifier_transaction), None);
     // TODO: submit tx to mempool
 
     // TODO: remove unwraps
@@ -162,7 +183,7 @@ async fn process_l1_message(
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
     // TODO: replace by tx hash from mempool
-    Ok(Some(blockifier_transaction.tx_hash))
+    Ok(Some(tx_hash))
 }
 
 pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
@@ -241,7 +262,7 @@ mod l1_messaging_tests {
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
-
+    use mc_mempool::Mempool;
     use crate::l1_messaging::sync;
 
     use self::DummyContract::DummyContractInstance;
@@ -253,6 +274,7 @@ mod l1_messaging_tests {
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
         eth_client: EthereumClient,
+        mempool: Arc<Mempool>
     }
 
     // LogMessageToL2 from https://etherscan.io/tx/0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843

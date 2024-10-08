@@ -1,7 +1,7 @@
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::DeclareTransaction;
+use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction};
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
 use header::make_pending_header;
@@ -90,8 +90,8 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
-        let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
+    pub fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
+        // let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
 
         log::debug!("Checkpoint: we are inside the accept tx and we made sure that we have account txn only");
 
@@ -119,7 +119,7 @@ impl Mempool {
         // If the contract has been deployed for the same block is is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
         //  may appear during that time - but it is not a problem.
-        let deploy_account_tx_hash = if let AccountTransaction::Invoke(tx) = &tx {
+        let deploy_account_tx_hash = if let Transaction::AccountTransaction(AccountTransaction::Invoke(tx)) = &tx {
             let mempool = self.inner.read().expect("Poisoned lock");
             if mempool.has_deployed_contract(&tx.tx.sender_address()) {
                 Some(tx.tx_hash) // we return the wrong tx hash here but it's ok because the actual hash is unused by blockifier
@@ -134,7 +134,10 @@ impl Mempool {
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        let _ = validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some());
+        
+        if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
+            let _ = validator.perform_validations(account_tx, deploy_account_tx_hash.is_some());
+        }
 
         log::debug!("Checkpoint: validation performed");
 
@@ -150,6 +153,7 @@ impl Mempool {
 
         Ok(())
     }
+
 }
 
 pub fn transaction_hash(tx: &Transaction) -> Felt {
@@ -266,11 +270,14 @@ impl MempoolProvider for Mempool {
     }
 }
 
-pub(crate) fn is_only_query(tx: &AccountTransaction) -> bool {
+pub(crate) fn is_only_query(tx: &Transaction) -> bool {
     match tx {
-        AccountTransaction::Declare(tx) => tx.only_query(),
-        AccountTransaction::DeployAccount(tx) => tx.only_query,
-        AccountTransaction::Invoke(tx) => tx.only_query,
+        Transaction::AccountTransaction(account_tx) => match account_tx {
+            AccountTransaction::Declare(tx) => tx.only_query(),
+            AccountTransaction::DeployAccount(tx) => tx.only_query,
+            AccountTransaction::Invoke(tx) => tx.only_query,
+        },
+        Transaction::L1HandlerTransaction(_) => false,
     }
 }
 
@@ -290,35 +297,43 @@ pub(crate) fn nonce(tx: &AccountTransaction) -> Nonce {
     }
 }
 
-pub(crate) fn tx_hash(tx: &AccountTransaction) -> TransactionHash {
+pub(crate) fn tx_hash(tx: &Transaction) -> TransactionHash {
     match tx {
-        AccountTransaction::Declare(tx) => tx.tx_hash,
-        AccountTransaction::DeployAccount(tx) => tx.tx_hash,
-        AccountTransaction::Invoke(tx) => tx.tx_hash,
+        Transaction::AccountTransaction(account_tx) => match account_tx {
+            AccountTransaction::Declare(tx) => tx.tx_hash,
+            AccountTransaction::DeployAccount(tx) => tx.tx_hash,
+            AccountTransaction::Invoke(tx) => tx.tx_hash,
+        },
+        Transaction::L1HandlerTransaction(tx) => tx.tx_hash,
     }
 }
 
 // AccountTransaction does not implement Clone :(
-pub(crate) fn clone_account_tx(tx: &AccountTransaction) -> AccountTransaction {
-    match tx {
-        // Declare has a private field :(
-        AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
-            // These should never fail
-            true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                .expect("Making blockifier transaction for query"),
-            false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                .expect("Making blockifier transaction"),
-        }),
-        AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
-            tx: tx.tx.clone(),
-            tx_hash: tx.tx_hash,
-            contract_address: tx.contract_address,
-            only_query: tx.only_query,
-        }),
-        AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
-            tx: tx.tx.clone(),
-            tx_hash: tx.tx_hash,
-            only_query: tx.only_query,
-        }),
+    pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
+        match tx {
+            Transaction::AccountTransaction(account_tx) => Transaction::AccountTransaction(match account_tx {
+                AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
+                    true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                        .expect("Making blockifier transaction for query"),
+                    false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                        .expect("Making blockifier transaction"),
+                }),
+                AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
+                    tx: tx.tx.clone(),
+                    tx_hash: tx.tx_hash,
+                    contract_address: tx.contract_address,
+                    only_query: tx.only_query,
+                }),
+                AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
+                    tx: tx.tx.clone(),
+                    tx_hash: tx.tx_hash,
+                    only_query: tx.only_query,
+                }),
+            }),
+            Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+                tx: tx.tx.clone(),
+                tx_hash: tx.tx_hash,
+                paid_fee_on_l1: tx.paid_fee_on_l1
+            }),
+        }
     }
-}

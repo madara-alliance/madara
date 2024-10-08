@@ -99,6 +99,9 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.l1_sync_params.gas_price_sync_disabled = true;
     }
 
+    // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
+    let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
+
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &db_service,
@@ -107,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
         run_cmd.is_sequencer(),
+        Arc::clone(&mempool)
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -117,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
         match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
-                let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
+                // let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
                 let block_production_service = BlockProductionService::new(
                     &run_cmd.block_production_params,

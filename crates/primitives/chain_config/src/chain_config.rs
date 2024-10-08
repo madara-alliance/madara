@@ -214,7 +214,7 @@ impl ChainConfig {
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             block_time: Duration::from_secs(8),
             pending_block_update_time: Duration::from_secs(2),
-            eth_core_contract_address: "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707".parse().expect("parsing a constant"),
+            eth_core_contract_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".parse().expect("parsing a constant"),
             ..ChainConfig::starknet_sepolia()
         }
     }
