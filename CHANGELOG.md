@@ -5,6 +5,7 @@
 - fix: estimate_fee should through an error if any txn fails
 - fix: rejected transaction block production panic
 - fix(sync): pending block retrying mechanism
+- feat(clean): dc_db: rename `DbBlockId::BlockN` to `DbBlockId::Number`
 - feat(cli): Environment variables can be used to specify Madara parameters
 - fix:(tests): Add testing feature to mc-db dev dependency (#294)
 - feat: new crate gateway client & server

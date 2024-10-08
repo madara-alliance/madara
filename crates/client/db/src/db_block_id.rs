@@ -7,7 +7,7 @@ use crate::{MadaraBackend, MadaraStorageError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DbBlockId {
     Pending,
-    BlockN(u64),
+    Number(u64),
 }
 
 impl DbBlockId {
@@ -42,7 +42,7 @@ impl fmt::Display for DbBlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pending => write!(f, "#<pending>"),
-            Self::BlockN(block_n) => write!(f, "#{block_n}"),
+            Self::Number(block_n) => write!(f, "#{block_n}"),
         }
     }
 }
@@ -60,6 +60,6 @@ mod test {
     #[test]
     fn test_db_block_id() {
         assert!(DbBlockId::Pending.is_pending());
-        assert!(!DbBlockId::BlockN(0).is_pending());
+        assert!(!DbBlockId::Number(0).is_pending());
     }
 }
