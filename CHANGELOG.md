@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: estimate_fee should through an error if any txn fails
 - fix: rejected transaction block production panic
 - fix(sync): pending block retrying mechanism
 - feat(cli): Environment variables can be used to specify Madara parameters
