@@ -5,7 +5,7 @@ use clap::Args;
 pub struct TelemetryParams {
     /// Disable connecting to the Madara telemetry server.
     /// Telemetry is enabled by default.
-    #[arg(long, alias = "no-telemetry")]
+    #[arg(env = "MADARA_TELEMETRY_DISABLED", long, alias = "no-telemetry")]
     pub telemetry_disabled: bool,
 
     /// The URL of the telemetry server.
@@ -14,6 +14,7 @@ pub struct TelemetryParams {
     /// the least verbosity.
     /// Expected format is 'URL VERBOSITY', e.g. `--telemetry-url 'wss://foo/bar 0'`.
     #[arg(
+		env = "MADARA_TELEMETRY_URL",
 		long = "telemetry-url",
 		value_name = "URL VERBOSITY",
 		value_parser = parse_telemetry_endpoints,
