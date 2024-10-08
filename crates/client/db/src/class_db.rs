@@ -67,7 +67,7 @@ impl MadaraBackend {
 
         let valid = match (requested_id, info.block_id) {
             (DbBlockId::Pending, _) => true,
-            (DbBlockId::BlockN(block_n), DbBlockId::BlockN(real_block_n)) => real_block_n <= block_n,
+            (DbBlockId::Number(block_n), DbBlockId::Number(real_block_n)) => real_block_n <= block_n,
             _ => false,
         };
         if !valid {
@@ -174,7 +174,7 @@ impl MadaraBackend {
         block_number: u64,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.store_classes(DbBlockId::BlockN(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
+        self.store_classes(DbBlockId::Number(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
     }
 
     /// NB: This functions needs to run on the rayon thread pool

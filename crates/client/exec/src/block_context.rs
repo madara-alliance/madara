@@ -35,9 +35,9 @@ impl ExecutionContext {
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
         let on_top_of = match self.db_id {
             DbBlockId::Pending => Some(DbBlockId::Pending),
-            DbBlockId::BlockN(block_n) => {
+            DbBlockId::Number(block_n) => {
                 // We exec on top of the previous block. None means we are executing genesis.
-                block_n.checked_sub(1).map(DbBlockId::BlockN)
+                block_n.checked_sub(1).map(DbBlockId::Number)
             }
         };
 
@@ -70,7 +70,7 @@ impl ExecutionContext {
                     block.header.l1_da_mode,
                 ),
                 MadaraMaybePendingBlockInfo::NotPending(block) => (
-                    DbBlockId::BlockN(block.header.block_number),
+                    DbBlockId::Number(block.header.block_number),
                     block.header.protocol_version,
                     block.header.block_number,
                     block.header.block_timestamp,
