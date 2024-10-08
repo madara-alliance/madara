@@ -28,8 +28,8 @@ mod block_tests {
         backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
         backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
 
-        assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), DbBlockId::BlockN(0));
-        assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), DbBlockId::BlockN(0));
+        assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), DbBlockId::Number(0));
+        assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), DbBlockId::Number(0));
         assert_eq!(backend.resolve_block_id(&DbBlockId::Pending).unwrap().unwrap(), DbBlockId::Pending);
     }
 
@@ -43,7 +43,7 @@ mod block_tests {
 
     #[tokio::test]
     async fn test_store_block() {
-        const BLOCK_ID_0: DbBlockId = DbBlockId::BlockN(0);
+        const BLOCK_ID_0: DbBlockId = DbBlockId::Number(0);
 
         let db = temp_db().await;
         let backend = db.backend();

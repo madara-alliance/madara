@@ -234,9 +234,6 @@ where
                         VersionMiddlewareError::InvalidVersion => {
                             ErrorObject::owned(-32600, "Invalid RPC version specified", None::<()>)
                         }
-                        VersionMiddlewareError::InvalidRequestFormat => {
-                            ErrorObject::owned(-32600, "Invalid JSON-RPC request format", None::<()>)
-                        }
                         VersionMiddlewareError::UnsupportedVersion => {
                             ErrorObject::owned(-32601, "Unsupported RPC version specified", None::<()>)
                         }

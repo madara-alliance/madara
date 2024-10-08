@@ -51,7 +51,7 @@ impl MadaraBackend {
                 let Some(block_n) = self.get_latest_block_n()? else { return Ok(None) };
                 block_n
             }
-            DbBlockId::BlockN(block_n) => block_n,
+            DbBlockId::Number(block_n) => block_n,
         };
 
         // We try to find history values.
