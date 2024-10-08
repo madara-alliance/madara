@@ -14,7 +14,7 @@ use starknet_core::types::Felt;
 /// Format: "--chain-config-override chain_id=NEW_MADARA --chain-config-override chain_name=NEW_NAME"
 #[derive(clap::Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
-    #[clap(long = "chain-config-override", value_parser = parse_key_value, number_of_values = 1)]
+    #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value, number_of_values = 1)]
     pub overrides: Vec<(String, String)>,
 }
 
