@@ -1,5 +1,8 @@
 // TODO: Move this into its own crate.
 
+use crate::close_block::close_block;
+use crate::header::make_pending_header;
+use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
@@ -24,14 +27,11 @@ use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
 use starknet_api::block::BlockNumber;
 use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
-
-use crate::close_block::close_block;
-use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -55,6 +55,8 @@ pub enum Error {
     ExecutionContext(#[from] mc_exec::Error),
     #[error("Import error: {0:#}")]
     Import(#[from] mc_block_import::BlockImportError),
+    #[error("Unexpected error: {0:#}")]
+    Unexpected(Cow<'static, str>),
 }
 
 fn csd_to_state_diff(
@@ -241,8 +243,16 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         loop {
             // Take transactions from mempool.
             let to_take = batch_size.saturating_sub(txs_to_process.len());
+            let cur_len = txs_to_process.len();
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
+
+                txs_to_process_blockifier.extend(
+                    txs_to_process
+                        .iter()
+                        .skip(cur_len)
+                        .map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))),
+                );
             }
 
             if txs_to_process.is_empty() {
@@ -252,16 +262,16 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
             stats.n_batches += 1;
 
-            txs_to_process_blockifier
-                .extend(txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))));
-
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
             let block_now_full = all_results.len() < txs_to_process_blockifier.len();
 
+            txs_to_process_blockifier.drain(..all_results.len()); // remove the used txs
+
             for exec_result in all_results {
-                let mut mempool_tx = txs_to_process.pop_front().expect("Vector length mismatch");
+                let mut mempool_tx =
+                    txs_to_process.pop_front().ok_or_else(|| Error::Unexpected("Vector length mismatch".into()))?;
                 match exec_result {
                     Ok(execution_info) => {
                         // Reverted transactions appear here as Ok too.
@@ -289,7 +299,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
                         // We reject them.
                         // Note that this is a big DoS vector.
-                        log::error!("Rejected transaction {} for unexpected error: {err:#}", mempool_tx.tx_hash());
+                        log::error!(
+                            "Rejected transaction {:#x} for unexpected error: {err:#}",
+                            mempool_tx.tx_hash().to_felt()
+                        );
                         stats.n_rejected += 1;
                     }
                 }
