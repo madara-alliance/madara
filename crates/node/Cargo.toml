@@ -40,6 +40,7 @@ mp-utils = { workspace = true }
 blockifier = { workspace = true }
 starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
+starknet-core = { workspace = true }
 
 # Other
 alloy = { workspace = true }
