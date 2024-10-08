@@ -13,29 +13,34 @@ use super::handler::{
 use super::helpers::{not_found_response, service_unavailable_response};
 
 // Main router to redirect to the appropriate sub-router
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn main_router(
     req: Request<Body>,
     backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
     feeder_gateway_enable: bool,
     gateway_enable: bool,
-    eth_core_contract_address: H160,
-    eth_gps_statement_verifier: H160,
-    public_key: Felt,
 ) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
         ("health", _, _) => Ok(Response::new(Body::from("OK"))),
         (path, true, _) if path.starts_with("feeder_gateway/") => {
-            feeder_gateway_router(req, path, backend, eth_core_contract_address, eth_gps_statement_verifier, public_key)
-                .await
+            let backend_clone = backend.clone();
+            let chain_config = backend.chain_config();
+            feeder_gateway_router(
+                req,
+                path,
+                backend_clone,
+                chain_config.eth_core_contract_address,
+                chain_config.eth_gps_statement_verifier,
+                chain_config.public_key,
+            )
+            .await
         }
         (path, _, true) if path.starts_with("feeder/") => gateway_router(req, path, add_transaction_provider).await,
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("feeder/") => Ok(service_unavailable_response("Feeder")),
         _ => {
-            log::warn!("Main router received invalid request: {path}");
+            log::debug!(target: "feeder_gateway", "Main router received invalid request: {path}");
             Ok(not_found_response())
         }
     }
@@ -75,7 +80,7 @@ async fn feeder_gateway_router(
             Ok(handle_get_publick_key(public_key).await.unwrap_or_else(Into::into))
         }
         _ => {
-            log::warn!("Feeder gateway received invalid request: {path}");
+            log::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");
             Ok(not_found_response())
         }
     }
@@ -92,7 +97,7 @@ async fn gateway_router(
             Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))
         }
         _ => {
-            log::warn!("Gateway received invalid request: {path}");
+            log::debug!(target: "feeder_gateway", "Gateway received invalid request: {path}");
             Ok(not_found_response())
         }
     }

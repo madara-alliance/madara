@@ -1,9 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
-use mp_block::H160;
 use mp_utils::service::Service;
-use starknet_core::types::Felt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -15,9 +13,6 @@ pub struct GatewayService {
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
-    eth_core_contract_address: H160,
-    eth_gps_statement_verifier: H160,
-    public_key: Felt,
 }
 
 impl GatewayService {
@@ -25,9 +20,6 @@ impl GatewayService {
         config: &GatewayParams,
         db: &DatabaseService,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
-        eth_core_contract_address: H160,
-        eth_gps_statement_verifier: H160,
-        public_key: Felt,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
@@ -36,9 +28,6 @@ impl GatewayService {
             gateway_enable: config.gateway_enable,
             gateway_external: config.gateway_external,
             gateway_port: config.gateway_port,
-            eth_core_contract_address,
-            eth_gps_statement_verifier,
-            public_key,
         })
     }
 }
@@ -54,9 +43,6 @@ impl Service for GatewayService {
                 gateway_enable,
                 gateway_external,
                 gateway_port,
-                eth_core_contract_address,
-                eth_gps_statement_verifier,
-                public_key,
             } = self.clone();
 
             join_set.spawn(async move {
@@ -67,9 +53,6 @@ impl Service for GatewayService {
                     gateway_enable,
                     gateway_external,
                     gateway_port,
-                    eth_core_contract_address,
-                    eth_gps_statement_verifier,
-                    public_key,
                 )
                 .await
             });

@@ -11,14 +11,11 @@ use hyper::{
 };
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_block::H160;
 use mp_utils::graceful_shutdown;
-use starknet_core::types::Felt;
 use tokio::net::TcpListener;
 
 use super::router::main_router;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn start_server(
     db_backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
@@ -26,9 +23,6 @@ pub async fn start_server(
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
-    eth_core_contract_address: H160,
-    eth_gps_statement_verifier: H160,
-    public_key: Felt,
 ) -> anyhow::Result<()> {
     if !feeder_gateway_enable && !gateway_enable {
         return Ok(());
@@ -57,9 +51,6 @@ pub async fn start_server(
                     Arc::clone(&add_transaction_provider),
                     feeder_gateway_enable,
                     gateway_enable,
-                    eth_core_contract_address,
-                    eth_gps_statement_verifier,
-                    public_key,
                 )
             }))
         }

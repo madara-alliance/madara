@@ -179,16 +179,9 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Initializing rpc service")?;
 
-    let gateway_service = GatewayService::new(
-        &run_cmd.gateway_params,
-        &db_service,
-        rpc_add_txs_method_provider,
-        chain_config.eth_core_contract_address,
-        chain_config.eth_gps_statement_verifier,
-        chain_config.public_key,
-    )
-    .await
-    .context("Initializing gateway service")?;
+    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+        .await
+        .context("Initializing gateway service")?;
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
