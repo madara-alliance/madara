@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(sync): Fixed pipeline stalling on machines with few cpu cores
 - fix(cleanup): Updated EditorConfig to 4-space indents
 - fix(tests): Fixed local testing scripts
 - fix: override chain config
