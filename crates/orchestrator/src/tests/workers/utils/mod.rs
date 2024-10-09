@@ -5,8 +5,8 @@ use mockall::predicate::eq;
 use uuid::Uuid;
 
 use crate::database::MockDatabase;
-use crate::jobs::MockJob;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::jobs::MockJob;
 
 pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
     JobItem {

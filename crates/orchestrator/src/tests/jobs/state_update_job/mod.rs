@@ -12,8 +12,8 @@ use mockall::predicate::{always, eq};
 use num_bigint::BigUint;
 use rstest::*;
 use settlement_client_interface::MockSettlementClient;
-use starknet::providers::JsonRpcClient;
 use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
 use url::Url;
 
 use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
-use color_eyre::Result;
 use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
@@ -21,7 +21,7 @@ use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet::signers::{LocalWallet, SigningKey};
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 use utils::settings::Settings;
 
 use crate::config::StarknetSettlementConfig;

@@ -5,8 +5,8 @@ use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::primitives::U256;
 use alloy_primitives::FixedBytes;
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::Result as EyreResult;
 use color_eyre::eyre::ContextCompat;
+use color_eyre::Result as EyreResult;
 
 /// Converts a `&[[u8; 32]]` to `Vec<U256>`.
 /// Pads with zeros if any inner slice is shorter than 32 bytes.

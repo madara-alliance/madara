@@ -15,8 +15,8 @@ use utils::env_utils::get_env_var_or_panic;
 use utils::settings::env::EnvSettingsProvider;
 
 use crate::config::ProviderConfig;
-use crate::data_storage::DataStorage;
 use crate::data_storage::aws_s3::AWSS3;
+use crate::data_storage::DataStorage;
 use crate::database::mongodb::MongoDb;
 use crate::jobs::types::JobStatus::Created;
 use crate::jobs::types::JobType::DataSubmission;

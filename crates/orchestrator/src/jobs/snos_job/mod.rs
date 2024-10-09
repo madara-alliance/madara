@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use cairo_vm::Felt252;
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use cairo_vm::Felt252;
 use chrono::{SubsecRound, Utc};
 use color_eyre::Result;
 use prove_block::prove_block;
@@ -20,10 +20,10 @@ use super::{JobError, OtherError};
 use crate::config::Config;
 use crate::constants::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::data_storage::DataStorage;
-use crate::jobs::Job;
 use crate::jobs::snos_job::error::FactError;
 use crate::jobs::snos_job::fact_info::get_fact_info;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use crate::jobs::Job;
 
 pub mod error;
 pub mod fact_info;
@@ -98,7 +98,7 @@ impl Job for SnosJob {
         let snos_url = config.snos_url().to_string();
         let snos_url = snos_url.trim_end_matches('/');
         let (cairo_pie, snos_output) =
-            prove_block(block_number, snos_url, LayoutName::all_cairo).await.map_err(|e| {
+            prove_block(block_number, snos_url, LayoutName::all_cairo, false).await.map_err(|e| {
                 SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
             })?;
 

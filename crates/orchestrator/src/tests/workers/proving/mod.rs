@@ -7,8 +7,8 @@ use mockall::predicate::eq;
 use prover_client_interface::MockProverClient;
 use rstest::rstest;
 use settlement_client_interface::MockSettlementClient;
-use starknet::providers::JsonRpcClient;
 use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
 use url::Url;
 
 use crate::database::MockDatabase;

@@ -2,18 +2,18 @@
 //!
 //! Port of https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/cairo/bootloaders/generate_fact.py
 
-use alloy::primitives::{B256, keccak256};
-use cairo_vm::Felt252;
+use alloy::primitives::{keccak256, B256};
 use cairo_vm::program_hash::compute_program_hash_chain;
 use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::types::relocatable::MaybeRelocatable;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use cairo_vm::Felt252;
 use starknet::core::types::Felt;
 
 // use starknet::core::types::FieldElement;
 use super::error::FactError;
 use super::fact_node::generate_merkle_root;
-use super::fact_topology::{FactTopology, get_fact_topology};
+use super::fact_topology::{get_fact_topology, FactTopology};
 
 /// Default bootloader program version.
 ///

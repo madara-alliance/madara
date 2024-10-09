@@ -3,8 +3,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use color_eyre::Result as EyreResult;
 use color_eyre::eyre::Context;
+use color_eyre::Result as EyreResult;
 use omniqueue::{Delivery, QueueError};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
@@ -13,13 +13,13 @@ use tracing::log;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::jobs::{JobError, OtherError, handle_job_failure, process_job, verify_job};
-use crate::workers::Worker;
+use crate::jobs::{handle_job_failure, process_job, verify_job, JobError, OtherError};
 use crate::workers::data_submission_worker::DataSubmissionWorker;
 use crate::workers::proof_registration::ProofRegistrationWorker;
 use crate::workers::proving::ProvingWorker;
 use crate::workers::snos::SnosWorker;
 use crate::workers::update_state::UpdateStateWorker;
+use crate::workers::Worker;
 
 pub const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 pub const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";

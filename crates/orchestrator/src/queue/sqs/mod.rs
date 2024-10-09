@@ -8,10 +8,10 @@ use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::{Delivery, QueueError};
 use utils::env_utils::get_env_var_or_panic;
 
-use crate::queue::QueueProvider;
 use crate::queue::job_queue::{
     JOB_HANDLE_FAILURE_QUEUE, JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE, WORKER_TRIGGER_QUEUE,
 };
+use crate::queue::QueueProvider;
 pub struct SqsQueue;
 
 lazy_static! {

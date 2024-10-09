@@ -16,10 +16,10 @@ use starknet::macros::{felt, selector};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
 use starknet::signers::{LocalWallet, SigningKey};
-use utils::settings::Settings;
 use utils::settings::env::EnvSettingsProvider;
+use utils::settings::Settings;
 
-use super::setup::{MadaraCmd, MadaraCmdBuilder, wait_for_cond};
+use super::setup::{wait_for_cond, MadaraCmd, MadaraCmdBuilder};
 use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient};
 
 #[fixture]

@@ -40,8 +40,6 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly
-          override: true
-          default: true
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -128,13 +126,16 @@ jobs:
           # Navigate to checkouts folder
           cd /home/runner/.cargo/git/checkouts
           # Navigating to snos
-          cd snos-*
+          cd snos-59fe8329bb16fe65
           # Navigating to the build
-          cd 71bd0a1
+          cd 3bd95bf
           # Activating the venv
           source ~/cairo_venv/bin/activate
           # Building the cairo lang repo requirements
           ./scripts/setup-tests.sh
+
+      - name: Check rust version
+        run: rustup show
 
       - name: Run llvm-cov tests
         env:

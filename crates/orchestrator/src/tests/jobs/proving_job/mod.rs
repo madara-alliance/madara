@@ -9,18 +9,18 @@ use httpmock::prelude::*;
 use mockall::predicate::eq;
 use prover_client_interface::{MockProverClient, TaskStatus};
 use rstest::*;
-use starknet::providers::JsonRpcClient;
 use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
 use url::Url;
 use uuid::Uuid;
 
 use super::super::common::default_job_item;
 use crate::constants::CAIRO_PIE_FILE_NAME;
 use crate::data_storage::MockDataStorage;
-use crate::jobs::Job;
 use crate::jobs::constants::JOB_METADATA_SNOS_FACT;
 use crate::jobs::proving_job::ProvingJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
+use crate::jobs::Job;
 use crate::tests::config::TestConfigBuilder;
 
 #[rstest]
@@ -85,17 +85,20 @@ async fn test_process_job() {
 
     assert_eq!(
         ProvingJob
-            .process_job(services.config, &mut JobItem {
-                id: Uuid::default(),
-                internal_id: "0".into(),
-                job_type: JobType::ProofCreation,
-                status: JobStatus::Created,
-                external_id: String::new().into(),
-                metadata: HashMap::new(),
-                version: 0,
-                created_at: Utc::now().round_subsecs(0),
-                updated_at: Utc::now().round_subsecs(0)
-            })
+            .process_job(
+                services.config,
+                &mut JobItem {
+                    id: Uuid::default(),
+                    internal_id: "0".into(),
+                    job_type: JobType::ProofCreation,
+                    status: JobStatus::Created,
+                    external_id: String::new().into(),
+                    metadata: HashMap::new(),
+                    version: 0,
+                    created_at: Utc::now().round_subsecs(0),
+                    updated_at: Utc::now().round_subsecs(0)
+                }
+            )
             .await
             .unwrap(),
         "task_id".to_string()

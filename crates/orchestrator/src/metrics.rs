@@ -1,8 +1,8 @@
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::Gauge;
-use opentelemetry::{KeyValue, global};
-use utils::metrics::lib::{Metrics, register_gauge_metric_instrument};
+use opentelemetry::{global, KeyValue};
+use utils::metrics::lib::{register_gauge_metric_instrument, Metrics};
 use utils::register_metric;
 
 use crate::telemetry::OTEL_SERVICE_NAME;

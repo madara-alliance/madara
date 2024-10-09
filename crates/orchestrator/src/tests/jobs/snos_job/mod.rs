@@ -9,10 +9,10 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::constants::{CAIRO_PIE_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::Job;
 use crate::jobs::constants::JOB_METADATA_SNOS_BLOCK;
 use crate::jobs::snos_job::SnosJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use crate::jobs::Job;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{MockType, TestConfigBuilder};
 use crate::tests::jobs::ConfigType;
@@ -51,7 +51,6 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 const SNOS_PATHFINDER_RPC_URL_ENV: &str = "RPC_FOR_SNOS";
 
 #[rstest]
-#[ignore = "This test is not working on CI because SNOS run fails"]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_process_job() -> color_eyre::Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {

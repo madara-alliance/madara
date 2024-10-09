@@ -109,8 +109,8 @@ cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "notles
 
 # Snos & Sharp (Starkware)
 # TODO: Update branch to main once the PR is merged (PR #368 in the snos repository)
-starknet-os = { git = "https://github.com/ocdbytes/snos", rev = "71bd0a102735f690c503b8e708773a2db843ef59" }
-prove_block = { git = "https://github.com/ocdbytes/snos", rev = "71bd0a102735f690c503b8e708773a2db843ef59" }
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos", rev = "3bd95bfb315a596519b5b1d3c81114fbfa06f8a6" }
+prove_block = { git = "https://github.com/keep-starknet-strange/snos", rev = "3bd95bfb315a596519b5b1d3c81114fbfa06f8a6" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }

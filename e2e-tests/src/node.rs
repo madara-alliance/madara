@@ -9,8 +9,8 @@ use url::Url;
 use crate::get_free_port;
 use crate::utils::get_repository_root;
 
-const CONNECTION_ATTEMPTS: usize = 360;
-const CONNECTION_ATTEMPT_DELAY_MS: u64 = 500;
+const CONNECTION_ATTEMPTS: usize = 720;
+const CONNECTION_ATTEMPT_DELAY_MS: u64 = 1000;
 
 #[derive(Debug)]
 pub struct Orchestrator {
@@ -40,6 +40,7 @@ impl Orchestrator {
         let mut command = Command::new("cargo");
         command
             .arg("run")
+            .arg("--release")
             .arg("--bin")
             .arg("orchestrator")
             .arg("--features")

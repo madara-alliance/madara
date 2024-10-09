@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use alloy::node_bindings::{Anvil, AnvilInstance};
-use alloy::providers::ProviderBuilder;
 use alloy::providers::ext::AnvilApi;
+use alloy::providers::ProviderBuilder;
 use alloy::sol;
 use alloy_primitives::Address;
 use utils::env_utils::get_env_var_or_panic;
@@ -131,12 +131,12 @@ mod settlement_client_tests {
     use tokio::time::sleep;
 
     use super::ENV_FILE_PATH;
-    use crate::EthereumSettlementClient;
     use crate::conversion::to_padded_hex;
     use crate::tests::{
-        CURRENT_PATH, DummyCoreContract, EthereumTestBuilder, Pipe, STARKNET_CORE_CONTRACT,
+        DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, STARKNET_CORE_CONTRACT,
         STARKNET_CORE_CONTRACT_ADDRESS, STARKNET_OPERATOR_ADDRESS,
     };
+    use crate::EthereumSettlementClient;
 
     #[rstest]
     #[tokio::test]

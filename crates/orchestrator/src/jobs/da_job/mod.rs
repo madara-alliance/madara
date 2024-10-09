@@ -379,8 +379,8 @@ pub mod test {
     use rstest::rstest;
     use serde_json::json;
     use starknet::core::types::{Felt, StateUpdate};
-    use starknet::providers::JsonRpcClient;
     use starknet::providers::jsonrpc::HttpTransport;
+    use starknet::providers::JsonRpcClient;
     use url::Url;
 
     use crate::jobs::da_job::da_word;

@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
-use color_eyre::Result;
 use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use futures::TryStreamExt;
-use mongodb::bson::{Bson, Document, doc};
+use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion, UpdateOptions};
-use mongodb::{Client, Collection, bson};
+use mongodb::{bson, Client, Collection};
 use utils::settings::Settings;
 use uuid::Uuid;
 

@@ -23,7 +23,7 @@
 
 use std::ops::Add;
 
-use alloy::primitives::{B256, keccak256};
+use alloy::primitives::{keccak256, B256};
 use cairo_vm::Felt252;
 use itertools::Itertools;
 use num_bigint::BigUint;

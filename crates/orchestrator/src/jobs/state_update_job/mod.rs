@@ -20,10 +20,10 @@ use super::constants::{
 use super::{JobError, OtherError};
 use crate::config::Config;
 use crate::constants::{PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::Job;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
 use crate::jobs::state_update_job::utils::fetch_blob_data_for_block;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
+use crate::jobs::Job;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum StateUpdateError {

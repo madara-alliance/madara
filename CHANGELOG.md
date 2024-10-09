@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- bumped snos and downgraded rust to match SNOS rust version
 - Bumped dependencies, and associated api changes done
 - ethereum DA client builder
 - AWS config built from TestConfigBuilder.

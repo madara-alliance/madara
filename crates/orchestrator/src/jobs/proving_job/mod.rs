@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
-use color_eyre::eyre::{WrapErr, eyre};
+use color_eyre::eyre::{eyre, WrapErr};
 use prover_client_interface::{Task, TaskStatus};
 use thiserror::Error;
-use tracing::log::Level::Error;
 use tracing::log::log;
+use tracing::log::Level::Error;
 use uuid::Uuid;
 
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};

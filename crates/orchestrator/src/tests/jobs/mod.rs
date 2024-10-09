@@ -13,7 +13,7 @@ use super::database::build_job_item;
 use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::{Job, MockJob, create_job, handle_job_failure, increment_key_in_metadata, process_job, verify_job};
+use crate::jobs::{create_job, handle_job_failure, increment_key_in_metadata, process_job, verify_job, Job, MockJob};
 use crate::queue::job_queue::{JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE};
 use crate::tests::common::MessagePayloadType;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
