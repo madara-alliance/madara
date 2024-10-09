@@ -20,8 +20,8 @@ anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 rayon.workspace = true
-rstest = { workspace = true }
+rstest.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
-tokio = { workspace = true, features = ["signal"] }
+tokio.workspace = true
 url.workspace = true
