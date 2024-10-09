@@ -651,29 +651,70 @@ else
     echo -e "\n🐳 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
     docker pull $IMAGE_NAME
 fi
+# Function to format the Docker command for display
+format_command_for_display() {
+    local cmd_array=("$@")
+    local formatted_cmd=""
+    local indent="    "  # Adjust the indentation as needed
 
-# Build the final Docker run command
+    for ((i=0; i<${#cmd_array[@]}; i++)); do
+        arg="${cmd_array[i]}"
+        next_arg="${cmd_array[i+1]}"
+        
+        # Start a new line if the argument is a Docker option or the image name
+        if [[ "$arg" == docker || "$arg" == run || "$arg" == "-d" ]]; then
+            formatted_cmd+="$arg "
+        elif [[ "$arg" == -* || "$arg" == "$IMAGE_NAME" ]]; then
+            formatted_cmd+="\\\n$indent$arg"
+        else
+            formatted_cmd+=" $arg"
+        fi
+    done
+
+    echo -e "$formatted_cmd"
+}
+
+# Build the DOCKER_COMMAND array as before
+DOCKER_COMMAND=("docker" "run" "-d" "--name" "madara-client" "-v" "${BASE_PATH}:/data")
+
+# Add PORT_MAPPING if it's not empty
+if [ -n "$PORT_MAPPING" ]; then
+    DOCKER_COMMAND+=(${PORT_MAPPING})
+fi
+
+# Add Docker options before the image name
 if [ "$MODE" == "full" ] && [ "$CONFIG_MODIFIED" == "false" ] && [ "$NETWORK" != "custom" ]; then
-    DOCKER_COMMAND="docker run -d --name madara-client \
-        -v ${BASE_PATH}:/data \
-        ${PORT_MAPPING} \
-        $IMAGE_NAME \
-        --${MODE} --name \"${NODE_NAME}\" --network \"${NETWORK}\" --base-path=\"/data\" ${RPC_OPTS} --l1-endpoint \"${L1_ENDPOINT}\""
+    DOCKER_COMMAND+=("--network" "${NETWORK}")
+fi
+
+# Add the image name
+DOCKER_COMMAND+=("$IMAGE_NAME")
+
+# Add container arguments after the image name
+DOCKER_COMMAND+=("--${MODE}" "--name" "${NODE_NAME}" "--base-path" "/data")
+
+if [ "$MODE" == "full" ] && [ "$CONFIG_MODIFIED" == "false" ] && [ "$NETWORK" != "custom" ]; then
+    # Add RPC_OPTS if it's not empty
+    if [ -n "$RPC_OPTS" ]; then
+        DOCKER_COMMAND+=(${RPC_OPTS})
+    fi
+    DOCKER_COMMAND+=("--l1-endpoint" "${L1_ENDPOINT}")
 else
-    DOCKER_COMMAND="docker run -d --name madara-client \
-        -v ${BASE_PATH}:/data \
-        ${PORT_MAPPING} \
-        $IMAGE_NAME \
-        --${MODE} --name \"${NODE_NAME}\" --chain-config-path=\"/data/chain_config.yaml\" --base-path=\"/data\" ${RPC_OPTS}"
+    DOCKER_COMMAND+=("--chain-config-path" "/data/chain_config.yaml")
+
+    # Add RPC_OPTS if it's not empty
+    if [ -n "$RPC_OPTS" ]; then
+        DOCKER_COMMAND+=(${RPC_OPTS})
+    fi
 
     # Add --override-devnet-chain-id if applicable
     if [ "$OVERRIDE_DEVNET_CHAIN_ID" == "true" ]; then
-        DOCKER_COMMAND="$DOCKER_COMMAND --override-devnet-chain-id"
+        DOCKER_COMMAND+=("--override-devnet-chain-id")
     fi
 
     # Add --l1-endpoint if applicable
     if [ "$MODE" == "sequencer" ]; then
-        DOCKER_COMMAND="$DOCKER_COMMAND --l1-endpoint \"${L1_ENDPOINT}\""
+        DOCKER_COMMAND+=("--l1-endpoint" "${L1_ENDPOINT}")
     fi
 fi
 
@@ -682,8 +723,10 @@ echo -e "\n${GREEN}Your docker image is ready to be used.${NC}"
 tput rc
 tput ed
 
-echo -e "\n🔄 ${YELLOW}${BOLD}The following Docker command will be executed:${NC}\n"
-echo -e "${CYAN}$DOCKER_COMMAND${NC}"
+# Output the formatted Docker command
+echo -e "\n🔄 The following Docker command will be executed:\n"
+formatted_command=$(format_command_for_display "${DOCKER_COMMAND[@]}")
+echo -e "${CYAN}${formatted_command}${NC}"
 
 # Confirm before executing
 echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}\n"
@@ -696,7 +739,8 @@ if [ "$CONFIRM" == "yes" ]; then
         docker stop madara-client
         docker rm madara-client
     fi
-    eval $DOCKER_COMMAND
+    # Execute the Docker command
+    "${DOCKER_COMMAND[@]}"
     tput rc
     tput ed
     # Check if the Madara Docker container is running
@@ -704,14 +748,14 @@ if [ "$CONFIRM" == "yes" ]; then
         echo -e "\n${GREEN}Madara client is running.${NC}"
         echo -e "${YELLOW}Container details:${NC}"
         docker inspect madara-client --format '
-        Name: {{.Name}}
-        ID: {{.Id}}
-        Image: {{.Config.Image}}
-        Status: {{.State.Status}}
-        StartedAt: {{.State.StartedAt}}
-        Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
+                Name: {{.Name}}
+                ID: {{.Id}}
+                Image: {{.Config.Image}}
+                Status: {{.State.Status}}
+                StartedAt: {{.State.StartedAt}}
+                Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
         
-        echo -e "\n${YELLOW}Client Logs (last 10 lines):${NC}"
+        echo -e "\n${YELLOW}Client Logs:${NC}"
         timeout 4 docker logs -f madara-client
         
         # Ask the user whether to quit or display more logs
