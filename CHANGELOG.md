@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(tests): Fixed local testing scripts
 - fix: override chain config
 - fix: estimate_fee should through an error if any txn fails
 - fix: rejected transaction block production panic
