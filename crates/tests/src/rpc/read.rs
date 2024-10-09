@@ -25,8 +25,6 @@ mod test_rpc_read_calls {
     use starknet_providers::{JsonRpcClient, Provider};
     use std::any::Any;
     use std::fmt::Write;
-    use std::fs::File;
-    use std::io::BufReader;
     use std::io::Read;
     use std::ops::Deref;
     use std::sync::{Arc, Mutex};
@@ -1278,15 +1276,9 @@ mod test_rpc_read_calls {
 
         let decompressed_program = decompress_to_string(contract_program.unwrap());
 
-        let mut class_program_file = File::open("crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
-
-        let mut original_program = String::new();
-        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
-
-        let contract_class_file = File::open("crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
-        let reader = BufReader::new(contract_class_file);
-
-        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
+        let expected_program = include_str!("test_utils/class_program.txt");
+        let expected_contract_class: ContractClass =
+            serde_json::from_slice(include_bytes!("test_utils/contract_class.json")).unwrap();
 
         let expected_contract_entry_points = match expected_contract_class.clone() {
             ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
@@ -1298,7 +1290,7 @@ mod test_rpc_read_calls {
             _ => None,
         };
 
-        assert_eq!(decompressed_program, original_program);
+        assert_eq!(decompressed_program, expected_program);
         assert_eq!(contract_entry_points, expected_contract_entry_points);
         assert_eq!(contract_abi, expected_contract_abi);
     }
