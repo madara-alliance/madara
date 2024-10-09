@@ -170,8 +170,6 @@ enum VersionMiddlewareError {
     BodyReadError(#[from] hyper::Error),
     #[error("Failed to parse JSON: {0}")]
     JsonParseError(#[from] serde_json::Error),
-    #[error("Invalid request format")]
-    InvalidRequestFormat,
     #[error("Invalid URL format")]
     InvalidUrlFormat,
     #[error("Invalid version specified")]
@@ -236,9 +234,6 @@ where
                         VersionMiddlewareError::InvalidVersion => {
                             ErrorObject::owned(-32600, "Invalid RPC version specified", None::<()>)
                         }
-                        VersionMiddlewareError::InvalidRequestFormat => {
-                            ErrorObject::owned(-32600, "Invalid JSON-RPC request format", None::<()>)
-                        }
                         VersionMiddlewareError::UnsupportedVersion => {
                             ErrorObject::owned(-32601, "Unsupported RPC version specified", None::<()>)
                         }
@@ -248,7 +243,7 @@ where
                     let body = json!({
                         "jsonrpc": "2.0",
                         "error": error,
-                        "id": 0
+                        "id": null
                     })
                     .to_string();
 
@@ -267,18 +262,29 @@ async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(),
     let version = RpcVersion::from_request_path(&path)?;
 
     let whole_body = hyper::body::to_bytes(req.body_mut()).await?;
-    let mut json: Value = serde_json::from_slice(&whole_body)?;
+    let json: Value = serde_json::from_slice(&whole_body)?;
 
-    if let Some(method) = json.get_mut("method").as_deref().and_then(Value::as_str) {
-        let new_method = format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
-
-        json["method"] = Value::String(new_method);
+    // in case of batched requests, the request is an array of JSON-RPC requests
+    let mut batched_request = false;
+    let mut items = if let Value::Array(items) = json {
+        batched_request = true;
+        items
     } else {
-        return Err(VersionMiddlewareError::InvalidRequestFormat);
+        vec![json]
+    };
+
+    for item in items.iter_mut() {
+        if let Some(method) = item.get_mut("method").as_deref().and_then(Value::as_str) {
+            let new_method =
+                format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
+
+            item["method"] = Value::String(new_method);
+        }
+        // we don't need to throw an error here, the request will be rejected later if the method is not supported
     }
 
-    let new_body = Body::from(serde_json::to_vec(&json)?);
-    *req.body_mut() = new_body;
+    let response = if batched_request { serde_json::to_vec(&items)? } else { serde_json::to_vec(&items[0])? };
+    *req.body_mut() = Body::from(response);
 
     Ok(())
 }

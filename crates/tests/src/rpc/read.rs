@@ -138,6 +138,88 @@ mod test_rpc_read_calls {
         assert_eq!(result, 1);
     }
 
+    /// Fetches the latest block hash and number.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '[
+    ///     {
+    ///         "jsonrpc": "2.0",
+    ///         "method": "starknet_blockHashAndNumber",
+    ///         "params": {},
+    ///         "id": 0
+    ///     },
+    ///     {
+    ///         "jsonrpc": "2.0",
+    ///         "method": "starknet_getBlockTransactionCount",
+    ///         "params": {
+    ///             "block_id": {
+    ///                 "block_number": 2
+    ///             }
+    ///         },
+    ///         "id": 1
+    ///     }
+    /// ]'
+    /// ```
+    #[rstest]
+    #[tokio::test]
+    async fn test_batched_requests_work() {
+        let madara = get_shared_state().await;
+
+        // use reqwest to send a batch request to the madara rpc.
+        // TODO: use a jsonrpc client instead of reqwest when we move
+        // to starknet-providers 0.12.0
+        let client = reqwest::Client::new();
+        let res = client
+            .post(madara.rpc_url.clone())
+            .json(&[
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_blockHashAndNumber",
+                    "params": {},
+                    "id": 0
+                }),
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getBlockTransactionCount",
+                    "params": {
+                        "block_id": {
+                            "block_number": 2
+                        }
+                    },
+                    "id": 1
+                }),
+            ])
+            .send()
+            .await
+            .unwrap();
+
+        let result = res.json::<serde_json::Value>().await.unwrap();
+
+        assert_eq!(
+            result[0],
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": {
+                    "block_hash": "0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5",
+                    "block_number": 19
+                },
+                "id": 0
+            })
+        );
+        assert_eq!(
+            result[1],
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": 1,
+                "id": 1
+            })
+        );
+    }
+
     /// Fetches a block with its transactions and receipts.
     ///
     /// Example curl command:
