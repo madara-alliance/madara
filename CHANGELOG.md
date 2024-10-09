@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: Pragma's ExEx refresh behavior
 - feat: `exex_pragma_dispatch` implementation
 - feat: Madara ExExs proof of concept
 - fix: override chain config
