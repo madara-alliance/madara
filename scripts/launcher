@@ -712,7 +712,7 @@ if [ "$CONFIRM" == "yes" ]; then
         Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
         
         echo -e "\n${YELLOW}Client Logs (last 10 lines):${NC}"
-        docker logs --tail 10 madara-client
+        timeout 4 docker logs -f madara-client
         
         # Ask the user whether to quit or display more logs
         echo -e "\n${YELLOW}${BOLD}Would you like to display the full logs of the running instance or quit? (logs/quit)${NC}\n"
