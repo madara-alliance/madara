@@ -186,7 +186,6 @@ mod tests {
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
-                        signature: vec![Felt::from_hex_unchecked("0x0")],
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,

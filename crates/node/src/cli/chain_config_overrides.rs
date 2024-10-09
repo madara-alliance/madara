@@ -8,7 +8,6 @@ use starknet_api::core::{ChainId, ContractAddress};
 use mp_block::H160;
 use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_utils::parsers::parse_key_value;
-use starknet_core::types::Felt;
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override chain_id=NEW_MADARA --chain-config-override chain_name=NEW_NAME"
@@ -65,7 +64,6 @@ pub struct OverridableChainConfig {
     pub max_nonce_for_validation_skip: u64,
     pub eth_core_contract_address: H160,
     pub eth_gps_statement_verifier: H160,
-    pub public_key: Felt,
 }
 
 impl From<&ChainConfig> for OverridableChainConfig {
@@ -83,7 +81,6 @@ impl From<&ChainConfig> for OverridableChainConfig {
             max_nonce_for_validation_skip: config.max_nonce_for_validation_skip,
             eth_core_contract_address: config.eth_core_contract_address,
             eth_gps_statement_verifier: config.eth_gps_statement_verifier,
-            public_key: config.public_key,
         }
     }
 }
@@ -105,7 +102,6 @@ impl From<OverridableChainConfig> for ChainConfig {
             versioned_constants: Default::default(),
             bouncer_config: Default::default(),
             eth_gps_statement_verifier: overridable.eth_gps_statement_verifier,
-            public_key: overridable.public_key,
         }
     }
 }

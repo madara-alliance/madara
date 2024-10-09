@@ -4,11 +4,11 @@ use hyper::{Body, Method, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_block::H160;
-use starknet_core::types::Felt;
+use starknet_signers::{SigningKey, VerifyingKey};
 
 use super::handler::{
     handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_compiled_class_by_class_hash,
-    handle_get_contract_addresses, handle_get_publick_key, handle_get_signature, handle_get_state_update,
+    handle_get_contract_addresses, handle_get_public_key, handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
 
@@ -19,6 +19,7 @@ pub(crate) async fn main_router(
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
     feeder_gateway_enable: bool,
     gateway_enable: bool,
+    key_pair: (SigningKey, VerifyingKey),
 ) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
@@ -32,7 +33,7 @@ pub(crate) async fn main_router(
                 backend_clone,
                 chain_config.eth_core_contract_address,
                 chain_config.eth_gps_statement_verifier,
-                chain_config.public_key,
+                key_pair,
             )
             .await
         }
@@ -53,14 +54,14 @@ async fn feeder_gateway_router(
     backend: Arc<MadaraBackend>,
     eth_core_contract_address: H160,
     eth_gps_statement_verifier: H160,
-    public_key: Felt,
+    key_pair: (SigningKey, VerifyingKey),
 ) -> Result<Response<Body>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_block") => {
             Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_signature") => {
-            Ok(handle_get_signature(req, backend).await.unwrap_or_else(Into::into))
+            Ok(handle_get_signature(req, backend, key_pair.0).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_state_update") => {
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
@@ -77,7 +78,7 @@ async fn feeder_gateway_router(
                 .unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_public_key") => {
-            Ok(handle_get_publick_key(public_key).await.unwrap_or_else(Into::into))
+            Ok(handle_get_public_key(key_pair.1).await.unwrap_or_else(Into::into))
         }
         _ => {
             log::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");

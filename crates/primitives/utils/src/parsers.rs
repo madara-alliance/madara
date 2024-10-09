@@ -1,4 +1,5 @@
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
+use starknet_core::types::Felt;
 
 use std::time::Duration;
 
@@ -31,6 +32,10 @@ pub fn parse_duration(s: &str) -> anyhow::Result<Duration> {
         "min" => Ok(Duration::from_secs(value * 60)),
         _ => bail!("Invalid duration suffix: {}. Expected 'ms', 's', or 'min'.", suffix),
     }
+}
+
+pub fn parse_felt(s: &str) -> anyhow::Result<Felt> {
+    Felt::from_hex(s).with_context(|| format!("Invalid felt format: {s}"))
 }
 
 #[cfg(test)]

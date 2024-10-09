@@ -13,6 +13,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
+starknet-core.workspace = true
+
 # Other
 anyhow.workspace = true
 async-trait.workspace = true

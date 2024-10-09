@@ -14,6 +14,7 @@ use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     BroadcastedTransaction,
 };
+use starknet_signers::{SigningKey, VerifyingKey};
 use starknet_types_core::felt::Felt;
 
 use crate::error::StarknetError;
@@ -82,6 +83,7 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
 pub async fn handle_get_signature(
     req: Request<Body>,
     backend: Arc<MadaraBackend>,
+    private_key: SigningKey,
 ) -> Result<Response<Body>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
@@ -100,8 +102,13 @@ pub async fn handle_get_signature(
             "Retrieved pending block info from db for non-pending block {block_id}"
         ))),
         MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+            // TODO: once zeroing has been implemented for Felt this should be
+            // read from env and zeroed after use isntead
+            let signature = private_key
+                .sign(&block_info.block_hash)
+                .map_err(|e| GatewayError::InternalServerError(format!("Failed to sign block hash: {e}")))?;
             let signature =
-                ProviderBlockSignature { block_hash: block_info.block_hash, signature: block_info.signature };
+                ProviderBlockSignature { block_hash: block_info.block_hash, signature: vec![signature.r, signature.s] };
             Ok(create_json_response(hyper::StatusCode::OK, &signature))
         }
     }
@@ -286,8 +293,8 @@ pub async fn handle_get_contract_addresses(
     ))
 }
 
-pub async fn handle_get_publick_key(public_key: Felt) -> Result<Response<Body>, GatewayError> {
-    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{public_key:#x}\"")))
+pub async fn handle_get_public_key(public_key: VerifyingKey) -> Result<Response<Body>, GatewayError> {
+    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key.scalar())))
 }
 
 pub async fn handle_add_transaction(

@@ -62,7 +62,6 @@ pub fn pre_validate_inner(
     converted_classes.extend(block.trusted_converted_classes);
 
     Ok(PreValidatedBlock {
-        signature: block.signature,
         header: block.header,
         transactions: block.transactions,
         state_diff: block.state_diff,

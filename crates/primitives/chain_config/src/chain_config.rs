@@ -115,10 +115,6 @@ pub struct ChainConfig {
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
     pub eth_gps_statement_verifier: H160,
-
-    /// The public key of the sequencer, used to sign blocks. Currently this is
-    /// not yet implemented in Madara so we leave it in the chain config
-    pub public_key: Felt,
 }
 
 impl ChainConfig {
@@ -176,8 +172,6 @@ impl ChainConfig {
 
             eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
 
-            public_key: Felt::from_hex_unchecked(public_key::MAINNET),
-
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
@@ -219,7 +213,6 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
                 .expect("parsing a constant"),
-            public_key: Felt::from_hex_unchecked(public_key::SEPOLIA_TESTNET),
             ..Self::starknet_mainnet()
         }
     }
@@ -234,7 +227,6 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
-            public_key: Felt::from_hex_unchecked(public_key::SEPOLIA_INTEGRATION),
             ..Self::starknet_mainnet()
         }
     }

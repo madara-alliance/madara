@@ -18,31 +18,33 @@ name = "madara"
 [dependencies]
 
 # Madara
-mc-block-import = { workspace = true }
-mc-db = { workspace = true }
-mc-devnet = { workspace = true }
-mc-eth = { workspace = true }
-mc-gateway = { workspace = true }
-mc-mempool = { workspace = true }
-mc-metrics = { workspace = true }
-mc-rpc = { workspace = true }
-mc-sync = { workspace = true }
-mc-telemetry = { workspace = true }
-mp-block = { workspace = true }
-mp-chain-config = { workspace = true }
-mp-convert = { workspace = true }
-mp-utils = { workspace = true }
+mc-block-import.workspace = true
+mc-db.workspace = true
+mc-devnet.workspace = true
+mc-eth.workspace = true
+mc-gateway.workspace = true
+mc-mempool.workspace = true
+mc-metrics.workspace = true
+mc-rpc.workspace = true
+mc-sync.workspace = true
+mc-telemetry.workspace = true
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-convert.workspace = true
+mp-utils.workspace = true
 
 # Starknet
-blockifier = { workspace = true }
-starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
-starknet_api = { workspace = true }
+blockifier.workspace = true
+starknet-core.workspace = true
+starknet-providers.workspace = true
+starknet-crypto.workspace = true
+starknet_api.workspace = true
+starknet-signers.workspace = true
 
 # Other
-alloy = { workspace = true }
+alloy.workspace = true
 anyhow.workspace = true
-async-trait = { workspace = true }
+async-trait.workspace = true
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
@@ -53,19 +55,19 @@ governor.workspace = true
 hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
-log = { workspace = true }
+log.workspace = true
 primitive-types.workspace = true
-rand = { workspace = true }
+rand.workspace = true
 rayon.workspace = true
-reqwest = { workspace = true }
+reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true }
+tokio.workspace = true
 tower-http.workspace = true
 tower.workspace = true
-url = { workspace = true }
+url.workspace = true
 
 [features]
 default = []

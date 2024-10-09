@@ -43,7 +43,7 @@ pub fn finalized_block_zero(header: Header) -> MadaraMaybePendingBlock {
     let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(0), Felt::from(1), Felt::from(2), Felt::from(3), Felt::from(4)];
-    let block_info = MadaraBlockInfo::new(vec![Felt::from_hex_unchecked("0x0")], header, tx_hashes, felt!("0x12345"));
+    let block_info = MadaraBlockInfo::new(header, tx_hashes, felt!("0x12345"));
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
@@ -73,7 +73,7 @@ pub fn finalized_block_one() -> MadaraMaybePendingBlock {
 
     let tx_hashes = vec![Felt::from(10), Felt::from(11), Felt::from(12), Felt::from(13), Felt::from(14)];
     let header = Header { block_number: 1, ..Default::default() };
-    let block_info = MadaraBlockInfo::new(vec![Felt::from_hex_unchecked("0x1")], header, tx_hashes, Felt::from(1));
+    let block_info = MadaraBlockInfo::new(header, tx_hashes, Felt::from(1));
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
