@@ -22,6 +22,6 @@ pub struct GatewayParams {
     pub gateway_port: u16,
 
     /// Sequencer secret key used to sign blocks
-    #[arg(long, value_parser = parse_felt)]
+    #[arg(env = "MADARA_PRIVATE_KEY", long, value_parser = parse_felt)]
     pub private_key: Felt,
 }
