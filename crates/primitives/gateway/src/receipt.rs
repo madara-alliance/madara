@@ -127,7 +127,7 @@ impl ConfirmedReceipt {
             execution_result: execution_result(self.execution_status, self.revert_error),
             contract_address: match tx {
                 DeployAccountTransaction::V1(tx) => tx.contract_address,
-                DeployAccountTransaction::V3(_) => Felt::default(),
+                DeployAccountTransaction::V3(tx) => tx.sender_address,
             },
         }
     }
