@@ -45,6 +45,7 @@ GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 RED=$(tput setaf 1)
 CYAN=$(tput setaf 6)
+BLUE=$(tput setaf 4)
 NC=$(tput sgr0) # No Color
 BOLD=$(tput bold)
 ITALIC=$(tput sitm)
@@ -484,7 +485,7 @@ if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
         if [ "$MODE" == "devnet" ] && { [ "$PRESET" == "starknet_mainnet" ] || [ "$PRESET" == "starknet_testnet" ]; }; then
             echo -e "\n❗ You're running a devnet with the network config of \"${PRESET}\". This means that devnet transactions can be replayed on the actual network."
             echo -e "\n${YELLOW}Do you want to proceed or use the devnet chain config instead?${NC}"
-            echo -e "${YELLOW}1. Switch to devnet config (recomended)${NC}"
+            echo -e "${YELLOW}1. Switch to devnet config (recommended)${NC}"
             echo -e "${YELLOW}2. Continue with ${PRESET} chain config${NC}"
             while true; do
                 read -p "> " USER_CHOICE
@@ -583,7 +584,7 @@ else
     done
 fi
 
-# Exeptional clear of screen
+# Exceptional clear of screen
 clear
 welcome_message
 
@@ -659,6 +660,7 @@ else
     echo -e "\n🐳 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
     docker pull $IMAGE_NAME
 fi
+
 # Function to format the Docker command for display
 format_command_for_display() {
     local cmd_array=("$@")
@@ -765,15 +767,79 @@ if [ "$CONFIRM" == "yes" ]; then
         
         echo -e "\n${YELLOW}Client Logs:${NC}"
         timeout 4 docker logs -f madara-client
-        
-        # Ask the user whether to quit or display more logs
-        echo -e "\n${YELLOW}${BOLD}Would you like to display the full logs of the running instance or quit? (logs/quit)${NC}\n"
+
+        # Present the new menu with options
+        echo -e "\n${YELLOW}${BOLD}Please choose one of the following options:${NC}"
+        echo -e "${YELLOW}1. Re-install the node${NC}"
+        echo -e "${YELLOW}2. Try RPC request${NC}"
+        echo -e "${YELLOW}3. Display logs of the sequencer${NC}"
+        echo -e "${YELLOW}4. Node informations${NC}"
         read -p "> " USER_CHOICE
-        if [ "$USER_CHOICE" == "logs" ]; then
-            echo -e "\n${YELLOW}Displaying full logs...${NC}"
+
+        if [ "$USER_CHOICE" == "1" ]; then
+            # Re-install the node
+            echo -e "\n${YELLOW}Re-installing the node will delete all data and re-install the node. Do you wish to proceed? (yes/no)${NC}"
+            read -p "> " CONFIRM
+            if [ "$CONFIRM" == "yes" ]; then
+                # Stop and remove the container
+                docker stop madara-client
+                docker rm madara-client
+                # Remove data in BASE_PATH
+                rm -rf "${BASE_PATH}"
+                # Re-create BASE_PATH
+                mkdir -p "${BASE_PATH}"
+                # Re-run the docker command
+                "${DOCKER_COMMAND[@]}"
+                echo -e "\n${GREEN}Node re-installed and started.${NC}"
+            else
+                echo -e "\n${GREEN}Operation cancelled.${NC}"
+            fi
+        elif [ "$USER_CHOICE" == "2" ]; then
+            # Try RPC request
+            if [ "$RPC_ACCESS" != "yes" ]; then
+                echo -e "\n${RED}RPC access is not enabled. Please re-install the node with RPC access enabled.${NC}"
+            else
+                echo -e "\n${YELLOW}We will perform the following RPC request to retrieve the latest block with transactions:${NC}"
+                echo -e "${CYAN}curl --location 'http://localhost:${RPC_PORT}' \\"
+                echo -e "--header 'Content-Type: application/json' \\"
+                echo -e "--data '{"
+                echo -e "    \"jsonrpc\": \"2.0\","
+                echo -e "    \"method\": \"starknet_getBlockWithTxs\","
+                echo -e "    \"params\": {"
+                echo -e "        \"block_id\": \"latest\""
+                echo -e "    },"
+                echo -e "    \"id\": 1"
+                echo -e "}'${NC}"
+                echo -e "\n${YELLOW}Do you want to proceed? (yes/no)${NC}"
+                read -p "> " CONFIRM
+                if [ "$CONFIRM" == "yes" ]; then
+                    # Execute the curl command
+                    curl --location "http://localhost:${RPC_PORT}" \
+                    --header 'Content-Type: application/json' \
+                    --data '{
+                        "jsonrpc": "2.0",
+                        "method": "starknet_getBlockWithTxs",
+                        "params": {
+                            "block_id": "latest"
+                        },
+                        "id": 1
+                    }'
+                else
+                    echo -e "\n${GREEN}Operation cancelled.${NC}"
+                fi
+                echo -e "\n${YELLOW}For a full list of RPC endpoints, you can use this playground:${NC}"
+                echo -e "${CYAN}https://rpc-request-builder.voyager.online/${NC}"
+                echo -e "${YELLOW}Change the RPC URL to localhost:${RPC_PORT}${NC}"
+            fi
+        elif [ "$USER_CHOICE" == "3" ]; then
+            # Display logs of the sequencer
+            echo -e "\n${YELLOW}Displaying logs of the sequencer...${NC}"
             docker logs -f madara-client
+        elif [ "$USER_CHOICE" == "4" ]; then
+            # Node informations
+            echo -e "\n${GREEN}Hi${NC}"
         else
-            echo -e "\n${GREEN}Exiting...${NC}"
+            echo -e "${RED}Invalid choice. Exiting...${NC}"
         fi
     else
         echo -e "${RED}Madara client is not running.${NC}"
