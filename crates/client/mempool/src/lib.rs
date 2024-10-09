@@ -281,19 +281,25 @@ pub(crate) fn is_only_query(tx: &Transaction) -> bool {
     }
 }
 
-pub(crate) fn contract_addr(tx: &AccountTransaction) -> ContractAddress {
+pub(crate) fn contract_addr(tx: &Transaction) -> ContractAddress {
     match tx {
-        AccountTransaction::Declare(tx) => tx.tx.sender_address(),
-        AccountTransaction::DeployAccount(tx) => tx.contract_address,
-        AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+        Transaction::AccountTransaction(account_tx) => (match account_tx {
+            AccountTransaction::Declare(tx) => tx.tx.sender_address(),
+            AccountTransaction::DeployAccount(tx) => tx.contract_address,
+            AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+        }),
+        Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
     }
 }
 
-pub(crate) fn nonce(tx: &AccountTransaction) -> Nonce {
+pub(crate) fn nonce(tx: &Transaction) -> Nonce {
     match tx {
-        AccountTransaction::Declare(tx) => tx.tx.nonce(),
-        AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-        AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+        Transaction::AccountTransaction(account_tx) => (match account_tx {
+            AccountTransaction::Declare(tx) => tx.tx.nonce(),
+            AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
+            AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+        }),
+        Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
     }
 }
 

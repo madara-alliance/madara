@@ -219,7 +219,7 @@ impl MempoolInner {
         debug_assert!(tx_queue.is_empty());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for contract in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
-            if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &contract.0.tx {
                 debug_assert!(deployed_contracts.remove(&tx.contract_address))
             };
         }
@@ -239,7 +239,7 @@ impl MempoolInner {
         let arrived_at = mempool_tx.arrived_at;
 
         let deployed_contract_address =
-            if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
 
         if let Some(contract_address) = &deployed_contract_address {
             if !self.deployed_contracts.insert(*contract_address) && !force {
@@ -325,7 +325,7 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx {
+        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
             let removed = self.deployed_contracts.remove(&tx.contract_address);
             debug_assert!(removed);
         }

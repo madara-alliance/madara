@@ -28,7 +28,7 @@ use std::time::Instant;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
+use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -249,7 +249,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_batches += 1;
 
             txs_to_process_blockifier
-                .extend(txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))));
+                .extend(txs_to_process.iter().map(|tx| clone_transaction(&tx.tx)));
 
             log::debug!("just before executing the transactions");
             // Execute the transactions.
@@ -275,9 +275,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
                         self.block.inner.receipts.push(from_blockifier_execution_info(
                             &execution_info,
-                            &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
+                            &clone_transaction(&mempool_tx.tx),
                         ));
-                        let converted_tx = TransactionWithHash::from(clone_account_tx(&mempool_tx.tx)); // TODO: too many tx clones!
+                        let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }

@@ -5,12 +5,10 @@ use blockifier::transaction::{
     transaction_execution::Transaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
+use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
 
-use crate::{
-    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
-    InvokeTransactionReceipt, L1Gas, MsgToL1, PriceUnit, TransactionReceipt,
-};
+use crate::{DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt};
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
     match tx {
@@ -51,6 +49,35 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             })
         })
         .collect();
+    
+    // if the txn type is L1HandlerTransaction, then the message hash is a function call of l1_handler_tx
+    // let message: MsgToL2 = match tx {
+    //     Transaction::L1HandlerTransaction(tx) => MsgToL2 {
+    //         nonce: tx.tx.nonce.into(),
+    //         payload: tx.tx.calldata.0,
+    //         from_address: tx.tx.contract_address,
+    //         to_address: tx.tx.to_address,
+    //         selector: tx.tx.entry_point_selector
+    //     },
+    //     _ => todo!(),
+    // };
+
+    // pub fn parse_msg_to_l2(&self) -> Result<MsgToL2, ParseMsgToL2Error> {
+    //     self.calldata.split_first().map_or(
+    //         Err(ParseMsgToL2Error::EmptyCalldata),
+    //         |(from_address, payload)| {
+    //             Ok(MsgToL2 {
+    //                 from_address: (*from_address)
+    //                     .try_into()
+    //                     .map_err(|_| ParseMsgToL2Error::FromAddressOutOfRange)?,
+    //                 to_address: self.contract_address,
+    //                 selector: self.entry_point_selector,
+    //                 payload: payload.into(),
+    //                 nonce: self.nonce,
+    //             })
+    //         },
+    //     )
+    // }
 
     let get_applications = |resource| {
         res.non_optional_call_infos()
@@ -113,16 +140,15 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::L1HandlerTransaction(_tx) => unimplemented!("l1 handler tx"),
-        // Transaction::L1HandlerTransactionv(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
-        //     transaction_hash,
-        //     actual_fee,
-        //     messages_sent,
-        //     events,
-        //     execution_resources,
-        //     execution_result,
-        //     message_hash: todo!(),
-        // }),
+        Transaction::L1HandlerTransaction(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash,
+            actual_fee,
+            messages_sent,
+            events,
+            execution_resources,
+            execution_result,
+            message_hash: Felt::from(1)
+        }),
     }
 }
 
