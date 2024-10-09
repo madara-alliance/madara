@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(cleanup): Updated EditorConfig to 4-space indents
 - fix: override chain config
 - fix: estimate_fee should through an error if any txn fails
 - fix: rejected transaction block production panic
