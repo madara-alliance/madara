@@ -1,6 +1,6 @@
 use crate::{
-    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
-    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
+    global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
+    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
 };
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -18,7 +18,6 @@ mod classes;
 mod contracts;
 
 pub struct VerifyApply {
-    pool: Arc<RayonPool>,
     pub(crate) backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
@@ -26,20 +25,28 @@ pub struct VerifyApply {
 }
 
 impl VerifyApply {
-    pub fn new(backend: Arc<MadaraBackend>, pool: Arc<RayonPool>) -> Self {
-        Self { pool, backend, mutex: Default::default() }
+    pub fn new(backend: Arc<MadaraBackend>) -> Self {
+        Self { backend, mutex: Default::default() }
     }
 
     /// This function wraps the [`verify_apply_inner`] step, which runs on the rayon pool, in a tokio-friendly future.
+    ///
+    /// NOTE: we do not use [`crate::rayon::RayonPool`], but [`global_spawn_rayon_task`] - this is because that would allow for a deadlock if we were to share
+    /// the semaphore with the [`crate::pre_validate`] task.
+    /// This is fine because the [`VerifyApply::mutex`] ensures correct backpressure handling.
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
+        log::debug!("acquiring verify_apply exclusive");
         let _exclusive = self.mutex.lock().await;
+        log::debug!("acquired verify_apply exclusive");
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await
+        let res = global_spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await;
+        log::debug!("releasing verify_apply exclusive");
+        res
     }
 
     /// See [`Self::verify_apply`].
@@ -48,10 +55,14 @@ impl VerifyApply {
         block: PreValidatedPendingBlock,
         validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
+        log::debug!("acquiring verify_apply exclusive (pending)");
         let _exclusive = self.mutex.lock().await;
+        log::debug!("acquired verify_apply exclusive (pending)");
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await
+        let res = global_spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await;
+        log::debug!("releasing verify_apply exclusive (pending)");
+        res
     }
 }
 

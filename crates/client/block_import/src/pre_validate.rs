@@ -22,7 +22,10 @@ pub async fn pre_validate(
     block: UnverifiedFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedBlock, BlockImportError> {
-    pool.spawn_rayon_task(move || pre_validate_inner(block, validation)).await
+    log::debug!("spawning pre_validate");
+    let res = pool.spawn_rayon_task(move || pre_validate_inner(block, validation)).await;
+    log::debug!("finished pre_validate");
+    res
 }
 
 /// See [`pre_validate`].
@@ -31,7 +34,10 @@ pub async fn pre_validate_pending(
     block: UnverifiedPendingFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-    pool.spawn_rayon_task(move || pre_validate_pending_inner(block, validation)).await
+    log::debug!("spawning pre_validate (pending)");
+    let res = pool.spawn_rayon_task(move || pre_validate_pending_inner(block, validation)).await;
+    log::debug!("finished pre_validate (pending)");
+    res
 }
 
 /// This runs on the [`rayon`] threadpool.
