@@ -199,7 +199,6 @@ impl MadaraCmdBuilder {
                 self.args
                     .into_iter()
                     .chain([
-                        "--telemetry-disabled".into(), // important: disable telemetry!!
                         "--no-prometheus".into(),
                         "--base-path".into(),
                         format!("{}", self.tempdir.as_ref().display()),
