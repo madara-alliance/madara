@@ -1,4 +1,4 @@
-use std::str::FromStr as _;
+use std::str::FromStr;
 use std::time::Duration;
 
 use lazy_static::lazy_static;
@@ -13,7 +13,7 @@ use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
-use utils::env_utils::get_env_var_or_panic;
+use utils::env_utils::{get_env_var_optional, get_env_var_or_default, get_env_var_or_panic};
 
 lazy_static! {
     #[derive(Debug)]
@@ -21,25 +21,23 @@ lazy_static! {
 }
 
 pub fn setup_analytics() -> Option<SdkMeterProvider> {
-    let otel_endpoint = get_env_var_or_panic("OTEL_COLLECTOR_ENDPOINT");
-    let tracing_level = Level::from_str(&get_env_var_or_panic("TRACING_LEVEL"))
-        .expect("Could not obtain tracing level from environment variable.");
+    let otel_endpoint = get_env_var_optional("OTEL_COLLECTOR_ENDPOINT").expect("Failed to get OTEL_COLLECTOR_ENDPOINT");
+    let log_level = get_env_var_or_default("RUST_LOG", "INFO");
+    let level = Level::from_str(&log_level).unwrap_or(Level::INFO);
 
-    // guard clause if otel is disabled
-    if otel_endpoint.is_empty() {
-        return None;
+    let tracing_subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::filter::LevelFilter::from_level(level))
+        .with(tracing_subscriber::fmt::layer().with_target(false));
+
+    if let Some(otel_endpoint) = otel_endpoint {
+        let meter_provider = init_metric_provider(&otel_endpoint);
+        let tracer = init_tracer_provider(&otel_endpoint);
+        tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).init();
+        Some(meter_provider)
+    } else {
+        tracing_subscriber.init();
+        None
     }
-
-    let meter_provider = init_metric_provider(otel_endpoint.as_str());
-    let tracer = init_tracer_provider(otel_endpoint.as_str());
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::LevelFilter::from_level(tracing_level))
-        .with(tracing_subscriber::fmt::layer())
-        .with(OpenTelemetryLayer::new(tracer))
-        .init();
-
-    Some(meter_provider)
 }
 
 pub fn shutdown_analytics(meter_provider: Option<SdkMeterProvider>) {
@@ -70,7 +68,7 @@ pub fn init_tracer_provider(otel_endpoint: &str) -> Tracer {
         )])))
         .with_batch_config(batch_config)
         .install_batch(runtime::Tokio)
-        .unwrap();
+        .expect("Failed to install tracer provider");
 
     global::set_tracer_provider(provider.clone());
 
@@ -89,8 +87,9 @@ pub fn init_metric_provider(otel_endpoint: &str) -> SdkMeterProvider {
     );
 
     // Creates a periodic reader that exports every 5 seconds
-    let reader =
-        PeriodicReader::builder(exporter.unwrap(), runtime::Tokio).with_interval(Duration::from_secs(5)).build();
+    let reader = PeriodicReader::builder(exporter.expect("Failed to build metrics exporter"), runtime::Tokio)
+        .with_interval(Duration::from_secs(5))
+        .build();
 
     // Builds a meter provider with the periodic reader
     let provider = SdkMeterProvider::builder()
@@ -120,7 +119,6 @@ mod tests {
     async fn test_init_metric_provider() {
         // Set up necessary environment variables
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("TRACING_LEVEL", "info");
         env::set_var("OTEL_SERVICE_NAME", "test_service");
 
         let otel_endpoint = get_env_var_or_panic("OTEL_COLLECTOR_ENDPOINT");
@@ -140,7 +138,6 @@ mod tests {
     async fn test_init_tracer_provider() {
         // Set up necessary environment variables
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("TRACING_LEVEL", "info");
         env::set_var("OTEL_SERVICE_NAME", "test_service");
         let otel_endpoint = get_env_var_or_panic("OTEL_COLLECTOR_ENDPOINT");
 
@@ -158,7 +155,6 @@ mod tests {
         // This test just ensures that the function doesn't panic
 
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("TRACING_LEVEL", "info");
         env::set_var("OTEL_SERVICE_NAME", "test_service");
 
         let analytics = setup_analytics();
@@ -172,7 +168,6 @@ mod tests {
         // This test just ensures that the function doesn't panic
 
         env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("TRACING_LEVEL", "info");
         env::set_var("OTEL_SERVICE_NAME", "test_service");
 
         setup_analytics();
