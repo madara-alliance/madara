@@ -1,16 +1,74 @@
 services:
+  app:
+    build: .
+    ports:
+      - "${PORT}:3000"
+    environment:
+      - HOST=${HOST:-127.0.0.1}
+      - PORT=${PORT:-3000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-localhost}
+      - DATA_STORAGE=${DATA_STORAGE:-s3}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
+      - QUEUE_PROVIDER=${QUEUE_PROVIDER:-sqs}
+      - SQS_JOB_PROCESSING_QUEUE_URL=${SQS_JOB_PROCESSING_QUEUE_URL}
+      - SQS_JOB_VERIFICATION_QUEUE_URL=${SQS_JOB_VERIFICATION_QUEUE_URL}
+      - SQS_JOB_HANDLE_FAILURE_QUEUE_URL=${SQS_JOB_HANDLE_FAILURE_QUEUE_URL}
+      - SQS_WORKER_TRIGGER_QUEUE_URL=${SQS_WORKER_TRIGGER_QUEUE_URL}
+      - ALERTS=${ALERTS:-sns}
+      - AWS_SNS_ARN=${AWS_SNS_ARN}
+      - AWS_SNS_ARN_NAME=${AWS_SNS_ARN_NAME}
+      - DATABASE=${DATABASE:-mongodb}
+      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING}
+      - PROVER_SERVICE=${PROVER_SERVICE:-sharp}
+      - SHARP_CUSTOMER_ID=${SHARP_CUSTOMER_ID}
+      - SHARP_URL=${SHARP_URL}
+      - SHARP_USER_CRT=${SHARP_USER_CRT}
+      - SHARP_USER_KEY=${SHARP_USER_KEY}
+      - SHARP_SERVER_CRT=${SHARP_SERVER_CRT}
+      - SHARP_PROOF_LAYOUT=${SHARP_PROOF_LAYOUT:-small}
+      - DA_LAYER=${DA_LAYER:-ethereum}
+      - SETTLEMENT_LAYER=${SETTLEMENT_LAYER:-ethereum}
+      - SETTLEMENT_RPC_URL=${SETTLEMENT_RPC_URL}
+      - MADARA_RPC_URL=${MADARA_RPC_URL}
+      - MEMORY_PAGES_CONTRACT_ADDRESS=${MEMORY_PAGES_CONTRACT_ADDRESS}
+      - ETHEREUM_PRIVATE_KEY=${ETHEREUM_PRIVATE_KEY}
+      - L1_CORE_CONTRACT_ADDRESS=${L1_CORE_CONTRACT_ADDRESS}
+      - RPC_FOR_SNOS=${RPC_FOR_SNOS}
+      - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
+      - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
+      - MADARA_BINARY_PATH=${MADARA_BINARY_PATH}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-madara_orchestrator}
+      - OTEL_COLLECTOR_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT}
+      - TRACING_LEVEL=${TRACING_LEVEL:-info}
+      - STARKNET_OPERATOR_ADDRESS=${STARKNET_OPERATOR_ADDRESS}
+    depends_on:
+      - mongodb
+      - localstack
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    networks:
+      - app-network
+
   localstack:
     image: localstack/localstack
-    container_name: localstack
+    ports:
+      - "4566:4566"
     environment:
       - DEFAULT_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
-    ports:
-      - "4566:4566"
+    networks:
+      - app-network
 
-  mongodb:
-    image: mongo:latest
-    container_name: mongodb
-    ports:
-      - "27017:27017"
+networks:
+  app-network:
+    driver: bridge

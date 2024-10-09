@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- added dockerfile
 - `SnosJob` implementation and e2e
 - Telemetry tracing and metrics.
 - e2e flow test
