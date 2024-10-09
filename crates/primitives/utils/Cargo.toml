@@ -22,5 +22,6 @@ futures.workspace = true
 rayon.workspace = true
 rstest = { workspace = true }
 serde.workspace = true
+serde_yaml.workspace = true
 tokio = { workspace = true, features = ["signal"] }
 url.workspace = true

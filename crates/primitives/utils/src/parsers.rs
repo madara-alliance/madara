@@ -1,16 +1,23 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail, ensure, Context};
+use serde_yaml::Value;
 use starknet_core::types::Felt;
 
 use std::time::Duration;
 
 use url::Url;
 
-/// Parses a "key=value" string & returns a [(String, String)] tuple.
-pub fn parse_key_value(s: &str) -> anyhow::Result<(String, String)> {
+/// Parses a "key=value" string & returns a [(String, Value)] tuple.
+pub fn parse_key_value_yaml(s: &str) -> anyhow::Result<(String, Value)> {
     let mut parts = s.splitn(2, '=');
-    let key = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
-    let value = parts.next().ok_or_else(|| anyhow::anyhow!("Invalid key-value pair"))?;
-    Ok((key.to_string(), value.to_string()))
+    let key = parts.next().ok_or_else(|| anyhow!("Missing key in key-value pair"))?.trim();
+    let value = parts.next().ok_or_else(|| anyhow!("Missing value in key-value pair"))?.trim();
+
+    ensure!(!key.trim().is_empty(), "Key cannot be empty");
+
+    // If the value starts with "0x", treat it as a string (to avoid parsing Felt values as numbers)
+    let value = if value.starts_with("0x") { Value::String(value.to_string()) } else { serde_yaml::from_str(value)? };
+
+    Ok((key.to_string(), value))
 }
 
 /// Parse a string URL & returns it as [Url].
