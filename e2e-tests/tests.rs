@@ -219,6 +219,7 @@ async fn wait_for_db_state(
             get_database_state(mongo_db_server, l2_block_for_testing.clone(), expected_db_state.job_type.clone())
                 .await
                 .unwrap();
+
         if db_state.is_some() && db_state.unwrap() == expected_db_state {
             return Ok(());
         }

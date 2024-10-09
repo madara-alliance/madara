@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -14,7 +12,7 @@ use uuid::Uuid;
 
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::{Database, DatabaseConfig};
-use crate::jobs::types::{JobItem, JobStatus, JobType};
+use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 
 pub mod config;
 
@@ -42,6 +40,40 @@ impl MongoDb {
         Self { client }
     }
 
+    pub fn to_document(&self, current_job: &JobItem, updates: &JobItemUpdates) -> Result<Document> {
+        let mut doc = Document::new();
+
+        // Serialize the struct to BSON
+        let bson = bson::to_bson(updates)?;
+
+        match bson {
+            // If serialization was successful and it's a document
+            Bson::Document(bson_doc) => {
+                let mut is_update_available: bool = false;
+                // Add non-null fields to our document
+                for (key, value) in bson_doc.iter() {
+                    if !matches!(value, Bson::Null) {
+                        is_update_available = true;
+                        doc.insert(key, value.clone());
+                    }
+                }
+
+                // checks if is_update_available is still false.
+                // if it is still false that means there's no field to be updated
+                // and the call is likely a false call, so raise an error.
+                if !is_update_available {
+                    return Err(eyre!("No field to be updated, likely a false call"));
+                }
+
+                // Add additional fields that are always updated
+                doc.insert("version", Bson::Int32(current_job.version + 1));
+                doc.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+            }
+            _ => return Err(eyre!("Bson object is not a document.")),
+        }
+        Ok(doc)
+    }
+
     /// Mongodb client uses Arc internally, reducing the cost of clone.
     /// Directly using clone is not recommended for libraries not using Arc internally.
     pub fn client(&self) -> Client {
@@ -50,47 +82,6 @@ impl MongoDb {
 
     fn get_job_collection(&self) -> Collection<JobItem> {
         self.client.database("orchestrator").collection("jobs")
-    }
-
-    /// Updates the job in the database optimistically. This means that the job is updated only if
-    /// the version of the job in the database is the same as the version of the job passed in.
-    /// If the version is different, the update fails.
-    #[tracing::instrument(skip(self, update), fields(function_type = "db_call"))]
-    async fn update_job_optimistically(&self, current_job: &JobItem, update: Document) -> Result<()> {
-        let filter = doc! {
-            "id": current_job.id,
-            "version": current_job.version,
-        };
-        let options = UpdateOptions::builder().upsert(false).build();
-        let result = self.get_job_collection().update_one(filter, update, options).await?;
-        if result.modified_count == 0 {
-            return Err(eyre!("Failed to update job. Job version is likely outdated"));
-        }
-        self.post_job_update(current_job).await?;
-
-        Ok(())
-    }
-
-    // TODO : remove this function
-    // Do this process in single db transaction.
-    /// To update the document version
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
-    async fn post_job_update(&self, current_job: &JobItem) -> Result<()> {
-        let filter = doc! {
-            "id": current_job.id,
-        };
-        let combined_update = doc! {
-            "$inc": { "version": 1 },
-            "$set" : {
-                "updated_at": Utc::now().round_subsecs(0)
-            }
-        };
-        let options = UpdateOptions::builder().upsert(false).build();
-        let result = self.get_job_collection().update_one(filter, combined_update, options).await?;
-        if result.modified_count == 0 {
-            return Err(eyre!("Failed to update job. version"));
-        }
-        Ok(())
     }
 }
 
@@ -120,34 +111,25 @@ impl Database for MongoDb {
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
-    async fn update_job(&self, job: &JobItem) -> Result<()> {
-        let job_doc = bson::to_document(job)?;
-        let update = doc! {
-            "$set": job_doc
+    async fn update_job(&self, current_job: &JobItem, updates: JobItemUpdates) -> Result<()> {
+        // Filters to search for the job
+        let filter = doc! {
+            "id": current_job.id,
+            "version": current_job.version,
         };
-        self.update_job_optimistically(job, update).await?;
-        Ok(())
-    }
+        let options = UpdateOptions::builder().upsert(false).build();
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
-    async fn update_job_status(&self, job: &JobItem, new_status: JobStatus) -> Result<()> {
-        let update = doc! {
-            "$set": {
-                "status": mongodb::bson::to_bson(&new_status)?,
-            }
-        };
-        self.update_job_optimistically(job, update).await?;
-        Ok(())
-    }
+        let values = self.to_document(current_job, &updates)?;
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"))]
-    async fn update_metadata(&self, job: &JobItem, metadata: HashMap<String, String>) -> Result<()> {
         let update = doc! {
-            "$set": {
-                "metadata":  mongodb::bson::to_document(&metadata)?
-            }
+            "$set": values
         };
-        self.update_job_optimistically(job, update).await?;
+
+        let result = self.get_job_collection().update_one(filter, update, options).await?;
+        if result.modified_count == 0 {
+            return Err(eyre!("Failed to update job. Job version is likely outdated"));
+        }
+
         Ok(())
     }
 

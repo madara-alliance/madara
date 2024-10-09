@@ -14,6 +14,7 @@ use snos_job::error::FactError;
 use snos_job::SnosError;
 use state_update_job::StateUpdateError;
 use tracing::log;
+use types::JobItemUpdates;
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -194,7 +195,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     // outdated
     config
         .database()
-        .update_job_status(&job, JobStatus::LockedForProcessing)
+        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::LockedForProcessing).build())
         .await
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
@@ -202,14 +203,22 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     let external_id = job_handler.process_job(config.clone(), &mut job).await?;
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
 
+    let mut job_cloned = job.clone();
+    job_cloned.version += 1;
+
     // Fetching the job again because update status above will update the job version
-    let mut job_updated = get_job(id, config.clone()).await?;
-
-    job_updated.external_id = external_id.into();
-    job_updated.status = JobStatus::PendingVerification;
-    job_updated.metadata = metadata;
-
-    config.database().update_job(&job_updated).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    config
+        .database()
+        .update_job(
+            &job_cloned,
+            JobItemUpdates::new()
+                .update_status(JobStatus::PendingVerification)
+                .update_metadata(metadata)
+                .update_external_id(external_id.into())
+                .build(),
+        )
+        .await
+        .map_err(|e| JobError::Other(OtherError(e)))?;
 
     add_job_to_verification_queue(
         job.id,
@@ -261,7 +270,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         JobVerificationStatus::Verified => {
             config
                 .database()
-                .update_job_status(&job, JobStatus::Completed)
+                .update_job(&job, JobItemUpdates::new().update_status(JobStatus::Completed).build())
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?;
         }
@@ -270,7 +279,17 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
             new_job.metadata.insert("error".to_string(), e);
             new_job.status = JobStatus::VerificationFailed;
 
-            config.database().update_job(&new_job).await.map_err(|e| JobError::Other(OtherError(e)))?;
+            config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::VerificationFailed)
+                        .update_metadata(new_job.metadata)
+                        .build(),
+                )
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?;
 
             log::error!("Verification failed for job with id {:?}. Cannot verify.", id);
 
@@ -295,13 +314,19 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
                 log::info!("Verification attempts exceeded for job {}. Marking as timed out.", job.id);
                 config
                     .database()
-                    .update_job_status(&job, JobStatus::VerificationTimeout)
+                    .update_job(&job, JobItemUpdates::new().update_status(JobStatus::VerificationTimeout).build())
                     .await
                     .map_err(|e| JobError::Other(OtherError(e)))?;
                 return Ok(());
             }
             let metadata = increment_key_in_metadata(&job.metadata, JOB_VERIFICATION_ATTEMPT_METADATA_KEY)?;
-            config.database().update_metadata(&job, metadata).await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+            config
+                .database()
+                .update_job(&job, JobItemUpdates::new().update_metadata(metadata).build())
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?;
+
             add_job_to_verification_queue(
                 job.id,
                 Duration::from_secs(job_handler.verification_polling_delay_seconds()),
@@ -327,7 +352,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
 /// Logs error if the job status `Completed` is existing on DL queue.
 #[tracing::instrument(skip(config), fields(job_status, job_type))]
 pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
-    let mut job = get_job(id, config.clone()).await?.clone();
+    let job = get_job(id, config.clone()).await?.clone();
     let mut metadata = job.metadata.clone();
 
     tracing::Span::current().record("job_status", format!("{:?}", job.status));
@@ -344,10 +369,11 @@ pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), Job
     }
 
     metadata.insert("last_job_status".to_string(), job.status.to_string());
-    job.metadata = metadata;
-    job.status = JobStatus::Failed;
-
-    config.database().update_job(&job).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    config
+        .database()
+        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(metadata).build())
+        .await
+        .map_err(|e| JobError::Other(OtherError(e)))?;
 
     Ok(())
 }
