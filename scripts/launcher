@@ -427,7 +427,15 @@ modify_chain_config() {
         while IFS= read -r line; do
             key=$(echo "$line" | cut -d'=' -f1)
             val=$(echo "$line" | cut -d'=' -f2-)
-            yq eval -i ".${key} = \"${val}\"" "$MODIFIED_CONFIG_PATH"
+
+            # Check if the value is numeric (integer or floating point)
+            if [[ "$val" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+                # Set the value without quotes for numeric types
+                yq eval -i ".${key} = ${val}" "$MODIFIED_CONFIG_PATH"
+            else
+                # Keep the value in quotes for strings
+                yq eval -i ".${key} = \"${val}\"" "$MODIFIED_CONFIG_PATH"
+            fi
         done < "$OVERRIDES_FILE"
     fi
 
