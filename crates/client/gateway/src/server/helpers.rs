@@ -54,6 +54,21 @@ where
     }
 }
 
+/// Creates a JSON response with the given status code and a body that can be serialized to JSON.
+///
+/// If the serialization fails, this function returns a 500 Internal Server Error response.
+pub(crate) fn create_string_response(status: StatusCode, body: String) -> Response<Body> {
+    let body = Body::from(body);
+    // Build the response with the specified status code and serialized body
+    match Response::builder().status(status).body(body) {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("Failed to build response: {}", e);
+            internal_error_response(&e.to_string())
+        }
+    }
+}
+
 /// Creates a JSON response with the given status code and a body that is already serialized to a string.
 pub(crate) fn create_response_with_json_body(status: StatusCode, body: &str) -> Response<Body> {
     // Build the response with the specified status code and serialized body

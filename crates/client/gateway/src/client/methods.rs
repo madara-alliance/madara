@@ -1,9 +1,9 @@
 use super::{builder::FeederClient, request_builder::RequestBuilder};
-use crate::error::SequencerError;
+use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{CompressedLegacyContractClass, ContractClass, FlattenedSierraClass};
 use mp_gateway::{
-    block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe},
+    block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
     state_update::{
         ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
@@ -30,7 +30,7 @@ impl FeederClient {
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
-            .expect("Failed to add URI segment. This should not fail in prod.")
+            .expect("Failed to add URI segment. This should not fail in prod")
             .with_block_id(block_id);
 
         match block_id {
@@ -47,7 +47,7 @@ impl FeederClient {
     ) -> Result<ProviderStateUpdateWithBlockPendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
-            .expect("Failed to add URI segment. This should not fail in prod.")
+            .expect("Failed to add URI segment. This should not fail in prod")
             .with_block_id(block_id)
             .add_param(Cow::from("includeBlock"), "true");
 
@@ -59,6 +59,19 @@ impl FeederClient {
                 request.send_get::<ProviderStateUpdateWithBlock>().await?,
             )),
         }
+    }
+
+    pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
+        if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+            return Err(StarknetError::no_signature_for_pending_block().into());
+        }
+
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_signature")
+            .expect("Failed to add URI segment. This should not fail in prod")
+            .with_block_id(block_id);
+
+        request.send_get::<ProviderBlockSignature>().await
     }
 
     pub async fn get_class_by_hash(
@@ -102,6 +115,8 @@ mod tests {
     use std::ops::Drop;
     use std::path::PathBuf;
 
+    use crate::error::StarknetErrorCode;
+
     use super::*;
 
     const CLASS_BLOCK_0: &str = "0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8";
@@ -133,11 +148,11 @@ mod tests {
         T: DeserializeOwned,
     {
         let path_abs = to_absolute_path(path);
-        let file = File::open(&path_abs).unwrap_or_else(|_| panic!("Loading test mock from {path_abs:?}"));
+        let file = File::open(&path_abs).unwrap_or_else(|e| panic!("Loading test mock from {path_abs:?}: {e}"));
         let reader = BufReader::new(file);
         let gz = GzDecoder::new(reader);
 
-        serde_json::from_reader(gz).unwrap_or_else(|_| panic!("Deserializing test mock from {path_abs:?}"))
+        serde_json::from_reader(gz).unwrap_or_else(|e| panic!("Deserializing test mock from {path_abs:?}: {e}"))
     }
 
     struct FileCleanupGuard<'a> {
@@ -188,6 +203,12 @@ mod tests {
         guard.deactivate();
 
         Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn compress() {
+        // file_compress("src/client/mocks/.json").unwrap();
     }
 
     /// Converts a crate-relative path to an absolute system path.
@@ -424,5 +445,58 @@ mod tests {
             class_reference.compress().expect("Compressing legacy contract class").into();
 
         assert_eq!(class_erc1155, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_signature_first_few_blocks(client_mainnet_fixture: FeederClient) {
+        let signature_block_0 = client_mainnet_fixture
+            .get_signature(BlockId::Number(0))
+            .await
+            .expect("Failed to get signature for block number 0");
+        let signature_reference =
+            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_0.gz");
+
+        assert_eq!(signature_block_0, signature_reference);
+
+        let signature_block_1 = client_mainnet_fixture
+            .get_signature(BlockId::Number(1))
+            .await
+            .expect("Failed to get signature for block number 1");
+        let signature_reference =
+            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_1.gz");
+
+        assert_eq!(signature_block_1, signature_reference);
+
+        let signature_block_2 = client_mainnet_fixture
+            .get_signature(BlockId::Number(2))
+            .await
+            .expect("Failed to get signature for block number 2");
+        let signature_reference =
+            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_2.gz");
+
+        assert_eq!(signature_block_2, signature_reference);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_signature_latest(client_mainnet_fixture: FeederClient) {
+        let signature_block_latest = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Latest)).await;
+
+        assert!(matches!(signature_block_latest, Ok(ProviderBlockSignature { .. })))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_signature_pending(client_mainnet_fixture: FeederClient) {
+        let signature_block_pending = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Pending)).await;
+
+        assert!(matches!(
+            signature_block_pending,
+            Err(SequencerError::StarknetError(StarknetError {
+                code: StarknetErrorCode::NoSignatureForPendingBlock,
+                ..
+            }))
+        ))
     }
 }

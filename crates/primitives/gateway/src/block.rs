@@ -67,8 +67,10 @@ pub struct ProviderBlock {
     pub transaction_commitment: Felt,
     pub event_commitment: Felt,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt_commitment: Option<Felt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_commitment: Option<Felt>,
     #[serde(default)]
     pub state_diff_length: Option<u64>,
@@ -105,6 +107,13 @@ impl ProviderBlock {
             Some(block.info.header.sequencer_address)
         };
 
+        let (receipt_commitment, state_diff_commitment) =
+            if block.info.header.protocol_version >= StarknetVersion::V0_13_2 {
+                (block.info.header.receipt_commitment, block.info.header.state_diff_commitment)
+            } else {
+                (None, None)
+            };
+
         Self {
             block_hash: block.info.block_hash,
             block_number: block.info.header.block_number,
@@ -114,8 +123,8 @@ impl ProviderBlock {
             state_root: block.info.header.global_state_root,
             transaction_commitment: block.info.header.transaction_commitment,
             event_commitment: block.info.header.event_commitment,
-            receipt_commitment: block.info.header.receipt_commitment,
-            state_diff_commitment: block.info.header.state_diff_commitment,
+            receipt_commitment,
+            state_diff_commitment,
             state_diff_length: block.info.header.state_diff_length,
             status,
             l1_da_mode: block.info.header.l1_da_mode,
@@ -235,6 +244,14 @@ impl ProviderBlockPending {
             l1_da_mode: self.l1_da_mode,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockSignature {
+    pub block_hash: Felt,
+    pub signature: Vec<Felt>,
 }
 
 #[serde_as]

@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer};
+use starknet_core::types::Felt;
 
-use crate::parsers::parse_duration;
+use crate::{crypto::ZeroingPrivateKey, parsers::parse_duration};
 
 pub fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
@@ -21,4 +22,12 @@ where
     } else {
         serializer.serialize_str(&format!("{}ms", duration.as_millis()))
     }
+}
+
+pub fn deserialize_private_key<'de, D>(deserializer: D) -> Result<ZeroingPrivateKey, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut private = Felt::deserialize(deserializer)?;
+    Ok(ZeroingPrivateKey::new(&mut private))
 }
