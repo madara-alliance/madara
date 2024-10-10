@@ -83,7 +83,7 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
     let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
-    log::debug!("Gas prices fetched is: {:?}", eth_gas_price);
+    log::debug!("Gas price fetched is: {:?}", eth_gas_price);
 
     // Update the metrics
     eth_client.l1_block_metrics.l1_block_number.set(latest_block_number as f64);
