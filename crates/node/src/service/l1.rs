@@ -54,7 +54,7 @@ impl L1SyncService {
 
         // Note: gas price should be synced in case the madara is running in sequencer mode,
         // we haven't set any fix price for the gas, hence gas price should be none
-        let gas_price_sync_enabled = authority && config.gas_price.is_none();
+        let gas_price_sync_enabled = authority && (config.gas_price.is_none() || config.blob_gas_price.is_none());
         let gas_price_poll = config.gas_price_poll;
 
         if gas_price_sync_enabled {

@@ -179,6 +179,58 @@ mod eth_client_gas_price_worker_test {
 
     #[serial]
     #[tokio::test]
+    async fn gas_price_worker_when_gas_price_fix_works() {
+        let anvil = Anvil::new()
+            .fork(FORK_URL.clone())
+            .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANOTHER_ANVIL_PORT)
+            .try_spawn()
+            .expect("issue while forking for the anvil");
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let l1_gas_provider = GasPriceProvider::new();
+        l1_gas_provider.update_eth_l1_gas_price(20);
+        l1_gas_provider.set_gas_price_sync_enabled(false);
+
+        // Run the worker for a short time
+        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+
+        // Wait for the worker to complete
+        worker_handle.await.expect("issue with the gas worker");
+
+        // Check if the gas price was updated
+        let updated_price = l1_gas_provider.get_gas_prices();
+        assert_eq!(updated_price.eth_l1_gas_price, 20);
+        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn gas_price_worker_when_data_gas_price_fix_works() {
+        let anvil = Anvil::new()
+            .fork(FORK_URL.clone())
+            .fork_block_number(L1_BLOCK_NUMBER)
+            .port(ANOTHER_ANVIL_PORT)
+            .try_spawn()
+            .expect("issue while forking for the anvil");
+        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let l1_gas_provider = GasPriceProvider::new();
+        l1_gas_provider.update_eth_l1_data_gas_price(20);
+        l1_gas_provider.set_data_gas_price_sync_enabled(false);
+
+        // Run the worker for a short time
+        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+
+        // Wait for the worker to complete
+        worker_handle.await.expect("issue with the gas worker");
+
+        // Check if the gas price was updated
+        let updated_price = l1_gas_provider.get_gas_prices();
+        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
+        assert_eq!(updated_price.eth_l1_data_gas_price, 20);
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
