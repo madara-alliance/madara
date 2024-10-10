@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: gas fee flag added
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
 - fix(tests): Fixed local testing scripts
