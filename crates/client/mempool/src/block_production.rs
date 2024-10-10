@@ -242,12 +242,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(
-                    txs_to_process
-                        .iter()
-                        .skip(cur_len)
-                        .map(|tx| clone_transaction(&tx.tx)),
-                );
+                txs_to_process_blockifier
+                    .extend(txs_to_process.iter().skip(cur_len).map(|tx| clone_transaction(&tx.tx)));
             }
 
             if txs_to_process.is_empty() {
@@ -257,8 +253,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
             stats.n_batches += 1;
 
-            txs_to_process_blockifier
-                .extend(txs_to_process.iter().map(|tx| clone_transaction(&tx.tx)));
+            txs_to_process_blockifier.extend(txs_to_process.iter().map(|tx| clone_transaction(&tx.tx)));
 
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
@@ -284,10 +279,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             self.declared_classes.push(class);
                         }
 
-                        self.block.inner.receipts.push(from_blockifier_execution_info(
-                            &execution_info,
-                            &clone_transaction(&mempool_tx.tx),
-                        ));
+                        self.block
+                            .inner
+                            .receipts
+                            .push(from_blockifier_execution_info(&execution_info, &clone_transaction(&mempool_tx.tx)));
                         let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);

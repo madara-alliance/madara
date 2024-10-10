@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use starknet_types_core::felt::Felt;
 
-
 pub mod class_hash;
 pub mod class_update;
 pub mod compile;

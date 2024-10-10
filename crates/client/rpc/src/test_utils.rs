@@ -29,8 +29,10 @@ pub struct TestTransactionProvider;
 #[cfg(test)]
 #[async_trait]
 impl AddTransactionProvider for TestTransactionProvider {
-
-    async fn add_declare_v0_transaction(&self, declare_v0_transaction: BroadcastedDeclareTransactionV0) -> RpcResult<DeclareTransactionResult> {
+    async fn add_declare_v0_transaction(
+        &self,
+        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult> {
         unimplemented!()
     }
     async fn add_declare_transaction(

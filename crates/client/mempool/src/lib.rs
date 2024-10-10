@@ -1,9 +1,9 @@
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction};
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
+use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction};
 use header::make_pending_header;
 use inner::MempoolInner;
 use mc_db::db_block_id::DbBlockId;
@@ -14,8 +14,8 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
-use mp_transactions::{broadcasted_to_blockifier, BroadcastedDeclareTransactionV0, broadcasted_to_blockifier_v0};
 use mp_transactions::BroadcastedToBlockifierError;
+use mp_transactions::{broadcasted_to_blockifier, broadcasted_to_blockifier_v0, BroadcastedDeclareTransactionV0};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::BroadcastedDeclareTransaction;
@@ -134,13 +134,12 @@ impl Mempool {
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        
+
         if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
             let _ = validator.perform_validations(account_tx, deploy_account_tx_hash.is_some());
         }
 
         log::debug!("Checkpoint: validation performed");
-
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
@@ -153,7 +152,6 @@ impl Mempool {
 
         Ok(())
     }
-
 }
 
 pub fn transaction_hash(tx: &Transaction) -> Felt {
@@ -196,14 +194,10 @@ impl MempoolProvider for Mempool {
 
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
         log::debug!("Checkpoint 3: accept_declare_v0_tx");
-        let (tx, classes) = broadcasted_to_blockifier_v0(
-            tx,
-            self.chain_id(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let (tx, classes) =
+            broadcasted_to_blockifier_v0(tx, self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         log::debug!("Checkpoint declare v0 tx");
-
 
         let res = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),
@@ -283,22 +277,26 @@ pub(crate) fn is_only_query(tx: &Transaction) -> bool {
 
 pub(crate) fn contract_addr(tx: &Transaction) -> ContractAddress {
     match tx {
-        Transaction::AccountTransaction(account_tx) => (match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.sender_address(),
-            AccountTransaction::DeployAccount(tx) => tx.contract_address,
-            AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
-        }),
+        Transaction::AccountTransaction(account_tx) => {
+            (match account_tx {
+                AccountTransaction::Declare(tx) => tx.tx.sender_address(),
+                AccountTransaction::DeployAccount(tx) => tx.contract_address,
+                AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+            })
+        }
         Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
     }
 }
 
 pub(crate) fn nonce(tx: &Transaction) -> Nonce {
     match tx {
-        Transaction::AccountTransaction(account_tx) => (match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.nonce(),
-            AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-            AccountTransaction::Invoke(tx) => tx.tx.nonce(),
-        }),
+        Transaction::AccountTransaction(account_tx) => {
+            (match account_tx {
+                AccountTransaction::Declare(tx) => tx.tx.nonce(),
+                AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
+                AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+            })
+        }
         Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
     }
 }
@@ -315,31 +313,31 @@ pub(crate) fn tx_hash(tx: &Transaction) -> TransactionHash {
 }
 
 // AccountTransaction does not implement Clone :(
-    pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
-        match tx {
-            Transaction::AccountTransaction(account_tx) => Transaction::AccountTransaction(match account_tx {
-                AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
-                    true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                        .expect("Making blockifier transaction for query"),
-                    false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                        .expect("Making blockifier transaction"),
-                }),
-                AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
-                    tx: tx.tx.clone(),
-                    tx_hash: tx.tx_hash,
-                    contract_address: tx.contract_address,
-                    only_query: tx.only_query,
-                }),
-                AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
-                    tx: tx.tx.clone(),
-                    tx_hash: tx.tx_hash,
-                    only_query: tx.only_query,
-                }),
+pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
+    match tx {
+        Transaction::AccountTransaction(account_tx) => Transaction::AccountTransaction(match account_tx {
+            AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
+                true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                    .expect("Making blockifier transaction for query"),
+                false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                    .expect("Making blockifier transaction"),
             }),
-            Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+            AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
                 tx: tx.tx.clone(),
                 tx_hash: tx.tx_hash,
-                paid_fee_on_l1: tx.paid_fee_on_l1
+                contract_address: tx.contract_address,
+                only_query: tx.only_query,
             }),
-        }
+            AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
+                tx: tx.tx.clone(),
+                tx_hash: tx.tx_hash,
+                only_query: tx.only_query,
+            }),
+        }),
+        Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+            tx: tx.tx.clone(),
+            tx_hash: tx.tx_hash,
+            paid_fee_on_l1: tx.paid_fee_on_l1,
+        }),
     }
+}

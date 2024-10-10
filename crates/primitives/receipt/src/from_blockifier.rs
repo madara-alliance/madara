@@ -8,7 +8,10 @@ use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
 
-use crate::{DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt};
+use crate::{
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
+    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
+};
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
     match tx {
@@ -49,7 +52,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             })
         })
         .collect();
-    
+
     // if the txn type is L1HandlerTransaction, then the message hash is a function call of l1_handler_tx
     // let message: MsgToL2 = match tx {
     //     Transaction::L1HandlerTransaction(tx) => MsgToL2 {
@@ -147,7 +150,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             events,
             execution_resources,
             execution_result,
-            message_hash: Felt::from(1)
+            message_hash: Felt::from(1),
         }),
     }
 }

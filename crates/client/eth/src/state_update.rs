@@ -6,12 +6,12 @@ use crate::{
 use anyhow::Context;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
+use mp_convert::ToFelt;
 use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::channel_wait_or_graceful_shutdown;
 use serde::Deserialize;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
-use mp_convert::ToFelt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {

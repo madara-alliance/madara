@@ -21,7 +21,7 @@ pub struct L1SyncService {
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
     gas_price_poll: Duration,
-    mempool: Arc<Mempool>
+    mempool: Arc<Mempool>,
 }
 
 impl L1SyncService {
@@ -33,7 +33,7 @@ impl L1SyncService {
         chain_id: ChainId,
         l1_core_address: H160,
         authority: bool,
-        mempool: Arc<Mempool>
+        mempool: Arc<Mempool>,
     ) -> anyhow::Result<Self> {
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -75,7 +75,7 @@ impl L1SyncService {
             chain_id,
             gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll,
-            mempool
+            mempool,
         })
     }
 }
@@ -83,7 +83,8 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } = self.clone();
+        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
+            self.clone();
 
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
@@ -97,7 +98,7 @@ impl Service for L1SyncService {
                     l1_gas_provider,
                     gas_price_sync_disabled,
                     gas_price_poll,
-                    mempool
+                    mempool,
                 )
                 .await
             });

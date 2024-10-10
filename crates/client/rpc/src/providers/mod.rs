@@ -5,16 +5,18 @@ pub use forward_to_provider::*;
 pub use mempool::*;
 
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
-use mp_transactions::BroadcastedDeclareTransactionV0;
 
 #[async_trait]
 pub trait AddTransactionProvider: Send + Sync {
-
-    async fn add_declare_v0_transaction(&self, declare_v0_transaction: BroadcastedDeclareTransactionV0) -> RpcResult<DeclareTransactionResult>;
+    async fn add_declare_v0_transaction(
+        &self,
+        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult>;
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTransaction,

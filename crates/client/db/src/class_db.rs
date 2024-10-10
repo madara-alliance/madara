@@ -121,7 +121,7 @@ impl MadaraBackend {
     ) -> Result<(), MadaraStorageError> {
         log::debug!("store classes has been called");
         log::debug!("converted classes length: {:?}", converted_classes.len());
-        
+
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 

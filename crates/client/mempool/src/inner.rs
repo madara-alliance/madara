@@ -8,6 +8,7 @@
 
 use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use mp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
@@ -19,7 +20,6 @@ use std::{
     iter,
     time::SystemTime,
 };
-use blockifier::transaction::transaction_execution::Transaction;
 
 pub type ArrivedAtTimestamp = SystemTime;
 
@@ -232,14 +232,17 @@ impl MempoolInner {
 
         log::debug!("Checkpoint: inside the insert tx");
 
-
         let contract_addr = mempool_tx.contract_address();
         log::debug!("Checkpoint: contract address here is: {:?}", contract_addr);
 
         let arrived_at = mempool_tx.arrived_at;
 
         let deployed_contract_address =
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                Some(tx.contract_address)
+            } else {
+                None
+            };
 
         if let Some(contract_address) = &deployed_contract_address {
             if !self.deployed_contracts.insert(*contract_address) && !force {
@@ -353,6 +356,7 @@ mod tests {
         test_utils::{contracts::FeatureContract, CairoVersion},
         transaction::transactions::{DeclareTransaction, InvokeTransaction, L1HandlerTransaction},
     };
+    use mc_exec::execution::TxInfo;
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use starknet_api::{
@@ -360,11 +364,10 @@ mod tests {
         transaction::{DeclareTransactionV3, InvokeTransactionV3},
     };
     use starknet_types_core::felt::Felt;
-    use mc_exec::execution::TxInfo;
 
     use super::*;
-    use std::fmt;
     use starknet_api::transaction::Fee;
+    use std::fmt;
     // use blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction;
     // use starknet_api::transaction::L1HandlerTransaction;
 
@@ -466,26 +469,27 @@ mod tests {
                             )
                             .unwrap(),
                         )),
-                        TxTy::InvokeFunction => Transaction::AccountTransaction(AccountTransaction::Invoke(InvokeTransaction::new(
-                            starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
-                                resource_bounds: Default::default(),
-                                tip: Default::default(),
-                                signature: Default::default(),
-                                nonce,
-                                sender_address: contract_addr,
-                                calldata: Default::default(),
-                                nonce_data_availability_mode: DataAvailabilityMode::L1,
-                                fee_data_availability_mode: DataAvailabilityMode::L1,
-                                paymaster_data: Default::default(),
-                                account_deployment_data: Default::default(),
-                            }),
-                            tx_hash,
-                        ))),
+                        TxTy::InvokeFunction => {
+                            Transaction::AccountTransaction(AccountTransaction::Invoke(InvokeTransaction::new(
+                                starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
+                                    resource_bounds: Default::default(),
+                                    tip: Default::default(),
+                                    signature: Default::default(),
+                                    nonce,
+                                    sender_address: contract_addr,
+                                    calldata: Default::default(),
+                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                    fee_data_availability_mode: DataAvailabilityMode::L1,
+                                    paymaster_data: Default::default(),
+                                    account_deployment_data: Default::default(),
+                                }),
+                                tx_hash,
+                            )))
+                        }
                         TxTy::L1Handler => Transaction::L1HandlerTransaction(L1HandlerTransaction::create_for_testing(
-                            Fee(0), ContractAddress::from(1u16)
-                        )
-
-                        ),
+                            Fee(0),
+                            ContractAddress::from(1u16),
+                        )),
                     };
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)

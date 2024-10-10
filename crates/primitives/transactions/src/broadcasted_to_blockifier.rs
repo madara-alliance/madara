@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::{BroadcastedDeclareTransactionV0, into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
+use crate::{
+    into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0, Transaction, TransactionWithHash,
+};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -42,32 +44,30 @@ pub fn broadcasted_to_blockifier_v0(
 
     let (class_info, class_hash, extra_class_info) = {
         let compressed_legacy_class: CompressedLegacyContractClass = (*transaction.contract_class).clone().into();
-    let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
-    log::debug!("Checkpoint 5: Computed legacy class hash: {:?}", class_hash);
-    let compressed_legacy_class: CompressedLegacyContractClass = (*transaction.contract_class).clone().into();
-    let class_blockifier = compressed_legacy_class
-        .to_blockifier_class()
-        .map_err(BroadcastedToBlockifierError::CompilationFailed)?;
+        let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
+        log::debug!("Checkpoint 5: Computed legacy class hash: {:?}", class_hash);
+        let compressed_legacy_class: CompressedLegacyContractClass = (*transaction.contract_class).clone().into();
+        let class_blockifier =
+            compressed_legacy_class.to_blockifier_class().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
 
         log::debug!("Checkpoint 5: class blockfier sorted");
 
         let class_info = LegacyClassInfo { contract_class: Arc::new(compressed_legacy_class) };
 
-    (
-        Some(blockifier::execution::contract_class::ClassInfo::new(&class_blockifier, 0, 0)?),
-        Some(class_hash),
-        Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: class_info })),
-    ) };
+        (
+            Some(blockifier::execution::contract_class::ClassInfo::new(&class_blockifier, 0, 0)?),
+            Some(class_hash),
+            Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: class_info })),
+        )
+    };
 
     log::debug!("Checkpoint 6: we have the class info, class hash and the extra class info");
-
 
     let is_query = transaction.is_query;
     let TransactionWithHash { transaction, hash } =
         TransactionWithHash::from_broadcasted_v0(transaction, chain_id, starknet_version, class_hash);
 
     log::debug!("Checkpoint 7: tx hash is: {:?}", hash);
-
 
     let deployed_address = match &transaction {
         Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
