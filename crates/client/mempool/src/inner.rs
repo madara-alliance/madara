@@ -6,8 +6,9 @@
 //! TODO: mempool size limits
 //! TODO(perf): should we box the MempoolTransaction?
 
-use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
+use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use mp_class::ConvertedClass;
 use starknet_api::{
     core::{ContractAddress, Nonce},
@@ -24,7 +25,7 @@ pub type ArrivedAtTimestamp = SystemTime;
 
 #[derive(Debug)]
 pub struct MempoolTransaction {
-    pub tx: AccountTransaction,
+    pub tx: Transaction,
     pub arrived_at: ArrivedAtTimestamp,
     pub converted_class: Option<ConvertedClass>,
 }
@@ -32,7 +33,7 @@ pub struct MempoolTransaction {
 impl Clone for MempoolTransaction {
     fn clone(&self) -> Self {
         Self {
-            tx: clone_account_tx(&self.tx),
+            tx: clone_transaction(&self.tx),
             arrived_at: self.arrived_at,
             converted_class: self.converted_class.clone(),
         }
@@ -218,7 +219,7 @@ impl MempoolInner {
         debug_assert!(tx_queue.is_empty());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for contract in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
-            if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &contract.0.tx {
                 debug_assert!(deployed_contracts.remove(&tx.contract_address))
             };
         }
@@ -230,10 +231,15 @@ impl MempoolInner {
         // Get the nonce chain for the contract
 
         let contract_addr = mempool_tx.contract_address();
+
         let arrived_at = mempool_tx.arrived_at;
 
         let deployed_contract_address =
-            if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                Some(tx.contract_address)
+            } else {
+                None
+            };
 
         if let Some(contract_address) = &deployed_contract_address {
             if !self.deployed_contracts.insert(*contract_address) && !force {
@@ -319,7 +325,7 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx {
+        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
             let removed = self.deployed_contracts.remove(&tx.contract_address);
             debug_assert!(removed);
         }
@@ -345,8 +351,9 @@ mod tests {
     use blockifier::{
         execution::contract_class::ClassInfo,
         test_utils::{contracts::FeatureContract, CairoVersion},
-        transaction::transactions::{DeclareTransaction, InvokeTransaction},
+        transaction::transactions::{DeclareTransaction, InvokeTransaction, L1HandlerTransaction},
     };
+    use mc_exec::execution::TxInfo;
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use starknet_api::{
@@ -356,6 +363,8 @@ mod tests {
     use starknet_types_core::felt::Felt;
 
     use super::*;
+    use blockifier::abi::abi_utils::selector_from_name;
+    use starknet_api::transaction::{Fee, TransactionVersion};
     use std::fmt;
 
     #[derive(PartialEq, Eq, Hash)]
@@ -403,6 +412,7 @@ mod tests {
                 Declare,
                 DeployAccount,
                 InvokeFunction,
+                L1Handler,
             }
 
             <(TxTy, SystemTime, AFelt, AFelt, u64, bool)>::arbitrary()
@@ -415,7 +425,7 @@ mod tests {
                     let dummy_class_info = ClassInfo::new(&dummy_contract_class.get_class(), 100, 100).unwrap();
 
                     let tx = match ty {
-                        TxTy::Declare => AccountTransaction::Declare(
+                        TxTy::Declare => Transaction::AccountTransaction(AccountTransaction::Declare(
                             DeclareTransaction::new(
                                 starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
                                     resource_bounds: Default::default(),
@@ -434,42 +444,56 @@ mod tests {
                                 dummy_class_info,
                             )
                             .unwrap(),
-                        ),
-                        TxTy::DeployAccount => AccountTransaction::Declare(
-                            DeclareTransaction::new(
-                                starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
-                                    resource_bounds: Default::default(),
-                                    tip: Default::default(),
-                                    signature: Default::default(),
-                                    nonce,
-                                    class_hash: Default::default(),
-                                    compiled_class_hash: Default::default(),
-                                    sender_address: contract_addr,
-                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
-                                    fee_data_availability_mode: DataAvailabilityMode::L1,
-                                    paymaster_data: Default::default(),
-                                    account_deployment_data: Default::default(),
-                                }),
-                                tx_hash,
-                                dummy_class_info,
-                            )
-                            .unwrap(),
-                        ),
-                        TxTy::InvokeFunction => AccountTransaction::Invoke(InvokeTransaction::new(
-                            starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
-                                resource_bounds: Default::default(),
-                                tip: Default::default(),
-                                signature: Default::default(),
-                                nonce,
-                                sender_address: contract_addr,
-                                calldata: Default::default(),
-                                nonce_data_availability_mode: DataAvailabilityMode::L1,
-                                fee_data_availability_mode: DataAvailabilityMode::L1,
-                                paymaster_data: Default::default(),
-                                account_deployment_data: Default::default(),
-                            }),
-                            tx_hash,
                         )),
+                        TxTy::DeployAccount => Transaction::AccountTransaction(AccountTransaction::Declare(
+                            DeclareTransaction::new(
+                                starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
+                                    resource_bounds: Default::default(),
+                                    tip: Default::default(),
+                                    signature: Default::default(),
+                                    nonce,
+                                    class_hash: Default::default(),
+                                    compiled_class_hash: Default::default(),
+                                    sender_address: contract_addr,
+                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                    fee_data_availability_mode: DataAvailabilityMode::L1,
+                                    paymaster_data: Default::default(),
+                                    account_deployment_data: Default::default(),
+                                }),
+                                tx_hash,
+                                dummy_class_info,
+                            )
+                            .unwrap(),
+                        )),
+                        TxTy::InvokeFunction => {
+                            Transaction::AccountTransaction(AccountTransaction::Invoke(InvokeTransaction::new(
+                                starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
+                                    resource_bounds: Default::default(),
+                                    tip: Default::default(),
+                                    signature: Default::default(),
+                                    nonce,
+                                    sender_address: contract_addr,
+                                    calldata: Default::default(),
+                                    nonce_data_availability_mode: DataAvailabilityMode::L1,
+                                    fee_data_availability_mode: DataAvailabilityMode::L1,
+                                    paymaster_data: Default::default(),
+                                    account_deployment_data: Default::default(),
+                                }),
+                                tx_hash,
+                            )))
+                        }
+                        // TODO: maybe update the values?
+                        TxTy::L1Handler => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+                            tx: starknet_api::transaction::L1HandlerTransaction {
+                                version: TransactionVersion::ZERO,
+                                nonce: Nonce::default(),
+                                contract_address: contract_addr,
+                                entry_point_selector: selector_from_name("l1_handler_set_value"),
+                                calldata: Default::default(),
+                            },
+                            tx_hash,
+                            paid_fee_on_l1: Fee::default(),
+                        }),
                     };
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)

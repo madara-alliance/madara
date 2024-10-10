@@ -11,7 +11,7 @@ use starknet_core::types::{
 use starknet_types_core::felt::Felt;
 
 use m_proc_macros::versioned_starknet_rpc;
-
+use mp_transactions::BroadcastedDeclareTransactionV0;
 // Starknet RPC API trait and types
 //
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
@@ -28,18 +28,25 @@ pub trait StarknetWriteRpcApi {
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult>;
 
-    /// Submit a new class declaration transaction
+    /// Submit a new deploy account transaction
     #[method(name = "addDeployAccountTransaction")]
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult>;
 
-    /// Submit a new deploy account transaction
+    /// Submit a new class declaration transaction
     #[method(name = "addDeclareTransaction")]
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult>;
+
+    /// Submit a new class v0 declaration transaction
+    #[method(name = "addDeclareV0Transaction")]
+    async fn add_declare_v0_transaction(
+        &self,
+        declare_transaction_v0: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<DeclareTransactionResult>;
 }
 

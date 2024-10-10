@@ -1,11 +1,11 @@
+use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
 use starknet_providers::{Provider, ProviderError};
-
-use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 
 use super::AddTransactionProvider;
 
@@ -21,6 +21,14 @@ impl<P: Provider + Send + Sync> ForwardToProvider<P> {
 
 #[async_trait]
 impl<P: Provider + Send + Sync> AddTransactionProvider for ForwardToProvider<P> {
+    async fn add_declare_v0_transaction(
+        &self,
+        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult> {
+        // panic here, because we can't really forward it to the real FGW, or shall we enable it so that another madara full node is able to use it?
+        // maybe a flag for this? as discussed
+        unimplemented!()
+    }
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
