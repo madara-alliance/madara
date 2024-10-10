@@ -32,7 +32,6 @@ impl MadaraBackend {
         if is_pending {
             let col = self.db.get_column(pending_col);
             if let Some(res) = self.db.get_pinned_cf(&col, &key_encoded)? {
-                log::debug!("got some result and next step is to deserialize");
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
