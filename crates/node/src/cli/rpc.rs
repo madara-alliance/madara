@@ -69,17 +69,18 @@ impl FromStr for Cors {
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
     /// Disable the RPC server.
-    #[arg(long, alias = "no-rpc")]
+    #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
     pub rpc_disabled: bool,
 
     /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
     /// Please note that some endpoints should not be exposed to the outside world - by default, enabling remote access
     /// will disable these endpoints. To re-enable them, use `--rpc-methods unsafe`
-    #[arg(long)]
+    #[arg(env = "MADARA_RPC_EXTERNAL", long)]
     pub rpc_external: bool,
 
     /// RPC methods to expose.
     #[arg(
+		env = "MADARA_RPC_METHODS",
 		long,
 		value_name = "METHOD",
 		value_enum,
@@ -95,13 +96,13 @@ pub struct RpcParams {
     ///
     /// For example `--rpc-rate-limit 10` will maximum allow
     /// 10 calls per minute per connection.
-    #[arg(long)]
+    #[arg(env = "MADARA_RPC_RATE_LIMIT", long)]
     pub rpc_rate_limit: Option<NonZeroU32>,
 
     /// Disable RPC rate limiting for certain ip addresses or ranges.
     ///
     /// Each IP address must be in the following notation: `1.2.3.4/24`.
-    #[arg(long, num_args = 1..)]
+    #[arg(env = "MADARA_RPC_RATE_LIMIT_WHITELISTED_IPS", long, num_args = 1..)]
     pub rpc_rate_limit_whitelisted_ips: Vec<IpNetwork>,
 
     /// Trust proxy headers for disable rate limiting.
@@ -110,40 +111,40 @@ pub struct RpcParams {
     /// By default, the RPC server will not trust these headers.
     ///
     /// This is currently only useful for rate-limiting reasons.
-    #[arg(long)]
+    #[arg(env = "MADARA_RPC_RATE_LIMIT_TRUST_PROXY_HEADERS", long)]
     pub rpc_rate_limit_trust_proxy_headers: bool,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
-    #[arg(long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
+    #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
     pub rpc_max_request_size: u32,
 
     /// Set the maximum RPC response payload size for both HTTP and WebSockets in megabytes.
-    #[arg(long, default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB)]
+    #[arg(env = "MADARA_RPC_MAX_RESPONSE_SIZE", long, default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB)]
     pub rpc_max_response_size: u32,
 
     /// Set the maximum concurrent subscriptions per connection.
-    #[arg(long, default_value_t = RPC_DEFAULT_MAX_SUBS_PER_CONN)]
+    #[arg(env = "MADARA_RPC_MAX_SUBSCRIPTIONS_PER_CONNECTION", long, default_value_t = RPC_DEFAULT_MAX_SUBS_PER_CONN)]
     pub rpc_max_subscriptions_per_connection: u32,
 
     /// The RPC port to listen at.
-    #[arg(long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
+    #[arg(env = "MADARA_RPC_PORT", long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
     pub rpc_port: u16,
 
     /// Maximum number of RPC server connections at a given time.
-    #[arg(long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
+    #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
 
     /// The maximum number of messages that can be kept in memory at a given time, per connection.
     /// The server enforces backpressure, and this buffering is useful when the client cannot keep up with our server.
-    #[arg(long, default_value_t = RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN)]
+    #[arg(env = "MADARA_RPC_MESSAGE_BUFFER_CAPACITY_PER_CONNECTION", long, default_value_t = RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN)]
     pub rpc_message_buffer_capacity_per_connection: u32,
 
     /// Disable RPC batch requests.
-    #[arg(long, alias = "rpc_no_batch_requests", conflicts_with_all = &["rpc_max_batch_request_len"])]
+    #[arg(env = "MADARA_RPC_DISABLE_BATCH_REQUESTS", long, alias = "rpc_no_batch_requests", conflicts_with_all = &["rpc_max_batch_request_len"])]
     pub rpc_disable_batch_requests: bool,
 
     /// Limit the max length for an RPC batch request.
-    #[arg(long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
+    #[arg(env = "MADARA_RPC_MAX_BATCH_REQUEST_LEN", long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
     pub rpc_max_batch_request_len: Option<u32>,
 
     /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC servers.
@@ -154,7 +155,7 @@ pub struct RpcParams {
     /// This argument is a comma separated list of origins, or the special `all` value.
     ///
     /// Learn more about CORS and web security at <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
-    #[arg(long, value_name = "ORIGINS")]
+    #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
 }
 

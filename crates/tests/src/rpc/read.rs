@@ -3,12 +3,9 @@
 
 #[cfg(test)]
 mod test_rpc_read_calls {
-    use once_cell::sync::Lazy;
-    use rstest::rstest;
-    use std::any::Any;
-
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
+    use rstest::rstest;
     use starknet::macros::felt;
     use starknet_core::types::{
         BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
@@ -26,27 +23,62 @@ mod test_rpc_read_calls {
     };
     use starknet_providers::jsonrpc::HttpTransport;
     use starknet_providers::{JsonRpcClient, Provider};
+    use std::any::Any;
     use std::fmt::Write;
-    use std::fs::File;
-    use std::io::BufReader;
     use std::io::Read;
-    use tokio::sync::OnceCell;
+    use std::ops::Deref;
+    use std::sync::{Arc, Mutex};
 
-    static MADARA: Lazy<OnceCell<MadaraCmd>> = Lazy::new(OnceCell::new);
+    static MADARA: tokio::sync::Mutex<Option<Arc<MadaraCmd>>> = tokio::sync::Mutex::const_new(None);
+    static MADARA_HANDLE_COUNT: Mutex<usize> = Mutex::new(0);
 
-    async fn setup_madara() -> MadaraCmd {
-        let mut madara = MadaraCmdBuilder::new()
-            .args(["--full", "--network", "sepolia", "--no-sync-polling", "--n-blocks-to-sync", "20", "--no-l1-sync"])
-            .run();
-
-        madara.wait_for_ready().await;
-        madara.wait_for_sync_to(19).await;
-
-        madara
+    struct SharedMadaraInstance(Arc<MadaraCmd>);
+    impl Deref for SharedMadaraInstance {
+        type Target = MadaraCmd;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
     }
+    impl Drop for SharedMadaraInstance {
+        fn drop(&mut self) {
+            let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
+            *guard -= 1;
+            if *guard == 0 {
+                // :/
+                tokio::task::spawn_blocking(|| *MADARA.blocking_lock() = None);
+            }
+        }
+    }
+    #[allow(clippy::await_holding_lock)]
+    async fn get_shared_state() -> SharedMadaraInstance {
+        let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
+        let mut madara_guard = MADARA.lock().await;
 
-    async fn get_shared_state<'a>() -> &'a MadaraCmd {
-        MADARA.get_or_init(setup_madara).await
+        let instance = if *guard == 0 {
+            let mut madara = MadaraCmdBuilder::new()
+                .args([
+                    "--full",
+                    "--network",
+                    "sepolia",
+                    "--no-sync-polling",
+                    "--n-blocks-to-sync",
+                    "20",
+                    "--no-l1-sync",
+                ])
+                .run();
+
+            madara.wait_for_ready().await;
+            madara.wait_for_sync_to(19).await;
+
+            let madara = Arc::new(madara);
+            *madara_guard = Some(madara.clone());
+            SharedMadaraInstance(madara)
+        } else {
+            SharedMadaraInstance(madara_guard.clone().unwrap())
+        };
+
+        *guard += 1;
+        instance
     }
 
     /// Fetches the latest block hash and number.
@@ -1162,15 +1194,9 @@ mod test_rpc_read_calls {
 
         let decompressed_program = decompress_to_string(contract_program.unwrap());
 
-        let mut class_program_file = File::open("crates/tests/src/rpc/test_utils/class_program.txt").unwrap();
-
-        let mut original_program = String::new();
-        class_program_file.read_to_string(&mut original_program).expect("issue while reading the file");
-
-        let contract_class_file = File::open("crates/tests/src/rpc/test_utils/contract_class.json").unwrap();
-        let reader = BufReader::new(contract_class_file);
-
-        let expected_contract_class: ContractClass = serde_json::from_reader(reader).unwrap();
+        let expected_program = include_str!("test_utils/class_program.txt");
+        let expected_contract_class: ContractClass =
+            serde_json::from_slice(include_bytes!("test_utils/contract_class.json")).unwrap();
 
         let expected_contract_entry_points = match expected_contract_class.clone() {
             ContractClass::Legacy(compressed) => Some(compressed.entry_points_by_type),
@@ -1182,7 +1208,7 @@ mod test_rpc_read_calls {
             _ => None,
         };
 
-        assert_eq!(decompressed_program, original_program);
+        assert_eq!(decompressed_program, expected_program);
         assert_eq!(contract_entry_points, expected_contract_entry_points);
         assert_eq!(contract_abi, expected_contract_abi);
     }

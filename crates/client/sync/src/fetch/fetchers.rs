@@ -86,36 +86,53 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 }
 
 pub async fn fetch_pending_block_and_updates(
+    parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &FeederClient,
-) -> Result<UnverifiedPendingFullBlock, FetchError> {
+) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
-
     let sw = PerfStopwatch::new();
-    let (state_update, block) = retry(
+    let block = retry(
         || async {
-            let (state_update, block) = provider
-                .get_state_update_with_block(block_id.into())
-                .await
-                .map(ProviderStateUpdateWithBlockPendingMaybe::as_update_and_block)?;
-            Ok((state_update, block))
+            match provider.get_state_update_with_block(block_id.into()).await {
+                Ok(block) => Ok(Some(block)),
+                // Ignore (this is the case where we returned a closed block when we asked for a pending one)
+                // When the FGW does not have a pending block, it can return the latest block instead
+                Err(SequencerError::DeserializeBody { body: _, serde_error }) => {
+                    log::debug!("Serde error when fetching the pending block: {serde_error:#}");
+                    Ok(None)
+                }
+                Err(err) => Err(err),
+            }
         },
         MAX_RETRY,
         BASE_DELAY,
     )
     .await?;
 
-    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
+    let Some(block) = block else { return Ok(None) };
+
+    let (state_update, block) = block.as_update_and_block();
+    let (state_update, block) = (
+        state_update.pending_owned().expect("Block should be pending (checked via serde above)"),
+        block.pending_owned().expect("Block should be pending (checked via serde above)"),
+    );
+
+    if block.parent_block_hash != parent_block_hash {
+        log::debug!(
+            "Fetched a pending block, but mismatched parent block hash: parent_block_hash={:#x}",
+            block.parent_block_hash
+        );
+        return Ok(None);
+    }
+    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
-    let converted = convert_sequencer_block_pending(
-        block.pending_owned().expect("Block called on block tag pending should be pending"),
-        state_update.pending_owned().expect("State update called on block tag pending should be pending"),
-        class_update,
-    )
-    .context("Parsing the FGW pending block format")?;
-    Ok(converted)
+    let converted = convert_sequencer_block_pending(block, state_update, class_update)
+        .context("Parsing the FGW pending block format")?;
+
+    Ok(Some(converted))
 }
 
 pub async fn fetch_block_and_updates(
@@ -254,7 +271,7 @@ async fn fetch_class(
     provider: &FeederClient,
 ) -> Result<(Felt, ContractClass), SequencerError> {
     let contract_class = provider.get_class_by_hash(class_hash, block_id.into()).await?;
-    log::debug!("Got the contract class {:?}", contract_class);
+    log::debug!("Got the contract class {:?}", class_hash);
     Ok((class_hash, contract_class))
 }
 
@@ -346,9 +363,14 @@ mod test_l2_fetchers {
         // Mock class hash
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(
+            Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            &ctx.backend.chain_config().chain_id,
+            &ctx.provider,
+        )
+        .await;
 
-        let pending_block = result.expect("Failed to fetch pending block");
+        let pending_block = result.expect("Failed to fetch pending block").expect("No pending block");
 
         assert!(
             matches!(pending_block, UnverifiedPendingFullBlock { .. }),
@@ -426,7 +448,12 @@ mod test_l2_fetchers {
         // Mock a "pending block not found" scenario
         ctx.mock_block_pending_not_found();
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(
+            Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            &ctx.backend.chain_config().chain_id,
+            &ctx.provider,
+        )
+        .await;
 
         assert!(
             matches!(
@@ -436,7 +463,7 @@ mod test_l2_fetchers {
                     ..
                 })))
             ),
-            "Expected BlockNotFound error, but got: {:?}",
+            "Expected no block, but got: {:?}",
             result
         );
     }
@@ -602,7 +629,7 @@ mod test_l2_fetchers {
         let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
         assert!(
-            matches!(result, Err(SequencerError::InvalidStarknetErrorVariant(_))),
+            matches!(result, Err(SequencerError::DeserializeBody { .. })),
             "Expected error about mismatched data, but got: {:?}",
             result
         );
