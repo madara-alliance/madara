@@ -31,7 +31,7 @@ pub struct TestTransactionProvider;
 impl AddTransactionProvider for TestTransactionProvider {
     async fn add_declare_v0_transaction(
         &self,
-        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<DeclareTransactionResult> {
         unimplemented!()
     }

@@ -233,7 +233,7 @@ async fn madara_can_sync_a_few_blocks() {
         "sepolia",
         "--no-sync-polling",
         "--n-blocks-to-sync",
-        "10",
+        "20",
         "--no-l1-sync",
     ]);
 
@@ -247,7 +247,7 @@ async fn madara_can_sync_a_few_blocks() {
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {
             // https://sepolia.voyager.online/block/0x4174555d24718e8225a3d536ca96d2c4cc8a31bff6a6c758ab84a16a9e92d6c
-            block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5,"),
+            block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
             block_number: 19
         }
     );

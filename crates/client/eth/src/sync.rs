@@ -4,7 +4,6 @@ use crate::l1_messaging::sync;
 use crate::state_update::state_update_worker;
 use mc_mempool::{GasPriceProvider, Mempool};
 use starknet_api::core::ChainId;
-use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::time::Duration;
 

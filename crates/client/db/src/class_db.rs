@@ -28,7 +28,6 @@ impl MadaraBackend {
         log::debug!("get encoded {key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
-        log::debug!("serailization passed, issue somewhere");
         // Get from pending db, then normal db if not found.
         if is_pending {
             let col = self.db.get_column(pending_col);
@@ -37,13 +36,10 @@ impl MadaraBackend {
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
-        log::debug!("get encoded: not in pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
         let val = bincode::deserialize(&val)?;
-
-        log::debug!("got some value of class hash");
 
         Ok(Some(val))
     }
@@ -64,7 +60,6 @@ impl MadaraBackend {
             Column::ClassInfo,
         )?
         else {
-            log::debug!("returning none because some error with getting the class");
             return Ok(None);
         };
 
@@ -119,9 +114,6 @@ impl MadaraBackend {
         col_info: Column,
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
-        log::debug!("store classes has been called");
-        log::debug!("converted classes length: {:?}", converted_classes.len());
-
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
@@ -163,7 +155,7 @@ impl MadaraBackend {
                 |col, chunk| {
                     let mut batch = WriteBatchWithTransaction::default();
                     for (key, value) in chunk {
-                        log::debug!("Class compiled store key={key:#x}");
+                        log::trace!("Class compiled store key={key:#x}");
                         let key_bin = bincode::serialize(key)?;
                         // TODO: find a way to avoid this allocation
                         batch.put_cf(col, &key_bin, bincode::serialize(&value)?);

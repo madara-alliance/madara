@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 use std::sync::Arc;
 
@@ -57,6 +58,12 @@ pub struct BroadcastedDeclareTransactionV0 {
     pub contract_class: Arc<CompressedLegacyContractClass>,
     /// If set to `true`, uses a query-only transaction version that's invalid for execution
     pub is_query: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct L1HandlerTransactionResult {
+    /// The hash of the invoke transaction
+    pub transaction_hash: Felt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

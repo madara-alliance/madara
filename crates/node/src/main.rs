@@ -121,8 +121,6 @@ async fn main() -> anyhow::Result<()> {
         match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
-                // let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
-
                 let block_production_service = BlockProductionService::new(
                     &run_cmd.block_production_params,
                     &db_service,

@@ -14,8 +14,8 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
-use mp_transactions::BroadcastedToBlockifierError;
 use mp_transactions::{broadcasted_to_blockifier, broadcasted_to_blockifier_v0, BroadcastedDeclareTransactionV0};
+use mp_transactions::{BroadcastedToBlockifierError, L1HandlerTransactionResult};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::BroadcastedDeclareTransaction;
@@ -69,6 +69,7 @@ pub trait MempoolProvider: Send + Sync {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error>;
+    fn accept_l1_handler_tx(&self, tx: Transaction) -> Result<L1HandlerTransactionResult, Error>;
     fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
     where
         Self: Sized;
@@ -90,11 +91,7 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
-    pub fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
-        // let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
-
-        log::debug!("Checkpoint: we are inside the accept tx and we made sure that we have account txn only");
-
+    fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
         // The timestamp *does not* take the transaction validation time into account.
         let arrived_at = ArrivedAtTimestamp::now();
 
@@ -103,8 +100,6 @@ impl Mempool {
             block
         } else {
             // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
-            log::debug!("Checkpoint: this should be triggered because we are trying for a genesis block/ or maybe not");
-
             let parent_block_hash = self
                 .backend
                 .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
@@ -129,8 +124,6 @@ impl Mempool {
         } else {
             None
         };
-        log::debug!("Checkpoint: now sending the tx for the execution context");
-
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
@@ -138,8 +131,6 @@ impl Mempool {
         if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
             let _ = validator.perform_validations(account_tx, deploy_account_tx_hash.is_some());
         }
-
-        log::debug!("Checkpoint: validation performed");
 
         if !is_only_query(&tx) {
             // Finally, add it to the nonce chain for the account nonce
@@ -193,19 +184,21 @@ impl MempoolProvider for Mempool {
     }
 
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
-        log::debug!("Checkpoint 3: accept_declare_v0_tx");
         let (tx, classes) =
             broadcasted_to_blockifier_v0(tx, self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
-
-        log::debug!("Checkpoint declare v0 tx");
 
         let res = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),
             class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
         };
-        log::debug!("sending txn to the accept tx");
 
         self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    fn accept_l1_handler_tx(&self, tx: Transaction) -> Result<L1HandlerTransactionResult, Error> {
+        let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&tx) };
+        self.accept_tx(tx, None)?;
         Ok(res)
     }
 
@@ -277,26 +270,22 @@ pub(crate) fn is_only_query(tx: &Transaction) -> bool {
 
 pub(crate) fn contract_addr(tx: &Transaction) -> ContractAddress {
     match tx {
-        Transaction::AccountTransaction(account_tx) => {
-            (match account_tx {
-                AccountTransaction::Declare(tx) => tx.tx.sender_address(),
-                AccountTransaction::DeployAccount(tx) => tx.contract_address,
-                AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
-            })
-        }
+        Transaction::AccountTransaction(account_tx) => match account_tx {
+            AccountTransaction::Declare(tx) => tx.tx.sender_address(),
+            AccountTransaction::DeployAccount(tx) => tx.contract_address,
+            AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+        },
         Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
     }
 }
 
 pub(crate) fn nonce(tx: &Transaction) -> Nonce {
     match tx {
-        Transaction::AccountTransaction(account_tx) => {
-            (match account_tx {
-                AccountTransaction::Declare(tx) => tx.tx.nonce(),
-                AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-                AccountTransaction::Invoke(tx) => tx.tx.nonce(),
-            })
-        }
+        Transaction::AccountTransaction(account_tx) => match account_tx {
+            AccountTransaction::Declare(tx) => tx.tx.nonce(),
+            AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
+            AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+        },
         Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
     }
 }

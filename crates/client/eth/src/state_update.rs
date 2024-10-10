@@ -111,7 +111,6 @@ mod eth_client_event_subscription_test {
     use mc_db::DatabaseService;
     use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
     use rstest::*;
     use tempfile::TempDir;
     use url::Url;

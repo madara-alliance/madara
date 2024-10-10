@@ -5,7 +5,7 @@ use blockifier::transaction::{
     transaction_execution::Transaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-use starknet_core::types::MsgToL2;
+// use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -143,7 +143,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::L1HandlerTransaction(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        Transaction::L1HandlerTransaction(_tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,

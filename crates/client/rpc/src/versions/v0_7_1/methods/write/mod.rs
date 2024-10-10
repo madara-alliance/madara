@@ -21,7 +21,6 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<DeclareTransactionResult> {
-        log::info!("add_declare_v0_transaction");
         Ok(self.add_transaction_provider.add_declare_v0_transaction(declare_transaction).await?)
     }
 

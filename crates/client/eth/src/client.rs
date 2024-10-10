@@ -67,8 +67,6 @@ impl EthereumClient {
     pub async fn new(url: Url, l1_core_address: Address, l1_block_metrics: L1BlockMetrics) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(url);
 
-        log::debug!("core contract address over here is: {:?}", l1_core_address);
-
         EthereumClient::assert_core_contract_exists(&provider, l1_core_address).await?;
 
         let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());

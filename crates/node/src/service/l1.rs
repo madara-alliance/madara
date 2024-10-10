@@ -6,7 +6,6 @@ use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mc_metrics::MetricsRegistry;
 use mp_block::H160;
-use mp_convert::ToFelt;
 use mp_utils::service::Service;
 use starknet_api::core::ChainId;
 use std::sync::Arc;
@@ -25,6 +24,7 @@ pub struct L1SyncService {
 }
 
 impl L1SyncService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: &L1SyncParams,
         db: &DatabaseService,

@@ -1,29 +1,20 @@
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
-use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{address, b256, keccak256, FixedBytes, U256};
-use alloy::providers::Provider;
-use alloy::rpc::types::Filter;
+use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use anyhow::Context;
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
 use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use futures::StreamExt;
-use log::Level::Debug;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
-use mc_mempool::Mempool;
+use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{
-    Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,
-};
+use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionVersion};
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
-use url::ParseError::SetHostOnCannotBeABaseUrl;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -64,39 +55,16 @@ pub async fn sync(
             return Err(e.into());
         }
     };
-    log::debug!(
-        "we are inside sync and we will be calling the event filter now and last synced event block is: {:?}",
-        last_synced_event_block
-    );
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
-    log::debug!("event filter here is: {:?}", event_filter);
 
-    let address = client.l1_core_contract.address().clone();
-    let transfer_event_signature = b256!("db80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b");
-    let filter = Filter::new()
-        .event_signature(transfer_event_signature)
-        .from_block(BlockNumberOrTag::Number(last_synced_event_block.block_number))
-        .address(address);
-    // You could also use the event name instead of the event signature like so:
-    // .event("Transfer(address,address,uint256)")
-
-    // Get all logs from the latest block that match the filter.
-    let logs = client.provider.get_logs(&filter).await?;
-
-    for log in logs {
-        log::debug!("Transfer event: {log:?}");
-    }
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
         .watch()
         .await
         .context("Failed to watch event filter")?
         .into_stream();
-    // log::debug!("event stream here is: {:?}", event_stream);
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
-        log::debug!("inside the l1 messages");
         if let Ok((event, meta)) = event_result {
-            log::debug!("we got some logs");
             tracing::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
                 meta.block_number,
@@ -164,7 +132,7 @@ async fn process_l1_message(
     event_index: &Option<u64>,
     chain_id: &ChainId,
     mempool: Arc<Mempool>,
-) -> anyhow::Result<Option<TransactionHash>> {
+) -> anyhow::Result<Option<Felt>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
 
@@ -184,16 +152,17 @@ async fn process_l1_message(
     };
 
     let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction =
+    let blockifier_transaction: BlockifierL1HandlerTransaction =
         BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
 
-    mempool.accept_tx(BlockifierTransation::L1HandlerTransaction(blockifier_transaction), None);
+    let res = mempool.accept_l1_handler_tx(BlockifierTransation::L1HandlerTransaction(blockifier_transaction))?;
 
     // TODO: remove unwraps
+    // Ques: shall it panic if no block number of event_index?
     let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
-    Ok(Some(tx_hash))
+    Ok(Some(res.transaction_hash))
 }
 
 pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
@@ -247,7 +216,6 @@ mod l1_messaging_tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use super::Felt;
     use crate::l1_messaging::sync;
     use crate::{
         client::{
@@ -271,6 +239,7 @@ mod l1_messaging_tests {
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
+    use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;

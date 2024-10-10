@@ -230,10 +230,7 @@ impl MempoolInner {
     pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction, force: bool) -> Result<(), TxInsersionError> {
         // Get the nonce chain for the contract
 
-        log::debug!("Checkpoint: inside the insert tx");
-
         let contract_addr = mempool_tx.contract_address();
-        log::debug!("Checkpoint: contract address here is: {:?}", contract_addr);
 
         let arrived_at = mempool_tx.arrived_at;
 
@@ -366,10 +363,9 @@ mod tests {
     use starknet_types_core::felt::Felt;
 
     use super::*;
-    use starknet_api::transaction::Fee;
+    use blockifier::abi::abi_utils::selector_from_name;
+    use starknet_api::transaction::{Fee, TransactionVersion};
     use std::fmt;
-    // use blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction;
-    // use starknet_api::transaction::L1HandlerTransaction;
 
     #[derive(PartialEq, Eq, Hash)]
     struct AFelt(Felt);
@@ -486,10 +482,18 @@ mod tests {
                                 tx_hash,
                             )))
                         }
-                        TxTy::L1Handler => Transaction::L1HandlerTransaction(L1HandlerTransaction::create_for_testing(
-                            Fee(0),
-                            ContractAddress::from(1u16),
-                        )),
+                        // TODO: maybe update the values?
+                        TxTy::L1Handler => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+                            tx: starknet_api::transaction::L1HandlerTransaction {
+                                version: TransactionVersion::ZERO,
+                                nonce: Nonce::default(),
+                                contract_address: contract_addr,
+                                entry_point_selector: selector_from_name("l1_handler_set_value"),
+                                calldata: Default::default(),
+                            },
+                            tx_hash,
+                            paid_fee_on_l1: Fee::default(),
+                        }),
                     };
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)

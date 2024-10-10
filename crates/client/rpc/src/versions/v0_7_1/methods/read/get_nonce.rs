@@ -23,7 +23,6 @@ use crate::Starknet;
 /// specific issue.
 
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    log::debug!("inside get nonce block id is: {:?}, and contract address is: {:?}", block_id, contract_address);
     // Check if block exists. We have to return a different error in that case.
     let block_exists =
         starknet.backend.contains_block(&block_id).or_internal_server_error("Checking if block is in database")?;
