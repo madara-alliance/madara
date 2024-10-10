@@ -149,7 +149,8 @@ pub async fn consume_worker_trigger_messages_from_queue<F, Fut>(
 ) -> Result<(), ConsumptionError>
 where
     F: FnOnce(Box<dyn Worker>, Arc<Config>) -> Fut,
-    Fut: Future<Output = color_eyre::Result<()>>,
+    F: Send + 'static,
+    Fut: Future<Output = color_eyre::Result<()>> + Send,
 {
     log::debug!("Consuming from queue {:?}", queue);
     let delivery = get_delivery_from_queue(&queue, config.clone()).await?;
@@ -162,7 +163,12 @@ where
     let job_message = parse_worker_message(&message)?;
 
     if let Some(job_message) = job_message {
-        handle_worker_message(job_message, message, handler, config).await?;
+        tokio::spawn(async move {
+            match handle_worker_message(job_message, message, handler, config).await {
+                Ok(_) => {}
+                Err(e) => log::error!("Failed to handle worker message. Error: {:?}", e),
+            }
+        });
     }
 
     Ok(())
