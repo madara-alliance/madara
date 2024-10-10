@@ -12,7 +12,6 @@ use hyper::{
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_utils::graceful_shutdown;
-use starknet_signers::{SigningKey, VerifyingKey};
 use tokio::net::TcpListener;
 
 use super::router::main_router;
@@ -24,7 +23,6 @@ pub async fn start_server(
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
-    key_pair: (SigningKey, VerifyingKey),
 ) -> anyhow::Result<()> {
     if !feeder_gateway_enable && !gateway_enable {
         return Ok(());
@@ -45,7 +43,6 @@ pub async fn start_server(
     let make_service = make_service_fn(move |_| {
         let db_backend = Arc::clone(&db_backend);
         let add_transaction_provider = Arc::clone(&add_transaction_provider);
-        let key_pair = key_pair.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 main_router(
@@ -54,7 +51,6 @@ pub async fn start_server(
                     Arc::clone(&add_transaction_provider),
                     feeder_gateway_enable,
                     gateway_enable,
-                    key_pair.clone(),
                 )
             }))
         }

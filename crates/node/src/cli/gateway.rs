@@ -1,6 +1,4 @@
 use clap::Args;
-use mp_utils::parsers::parse_felt;
-use starknet_crypto::Felt;
 
 /// Parameters used to config gateway.
 #[derive(Debug, Clone, Args)]
@@ -20,8 +18,4 @@ pub struct GatewayParams {
     /// The gateway port to listen at.
     #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value = "8080")]
     pub gateway_port: u16,
-
-    /// Sequencer secret key used to sign blocks
-    #[arg(env = "MADARA_PRIVATE_KEY", long, value_parser = parse_felt)]
-    pub private_key: Felt,
 }

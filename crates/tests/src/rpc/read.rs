@@ -66,8 +66,6 @@ mod test_rpc_read_calls {
                     "--n-blocks-to-sync",
                     "20",
                     "--no-l1-sync",
-                    "--private-key",
-                    "0x1234",
                 ])
                 .run();
 

@@ -185,6 +185,7 @@ serial_test = "3.1.1"
 itertools = "0.13.0"
 regex = "1.10.5"
 bytes = "1.6.0"
+crypto-bigint = "0.5.5"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

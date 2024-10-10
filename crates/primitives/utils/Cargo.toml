@@ -13,7 +13,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
+# Starknet
 starknet-core.workspace = true
+starknet-types-core.workspace = true
+starknet-crypto.workspace = true
 
 # Other
 anyhow.workspace = true
@@ -25,3 +28,5 @@ serde.workspace = true
 serde_yaml.workspace = true
 tokio.workspace = true
 url.workspace = true
+crypto-bigint.workspace = true
+rand.workspace = true

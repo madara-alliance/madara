@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
+use mp_utils::crypto::ZeroingPrivateKey;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
@@ -13,7 +14,7 @@ use mp_chain_config::{
     ChainConfig, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
-use mp_utils::serde::{deserialize_duration, serialize_duration};
+use mp_utils::serde::{deserialize_duration, deserialize_private_key, serialize_duration};
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
@@ -42,32 +43,33 @@ pub struct ChainConfigOverridesInner {
     pub max_nonce_for_validation_skip: u64,
     pub eth_core_contract_address: H160,
     pub eth_gps_statement_verifier: H160,
-}
-
-impl From<&ChainConfig> for ChainConfigOverridesInner {
-    fn from(config: &ChainConfig) -> Self {
-        Self {
-            chain_name: config.chain_name.clone(),
-            chain_id: config.chain_id.clone(),
-            native_fee_token_address: config.native_fee_token_address,
-            parent_fee_token_address: config.parent_fee_token_address,
-            latest_protocol_version: config.latest_protocol_version,
-            block_time: config.block_time,
-            pending_block_update_time: config.pending_block_update_time,
-            execution_batch_size: config.execution_batch_size,
-            bouncer_config: config.bouncer_config.clone(),
-            sequencer_address: config.sequencer_address,
-            max_nonce_for_validation_skip: config.max_nonce_for_validation_skip,
-            eth_core_contract_address: config.eth_core_contract_address,
-            eth_gps_statement_verifier: config.eth_gps_statement_verifier,
-        }
-    }
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    #[serde(deserialize_with = "deserialize_private_key")]
+    pub private_key: ZeroingPrivateKey,
 }
 
 impl ChainConfigOverrideParams {
     pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
-        let mut chain_config_overrides = serde_yaml::to_value(ChainConfigOverridesInner::from(&chain_config))
-            .context("Failed to convert ChainConfig to Value")?;
+        let versioned_constants = chain_config.versioned_constants;
+
+        let mut chain_config_overrides = serde_yaml::to_value(ChainConfigOverridesInner {
+            chain_name: chain_config.chain_name,
+            chain_id: chain_config.chain_id,
+            native_fee_token_address: chain_config.native_fee_token_address,
+            parent_fee_token_address: chain_config.parent_fee_token_address,
+            latest_protocol_version: chain_config.latest_protocol_version,
+            block_time: chain_config.block_time,
+            pending_block_update_time: chain_config.pending_block_update_time,
+            execution_batch_size: chain_config.execution_batch_size,
+            bouncer_config: chain_config.bouncer_config,
+            sequencer_address: chain_config.sequencer_address,
+            max_nonce_for_validation_skip: chain_config.max_nonce_for_validation_skip,
+            eth_core_contract_address: chain_config.eth_core_contract_address,
+            eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
+            private_key: chain_config.private_key,
+        })
+        .context("Failed to convert ChainConfig to Value")?;
 
         for (key, value) in &self.overrides {
             // Split the key by '.' to handle nested fields
@@ -100,8 +102,6 @@ impl ChainConfigOverrideParams {
 
         println!("chain_config_overrides: {:#?}", chain_config_overrides);
 
-        let versioned_constants = chain_config.versioned_constants;
-
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
@@ -117,6 +117,7 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
+            private_key: chain_config_overrides.private_key,
         })
     }
 }

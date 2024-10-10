@@ -3,7 +3,7 @@ use std::sync::Arc;
 use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock, H160};
+use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
@@ -14,7 +14,6 @@ use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     BroadcastedTransaction,
 };
-use starknet_signers::{SigningKey, VerifyingKey};
 use starknet_types_core::felt::Felt;
 
 use crate::error::StarknetError;
@@ -83,7 +82,6 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
 pub async fn handle_get_signature(
     req: Request<Body>,
     backend: Arc<MadaraBackend>,
-    private_key: SigningKey,
 ) -> Result<Response<Body>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
@@ -102,8 +100,7 @@ pub async fn handle_get_signature(
             "Retrieved pending block info from db for non-pending block {block_id}"
         ))),
         MadaraMaybePendingBlockInfo::NotPending(block_info) => {
-            // TODO: once zeroing has been implemented for Felt this should be
-            // read from env and zeroed after use isntead
+            let private_key = &backend.chain_config().private_key;
             let signature = private_key
                 .sign(&block_info.block_hash)
                 .map_err(|e| GatewayError::InternalServerError(format!("Failed to sign block hash: {e}")))?;
@@ -280,21 +277,20 @@ pub async fn handle_get_compiled_class_by_class_hash(
     Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.as_ref()))
 }
 
-pub async fn handle_get_contract_addresses(
-    eth_core_contract_address: H160,
-    eth_gps_statement_verifier: H160,
-) -> Result<Response<Body>, GatewayError> {
+pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+    let chain_config = &backend.chain_config();
     Ok(create_json_response(
         hyper::StatusCode::OK,
         &json!({
-            "Starknet": eth_core_contract_address,
-            "GpsStatementVerifier": eth_gps_statement_verifier
+            "Starknet": chain_config.eth_core_contract_address,
+            "GpsStatementVerifier": chain_config.eth_gps_statement_verifier
         }),
     ))
 }
 
-pub async fn handle_get_public_key(public_key: VerifyingKey) -> Result<Response<Body>, GatewayError> {
-    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key.scalar())))
+pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+    let public_key = &backend.chain_config().private_key.public;
+    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
 }
 
 pub async fn handle_add_transaction(

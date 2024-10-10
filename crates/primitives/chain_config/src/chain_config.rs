@@ -17,13 +17,14 @@ use anyhow::{bail, Context, Result};
 use blockifier::bouncer::{BouncerWeights, BuiltinCount};
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
+use mp_utils::crypto::ZeroingPrivateKey;
 use primitive_types::H160;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 
-use mp_utils::serde::deserialize_duration;
+use mp_utils::serde::{deserialize_duration, deserialize_private_key};
 
 use crate::StarknetVersion;
 
@@ -118,6 +119,17 @@ pub struct ChainConfig {
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
     pub eth_gps_statement_verifier: H160,
+
+    /// Private key used by the node to sign blocks provided through the
+    /// feeder gateway. This serves as a proof of origin and in the future
+    /// will also be used by the p2p protocol and tendermint consensus.
+    /// > [!NOTE]
+    /// > This key will be auto-generated on startup if none is provided.
+    /// > This also means the private key is by default regenerated on boot
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    #[serde(deserialize_with = "deserialize_private_key")]
+    pub private_key: ZeroingPrivateKey,
 }
 
 impl ChainConfig {
@@ -216,6 +228,8 @@ impl ChainConfig {
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress::default(),
             max_nonce_for_validation_skip: 2,
+
+            private_key: ZeroingPrivateKey::default(),
         }
     }
 

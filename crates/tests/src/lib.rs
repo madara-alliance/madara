@@ -247,8 +247,6 @@ async fn madara_can_sync_a_few_blocks() {
         "--n-blocks-to-sync",
         "10",
         "--no-l1-sync",
-        "--private-key",
-        "0x1234",
     ]);
 
     let mut node = cmd_builder.run();
