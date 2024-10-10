@@ -39,21 +39,21 @@ impl TelemetryHandle {
     }
 }
 pub struct TelemetryService {
-    no_telemetry: bool,
+    telemetry: bool,
     telemetry_endpoints: Vec<(String, u8)>,
     telemetry_handle: TelemetryHandle,
     start_state: Option<mpsc::Receiver<TelemetryEvent>>,
 }
 
 impl TelemetryService {
-    pub fn new(no_telemetry: bool, telemetry_endpoints: Vec<(String, u8)>) -> anyhow::Result<Self> {
-        let (telemetry_handle, start_state) = if no_telemetry {
+    pub fn new(telemetry: bool, telemetry_endpoints: Vec<(String, u8)>) -> anyhow::Result<Self> {
+        let (telemetry_handle, start_state) = if !telemetry {
             (TelemetryHandle(None), None)
         } else {
             let (tx, rx) = mpsc::channel(1024);
             (TelemetryHandle(Some(Arc::new(tx))), Some(rx))
         };
-        Ok(Self { no_telemetry, telemetry_endpoints, telemetry_handle, start_state })
+        Ok(Self { telemetry, telemetry_endpoints, telemetry_handle, start_state })
     }
 
     pub fn new_handle(&self) -> TelemetryHandle {
@@ -94,7 +94,7 @@ impl TelemetryService {
 #[async_trait::async_trait]
 impl Service for TelemetryService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        if self.no_telemetry {
+        if !self.telemetry {
             return Ok(());
         }
 
