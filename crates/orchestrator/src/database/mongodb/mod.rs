@@ -16,10 +16,9 @@ use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 
 pub mod config;
 
-pub const MONGO_DB_SETTINGS: &str = "mongodb";
-
 pub struct MongoDb {
     client: Client,
+    database_name: String,
 }
 
 impl MongoDb {
@@ -37,7 +36,7 @@ impl MongoDb {
         client.database("admin").run_command(doc! {"ping": 1}, None).await.expect("Failed to ping MongoDB deployment");
         log::debug!("Pinged your deployment. You successfully connected to MongoDB!");
 
-        Self { client }
+        Self { client, database_name: mongo_db_settings.database_name }
     }
 
     pub fn to_document(&self, current_job: &JobItem, updates: &JobItemUpdates) -> Result<Document> {
@@ -81,7 +80,7 @@ impl MongoDb {
     }
 
     fn get_job_collection(&self) -> Collection<JobItem> {
-        self.client.database("orchestrator").collection("jobs")
+        self.client.database(&self.database_name).collection("jobs")
     }
 }
 

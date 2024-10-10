@@ -8,7 +8,9 @@ RUN apt update && apt install -y  \
     libgmp3-dev \
     software-properties-common \
     wget \
-    bash
+    bash \
+    nodejs \
+    npm
 
 # Install Python 3.9
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
@@ -54,12 +56,15 @@ WORKDIR /usr/src/madara-orchestrator
 # Build the project
 RUN cargo build --release
 
+# Install Node.js dependencies for migrations
+RUN npm install
+
 
 FROM debian:bookworm
 
 # Install runtime dependencies
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates &&\
+    apt-get install -y openssl ca-certificates nodejs npm &&\
     apt-get autoremove -y; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
@@ -70,5 +75,16 @@ WORKDIR /usr/local/bin
 # Copy the compiled binary from the builder stage
 COPY --from=builder /usr/src/madara-orchestrator/target/release/orchestrator .
 
-# Set the entrypoint
-ENTRYPOINT ["./orchestrator"]
+# Copy Node.js files and dependencies
+COPY --from=builder /usr/src/madara-orchestrator/node_modules ./node_modules
+COPY --from=builder /usr/src/madara-orchestrator/package.json .
+COPY --from=builder /usr/src/madara-orchestrator/migrate-mongo-config.js .
+COPY --from=builder /usr/src/madara-orchestrator/migrations ./migrations
+
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+    npm run migrate up\n\
+    ./orchestrator' > start.sh && chmod +x start.sh
+
+# Set the entrypoint to the startup script
+ENTRYPOINT ["./start.sh"]

@@ -10,3 +10,5 @@
 lcov.info
 
 **/*-SN.zip
+
+node_modules
