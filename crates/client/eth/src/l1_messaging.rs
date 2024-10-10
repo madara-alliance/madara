@@ -176,13 +176,11 @@ async fn process_l1_message(
         BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
 
     mempool.accept_tx(BlockifierTransation::L1HandlerTransaction(blockifier_transaction), None);
-    // TODO: submit tx to mempool
 
     // TODO: remove unwraps
     let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
-    // TODO: replace by tx hash from mempool
     Ok(Some(tx_hash))
 }
 
@@ -262,7 +260,7 @@ mod l1_messaging_tests {
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
-    use mc_mempool::Mempool;
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
     use crate::l1_messaging::sync;
 
     use self::DummyContract::DummyContractInstance;
@@ -375,6 +373,12 @@ mod l1_messaging_tests {
                 .expect("Failed to create database service"),
         );
 
+
+        let l1_gas_setter = GasPriceProvider::new();
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), Arc::clone(&l1_data_provider)));
+
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
@@ -394,7 +398,7 @@ mod l1_messaging_tests {
             l1_block_metrics: l1_block_metrics.clone(),
         };
 
-        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client }
+        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -413,13 +417,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -465,13 +469,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -512,13 +516,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         // Mock cancelled message

@@ -13,7 +13,7 @@ use starknet_types_core::felt::Felt;
 mod block_context;
 mod blockifier_state_adapter;
 mod call;
-mod execution;
+pub mod execution;
 mod fee;
 mod trace;
 

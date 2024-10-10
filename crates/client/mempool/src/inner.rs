@@ -351,7 +351,7 @@ mod tests {
     use blockifier::{
         execution::contract_class::ClassInfo,
         test_utils::{contracts::FeatureContract, CairoVersion},
-        transaction::transactions::{DeclareTransaction, InvokeTransaction},
+        transaction::transactions::{DeclareTransaction, InvokeTransaction, L1HandlerTransaction},
     };
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
@@ -360,9 +360,13 @@ mod tests {
         transaction::{DeclareTransactionV3, InvokeTransactionV3},
     };
     use starknet_types_core::felt::Felt;
+    use mc_exec::execution::TxInfo;
 
     use super::*;
     use std::fmt;
+    use starknet_api::transaction::Fee;
+    // use blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction;
+    // use starknet_api::transaction::L1HandlerTransaction;
 
     #[derive(PartialEq, Eq, Hash)]
     struct AFelt(Felt);
@@ -409,6 +413,7 @@ mod tests {
                 Declare,
                 DeployAccount,
                 InvokeFunction,
+                L1Handler,
             }
 
             <(TxTy, SystemTime, AFelt, AFelt, u64, bool)>::arbitrary()
@@ -421,7 +426,7 @@ mod tests {
                     let dummy_class_info = ClassInfo::new(&dummy_contract_class.get_class(), 100, 100).unwrap();
 
                     let tx = match ty {
-                        TxTy::Declare => AccountTransaction::Declare(
+                        TxTy::Declare => Transaction::AccountTransaction(AccountTransaction::Declare(
                             DeclareTransaction::new(
                                 starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
                                     resource_bounds: Default::default(),
@@ -440,8 +445,8 @@ mod tests {
                                 dummy_class_info,
                             )
                             .unwrap(),
-                        ),
-                        TxTy::DeployAccount => AccountTransaction::Declare(
+                        )),
+                        TxTy::DeployAccount => Transaction::AccountTransaction(AccountTransaction::Declare(
                             DeclareTransaction::new(
                                 starknet_api::transaction::DeclareTransaction::V3(DeclareTransactionV3 {
                                     resource_bounds: Default::default(),
@@ -460,8 +465,8 @@ mod tests {
                                 dummy_class_info,
                             )
                             .unwrap(),
-                        ),
-                        TxTy::InvokeFunction => AccountTransaction::Invoke(InvokeTransaction::new(
+                        )),
+                        TxTy::InvokeFunction => Transaction::AccountTransaction(AccountTransaction::Invoke(InvokeTransaction::new(
                             starknet_api::transaction::InvokeTransaction::V3(InvokeTransactionV3 {
                                 resource_bounds: Default::default(),
                                 tip: Default::default(),
@@ -475,7 +480,12 @@ mod tests {
                                 account_deployment_data: Default::default(),
                             }),
                             tx_hash,
-                        )),
+                        ))),
+                        TxTy::L1Handler => Transaction::L1HandlerTransaction(L1HandlerTransaction::create_for_testing(
+                            Fee(0), ContractAddress::from(1u16)
+                        )
+
+                        ),
                     };
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
