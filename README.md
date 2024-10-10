@@ -321,7 +321,7 @@ Toggle details for each namespace to view additional settings:
 <details>
 <summary><strong>Metrics</strong></summary>
 
-- **`--telemetry-disabled`**: Disable connection to the Madara telemetry server.
+- **`--telemetry`**: Enable connection to the Madara telemetry server.
 
 - **`--telemetry-url <URL VERBOSITY>`**: The URL of the telemetry server with verbosity level.
 
@@ -342,12 +342,18 @@ Toggle details for each namespace to view additional settings:
 
 ### Environment Variables
 
-Set up your node's environment variables using the `STARKNET_` prefix. For example:
+Set up your node's environment variables using the `MADARA_` prefix. For example:
 
-- `STARKNET_BASE_PATH=/path/to/data`
-- `STARKNET_LOG=info`
+- `MADARA_BASE_PATH=/path/to/data`
+- `MADARA_RPC_PORT=1111`
 
-These variables allow you to adjust the node's configuration without using command-line arguments.
+These variables allow you to adjust the node's configuration without using command-line arguments. If the command-line
+argument is specified then it takes precedent over the environment variable.
+
+> [!CAUTION]
+> Environment variables can be visible beyond the current process and are not
+> encrypted. You should take special care when setting _secrets_ through
+> environment variables, such as `MADARA_L1_ENDPOINT` or `MADARA_GATEWAY_KEY`
 
 ### Configuration File
 

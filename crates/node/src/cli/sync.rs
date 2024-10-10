@@ -11,29 +11,30 @@ use crate::cli::NetworkType;
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
-    #[clap(long, alias = "no-sync")]
+    #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
     pub sync_disabled: bool,
 
     /// The block you want to start syncing from. This will most probably break your database.
-    #[clap(long, value_name = "BLOCK NUMBER")]
+    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
 
     /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
     /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
     // TODO(docs): explain the security cost
-    #[clap(long)]
+    #[clap(env = "MADARA_DISABLE_ROOT", long)]
     pub disable_root: bool,
 
     /// Gateway api key to avoid rate limiting (optional).
-    #[clap(long, value_name = "API KEY")]
+    #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
 
     /// Feeder gateway url used to sync blocks, state updates and classes
-    #[clap(long, value_parser = parse_url, value_name = "URL")]
+    #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
     pub gateway_url: Option<Url>,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
+		env = "MADARA_SYNC_POLLING_INTERVAL",
         long,
         value_parser = parse_duration,
         default_value = "4s",
@@ -44,6 +45,7 @@ pub struct SyncParams {
 
     /// Pending block polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
+		env = "MADARA_PENDING_BLOCK_POLL_INTERVAL",
         long,
         value_parser = parse_duration,
         default_value = "2s",
@@ -54,15 +56,15 @@ pub struct SyncParams {
 
     /// Disable sync polling. This currently means that the sync process will not import any more block once it has caught up with the
     /// blockchain tip.
-    #[clap(long)]
+    #[clap(env = "MADARA_NO_SYNC_POLLING", long)]
     pub no_sync_polling: bool,
 
     /// Number of blocks to sync. May be useful for benchmarking the sync service.
-    #[clap(long, value_name = "NUMBER OF BLOCKS")]
+    #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "NUMBER OF BLOCKS")]
     pub n_blocks_to_sync: Option<u64>,
 
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
-    #[clap(long, value_name = "NUMBER OF BLOCKS")]
+    #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 }
 

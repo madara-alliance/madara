@@ -3,7 +3,15 @@
 ## Next release
 
 - feat: gas fee flag added
+- fix: added more launcher capabilities
+- fix(cleanup): Updated EditorConfig to 4-space indents
+- fix(tests): Fixed local testing scripts
+- fix: override chain config
+- fix: estimate_fee should through an error if any txn fails
+- fix: rejected transaction block production panic
 - fix(sync): pending block retrying mechanism
+- feat(clean): dc_db: rename `DbBlockId::BlockN` to `DbBlockId::Number`
+- feat(cli): Environment variables can be used to specify Madara parameters
 - fix:(tests): Add testing feature to mc-db dev dependency (#294)
 - feat: new crate gateway client & server
 - test: Starknet-js basic tests added
