@@ -129,7 +129,7 @@ impl Mempool {
         let mut validator = exec_context.tx_validator();
 
         if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
-            let _ = validator.perform_validations(account_tx, deploy_account_tx_hash.is_some());
+           validator.perform_validations(account_tx, deploy_account_tx_hash.is_some())?
         }
 
         if !is_only_query(&tx) {
