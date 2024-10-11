@@ -25,21 +25,41 @@ pub struct StarknetError {
     pub message: String,
 }
 
+mod err {
+    pub(crate) const RATE_LIMITED: &str = "Too many requests";
+    pub(crate) const BLOCK_NOT_FOUND: &str = "Block not found";
+    pub(crate) const NO_SIGNATURE_FOR_PENDING_BLOCK: &str =
+        "BlockSignature is not supported for pending blocks; try querying with a concrete block identifier";
+    pub(crate) const NO_BLOCK_HEADER_FOR_PENDING_BLOCK: &str = "Block header is not supported for the pending block";
+    pub(crate) const MISSING_CLASS_HASH: &str = "Missing class_hash parameter";
+}
+
 impl StarknetError {
     pub fn new(code: StarknetErrorCode, message: String) -> Self {
         Self { code, message }
     }
 
     pub fn rate_limited() -> Self {
-        Self { code: StarknetErrorCode::RateLimited, message: "Too many requests".to_string() }
+        Self { code: StarknetErrorCode::RateLimited, message: err::RATE_LIMITED.to_string() }
     }
 
     pub fn block_not_found() -> Self {
-        Self { code: StarknetErrorCode::BlockNotFound, message: "Block not found".to_string() }
+        Self { code: StarknetErrorCode::BlockNotFound, message: err::BLOCK_NOT_FOUND.to_string() }
+    }
+
+    pub fn no_signature_for_pending_block() -> Self {
+        Self {
+            code: StarknetErrorCode::NoSignatureForPendingBlock,
+            message: err::NO_SIGNATURE_FOR_PENDING_BLOCK.to_string(),
+        }
+    }
+
+    pub fn no_block_header_for_pending_block() -> Self {
+        Self { code: StarknetErrorCode::NoBlockHeader, message: err::NO_BLOCK_HEADER_FOR_PENDING_BLOCK.to_string() }
     }
 
     pub fn missing_class_hash() -> Self {
-        Self { code: StarknetErrorCode::MalformedRequest, message: "Missing class_hash parameter".to_string() }
+        Self { code: StarknetErrorCode::MalformedRequest, message: err::MISSING_CLASS_HASH.to_string() }
     }
 
     pub fn invalid_class_hash(e: FromStrError) -> Self {
@@ -50,6 +70,13 @@ impl StarknetError {
         Self {
             code: StarknetErrorCode::UndeclaredClass,
             message: format!("Class with hash {:#x} not found", class_hash),
+        }
+    }
+
+    pub fn sierra_class_not_found(class_hash: Felt) -> Self {
+        Self {
+            code: StarknetErrorCode::UndeclaredClass,
+            message: format!("Class with hash {:#x} is not a sierra class", class_hash),
         }
     }
 
@@ -71,6 +98,8 @@ impl std::fmt::Display for StarknetError {
 pub enum StarknetErrorCode {
     #[serde(rename = "StarknetErrorCode.BLOCK_NOT_FOUND")]
     BlockNotFound,
+    #[serde(rename = "StarknetErrorCode.NO_BLOCK_HEADER")]
+    NoBlockHeader,
     #[serde(rename = "StarknetErrorCode.ENTRY_POINT_NOT_FOUND_IN_CONTRACT")]
     EntryPointNotFound,
     #[serde(rename = "StarknetErrorCode.OUT_OF_RANGE_CONTRACT_ADDRESS")]
@@ -117,8 +146,10 @@ pub enum StarknetErrorCode {
     InvalidContractClass,
     #[serde(rename = "StarknetErrorCode.CLASS_ALREADY_DECLARED")]
     ClassAlreadyDeclared,
-    #[serde(rename = "StarkErrorCode.INVALID_SIGNATURE")]
+    #[serde(rename = "StarknetErrorCode.INVALID_SIGNATURE")]
     InvalidSignature,
+    #[serde(rename = "StarknetErrorCode.NO_SIGNATURE_FOR_PENDING_BLOCK")]
+    NoSignatureForPendingBlock,
     #[serde(rename = "StarknetErrorCode.INSUFFICIENT_ACCOUNT_BALANCE")]
     InsufficientAccountBalance,
     #[serde(rename = "StarknetErrorCode.INSUFFICIENT_MAX_FEE")]
