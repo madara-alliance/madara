@@ -154,11 +154,24 @@ impl SettlementClient for EthereumSettlementClient {
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
     ) -> Result<String> {
+        tracing::info!(
+            log_type = "starting",
+            category = "update_state",
+            function_type = "calldata",
+            "Updating state with calldata."
+        );
         let program_output: Vec<U256> = vec_u8_32_to_vec_u256(program_output.as_slice())?;
         let onchain_data_hash: U256 = slice_u8_to_u256(&onchain_data_hash)?;
         let onchain_data_size = U256::from_be_bytes(onchain_data_size);
         let tx_receipt =
             self.core_contract_client.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
+        tracing::info!(
+            log_type = "completed",
+            category = "update_state",
+            function_type = "calldata",
+            tx_hash = %tx_receipt.transaction_hash,
+            "State updated with calldata."
+        );
         Ok(format!("0x{:x}", tx_receipt.transaction_hash))
     }
 
@@ -169,6 +182,12 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
     ) -> Result<String> {
+        tracing::info!(
+            log_type = "starting",
+            category = "update_state",
+            function_type = "blobs",
+            "Updating state with blobs."
+        );
         let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
         let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
@@ -223,22 +242,58 @@ impl SettlementClient for EthereumSettlementClient {
             { test_config::configure_transaction(self.provider.clone(), tx_envelope, self.impersonate_account).await };
 
         let pending_transaction = self.provider.send_transaction(txn_request).await?;
+        tracing::info!(
+            log_type = "completed",
+            category = "update_state",
+            function_type = "blobs",
+            "State updated with blobs."
+        );
         return Ok(pending_transaction.tx_hash().to_string());
     }
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus> {
+        tracing::info!(
+            log_type = "starting",
+            category = "verify_tx",
+            function_type = "inclusion",
+            tx_hash = %tx_hash,
+            "Verifying tx inclusion."
+        );
         let tx_hash = B256::from_str(tx_hash)?;
         let maybe_tx_status: Option<TransactionReceipt> = self.provider.get_transaction_receipt(tx_hash).await?;
         match maybe_tx_status {
             Some(tx_status) => {
                 if tx_status.status() {
+                    tracing::info!(
+                        log_type = "completed",
+                        category = "verify_tx",
+                        function_type = "inclusion",
+                        tx_hash = %tx_status.transaction_hash,
+                        "Tx inclusion verified."
+                    );
                     Ok(SettlementVerificationStatus::Verified)
                 } else {
+                    tracing::info!(
+                        log_type = "pending",
+                        category = "verify_tx",
+                        function_type = "inclusion",
+                        tx_hash = %tx_status.transaction_hash,
+                        "Tx inclusion pending."
+                    );
                     Ok(SettlementVerificationStatus::Pending)
                 }
             }
-            None => Ok(SettlementVerificationStatus::Rejected(format!("Could not find status of tx: {}", tx_hash))),
+            None => {
+                tracing::info!(
+                    log_type = "pending",
+                    category = "verify_tx",
+                    function_type = "inclusion",
+                    tx_hash = %tx_hash,
+                    "Tx inclusion pending."
+                );
+                Ok(SettlementVerificationStatus::Pending)
+            }
         }
     }
 

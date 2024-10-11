@@ -45,10 +45,10 @@ impl LocalStack {
     pub async fn setup_sqs(&self) -> color_eyre::Result<()> {
         let list_queues_output = self.sqs_client.list_queues().send().await?;
         let queue_urls = list_queues_output.queue_urls();
-        log::debug!("Found {} queues", queue_urls.len());
+        println!("Found {} queues", queue_urls.len());
         for queue_url in queue_urls {
             match self.sqs_client.delete_queue().queue_url(queue_url).send().await {
-                Ok(_) => log::debug!("Successfully deleted queue: {}", queue_url),
+                Ok(_) => println!("Successfully deleted queue: {}", queue_url),
                 Err(e) => eprintln!("Error deleting queue {}: {:?}", queue_url, e),
             }
         }

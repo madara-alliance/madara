@@ -50,29 +50,71 @@ pub struct FactNode {
 /// Basically it transforms the flat fact topology into a non-binary Merkle tree and then computes
 /// its root, enriching the nodes with metadata such as page sizes and hashes.
 pub fn generate_merkle_root(program_output: &[Felt252], fact_topology: &FactTopology) -> Result<FactNode, FactError> {
+    tracing::info!(
+        log_type = "FactNode",
+        category = "generate_merkle_root",
+        function_type = "generate_merkle_root",
+        "Starting generate_merkle_root function"
+    );
     let FactTopology { tree_structure, mut page_sizes } = fact_topology.clone();
 
     let mut end_offset: usize = 0;
     let mut node_stack: Vec<FactNode> = Vec::with_capacity(page_sizes.len());
     let mut output_iter = program_output.iter();
 
+    tracing::debug!(
+        log_type = "FactNode",
+        category = "generate_merkle_root",
+        function_type = "generate_merkle_root",
+        "Processing tree structure: {:?}",
+        tree_structure.len()
+    );
     for (n_pages, n_nodes) in tree_structure.into_iter().tuples() {
+        tracing::trace!(
+            log_type = "FactNode",
+            category = "generate_merkle_root",
+            function_type = "generate_merkle_root",
+            "(n_pages: {}, n_nodes: {})",
+            n_pages,
+            n_nodes
+        );
         ensure!(n_pages <= page_sizes.len(), FactError::TreeStructurePagesCountOutOfRange(n_pages, page_sizes.len()));
 
         // Push n_pages (leaves) to the stack
         for _ in 0..n_pages {
             let page_size = page_sizes.remove(0);
+            tracing::trace!(
+                log_type = "FactNode",
+                category = "generate_merkle_root",
+                function_type = "generate_merkle_root",
+                "Processing page with size: {}",
+                page_size
+            );
             // Page size is already validated upon retrieving the topology
             let page = output_iter.by_ref().take(page_size).map(|felt| felt.to_bytes_be().to_vec()).concat();
             let node_hash = keccak256(&page);
             end_offset += page_size;
             // Add lead node (no children)
-            node_stack.push(FactNode { node_hash, end_offset, page_size, children: vec![] })
+            node_stack.push(FactNode { node_hash, end_offset, page_size, children: vec![] });
+            tracing::debug!(
+                log_type = "FactNode",
+                category = "generate_merkle_root",
+                function_type = "generate_merkle_root",
+                "Added leaf node with hash: {:?}",
+                node_hash.to_string()
+            );
         }
 
         ensure!(n_nodes <= node_stack.len(), FactError::TreeStructureNodesCountOutOfRange(n_nodes, node_stack.len()));
 
         if n_nodes > 0 {
+            tracing::trace!(
+                log_type = "FactNode",
+                category = "generate_merkle_root",
+                function_type = "generate_merkle_root",
+                "Creating parent node for {} children",
+                n_nodes
+            );
             // Create a parent node to the last n_nodes in the head of the stack.
             let children: Vec<FactNode> = node_stack.drain(node_stack.len() - n_nodes..).collect();
             let mut node_data = Vec::with_capacity(2 * 32 * children.len());
@@ -87,12 +129,20 @@ pub fn generate_merkle_root(program_output: &[Felt252], fact_topology: &FactTopo
                 child_end_offset = node.end_offset;
             }
 
-            node_stack.push(FactNode {
+            let parent_node = FactNode {
                 node_hash: calculate_node_hash(node_data.as_slice()),
                 end_offset: child_end_offset,
                 page_size: total_page_size,
                 children,
-            })
+            };
+            node_stack.push(parent_node.clone());
+            tracing::debug!(
+                log_type = "FactNode",
+                category = "generate_merkle_root",
+                function_type = "generate_merkle_root",
+                "Added parent node with hash: {:?}",
+                parent_node.node_hash
+            );
         }
     }
 
@@ -107,7 +157,15 @@ pub fn generate_merkle_root(program_output: &[Felt252], fact_topology: &FactTopo
         FactError::TreeStructureRootOffsetInvalid(node_stack[0].end_offset, program_output.len(),)
     );
 
-    Ok(node_stack.remove(0))
+    let root = node_stack.remove(0);
+    tracing::info!(
+        log_type = "FactNode",
+        category = "generate_merkle_root",
+        function_type = "generate_merkle_root",
+        "Successfully generated Merkle root with hash: {:?}",
+        root.node_hash
+    );
+    Ok(root)
 }
 
 /// Calculates the keccak hash and adds 1 to it.

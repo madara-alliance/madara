@@ -14,7 +14,6 @@ use starknet::core::types::{
 };
 use starknet::providers::Provider;
 use thiserror::Error;
-use tracing::log;
 use uuid::Uuid;
 
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
@@ -65,16 +64,18 @@ pub struct DaJob;
 
 #[async_trait]
 impl Job for DaJob {
-    #[tracing::instrument(fields(category = "da"), skip(self, _config, metadata))]
+    #[tracing::instrument(fields(category = "da"), skip(self, _config, metadata), ret, err)]
     async fn create_job(
         &self,
         _config: Arc<Config>,
         internal_id: String,
         metadata: HashMap<String, String>,
     ) -> Result<JobItem, JobError> {
-        Ok(JobItem {
-            id: Uuid::new_v4(),
-            internal_id,
+        let job_id = Uuid::new_v4();
+        tracing::info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
+        let job_item = JobItem {
+            id: job_id,
+            internal_id: internal_id.clone(),
             job_type: JobType::DataSubmission,
             status: JobStatus::Created,
             external_id: String::new().into(),
@@ -82,56 +83,74 @@ impl Job for DaJob {
             version: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
-        })
+        };
+        tracing::info!(log_type = "completed", category = "da", function_type = "create_job", block_no = %internal_id, "DA job creation completed.");
+        Ok(job_item)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config))]
+    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let block_no = job
-            .internal_id
-            .parse::<u64>()
-            .wrap_err("Failed to parse u64".to_string())
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+        let internal_id = job.internal_id.clone();
+        tracing::info!(log_type = "starting", category = "da", function_type = "process_job", job_id = ?job.id,  block_no = %internal_id, "DA job processing started.");
+        let block_no = job.internal_id.parse::<u64>().wrap_err("Failed to parse u64".to_string()).map_err(|e| {
+            tracing::error!(job_id = ?job.id, error = ?e, "Failed to parse block number");
+            JobError::Other(OtherError(e))
+        })?;
 
         let state_update = config
             .starknet_client()
             .get_state_update(BlockId::Number(block_no))
             .await
             .wrap_err("Failed to get state Update.".to_string())
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+            .map_err(|e| {
+                tracing::error!(job_id = ?job.id, error = ?e, "Failed to get state update");
+                JobError::Other(OtherError(e))
+            })?;
 
         let state_update = match state_update {
             MaybePendingStateUpdate::PendingUpdate(_) => {
+                tracing::warn!(job_id = ?job.id, block_no = block_no, "Block is still pending");
                 Err(DaError::BlockPending { block_no: block_no.to_string(), job_id: job.id })?
             }
             MaybePendingStateUpdate::Update(state_update) => state_update,
         };
+        tracing::debug!(job_id = ?job.id, "Retrieved state update");
         // constructing the data from the rpc
-        let blob_data = state_update_to_blob_data(block_no, state_update, config.clone())
-            .await
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+        let blob_data = state_update_to_blob_data(block_no, state_update, config.clone()).await.map_err(|e| {
+            tracing::error!(job_id = ?job.id, error = ?e, "Failed to convert state update to blob data");
+            JobError::Other(OtherError(e))
+        })?;
         // transforming the data so that we can apply FFT on this.
         // @note: we can skip this step if in the above step we return vec<BigUint> directly
         let blob_data_biguint = convert_to_biguint(blob_data.clone());
+        tracing::trace!(job_id = ?job.id, "Converted blob data to BigUint");
 
-        // data transformation on the data
         let transformed_data = fft_transformation(blob_data_biguint);
+        // data transformation on the data
+        tracing::trace!(job_id = ?job.id, "Applied FFT transformation");
 
         store_blob_data(transformed_data.clone(), block_no, config.clone()).await?;
+        tracing::debug!(job_id = ?job.id, "Stored blob data");
 
         let max_bytes_per_blob = config.da_client().max_bytes_per_blob().await;
         let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
-
+        tracing::trace!(job_id = ?job.id, max_bytes_per_blob = max_bytes_per_blob, max_blob_per_txn = max_blob_per_txn, "Retrieved DA client configuration");
         // converting BigUints to Vec<u8>, one Vec<u8> represents one blob data
+
         let blob_array = data_to_blobs(max_bytes_per_blob, transformed_data)?;
         let current_blob_length: u64 = blob_array
             .len()
             .try_into()
             .wrap_err("Unable to convert the blob length into u64 format.".to_string())
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+            .map_err(|e| {
+                tracing::error!(job_id = ?job.id, error = ?e, "Failed to convert blob length to u64");
+                JobError::Other(OtherError(e))
+            })?;
+        tracing::debug!(job_id = ?job.id, blob_count = current_blob_length, "Converted data to blobs");
 
         // there is a limit on number of blobs per txn, checking that here
         if current_blob_length > max_blob_per_txn {
+            tracing::warn!(job_id = ?job.id, current_blob_length = current_blob_length, max_blob_per_txn = max_blob_per_txn, "Exceeded maximum number of blobs per transaction");
             Err(DaError::MaxBlobsLimitExceeded {
                 max_blob_per_txn,
                 current_blob_length,
@@ -141,23 +160,34 @@ impl Job for DaJob {
         }
 
         // making the txn to the DA layer
-        let external_id = config
-            .da_client()
-            .publish_state_diff(blob_array, &[0; 32])
-            .await
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+        let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
+            tracing::error!(job_id = ?job.id, error = ?e, "Failed to publish state diff to DA layer");
+            JobError::Other(OtherError(e))
+        })?;
 
+        tracing::info!(log_type = "completed", category = "da", function_type = "process_job", job_id = ?job.id,  block_no = %internal_id, external_id = ?external_id, "Successfully published state diff to DA layer.");
         Ok(external_id)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config))]
+    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        Ok(config
+        let internal_id = job.internal_id.clone();
+        tracing::info!(log_type = "starting", category = "da", function_type = "verify_job", job_id = ?job.id,  block_no = %internal_id, "DA job verification started.");
+        let verification_status = config
             .da_client()
-            .verify_inclusion(job.external_id.unwrap_string().map_err(|e| JobError::Other(OtherError(e)))?)
+            .verify_inclusion(job.external_id.unwrap_string().map_err(|e| {
+                tracing::error!(job_id = ?job.id, error = ?e, "Failed to unwrap external ID");
+                JobError::Other(OtherError(e))
+            })?)
             .await
-            .map_err(|e| JobError::Other(OtherError(e)))?
-            .into())
+            .map_err(|e| {
+                tracing::error!(job_id = ?job.id, error = ?e, "Job verification failed");
+                JobError::Other(OtherError(e))
+            })?
+            .into();
+
+        tracing::info!(log_type = "completed", category = "da", function_type = "verify_job", job_id = ?job.id,  block_no = %internal_id, verification_status = ?verification_status, "DA job verification completed.");
+        Ok(verification_status)
     }
 
     fn max_process_attempts(&self) -> u64 {
@@ -173,7 +203,7 @@ impl Job for DaJob {
     }
 }
 
-#[tracing::instrument(skip(elements))]
+#[tracing::instrument(skip(elements), ret)]
 pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
     let xs: Vec<BigUint> = (0..*BLOB_LEN)
         .map(|i| {
@@ -234,7 +264,7 @@ fn data_to_blobs(blob_size: u64, block_data: Vec<BigUint>) -> Result<Vec<Vec<u8>
         let mut blob = chunk.to_vec();
         if blob.len() < chunk_size {
             blob.resize(chunk_size, 0);
-            log::debug!("Warning: Last chunk of {} bytes was padded to full blob size", chunk.len());
+            tracing::debug!("Warning: Last chunk of {} bytes was padded to full blob size", chunk.len());
         }
         blobs.push(blob);
     }

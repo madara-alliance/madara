@@ -25,7 +25,7 @@ use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient};
 #[fixture]
 pub async fn spin_up_madara() -> MadaraCmd {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
-    log::trace!("Spinning up Madara");
+    tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
         .args([
             "--no-sync-polling",
@@ -122,7 +122,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
 
     let DeclareTransactionResult { transaction_hash: declare_tx_hash, class_hash: _ } =
         account.declare_v2(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
-    log::debug!("declare tx hash {:?}", declare_tx_hash);
+    tracing::debug!("declare tx hash {:?}", declare_tx_hash);
 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Declare trasactiion failed");
@@ -148,7 +148,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
         .await
         .expect("Sending Update state");
 
-    log::debug!("update state tx hash {:?}", update_state_tx_hash);
+    tracing::debug!("update state tx hash {:?}", update_state_tx_hash);
 
     let is_success = wait_for_tx(
         &account,
@@ -179,8 +179,8 @@ async fn test_get_nonce_works(#[future] setup: (LocalWalletSignerMiddleware, Mad
     let (account, _madara_process) = setup.await;
     let nonce = account.get_nonce().await;
     match &nonce {
-        Ok(n) => log::info!("Nonce value from get_nonce: {:?}", n),
-        Err(e) => log::error!("Error getting nonce: {:?}", e),
+        Ok(n) => tracing::debug!("Nonce value from get_nonce: {:?}", n),
+        Err(e) => tracing::error!("Error getting nonce: {:?}", e),
     }
     assert!(nonce.is_ok(), "Failed to get nonce");
 }

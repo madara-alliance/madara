@@ -4,7 +4,9 @@ use std::time::Duration;
 use lazy_static::lazy_static;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{ExportConfig, WithExportConfig};
+use opentelemetry_sdk::logs::LoggerProvider;
 use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemporalitySelector};
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
@@ -32,7 +34,16 @@ pub fn setup_analytics() -> Option<SdkMeterProvider> {
     if let Some(otel_endpoint) = otel_endpoint {
         let meter_provider = init_metric_provider(&otel_endpoint);
         let tracer = init_tracer_provider(&otel_endpoint);
-        tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).init();
+
+        // Opentelemetry will not provide a global API to manage the logger
+        // provider. Application users must manage the lifecycle of the logger
+        // provider on their own. Dropping logger providers will disable log
+        // emitting.
+        let logger_provider = init_logs(&otel_endpoint).unwrap();
+        // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
+        let layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+        tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
         Some(meter_provider)
     } else {
         tracing_subscriber.init();
@@ -101,6 +112,17 @@ pub fn init_metric_provider(otel_endpoint: &str) -> SdkMeterProvider {
         .build();
     global::set_meter_provider(provider.clone());
     provider
+}
+
+fn init_logs(otel_endpoint: &str) -> Result<LoggerProvider, opentelemetry::logs::LogError> {
+    opentelemetry_otlp::new_pipeline()
+        .logging()
+        .with_resource(Resource::new(vec![KeyValue::new(
+            opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+            format!("{}{}", *OTEL_SERVICE_NAME, "_logs_service"),
+        )]))
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_endpoint.to_string()))
+        .install_batch(runtime::Tokio)
 }
 
 #[cfg(test)]

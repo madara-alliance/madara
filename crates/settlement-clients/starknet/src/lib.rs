@@ -116,32 +116,74 @@ impl SettlementClient for StarknetSettlementClient {
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
     ) -> Result<String> {
+        tracing::info!(
+            log_type = "starting",
+            category = "update_state",
+            function_type = "calldata",
+            "Updating state with calldata."
+        );
         let program_output = slice_slice_u8_to_vec_field(program_output.as_slice());
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
         let onchain_data_size = crypto_bigint::U256::from_be_bytes(onchain_data_size).into();
         let invoke_result = core_contract.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
-
+        tracing::info!(
+            log_type = "completed",
+            category = "update_state",
+            function_type = "calldata",
+            "State updated with calldata."
+        );
         Ok(invoke_result.transaction_hash.to_hex_string())
     }
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus> {
+        tracing::info!(
+            log_type = "starting",
+            category = "verify_tx",
+            function_type = "inclusion",
+            tx_hash = %tx_hash,
+            "Verifying tx inclusion."
+        );
         let tx_hash = Felt::from_hex(tx_hash)?;
         let tx_receipt = self.account.provider().get_transaction_receipt(tx_hash).await?;
         let execution_result = tx_receipt.receipt.execution_result();
         let status = execution_result.status();
 
         match status {
-            TransactionExecutionStatus::Reverted => Ok(SettlementVerificationStatus::Rejected(format!(
-                "Transaction {} has been reverted: {}",
-                tx_hash,
-                execution_result.revert_reason().unwrap()
-            ))),
+            TransactionExecutionStatus::Reverted => {
+                tracing::info!(
+                    log_type = "completed",
+                    category = "verify_tx",
+                    tx_hash = %tx_hash,
+                    function_type = "inclusion",
+                    revert_reason = %execution_result.revert_reason().unwrap(),
+                    "Tx inclusion verified."
+                );
+                Ok(SettlementVerificationStatus::Rejected(format!(
+                    "Transaction {} has been reverted: {}",
+                    tx_hash,
+                    execution_result.revert_reason().unwrap()
+                )))
+            }
             TransactionExecutionStatus::Succeeded => {
                 if tx_receipt.block.is_pending() {
+                    tracing::info!(
+                        log_type = "pending",
+                        category = "verify_tx",
+                        function_type = "inclusion",
+                        tx_hash = %tx_hash,
+                        "Tx inclusion pending."
+                    );
                     Ok(SettlementVerificationStatus::Pending)
                 } else {
+                    tracing::info!(
+                        log_type = "completed",
+                        category = "verify_tx",
+                        function_type = "inclusion",
+                        tx_hash = %tx_hash,
+                        "Tx inclusion verified."
+                    );
                     Ok(SettlementVerificationStatus::Verified)
                 }
             }

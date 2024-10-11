@@ -27,19 +27,86 @@ pub struct FactInfo {
 }
 
 pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result<FactInfo, FactError> {
-    let program_output = get_program_output(cairo_pie)?;
+    tracing::debug!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Starting get_fact_info function"
+    );
 
+    tracing::debug!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Getting program output"
+    );
+    let program_output = get_program_output(cairo_pie)?;
+    tracing::debug!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Program output length: {}",
+        program_output.len()
+    );
+
+    tracing::debug!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Getting fact topology"
+    );
     let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
+
     let program_hash = match program_hash {
-        Some(hash) => hash,
-        None => Felt::from_bytes_be(
-            &compute_program_hash_chain(&cairo_pie.metadata.program, BOOTLOADER_VERSION)
-                .map_err(|e| FactError::ProgramHashCompute(e.to_string()))?
-                .to_bytes_be(),
-        ),
+        Some(hash) => {
+            tracing::debug!(
+                log_type = "FactInfo",
+                category = "fact_info",
+                function_type = "get_fact_info",
+                "Using provided program hash"
+            );
+            hash
+        }
+        None => {
+            tracing::debug!(
+                log_type = "FactInfo",
+                category = "fact_info",
+                function_type = "get_fact_info",
+                "Computing program hash"
+            );
+            Felt::from_bytes_be(
+                &compute_program_hash_chain(&cairo_pie.metadata.program, BOOTLOADER_VERSION)
+                    .map_err(|e| {
+                        tracing::error!(
+                            log_type = "FactInfo",
+                            category = "fact_info",
+                            function_type = "get_fact_info",
+                            "Failed to compute program hash: {}",
+                            e
+                        );
+                        FactError::ProgramHashCompute(e.to_string())
+                    })?
+                    .to_bytes_be(),
+            )
+        }
     };
+    tracing::trace!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Program hash: {:?} and now generating merkle root",
+        program_hash
+    );
     let output_root = generate_merkle_root(&program_output, &fact_topology)?;
     let fact = keccak256([program_hash.to_bytes_be(), *output_root.node_hash].concat());
+    tracing::debug!(
+        log_type = "FactInfo",
+        category = "fact_info",
+        function_type = "get_fact_info",
+        "Fact computed successfully: {:?}",
+        fact
+    );
+
     Ok(FactInfo { program_output, fact_topology, fact })
 }
 

@@ -32,7 +32,7 @@ fn test_u64_from_from_felt_panic() {
     let number = Felt::MAX;
     let number = u64_from_felt(number);
     match number {
-        Ok(n) => log::info!("Nonce value from get_nonce: {:?}", n),
-        Err(e) => log::error!("Error getting nonce: {:?}", e),
+        Ok(n) => tracing::debug!("Nonce value from get_nonce: {:?}", n),
+        Err(e) => tracing::error!("Error getting nonce: {:?}", e),
     }
 }
