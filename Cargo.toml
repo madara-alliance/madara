@@ -53,7 +53,7 @@ default-members = [
 
 [profile.dev]
 incremental = true
-# panic = "abort"
+panic = "abort"
 
 [profile.release]
 panic = "unwind"
