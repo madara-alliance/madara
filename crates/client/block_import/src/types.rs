@@ -189,7 +189,6 @@ pub struct PreValidatedBlock {
     pub receipts: Vec<TransactionReceipt>,
     pub commitments: ValidatedCommitments,
     pub converted_classes: Vec<ConvertedClass>,
-
     pub unverified_global_state_root: Option<Felt>,
     pub unverified_block_hash: Option<Felt>,
     pub unverified_block_number: Option<u64>,
