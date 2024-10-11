@@ -321,7 +321,7 @@ Toggle details for each namespace to view additional settings:
 <details>
 <summary><strong>Metrics</strong></summary>
 
-- **`--telemetry-disabled`**: Disable connection to the Madara telemetry server.
+- **`--telemetry`**: Enable connection to the Madara telemetry server.
 
 - **`--telemetry-url <URL VERBOSITY>`**: The URL of the telemetry server with verbosity level.
 
