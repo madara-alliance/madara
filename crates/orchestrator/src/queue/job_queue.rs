@@ -120,7 +120,8 @@ pub async fn consume_job_from_queue<F, Fut>(
 ) -> Result<(), ConsumptionError>
 where
     F: FnOnce(Uuid, Arc<Config>) -> Fut,
-    Fut: Future<Output = Result<(), JobError>>,
+    F: Send + 'static,
+    Fut: Future<Output = Result<(), JobError>> + Send,
 {
     log::debug!("Consuming from queue {:?}", queue);
 
@@ -134,7 +135,12 @@ where
     let job_message = parse_job_message(&message)?;
 
     if let Some(job_message) = job_message {
-        handle_job_message(job_message, message, handler, config).await?;
+        tokio::spawn(async move {
+            match handle_job_message(job_message, message, handler, config).await {
+                Ok(_) => {}
+                Err(e) => log::error!("Failed to handle job message. Error: {:?}", e),
+            }
+        });
     }
 
     Ok(())
