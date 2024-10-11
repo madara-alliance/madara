@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
