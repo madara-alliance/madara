@@ -31,7 +31,7 @@ lazy_static::lazy_static! {
     pub static ref PRIVATE_KEY: SigningKey = SigningKey::from_secret_scalar(felt!("0x7a9779748888c95d96bbbce041b5109c6ffc0c4f30561c0170384a5922d9e91"));
 
     pub static ref PRAGMA_FEEDS_REGISTRY_ADDRESS: Felt = felt!("0x13c3404ff9802442d0bf389afcf2fab9201b47c2268fcaa4bd36ba1978af76");
-    pub static ref PRAGMA_DISPATCHER_ADDRESS: Felt = felt!("0x38d9b85bf3623681aaa37b1c591b07237dee8b17a11eaac53ddc07a306fefe2");
+    pub static ref PRAGMA_DISPATCHER_ADDRESS: Felt = felt!("0x4d997c57f63d509f483927ce74135a4e12de834144d9e90044ac03f6024267e");
 
     pub static ref MAX_FEE: Felt = felt!("2386F26FC10000"); // 0.01 eth
 
