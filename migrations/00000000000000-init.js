@@ -5,7 +5,7 @@ module.exports = {
       .collection("jobs")
       .createIndexes([
         { key: { id: 1 } },
-        { key: { job_type: 1, internal_id: -1 } },
+        { key: { job_type: 1, internal_id: -1 }, unique: true },
         { key: { job_type: 1, status: 1, internal_id: -1 } },
         { key: { status: 1 } },
       ]);

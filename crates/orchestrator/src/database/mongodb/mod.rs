@@ -1,3 +1,4 @@
+use ::utils::settings::Settings;
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -7,14 +8,16 @@ use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion, UpdateOptions};
 use mongodb::{bson, Client, Collection};
-use utils::settings::Settings;
+use utils::ToDocument;
 use uuid::Uuid;
 
 use crate::database::mongodb::config::MongoDbConfig;
 use crate::database::{Database, DatabaseConfig};
 use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
+use crate::jobs::JobError;
 
 pub mod config;
+mod utils;
 
 pub struct MongoDb {
     client: Client,
@@ -39,40 +42,6 @@ impl MongoDb {
         Self { client, database_name: mongo_db_settings.database_name }
     }
 
-    pub fn to_document(&self, current_job: &JobItem, updates: &JobItemUpdates) -> Result<Document> {
-        let mut doc = Document::new();
-
-        // Serialize the struct to BSON
-        let bson = bson::to_bson(updates)?;
-
-        match bson {
-            // If serialization was successful and it's a document
-            Bson::Document(bson_doc) => {
-                let mut is_update_available: bool = false;
-                // Add non-null fields to our document
-                for (key, value) in bson_doc.iter() {
-                    if !matches!(value, Bson::Null) {
-                        is_update_available = true;
-                        doc.insert(key, value.clone());
-                    }
-                }
-
-                // checks if is_update_available is still false.
-                // if it is still false that means there's no field to be updated
-                // and the call is likely a false call, so raise an error.
-                if !is_update_available {
-                    return Err(eyre!("No field to be updated, likely a false call"));
-                }
-
-                // Add additional fields that are always updated
-                doc.insert("version", Bson::Int32(current_job.version + 1));
-                doc.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
-            }
-            _ => return Err(eyre!("Bson object is not a document.")),
-        }
-        Ok(doc)
-    }
-
     /// Mongodb client uses Arc internally, reducing the cost of clone.
     /// Directly using clone is not recommended for libraries not using Arc internally.
     pub fn client(&self) -> Client {
@@ -87,10 +56,37 @@ impl MongoDb {
 #[async_trait]
 impl Database for MongoDb {
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    async fn create_job(&self, job: JobItem) -> Result<JobItem> {
-        self.get_job_collection().insert_one(&job, None).await?;
-        tracing::debug!(job_id = %job.id, category = "db_call", "Job created successfully");
-        Ok(job)
+    async fn create_job(&self, job: JobItem) -> Result<JobItem, JobError> {
+        let options = UpdateOptions::builder().upsert(true).build();
+
+        let updates = job.to_document().map_err(|e| JobError::Other(e.into()))?;
+        let job_type =
+            updates.get("job_type").ok_or(eyre!("Job type not found")).map_err(|e| JobError::Other(e.into()))?;
+        let internal_id =
+            updates.get("internal_id").ok_or(eyre!("Internal ID not found")).map_err(|e| JobError::Other(e.into()))?;
+
+        // Filter using only two fields
+        let filter = doc! {
+            "job_type": job_type.clone(),
+            "internal_id": internal_id.clone()
+        };
+
+        let updates = doc! {
+            // only set when the document is inserted for the first time
+            "$setOnInsert": updates
+        };
+
+        let result = self
+            .get_job_collection()
+            .update_one(filter, updates, options)
+            .await
+            .map_err(|e| JobError::Other(e.to_string().into()))?;
+
+        if result.matched_count == 0 {
+            Ok(job)
+        } else {
+            Err(JobError::JobAlreadyExists { internal_id: job.internal_id, job_type: job.job_type })
+        }
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
@@ -121,10 +117,27 @@ impl Database for MongoDb {
         };
         let options = UpdateOptions::builder().upsert(false).build();
 
-        let values = self.to_document(current_job, &updates)?;
+        let mut updates = updates.to_document()?;
+
+        // remove null values from the updates
+        let mut non_null_updates = Document::new();
+        updates.iter_mut().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+
+        // throw an error if there's no field to be updated
+        if non_null_updates.is_empty() {
+            return Err(eyre!("No field to be updated, likely a false call"));
+        }
+
+        // Add additional fields that are always updated
+        non_null_updates.insert("version", Bson::Int32(current_job.version + 1));
+        non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
-            "$set": values
+            "$set": non_null_updates
         };
 
         let result = self.get_job_collection().update_one(filter, update, options).await?;

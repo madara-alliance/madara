@@ -159,13 +159,14 @@ pub async fn create_job(
         .await
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
+    // this is technicaly a redundant check, we've another check inside `create_job`
     if existing_job.is_some() {
         return Err(JobError::JobAlreadyExists { internal_id, job_type });
     }
 
     let job_handler = factory::get_job_handler(&job_type).await;
     let job_item = job_handler.create_job(config.clone(), internal_id.clone(), metadata).await?;
-    config.database().create_job(job_item.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    config.database().create_job(job_item.clone()).await?;
 
     add_job_to_process_queue(job_item.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
 

@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- made create_job atomic to avoid race conditions
 - handle jobs in tokio tasks
 - handle workers in tokio tasks
 - cleaned .env.example and .env.test files
