@@ -498,10 +498,11 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::GasPriceProvider;
+    use crate::{GasPriceProvider, Mempool};
     use mc_block_import::BlockImporter;
     use mc_db::MadaraBackend;
 
+    use mc_metrics::MetricsRegistry;
     use mp_chain_config::ChainConfig;
 
     #[derive(Clone)]
@@ -516,12 +517,13 @@ mod tests {
     impl TestEnvironment {
         #[allow(unused)]
         fn new() -> Self {
-            let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+            let chain_config = Arc::new(ChainConfig::madara_test());
             let backend = MadaraBackend::open_for_testing(chain_config.clone());
             let l1_gas_setter = GasPriceProvider::new();
             let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
             let mempool = Arc::new(Mempool::new(backend.clone(), l1_data_provider.clone()));
-            let importer = Arc::new(BlockImporter::new(backend.clone()));
+            let importer =
+                Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
             Self { backend, l1_data_provider, mempool, importer }
         }
     }
@@ -553,7 +555,7 @@ mod tests {
         assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
 
         block_production_task.on_block_time().await.expect("Failed to close empty block");
-        let block = test_env.backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+        let block = test_env.backend.get_block(&DbBlockId::Number(0)).expect("get_block failed");
         assert!(block.is_some());
         assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
         assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
@@ -658,7 +660,7 @@ mod tests {
 
         // For example, you might want to check if transactions are being included in blocks:
         for block_number in 0..=block_number {
-            let block = backend.get_block(&DbBlockId::BlockN(block_number)).expect("Failed to get block");
+            let block = backend.get_block(&DbBlockId::Number(block_number)).expect("Failed to get block");
             if let Some(block) = block {
                 println!("Block {} has {} transactions", block_number, block.info.tx_hashes().len());
                 // Add more specific checks here if needed

@@ -5613,6 +5613,7 @@ dependencies = [
  "mc-block-import",
  "mc-db",
  "mc-exec",
+ "mc-metrics",
  "mockall",
  "mp-block",
  "mp-chain-config",

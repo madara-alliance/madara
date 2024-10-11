@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use mc_metrics::MetricsRegistry;
 use mp_receipt::{ExecutionResources, FeePayment, TransactionReceipt};
 use mp_transactions::Transaction;
 use std::sync::Arc;
@@ -18,12 +19,13 @@ use starknet_core::types::Felt;
 
 #[tokio::test]
 async fn import_one_empty_block_full() {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let block_importer = BlockImporter::new(backend.clone());
+    let block_importer = Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
 
     let block = UnverifiedFullBlock {
         unverified_block_number: None,
+        trusted_converted_classes: vec![],
         header: UnverifiedHeader {
             parent_block_hash: None,
             sequencer_address: Felt::ONE,
@@ -62,11 +64,11 @@ async fn import_one_empty_block_full() {
         transaction_commitment: Felt::ZERO,
         event_count: 0,
         event_commitment: Felt::ZERO,
-        state_diff_length: 0,
-        state_diff_commitment: Felt::from_hex_unchecked(
+        state_diff_length: Some(0),
+        state_diff_commitment: Some(Felt::from_hex_unchecked(
             "0x49973925542c74a9d9ff0efaa98c61e1225d0aedb708092433cbbb20836d30a",
-        ),
-        receipt_commitment: Felt::ZERO,
+        )),
+        receipt_commitment: Some(Felt::ZERO),
         protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
@@ -79,7 +81,7 @@ async fn import_one_empty_block_full() {
     };
 
     // Check backend update
-    let block = backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+    let block = backend.get_block(&DbBlockId::Number(0)).expect("get_block failed");
     assert!(block.is_some());
     assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
     assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 0);
@@ -90,9 +92,9 @@ async fn import_one_empty_block_full() {
 
 #[tokio::test]
 async fn import_one_empty_block_pending() {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let block_importer = BlockImporter::new(backend.clone());
+    let block_importer = Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
 
     let block = UnverifiedPendingFullBlock {
         header: UnverifiedHeader {
@@ -149,9 +151,9 @@ async fn import_one_empty_block_pending() {
 
 #[tokio::test]
 async fn import_block_with_txs() {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let block_importer = BlockImporter::new(backend.clone());
+    let block_importer = Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
 
     let block = get_unverified_full_block();
 
@@ -180,13 +182,13 @@ async fn import_block_with_txs() {
         ),
         event_count: 0,
         event_commitment: Felt::ZERO,
-        state_diff_length: 0,
-        state_diff_commitment: Felt::from_hex_unchecked(
+        state_diff_length: Some(0),
+        state_diff_commitment: Some(Felt::from_hex_unchecked(
             "0x49973925542c74a9d9ff0efaa98c61e1225d0aedb708092433cbbb20836d30a",
-        ),
-        receipt_commitment: Felt::from_hex_unchecked(
+        )),
+        receipt_commitment: Some(Felt::from_hex_unchecked(
             "0x2879fdc4d9521339b5015d67494aa183352f76d4a441f64bbde534f14c8be3a",
-        ),
+        )),
         protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
@@ -199,7 +201,7 @@ async fn import_block_with_txs() {
     };
 
     // Check backend update
-    let block = backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+    let block = backend.get_block(&DbBlockId::Number(0)).expect("get_block failed");
     assert!(block.is_some());
     assert_matches!(block.clone().unwrap().info, MadaraMaybePendingBlockInfo::NotPending(_));
     assert_eq!(block.clone().unwrap().info.tx_hashes().len(), 1);
@@ -210,9 +212,9 @@ async fn import_block_with_txs() {
 
 #[tokio::test]
 async fn import_multiple_blocks_with_txs() {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let block_importer = BlockImporter::new(backend.clone());
+    let block_importer = Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
 
     let block = get_unverified_full_block();
 
@@ -250,13 +252,13 @@ async fn import_multiple_blocks_with_txs() {
         ),
         event_count: 0,
         event_commitment: Felt::ZERO,
-        state_diff_length: 0,
-        state_diff_commitment: Felt::from_hex_unchecked(
+        state_diff_length: Some(0),
+        state_diff_commitment: Some(Felt::from_hex_unchecked(
             "0x49973925542c74a9d9ff0efaa98c61e1225d0aedb708092433cbbb20836d30a",
-        ),
-        receipt_commitment: Felt::from_hex_unchecked(
+        )),
+        receipt_commitment: Some(Felt::from_hex_unchecked(
             "0x2879fdc4d9521339b5015d67494aa183352f76d4a441f64bbde534f14c8be3a",
-        ),
+        )),
         protocol_version: StarknetVersion::LATEST,
         l1_gas_price: GasPrices::default(),
         l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
@@ -270,12 +272,13 @@ async fn import_multiple_blocks_with_txs() {
 
     assert_eq!(block_import_result, expected_block_import_result);
 
-    let block = backend.get_block(&DbBlockId::BlockN(0)).expect("get_block failed");
+    let block = backend.get_block(&DbBlockId::Number(0)).expect("get_block failed");
     assert!(block.is_some());
 }
 
 fn get_unverified_full_block() -> UnverifiedFullBlock {
     UnverifiedFullBlock {
+        trusted_converted_classes: vec![],
         unverified_block_number: None,
         header: UnverifiedHeader {
             parent_block_hash: None,
