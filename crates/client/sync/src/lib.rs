@@ -16,6 +16,7 @@ pub mod tests;
 pub mod utils;
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(backend, block_importer, fetch_config, telemetry))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
     block_importer: Arc<BlockImporter>,

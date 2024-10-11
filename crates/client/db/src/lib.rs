@@ -461,6 +461,7 @@ impl MadaraBackend {
         Ok(will_flush)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn backup(&self) -> Result<()> {
         let (callback_sender, callback_recv) = oneshot::channel();
         let _res = self

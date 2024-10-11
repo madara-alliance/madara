@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod block_production;
 pub mod chain_config_overrides;
 pub mod db;
@@ -7,8 +8,8 @@ pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-
 use crate::cli::l1::L1SyncParams;
+use analytics::AnalyticsParams;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
@@ -64,6 +65,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub l1_sync_params: L1SyncParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub analytics_params: AnalyticsParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

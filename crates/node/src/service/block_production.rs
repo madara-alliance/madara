@@ -27,6 +27,10 @@ pub struct BlockProductionService {
 }
 impl BlockProductionService {
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(
+        name = "BlockProductionService::new",
+        skip(config, db_service, mempool, block_import, l1_data_provider, is_devnet, _metrics_handle, _telemetry)
+    )]
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
@@ -58,6 +62,7 @@ impl BlockProductionService {
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
+    #[tracing::instrument(service_name = "BlockProductionService", skip(self, join_set))]
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());

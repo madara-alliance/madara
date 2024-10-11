@@ -84,10 +84,12 @@ impl Drop for StopHandle {
 pub struct PerfStopwatch(pub Instant);
 
 impl PerfStopwatch {
+    #[tracing::instrument(name = "PerfStopwatch::new")]
     pub fn new() -> PerfStopwatch {
         PerfStopwatch(Instant::now())
     }
 
+    #[tracing::instrument(name = "PerfStopwatch::elapsed", skip(self))]
     pub fn elapsed(&self) -> Duration {
         self.0.elapsed()
     }

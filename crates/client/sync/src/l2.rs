@@ -45,6 +45,7 @@ pub struct L2StateUpdate {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(backend, updates_receiver, block_import, validation))]
 async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
     mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
@@ -189,6 +190,7 @@ pub struct L2SyncConfig {
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(backend, provider, config, chain_id, telemetry, block_importer))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
     provider: FeederClient,

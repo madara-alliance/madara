@@ -11,6 +11,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
+use mc_analytics::AnalyticsService;
 use mc_block_import::BlockImporter;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
@@ -27,7 +28,7 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_logging()?;
+    // crate::util::setup_logging()?;
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
@@ -58,7 +59,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    let telemetry_service =
+    let analytics_service = AnalyticsService::new(
+        run_cmd.analytics_params.analytics_service_name.clone(),
+        run_cmd.analytics_params.analytics_log_level.clone(),
+        run_cmd.analytics_params.analytics_collection_endpoint.clone(),
+    )
+    .context("Initializing analytics service")?;
+
+    let telemetry_service: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
     let prometheus_service = MetricsService::new(
@@ -184,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
     let app = ServiceGroup::default()
+        .with(analytics_service)
         .with(db_service)
         .with(l1_service)
         .with(block_provider_service)

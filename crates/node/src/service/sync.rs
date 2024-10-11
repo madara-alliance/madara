@@ -50,6 +50,7 @@ impl SyncService {
 
 #[async_trait::async_trait]
 impl Service for SyncService {
+    #[tracing::instrument(skip(self, join_set))]
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
