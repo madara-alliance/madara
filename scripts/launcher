@@ -107,7 +107,6 @@ welcome_message() {
 
 # Function to play with an existing node running
 node_menu() {
-    # Present the menu options
     echo -e "\n${YELLOW}${BOLD}Your client is running correctly, what would you like to do next:${NC}"
     echo -e "${YELLOW}1. Re-install the current Madara client${NC}"
     echo -e "${YELLOW}2. Interact with your Madara client${NC}"
@@ -123,7 +122,6 @@ node_menu() {
         echo -e "\n${YELLOW}Re-installing the node will delete all data and re-install the node. Do you wish to proceed? (yes/no)${NC}"
         read -p "> " CONFIRM
         if [ "$CONFIRM" == "yes" ]; then
-            # Stop and remove the container
             echo -e "${YELLOW}Stopping the current container...${NC}"
             docker stop madara-client
             echo -e "${YELLOW}Removing the current container...${NC}"
@@ -131,12 +129,11 @@ node_menu() {
             echo -e "${YELLOW}Removing current cache...${NC}"
             rm -rf "${BASE_PATH}"
             echo -e "${YELLOW}Re-starting the client launcher...${NC}"
-            exec "$0"
+            curl -sL https://raw.githubusercontent.com/madara-alliance/madara/refs/heads/main/scripts/launcher -o launcher && chmod +x launcher && ./launcher
         else
             echo -e "\n${GREEN}Operation cancelled.${NC}"
         fi
     elif [ "$USER_CHOICE" == "2" ]; then
-        # Try RPC request
         if [ "$RPC_ACCESS" != "yes" ]; then
             echo -e "\n${RED}RPC access is not enabled. Please re-install your client with RPC access enabled.${NC}"
         else
@@ -159,7 +156,6 @@ node_menu() {
             echo -e "\n${YELLOW}Do you want to proceed? (yes/no)${NC}"
             read -p "> " CONFIRM
             if [ "$CONFIRM" == "yes" ]; then
-                # Execute the curl command
                 curl --location "http://localhost:${RPC_PORT}" \
                 --header 'Content-Type: application/json' \
                 --data '{
@@ -181,7 +177,6 @@ node_menu() {
     elif [ "$USER_CHOICE" == "4" ]; then
         # Node informations
         echo -e "\n${GREEN}Fetching node information...${NC}"
-        # Add your code here to display node information
     else
         echo -e "${RED}Invalid choice. Exiting...${NC}"
     fi
