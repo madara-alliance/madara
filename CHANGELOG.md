@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add integration tests for block production
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
