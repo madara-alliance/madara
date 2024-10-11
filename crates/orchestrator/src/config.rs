@@ -90,7 +90,7 @@ pub async fn get_aws_config(settings_provider: &impl Settings) -> SdkConfig {
 }
 
 /// Initializes the app config
-pub async fn init_config() -> Arc<Config> {
+pub async fn init_config() -> color_eyre::Result<Arc<Config>> {
     dotenv().ok();
 
     let settings_provider = EnvSettingsProvider {};
@@ -104,7 +104,7 @@ pub async fn init_config() -> Arc<Config> {
     // init database
     let database = build_database_client(&settings_provider).await;
     let da_client = build_da_client(&settings_provider).await;
-    let settlement_client = build_settlement_client(&settings_provider).await;
+    let settlement_client = build_settlement_client(&settings_provider).await?;
     let prover_client = build_prover_service(&settings_provider);
     let storage_client = build_storage_client(&settings_provider, provider_config.clone()).await;
     let alerts_client = build_alert_client(&settings_provider, provider_config.clone()).await;
@@ -115,7 +115,7 @@ pub async fn init_config() -> Arc<Config> {
     // us stop using the generic omniqueue abstractions for message ack/nack
     let queue = build_queue_client();
 
-    Arc::new(Config::new(
+    Ok(Arc::new(Config::new(
         rpc_url,
         snos_url,
         Arc::new(provider),
@@ -126,7 +126,7 @@ pub async fn init_config() -> Arc<Config> {
         queue,
         storage_client,
         alerts_client,
-    ))
+    )))
 }
 
 impl Config {
@@ -230,24 +230,26 @@ pub fn build_prover_service(settings_provider: &impl Settings) -> Box<dyn Prover
 }
 
 /// Builds the settlement client depending on the env variable SETTLEMENT_LAYER
-pub async fn build_settlement_client(settings_provider: &impl Settings) -> Box<dyn SettlementClient + Send + Sync> {
+pub async fn build_settlement_client(
+    settings_provider: &impl Settings,
+) -> color_eyre::Result<Box<dyn SettlementClient + Send + Sync>> {
     match get_env_var_or_panic("SETTLEMENT_LAYER").as_str() {
         "ethereum" => {
             #[cfg(not(feature = "testing"))]
             {
-                Box::new(EthereumSettlementClient::new_with_settings(settings_provider))
+                Ok(Box::new(EthereumSettlementClient::new_with_settings(settings_provider)))
             }
             #[cfg(feature = "testing")]
             {
-                Box::new(EthereumSettlementClient::with_test_settings(
-                    RootProvider::new_http(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str().parse().unwrap()),
-                    Address::from_str(&get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS")).unwrap(),
-                    Url::from_str(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str()).unwrap(),
-                    Some(Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str()).unwrap()),
-                ))
+                Ok(Box::new(EthereumSettlementClient::with_test_settings(
+                    RootProvider::new_http(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str().parse()?),
+                    Address::from_str(&get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS"))?,
+                    Url::from_str(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str())?,
+                    Some(Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str())?),
+                )))
             }
         }
-        "starknet" => Box::new(StarknetSettlementClient::new_with_settings(settings_provider).await),
+        "starknet" => Ok(Box::new(StarknetSettlementClient::new_with_settings(settings_provider).await)),
         _ => panic!("Unsupported Settlement layer"),
     }
 }

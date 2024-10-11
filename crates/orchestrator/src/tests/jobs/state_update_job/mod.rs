@@ -30,7 +30,7 @@ use crate::tests::common::default_job_item;
 use crate::tests::config::TestConfigBuilder;
 
 lazy_static! {
-    pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().unwrap();
+    pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().expect("Failed to get Current Path");
 }
 
 pub const X_0_FILE_NAME: &str = "x_0.txt";

@@ -104,7 +104,7 @@ pub fn get_page_sizes(pages: &HashMap<usize, PublicMemoryPage>, output_size: usi
             tracing::trace!("FactTopology Processing non-first page");
             ensure!(
                 Some(page_start) == expected_page_start,
-                FactError::OutputPagesUnexpectedStart(page_id, page_start, expected_page_start.unwrap_or_default(),)
+                FactError::OutputPagesUnexpectedStart(page_id, page_start, expected_page_start.unwrap_or_default(),) /* The unwrap here is fine as the assert is exactly for this reason */
             );
         }
 
@@ -123,7 +123,7 @@ pub fn get_page_sizes(pages: &HashMap<usize, PublicMemoryPage>, output_size: usi
 
     ensure!(
         pages.is_empty() || expected_page_start == Some(output_size),
-        FactError::OutputPagesUncoveredOutput(expected_page_start.unwrap_or_default(), output_size)
+        FactError::OutputPagesUncoveredOutput(expected_page_start.unwrap_or_default(), output_size) /* The unwrap here is fine as the assert is exactly for this reason */
     );
 
     tracing::debug!(

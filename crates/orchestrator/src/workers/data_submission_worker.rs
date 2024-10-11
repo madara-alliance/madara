@@ -24,8 +24,7 @@ impl Worker for DataSubmissionWorker {
         let latest_proven_job_id = config
             .database()
             .get_latest_job_by_type_and_status(JobType::ProofCreation, JobStatus::Completed)
-            .await
-            .unwrap()
+            .await?
             .map(|item| item.internal_id)
             .unwrap_or("0".to_string());
 
@@ -35,8 +34,7 @@ impl Worker for DataSubmissionWorker {
         let latest_data_submission_job_id = config
             .database()
             .get_latest_job_by_type(JobType::DataSubmission)
-            .await
-            .unwrap()
+            .await?
             .map(|item| item.internal_id)
             .unwrap_or("0".to_string());
 

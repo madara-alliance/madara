@@ -58,6 +58,14 @@ sol! {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum StarknetValidityContractError {
+    #[error("RPC error: {0}")]
+    RpcError(#[from] RpcError<TransportErrorKind>),
+    #[error("Failed to estimate gas: {0}")]
+    EstimateGasError(#[from] alloy::contract::Error),
+}
+
 #[async_trait]
 pub trait StarknetValidityContractTrait {
     /// Retrieves the last block number settled
@@ -69,13 +77,13 @@ pub trait StarknetValidityContractTrait {
         program_output: Vec<U256>,
         onchain_data_hash: U256,
         onchain_data_size: U256,
-    ) -> Result<TransactionReceipt, RpcError<TransportErrorKind>>;
+    ) -> Result<TransactionReceipt, StarknetValidityContractError>;
 
     async fn update_state_kzg(
         &self,
         program_output: Vec<U256>,
         kzg_proof: [u8; 48],
-    ) -> Result<TransactionReceipt, RpcError<TransportErrorKind>>;
+    ) -> Result<TransactionReceipt, StarknetValidityContractError>;
 }
 
 #[async_trait]
@@ -99,25 +107,33 @@ where
         program_output: Vec<U256>,
         onchain_data_hash: U256,
         onchain_data_size: U256,
-    ) -> Result<TransactionReceipt, RpcError<TransportErrorKind>> {
-        let base_fee = self.as_ref().provider().as_ref().get_gas_price().await.unwrap();
-        let from_address = self.as_ref().provider().as_ref().get_accounts().await.unwrap()[0];
+    ) -> Result<TransactionReceipt, StarknetValidityContractError> {
+        let base_fee = self.as_ref().provider().as_ref().get_gas_price().await?;
+        let from_address = self.as_ref().provider().as_ref().get_accounts().await?[0];
         let gas = self
             .as_ref()
             .updateState(program_output.clone(), onchain_data_hash, onchain_data_size)
             .from(from_address)
             .estimate_gas()
-            .await
-            .unwrap();
+            .await?;
         let builder = self.as_ref().updateState(program_output, onchain_data_hash, onchain_data_size);
-        builder.from(from_address).nonce(2).gas(gas).gas_price(base_fee).send().await.unwrap().get_receipt().await
+        builder
+            .from(from_address)
+            .nonce(2)
+            .gas(gas)
+            .gas_price(base_fee)
+            .send()
+            .await?
+            .get_receipt()
+            .await
+            .map_err(StarknetValidityContractError::RpcError)
     }
 
     async fn update_state_kzg(
         &self,
         program_output: Vec<U256>,
         kzg_proof: [u8; 48],
-    ) -> Result<TransactionReceipt, RpcError<TransportErrorKind>> {
+    ) -> Result<TransactionReceipt, StarknetValidityContractError> {
         let base_fee = self.as_ref().provider().as_ref().get_gas_price().await?;
         let from_address = self.as_ref().provider().as_ref().get_accounts().await?[0];
         let proof_vec = vec![Bytes::from(kzg_proof.to_vec())];
@@ -126,9 +142,17 @@ where
             .updateStateKzgDA(program_output.clone(), proof_vec.clone())
             .from(from_address)
             .estimate_gas()
-            .await
-            .unwrap();
+            .await?;
         let builder = self.as_ref().updateStateKzgDA(program_output, proof_vec);
-        builder.from(from_address).nonce(2).gas(gas).gas_price(base_fee).send().await.unwrap().get_receipt().await
+        builder
+            .from(from_address)
+            .nonce(2)
+            .gas(gas)
+            .gas_price(base_fee)
+            .send()
+            .await?
+            .get_receipt()
+            .await
+            .map_err(StarknetValidityContractError::RpcError)
     }
 }

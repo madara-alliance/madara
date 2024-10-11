@@ -285,7 +285,9 @@ pub mod implement_client {
     ) -> Box<dyn SettlementClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => build_settlement_client(settings_provider).await,
+            ConfigType::Actual => {
+                build_settlement_client(settings_provider).await.expect("Failed to initialise settlement_client")
+            }
             ConfigType::Dummy => Box::new(MockSettlementClient::new()),
         }
     }

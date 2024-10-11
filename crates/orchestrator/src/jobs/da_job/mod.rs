@@ -31,13 +31,13 @@ lazy_static! {
     pub static ref GENERATOR: BigUint = BigUint::from_str(
         "39033254847818212395286706435128746857159659164139250548781411570340225835782",
     )
-    .unwrap();
+    .expect("Failed to convert to biguint");
 
     pub static ref BLS_MODULUS: BigUint = BigUint::from_str(
         "52435875175126190479447740508185965837690552500527637822603658699938581184513",
     )
-    .unwrap();
-    pub static ref TWO: BigUint = 2u32.to_biguint().unwrap();
+    .expect("Failed to convert to biguint");
+    pub static ref TWO: BigUint = 2u32.to_biguint().expect("Failed to convert to biguint");
 
     pub static ref BLOB_LEN: usize = 4096;
 }

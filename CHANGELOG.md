@@ -62,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- Fixes all unwraps() in code to improve error logging
 - Simplified Update_Job for Database.
 - Simplified otel setup.
 - Added new_with_settings to SharpClient.

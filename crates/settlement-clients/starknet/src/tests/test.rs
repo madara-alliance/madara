@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use color_eyre::eyre::eyre;
 use rstest::{fixture, rstest};
 use settlement_client_interface::SettlementClient;
 use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
@@ -46,13 +47,13 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
             let receipt = match account.provider().get_transaction_status(transaction_hash).await {
                 Ok(receipt) => Ok(receipt),
                 Err(ProviderError::StarknetError(StarknetError::TransactionHashNotFound)) => {
-                    Err(anyhow::anyhow!("Transaction not yet received"))
+                    Err(eyre!("Transaction not yet received"))
                 }
-                _ => Err(anyhow::anyhow!("Unknown error")),
+                _ => Err(eyre!("Unknown error")),
             };
 
             match receipt {
-                Ok(TransactionStatus::Received) => Err(anyhow::anyhow!("Transaction not yet received")),
+                Ok(TransactionStatus::Received) => Err(eyre!("Transaction not yet received")),
                 Ok(TransactionStatus::Rejected) => Ok(false),
                 Ok(TransactionStatus::AcceptedOnL2(status)) => match status {
                     TransactionExecutionStatus::Succeeded => Ok(true),
@@ -62,7 +63,7 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
                     TransactionExecutionStatus::Succeeded => Ok(true),
                     TransactionExecutionStatus::Reverted => Ok(false),
                 },
-                Err(e) => Err(anyhow::anyhow!("Unknown error: {}", e)),
+                Err(e) => Err(eyre!("Unknown error: {}", e)),
             }
         },
         duration,

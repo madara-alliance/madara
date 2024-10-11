@@ -171,7 +171,11 @@ impl Job for StateUpdateJob {
         // number : 0
         let metadata_tx_hashes = job
             .metadata
-            .get(&format!("{}{}", JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX, attempt_no.parse::<u32>().unwrap() - 1))
+            .get(&format!(
+                "{}{}",
+                JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX,
+                attempt_no.parse::<u32>().map_err(|e| JobError::Other(OtherError(eyre!(e))))? - 1
+            ))
             .ok_or_else(|| StateUpdateError::TxnHashMetadataNotFound)?
             .clone()
             .replace(' ', "");

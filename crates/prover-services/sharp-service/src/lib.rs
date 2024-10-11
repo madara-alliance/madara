@@ -66,6 +66,9 @@ impl ProverClient for SharpProverService {
             // TODO : We would need to remove the FAILED, UNKNOWN, NOT_CREATED status as it is not in the sharp client
             // response specs : https://docs.google.com/document/d/1-9ggQoYmjqAtLBGNNR2Z5eLreBmlckGYjbVl0khtpU0
             // We are waiting for the official public API spec before making changes
+
+            // The `unwrap_or_default`s below is safe as it is just returning if any error logs
+            // present
             CairoJobStatus::FAILED => {
                 tracing::error!(
                     log_type = "failed",
@@ -142,8 +145,10 @@ impl SharpProverService {
     pub fn with_test_settings(settings: &impl Settings, port: u16) -> Self {
         let sharp_config = SharpConfig::new_with_settings(settings)
             .expect("Not able to create SharpProverService from given settings.");
-        let sharp_client =
-            SharpClient::new_with_settings(format!("http://127.0.0.1:{}", port).parse().unwrap(), settings);
+        let sharp_client = SharpClient::new_with_settings(
+            format!("http://127.0.0.1:{}", port).parse().expect("Failed to create sharp client with the given params"),
+            settings,
+        );
         let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
         Self::new(sharp_client, fact_checker)
     }

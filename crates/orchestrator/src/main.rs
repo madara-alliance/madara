@@ -16,8 +16,10 @@ async fn main() {
     let meter_provider = setup_analytics();
     tracing::info!(service = "orchestrator", "Starting orchestrator service");
 
+    color_eyre::install().expect("Unable to isntall color_eyre");
+
     // initial config setup
-    let config = init_config().await;
+    let config = init_config().await.expect("Config instantiation failed");
     tracing::debug!(service = "orchestrator", "Configuration initialized");
 
     let host = get_env_var_or_default("HOST", "127.0.0.1");

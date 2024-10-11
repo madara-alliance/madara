@@ -4527,6 +4527,7 @@ dependencies = [
  "serde",
  "settlement-client-interface",
  "starknet-os",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tracing",
@@ -9672,7 +9673,6 @@ dependencies = [
 name = "starknet-settlement-client"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "appchain-core-contract-client",
  "async-std",
  "async-trait",

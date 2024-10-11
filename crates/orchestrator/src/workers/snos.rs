@@ -27,8 +27,7 @@ impl Worker for SnosWorker {
         let latest_block_processed_data = config
             .database()
             .get_latest_job_by_type_and_status(JobType::SnosRun, JobStatus::Completed)
-            .await
-            .unwrap()
+            .await?
             .map(|item| item.internal_id)
             .unwrap_or("0".to_string());
         tracing::debug!(latest_processed_block = %latest_block_processed_data, "Fetched latest processed block from database");
@@ -39,8 +38,7 @@ impl Worker for SnosWorker {
         let job_in_db = config
             .database()
             .get_job_by_internal_id_and_type(&latest_block_number.to_string(), &JobType::SnosRun)
-            .await
-            .unwrap();
+            .await?;
 
         if job_in_db.is_some() {
             tracing::trace!(block_number = %latest_block_number, "SNOS job already exists for the latest block");

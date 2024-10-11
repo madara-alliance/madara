@@ -35,6 +35,7 @@ opentelemetry-otlp = { workspace = true, features = [
 ] }
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = "0.26.0"

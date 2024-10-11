@@ -23,7 +23,7 @@ pub async fn fetch_program_data_for_block(block_number: u64, config: Arc<Config>
     let storage_client = config.storage();
     let key = block_number.to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
     let blob_data = storage_client.get_data(&key).await?;
-    let transformed_blob_vec_u8 = bytes_to_vec_u8(blob_data.as_ref());
+    let transformed_blob_vec_u8 = bytes_to_vec_u8(blob_data.as_ref())?;
     Ok(transformed_blob_vec_u8)
 }
 
@@ -48,7 +48,7 @@ pub fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
     Ok(result)
 }
 
-pub fn bytes_to_vec_u8(bytes: &[u8]) -> Vec<[u8; 32]> {
+pub fn bytes_to_vec_u8(bytes: &[u8]) -> color_eyre::Result<Vec<[u8; 32]>> {
     let cursor = Cursor::new(bytes);
     let reader = std::io::BufReader::new(cursor);
 
@@ -62,11 +62,13 @@ pub fn bytes_to_vec_u8(bytes: &[u8]) -> Vec<[u8; 32]> {
         let result = U256::from_str(trimmed).expect("Unable to convert line");
         let res_vec = result.to_be_bytes_vec();
         let hex = to_padded_hex(res_vec.as_slice());
-        let vec_hex = hex_string_to_u8_vec(&hex).unwrap();
-        program_output.push(vec_hex.try_into().unwrap());
+        let vec_hex = hex_string_to_u8_vec(&hex)
+            .map_err(|e| eyre!(format!("Failed converting hex string to Vec<u8>, {:?}", e)))?;
+        program_output
+            .push(vec_hex.try_into().map_err(|e| eyre!(format!("Failed to convert Vec<u8> to [u8; 32] : {:?}", e)))?);
     }
 
-    program_output
+    Ok(program_output)
 }
 
 fn to_padded_hex(slice: &[u8]) -> String {

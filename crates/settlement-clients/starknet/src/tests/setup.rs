@@ -20,10 +20,10 @@ pub struct MadaraCmd {
     pub _port: MadaraPortNum,
 }
 
-pub async fn wait_for_cond<F: Future<Output = Result<bool, anyhow::Error>>>(
+pub async fn wait_for_cond<F: Future<Output = color_eyre::Result<bool>>>(
     mut cond: impl FnMut() -> F,
     duration: Duration,
-) -> Result<bool, anyhow::Error> {
+) -> color_eyre::Result<bool> {
     let mut attempt = 0;
     loop {
         let err = match cond().await {
@@ -49,12 +49,14 @@ impl MadaraCmd {
     }
 
     pub async fn wait_for_ready(&mut self) -> &mut Self {
-        let endpoint = self.rpc_url.join("/health").unwrap();
+        // We are fine with `expect` here as this function is called in the intial phases of the
+        // program execution
+        let endpoint = self.rpc_url.join("/health").expect("Request to health endpoint failed");
         wait_for_cond(
             || async {
                 let res = reqwest::get(endpoint.clone()).await?;
                 res.error_for_status()?;
-                anyhow::Ok(true)
+                Ok(true)
             },
             Duration::from_millis(1000),
         )
@@ -71,12 +73,20 @@ impl Drop for MadaraCmd {
         let kill = || {
             let mut kill = Command::new("kill").args(["-s", "TERM", &child.id().to_string()]).spawn()?;
             kill.wait()?;
-            anyhow::Ok(())
+            Ok::<_, color_eyre::Report>(())
         };
         if let Err(_err) = kill() {
-            child.kill().unwrap()
+            match child.kill() {
+                Ok(kill) => kill,
+                Err(e) => {
+                    log::error!("{}", format!("Failed to kill Madara {:?}", e));
+                }
+            }
         }
-        child.wait().unwrap();
+        match child.wait() {
+            Ok(exit_status) => log::debug!("{}", exit_status),
+            Err(e) => log::error!("failed to exit madara {:?}", e),
+        }
     }
 }
 
