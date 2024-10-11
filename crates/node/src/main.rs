@@ -177,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Initializing rpc service")?;
 
-    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
         .await
         .context("Initializing gateway service")?;
 

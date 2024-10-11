@@ -1,5 +1,6 @@
 #![allow(clippy::new_without_default)]
 
+pub mod crypto;
 pub mod parsers;
 pub mod serde;
 pub mod service;
