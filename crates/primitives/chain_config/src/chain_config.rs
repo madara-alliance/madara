@@ -226,7 +226,12 @@ impl ChainConfig {
                 },
             },
             // We are not producing blocks for these chains.
-            sequencer_address: ContractAddress::default(),
+            sequencer_address: ContractAddress(
+                PatriciaKey::try_from(Felt::from_hex_unchecked(
+                    "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                ))
+                .unwrap(),
+            ),
             max_nonce_for_validation_skip: 2,
 
             private_key: ZeroingPrivateKey::default(),
