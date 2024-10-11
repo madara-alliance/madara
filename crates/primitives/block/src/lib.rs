@@ -2,6 +2,8 @@
 
 pub mod header;
 
+use std::fmt::Display;
+
 pub use header::Header;
 use header::PendingHeader;
 use mp_chain_config::StarknetVersion;
@@ -126,6 +128,18 @@ impl From<BlockId> for starknet_core::types::BlockId {
         }
     }
 }
+impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockId::Hash(hash) => write!(f, "0x{hash:x}"),
+            BlockId::Number(number) => write!(f, "{number}"),
+            BlockId::Tag(blocktag) => match blocktag {
+                BlockTag::Latest => write!(f, "latest"),
+                BlockTag::Pending => write!(f, "pending"),
+            },
+        }
+    }
+}
 
 // Light version of the block with block_hash
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -180,6 +194,12 @@ impl MadaraBlockInner {
 pub struct MadaraMaybePendingBlock {
     pub info: MadaraMaybePendingBlockInfo,
     pub inner: MadaraBlockInner,
+}
+
+impl MadaraMaybePendingBlock {
+    pub fn is_pending(&self) -> bool {
+        matches!(self.info, MadaraMaybePendingBlockInfo::Pending(_))
+    }
 }
 
 /// Starknet block definition.

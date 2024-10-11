@@ -1,12 +1,10 @@
 use httpmock::MockServer;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
+use mc_gateway::client::builder::FeederClient;
 use mp_chain_config::ChainConfig;
-use mp_utils::tests_common::set_workdir;
 use rstest::*;
 use serde_json::{json, Value};
-use starknet_providers::SequencerGatewayProvider;
-use starknet_types_core::felt::Felt;
 use std::fs;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -14,7 +12,7 @@ use url::Url;
 
 pub struct TestContext {
     pub mock_server: MockServer,
-    pub provider: Arc<SequencerGatewayProvider>,
+    pub provider: Arc<FeederClient>,
     pub backend: Arc<MadaraBackend>,
     pub fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     pub fetch_stream_receiver: mpsc::Receiver<UnverifiedFullBlock>,
@@ -24,25 +22,21 @@ pub struct TestContext {
 
 impl Default for TestContext {
     fn default() -> Self {
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
-        let backend = MadaraBackend::open_for_testing(chain_config.clone());
-        Self::new(backend)
+        Self::new(MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test())))
     }
 }
 
 #[fixture]
-pub fn test_setup(_set_workdir: ()) -> Arc<MadaraBackend> {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
-    MadaraBackend::open_for_testing(chain_config.clone())
+pub fn test_setup() -> Arc<MadaraBackend> {
+    MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()))
 }
 
 impl TestContext {
     pub fn new(backend: Arc<MadaraBackend>) -> Self {
         let mock_server = MockServer::start();
-        let provider = Arc::new(SequencerGatewayProvider::new(
-            Url::parse(&format!("{}/gateway", mock_server.base_url())).unwrap(),
-            Url::parse(&format!("{}/feeder_gateway", mock_server.base_url())).unwrap(),
-            Felt::from_hex_unchecked("0x4d41444152415f54455354"),
+        let provider = Arc::new(FeederClient::new(
+            Url::parse(&format!("{}/gateway/", mock_server.base_url())).unwrap(),
+            Url::parse(&format!("{}/feeder_gateway/", mock_server.base_url())).unwrap(),
         ));
         let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(100);
         let (once_caught_up_sender, once_caught_up_receiver) = oneshot::channel();
@@ -238,6 +232,19 @@ impl TestContext {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_class_by_hash");
             then.status(200).header("content-type", "application/json").json_body(api_response);
+        });
+    }
+
+    pub fn mock_signature(&self) {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_signature");
+            then.status(200).header("content_type", "application/json").json_body(json!({
+                    "block_hash": "0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32",
+                    "signature": [
+                        "0x315b1d77f8b1fc85657725639e88d4e1bfe846b4a866ddeb2e74cd91ccff9ca",
+                        "0x3cbd913e55ca0c9ab107a5988dd4c54d56dd3700948a2b96c19d4728a5864de"
+                    ]
+            }));
         });
     }
 

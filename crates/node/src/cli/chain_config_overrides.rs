@@ -1,85 +1,123 @@
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
+
+use anyhow::{bail, Context};
+use blockifier::bouncer::BouncerConfig;
+use clap::Parser;
+use mp_utils::crypto::ZeroingPrivateKey;
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_block::H160;
-use mp_chain_config::{ChainConfig, StarknetVersion};
-use starknet_api::{
-    contract_address,
-    core::{ChainId, ContractAddress, PatriciaKey},
-    felt, patricia_key,
+use mp_chain_config::{
+    deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
+    ChainConfig, StarknetVersion,
 };
+use mp_utils::parsers::parse_key_value_yaml;
+use mp_utils::serde::{deserialize_duration, deserialize_private_key, serialize_duration};
 
-/// Parameters used to override chain config.
-#[derive(Clone, Debug, clap::Parser)]
+/// Override chain config parameters.
+/// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
+#[derive(Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
-    //Overrideable args
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN NAME")]
-    pub chain_name: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED CHAIN ID")]
-    pub chain_id: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED NATIVE FEE TOKEN")]
-    pub native_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PARENT FEE TOKEN")]
-    pub parent_fee_token_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED LATEST PROTOCOL VERSION")]
-    pub latest_protocol_version: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED BLOCK TIME")]
-    pub block_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED PENDING BLOCK UPDATE")]
-    pub pending_block_update_time: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED SEQUENCER ADDRESS")]
-    pub sequencer_address: Option<String>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED MAX NONCE VALIDATION FOR SKIP")]
-    pub max_nonce_for_validation_skip: Option<u64>,
-    #[arg(long, requires = "chain_config_override", value_name = "OVERRIDED ETH CORE CONTRACT")]
-    pub eth_core_contract_address: Option<String>,
+    #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
+    pub overrides: Vec<(String, Value)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChainConfigOverridesInner {
+    pub chain_name: String,
+    pub chain_id: ChainId,
+    pub native_fee_token_address: ContractAddress,
+    pub parent_fee_token_address: ContractAddress,
+    #[serde(deserialize_with = "deserialize_starknet_version", serialize_with = "serialize_starknet_version")]
+    pub latest_protocol_version: StarknetVersion,
+    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
+    pub block_time: Duration,
+    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
+    pub pending_block_update_time: Duration,
+    pub execution_batch_size: usize,
+    #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
+    pub bouncer_config: BouncerConfig,
+    pub sequencer_address: ContractAddress,
+    pub max_nonce_for_validation_skip: u64,
+    pub eth_core_contract_address: H160,
+    pub eth_gps_statement_verifier: H160,
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    #[serde(deserialize_with = "deserialize_private_key")]
+    pub private_key: ZeroingPrivateKey,
 }
 
 impl ChainConfigOverrideParams {
-    pub fn override_cfg(&self, mut chain_config: ChainConfig) -> ChainConfig {
-        let params = self.clone();
+    pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
+        let versioned_constants = chain_config.versioned_constants;
 
-        if let Some(name) = params.chain_name {
-            chain_config.chain_name = name;
+        let mut chain_config_overrides = serde_yaml::to_value(ChainConfigOverridesInner {
+            chain_name: chain_config.chain_name,
+            chain_id: chain_config.chain_id,
+            native_fee_token_address: chain_config.native_fee_token_address,
+            parent_fee_token_address: chain_config.parent_fee_token_address,
+            latest_protocol_version: chain_config.latest_protocol_version,
+            block_time: chain_config.block_time,
+            pending_block_update_time: chain_config.pending_block_update_time,
+            execution_batch_size: chain_config.execution_batch_size,
+            bouncer_config: chain_config.bouncer_config,
+            sequencer_address: chain_config.sequencer_address,
+            max_nonce_for_validation_skip: chain_config.max_nonce_for_validation_skip,
+            eth_core_contract_address: chain_config.eth_core_contract_address,
+            eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
+            private_key: chain_config.private_key,
+        })
+        .context("Failed to convert ChainConfig to Value")?;
+
+        for (key, value) in &self.overrides {
+            // Split the key by '.' to handle nested fields
+            let key_parts = key.split('.').collect::<Vec<_>>();
+
+            // Navigate to the last field in the path
+            let mut current_value = &mut chain_config_overrides;
+            for part in key_parts.iter().take(key_parts.len() - 1) {
+                current_value = match current_value.get_mut(part) {
+                    Some(v) => v,
+                    None => bail!("Invalid chain config override key path: {}", key),
+                };
+            }
+
+            // Set the value to the final field in the path
+            let last_key =
+                key_parts.last().with_context(|| format!("Invalid chain config override key path: {}", key))?;
+            match current_value.get_mut(*last_key) {
+                Some(field) => {
+                    *field = value.clone();
+                }
+                None => {
+                    bail!("Invalid chain config override key path: {}", key);
+                }
+            }
         }
 
-        if let Some(id) = params.chain_id {
-            chain_config.chain_id = ChainId::from(id);
-        }
+        let chain_config_overrides: ChainConfigOverridesInner = serde_yaml::from_value(chain_config_overrides)
+            .context("Failed to convert Value to ChainConfigOverridesInner")?;
 
-        if let Some(address) = params.native_fee_token_address {
-            chain_config.native_fee_token_address = contract_address!(address.as_str());
-        }
+        println!("chain_config_overrides: {:#?}", chain_config_overrides);
 
-        if let Some(address) = params.parent_fee_token_address {
-            chain_config.parent_fee_token_address = contract_address!(address.as_str());
-        }
-
-        if let Some(version) = params.latest_protocol_version {
-            chain_config.latest_protocol_version =
-                StarknetVersion::from_str(version.as_str()).expect("failed to retrieve version");
-        }
-
-        if let Some(time) = params.block_time {
-            chain_config.block_time = Duration::from_secs(time);
-        }
-
-        if let Some(time) = self.pending_block_update_time {
-            chain_config.pending_block_update_time = Duration::from_secs(time);
-        }
-
-        if let Some(address) = params.sequencer_address {
-            chain_config.sequencer_address = contract_address!(address.as_str());
-        }
-
-        if let Some(max_nonce) = params.max_nonce_for_validation_skip {
-            chain_config.max_nonce_for_validation_skip = max_nonce;
-        }
-
-        if let Some(address) = params.eth_core_contract_address {
-            chain_config.eth_core_contract_address =
-                H160::from_str(address.as_str()).expect("failed to parse core contract");
-        }
-
-        chain_config
+        Ok(ChainConfig {
+            chain_name: chain_config_overrides.chain_name,
+            chain_id: chain_config_overrides.chain_id,
+            native_fee_token_address: chain_config_overrides.native_fee_token_address,
+            parent_fee_token_address: chain_config_overrides.parent_fee_token_address,
+            latest_protocol_version: chain_config_overrides.latest_protocol_version,
+            block_time: chain_config_overrides.block_time,
+            pending_block_update_time: chain_config_overrides.pending_block_update_time,
+            execution_batch_size: chain_config_overrides.execution_batch_size,
+            bouncer_config: chain_config_overrides.bouncer_config,
+            sequencer_address: chain_config_overrides.sequencer_address,
+            max_nonce_for_validation_skip: chain_config_overrides.max_nonce_for_validation_skip,
+            eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
+            versioned_constants,
+            eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
+            private_key: chain_config_overrides.private_key,
+        })
     }
 }

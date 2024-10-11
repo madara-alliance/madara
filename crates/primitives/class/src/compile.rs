@@ -6,7 +6,7 @@ use std::{
     io::{Cursor, Read},
 };
 
-use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass};
+use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClassCompilationError {
@@ -25,7 +25,7 @@ pub enum ClassCompilationError {
 }
 
 impl CompressedLegacyContractClass {
-    fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
+    pub fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
         let mut decompressor = flate2::read::GzDecoder::new(Cursor::new(&self.program));
         let mut program = Vec::new();
         decompressor.read_to_end(&mut program)?;
@@ -38,10 +38,36 @@ impl CompressedLegacyContractClass {
             program_object.insert("debug_info".to_owned(), serde_json::json!(""));
         }
 
+        // This convoluted JSON serialization is a way to get around bincode's
+        // lack of support for #[serde(tag = "type")]. Abi entries should be
+        // serialized as typed JSON structs, so we have to do this manually.
+        //
+        // NOTE: that the `type` field is already present in each ABI entry
+        // struct so we do not need to add it manually.
+        let abi = self
+            .abi
+            .as_ref()
+            .map(|abi| {
+                abi.iter()
+                    .map(|entry| match entry {
+                        LegacyContractAbiEntry::Function(entry) => serde_json::to_value(entry).map(|mut v| {
+                            if entry.state_mutability.is_none() {
+                                v.as_object_mut().unwrap().remove("stateMutability");
+                            }
+                            v
+                        }),
+                        LegacyContractAbiEntry::Event(entry) => serde_json::to_value(entry),
+                        LegacyContractAbiEntry::Struct(entry) => serde_json::to_value(entry),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(ClassCompilationError::ParsingProgramJsonFailed)
+            })
+            .transpose()?;
+
         let json = serde_json::json!({
             "program": program,
             "entry_points_by_type": self.entry_points_by_type,
-            "abi": self.abi
+            "abi": abi
         });
 
         Ok(serde_json::to_string(&json)?)

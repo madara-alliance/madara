@@ -3,6 +3,28 @@
 ## Next release
 
 - feat: add integration tests for block production
+- fix(fgw): sync from other nodes and block signature
+- fix: added more launcher capabilities
+- fix(cleanup): Updated EditorConfig to 4-space indents
+- fix(tests): Fixed local testing scripts
+- fix: override chain config
+- fix: estimate_fee should through an error if any txn fails
+- fix: rejected transaction block production panic
+- fix(sync): pending block retrying mechanism
+- feat(clean): dc_db: rename `DbBlockId::BlockN` to `DbBlockId::Number`
+- feat(cli): Environment variables can be used to specify Madara parameters
+- fix:(tests): Add testing feature to mc-db dev dependency (#294)
+- feat: new crate gateway client & server
+- test: Starknet-js basic tests added
+- test: add block conversion task test
+- fix(docs): updated readme and fixed launcher
+- fix(ci): added gateway key to fix rate limit on tests
+- feat(cli): launcher script and release workflows
+- fix: cleaned cli settings for sequencer, devnet and full
+- feat: move to karnot runner
+- fix: docker file fixes for devnet
+- fix(block-production): fix bouncer calculation and declared classes
+- fix: Fix pending block sync and add real FGW tests
 - test: tests added for verify and apply task in l2 sync
 - fix: UDC cairo 0 migration & events logic fix
 - fix: response of spec version rpc call fixed

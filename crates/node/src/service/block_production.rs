@@ -26,13 +26,15 @@ pub struct BlockProductionService {
     enabled: bool,
 }
 impl BlockProductionService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
-        _metrics_handle: MetricsRegistry,
+        is_devnet: bool,
+        _metrics_handle: &MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         if config.block_production_disabled {
@@ -46,7 +48,7 @@ impl BlockProductionService {
                 mempool,
                 block_import,
                 n_devnet_contracts: config.devnet_contracts,
-                is_devnet: config.devnet,
+                is_devnet,
             }),
             enabled: true,
         })
@@ -66,7 +68,7 @@ impl Service for BlockProductionService {
         if is_devnet {
             // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
 
-            let keys = if (backend.get_latest_block_n().context("Getting the latest block number in db")?).is_none() {
+            let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
                 // deploy devnet genesis
 
                 log::info!("⛏️  Deploying devnet genesis block");

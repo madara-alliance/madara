@@ -1,6 +1,7 @@
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
+use core::fmt;
 use std::ops::Deref;
 
 use starknet_api::block::BlockHash;
@@ -92,6 +93,33 @@ impl_for_wrapper!(Nonce);
 impl_for_wrapper!(EntryPointSelector);
 impl_for_wrapper!(CompiledClassHash);
 impl_for_wrapper!(ContractAddressSalt);
+
+pub trait FeltHexDisplay {
+    /// Force-display this felt as hexadecimal when using the [`fmt::Display`] or [`fmt::Debug`] traits.
+    fn hex_display(self) -> DisplayFeltAsHex;
+}
+impl<T: ToFelt> FeltHexDisplay for T {
+    fn hex_display(self) -> DisplayFeltAsHex {
+        DisplayFeltAsHex(self.to_felt())
+    }
+}
+impl FeltHexDisplay for Felt {
+    fn hex_display(self) -> DisplayFeltAsHex {
+        DisplayFeltAsHex(self)
+    }
+}
+
+pub struct DisplayFeltAsHex(pub Felt);
+impl fmt::Display for DisplayFeltAsHex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#x}", self.0)
+    }
+}
+impl fmt::Debug for DisplayFeltAsHex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -13,10 +13,11 @@ use mp_class::{
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
+use serde::{Deserialize, Serialize};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedHeader {
     /// The hash of this block’s parent. When set to None, it will be deduced from the latest block in storage.
     pub parent_block_hash: Option<Felt>,
@@ -72,7 +73,7 @@ impl BlockValidationContext {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum DeclaredClass {
     Legacy(LegacyDeclaredClass),
     Sierra(SierraDeclaredClass),
@@ -96,7 +97,7 @@ impl From<ClassUpdate> for DeclaredClass {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LegacyDeclaredClass {
     pub class_hash: Felt,
     pub contract_class: CompressedLegacyContractClass,
@@ -104,11 +105,11 @@ pub struct LegacyDeclaredClass {
 
 impl From<LegacyClassUpdate> for LegacyDeclaredClass {
     fn from(value: LegacyClassUpdate) -> Self {
-        Self { class_hash: value.class_hash, contract_class: value.contract_class.into() }
+        Self { class_hash: value.class_hash, contract_class: value.contract_class }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SierraDeclaredClass {
     pub class_hash: Felt,
     pub contract_class: FlattenedSierraClass,
@@ -119,13 +120,13 @@ impl From<SierraClassUpdate> for SierraDeclaredClass {
     fn from(value: SierraClassUpdate) -> Self {
         Self {
             class_hash: value.class_hash,
-            contract_class: value.contract_class.into(),
+            contract_class: value.contract_class,
             compiled_class_hash: value.compiled_class_hash,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedCommitments {
     pub transaction_count: Option<u64>,
     pub transaction_commitment: Option<Felt>,
@@ -141,7 +142,7 @@ pub struct UnverifiedCommitments {
 }
 
 /// An unverified pending full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UnverifiedPendingFullBlock {
     pub header: UnverifiedHeader,
     pub state_diff: StateDiff,
@@ -151,7 +152,7 @@ pub struct UnverifiedPendingFullBlock {
 }
 
 /// An unverified full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedFullBlock {
     /// When set to None, it will be deduced from the latest block in storage.
     pub unverified_block_number: Option<u64>,
@@ -160,6 +161,9 @@ pub struct UnverifiedFullBlock {
     pub transactions: Vec<Transaction>,
     pub receipts: Vec<TransactionReceipt>,
     pub declared_classes: Vec<DeclaredClass>,
+    /// Classes that are already compiled and hashed.
+    #[serde(skip)]
+    pub trusted_converted_classes: Vec<ConvertedClass>,
     pub commitments: UnverifiedCommitments,
 }
 
@@ -185,7 +189,6 @@ pub struct PreValidatedBlock {
     pub receipts: Vec<TransactionReceipt>,
     pub commitments: ValidatedCommitments,
     pub converted_classes: Vec<ConvertedClass>,
-
     pub unverified_global_state_root: Option<Felt>,
     pub unverified_block_hash: Option<Felt>,
     pub unverified_block_number: Option<u64>,

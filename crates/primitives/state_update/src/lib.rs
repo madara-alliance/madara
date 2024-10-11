@@ -159,18 +159,21 @@ impl ContractStorageDiffItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StorageEntry {
     pub key: Felt,
     pub value: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeclaredClassItem {
     pub class_hash: Felt,
     pub compiled_class_hash: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeployedContractItem {
     pub address: Felt,
     pub class_hash: Felt,

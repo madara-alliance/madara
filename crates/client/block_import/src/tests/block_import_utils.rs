@@ -2,9 +2,11 @@ use mp_block::header::{GasPrices, L1DataAvailabilityMode};
 use mp_block::Header;
 use mp_chain_config::StarknetVersion;
 use mp_state_update::StateDiff;
+use starknet_core::types::Felt;
 
 use crate::{
-    BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
+    BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedCommitments, UnverifiedFullBlock,
+    UnverifiedHeader, ValidatedCommitments,
 };
 use starknet_api::{core::ChainId, felt};
 
@@ -72,9 +74,9 @@ pub fn create_dummy_header() -> Header {
         transaction_commitment: felt!("0x0"),
         event_count: 0,
         event_commitment: felt!("0x0"),
-        state_diff_length: 0,
-        state_diff_commitment: felt!("0x0"),
-        receipt_commitment: felt!("0x0"),
+        state_diff_length: Some(0),
+        state_diff_commitment: Some(felt!("0x0")),
+        receipt_commitment: Some(felt!("0x0")),
         block_timestamp: 12345,
         protocol_version: StarknetVersion::new(0, 13, 2, 0),
         l1_gas_price: GasPrices {
@@ -102,6 +104,30 @@ pub fn create_dummy_block() -> PreValidatedBlock {
         receipts: vec![],
         state_diff: StateDiff::default(),
         converted_classes: Default::default(),
+    }
+}
+
+/// Creates a dummy PreValidatedBlock for testing purposes.
+///
+/// This function generates a PreValidatedBlock with predefined values,
+/// useful for testing update_tries scenarios.
+pub fn create_dummy_unverified_full_block() -> UnverifiedFullBlock {
+    UnverifiedFullBlock {
+        header: UnverifiedHeader {
+            parent_block_hash: Some(Felt::ZERO),
+            sequencer_address: Felt::ZERO,
+            block_timestamp: 0,
+            protocol_version: StarknetVersion::default(),
+            l1_gas_price: GasPrices::default(),
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+        },
+        transactions: vec![],
+        unverified_block_number: Some(0),
+        state_diff: StateDiff::default(),
+        receipts: vec![],
+        declared_classes: vec![],
+        commitments: UnverifiedCommitments::default(),
+        trusted_converted_classes: vec![],
     }
 }
 

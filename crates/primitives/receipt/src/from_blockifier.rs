@@ -8,8 +8,8 @@ use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_types_core::felt::Felt;
 
 use crate::{
-    DataAvailabilityResources, DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources,
-    ExecutionResult, FeePayment, InvokeTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
+    InvokeTransactionReceipt, L1Gas, MsgToL1, PriceUnit, TransactionReceipt,
 };
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
@@ -126,6 +126,12 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     }
 }
 
+impl From<GasVector> for L1Gas {
+    fn from(value: GasVector) -> Self {
+        L1Gas { l1_gas: value.l1_gas as _, l1_data_gas: value.l1_data_gas as _ }
+    }
+}
+
 /// To get all the events from the CallInfo including the inner call events.
 fn get_events_from_call_info(call_info: Option<&CallInfo>, next_order: usize, events_vec: &mut Vec<Event>) -> usize {
     let mut event_idx = 0;
@@ -164,12 +170,6 @@ fn get_events_from_call_info(call_info: Option<&CallInfo>, next_order: usize, ev
     }
 
     next_order
-}
-
-impl From<GasVector> for DataAvailabilityResources {
-    fn from(value: GasVector) -> Self {
-        DataAvailabilityResources { l1_gas: value.l1_gas as _, l1_data_gas: value.l1_data_gas as _ }
-    }
 }
 
 #[cfg(test)]

@@ -107,7 +107,7 @@ mod eth_client_event_subscription_test {
 
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use mc_db::DatabaseService;
-    use mc_metrics::MetricsService;
+    use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use rstest::*;
@@ -155,7 +155,7 @@ mod eth_client_event_subscription_test {
         println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_info = Arc::new(ChainConfig::test_config().unwrap());
+        let chain_info = Arc::new(ChainConfig::madara_test());
 
         // Set up database paths
         let temp_dir = TempDir::new().expect("issue while creating temporary directory");
@@ -164,14 +164,14 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), &MetricsRegistry::dummy())
                 .await
                 .expect("Failed to create database service"),
         );
 
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(&prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);

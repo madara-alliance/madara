@@ -5,6 +5,7 @@ members = [
   "crates/client/sync",
   "crates/client/eth",
   "crates/client/rpc",
+  "crates/client/gateway",
   "crates/client/telemetry",
   "crates/client/metrics",
   "crates/client/devnet",
@@ -15,6 +16,7 @@ members = [
   "crates/primitives/convert",
   "crates/primitives/transactions",
   "crates/primitives/class",
+  "crates/primitives/gateway",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
@@ -28,6 +30,7 @@ default-members = [
   "crates/client/exec",
   "crates/client/sync",
   "crates/client/eth",
+  "crates/client/gateway",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/metrics",
@@ -39,6 +42,7 @@ default-members = [
   "crates/primitives/convert",
   "crates/primitives/transactions",
   "crates/primitives/class",
+  "crates/primitives/gateway",
   "crates/primitives/receipt",
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
@@ -88,6 +92,7 @@ mp-block = { path = "crates/primitives/block", default-features = false }
 mp-convert = { path = "crates/primitives/convert", default-features = false }
 mp-transactions = { path = "crates/primitives/transactions", default-features = false }
 mp-class = { path = "crates/primitives/class", default-features = false }
+mp-gateway = { path = "crates/primitives/gateway", default-features = false }
 mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/primitives/utils", default-features = false }
@@ -98,6 +103,7 @@ mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
+mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-metrics = { path = "crates/client/metrics" }
@@ -155,13 +161,14 @@ num-traits = "0.2"
 num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_with = "3.9"
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "1.0"
-tokio = { version = "1.34", features = ["signal"] }
+tokio = { version = "1.34", features = ["signal", "rt"] }
 url = "2.4"
 rayon = "1.10"
 bincode = "1.3"
@@ -175,6 +182,10 @@ tempfile = "3.10.1"
 env_logger = "0.11.3"
 mockall = "0.13.0"
 serial_test = "3.1.1"
+itertools = "0.13.0"
+regex = "1.10.5"
+bytes = "1.6.0"
+crypto-bigint = "0.5.5"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

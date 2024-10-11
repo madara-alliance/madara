@@ -4,9 +4,11 @@ use std::time::Duration;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
+use mc_gateway::{
+    client::builder::FeederClient,
+    error::{SequencerError, StarknetError, StarknetErrorCode},
+};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
-use starknet_core::types::StarknetError;
-use starknet_providers::{ProviderError, SequencerGatewayProvider};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fetch::fetchers::fetch_block_and_updates;
@@ -19,7 +21,7 @@ pub async fn l2_fetch_task(
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
-    provider: Arc<SequencerGatewayProvider>,
+    provider: Arc<FeederClient>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
@@ -32,14 +34,17 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(backend, block_n, &provider).await) }
+            async move { (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider).await) }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
         while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
             match val {
-                Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                    code: StarknetErrorCode::BlockNotFound,
+                    ..
+                }))) => {
                     log::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
@@ -64,8 +69,11 @@ pub async fn l2_fetch_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
             loop {
-                match fetch_block_and_updates(backend, next_block, &provider).await {
-                    Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound))) => {
+                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
+                    Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                        code: StarknetErrorCode::BlockNotFound,
+                        ..
+                    }))) => {
                         break;
                     }
                     val => {
@@ -86,7 +94,7 @@ pub async fn l2_fetch_task(
 #[derive(thiserror::Error, Debug)]
 pub enum FetchError {
     #[error(transparent)]
-    Provider(#[from] ProviderError),
+    Sequencer(#[from] SequencerError),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -115,7 +123,8 @@ mod test_l2_fetch_task {
             ctx.mock_block(block_number);
         }
 
-        ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_signature();
 
         let polling_interval = Duration::from_millis(100);
         let task = tokio::spawn({

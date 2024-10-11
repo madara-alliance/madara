@@ -1,26 +1,25 @@
-use std::{borrow::Cow, sync::Arc};
-
+use crate::{
+    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
+    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
+};
+use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::{
     header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
-use mp_convert::ToFelt;
+use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
-
-use crate::{
-    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
-    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
-};
+use std::{borrow::Cow, sync::Arc};
 
 mod classes;
 mod contracts;
 
 pub struct VerifyApply {
     pool: Arc<RayonPool>,
-    backend: Arc<MadaraBackend>,
+    pub(crate) backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
     mutex: tokio::sync::Mutex<()>,
@@ -199,10 +198,25 @@ fn update_tries(
 ) -> Result<Felt, BlockImportError> {
     if validation.trust_global_tries {
         let Some(global_state_root) = block.unverified_global_state_root else {
-            return Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()));
+            return Err(BlockImportError::Internal(
+                "Trying to import a block without a global state root when using trust_global_tries".into(),
+            ));
         };
         return Ok(global_state_root);
     }
+
+    log::debug!(
+        "Deployed contracts: [{:?}]",
+        block.state_diff.deployed_contracts.iter().map(|c| c.address.hex_display()).format(", ")
+    );
+    log::debug!(
+        "Declared classes: [{:?}]",
+        block.state_diff.declared_classes.iter().map(|c| c.class_hash.hex_display()).format(", ")
+    );
+    log::debug!(
+        "Deprecated declared classes: [{:?}]",
+        block.state_diff.deprecated_declared_classes.iter().map(|c| c.hex_display()).format(", ")
+    );
 
     let (contract_trie_root, class_trie_root) = rayon::join(
         || {
@@ -271,9 +285,9 @@ fn block_hash(
         transaction_commitment,
         event_count,
         event_commitment,
-        state_diff_length,
-        state_diff_commitment,
-        receipt_commitment,
+        state_diff_length: Some(state_diff_length),
+        state_diff_commitment: Some(state_diff_commitment),
+        receipt_commitment: Some(receipt_commitment),
         protocol_version,
         l1_gas_price,
         l1_da_mode,
@@ -305,7 +319,6 @@ mod verify_apply_tests {
 
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
 
-    use mp_utils::tests_common::set_workdir;
     use rstest::*;
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
@@ -314,8 +327,8 @@ mod verify_apply_tests {
     ///
     /// This function creates a new MadaraBackend instance with a test configuration, useful for isolated test environments.
     #[fixture]
-    pub fn setup_test_backend(_set_workdir: ()) -> Arc<MadaraBackend> {
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    pub fn setup_test_backend() -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(ChainConfig::madara_test());
         MadaraBackend::open_for_testing(chain_config.clone())
     }
 
@@ -465,7 +478,7 @@ mod verify_apply_tests {
             StateDiff::default(), // Empty state diff
             true, // Trust global tries (irrelevant in this case)
             // Expected result: an Internal error
-            Err(BlockImportError::Internal("Trying to import a block without a global state root but ".into()))
+            Err(BlockImportError::Internal("Trying to import a block without a global state root when using trust_global_tries".into()))
         )]
     #[case::mismatch_global_state_root(
             Some(felt!("0xb")), // A non-zero global state root
@@ -546,8 +559,8 @@ mod verify_apply_tests {
             felt!("0x1"),
             felt!("0xa"),
             Err(BlockImportError::BlockHash {
-                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 
-                expected: felt!("0xdeadbeef") 
+                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
+                expected: felt!("0xdeadbeef")
             })
         )]
     // Case 3: Special trusted case for Mainnet blocks 1466-2242

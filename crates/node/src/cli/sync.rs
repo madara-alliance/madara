@@ -1,72 +1,89 @@
-use crate::cli::NetworkType;
-use mc_sync::fetch::fetchers::FetchConfig;
-use starknet_api::core::ChainId;
 use std::time::Duration;
+
+use starknet_api::core::ChainId;
+
+use mc_sync::fetch::fetchers::FetchConfig;
+use mp_utils::parsers::{parse_duration, parse_url};
+use url::Url;
+
+use crate::cli::NetworkType;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
-    #[clap(long, alias = "no-sync")]
+    #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
     pub sync_disabled: bool,
 
     /// The block you want to start syncing from. This will most probably break your database.
-    #[clap(long, value_name = "BLOCK NUMBER")]
+    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
-
-    /// This will produce sound interpreted from the block hashes.
-    #[cfg(feature = "sound")]
-    #[clap(long)]
-    pub sound: bool,
 
     /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
     /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
     // TODO(docs): explain the security cost
-    #[clap(long)]
+    #[clap(env = "MADARA_DISABLE_ROOT", long)]
     pub disable_root: bool,
 
     /// Gateway api key to avoid rate limiting (optional).
-    #[clap(long, value_name = "API KEY")]
+    #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
 
+    /// Feeder gateway url used to sync blocks, state updates and classes
+    #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
+    pub gateway_url: Option<Url>,
+
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    #[clap(long, default_value = "4", value_name = "SECONDS")]
-    pub sync_polling_interval: u64,
+    #[clap(
+		env = "MADARA_SYNC_POLLING_INTERVAL",
+        long,
+        value_parser = parse_duration,
+        default_value = "4s",
+        value_name = "SYNC POLLING INTERVAL",
+        help = "Set the sync polling interval (e.g., '4s', '100ms', '1min')"
+    )]
+    pub sync_polling_interval: Duration,
 
     /// Pending block polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    #[clap(long, default_value = "2", value_name = "SECONDS")]
-    pub pending_block_poll_interval: u64,
+    #[clap(
+		env = "MADARA_PENDING_BLOCK_POLL_INTERVAL",
+        long,
+        value_parser = parse_duration,
+        default_value = "2s",
+        value_name = "PENDING BLOCK POLL INTERVAL",
+        help = "Set the pending block poll interval (e.g., '2s', '500ms', '30s')"
+    )]
+    pub pending_block_poll_interval: Duration,
 
     /// Disable sync polling. This currently means that the sync process will not import any more block once it has caught up with the
     /// blockchain tip.
-    #[clap(long)]
+    #[clap(env = "MADARA_NO_SYNC_POLLING", long)]
     pub no_sync_polling: bool,
 
     /// Number of blocks to sync. May be useful for benchmarking the sync service.
-    #[clap(long, value_name = "NUMBER OF BLOCKS")]
+    #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "NUMBER OF BLOCKS")]
     pub n_blocks_to_sync: Option<u64>,
 
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
-    #[clap(long, value_name = "NUMBER OF BLOCKS")]
+    #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 }
 
 impl SyncParams {
     pub fn block_fetch_config(&self, chain_id: ChainId, network: NetworkType) -> FetchConfig {
-        let gateway = network.gateway();
-        let feeder_gateway = network.feeder_gateway();
+        let (gateway, feeder_gateway) = match &self.gateway_url {
+            Some(url) => (
+                url.join("/gateway/").expect("Error parsing url (this should not panic)"),
+                url.join("/feeder_gateway/").expect("Error parsing url (this should not panic)"),
+            ),
+            None => (network.gateway(), network.feeder_gateway()),
+        };
 
-        let polling = if self.no_sync_polling { None } else { Some(Duration::from_secs(self.sync_polling_interval)) };
-
-        #[cfg(feature = "sound")]
-        let sound = self.sound;
-        #[cfg(not(feature = "sound"))]
-        let sound = false;
+        let polling = if self.no_sync_polling { None } else { Some(self.sync_polling_interval) };
 
         FetchConfig {
             gateway,
             feeder_gateway,
             chain_id,
-            sound,
             verify: !self.disable_root,
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,

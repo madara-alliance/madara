@@ -1,7 +1,3 @@
-use mp_convert::ToFelt;
-use starknet_api::transaction::TransactionVersion;
-use starknet_types_core::{felt::Felt, hash::StarkHash};
-
 mod broadcasted_to_blockifier;
 mod from_blockifier;
 mod from_broadcasted_transaction;
@@ -12,7 +8,13 @@ mod to_starknet_core;
 
 pub mod compute_hash;
 pub mod utils;
+
+use mp_convert::{hex_serde::U128AsHex, hex_serde::U64AsHex, ToFelt};
+// pub use from_starknet_provider::TransactionTypeError;
 pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
+use serde_with::serde_as;
+use starknet_api::transaction::TransactionVersion;
+use starknet_types_core::{felt::Felt, hash::StarkHash};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -601,23 +603,49 @@ impl DeployAccountTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub enum DataAvailabilityMode {
     #[default]
     L1 = 0,
     L2 = 1,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+impl serde::Serialize for DataAvailabilityMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
+}
 
+impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Ok(DataAvailabilityMode::L1),
+            1 => Ok(DataAvailabilityMode::L2),
+            _ => Err(serde::de::Error::custom("Invalid value for DataAvailabilityMode")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceBounds {
+    #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,
+    #[serde_as(as = "U128AsHex")]
     pub max_price_per_unit: u128,
 }
 
