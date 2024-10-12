@@ -174,7 +174,7 @@ serde_with = "3.9"
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "1.0"
-tokio = { version = "1.34", features = ["signal"] }
+tokio = { version = "1.34", features = ["signal", "rt"] }
 url = "2.4"
 rayon = "1.10"
 bincode = "1.3"
@@ -193,6 +193,7 @@ regex = "1.10.5"
 bytes = "1.6.0"
 tokio-stream = "0.1.16"
 tokio-util = "0.7.12"
+crypto-bigint = "0.5.5"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

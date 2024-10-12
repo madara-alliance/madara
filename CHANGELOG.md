@@ -5,6 +5,11 @@
 - fix: Pragma's ExEx refresh behavior
 - feat: `exex_pragma_dispatch` implementation
 - feat: Madara ExExs proof of concept
+- feat(script): added more capabilities to the launcher script
+- fix(fgw): sync from other nodes and block signature
+- fix: added more launcher capabilities
+- fix(cleanup): Updated EditorConfig to 4-space indents
+- fix(tests): Fixed local testing scripts
 - fix: override chain config
 - fix: estimate_fee should through an error if any txn fails
 - fix: rejected transaction block production panic

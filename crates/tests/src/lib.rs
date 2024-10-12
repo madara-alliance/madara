@@ -172,26 +172,14 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let output = std::process::Command::new("cargo")
-            .arg("locate-project")
-            .arg("--workspace")
-            .arg("--message-format=plain")
-            .output()
-            .expect("Failed to execute command");
-
-        let cargo_toml_path = String::from_utf8(output.stdout).expect("Invalid UTF-8");
-        let project_root = PathBuf::from(cargo_toml_path.trim()).parent().unwrap().to_path_buf();
-
-        env::set_current_dir(&project_root).expect("Failed to set working directory");
-        let target_bin = option_env!("COVERAGE_BIN").unwrap_or("./target/debug/madara");
-        let target_bin = PathBuf::from_str(target_bin).expect("target bin is not a path");
+        let target_bin = env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script");
+        let target_bin = PathBuf::from_str(&target_bin).expect("COVERAGE_BIN to be a path");
         if !target_bin.exists() {
             panic!("No binary to run: {:?}", target_bin)
         }
 
         // This is an optional argument to sync faster from the FGW if gateway_key is set
-        let gateway_key_arg =
-            std::env::var("GATEWAY_KEY").ok().map(|gateway_key| ["--gateway-key".into(), gateway_key]);
+        let gateway_key_arg = env::var("GATEWAY_KEY").ok().map(|gateway_key| ["--gateway-key".into(), gateway_key]);
 
         let process = Command::new(target_bin)
             .envs(self.env)
@@ -199,7 +187,6 @@ impl MadaraCmdBuilder {
                 self.args
                     .into_iter()
                     .chain([
-                        "--telemetry-disabled".into(), // important: disable telemetry!!
                         "--no-prometheus".into(),
                         "--base-path".into(),
                         format!("{}", self.tempdir.as_ref().display()),

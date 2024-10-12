@@ -62,11 +62,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    let telemetry_service = TelemetryService::new(
-        run_cmd.telemetry_params.telemetry_disabled,
-        run_cmd.telemetry_params.telemetry_endpoints.clone(),
-    )
-    .context("Initializing telemetry service")?;
+    let telemetry_service =
+        TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
+            .context("Initializing telemetry service")?;
     let prometheus_service = MetricsService::new(
         run_cmd.prometheus_params.prometheus_disabled,
         run_cmd.prometheus_params.prometheus_external,
@@ -200,7 +198,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Initializing rpc service")?;
 
-    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
         .await
         .context("Initializing gateway service")?;
 

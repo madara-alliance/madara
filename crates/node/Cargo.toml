@@ -44,9 +44,9 @@ starknet-providers = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-alloy = { workspace = true }
+alloy.workspace = true
 anyhow.workspace = true
-async-trait = { workspace = true }
+async-trait.workspace = true
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
@@ -57,20 +57,21 @@ governor.workspace = true
 hyper.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
-lazy_static = { workspace = true }
-log = { workspace = true }
-rand = { workspace = true }
+lazy_static.workspace = true
+log.workspace = true
+primitive-types.workspace = true
+rand.workspace = true
 rayon.workspace = true
-reqwest = { workspace = true }
+reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 starknet-signers = { workspace = true }
 thiserror.workspace = true
-tokio = { workspace = true }
+tokio.workspace = true
 tower-http.workspace = true
 tower.workspace = true
-url = { workspace = true }
+url.workspace = true
 
 [features]
 default = []

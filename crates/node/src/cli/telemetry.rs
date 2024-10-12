@@ -3,10 +3,9 @@ use clap::Args;
 /// Parameters used to config telemetry.
 #[derive(Debug, Clone, Args)]
 pub struct TelemetryParams {
-    /// Disable connecting to the Madara telemetry server.
-    /// Telemetry is enabled by default.
-    #[arg(env = "MADARA_TELEMETRY_DISABLED", long, alias = "no-telemetry")]
-    pub telemetry_disabled: bool,
+    /// Enable connecting to the Madara telemetry server.
+    #[arg(env = "MADARA_TELEMETRY", long, alias = "telemetry")]
+    pub telemetry: bool,
 
     /// The URL of the telemetry server.
     /// Pass this flag multiple times specify multiple telemetry endpoints.

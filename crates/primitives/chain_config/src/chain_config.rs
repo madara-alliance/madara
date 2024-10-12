@@ -17,13 +17,14 @@ use anyhow::{bail, Context, Result};
 use blockifier::bouncer::{BouncerWeights, BuiltinCount};
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
+use mp_utils::crypto::ZeroingPrivateKey;
 use primitive_types::H160;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 
-use mp_utils::serde::deserialize_duration;
+use mp_utils::serde::{deserialize_duration, deserialize_private_key};
 
 use crate::StarknetVersion;
 
@@ -31,6 +32,18 @@ pub mod eth_core_contract_address {
     pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
     pub const SEPOLIA_INTEGRATION: &str = "0x4737c0c1B4D5b1A687B42610DdabEE781152359c";
+}
+
+pub mod eth_gps_statement_verifier {
+    pub const MAINNET: &str = "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60";
+    pub const SEPOLIA_TESTNET: &str = "0xf294781D719D2F4169cE54469C28908E6FA752C1";
+    pub const SEPOLIA_INTEGRATION: &str = "0x2046B966994Adcb88D83f467a41b75d64C2a619F";
+}
+
+pub mod public_key {
+    pub const MAINNET: &str = "0x48253ff2c3bed7af18bde0b611b083b39445959102d4947c51c4db6aa4f4e58";
+    pub const SEPOLIA_TESTNET: &str = "0x1252b6bce1351844c677869c6327e80eae1535755b611c66b8f46e595b40eea";
+    pub const SEPOLIA_INTEGRATION: &str = "0x4e4856eb36dbd5f4a7dca29f7bb5232974ef1fb7eb5b597c58077174c294da1";
 }
 
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
@@ -77,7 +90,7 @@ pub struct ChainConfig {
     pub block_time: Duration,
 
     /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.  
+    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
     #[serde(deserialize_with = "deserialize_duration")]
     pub pending_block_update_time: Duration,
 
@@ -102,6 +115,21 @@ pub struct ChainConfig {
 
     /// The Starknet core contract address for the L1 watcher.
     pub eth_core_contract_address: H160,
+
+    /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
+    /// for more information
+    pub eth_gps_statement_verifier: H160,
+
+    /// Private key used by the node to sign blocks provided through the
+    /// feeder gateway. This serves as a proof of origin and in the future
+    /// will also be used by the p2p protocol and tendermint consensus.
+    /// > [!NOTE]
+    /// > This key will be auto-generated on startup if none is provided.
+    /// > This also means the private key is by default regenerated on boot
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    #[serde(deserialize_with = "deserialize_private_key")]
+    pub private_key: ZeroingPrivateKey,
 }
 
 impl ChainConfig {
@@ -168,6 +196,8 @@ impl ChainConfig {
 
             eth_core_contract_address: eth_core_contract_address::MAINNET.parse().expect("parsing a constant"),
 
+            eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
+
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
@@ -196,8 +226,15 @@ impl ChainConfig {
                 },
             },
             // We are not producing blocks for these chains.
-            sequencer_address: ContractAddress::default(),
+            sequencer_address: ContractAddress(
+                PatriciaKey::try_from(Felt::from_hex_unchecked(
+                    "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                ))
+                .unwrap(),
+            ),
             max_nonce_for_validation_skip: 2,
+
+            private_key: ZeroingPrivateKey::default(),
         }
     }
 
@@ -206,6 +243,9 @@ impl ChainConfig {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
+            eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
+                .parse()
+                .expect("parsing a constant"),
             ..Self::starknet_mainnet()
         }
     }
@@ -215,6 +255,9 @@ impl ChainConfig {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
+                .parse()
+                .expect("parsing a constant"),
+            eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
             ..Self::starknet_mainnet()

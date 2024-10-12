@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use hyper::{body, Body, Request, Response};
 use mc_db::MadaraBackend;
-use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraPendingBlock};
-use mp_class::ContractClass;
+use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
-    block::{BlockStatus, ProviderBlock, ProviderBlockPending},
+    block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
 use mp_rpc::AddTransactionProvider;
@@ -21,8 +21,8 @@ use crate::error::StarknetError;
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
     helpers::{
-        block_id_from_params, create_json_response, create_response_with_json_body, get_params_from_request,
-        include_block_params,
+        block_id_from_params, create_json_response, create_response_with_json_body, create_string_response,
+        get_params_from_request, include_block_params,
     },
 };
 
@@ -30,28 +30,84 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
-    let block = backend
-        .get_block(&block_id)
-        .or_internal_server_error(format!("Retrieving block {block_id}"))?
+    if params.get("headerOnly").map(|s| s.as_ref()) == Some("true") {
+        if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+            return Err(GatewayError::StarknetError(StarknetError::no_block_header_for_pending_block()));
+        }
+
+        let block_info = backend
+            .get_block_info(&block_id)
+            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .ok_or(StarknetError::block_not_found())?;
+
+        match block_info {
+            MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+                "Retrieved pending block info from db for non-pending block {block_id}"
+            ))),
+            MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+                let body = json!({
+                    "block_hash": block_info.block_hash,
+                    "block_number": block_info.header.block_number
+                });
+                Ok(create_json_response(hyper::StatusCode::OK, &body))
+            }
+        }
+    } else {
+        let block = backend
+            .get_block(&block_id)
+            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .ok_or(StarknetError::block_not_found())?;
+
+        if let Ok(block) = MadaraBlock::try_from(block.clone()) {
+            let last_l1_confirmed_block =
+                backend.get_l1_last_confirmed_block().or_internal_server_error("Retrieving last l1 confirmed block")?;
+
+            let status = if Some(block.info.header.block_number) <= last_l1_confirmed_block {
+                BlockStatus::AcceptedOnL1
+            } else {
+                BlockStatus::AcceptedOnL2
+            };
+
+            let block_provider = ProviderBlock::new(block, status);
+            Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        } else {
+            let block =
+                MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
+            let block_provider = ProviderBlockPending::new(block);
+            Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        }
+    }
+}
+
+pub async fn handle_get_signature(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+
+    if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+        return Err(GatewayError::StarknetError(StarknetError::no_signature_for_pending_block()));
+    }
+
+    let block_info = backend
+        .get_block_info(&block_id)
+        .or_internal_server_error(format!("Retrieving block info for block {block_id}"))?
         .ok_or(StarknetError::block_not_found())?;
 
-    if let Ok(block) = MadaraBlock::try_from(block.clone()) {
-        let last_l1_confirmed_block =
-            backend.get_l1_last_confirmed_block().or_internal_server_error("Retrieving last l1 confirmed block")?;
-
-        let status = if Some(block.info.header.block_number) <= last_l1_confirmed_block {
-            BlockStatus::AcceptedOnL1
-        } else {
-            BlockStatus::AcceptedOnL2
-        };
-
-        let block_provider = ProviderBlock::new(block, status);
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
-    } else {
-        let block =
-            MadaraPendingBlock::try_from(block).map_err(|e| GatewayError::InternalServerError(e.to_string()))?;
-        let block_provider = ProviderBlockPending::new(block);
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+    match block_info {
+        MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+            "Retrieved pending block info from db for non-pending block {block_id}"
+        ))),
+        MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+            let private_key = &backend.chain_config().private_key;
+            let signature = private_key
+                .sign(&block_info.block_hash)
+                .map_err(|e| GatewayError::InternalServerError(format!("Failed to sign block hash: {e}")))?;
+            let signature =
+                ProviderBlockSignature { block_hash: block_info.block_hash, signature: vec![signature.r, signature.s] };
+            Ok(create_json_response(hyper::StatusCode::OK, &signature))
+        }
     }
 }
 
@@ -189,6 +245,52 @@ pub async fn handle_get_class_by_hash(
     };
 
     Ok(json_response)
+}
+
+pub async fn handle_get_compiled_class_by_class_hash(
+    req: Request<Body>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<Body>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
+
+    let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
+    let class_hash = Felt::from_hex(class_hash).map_err(StarknetError::invalid_class_hash)?;
+
+    let class_info = backend
+        .get_class_info(&block_id, &class_hash)
+        .or_internal_server_error(format!("Retrieving class info from class hash {class_hash:x}"))?
+        .ok_or(StarknetError::class_not_found(class_hash))?;
+
+    let compiled_class_hash = match class_info {
+        ClassInfo::Sierra(class_info) => class_info.compiled_class_hash,
+        ClassInfo::Legacy(_) => {
+            return Err(GatewayError::StarknetError(StarknetError::sierra_class_not_found(class_hash)))
+        }
+    };
+
+    let class_compiled = backend
+        .get_sierra_compiled(&block_id, &compiled_class_hash)
+        .or_internal_server_error(format!("Retrieving compiled Sierra class from class hash {class_hash:x}"))?
+        .ok_or(StarknetError::class_not_found(class_hash))?;
+
+    Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.as_ref()))
+}
+
+pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+    let chain_config = &backend.chain_config();
+    Ok(create_json_response(
+        hyper::StatusCode::OK,
+        &json!({
+            "Starknet": chain_config.eth_core_contract_address,
+            "GpsStatementVerifier": chain_config.eth_gps_statement_verifier
+        }),
+    ))
+}
+
+pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+    let public_key = &backend.chain_config().private_key.public;
+    Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
 }
 
 pub async fn handle_add_transaction(
