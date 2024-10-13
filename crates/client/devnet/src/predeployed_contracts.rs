@@ -27,7 +27,7 @@ impl fmt::Display for DevnetKeys {
         writeln!(f, "==== DEVNET PREDEPLOYED CONTRACTS ====")?;
         writeln!(f)?;
         for (i, contract) in self.0.iter().enumerate() {
-            writeln!(f, "(#{}) Address: {:#x}", i + 1, contract.address,)?;
+            writeln!(f, "(#{}) Address: 0x{:0>64}", i + 1, format!("{:x}", contract.address),)?;
             writeln!(f, "  Private key: {:#x}", contract.secret.secret_scalar())?;
             match contract.balance.as_u128_fri_wei() {
                 Ok((fri, wei)) => {
