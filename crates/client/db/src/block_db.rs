@@ -103,7 +103,7 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "BlockDB", skip(self))]
+    #[tracing::instrument(service_name= "BlockDB", skip(self))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
@@ -299,7 +299,7 @@ impl MadaraBackend {
         }
     }
 
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "BlockDB", skip(self, id))]
+    #[tracing::instrument(service_name= "BlockDB", skip(self, id))]
     pub fn get_block_hash(&self, id: &impl DbBlockIdResolvable) -> Result<Option<Felt>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {

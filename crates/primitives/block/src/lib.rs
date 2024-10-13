@@ -233,7 +233,7 @@ impl MadaraPendingBlock {
         Self { info, inner }
     }
 
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "MadaraPendingBlock", skip(header))]
+    #[tracing::instrument(service_name= "MadaraPendingBlock", skip(header))]
     pub fn new_empty(header: PendingHeader) -> Self {
         Self {
             info: MadaraPendingBlockInfo { header, tx_hashes: vec![] },

@@ -82,7 +82,7 @@ pub fn get_fee_tokens_balance(
 }
 
 impl DevnetKeys {
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "DevnetKeys", skip(backend))]
+    #[tracing::instrument(service_name= "DevnetKeys", skip(backend))]
     pub fn from_db(backend: &MadaraBackend) -> anyhow::Result<Self> {
         let keys = backend
             .get_devnet_predeployed_keys()
@@ -106,7 +106,7 @@ impl DevnetKeys {
         Ok(Self(keys))
     }
 
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "DevnetKeys", skip(self, backend))]
+    #[tracing::instrument(service_name= "DevnetKeys", skip(self, backend))]
     pub fn save_to_db(&self, backend: &MadaraBackend) -> anyhow::Result<()> {
         let keys = mc_db::devnet_db::DevnetPredeployedKeys(
             self.0

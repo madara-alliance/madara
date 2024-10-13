@@ -186,7 +186,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "BlockProductionTask", skip(backend, importer, mempool, l1_data_provider))]
+    #[tracing::instrument(service_name= "BlockProductionTask", skip(backend, importer, mempool, l1_data_provider))]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,

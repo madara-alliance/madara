@@ -153,7 +153,7 @@ impl BlockImporter {
     }
 
     /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block.
-    #[tracing::instrument(service_name;;;;;;; =;;;;;;; "BlockImporter", skip(self, block, validation))]
+    #[tracing::instrument(service_name = "BlockImporter", skip(self, block, validation))]
     pub async fn add_block(
         &self,
         block: UnverifiedFullBlock,
