@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(primitives): fixed storage entries not being sorted in state commitment
 - fix(db): storing a block needs to clear the current pending block
 - fix(sync): Fixed pipeline stalling on machines with few cpu cores
 - fix(rpc): handle batched requests in middleware
