@@ -101,9 +101,6 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter.set_data_gas_price_sync_enabled(false);
     }
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-    if run_cmd.devnet {
-        run_cmd.l1_sync_params.sync_l1_disabled = true;
-    }
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
