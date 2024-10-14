@@ -14,6 +14,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
 use mp_transactions::broadcasted_to_blockifier;
 use mp_transactions::BroadcastedToBlockifierError;
 use starknet_api::core::{ContractAddress, Nonce};
@@ -125,12 +126,15 @@ impl Mempool {
             None
         };
 
+        log::debug!("Mempool verify tx_hash={:#x}", tx_hash(&tx).to_felt());
+
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
-        let _ = validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some());
+        validator.perform_validations(clone_account_tx(&tx), deploy_account_tx_hash.is_some())?;
 
         if !is_only_query(&tx) {
+            log::debug!("Adding to mempool tx_hash={:#x}", tx_hash(&tx).to_felt());
             // Finally, add it to the nonce chain for the account nonce
             let force = false;
             self.inner
