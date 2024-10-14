@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: possibility of starting madara & kakarot-rpc in docker
 - feat(script): added more capabilities to the launcher script
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
