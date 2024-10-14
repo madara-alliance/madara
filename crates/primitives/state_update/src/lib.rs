@@ -100,6 +100,7 @@ impl StateDiff {
 
         let storage_diffs_sorted = {
             let mut storage_diffs = self.storage_diffs.clone();
+            storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort());
             storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
             storage_diffs
         };
@@ -220,6 +221,25 @@ mod tests {
         let state_diff = dummy_state_diff();
         let hash = state_diff.compute_hash();
         assert_eq!(hash, Felt::from_hex_unchecked("0x3bda8176c564f07b91627f95e1c6249c0d19ba00e47edfc17ae52ccf946ea20"));
+    }
+
+    #[test]
+    fn test_compute_hash_sorted() {
+        let state_diff_one = dummy_state_diff();
+        let mut state_diff_two = state_diff_one.clone();
+
+        // Reverse the array and storage_entries inside storage_diffs to create state_diff_two
+        state_diff_two.storage_diffs.reverse();
+        for diff in state_diff_two.storage_diffs.iter_mut() {
+            diff.storage_entries.reverse();
+        }
+        state_diff_two.deprecated_declared_classes.reverse();
+        state_diff_two.declared_classes.reverse();
+        state_diff_two.deployed_contracts.reverse();
+        state_diff_two.replaced_classes.reverse();
+        state_diff_two.nonces.reverse();
+
+        assert_eq!(state_diff_one.compute_hash(), state_diff_two.compute_hash());
     }
 
     pub(crate) fn dummy_state_diff() -> StateDiff {
