@@ -228,7 +228,8 @@ mod tests {
         let state_diff_one = dummy_state_diff();
         let mut state_diff_two = state_diff_one.clone();
 
-        // Reverse the array and storage_entries inside storage_diffs to create state_diff_two
+        // reversting all vectors inside state_diff_two
+        // to check if hash still matches
         state_diff_two.storage_diffs.reverse();
         for diff in state_diff_two.storage_diffs.iter_mut() {
             diff.storage_entries.reverse();
