@@ -45,7 +45,6 @@ impl RpcVersion {
         }
 
         let version_str = &parts[2][1..]; // without the 'v' prefix
-        println!("Version: {}", version_str);
         if let Ok(version) = RpcVersion::from_str(version_str) {
             if SUPPORTED_RPC_VERSIONS.contains(&version) {
                 Ok(version)
