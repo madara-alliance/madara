@@ -45,7 +45,7 @@ Madara is a powerful Starknet client written in Rust.
 
    | Dependency | Version    | Installation                                                                             |
    | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
-   | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs`                              |
+   | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                        |
    | Clang      | Latest     | `sudo apt-get install clang`                                                             |
    | Scarb      | v2.8.2     | `curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh \| sh` |
 
