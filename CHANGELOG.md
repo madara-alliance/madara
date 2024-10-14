@@ -3,6 +3,7 @@
 ## Next release
 
 - fix(sync): Fixed pipeline stalling on machines with few cpu cores
+- feat(script): added more capabilities to the launcher script
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
