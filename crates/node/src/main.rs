@@ -1,6 +1,5 @@
 //! Madara node command line.
 #![warn(missing_docs)]
-#![warn(clippy::unwrap_used)]
 
 mod cli;
 mod extensions;
