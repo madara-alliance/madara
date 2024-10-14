@@ -65,8 +65,3 @@ bouncer_config:
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
 sequencer_address: "0x0"
-
-# /!\ Only used for block production.
-# When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
-# This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
-max_nonce_for_validation_skip: 2
