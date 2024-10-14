@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: padded devnet address display with 64 chars
 - feat(script): added more capabilities to the launcher script
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
