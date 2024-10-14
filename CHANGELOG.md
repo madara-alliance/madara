@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(clippy): disallow printlns in workspace
 - fix(rpc): handle batched requests in middleware
 - chore: padded devnet address display with 64 chars
 - feat(script): added more capabilities to the launcher script

@@ -8,6 +8,12 @@ repository.workspace = true
 version.workspace = true
 homepage.workspace = true
 
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [dependencies]
 proc-macro2 = "1.0.86"
 quote = "1.0.26"

@@ -100,8 +100,6 @@ impl ChainConfigOverrideParams {
         let chain_config_overrides: ChainConfigOverridesInner = serde_yaml::from_value(chain_config_overrides)
             .context("Failed to convert Value to ChainConfigOverridesInner")?;
 
-        println!("chain_config_overrides: {:#?}", chain_config_overrides);
-
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
