@@ -3,6 +3,8 @@
 ## Next release
 
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
+- fix(rpc): handle batched requests in middleware
+- chore: padded devnet address display with 64 chars
 - feat(script): added more capabilities to the launcher script
 - fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
