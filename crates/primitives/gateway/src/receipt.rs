@@ -127,7 +127,7 @@ impl ConfirmedReceipt {
             execution_result: execution_result(self.execution_status, self.revert_error),
             contract_address: match tx {
                 DeployAccountTransaction::V1(tx) => tx.contract_address,
-                DeployAccountTransaction::V3(_) => Felt::default(),
+                DeployAccountTransaction::V3(tx) => tx.sender_address,
             },
         }
     }
@@ -146,12 +146,24 @@ pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,
     pub n_memory_holes: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data_availability: Option<L1Gas>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_gas_consumed: Option<L1Gas>,
 }
 
 impl From<mp_receipt::ExecutionResources> for ExecutionResources {
     fn from(resources: mp_receipt::ExecutionResources) -> Self {
+        fn none_if_zero(gas: L1Gas) -> Option<L1Gas> {
+            if gas.l1_gas == 0 && gas.l1_data_gas == 0 {
+                None
+            } else {
+                Some(gas)
+            }
+        }
+
         Self {
             builtin_instance_counter: BuiltinCounters {
                 output_builtin: 0,
@@ -168,8 +180,8 @@ impl From<mp_receipt::ExecutionResources> for ExecutionResources {
             },
             n_steps: resources.steps,
             n_memory_holes: resources.memory_holes.unwrap_or(0),
-            data_availability: Some(resources.data_availability),
-            total_gas_consumed: Some(resources.total_gas_consumed),
+            data_availability: none_if_zero(resources.data_availability),
+            total_gas_consumed: none_if_zero(resources.total_gas_consumed),
         }
     }
 }
