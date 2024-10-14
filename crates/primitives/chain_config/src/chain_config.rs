@@ -108,11 +108,6 @@ pub struct ChainConfig {
     /// Only used for block production.
     pub sequencer_address: ContractAddress,
 
-    /// Only used when mempool is enabled.
-    /// When deploying an account and invoking a contract at the same time, we want to skip the validation step for the invoke tx.
-    /// This number is the maximum nonce the invoke tx can have to qualify for the validation skip.
-    pub max_nonce_for_validation_skip: u64,
-
     /// The Starknet core contract address for the L1 watcher.
     pub eth_core_contract_address: H160,
 
@@ -232,7 +227,6 @@ impl ChainConfig {
                 ))
                 .unwrap(),
             ),
-            max_nonce_for_validation_skip: 2,
 
             private_key: ZeroingPrivateKey::default(),
         }
@@ -529,7 +523,6 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(chain_config.max_nonce_for_validation_skip, 2);
         assert_eq!(
             chain_config.eth_core_contract_address,
             H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
