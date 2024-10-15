@@ -51,6 +51,5 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 log.workspace = true
-rand = { workspace = true, features = ["small_rng"] }
 serde_json.workspace = true
 tokio.workspace = true
