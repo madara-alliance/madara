@@ -17,6 +17,7 @@ struct ClassInfoWithBlockNumber {
 }
 
 impl MadaraBackend {
+    #[tracing::instrument(skip(self, key), fields(service_name = "ClassDB"))]
     fn class_db_get_encoded_kv<V: serde::de::DeserializeOwned>(
         &self,
         is_pending: bool,
@@ -44,6 +45,7 @@ impl MadaraBackend {
         Ok(Some(val))
     }
 
+    #[tracing::instrument(skip(self, id, class_hash), fields(service_name = "ClassDB"))]
     pub fn get_class_info(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -78,12 +80,14 @@ impl MadaraBackend {
         Ok(Some(info.class_info))
     }
 
+    #[tracing::instrument(skip(self, class_hash), fields(service_name = "ClassDB"))]
     pub fn contains_class(&self, class_hash: &Felt) -> Result<bool, MadaraStorageError> {
         let col = self.db.get_column(Column::ClassInfo);
         let key_encoded = bincode::serialize(class_hash)?;
         Ok(self.db.get_pinned_cf(&col, &key_encoded)?.is_some())
     }
 
+    #[tracing::instrument(skip(self, id, class_hash), fields(service_name = "ClassDB"))]
     pub fn get_sierra_compiled(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -107,6 +111,10 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(
+        skip(self, block_id, converted_classes, col_info, col_compiled),
+        fields(service_name = "ClassDB")
+    )]
     pub(crate) fn store_classes(
         &self,
         block_id: DbBlockId,
@@ -169,6 +177,7 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(skip(self, block_number, converted_classes), fields(service_name = "ClassDB"))]
     pub(crate) fn class_db_store_block(
         &self,
         block_number: u64,
@@ -178,6 +187,7 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(skip(self, converted_classes), fields(service_name = "ClassDB"))]
     pub(crate) fn class_db_store_pending(
         &self,
         converted_classes: &[ConvertedClass],
@@ -190,6 +200,7 @@ impl MadaraBackend {
         )
     }
 
+    #[tracing::instrument(fields(service_name = "ClassDB"))]
     pub(crate) fn class_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);

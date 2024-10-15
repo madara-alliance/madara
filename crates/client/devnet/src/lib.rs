@@ -76,7 +76,7 @@ pub struct ChainGenesisDescription {
 }
 
 impl ChainGenesisDescription {
-    #[tracing::instrument(service_name= "ChainGenesisDescription")]
+    #[tracing::instrument(fields(service_name = "ChainGenesisDescription"))]
     pub fn base_config() -> anyhow::Result<Self> {
         let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
@@ -92,7 +92,7 @@ impl ChainGenesisDescription {
         })
     }
 
-    #[tracing::instrument(service_name= "ChainGenesisDescription", skip(self))]
+    #[tracing::instrument(skip(self), fields(service_name = "ChainGenesisDescription"))]
     pub fn add_devnet_contracts(&mut self, n_addr: u64) -> anyhow::Result<DevnetKeys> {
         let account_class =
             InitiallyDeclaredClass::new_sierra(ACCOUNT_CLASS_DEFINITION).context("Failed to add account class")?;
@@ -147,7 +147,7 @@ impl ChainGenesisDescription {
         ))
     }
 
-    #[tracing::instrument(service_name= "ChainGenesisDescription", skip(self, chain_config))]
+    #[tracing::instrument(skip(self, chain_config), fields(service_name = "ChainGenesisDescription"))]
     pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 

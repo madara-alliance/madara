@@ -41,6 +41,7 @@ mp-receipt.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
+mc-analytics.workspace = true
 
 # Starknet
 blockifier.workspace = true
@@ -58,6 +59,7 @@ mockall = { workspace = true, optional = true }
 
 
 #Instrumentation
+once_cell = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [

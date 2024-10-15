@@ -62,7 +62,7 @@ impl BlockProductionService {
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
-    #[tracing::instrument(service_name = "BlockProductionService", skip(self, join_set))]
+    #[tracing::instrument(skip(self, join_set), fields(service_name = "BlockProductionService"))]
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());

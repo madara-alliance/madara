@@ -153,7 +153,7 @@ impl BlockImporter {
     }
 
     /// Perform [`BlockImporter::pre_validate`] followed by [`BlockImporter::verify_apply`] to import a block.
-    #[tracing::instrument(service_name = "BlockImporter", skip(self, block, validation))]
+    #[tracing::instrument(skip(self, block, validation), fields(service_name = "BlockImporter"))]
     pub async fn add_block(
         &self,
         block: UnverifiedFullBlock,
@@ -163,6 +163,7 @@ impl BlockImporter {
         self.verify_apply(block, validation).await
     }
 
+    #[tracing::instrument(skip(self, block, validation), fields(service_name = "BlockImporter"))]
     pub async fn pre_validate(
         &self,
         block: UnverifiedFullBlock,
@@ -171,7 +172,7 @@ impl BlockImporter {
         pre_validate(&self.pool, block, validation).await
     }
 
-    #[tracing::instrument(skip(self, block, validation))]
+    #[tracing::instrument(skip(self, block, validation), fields(service_name = "BlockImporter"))]
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
@@ -187,6 +188,7 @@ impl BlockImporter {
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self, block, validation), fields(service_name = "BlockImporter"))]
     pub async fn pre_validate_pending(
         &self,
         block: UnverifiedPendingFullBlock,
@@ -195,6 +197,7 @@ impl BlockImporter {
         pre_validate_pending(&self.pool, block, validation).await
     }
 
+    #[tracing::instrument(skip(self, block, validation), fields(service_name = "BlockImporter"))]
     pub async fn verify_apply_pending(
         &self,
         block: PreValidatedPendingBlock,

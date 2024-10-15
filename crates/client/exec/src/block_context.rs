@@ -55,7 +55,7 @@ impl ExecutionContext {
     }
 
     /// Create an execution context for executing transactions **within** that block.
-    #[tracing::instrument(service_name= "ExecutionContext", skip(backend, block_info))]
+    #[tracing::instrument(skip(backend, block_info), fields(service_name = "ExecutionContext"))]
     pub fn new_in_block(backend: Arc<MadaraBackend>, block_info: &MadaraMaybePendingBlockInfo) -> Result<Self, Error> {
         let (db_id, protocol_version, block_number, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) =
             match block_info {

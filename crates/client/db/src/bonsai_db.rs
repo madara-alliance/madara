@@ -46,12 +46,14 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Self::Batch::default()
     }
 
+    #[tracing::instrument(skip(self, key), fields(service_name = "BonsaiDB"))]
     fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
         log::trace!("Getting from RocksDB: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         Ok(self.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, prefix), fields(service_name = "BonsaiDB"))]
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         log::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
@@ -72,12 +74,14 @@ impl BonsaiDatabase for BonsaiDb<'_> {
             .collect())
     }
 
+    #[tracing::instrument(skip(self, key), fields(service_name = "BonsaiDB"))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         log::trace!("Checking if RocksDB contains: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         Ok(self.db.get_cf(&handle, key.as_slice()).map(|value| value.is_some())?)
     }
 
+    #[tracing::instrument(skip(self, key, value, batch), fields(service_name = "BonsaiDB"))]
     fn insert(
         &mut self,
         key: &DatabaseKey,
@@ -99,6 +103,7 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Ok(None)
     }
 
+    #[tracing::instrument(skip(self, key, batch), fields(service_name = "BonsaiDB"))]
     fn remove(
         &mut self,
         key: &DatabaseKey,
@@ -115,6 +120,7 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Ok(None)
     }
 
+    #[tracing::instrument(skip(self, prefix), fields(service_name = "BonsaiDB"))]
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         log::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
@@ -136,6 +142,7 @@ impl BonsaiDatabase for BonsaiDb<'_> {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, batch), fields(service_name = "BonsaiDB"))]
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         Ok(self.db.write_opt(batch, &self.write_opt)?)
     }

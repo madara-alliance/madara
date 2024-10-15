@@ -1,5 +1,6 @@
 // TODO: Move this into its own crate.
 
+use crate::analytics::MEMPOOL_METRICS;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
 use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
@@ -23,6 +24,7 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use opentelemetry::KeyValue;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -182,11 +184,15 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
 
 impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     #[cfg(any(test, feature = "testing"))]
+    #[tracing::instrument(skip(self), fields(service_name = "BlockProductionTask"))]
     pub fn set_current_pending_tick(&mut self, n: usize) {
         self.current_pending_tick = n;
     }
 
-    #[tracing::instrument(service_name= "BlockProductionTask", skip(backend, importer, mempool, l1_data_provider))]
+    #[tracing::instrument(
+        skip(backend, importer, mempool, l1_data_provider),
+        fields(service_name = "BlockProductionTask")
+    )]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
@@ -224,6 +230,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         })
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "BlockProductionTask"))]
     fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats), Error> {
         let mut stats = ContinueBlockStats::default();
 
@@ -336,6 +343,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
+    #[tracing::instrument(skip(self), fields(service_name = "BlockProductionTask"))]
     pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
         let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
@@ -400,6 +408,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
+    #[tracing::instrument(skip(self), fields(service_name = "BlockProductionTask"))]
     pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         log::debug!("closing block #{}", block_n);
@@ -440,11 +449,22 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
         self.current_pending_tick = 0;
 
-        log::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, start_time.elapsed());
+        let end_time = start_time.elapsed();
+        log::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
+
+        let attributes = [
+            KeyValue::new("transactions_added", n_txs.to_string()),
+            KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
+        ];
+
+        MEMPOOL_METRICS.block_counter.add(1, &[]);
+        MEMPOOL_METRICS.block_gauge.record(block_n, &attributes);
+        MEMPOOL_METRICS.transaction_counter.add(n_txs as u64, &[]);
 
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "BlockProductionTask"))]
     pub async fn block_production_task(&mut self) -> Result<(), anyhow::Error> {
         let start = tokio::time::Instant::now();
 

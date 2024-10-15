@@ -1,3 +1,4 @@
+use analytics::MEMPOOL_METRICS;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -35,6 +36,7 @@ pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
+mod analytics;
 pub mod block_production;
 mod close_block;
 pub mod header;
@@ -89,6 +91,7 @@ impl Mempool {
         Mempool { backend, l1_data_provider, inner: Default::default() }
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
     fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
         let Transaction::AccountTransaction(tx) = tx else { panic!("L1HandlerTransaction not supported yet") };
 
@@ -139,6 +142,8 @@ impl Mempool {
                 .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
         }
 
+        MEMPOOL_METRICS.accepted_transaction_counter.add(1, &[]);
+
         Ok(())
     }
 }
@@ -169,6 +174,7 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 }
 
 impl MempoolProvider for Mempool {
+    #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
             BroadcastedTransaction::Invoke(tx),
@@ -181,6 +187,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
             BroadcastedTransaction::Declare(tx),
@@ -196,6 +203,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
     fn accept_deploy_account_tx(
         &self,
         tx: BroadcastedDeployAccountTransaction,
@@ -215,17 +223,20 @@ impl MempoolProvider for Mempool {
     }
 
     /// Warning: A lock is held while a user-supplied function (extend) is run - Callers should be careful
+    #[tracing::instrument(skip(self, dest, n), fields(service_name = "Mempool"))]
     fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next_chunk(dest, n)
     }
 
+    #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
     fn take_tx(&self) -> Option<MempoolTransaction> {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next()
     }
 
     /// Warning: A lock is taken while a user-supplied function (iterator stuff) is run - Callers should be careful
+    #[tracing::instrument(skip(self, txs), fields(service_name = "Mempool"))]
     fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.re_add_txs(txs)
