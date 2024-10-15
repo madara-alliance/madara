@@ -292,3 +292,83 @@ pub(crate) fn clone_account_tx(tx: &AccountTransaction) -> AccountTransaction {
         }),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use starknet_core::types::Felt;
+
+    use crate::MockL1DataProvider;
+
+    #[rstest::fixture]
+    fn backend() -> Arc<mc_db::MadaraBackend> {
+        mc_db::MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()))
+    }
+
+    #[rstest::fixture]
+    fn l1_data_provider() -> Arc<MockL1DataProvider> {
+        let mut mock = MockL1DataProvider::new();
+        mock.expect_get_gas_prices().return_const(mp_block::header::GasPrices {
+            eth_l1_gas_price: 0,
+            strk_l1_gas_price: 0,
+            eth_l1_data_gas_price: 0,
+            strk_l1_data_gas_price: 0,
+        });
+        mock.expect_get_gas_prices_last_update().return_const(std::time::SystemTime::now());
+        mock.expect_get_da_mode().return_const(mp_block::header::L1DataAvailabilityMode::Calldata);
+        Arc::new(mock)
+    }
+
+    #[rstest::fixture]
+    fn tx_account_v0_valid() -> blockifier::transaction::transaction_execution::Transaction {
+        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
+            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
+                blockifier::transaction::transactions::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V0(
+                        starknet_api::transaction::InvokeTransactionV0::default(),
+                    ),
+                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
+                    only_query: true,
+                },
+            ),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_account_v1_invalid() -> blockifier::transaction::transaction_execution::Transaction {
+        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
+            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
+                blockifier::transaction::transactions::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V1(
+                        starknet_api::transaction::InvokeTransactionV1::default(),
+                    ),
+                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
+                    only_query: true,
+                },
+            ),
+        )
+    }
+
+    #[rstest::rstest]
+    fn mempool_accept_tx_pass(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = crate::Mempool::new(backend, l1_data_provider);
+        let result = mempool.accept_tx(tx_account_v0_valid, None);
+        assert_matches::assert_matches!(result, Ok(()));
+    }
+
+    #[rstest::rstest]
+    fn mempool_accept_tx_fail_validate(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = crate::Mempool::new(backend, l1_data_provider);
+        let result = mempool.accept_tx(tx_account_v1_invalid, None);
+        assert_matches::assert_matches!(result, Err(crate::Error::Validation(_)));
+    }
+}
