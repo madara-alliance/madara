@@ -57,7 +57,7 @@ impl L1SyncService {
         let gas_price_sync_enabled = authority && (config.gas_price.is_none() || config.blob_gas_price.is_none());
         let gas_price_poll = config.gas_price_poll;
 
-        if gas_price_sync_enabled && !config.sync_l1_disabled {
+        if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
                 .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
