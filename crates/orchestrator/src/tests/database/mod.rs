@@ -208,7 +208,7 @@ async fn database_test_update_job() {
     let updated_metadata = increment_key_in_metadata(&metadata, key).unwrap();
 
     let job_cloned = job.clone();
-    let _ = database_client
+    let updated_job = database_client
         .update_job(
             &job_cloned,
             JobItemUpdates::new()
@@ -219,10 +219,15 @@ async fn database_test_update_job() {
         .await;
 
     if let Some(job_after_updates_db) = database_client.get_job_by_id(job_id).await.unwrap() {
+        // check if job is updated
         assert_eq!(JobType::DataSubmission, job_after_updates_db.job_type);
         assert_eq!(JobStatus::LockedForProcessing, job_after_updates_db.status);
         assert_eq!(1, job_after_updates_db.version);
         assert_eq!(456.to_string(), job_after_updates_db.internal_id);
+
+        // check if value returned by `update_job` is the correct one
+        // and matches the one in database
+        assert_eq!(updated_job.unwrap(), job_after_updates_db);
     } else {
         panic!("Job not found in Database.")
     }

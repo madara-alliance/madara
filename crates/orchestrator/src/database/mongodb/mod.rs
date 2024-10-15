@@ -6,7 +6,10 @@ use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
-use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion, UpdateOptions};
+use mongodb::options::{
+    ClientOptions, FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument, ServerApi, ServerApiVersion,
+    UpdateOptions,
+};
 use mongodb::{bson, Client, Collection};
 use utils::ToDocument;
 use uuid::Uuid;
@@ -109,13 +112,13 @@ impl Database for MongoDb {
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    async fn update_job(&self, current_job: &JobItem, updates: JobItemUpdates) -> Result<()> {
+    async fn update_job(&self, current_job: &JobItem, updates: JobItemUpdates) -> Result<JobItem> {
         // Filters to search for the job
         let filter = doc! {
             "id": current_job.id,
             "version": current_job.version,
         };
-        let options = UpdateOptions::builder().upsert(false).build();
+        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
 
         let mut updates = updates.to_document()?;
 
@@ -140,14 +143,17 @@ impl Database for MongoDb {
             "$set": non_null_updates
         };
 
-        let result = self.get_job_collection().update_one(filter, update, options).await?;
-        if result.modified_count == 0 {
-            tracing::warn!(job_id = %current_job.id, category = "db_call", "Failed to update job. Job version is likely outdated");
-            return Err(eyre!("Failed to update job. Job version is likely outdated"));
+        let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(job) => {
+                tracing::debug!(job_id = %current_job.id, category = "db_call", "Job updated successfully");
+                Ok(job)
+            }
+            None => {
+                tracing::warn!(job_id = %current_job.id, category = "db_call", "Failed to update job. Job version is likely outdated");
+                return Err(eyre!("Failed to update job. Job version is likely outdated"));
+            }
         }
-
-        tracing::debug!(job_id = %current_job.id, category = "db_call", "Job updated successfully");
-        Ok(())
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]

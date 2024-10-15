@@ -6,3 +6,4 @@ pub const JOB_METADATA_STATE_UPDATE_ATTEMPT_PREFIX: &str = "attempt_tx_hashes_";
 pub const JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO: &str = "last_failed_block_no";
 pub const JOB_METADATA_SNOS_BLOCK: &str = "block_number_to_run";
 pub const JOB_METADATA_SNOS_FACT: &str = "snos_fact";
+pub const JOB_METADATA_FAILURE_REASON: &str = "failure_reason";

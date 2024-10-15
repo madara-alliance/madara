@@ -10,10 +10,14 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use super::database::build_job_item;
-use crate::jobs::constants::{JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY};
+use crate::jobs::constants::{
+    JOB_METADATA_FAILURE_REASON, JOB_PROCESS_ATTEMPT_METADATA_KEY, JOB_VERIFICATION_ATTEMPT_METADATA_KEY,
+};
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::{create_job, handle_job_failure, increment_key_in_metadata, process_job, verify_job, Job, MockJob};
+use crate::jobs::{
+    create_job, handle_job_failure, increment_key_in_metadata, process_job, verify_job, Job, JobError, MockJob,
+};
 use crate::queue::job_queue::{JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE};
 use crate::tests::common::MessagePayloadType;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
@@ -298,6 +302,45 @@ async fn process_job_two_workers_process_same_job_works() {
     assert_eq!(final_job_in_db.status, JobStatus::PendingVerification);
 }
 
+/// Tests `process_job` function when the job handler returns an error.
+/// The job should be moved to the failed status.
+#[rstest]
+#[tokio::test]
+async fn process_job_job_handler_returns_error_works() {
+    let mut job_handler = MockJob::new();
+    // Expecting process job function in job processor to return the external ID.
+    let failure_reason = "Failed to process job";
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(move |_, _| Err(JobError::Other(failure_reason.to_string().into())));
+    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+
+    // Mocking the `get_job_handler` call in create_job function.
+    let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    // building config
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item_by_type_and_status(JobType::SnosRun, JobStatus::Created, "1".to_string());
+
+    // Creating the job in the db
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    assert!(process_job(job_item.id, services.config.clone()).await.is_ok());
+
+    let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(final_job_in_db.status, JobStatus::Failed);
+    assert!(final_job_in_db.metadata.get(JOB_METADATA_FAILURE_REASON).unwrap().to_string().contains(failure_reason));
+}
+
 /// Tests `verify_job` function when job is having expected status
 /// and returns a `Verified` verification status.
 #[rstest]
@@ -427,7 +470,7 @@ async fn verify_job_with_rejected_status_works() {
 
     // DB checks.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::VerificationFailed);
+    assert_eq!(updated_job.status, JobStatus::Failed);
     assert_eq!(updated_job.metadata.get(JOB_PROCESS_ATTEMPT_METADATA_KEY).unwrap(), "1");
 
     // Waiting for 5 secs for message to be passed into the queue
@@ -623,7 +666,10 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
     // creating expected output
     let mut job_expected = job.clone();
     let mut job_metadata = job_expected.metadata.clone();
-    job_metadata.insert("last_job_status".to_string(), job_status.to_string());
+    job_metadata.insert(
+        JOB_METADATA_FAILURE_REASON.to_string(),
+        format!("Received failure queue message for job with status: {}", job_status),
+    );
     job_expected.metadata.clone_from(&job_metadata);
     job_expected.status = JobStatus::Failed;
     job_expected.version = 1;

@@ -28,7 +28,7 @@ pub trait Database: Send + Sync {
     async fn create_job(&self, job: JobItem) -> Result<JobItem, JobError>;
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>>;
     async fn get_job_by_internal_id_and_type(&self, internal_id: &str, job_type: &JobType) -> Result<Option<JobItem>>;
-    async fn update_job(&self, current_job: &JobItem, updates: crate::jobs::types::JobItemUpdates) -> Result<()>;
+    async fn update_job(&self, current_job: &JobItem, updates: crate::jobs::types::JobItemUpdates) -> Result<JobItem>;
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>>;
     async fn get_jobs_without_successor(
         &self,

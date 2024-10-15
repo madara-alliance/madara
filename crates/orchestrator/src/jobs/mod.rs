@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
+use constants::JOB_METADATA_FAILURE_REASON;
 use conversion::parse_string;
 use da_job::DaError;
 use mockall::automock;
@@ -185,7 +186,7 @@ pub async fn create_job(
 /// DB. It then adds the job to the verification queue.
 #[tracing::instrument(skip(config), fields(category = "general", job, job_type, internal_id), ret, err)]
 pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
-    let mut job = get_job(id, config.clone()).await?;
+    let job = get_job(id, config.clone()).await?;
     let internal_id = job.internal_id.clone();
     tracing::info!(log_type = "starting", category = "general", function_type = "process_job", block_no = %internal_id, "General process job started for block");
 
@@ -209,7 +210,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     // the same job, it would fail to update the job in the database because the version would be
     // outdated
     tracing::debug!(job_id = ?id, "Updating job status to LockedForProcessing");
-    config
+    let mut job = config
         .database()
         .update_job(&job, JobItemUpdates::new().update_status(JobStatus::LockedForProcessing).build())
         .await
@@ -220,19 +221,28 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
 
     tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
     let job_handler = factory::get_job_handler(&job.job_type).await;
-    let external_id = job_handler.process_job(config.clone(), &mut job).await?;
+    let external_id = match job_handler.process_job(config.clone(), &mut job).await {
+        Ok(external_id) => {
+            tracing::debug!(job_id = ?id, "Successfully processed job");
+            external_id
+        }
+        Err(e) => {
+            // TODO: I think most of the times the errors will not be fixed automatically
+            // if we just retry. But for some failures like DB issues, it might be possible
+            // that retrying will work. So we can add a retry logic here to improve robustness.
+            tracing::error!(job_id = ?id, error = ?e, "Failed to process job");
+            return move_job_to_failed(&job, config.clone(), format!("Processing failed: {}", e)).await;
+        }
+    };
     tracing::debug!(job_id = ?id, "Incrementing process attempt count in metadata");
     let metadata = increment_key_in_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)?;
-
-    let mut job_cloned = job.clone();
-    job_cloned.version += 1;
 
     // Fetching the job again because update status above will update the job version
     tracing::debug!(job_id = ?id, "Updating job status to PendingVerification");
     config
         .database()
         .update_job(
-            &job_cloned,
+            &job,
             JobItemUpdates::new()
                 .update_status(JobStatus::PendingVerification)
                 .update_metadata(metadata)
@@ -322,21 +332,6 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
             new_job.metadata.insert("error".to_string(), e);
             new_job.status = JobStatus::VerificationFailed;
 
-            config
-                .database()
-                .update_job(
-                    &job,
-                    JobItemUpdates::new()
-                        .update_status(JobStatus::VerificationFailed)
-                        .update_metadata(new_job.metadata)
-                        .build(),
-                )
-                .await
-                .map_err(|e| {
-                    tracing::error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
-                    JobError::Other(OtherError(e))
-                })?;
-
             let process_attempts = get_u64_from_metadata(&job.metadata, JOB_PROCESS_ATTEMPT_METADATA_KEY)
                 .map_err(|e| JobError::Other(OtherError(e)))?;
             if process_attempts < job_handler.max_process_attempts() {
@@ -345,10 +340,30 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
                     attempt = process_attempts + 1,
                     "Verification failed. Retrying job processing"
                 );
+                config
+                    .database()
+                    .update_job(
+                        &job,
+                        JobItemUpdates::new()
+                            .update_status(JobStatus::VerificationFailed)
+                            .update_metadata(new_job.metadata)
+                            .build(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
+                        JobError::Other(OtherError(e))
+                    })?;
                 add_job_to_process_queue(job.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
                 return Ok(());
             } else {
                 tracing::warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
+                return move_job_to_failed(
+                    &job,
+                    config.clone(),
+                    format!("Verification rejected. Max process attempts reached: {}", process_attempts),
+                )
+                .await;
             }
         }
         JobVerificationStatus::Pending => {
@@ -408,30 +423,36 @@ pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), Job
     let job = get_job(id, config.clone()).await?.clone();
     let internal_id = job.internal_id.clone();
     tracing::info!(log_type = "starting", category = "general", function_type = "handle_job_failure", block_no = %internal_id, "General handle job failure started for block");
-    let mut metadata = job.metadata.clone();
 
     tracing::Span::current().record("job_status", format!("{:?}", job.status));
     tracing::Span::current().record("job_type", format!("{:?}", job.job_type));
 
     tracing::debug!(job_id = ?id, job_status = ?job.status, job_type = ?job.job_type, block_no = %internal_id, "Job details for failure handling for block");
+    let status = job.status.clone().to_string();
+    move_job_to_failed(&job, config.clone(), format!("Received failure queue message for job with status: {}", status))
+        .await
+}
 
+async fn move_job_to_failed(job: &JobItem, config: Arc<Config>, reason: String) -> Result<(), JobError> {
     if job.status == JobStatus::Completed {
-        tracing::error!(job_id = ?id, job_status = ?job.status, "Invalid state exists on DL queue");
+        tracing::error!(job_id = ?job.id, job_status = ?job.status, "Invalid state exists on DL queue");
         return Ok(());
     }
     // We assume that a Failure status will only show up if the message is sent twice from a queue
     // Can return silently because it's already been processed.
     else if job.status == JobStatus::Failed {
-        tracing::warn!(job_id = ?id, "Job already marked as failed, skipping processing");
+        tracing::warn!(job_id = ?job.id, "Job already marked as failed, skipping processing");
         return Ok(());
     }
 
-    metadata.insert("last_job_status".to_string(), job.status.to_string());
+    let mut metadata = job.metadata.clone();
+    let internal_id = job.internal_id.clone();
+    metadata.insert(JOB_METADATA_FAILURE_REASON.to_string(), reason);
 
-    tracing::debug!(job_id = ?id, "Updating job status to Failed in database");
+    tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
     match config
         .database()
-        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(metadata).build())
+        .update_job(job, JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(metadata).build())
         .await
     {
         Ok(_) => {
