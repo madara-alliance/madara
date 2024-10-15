@@ -63,6 +63,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
 
     opts.set_max_log_file_size(1 * MiB);
     opts.set_keep_log_file_num(3);
+    opts.set_log_level(rocksdb::LogLevel::Warn);
 
     let mut env = Env::new().context("Creating rocksdb env")?;
     // env.set_high_priority_background_threads(cores); // flushes
