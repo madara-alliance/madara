@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(cli): fixed devnet cli arguments
 - feat: gas fee flag added
 - fix(mempool): fixed proptesting of the inner mempool
 - fix(clippy): disallow printlns in workspace
