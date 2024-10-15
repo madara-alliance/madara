@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(devnet): devnet predeployed contracts stable address across systems
 - feat: gas fee flag added
 - fix(mempool): fixed proptesting of the inner mempool
 - fix(clippy): disallow printlns in workspace
