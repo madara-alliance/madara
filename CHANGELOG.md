@@ -3,6 +3,15 @@
 ## Next release
 
 - feat: declare v0, l1 handler support added
+- feat: gas fee flag added
+- fix(mempool): fixed proptesting of the inner mempool
+- fix(clippy): disallow printlns in workspace
+- fix(db): storing a block needs to clear the current pending block
+- fix(sync): Fixed pipeline stalling on machines with few cpu cores
+- fix(rpc): handle batched requests in middleware
+- chore: padded devnet address display with 64 chars
+- feat(script): added more capabilities to the launcher script
+- fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
 - fix(tests): Fixed local testing scripts

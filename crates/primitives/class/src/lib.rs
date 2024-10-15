@@ -225,6 +225,7 @@ pub struct LegacyTypedParameter {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyFunctionAbiType {
     #[serde(rename = "function")]
     Function,
@@ -235,18 +236,21 @@ pub enum LegacyFunctionAbiType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyEventAbiType {
     #[serde(rename = "event")]
     Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyStructAbiType {
     #[serde(rename = "struct")]
     Struct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FunctionStateMutability {
     #[serde(rename = "view")]
     View,
@@ -254,6 +258,12 @@ pub enum FunctionStateMutability {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledSierra(String);
+
+impl AsRef<str> for CompiledSierra {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 const MISSED_CLASS_HASHES_JSON: &[u8] = include_bytes!("../resources/missed_classes.json");
 

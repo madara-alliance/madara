@@ -24,7 +24,7 @@ impl MempoolAddTxProvider {
 impl From<mc_mempool::Error> for StarknetRpcApiError {
     fn from(value: mc_mempool::Error) -> Self {
         match value {
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
                 StarknetRpcApiError::DuplicateTxn
             }
             mc_mempool::Error::Validation(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },

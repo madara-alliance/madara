@@ -234,6 +234,8 @@ async fn madara_can_sync_a_few_blocks() {
         "--n-blocks-to-sync",
         "20",
         "--no-l1-sync",
+        "--gas-price",
+        "0",
     ]);
 
     let mut node = cmd_builder.run();

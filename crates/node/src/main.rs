@@ -1,6 +1,5 @@
 //! Madara node command line.
 #![warn(missing_docs)]
-#![warn(clippy::unwrap_used)]
 
 mod cli;
 mod service;
@@ -91,11 +90,16 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let l1_gas_setter = GasPriceProvider::new();
-    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-    if run_cmd.devnet {
-        run_cmd.l1_sync_params.sync_l1_disabled = true;
-        run_cmd.l1_sync_params.gas_price_sync_disabled = true;
+
+    if let Some(fix_gas) = run_cmd.l1_sync_params.gas_price {
+        l1_gas_setter.update_eth_l1_gas_price(fix_gas as u128);
+        l1_gas_setter.set_gas_price_sync_enabled(false);
     }
+    if let Some(fix_blob_gas) = run_cmd.l1_sync_params.blob_gas_price {
+        l1_gas_setter.update_eth_l1_data_gas_price(fix_blob_gas as u128);
+        l1_gas_setter.set_data_gas_price_sync_enabled(false);
+    }
+    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
@@ -179,7 +183,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Initializing rpc service")?;
 
-    let gateway_service = GatewayService::new(&run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
         .await
         .context("Initializing gateway service")?;
 
