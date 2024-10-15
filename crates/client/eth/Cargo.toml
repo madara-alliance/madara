@@ -8,6 +8,11 @@ repository.workspace = true
 version.workspace = true
 homepage.workspace = true
 
+[lints.clippy]
+# We cannot inherit the lints because the sol! macro for solidy ABI generates unsafe blocks.
+print_stdout = "warn"
+print_stderr = "warn"
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 

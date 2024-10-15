@@ -40,7 +40,6 @@ pub struct ChainConfigOverridesInner {
     #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
-    pub max_nonce_for_validation_skip: u64,
     pub eth_core_contract_address: H160,
     pub eth_gps_statement_verifier: H160,
     #[serde(default)]
@@ -64,7 +63,6 @@ impl ChainConfigOverrideParams {
             execution_batch_size: chain_config.execution_batch_size,
             bouncer_config: chain_config.bouncer_config,
             sequencer_address: chain_config.sequencer_address,
-            max_nonce_for_validation_skip: chain_config.max_nonce_for_validation_skip,
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
             private_key: chain_config.private_key,
@@ -100,8 +98,6 @@ impl ChainConfigOverrideParams {
         let chain_config_overrides: ChainConfigOverridesInner = serde_yaml::from_value(chain_config_overrides)
             .context("Failed to convert Value to ChainConfigOverridesInner")?;
 
-        println!("chain_config_overrides: {:#?}", chain_config_overrides);
-
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
@@ -113,7 +109,6 @@ impl ChainConfigOverrideParams {
             execution_batch_size: chain_config_overrides.execution_batch_size,
             bouncer_config: chain_config_overrides.bouncer_config,
             sequencer_address: chain_config_overrides.sequencer_address,
-            max_nonce_for_validation_skip: chain_config_overrides.max_nonce_for_validation_skip,
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
