@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(devnet): devnet predeployed contracts stable address across systems (re)
 - chore: Fixed README table format
 - fix(cli): fixed devnet cli arguments
 - fix(db): max rocksdb LOG files count and size and add more memory metrics
