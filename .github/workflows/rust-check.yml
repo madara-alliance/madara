@@ -15,7 +15,7 @@ jobs:
           shared-key: "cache"
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.78
+          toolchain: 1.81
 
       - uses: software-mansion/setup-scarb@v1
         with:
