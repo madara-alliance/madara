@@ -2,9 +2,9 @@
 
 ## Next release
 
-- fix: Pragma's ExEx refresh behavior
-- feat: `exex_pragma_dispatch` implementation
-- feat: Madara ExExs proof of concept
+- feat: Pragma's ExEx
+- fix(devnet): devnet predeployed contracts stable address across systems (re)
+- chore: Fixed README table format
 - fix(cli): fixed devnet cli arguments
 - fix(db): max rocksdb LOG files count and size and add more memory metrics
 - fix(devnet): devnet predeployed contracts stable address across systems

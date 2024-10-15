@@ -14,6 +14,7 @@ use starknet_core::types::{
     TransactionReceiptWithBlockInfo, TransactionStatus,
 };
 use starknet_signers::SigningKey;
+use tokio::time::sleep;
 
 use mc_devnet::{Call, Multicall, Selector};
 use mc_mempool::transaction_hash;
@@ -21,7 +22,6 @@ use mc_rpc::versions::v0_7_1::{StarknetReadRpcApiV0_7_1Server, StarknetWriteRpcA
 use mp_convert::ToFelt;
 use mp_exex::{ExExContext, ExExEvent, ExExNotification};
 use mp_transactions::broadcasted_to_blockifier;
-use tokio::time::sleep;
 
 const PENDING_BLOCK: BlockId = BlockId::Tag(BlockTag::Pending);
 
@@ -251,10 +251,9 @@ async fn get_transaction_status(
 ) -> anyhow::Result<TransactionStatus> {
     const POLLING_INTERVAL: Duration = Duration::from_millis(100);
     const ERROR_RETRY_INTERVAL: Duration = Duration::from_millis(10);
-    const MAX_RETRIES: u32 = 100;
+    const MAX_RETRIES: u32 = 200;
 
     let mut retries = 0;
-
     loop {
         match starknet.get_transaction_status(*transaction_hash) {
             Ok(TransactionStatus::Received) => {
