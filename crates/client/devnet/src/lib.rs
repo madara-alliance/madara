@@ -5,8 +5,6 @@ use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
@@ -102,8 +100,9 @@ impl ChainGenesisDescription {
         }
 
         pub fn from_seed(seed: u64) -> Felt {
-            // Use a fixed seed for deterministic RNG
-            let mut rng = StdRng::seed_from_u64(seed);
+            use rand::{RngCore, SeedableRng};
+            // Use a fixed seed for deterministic RNG. Do not use StdRng but SmallRng so that it's stable across systems.
+            let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
             let mut buffer = [0u8; 32];
             rng.fill_bytes(&mut buffer);
 
