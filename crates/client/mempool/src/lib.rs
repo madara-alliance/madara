@@ -15,7 +15,7 @@ use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_transactions::{broadcasted_to_blockifier, broadcasted_to_blockifier_v0, BroadcastedDeclareTransactionV0};
+use mp_transactions::{broadcasted_to_blockifier, broadcasted_declare_v0_to_blockifier, BroadcastedDeclareTransactionV0};
 use mp_transactions::{BroadcastedToBlockifierError, L1HandlerTransactionResult};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
@@ -190,7 +190,7 @@ impl MempoolProvider for Mempool {
 
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
         let (tx, classes) =
-            broadcasted_to_blockifier_v0(tx, self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+            broadcasted_declare_v0_to_blockifier(tx, self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),

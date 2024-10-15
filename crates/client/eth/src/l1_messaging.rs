@@ -152,10 +152,8 @@ async fn process_l1_message(
     };
 
     let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction: BlockifierL1HandlerTransaction =
-        BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
-
-    let res = mempool.accept_l1_handler_tx(BlockifierTransation::L1HandlerTransaction(blockifier_transaction))?;
+    let blockifier_transaction = BlockifierTransation::from_api(Transaction::L1Handler(transaction), tx_hash, None, Some(event.fee.try_into()?), None, false)?;
+    let res = mempool.accept_l1_handler_tx(blockifier_transaction)?;
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?

@@ -32,7 +32,7 @@ pub enum BroadcastedToBlockifierError {
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
 }
 
-pub fn broadcasted_to_blockifier_v0(
+pub fn broadcasted_declare_v0_to_blockifier(
     transaction: BroadcastedDeclareTransactionV0,
     chain_id: Felt,
     starknet_version: StarknetVersion,
@@ -58,7 +58,7 @@ pub fn broadcasted_to_blockifier_v0(
 
     let is_query = transaction.is_query;
     let TransactionWithHash { transaction, hash } =
-        TransactionWithHash::from_broadcasted_v0(transaction, chain_id, starknet_version, class_hash);
+        TransactionWithHash::from_broadcasted_declare_v0(transaction, chain_id, starknet_version, class_hash);
 
     let deployed_address = match &transaction {
         Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),

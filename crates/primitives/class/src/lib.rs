@@ -227,32 +227,26 @@ pub struct LegacyTypedParameter {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyFunctionAbiType {
-    #[serde(rename = "function")]
     Function,
-    #[serde(rename = "l1_handler")]
     L1Handler,
-    #[serde(rename = "constructor")]
     Constructor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyEventAbiType {
-    #[serde(rename = "event")]
     Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyStructAbiType {
-    #[serde(rename = "struct")]
     Struct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FunctionStateMutability {
-    #[serde(rename = "view")]
     View,
 }
 

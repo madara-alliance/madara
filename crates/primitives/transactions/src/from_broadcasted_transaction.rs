@@ -28,7 +28,7 @@ impl TransactionWithHash {
         Self { hash, transaction }
     }
 
-    pub fn from_broadcasted_v0(
+    pub fn from_broadcasted_declare_v0(
         tx: BroadcastedDeclareTransactionV0,
         chain_id: Felt,
         starknet_version: StarknetVersion,
@@ -36,7 +36,7 @@ impl TransactionWithHash {
     ) -> Self {
         let is_query = tx.is_query;
         let transaction: Transaction =
-            Transaction::Declare(DeclareTransaction::from_broadcasted_v0(tx, class_hash.unwrap()));
+            Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(tx, class_hash.unwrap()));
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
@@ -95,13 +95,13 @@ impl DeclareTransaction {
         }
     }
 
-    fn from_broadcasted_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
-        DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted(tx, class_hash))
+    fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+        DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted_declare_v0(tx, class_hash))
     }
 }
 
 impl DeclareTransactionV0 {
-    fn from_broadcasted(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+    fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
         Self { sender_address: tx.sender_address, max_fee: tx.max_fee, signature: tx.signature, class_hash }
     }
 }

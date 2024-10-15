@@ -536,7 +536,7 @@ mod tests {
                         TxTy::L1Handler => starknet_api::transaction::Transaction::L1Handler(
                             starknet_api::transaction::L1HandlerTransaction {
                                 version: TransactionVersion::ZERO,
-                                nonce: Nonce::default(),
+                                nonce,
                                 contract_address: contract_addr,
                                 entry_point_selector: selector_from_name("l1_handler_set_value"),
                                 calldata: Default::default(),
@@ -560,10 +560,9 @@ mod tests {
 
                     let tx_hash = tx.calculate_transaction_hash(&ChainId::Mainnet, &TransactionVersion::THREE).unwrap();
 
+                    // Note: sending paid l1 gas as none as of now
                     let tx =
                         Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), None, deployed, false).unwrap();
-
-                    // let Transaction::AccountTransaction(tx) = tx else { unimplemented!() };
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
                 })

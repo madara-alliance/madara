@@ -242,8 +242,6 @@ async fn madara_can_sync_a_few_blocks() {
     node.wait_for_ready().await;
     node.wait_for_sync_to(19).await;
 
-    println!("we have block till: {:?}", node.json_rpc().block_hash_and_number().await.unwrap());
-
     assert_eq!(
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {

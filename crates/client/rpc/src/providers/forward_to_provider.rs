@@ -25,9 +25,7 @@ impl<P: Provider + Send + Sync> AddTransactionProvider for ForwardToProvider<P> 
         &self,
         _declare_v0_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<DeclareTransactionResult> {
-        // panic here, because we can't really forward it to the real FGW, or shall we enable it so that another madara full node is able to use it?
-        // maybe a flag for this? as discussed
-        unimplemented!()
+        Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
     async fn add_declare_transaction(
         &self,

@@ -5,7 +5,6 @@ use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
-// use blockifier::transaction::transaction_execution::Transaction;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -252,8 +251,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             }
 
             stats.n_batches += 1;
-
-            // txs_to_process_blockifier.extend(txs_to_process.iter().map(|tx| clone_transaction(&tx.tx)));
 
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
