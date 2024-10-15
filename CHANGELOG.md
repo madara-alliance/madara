@@ -3,6 +3,8 @@
 ## Next release
 
 - chore: Fixed README table format
+- fix(cli): fixed devnet cli arguments
+- fix(db): max rocksdb LOG files count and size and add more memory metrics
 - fix(devnet): devnet predeployed contracts stable address across systems
 - feat: gas fee flag added
 - fix(mempool): fixed proptesting of the inner mempool
