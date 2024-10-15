@@ -55,7 +55,7 @@ impl StateDiff {
     }
 
     pub fn sort(&mut self) {
-        self.storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort());
+        self.storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort_storage_entries());
         self.storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
         self.deprecated_declared_classes.sort();
         self.declared_classes.sort_by_key(|declared_class| declared_class.class_hash);
@@ -100,7 +100,7 @@ impl StateDiff {
 
         let storage_diffs_sorted = {
             let mut storage_diffs = self.storage_diffs.clone();
-            storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort());
+            storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort_storage_entries());
             storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
             storage_diffs
         };
@@ -154,7 +154,7 @@ impl ContractStorageDiffItem {
         self.storage_entries.len()
     }
 
-    pub fn sort(&mut self) {
+    pub fn sort_storage_entries(&mut self) {
         self.storage_entries.sort_by_key(|storage_entry| storage_entry.key);
     }
 }
