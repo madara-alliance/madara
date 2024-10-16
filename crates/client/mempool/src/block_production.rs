@@ -401,8 +401,33 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (new_state_diff, _n_executed) =
+        let (mut new_state_diff, _n_executed) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+
+        // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
+        // at address 0x1 with the block number as the key
+        if block_n >= 10 {
+            let prev_block_number = block_n - 10;
+            match self.backend.get_block_hash(&BlockId::Number(prev_block_number)) {
+                Ok(Some(prev_block_hash)) => {
+                    let address = Felt::ONE;
+                    new_state_diff.storage_diffs.push(ContractStorageDiffItem {
+                        address,
+                        storage_entries: vec![StorageEntry { key: Felt::from(block_n), value: prev_block_hash }],
+                    });
+                }
+                Ok(None) => {
+                    return Err(Error::Unexpected(
+                        format!("No block hash found for block number {}", prev_block_number).into(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(Error::Unexpected(
+                        format!("Error fetching block hash for block {}: {:?}", prev_block_number, e).into(),
+                    ));
+                }
+            }
+        }
 
         // Convert the pending block to a closed block and save to db.
 
