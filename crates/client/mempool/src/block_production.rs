@@ -1,8 +1,8 @@
 // TODO: Move this into its own crate.
 
-use crate::analytics::MEMPOOL_METRICS;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
+use crate::metrics::BlockProductionMetrics;
 use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
@@ -180,6 +180,7 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
+    metrics: BlockProductionMetrics,
 }
 
 impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
@@ -190,13 +191,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(
-        skip(backend, importer, mempool, l1_data_provider),
+        skip(backend, importer, mempool, l1_data_provider, metrics),
         fields(service_name = "BlockProductionTask")
     )]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
+        metrics: BlockProductionMetrics,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend
@@ -227,6 +229,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             block: pending_block,
             declared_classes: vec![],
             l1_data_provider,
+            metrics,
         })
     }
 
@@ -457,9 +460,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
         ];
 
-        MEMPOOL_METRICS.block_counter.add(1, &[]);
-        MEMPOOL_METRICS.block_gauge.record(block_n, &attributes);
-        MEMPOOL_METRICS.transaction_counter.add(n_txs as u64, &[]);
+        self.metrics.block_counter.add(1, &[]);
+        self.metrics.block_gauge.record(block_n, &attributes);
+        self.metrics.transaction_counter.add(n_txs as u64, &[]);
 
         Ok(())
     }

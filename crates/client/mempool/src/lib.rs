@@ -1,4 +1,3 @@
-use analytics::MEMPOOL_METRICS;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -36,12 +35,12 @@ pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
-mod analytics;
 pub mod block_production;
 mod close_block;
 pub mod header;
 mod inner;
 mod l1;
+pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -141,8 +140,6 @@ impl Mempool {
                 .expect("Poisoned lock")
                 .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
         }
-
-        MEMPOOL_METRICS.accepted_transaction_counter.add(1, &[]);
 
         Ok(())
     }

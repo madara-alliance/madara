@@ -4,7 +4,7 @@ use anyhow::Context;
 use mc_block_import::{BlockImporter, BlockValidationContext};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
+use mc_mempool::{block_production::BlockProductionTask, metrics::BlockProductionMetrics, L1DataProvider, Mempool};
 use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;
@@ -15,6 +15,7 @@ struct StartParams {
     backend: Arc<MadaraBackend>,
     block_import: Arc<BlockImporter>,
     mempool: Arc<Mempool>,
+    metrics: BlockProductionMetrics,
     l1_data_provider: Arc<dyn L1DataProvider>,
     is_devnet: bool,
     n_devnet_contracts: u64,
@@ -43,11 +44,14 @@ impl BlockProductionService {
             return Ok(Self { start: None, enabled: false });
         }
 
+        let metrics = BlockProductionMetrics::register();
+
         Ok(Self {
             start: Some(StartParams {
                 backend: Arc::clone(db_service.backend()),
                 l1_data_provider,
                 mempool,
+                metrics,
                 block_import,
                 n_devnet_contracts: config.devnet_contracts,
                 is_devnet,
@@ -65,7 +69,7 @@ impl Service for BlockProductionService {
         if !self.enabled {
             return Ok(());
         }
-        let StartParams { backend, l1_data_provider, mempool, is_devnet, n_devnet_contracts, block_import } =
+        let StartParams { backend, l1_data_provider, mempool, metrics, is_devnet, n_devnet_contracts, block_import } =
             self.start.take().expect("Service already started");
 
         if is_devnet {
@@ -110,7 +114,9 @@ impl Service for BlockProductionService {
         }
 
         join_set.spawn(async move {
-            BlockProductionTask::new(backend, block_import, mempool, l1_data_provider)?.block_production_task().await?;
+            BlockProductionTask::new(backend, block_import, mempool, metrics, l1_data_provider)?
+                .block_production_task()
+                .await?;
             Ok(())
         });
 

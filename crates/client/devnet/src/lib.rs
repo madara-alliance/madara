@@ -190,6 +190,7 @@ mod tests {
     use mc_block_import::{BlockImporter, BlockValidationContext};
     use mc_db::MadaraBackend;
     use mc_mempool::block_production::BlockProductionTask;
+    use mc_mempool::metrics::BlockProductionMetrics;
     use mc_mempool::MempoolProvider;
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
 
@@ -328,10 +329,13 @@ mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider)));
+        let metrics = BlockProductionMetrics::register();
+
         let block_production = BlockProductionTask::new(
             Arc::clone(&backend),
             Arc::clone(&importer),
             Arc::clone(&mempool),
+            metrics,
             Arc::clone(&l1_data_provider),
         )
         .unwrap();

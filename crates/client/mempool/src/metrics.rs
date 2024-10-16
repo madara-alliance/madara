@@ -1,19 +1,16 @@
-use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument, register_metric, Metrics};
-use once_cell::sync::Lazy;
+use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument};
 use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, KeyValue};
 
-register_metric!(MEMPOOL_METRICS, MempoolMetrics);
-
-pub struct MempoolMetrics {
+pub struct BlockProductionMetrics {
     pub block_gauge: Gauge<u64>,
     pub block_counter: Counter<u64>,
     pub transaction_counter: Counter<u64>,
     pub accepted_transaction_counter: Counter<u64>,
 }
 
-impl Metrics for MempoolMetrics {
-    fn register() -> Self {
+impl BlockProductionMetrics {
+    pub fn register() -> Self {
         // Register meter
         let common_scope_attributes = vec![KeyValue::new("crate", "mempool")];
         let mempool_meter = global::meter_with_version(

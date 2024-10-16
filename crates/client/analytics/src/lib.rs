@@ -25,19 +25,19 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 // Initializing Logging
 
 #[derive(Debug, Clone)]
-pub struct AnalyticsService {
+pub struct Analytics {
     service_name: String,
     log_level: Level,
     collection_endpoint: Url,
 }
 
-impl AnalyticsService {
+impl Analytics {
     pub fn new(service_name: String, log_level: String, collection_endpoint: Url) -> anyhow::Result<Self> {
         let log_level = Level::from_str(&log_level).unwrap_or(Level::INFO);
         Ok(Self { service_name, log_level, collection_endpoint })
     }
 
-    fn setup(&mut self) -> anyhow::Result<()> {
+    pub fn setup(&mut self) -> anyhow::Result<()> {
         println!("Setting up analytics service");
         let otel_endpoint = self.collection_endpoint.clone();
         println!("OTEL endpoint: {}", otel_endpoint);
@@ -155,31 +155,8 @@ impl AnalyticsService {
     // }
 }
 
-#[async_trait::async_trait]
-impl Service for AnalyticsService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        self.setup()?;
-        join_set.spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            Ok(())
-        });
-        Ok(())
-    }
-}
-
 // Utils
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
-
-pub trait Metrics {
-    fn register() -> Self;
-}
-
-#[macro_export]
-macro_rules! register_metric {
-    ($name:ident, $type:ty) => {
-        pub static $name: Lazy<$type> = Lazy::new(|| <$type>::register());
-    };
-}
 
 use std::fmt::Display;
 

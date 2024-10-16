@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
-use mc_analytics::AnalyticsService;
+use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
@@ -32,6 +32,16 @@ async fn main() -> anyhow::Result<()> {
     crate::util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
+
+    // Setting up analytics
+
+    let mut analytics = Analytics::new(
+        run_cmd.analytics_params.analytics_service_name.clone(),
+        run_cmd.analytics_params.analytics_log_level.clone(),
+        run_cmd.analytics_params.analytics_collection_endpoint.clone(),
+    )
+    .context("Initializing analytics service")?;
+    analytics.setup().unwrap();
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
@@ -59,19 +69,10 @@ async fn main() -> anyhow::Result<()> {
     // Services.
 
     // TODO: analytics service is the first one to get registered now, no need to make it a service now, just use setup like logger.
-    let mut analytics_service = AnalyticsService::new(
-        run_cmd.analytics_params.analytics_service_name.clone(),
-        run_cmd.analytics_params.analytics_log_level.clone(),
-        run_cmd.analytics_params.analytics_collection_endpoint.clone(),
-    )
-    .context("Initializing analytics service")?;
-
-    let mut x = Default::default();
-    analytics_service.start(&mut x).await.unwrap();
     let telemetry_service: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
-   
+
     let db_service = DatabaseService::new(
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),

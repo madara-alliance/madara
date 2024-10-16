@@ -1,7 +1,8 @@
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{
     global::{self, Error},
-    metrics::{Counter as OtelCounter, Histogram as OtelHistogram}, KeyValue,
+    metrics::{Counter as OtelCounter, Histogram as OtelHistogram},
+    KeyValue,
 };
 
 #[derive(Clone, Debug)]
@@ -99,15 +100,15 @@ impl BlockMetrics {
         );
 
         Ok(Self {
-            l2_block_number: l2_block_number,
-            l2_sync_time: l2_sync_time,
-            l2_avg_sync_time: l2_avg_sync_time,
-            l2_latest_sync_time: l2_latest_sync_time,
-            l2_state_size: l2_state_size,
-            transaction_count: transaction_count,
-            event_count: event_count,
-            l1_gas_price_wei: l1_gas_price_wei,
-            l1_gas_price_strk: l1_gas_price_strk,
+            l2_block_number,
+            l2_sync_time,
+            l2_avg_sync_time,
+            l2_latest_sync_time,
+            l2_state_size,
+            transaction_count,
+            event_count,
+            l1_gas_price_wei,
+            l1_gas_price_strk,
         })
     }
 }
