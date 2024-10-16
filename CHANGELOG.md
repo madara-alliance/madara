@@ -3,6 +3,13 @@
 ## Next release
 
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
+- fix(primitives): fixed storage entries not being sorted in state commitment
+- fix(devnet): devnet predeployed contracts stable address across systems (re)
+- chore: Fixed README table format
+- fix(cli): fixed devnet cli arguments
+- fix(db): max rocksdb LOG files count and size and add more memory metrics
+- fix(devnet): devnet predeployed contracts stable address across systems
+- feat: gas fee flag added
 - fix(mempool): fixed proptesting of the inner mempool
 - fix(clippy): disallow printlns in workspace
 - fix(db): storing a block needs to clear the current pending block

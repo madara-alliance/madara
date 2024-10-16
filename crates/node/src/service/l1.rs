@@ -24,6 +24,7 @@ pub struct L1SyncService {
 }
 
 impl L1SyncService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: &L1SyncParams,
         db: &DatabaseService,
@@ -32,8 +33,9 @@ impl L1SyncService {
         chain_id: ChainId,
         l1_core_address: H160,
         authority: bool,
+        devnet: bool,
     ) -> anyhow::Result<Self> {
-        let eth_client = if !config.sync_l1_disabled {
+        let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
                 let l1_block_metrics =
@@ -52,13 +54,16 @@ impl L1SyncService {
             None
         };
 
-        let gas_price_sync_enabled = authority && !config.gas_price_sync_disabled;
+        // Note: gas price should be synced in case the madara is running in sequencer mode,
+        // we haven't set any fix price for the gas, hence gas price should be none
+        let gas_price_sync_enabled =
+            authority && !devnet && (config.gas_price.is_none() || config.blob_gas_price.is_none());
         let gas_price_poll = config.gas_price_poll;
 
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
-                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--no-gas-price-sync`, or remove the `--no-l1-sync` argument.")?;
+                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             log::info!("⏳ Getting initial L1 gas prices");
             mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)
