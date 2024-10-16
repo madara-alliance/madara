@@ -35,7 +35,7 @@ impl BlockProductionMetrics {
         );
         let transaction_counter = register_counter_metric_instrument(
             &mempool_meter,
-            "transaction_count".to_string(),
+            "transaction_counter".to_string(),
             "A counter to show transaction state for the given block".to_string(),
             "transaction".to_string(),
         );
