@@ -204,5 +204,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     app.start_and_drive_to_end().await?;
+
+    tracing::info!("Shutting down analytics");
+    analytics.shutdown();
+
     Ok(())
 }

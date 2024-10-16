@@ -10,11 +10,6 @@ use opentelemetry::{
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{global, KeyValue};
 
-// TODO: add the buckets to the metrics
-/// Histogram time buckets in microseconds.
-const HISTOGRAM_BUCKETS: [f64; 11] =
-    [5.0, 25.0, 100.0, 500.0, 1_000.0, 2_500.0, 10_000.0, 25_000.0, 100_000.0, 1_000_000.0, 10_000_000.0];
-
 /// Metrics for RPC middleware storing information about the number of requests started/completed,
 /// calls started/completed and their timings.
 #[derive(Debug, Clone)]

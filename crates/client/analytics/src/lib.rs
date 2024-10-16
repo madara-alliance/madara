@@ -1,10 +1,6 @@
 use std::str::FromStr as _;
 use std::time::Duration;
-
-use mp_utils::service::Service;
-use tokio::task::JoinSet;
 use url::Url;
-
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -19,13 +15,9 @@ use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-// Creating Open Telemetry resources
-// Initializing Tracing
-// Initializing Metrics
-// Initializing Logging
-
 #[derive(Debug, Clone)]
 pub struct Analytics {
+    meter_provider: Option<SdkMeterProvider>,
     service_name: String,
     log_level: Level,
     collection_endpoint: Url,
@@ -34,7 +26,7 @@ pub struct Analytics {
 impl Analytics {
     pub fn new(service_name: String, log_level: String, collection_endpoint: Url) -> anyhow::Result<Self> {
         let log_level = Level::from_str(&log_level).unwrap_or(Level::INFO);
-        Ok(Self { service_name, log_level, collection_endpoint })
+        Ok(Self { meter_provider: None, service_name, log_level, collection_endpoint })
     }
 
     pub fn setup(&mut self) -> anyhow::Result<()> {
@@ -50,7 +42,8 @@ impl Analytics {
         println!("Tracing subscriber:");
 
         if !otel_endpoint.host_str().unwrap().is_empty() {
-            let _meter_provider = self.init_metric_provider();
+            let meter_provider = self.init_metric_provider();
+            self.meter_provider = Some(meter_provider);
             let tracer = self.init_tracer_provider();
             println!("Tracer: {}", "hi");
 
@@ -140,19 +133,17 @@ impl Analytics {
             .install_batch(runtime::Tokio)
     }
 
-    // fn shutdown(&self, meter_provider: Option<SdkMeterProvider>) {
-    //     let otel_endpoint = get_env_var_or_panic("OTEL_COLLECTOR_ENDPOINT");
+    pub fn shutdown(&self) {
+        // guard clause if otel is disabled
+        if self.collection_endpoint.to_string().is_empty() {
+            return;
+        }
 
-    //     // guard clause if otel is disabled
-    //     if otel_endpoint.is_empty() {
-    //         return;
-    //     }
-
-    //     if let Some(meter_provider) = meter_provider {
-    //         global::shutdown_tracer_provider();
-    //         let _ = meter_provider.shutdown();
-    //     }
-    // }
+        if let Some(meter_provider) = self.meter_provider.clone() {
+            global::shutdown_tracer_provider();
+            let _ = meter_provider.shutdown();
+        }
+    }
 }
 
 // Utils
