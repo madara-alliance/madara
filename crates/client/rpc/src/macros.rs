@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! merge_rpc_versions {
-    ($rpc_api:expr, $starknet:expr, $read:expr, $write:expr, $trace:expr, $($version:ident),+ $(,)?) => {
+    ($rpc_api:expr, $starknet:expr, $read:expr, $write:expr, $trace:expr, $internal:expr, $($version:ident),+ $(,)?) => {
         $(
             paste::paste! {
                 if $read {
@@ -11,6 +11,9 @@ macro_rules! merge_rpc_versions {
                 }
                 if $trace {
                     $rpc_api.merge(versions::[<$version>]::[<StarknetTraceRpcApi $version:upper Server>]::into_rpc($starknet.clone()))?;
+                }
+                if $internal {
+                    $rpc_api.merge(versions::[<$version>]::[<MadaraWriteRpcApi $version:upper Server>]::into_rpc($starknet.clone()))?;
                 }
             }
         )+

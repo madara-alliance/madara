@@ -1,10 +1,9 @@
+use crate::{versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
     DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
 };
-
-use crate::{versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet};
 
 #[async_trait]
 impl StarknetWriteRpcApiV0_7_1Server for Starknet {
