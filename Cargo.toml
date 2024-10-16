@@ -8,7 +8,6 @@ members = [
   "crates/client/gateway",
   "crates/client/analytics",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
@@ -35,7 +34,6 @@ default-members = [
   "crates/client/gateway",
   "crates/client/rpc",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
@@ -109,7 +107,6 @@ mc-rpc = { path = "crates/client/rpc" }
 mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
-mc-metrics = { path = "crates/client/metrics" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }

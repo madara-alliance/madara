@@ -5424,7 +5424,6 @@ dependencies = [
  "mc-eth",
  "mc-gateway",
  "mc-mempool",
- "mc-metrics",
  "mc-rpc",
  "mc-sync",
  "mc-telemetry",
@@ -5514,7 +5513,6 @@ dependencies = [
  "log",
  "mc-analytics",
  "mc-db",
- "mc-metrics",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -5554,7 +5552,6 @@ dependencies = [
  "lazy_static",
  "log",
  "mc-analytics",
- "mc-metrics",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -5595,7 +5592,6 @@ dependencies = [
  "mc-block-import",
  "mc-db",
  "mc-mempool",
- "mc-metrics",
  "mockall",
  "mp-block",
  "mp-chain-config",
@@ -5660,7 +5656,6 @@ dependencies = [
  "mc-analytics",
  "mc-db",
  "mc-mempool",
- "mc-metrics",
  "mp-chain-config",
  "mp-convert",
  "mp-transactions",
@@ -5793,20 +5788,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-metrics"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "hyper 0.14.29",
- "log",
- "mp-utils",
- "prometheus",
- "thiserror",
- "tokio",
-]
-
-[[package]]
 name = "mc-rpc"
 version = "0.7.0"
 dependencies = [
@@ -5848,7 +5829,6 @@ dependencies = [
  "mc-block-import",
  "mc-db",
  "mc-gateway",
- "mc-metrics",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",

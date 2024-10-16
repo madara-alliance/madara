@@ -21,7 +21,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway.workspace = true
-mc-metrics.workspace = true
 mc-analytics.workspace = true
 mc-telemetry.workspace = true
 
