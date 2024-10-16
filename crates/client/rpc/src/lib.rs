@@ -108,7 +108,5 @@ pub fn versioned_rpc_api(
                 // , v0_8_0 (for example)
     );
 
-    log::debug!("rpc here is: {:?}", rpc_api);
-
     Ok(rpc_api)
 }

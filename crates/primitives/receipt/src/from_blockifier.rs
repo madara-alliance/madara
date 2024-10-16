@@ -2,7 +2,7 @@ use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
     account_transaction::AccountTransaction,
     objects::{FeeType, GasVector, HasRelatedFeeType, TransactionExecutionInfo},
-    transaction_execution::Transaction,
+    transaction_execution::Transaction, transactions::L1HandlerTransaction
 };
 use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_core::types::MsgToL2;
@@ -41,26 +41,21 @@ pub enum L1HandlerMessageError {
     InvalidNonce,
 }
 
-fn get_l1_handler_message_hash(tx: &Transaction) -> Result<Felt, L1HandlerMessageError> {
-    match tx {
-        Transaction::L1HandlerTransaction(tx) => {
-            let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
+fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Felt, L1HandlerMessageError> {
+    let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
-            let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
+    let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
 
-            let nonce = tx.tx.nonce.0.to_bigint().try_into().map_err(|_| L1HandlerMessageError::InvalidNonce)?;
+    let nonce = tx.tx.nonce.0.to_bigint().try_into().map_err(|_| L1HandlerMessageError::InvalidNonce)?;
 
-            let message = MsgToL2 {
-                from_address,
-                to_address: tx.tx.contract_address.into(),
-                selector: tx.tx.entry_point_selector.0,
-                payload: payload.into(),
-                nonce,
-            };
-            Ok(Felt::from_bytes_le(message.hash().as_bytes()))
-        }
-        _ => Err(L1HandlerMessageError::EmptyCalldata), // or another appropriate error
-    }
+    let message = MsgToL2 {
+        from_address,
+        to_address: tx.tx.contract_address.into(),
+        selector: tx.tx.entry_point_selector.0,
+        payload: payload.into(),
+        nonce,
+    };
+    Ok(Felt::from_bytes_le(message.hash().as_bytes()))
 }
 
 pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Transaction) -> TransactionReceipt {
@@ -76,11 +71,10 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     get_events_from_call_info(res.execute_call_info.as_ref(), 0, &mut events);
 
     let message_hash = match tx {
-        Transaction::L1HandlerTransaction(_) => match get_l1_handler_message_hash(tx) {
+        Transaction::L1HandlerTransaction(tx) => match get_l1_handler_message_hash(tx) {
             Ok(hash) => Some(hash),
-            Err(_err) => {
-                // ideal this should panic
-                None
+            Err(err) => {
+                panic!("Error getting l1 handler message hash: {:?}", err);
             }
         },
         _ => None,
@@ -165,7 +159,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             events,
             execution_resources,
             execution_result,
-            message_hash: message_hash.unwrap_or_else(|| Felt::from(0)),
+            message_hash: message_hash.unwrap(), // it's a safe unwrap because it would've panicked earlier if it was Err
         }),
     }
 }
