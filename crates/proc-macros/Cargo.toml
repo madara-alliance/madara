@@ -18,6 +18,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 proc-macro2 = "1.0.86"
 quote = "1.0.26"
 syn = { version = "2.0.39", features = ["full"] }
+indoc = "2.0.5"
 
 [lib]
 proc-macro = true
