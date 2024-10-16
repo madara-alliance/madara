@@ -4,7 +4,9 @@ use anyhow::Context;
 use mc_block_import::{BlockImporter, BlockValidationContext};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::{block_production::BlockProductionTask, metrics::BlockProductionMetrics, L1DataProvider, Mempool};
+use mc_mempool::{
+    block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
+};
 use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;

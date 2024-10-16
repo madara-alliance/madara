@@ -1,15 +1,12 @@
-use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument};
-use opentelemetry::metrics::{Counter, Gauge};
+use mc_analytics::register_counter_metric_instrument;
+use opentelemetry::metrics::Counter;
 use opentelemetry::{global, KeyValue};
 
-pub struct BlockProductionMetrics {
-    pub block_gauge: Gauge<u64>,
-    pub block_counter: Counter<u64>,
-    pub transaction_counter: Counter<u64>,
+pub struct MempoolMetrics {
     pub accepted_transaction_counter: Counter<u64>,
 }
 
-impl BlockProductionMetrics {
+impl MempoolMetrics {
     pub fn register() -> Self {
         // Register meter
         let common_scope_attributes = vec![KeyValue::new("crate", "mempool")];
@@ -21,25 +18,6 @@ impl BlockProductionMetrics {
             Some(common_scope_attributes.clone()),
         );
 
-        let block_gauge = register_gauge_metric_instrument(
-            &mempool_meter,
-            "block_produced_no".to_string(),
-            "A gauge to show block state at given time".to_string(),
-            "block".to_string(),
-        );
-        let block_counter = register_counter_metric_instrument(
-            &mempool_meter,
-            "block_produced_count".to_string(),
-            "A counter to show block state at given time".to_string(),
-            "block".to_string(),
-        );
-        let transaction_counter = register_counter_metric_instrument(
-            &mempool_meter,
-            "transaction_count".to_string(),
-            "A counter to show transaction state for the given block".to_string(),
-            "transaction".to_string(),
-        );
-
         let accepted_transaction_counter = register_counter_metric_instrument(
             &mempool_meter,
             "accepted_transaction_count".to_string(),
@@ -47,6 +25,6 @@ impl BlockProductionMetrics {
             "transaction".to_string(),
         );
 
-        Self { block_gauge, block_counter, transaction_counter, accepted_transaction_counter }
+        Self { accepted_transaction_counter }
     }
 }

@@ -1,8 +1,8 @@
 // TODO: Move this into its own crate.
 
+use crate::block_production_metrics::BlockProductionMetrics;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::metrics::BlockProductionMetrics;
 use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};

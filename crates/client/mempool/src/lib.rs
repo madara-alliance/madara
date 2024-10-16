@@ -10,6 +10,7 @@ use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
 use mc_exec::ExecutionContext;
+use metrics::MempoolMetrics;
 use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
@@ -36,6 +37,7 @@ pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
 pub mod block_production;
+pub mod block_production_metrics;
 mod close_block;
 pub mod header;
 mod inner;
@@ -83,11 +85,12 @@ pub struct Mempool {
     backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
+    metrics: MempoolMetrics,
 }
 
 impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
-        Mempool { backend, l1_data_provider, inner: Default::default() }
+        Mempool { backend, l1_data_provider, inner: Default::default(), metrics: MempoolMetrics::register() }
     }
 
     #[tracing::instrument(skip(self), fields(service_name = "Mempool"))]
@@ -140,6 +143,8 @@ impl Mempool {
                 .expect("Poisoned lock")
                 .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
         }
+
+        self.metrics.accepted_transaction_counter.add(1, &[]);
 
         Ok(())
     }
