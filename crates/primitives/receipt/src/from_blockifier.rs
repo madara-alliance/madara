@@ -5,8 +5,9 @@ use blockifier::transaction::{
     transaction_execution::Transaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-// use starknet_core::types::MsgToL2;
+use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
+use thiserror::Error;
 
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
@@ -30,6 +31,38 @@ fn blockifier_tx_hash(tx: &Transaction) -> Felt {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum L1HandlerMessageError {
+    #[error("Empty calldata")]
+    EmptyCalldata,
+    #[error("From address out of range")]
+    FromAddressOutOfRange,
+    #[error("Invalid nonce")]
+    InvalidNonce,
+}
+
+fn get_l1_handler_message_hash(tx: &Transaction) -> Result<Felt, L1HandlerMessageError> {
+    match tx {
+        Transaction::L1HandlerTransaction(tx) => {
+            let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
+
+            let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
+
+            let nonce = tx.tx.nonce.0.to_bigint().try_into().map_err(|_| L1HandlerMessageError::InvalidNonce)?;
+
+            let message = MsgToL2 {
+                from_address,
+                to_address: tx.tx.contract_address.into(),
+                selector: tx.tx.entry_point_selector.0,
+                payload: payload.into(),
+                nonce,
+            };
+            Ok(Felt::from_bytes_le(message.hash().as_bytes()))
+        }
+        _ => Err(L1HandlerMessageError::EmptyCalldata), // or another appropriate error
+    }
+}
+
 pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Transaction) -> TransactionReceipt {
     let price_unit = match blockifier_tx_fee_type(tx) {
         FeeType::Eth => PriceUnit::Wei,
@@ -42,6 +75,17 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let mut events: Vec<Event> = Vec::new();
     get_events_from_call_info(res.execute_call_info.as_ref(), 0, &mut events);
 
+    let message_hash = match tx {
+        Transaction::L1HandlerTransaction(_) => match get_l1_handler_message_hash(tx) {
+            Ok(hash) => Some(hash),
+            Err(_err) => {
+                // ideal this should panic
+                None
+            }
+        },
+        _ => None,
+    };
+
     let messages_sent = res
         .non_optional_call_infos()
         .flat_map(|call| {
@@ -52,35 +96,6 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             })
         })
         .collect();
-
-    // if the txn type is L1HandlerTransaction, then the message hash is a function call of l1_handler_tx
-    // let message: MsgToL2 = match tx {
-    //     Transaction::L1HandlerTransaction(tx) => MsgToL2 {
-    //         nonce: tx.tx.nonce.into(),
-    //         payload: tx.tx.calldata.0,
-    //         from_address: tx.tx.contract_address,
-    //         to_address: tx.tx.to_address,
-    //         selector: tx.tx.entry_point_selector
-    //     },
-    //     _ => todo!(),
-    // };
-
-    // pub fn parse_msg_to_l2(&self) -> Result<MsgToL2, ParseMsgToL2Error> {
-    //     self.calldata.split_first().map_or(
-    //         Err(ParseMsgToL2Error::EmptyCalldata),
-    //         |(from_address, payload)| {
-    //             Ok(MsgToL2 {
-    //                 from_address: (*from_address)
-    //                     .try_into()
-    //                     .map_err(|_| ParseMsgToL2Error::FromAddressOutOfRange)?,
-    //                 to_address: self.contract_address,
-    //                 selector: self.entry_point_selector,
-    //                 payload: payload.into(),
-    //                 nonce: self.nonce,
-    //             })
-    //         },
-    //     )
-    // }
 
     let get_applications = |resource| {
         res.non_optional_call_infos()
@@ -150,7 +165,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             events,
             execution_resources,
             execution_result,
-            message_hash: Felt::from(1),
+            message_hash: message_hash.unwrap_or_else(|| Felt::from(0)),
         }),
     }
 }

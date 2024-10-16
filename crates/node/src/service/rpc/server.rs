@@ -129,7 +129,6 @@ pub async fn start_server(
             let rate_limit_whitelisted_ips = rate_limit_whitelisted_ips.clone();
 
             Ok::<_, Infallible>(service_fn(move |req| {
-                log::debug!("req: {:?}", req);
                 let proxy_ip = if rate_limit_trust_proxy_headers { get_proxy_ip(&req) } else { None };
 
                 let rate_limit_cfg = if rate_limit_whitelisted_ips
@@ -224,8 +223,6 @@ pub(crate) fn host_filtering(enabled: bool, addr: Option<SocketAddr>) -> Option<
 
 pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: RpcModule<M>) -> RpcModule<M> {
     let mut available_methods = rpc_api.method_names().collect::<Vec<_>>();
-
-    log::debug!("available_methods: {:?}", available_methods);
 
     // The "rpc_methods" is defined below and we want it to be part of the reported methods.
     // The available methods will be prefixed by their version, example:

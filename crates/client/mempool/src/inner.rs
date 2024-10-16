@@ -435,6 +435,7 @@ mod tests {
     use starknet_types_core::felt::Felt;
 
     use blockifier::abi::abi_utils::selector_from_name;
+    use starknet_api::transaction::Fee;
     use std::{collections::HashSet, fmt, time::Duration};
 
     lazy_static::lazy_static! {
@@ -556,11 +557,17 @@ mod tests {
                         None
                     };
 
+                    // providing dummy l1 gas for now
+                    let l1_gas_paid = match &tx {
+                        starknet_api::transaction::Transaction::L1Handler(_) => Some(Fee(1)),
+                        _ => None,
+                    };
+
                     let tx_hash = tx.calculate_transaction_hash(&ChainId::Mainnet, &TransactionVersion::THREE).unwrap();
 
-                    // Note: sending paid l1 gas as none as of now
                     let tx =
-                        Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), None, deployed, false).unwrap();
+                        Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), l1_gas_paid, deployed, false)
+                            .unwrap();
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
                 })

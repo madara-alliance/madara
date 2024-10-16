@@ -5210,7 +5210,6 @@ dependencies = [
 name = "m-proc-macros"
 version = "0.7.0"
 dependencies = [
- "log",
  "proc-macro2",
  "quote",
  "syn 2.0.79",
@@ -5788,6 +5787,7 @@ dependencies = [
  "starknet-providers",
  "starknet-types-core",
  "starknet_api",
+ "thiserror",
 ]
 
 [[package]]

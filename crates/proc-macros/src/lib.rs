@@ -111,8 +111,6 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
         ..item_trait
     };
 
-    log::debug!("versioned_trait: {:?}", versioned_trait);
-
     quote! {
         #versioned_trait
     }
