@@ -113,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         chain_config.eth_core_contract_address,
         run_cmd.is_sequencer(),
         Arc::clone(&mempool),
+        run_cmd.is_devnet(),
     )
     .await
     .context("Initializing the l1 sync service")?;
