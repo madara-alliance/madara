@@ -421,13 +421,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     });
                 }
                 Ok(None) => {
-                    log::error!("No block hash found for block number {}", prev_block_number);
                     return Err(Error::Unexpected(
                         format!("No block hash found for block number {}", prev_block_number).into(),
                     ));
                 }
                 Err(e) => {
-                    log::error!("Error fetching block hash for block {}: {:?}", prev_block_number, e);
                     return Err(Error::Unexpected(
                         format!("Error fetching block hash for block {}: {:?}", prev_block_number, e).into(),
                     ));
