@@ -35,11 +35,14 @@ use syn::{parse::Parse, parse_macro_input, Attribute, Ident, ItemTrait, LitStr, 
 
 struct VersionedRpcAttr {
     version: String,
+    namespace: String,
 }
 
 impl Parse for VersionedRpcAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let version = input.parse::<LitStr>()?.value();
+        input.parse::<syn::Token![,]>()?;
+        let namespace = input.parse::<LitStr>()?.value();
 
         if !version.starts_with('V') {
             return Err(syn::Error::new(Span::call_site(), "Version must start with 'V'"));
@@ -60,7 +63,7 @@ impl Parse for VersionedRpcAttr {
             }
         }
 
-        Ok(VersionedRpcAttr { version })
+        Ok(VersionedRpcAttr { version, namespace })
     }
 }
 
@@ -79,8 +82,8 @@ fn version_method_name(attr: &Attribute, version: &str) -> syn::Result<Attribute
 }
 
 #[proc_macro_attribute]
-pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let VersionedRpcAttr { version } = parse_macro_input!(attr as VersionedRpcAttr);
+pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let VersionedRpcAttr { version, namespace } = parse_macro_input!(attr as VersionedRpcAttr);
     let mut item_trait = parse_macro_input!(input as ItemTrait);
 
     let trait_name = &item_trait.ident;
@@ -103,10 +106,12 @@ pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStr
     }
 
     let versioned_trait = ItemTrait {
-        attrs: vec![syn::parse_quote!(#[rpc(server, namespace = "starknet")])],
+        attrs: vec![syn::parse_quote!(#[rpc(server, namespace = #namespace)])],
         ident: versioned_trait_name,
         ..item_trait
     };
+
+    log::debug!("versioned_trait: {:?}", versioned_trait);
 
     quote! {
         #versioned_trait

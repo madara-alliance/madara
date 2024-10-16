@@ -5,7 +5,6 @@ use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use anyhow::Context;
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
-use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mc_mempool::{Mempool, MempoolProvider};
@@ -152,7 +151,14 @@ async fn process_l1_message(
     };
 
     let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction = BlockifierTransation::from_api(Transaction::L1Handler(transaction), tx_hash, None, Some(event.fee.try_into()?), None, false)?;
+    let blockifier_transaction = BlockifierTransation::from_api(
+        Transaction::L1Handler(transaction),
+        tx_hash,
+        None,
+        Some(Fee(event.fee.try_into()?)),
+        None,
+        false,
+    )?;
     let res = mempool.accept_l1_handler_tx(blockifier_transaction)?;
 
     // TODO: remove unwraps

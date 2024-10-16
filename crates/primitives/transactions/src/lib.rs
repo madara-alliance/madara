@@ -16,7 +16,7 @@ pub mod utils;
 use mp_convert::{hex_serde::U128AsHex, hex_serde::U64AsHex, ToFelt};
 // pub use from_starknet_provider::TransactionTypeError;
 pub use broadcasted_to_blockifier::{
-    broadcasted_to_blockifier, broadcasted_declare_v0_to_blockifier, BroadcastedToBlockifierError,
+    broadcasted_declare_v0_to_blockifier, broadcasted_to_blockifier, BroadcastedToBlockifierError,
 };
 use mp_class::CompressedLegacyContractClass;
 use serde_with::serde_as;

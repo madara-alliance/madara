@@ -418,7 +418,6 @@ mod tests {
     use blockifier::{
         execution::contract_class::ClassInfo,
         test_utils::{contracts::FeatureContract, CairoVersion},
-        transaction::transactions::{DeclareTransaction, InvokeTransaction, L1HandlerTransaction},
         transaction::{transaction_execution::Transaction, transaction_types::TransactionType},
     };
     use mc_exec::execution::TxInfo;
@@ -429,14 +428,13 @@ mod tests {
         core::{calculate_contract_address, ChainId},
         data_availability::DataAvailabilityMode,
         transaction::{
-            ContractAddressSalt, DeclareTransactionV3, DeployAccountTransactionV3, Fee, InvokeTransactionV3, Resource,
+            ContractAddressSalt, DeclareTransactionV3, DeployAccountTransactionV3, InvokeTransactionV3, Resource,
             ResourceBounds, ResourceBoundsMapping, TransactionHasher, TransactionVersion,
         },
     };
     use starknet_types_core::felt::Felt;
 
     use blockifier::abi::abi_utils::selector_from_name;
-    use lazy_static::*;
     use std::{collections::HashSet, fmt, time::Duration};
 
     lazy_static::lazy_static! {
