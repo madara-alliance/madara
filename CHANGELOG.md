@@ -3,6 +3,8 @@
 ## Next release
 
 - feat: declare v0, l1 handler support added
+- fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
+- fix(primitives): fixed storage entries not being sorted in state commitment
 - fix(devnet): devnet predeployed contracts stable address across systems (re)
 - chore: Fixed README table format
 - fix(cli): fixed devnet cli arguments
