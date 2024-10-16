@@ -12,6 +12,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::jobs::types::JobType;
 use crate::jobs::{handle_job_failure, process_job, verify_job, JobError, OtherError};
 use crate::workers::data_submission_worker::DataSubmissionWorker;
 use crate::workers::proof_registration::ProofRegistrationWorker;
@@ -20,9 +21,23 @@ use crate::workers::snos::SnosWorker;
 use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
 
-pub const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
-pub const JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_job_verification_queue";
-// Below is the Data Letter Queue for the above two jobs.
+pub const SNOS_JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_snos_job_processing_queue";
+pub const SNOS_JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_snos_job_verification_queue";
+
+pub const PROVING_JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_proving_job_processing_queue";
+pub const PROVING_JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_proving_job_verification_queue";
+
+pub const PROOF_REGISTRATION_JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_proof_registration_job_processing_queue";
+pub const PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE: &str =
+    "madara_orchestrator_proof_registration_job_verification_queue";
+
+pub const DATA_SUBMISSION_JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_data_submission_job_processing_queue";
+pub const DATA_SUBMISSION_JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_data_submission_job_verification_queue";
+
+pub const UPDATE_STATE_JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_update_state_job_processing_queue";
+pub const UPDATE_STATE_JOB_VERIFICATION_QUEUE: &str = "madara_orchestrator_update_state_job_verification_queue";
+
+// Below is the Dead Letter Queue for the above queues.
 pub const JOB_HANDLE_FAILURE_QUEUE: &str = "madara_orchestrator_job_handle_failure_queue";
 
 // Queues for SNOS worker trigger listening
@@ -102,14 +117,47 @@ enum DeliveryReturnType {
     NoMessage,
 }
 
-pub async fn add_job_to_process_queue(id: Uuid, config: Arc<Config>) -> EyreResult<()> {
-    tracing::info!("Adding job with id {:?} to processing queue", id);
-    add_job_to_queue(id, JOB_PROCESSING_QUEUE.to_string(), None, config).await
+pub trait QueueNameForJobType {
+    fn process_queue_name(&self) -> String;
+    fn verify_queue_name(&self) -> String;
 }
 
-pub async fn add_job_to_verification_queue(id: Uuid, delay: Duration, config: Arc<Config>) -> EyreResult<()> {
+impl QueueNameForJobType for JobType {
+    fn process_queue_name(&self) -> String {
+        match self {
+            JobType::SnosRun => SNOS_JOB_PROCESSING_QUEUE,
+            JobType::ProofCreation => PROVING_JOB_PROCESSING_QUEUE,
+            JobType::ProofRegistration => PROOF_REGISTRATION_JOB_PROCESSING_QUEUE,
+            JobType::DataSubmission => DATA_SUBMISSION_JOB_PROCESSING_QUEUE,
+            JobType::StateTransition => UPDATE_STATE_JOB_PROCESSING_QUEUE,
+        }
+        .to_string()
+    }
+    fn verify_queue_name(&self) -> String {
+        match self {
+            JobType::SnosRun => SNOS_JOB_VERIFICATION_QUEUE,
+            JobType::ProofCreation => PROVING_JOB_VERIFICATION_QUEUE,
+            JobType::ProofRegistration => PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE,
+            JobType::DataSubmission => DATA_SUBMISSION_JOB_VERIFICATION_QUEUE,
+            JobType::StateTransition => UPDATE_STATE_JOB_VERIFICATION_QUEUE,
+        }
+        .to_string()
+    }
+}
+
+pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, config: Arc<Config>) -> EyreResult<()> {
+    tracing::info!("Adding job with id {:?} to processing queue", id);
+    add_job_to_queue(id, job_type.process_queue_name(), None, config).await
+}
+
+pub async fn add_job_to_verification_queue(
+    id: Uuid,
+    job_type: &JobType,
+    delay: Duration,
+    config: Arc<Config>,
+) -> EyreResult<()> {
     tracing::info!("Adding job with id {:?} to verification queue", id);
-    add_job_to_queue(id, JOB_VERIFICATION_QUEUE.to_string(), Some(delay), config).await
+    add_job_to_queue(id, job_type.verify_queue_name(), Some(delay), config).await
 }
 
 pub async fn consume_job_from_queue<F, Fut>(
@@ -122,7 +170,7 @@ where
     F: Send + 'static,
     Fut: Future<Output = Result<(), JobError>> + Send,
 {
-    tracing::info!(queue = %queue, "Attempting to consume job from queue");
+    tracing::trace!(queue = %queue, "Attempting to consume job from queue");
 
     let delivery = get_delivery_from_queue(&queue, config.clone()).await?;
 
@@ -322,9 +370,35 @@ macro_rules! spawn_consumer {
 }
 
 pub async fn init_consumers(config: Arc<Config>) -> Result<(), JobError> {
-    spawn_consumer!(JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue, config.clone());
-    spawn_consumer!(JOB_VERIFICATION_QUEUE.to_string(), verify_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(SNOS_JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(SNOS_JOB_VERIFICATION_QUEUE.to_string(), verify_job, consume_job_from_queue, config.clone());
+
+    spawn_consumer!(PROVING_JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(PROVING_JOB_VERIFICATION_QUEUE.to_string(), verify_job, consume_job_from_queue, config.clone());
+
+    spawn_consumer!(
+        DATA_SUBMISSION_JOB_PROCESSING_QUEUE.to_string(),
+        process_job,
+        consume_job_from_queue,
+        config.clone()
+    );
+    spawn_consumer!(
+        DATA_SUBMISSION_JOB_VERIFICATION_QUEUE.to_string(),
+        verify_job,
+        consume_job_from_queue,
+        config.clone()
+    );
+
+    spawn_consumer!(UPDATE_STATE_JOB_PROCESSING_QUEUE.to_string(), process_job, consume_job_from_queue, config.clone());
+    spawn_consumer!(
+        UPDATE_STATE_JOB_VERIFICATION_QUEUE.to_string(),
+        verify_job,
+        consume_job_from_queue,
+        config.clone()
+    );
+
     spawn_consumer!(JOB_HANDLE_FAILURE_QUEUE.to_string(), handle_job_failure, consume_job_from_queue, config.clone());
+
     spawn_consumer!(WORKER_TRIGGER_QUEUE.to_string(), spawn_worker, consume_worker_trigger_messages_from_queue, config);
     Ok(())
 }

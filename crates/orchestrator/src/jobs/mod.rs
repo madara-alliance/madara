@@ -42,7 +42,7 @@ pub enum JobError {
     #[error("Job already exists for internal_id {internal_id:?} and job_type {job_type:?}. Skipping!")]
     JobAlreadyExists { internal_id: String, job_type: JobType },
 
-    #[error("Invalid status {id:?} for job with id {job_status:?}. Cannot process.")]
+    #[error("Invalid status {job_status:?} for job with id {id:?}. Cannot process.")]
     InvalidStatus { id: Uuid, job_status: JobStatus },
 
     #[error("Failed to find job with id {id:?}")]
@@ -169,7 +169,9 @@ pub async fn create_job(
     let job_item = job_handler.create_job(config.clone(), internal_id.clone(), metadata).await?;
     config.database().create_job(job_item.clone()).await?;
 
-    add_job_to_process_queue(job_item.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
+    add_job_to_process_queue(job_item.id, &job_type, config.clone())
+        .await
+        .map_err(|e| JobError::Other(OtherError(e)))?;
 
     let attributes = [
         KeyValue::new("job_type", format!("{:?}", job_type)),
@@ -258,6 +260,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     tracing::debug!(job_id = ?id, "Adding job to verification queue");
     add_job_to_verification_queue(
         job.id,
+        &job.job_type,
         Duration::from_secs(job_handler.verification_polling_delay_seconds()),
         config.clone(),
     )
@@ -340,6 +343,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
                     attempt = process_attempts + 1,
                     "Verification failed. Retrying job processing"
                 );
+
                 config
                     .database()
                     .update_job(
@@ -354,8 +358,9 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
                         tracing::error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
                         JobError::Other(OtherError(e))
                     })?;
-                add_job_to_process_queue(job.id, config.clone()).await.map_err(|e| JobError::Other(OtherError(e)))?;
-                return Ok(());
+                add_job_to_process_queue(job.id, &job.job_type, config.clone())
+                    .await
+                    .map_err(|e| JobError::Other(OtherError(e)))?;
             } else {
                 tracing::warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
                 return move_job_to_failed(
@@ -394,6 +399,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
             tracing::debug!(job_id = ?id, "Adding job back to verification queue");
             add_job_to_verification_queue(
                 job.id,
+                &job.job_type,
                 Duration::from_secs(job_handler.verification_polling_delay_seconds()),
                 config.clone(),
             )

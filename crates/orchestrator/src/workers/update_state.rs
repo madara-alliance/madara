@@ -17,7 +17,7 @@ impl Worker for UpdateStateWorker {
     /// 2. Fetch all successful proving jobs covering blocks after the last state update
     /// 3. Create state updates for all the blocks that don't have a state update job
     async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
-        tracing::info!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
+        tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
 
         let latest_successful_job =
             config.database().get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await?;
@@ -57,7 +57,7 @@ impl Worker for UpdateStateWorker {
                     }
                 }
 
-                tracing::info!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+                tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
                 Ok(())
             }
             None => {
@@ -90,7 +90,7 @@ impl Worker for UpdateStateWorker {
                     }
                 }
 
-                tracing::info!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+                tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
                 Ok(())
             }
         }

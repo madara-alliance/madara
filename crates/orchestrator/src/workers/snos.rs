@@ -18,7 +18,7 @@ impl Worker for SnosWorker {
     /// 2. Fetch the last block that had a SNOS job run.
     /// 3. Create SNOS run jobs for all the remaining blocks
     async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
-        tracing::info!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
+        tracing::trace!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
 
         let provider = config.starknet_client();
         let latest_block_number = provider.block_number().await?;
@@ -65,7 +65,7 @@ impl Worker for SnosWorker {
         for x in latest_block_processed + 1..latest_block_number + 1 {
             create_job(JobType::SnosRun, x.to_string(), HashMap::new(), config.clone()).await?;
         }
-        tracing::info!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
+        tracing::trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
     }
 }

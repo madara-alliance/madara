@@ -21,7 +21,12 @@ use crate::database::mongodb::MongoDb;
 use crate::jobs::types::JobStatus::Created;
 use crate::jobs::types::JobType::DataSubmission;
 use crate::jobs::types::{ExternalId, JobItem};
-use crate::queue::job_queue::{JOB_PROCESSING_QUEUE, JOB_VERIFICATION_QUEUE};
+use crate::queue::job_queue::{
+    DATA_SUBMISSION_JOB_PROCESSING_QUEUE, DATA_SUBMISSION_JOB_VERIFICATION_QUEUE,
+    PROOF_REGISTRATION_JOB_PROCESSING_QUEUE, PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE, PROVING_JOB_PROCESSING_QUEUE,
+    PROVING_JOB_VERIFICATION_QUEUE, SNOS_JOB_PROCESSING_QUEUE, SNOS_JOB_VERIFICATION_QUEUE,
+    UPDATE_STATE_JOB_PROCESSING_QUEUE, UPDATE_STATE_JOB_VERIFICATION_QUEUE,
+};
 
 #[fixture]
 pub fn default_job_item() -> JobItem {
@@ -82,8 +87,17 @@ pub async fn create_sqs_queues(provider_config: Arc<ProviderConfig>) -> color_ey
     }
 
     // Creating SQS queues
-    sqs_client.create_queue().queue_name(JOB_PROCESSING_QUEUE).send().await?;
-    sqs_client.create_queue().queue_name(JOB_VERIFICATION_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(DATA_SUBMISSION_JOB_PROCESSING_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(DATA_SUBMISSION_JOB_VERIFICATION_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(SNOS_JOB_PROCESSING_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(SNOS_JOB_VERIFICATION_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(PROVING_JOB_PROCESSING_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(PROVING_JOB_VERIFICATION_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(PROOF_REGISTRATION_JOB_PROCESSING_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(UPDATE_STATE_JOB_PROCESSING_QUEUE).send().await?;
+    sqs_client.create_queue().queue_name(UPDATE_STATE_JOB_VERIFICATION_QUEUE).send().await?;
+
     Ok(())
 }
 

@@ -10,8 +10,11 @@ use orchestrator::config::ProviderConfig;
 use orchestrator::data_storage::aws_s3::AWSS3;
 use orchestrator::data_storage::DataStorage;
 use orchestrator::queue::job_queue::{
-    JobQueueMessage, WorkerTriggerMessage, WorkerTriggerType, JOB_HANDLE_FAILURE_QUEUE, JOB_PROCESSING_QUEUE,
-    JOB_VERIFICATION_QUEUE, WORKER_TRIGGER_QUEUE,
+    JobQueueMessage, WorkerTriggerMessage, WorkerTriggerType, DATA_SUBMISSION_JOB_PROCESSING_QUEUE,
+    DATA_SUBMISSION_JOB_VERIFICATION_QUEUE, JOB_HANDLE_FAILURE_QUEUE, PROOF_REGISTRATION_JOB_PROCESSING_QUEUE,
+    PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE, PROVING_JOB_PROCESSING_QUEUE, PROVING_JOB_VERIFICATION_QUEUE,
+    SNOS_JOB_PROCESSING_QUEUE, SNOS_JOB_VERIFICATION_QUEUE, UPDATE_STATE_JOB_PROCESSING_QUEUE,
+    UPDATE_STATE_JOB_VERIFICATION_QUEUE, WORKER_TRIGGER_QUEUE,
 };
 use utils::env_utils::get_env_var_or_panic;
 use utils::settings::env::EnvSettingsProvider;
@@ -56,30 +59,31 @@ impl LocalStack {
         // Creating SQS queues
         let mut queue_attributes = HashMap::new();
         queue_attributes.insert(VisibilityTimeout, "1".into());
-        self.sqs_client
-            .create_queue()
-            .queue_name(JOB_PROCESSING_QUEUE)
-            .set_attributes(Some(queue_attributes.clone()))
-            .send()
-            .await?;
-        self.sqs_client
-            .create_queue()
-            .queue_name(JOB_VERIFICATION_QUEUE)
-            .set_attributes(Some(queue_attributes.clone()))
-            .send()
-            .await?;
-        self.sqs_client
-            .create_queue()
-            .queue_name(JOB_HANDLE_FAILURE_QUEUE)
-            .set_attributes(Some(queue_attributes.clone()))
-            .send()
-            .await?;
-        self.sqs_client
-            .create_queue()
-            .queue_name(WORKER_TRIGGER_QUEUE)
-            .set_attributes(Some(queue_attributes.clone()))
-            .send()
-            .await?;
+
+        let queue_names = vec![
+            DATA_SUBMISSION_JOB_PROCESSING_QUEUE,
+            DATA_SUBMISSION_JOB_VERIFICATION_QUEUE,
+            PROOF_REGISTRATION_JOB_PROCESSING_QUEUE,
+            PROOF_REGISTRATION_JOB_VERIFICATION_QUEUE,
+            PROVING_JOB_PROCESSING_QUEUE,
+            PROVING_JOB_VERIFICATION_QUEUE,
+            SNOS_JOB_PROCESSING_QUEUE,
+            SNOS_JOB_VERIFICATION_QUEUE,
+            UPDATE_STATE_JOB_PROCESSING_QUEUE,
+            UPDATE_STATE_JOB_VERIFICATION_QUEUE,
+            JOB_HANDLE_FAILURE_QUEUE,
+            WORKER_TRIGGER_QUEUE,
+        ];
+
+        for queue_name in queue_names {
+            self.sqs_client
+                .create_queue()
+                .queue_name(queue_name)
+                .set_attributes(Some(queue_attributes.clone()))
+                .send()
+                .await?;
+        }
+
         println!("🌊 SQS queues creation completed.");
 
         Ok(())

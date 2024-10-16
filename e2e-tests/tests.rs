@@ -279,7 +279,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 /// as soon as it is picked up by orchestrator
 pub async fn put_snos_job_in_processing_queue(local_stack: &LocalStack, id: Uuid) -> color_eyre::Result<()> {
     let message = JobQueueMessage { id };
-    local_stack.put_message_in_queue(message, get_env_var_or_panic("SQS_JOB_PROCESSING_QUEUE_URL")).await?;
+    local_stack.put_message_in_queue(message, get_env_var_or_panic("SQS_SNOS_JOB_PROCESSING_QUEUE_URL")).await?;
     Ok(())
 }
 

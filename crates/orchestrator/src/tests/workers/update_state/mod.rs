@@ -14,6 +14,7 @@ use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
+use crate::queue::job_queue::UPDATE_STATE_JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{get_job_by_mock_id_vector, get_job_item_mock_by_id};
@@ -32,8 +33,6 @@ async fn test_update_state_worker(
     let da_client = MockDaClient::new();
     let mut db = MockDatabase::new();
     let mut queue = MockQueueProvider::new();
-
-    const JOB_PROCESSING_QUEUE: &str = "madara_orchestrator_job_processing_queue";
 
     // Mocking the get_job_handler function.
     let mut job_handler = MockJob::new();
@@ -102,7 +101,7 @@ async fn test_update_state_worker(
     queue
         .expect_send_message_to_queue()
         .returning(|_, _, _| Ok(()))
-        .withf(|queue, _payload, _delay| queue == JOB_PROCESSING_QUEUE);
+        .withf(|queue, _payload, _delay| queue == UPDATE_STATE_JOB_PROCESSING_QUEUE);
 
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
