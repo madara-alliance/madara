@@ -16,10 +16,14 @@ COPY cairo_0 cairo_0
 
 
 # Installing scarb, new since devnet integration
-ENV SCARB_VERSION="v2.8.2"
-ENV SHELL="/bin/bash"
-RUN curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh -s -- ${SCARB_VERSION}
-ENV PATH="/root/.local/bin:${PATH}"
+ENV SCARB_VERSION="2.8.2"
+RUN git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.1
+RUN echo '. "$HOME/.asdf/asdf.sh"' >> ~/.bashrc
+RUN echo '. "$HOME/.asdf/completions/asdf.bash"' >> ~/.bashrc
+ENV PATH="/root/.asdf/shims:/root/.asdf/bin:${PATH}"
+RUN asdf plugin add scarb
+RUN asdf install scarb ${SCARB_VERSION}
+RUN asdf global scarb ${SCARB_VERSION}
 RUN scarb --version
 
 # Install runtime dependencies
