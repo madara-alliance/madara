@@ -15,7 +15,6 @@ use mc_analytics::AnalyticsService;
 use mc_block_import::BlockImporter;
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
-use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
@@ -72,13 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let telemetry_service: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
-    let prometheus_service = MetricsService::new(
-        run_cmd.prometheus_params.prometheus_disabled,
-        run_cmd.prometheus_params.prometheus_external,
-        run_cmd.prometheus_params.prometheus_port,
-    )
-    .context("Initializing prometheus metrics service")?;
-
+   
     let db_service = DatabaseService::new(
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
@@ -195,8 +188,7 @@ async fn main() -> anyhow::Result<()> {
         .with(block_provider_service)
         .with(rpc_service)
         .with(gateway_service)
-        .with(telemetry_service)
-        .with(prometheus_service);
+        .with(telemetry_service);
 
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {

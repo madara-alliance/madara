@@ -229,7 +229,6 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
-    use mc_metrics::MetricsService;
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
@@ -349,7 +348,6 @@ mod l1_messaging_tests {
         );
 
         // Set up metrics service
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         // Set up provider

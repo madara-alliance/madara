@@ -511,6 +511,7 @@ impl MadaraBackend {
 
     /// Returns the total storage size
     pub fn update_metrics(&self) -> u64 {
+        println!("Updating DB metrics.");
         self.db_metrics.update(&self.db)
     }
 }

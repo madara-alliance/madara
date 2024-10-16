@@ -11,9 +11,9 @@ pub struct DbMetrics {
 
 impl DbMetrics {
     pub fn register() -> Result<Self, Error> {
-        tracing::trace!("Registering RPC metrics.");
+        tracing::trace!("Registering DB metrics.");
         // TODO: Remove this println
-        println!("Registering RPC metrics.");
+        println!("Registering DB metrics.");
 
         let common_scope_attributes = vec![KeyValue::new("crate", "rpc")];
         let rpc_meter = global::meter_with_version(
@@ -51,6 +51,8 @@ impl DbMetrics {
             let cf_metadata = db.get_column_family_metadata_cf(&cf_handle);
             let column_size = cf_metadata.size;
             storage_size += column_size;
+
+            println!("Updating DB metrics.");
 
             self.column_sizes.record(column_size, &[KeyValue::new("column", column.rocksdb_name())]);
         }
