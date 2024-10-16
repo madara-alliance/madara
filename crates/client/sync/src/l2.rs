@@ -268,7 +268,7 @@ mod tests {
     use mc_block_import::tests::block_import_utils::create_dummy_unverified_full_block;
     use mc_block_import::BlockImporter;
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-    use mc_metrics::MetricsRegistry;
+
     use mc_telemetry::TelemetryService;
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::MadaraBlock;
@@ -300,8 +300,7 @@ mod tests {
     async fn test_l2_verify_and_apply_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
-        let block_importer =
-            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
+        let block_importer = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
         let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
 
@@ -360,8 +359,7 @@ mod tests {
         let backend = test_setup;
         let (updates_sender, updates_receiver) = mpsc::channel(100);
         let (output_sender, mut output_receiver) = mpsc::channel(100);
-        let block_import =
-            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let mock_block = create_dummy_unverified_full_block();
@@ -410,8 +408,7 @@ mod tests {
     async fn test_l2_pending_block_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let ctx = TestContext::new(backend.clone());
-        let block_import =
-            Arc::new(BlockImporter::new(backend.clone(), &MetricsRegistry::dummy(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let task_handle = tokio::spawn(l2_pending_block_task(

@@ -10,7 +10,6 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
@@ -335,18 +334,12 @@ impl DatabaseService {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-        metrics_registry: &MetricsRegistry,
     ) -> anyhow::Result<Self> {
         log::info!("💾 Opening database at: {}", base_path.display());
 
-        let handle = MadaraBackend::open(
-            base_path.to_owned(),
-            backup_dir.clone(),
-            restore_from_latest_backup,
-            chain_config,
-            metrics_registry,
-        )
-        .await?;
+        let handle =
+            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
+                .await?;
 
         Ok(Self { handle })
     }
@@ -388,7 +381,7 @@ impl MadaraBackend {
             db: open_rocksdb(temp_dir.as_ref(), true).unwrap(),
             last_flush_time: Default::default(),
             chain_config,
-            db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
+            db_metrics: DbMetrics::register().unwrap(),
             _temp_dir: Some(temp_dir),
         })
     }
@@ -399,7 +392,6 @@ impl MadaraBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-        metrics_registry: &MetricsRegistry,
     ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
@@ -427,7 +419,7 @@ impl MadaraBackend {
         let db = open_rocksdb(&db_path, true)?;
 
         let backend = Arc::new(Self {
-            db_metrics: DbMetrics::register(metrics_registry).context("Registering db metrics")?,
+            db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
             db,
             last_flush_time: Default::default(),

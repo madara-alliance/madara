@@ -80,8 +80,9 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
     // Update the metrics
-    eth_client.l1_block_metrics.l1_block_number.set(latest_block_number as f64);
-    eth_client.l1_block_metrics.l1_gas_price_wei.set(eth_gas_price as f64);
+
+    eth_client.l1_block_metrics.l1_block_number.record(latest_block_number, &[]);
+    eth_client.l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
 
     // We're ignoring l1_gas_price_strk
 

@@ -22,6 +22,8 @@ serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
+# madara
+mc-analytics.workspace = true
 mc-db.workspace = true
 mc-metrics.workspace = true
 mp-block.workspace = true

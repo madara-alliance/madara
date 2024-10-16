@@ -59,13 +59,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    let analytics_service = AnalyticsService::new(
+    // TODO: analytics service is the first one to get registered now, no need to make it a service now, just use setup like logger.
+    let mut analytics_service = AnalyticsService::new(
         run_cmd.analytics_params.analytics_service_name.clone(),
         run_cmd.analytics_params.analytics_log_level.clone(),
         run_cmd.analytics_params.analytics_collection_endpoint.clone(),
     )
     .context("Initializing analytics service")?;
 
+    let mut x = Default::default();
+    analytics_service.start(&mut x).await.unwrap();
     let telemetry_service: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
@@ -81,7 +84,6 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
         Arc::clone(&chain_config),
-        prometheus_service.registry(),
     )
     .await
     .context("Initializing db service")?;
@@ -89,7 +91,6 @@ async fn main() -> anyhow::Result<()> {
     let importer = Arc::new(
         BlockImporter::new(
             Arc::clone(db_service.backend()),
-            prometheus_service.registry(),
             run_cmd.sync_params.unsafe_starting_block,
             // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
             /* always_force_flush */
@@ -108,7 +109,6 @@ async fn main() -> anyhow::Result<()> {
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &db_service,
-        prometheus_service.registry(),
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
@@ -132,7 +132,6 @@ async fn main() -> anyhow::Result<()> {
                     importer,
                     Arc::clone(&l1_data_provider),
                     run_cmd.devnet,
-                    prometheus_service.registry(),
                     telemetry_service.new_handle(),
                 )?;
 
@@ -180,7 +179,6 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.rpc_params,
         &db_service,
         Arc::clone(&chain_config),
-        prometheus_service.registry(),
         Arc::clone(&rpc_add_txs_method_provider),
     )
     .context("Initializing rpc service")?;
@@ -192,7 +190,6 @@ async fn main() -> anyhow::Result<()> {
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
     let app = ServiceGroup::default()
-        .with(analytics_service)
         .with(db_service)
         .with(l1_service)
         .with(block_provider_service)

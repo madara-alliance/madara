@@ -40,7 +40,6 @@
 
 use anyhow::Context;
 use mc_db::{MadaraBackend, MadaraStorageError};
-use mc_metrics::MetricsRegistry;
 use metrics::BlockMetrics;
 use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
 use starknet_core::types::Felt;
@@ -127,7 +126,6 @@ impl BlockImporter {
     /// The starting block is used for metrics. Setting it to None means it will look at the database latest block number.
     pub fn new(
         backend: Arc<MadaraBackend>,
-        metrics_registry: &MetricsRegistry,
         starting_block: Option<u64>,
         always_force_flush: bool,
     ) -> anyhow::Result<Self> {
@@ -145,8 +143,7 @@ impl BlockImporter {
         Ok(Self {
             verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)),
             pool,
-            metrics: BlockMetrics::register(starting_block, metrics_registry)
-                .context("Registering metrics for block import")?,
+            metrics: BlockMetrics::register(starting_block).context("Registering metrics for block import")?,
             backend,
             always_force_flush,
         })

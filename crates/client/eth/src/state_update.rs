@@ -72,7 +72,7 @@ pub fn update_l1(
             trim_hash(&state_update.global_root)
         );
 
-        block_metrics.l1_block_number.set(state_update.block_number as f64);
+        block_metrics.l1_block_number.record(state_update.block_number, &[]);
 
         backend
             .write_last_confirmed_block(state_update.block_number)
@@ -113,7 +113,6 @@ mod eth_client_event_subscription_test {
 
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use mc_db::DatabaseService;
-    use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use rstest::*;
@@ -170,14 +169,13 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), &MetricsRegistry::dummy())
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
                 .await
                 .expect("Failed to create database service"),
         );
 
         // Set up metrics service
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);

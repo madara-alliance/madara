@@ -168,7 +168,7 @@ impl Service for AnalyticsService {
 }
 
 // Utils
-use opentelemetry::metrics::{Counter, Gauge, Meter};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
 pub trait Metrics {
     fn register() -> Self;
@@ -181,20 +181,78 @@ macro_rules! register_metric {
     };
 }
 
-pub fn register_gauge_metric_instrument(
-    crate_meter: &Meter,
-    instrument_name: String,
-    desc: String,
-    unit: String,
-) -> Gauge<u64> {
-    crate_meter.u64_gauge(instrument_name).with_description(desc).with_unit(unit).init()
+use std::fmt::Display;
+
+// TODO: this could be optimized by using generics
+pub trait GaugeType<T> {
+    fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<T>;
 }
 
-pub fn register_counter_metric_instrument(
+impl GaugeType<f64> for f64 {
+    fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<f64> {
+        meter.f64_gauge(name).with_description(description).with_unit(unit).init()
+    }
+}
+
+impl GaugeType<u64> for u64 {
+    fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<u64> {
+        meter.u64_gauge(name).with_description(description).with_unit(unit).init()
+    }
+}
+
+pub fn register_gauge_metric_instrument<T: GaugeType<T> + Display>(
     crate_meter: &Meter,
     instrument_name: String,
     desc: String,
     unit: String,
-) -> Counter<u64> {
-    crate_meter.u64_counter(instrument_name).with_description(desc).with_unit(unit).init()
+) -> Gauge<T> {
+    T::register_gauge(crate_meter, instrument_name, desc, unit)
+}
+
+pub trait CounterType<T> {
+    fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<T>;
+}
+
+impl CounterType<u64> for u64 {
+    fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<u64> {
+        meter.u64_counter(name).with_description(description).with_unit(unit).init()
+    }
+}
+impl CounterType<f64> for f64 {
+    fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<f64> {
+        meter.f64_counter(name).with_description(description).with_unit(unit).init()
+    }
+}
+pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
+    crate_meter: &Meter,
+    instrument_name: String,
+    desc: String,
+    unit: String,
+) -> Counter<T> {
+    T::register_counter(crate_meter, instrument_name, desc, unit)
+}
+
+pub trait HistogramType<T> {
+    fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<T>;
+}
+
+impl HistogramType<f64> for f64 {
+    fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<f64> {
+        meter.f64_histogram(name).with_description(description).with_unit(unit).init()
+    }
+}
+
+impl HistogramType<u64> for u64 {
+    fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<u64> {
+        meter.u64_histogram(name).with_description(description).with_unit(unit).init()
+    }
+}
+
+pub fn register_histogram_metric_instrument<T: HistogramType<T> + Display>(
+    crate_meter: &Meter,
+    instrument_name: String,
+    desc: String,
+    unit: String,
+) -> Histogram<T> {
+    T::register_histogram(crate_meter, instrument_name, desc, unit)
 }

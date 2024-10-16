@@ -5,7 +5,6 @@ use mc_block_import::{BlockImporter, BlockValidationContext};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{block_production::BlockProductionTask, L1DataProvider, Mempool};
-use mc_metrics::MetricsRegistry;
 use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
 use tokio::task::JoinSet;
@@ -29,7 +28,7 @@ impl BlockProductionService {
     #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(
         name = "BlockProductionService::new",
-        skip(config, db_service, mempool, block_import, l1_data_provider, is_devnet, _metrics_handle, _telemetry)
+        skip(config, db_service, mempool, block_import, l1_data_provider, is_devnet, _telemetry)
     )]
     pub fn new(
         config: &BlockProductionParams,
@@ -38,7 +37,6 @@ impl BlockProductionService {
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
         is_devnet: bool,
-        _metrics_handle: &MetricsRegistry,
         _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
         if config.block_production_disabled {

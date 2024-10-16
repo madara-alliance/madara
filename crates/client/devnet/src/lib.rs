@@ -192,7 +192,7 @@ mod tests {
     use mc_mempool::block_production::BlockProductionTask;
     use mc_mempool::MempoolProvider;
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
-    use mc_metrics::MetricsRegistry;
+
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
@@ -303,8 +303,7 @@ mod tests {
         let chain_config = Arc::new(ChainConfig::madara_devnet());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
-        let importer =
-            Arc::new(BlockImporter::new(Arc::clone(&backend), &MetricsRegistry::dummy(), None, true).unwrap());
+        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None, true).unwrap());
 
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()

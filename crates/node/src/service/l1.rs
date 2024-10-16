@@ -4,7 +4,6 @@ use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::GasPriceProvider;
-use mc_metrics::MetricsRegistry;
 use mp_block::H160;
 use mp_convert::ToFelt;
 use mp_utils::service::Service;
@@ -27,7 +26,6 @@ impl L1SyncService {
     pub async fn new(
         config: &L1SyncParams,
         db: &DatabaseService,
-        metrics_handle: &MetricsRegistry,
         l1_gas_provider: GasPriceProvider,
         chain_id: ChainId,
         l1_core_address: H160,
@@ -36,8 +34,7 @@ impl L1SyncService {
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
-                let l1_block_metrics =
-                    L1BlockMetrics::register(metrics_handle).expect("Registering prometheus metrics");
+                let l1_block_metrics = L1BlockMetrics::register().expect("Registering prometheus metrics");
                 Some(
                     EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
                         .await
