@@ -1,6 +1,3 @@
-use std::str::FromStr as _;
-use std::time::Duration;
-use url::Url;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -10,10 +7,13 @@ use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemp
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
 use opentelemetry_sdk::{runtime, Resource};
+use std::str::FromStr as _;
+use std::time::Duration;
 use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct Analytics {

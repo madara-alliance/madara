@@ -172,7 +172,6 @@ tokio = { version = "1.34", features = ["signal"] }
 url = "2.4"
 rayon = "1.10"
 bincode = "1.3"
-prometheus = "0.13.4"
 fdlimit = "0.3.0"
 proptest = "1.5.0"
 proptest-derive = "0.5.0"
