@@ -31,10 +31,6 @@ pub struct RpcMetrics {
 impl RpcMetrics {
     /// Create an instance of metrics
     pub fn register() -> Result<Self, Error> {
-        tracing::trace!("Registering RPC metrics.");
-        // TODO: Remove this println
-        println!("Registering RPC metrics.");
-
         let common_scope_attributes = vec![KeyValue::new("crate", "rpc")];
         let rpc_meter = global::meter_with_version(
             "crates.rpc.opentelemetry",

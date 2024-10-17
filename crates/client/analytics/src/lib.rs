@@ -34,9 +34,19 @@ impl Analytics {
     pub fn setup(&mut self) -> anyhow::Result<()> {
         let level = self.log_level;
 
+        let format = tracing_subscriber::fmt::format()
+            .pretty()
+            .with_level(true)
+            .with_target(true)
+            .with_thread_names(true)
+            .with_thread_ids(true)
+            .with_file(false)
+            .with_timer(tracing_subscriber::fmt::time::SystemTime)
+            .with_ansi(true);
+
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(level))
-            .with(tracing_subscriber::fmt::layer().with_target(false));
+            .with(tracing_subscriber::fmt::layer().with_target(false).event_format(format));
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();

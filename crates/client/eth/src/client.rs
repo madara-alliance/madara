@@ -29,10 +29,6 @@ pub struct L1BlockMetrics {
 
 impl L1BlockMetrics {
     pub fn register() -> Result<Self, Error> {
-        tracing::trace!("Registering L1 Block metrics.");
-        // TODO: Remove this println
-        println!("Registering L1 Block metrics.");
-
         let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
         let eth_meter = global::meter_with_version(
             "crates.l1block.opentelemetry",
