@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use forwarded_header_value::ForwardedHeaderValue;
+use futures::FutureExt;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -17,7 +18,10 @@ use ip_network::IpNetwork;
 use jsonrpsee::core::id_providers::RandomStringIdProvider;
 use jsonrpsee::server::middleware::http::HostFilterLayer;
 use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
-use jsonrpsee::server::{stop_channel, ws, BatchRequestConfig, PingConfig, StopHandle, TowerServiceBuilder};
+use jsonrpsee::server::{
+    http, stop_channel, ws, BatchRequestConfig, ConnectionGuard, ConnectionState, PingConfig, StopHandle,
+    TowerServiceBuilder,
+};
 use jsonrpsee::{Methods, RpcModule};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -26,7 +30,10 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use mp_utils::wait_or_graceful_shutdown;
 
-use super::middleware::{Metrics, MiddlewareLayer, RpcMetrics, VersionMiddlewareLayer};
+use crate::service::rpc::middleware::RpcLayerRateLimit;
+
+use super::metrics::RpcMetrics;
+use super::middleware::{Metrics, RpcLayerMetrics, RpcMiddleWareServiceMetrics, VersionMiddlewareLayer};
 
 const MEGABYTE: u32 = 1024 * 1024;
 
@@ -65,6 +72,8 @@ pub async fn start_server(
     config: ServerConfig,
     join_set: &mut JoinSet<anyhow::Result<()>>,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
+    log::debug!(target: "service_rpc", "Starting rpc server");
+
     let ServerConfig {
         addr,
         batch_config,
@@ -81,19 +90,15 @@ pub async fn start_server(
         rate_limit_trust_proxy_headers,
     } = config;
 
-    let std_listener = TcpListener::bind(addr)
-        .await
-        .and_then(|a| a.into_std())
-        .with_context(|| format!("binding to address: {addr}"))?;
-    let local_addr = std_listener.local_addr().ok();
+    let listener = TcpListener::bind(addr).await.with_context(|| format!("binding to address: {addr}"))?;
+    let local_addr = listener.local_addr().ok();
     let host_filter = host_filtering(cors.is_some(), local_addr);
 
-    let http_middleware = tower::ServiceBuilder::new()
-		.option_layer(host_filter)
-		// Proxy `GET /health` requests to internal `system_health` method.
-		// .layer(ProxyGetRequestLayer::new("/health", "system_health")?)
-        .layer(VersionMiddlewareLayer)
-		.layer(try_into_cors(cors.as_ref())?);
+    log::debug!(target: "service_rpc", "Listening on address: {addr}");
+
+    let http_middleware = tower::ServiceBuilder::new().option_layer(host_filter).layer(try_into_cors(cors.as_ref())?);
+
+    log::debug!(target: "service_rpc", "Filter, versioning and cors middleware built");
 
     let builder = jsonrpsee::server::Server::builder()
         .max_request_body_size(max_payload_in_mb.saturating_mul(MEGABYTE))
@@ -106,7 +111,7 @@ pub async fn start_server(
                 .inactive_limit(Duration::from_secs(60))
                 .max_failures(3),
         )
-        .set_http_middleware(http_middleware)
+        // .set_http_middleware(http_middleware)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)
         .set_id_provider(RandomStringIdProvider::new(16));
@@ -114,10 +119,12 @@ pub async fn start_server(
     let (stop_handle, server_handle) = stop_channel();
     let cfg = PerConnection {
         methods: build_rpc_api(rpc_api).into(),
-        service_builder: builder.to_service_builder(),
-        metrics,
         stop_handle: stop_handle.clone(),
+        metrics,
+        service_builder: builder.to_service_builder(),
     };
+
+    log::debug!(target: "service_rpc", "Built rpc service");
 
     let make_service = make_service_fn(move |addr: &AddrStream| {
         let cfg = cfg.clone();
@@ -129,34 +136,21 @@ pub async fn start_server(
             let rate_limit_whitelisted_ips = rate_limit_whitelisted_ips.clone();
 
             Ok::<_, Infallible>(service_fn(move |req| {
+                log::debug!(target: "rpc", "Received rpc request");
                 let proxy_ip = if rate_limit_trust_proxy_headers { get_proxy_ip(&req) } else { None };
-
-                let rate_limit_cfg = if rate_limit_whitelisted_ips
-                    .iter()
-                    .any(|ips| ips.contains(proxy_ip.unwrap_or(ip)))
-                {
-                    log::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is trusted, disabling rate-limit", proxy_ip);
-                    None
-                } else {
-                    if !rate_limit_whitelisted_ips.is_empty() {
-                        log::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is not trusted, rate-limit enabled", proxy_ip);
-                    }
-                    rate_limit
-                };
+                let is_whitelisted_ip =
+                    rate_limit_whitelisted_ips.iter().any(|ips| ips.contains(proxy_ip.unwrap_or(ip)));
+                let rate_limit_cfg = if is_whitelisted_ip { None } else { rate_limit };
 
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
 
                 let is_websocket = ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
 
-                let middleware_layer = match rate_limit_cfg {
-                    None => MiddlewareLayer::new().with_metrics(Metrics::new(metrics, transport_label)),
-                    Some(rate_limit) => MiddlewareLayer::new()
-                        .with_metrics(Metrics::new(metrics, transport_label))
-                        .with_rate_limit_per_minute(rate_limit),
-                };
-
-                let rpc_middleware = RpcServiceBuilder::new().layer(middleware_layer.clone());
+                let rpc_middleware = RpcServiceBuilder::new()
+                    .layer(VersionMiddlewareLayer)
+                    .option_layer(rate_limit_cfg.map(RpcLayerRateLimit::new))
+                    .layer(RpcLayerMetrics::new(Metrics::new(metrics, transport_label)));
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
@@ -165,28 +159,38 @@ pub async fn start_server(
                         Ok(Response::builder().status(StatusCode::OK).body(Body::from("OK"))?)
                     } else {
                         if is_websocket {
+                            log::debug!(target: "rpc", "Received websocket request");
+                            // Utilize the session close future to know when the actual WebSocket
+                            // session was closed.
                             let on_disconnect = svc.on_session_closed();
 
                             // Spawn a task to handle when the connection is closed.
+                            // let middleware_layer2 = middleware_layer.clone();
                             tokio::spawn(async move {
                                 let now = std::time::Instant::now();
-                                middleware_layer.ws_connect();
                                 on_disconnect.await;
-                                middleware_layer.ws_disconnect(now);
+                                log::debug!(target: "rpc", "Websocket disconnected");
+                                // middleware_layer2.ws_disconnect(now);
                             });
-                        }
 
-                        svc.call(req).await
+                            log::debug!(target: "rpc", "Websocket connected");
+                            // middleware_layer.ws_connect();
+                            svc.call(req).await
+                        } else {
+                            log::debug!(target: "rpc", "Received http request");
+                            svc.call(req).await
+                        }
                     }
                 }
             }))
         }
     });
 
-    let server = hyper::Server::from_tcp(std_listener)
+    let server = hyper::Server::from_tcp(listener.into_std()?)
         .with_context(|| format!("Creating hyper server at: {addr}"))?
         .serve(make_service);
 
+    log::debug!(target: "service_rpc", "Spawning rpc service");
     join_set.spawn(async move {
         log::info!(
             "📱 Running JSON-RPC server at {} (allowed origins={})",

@@ -46,7 +46,7 @@ impl RpcService {
                 (true, false)
             }
         };
-        let (read, write, trace) = (rpcs, rpcs, rpcs);
+        let (read, write, trace, ws) = (rpcs, rpcs, rpcs, rpcs);
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
         let metrics = RpcMetrics::register(metrics_handle)?;
 
@@ -59,7 +59,7 @@ impl RpcService {
                 max_payload_out_mb: config.rpc_max_response_size,
                 max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                 message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                rpc_api: versioned_rpc_api(&starknet, read, write, trace)?,
+                rpc_api: versioned_rpc_api(&starknet, read, write, trace, ws)?,
                 metrics,
                 cors: config.cors(),
                 rate_limit: config.rpc_rate_limit,

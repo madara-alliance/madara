@@ -14,126 +14,162 @@ use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
 use hyper::{Body, Response};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
-use jsonrpsee::types::{ErrorObject, Request};
+use jsonrpsee::server::ws;
+use jsonrpsee::types::ErrorObject;
 use jsonrpsee::MethodResponse;
 use serde_json::{json, Value};
-use tower::{Layer, Service};
+use tower::Service;
 
 use mp_chain_config::{RpcVersion, RpcVersionError};
 
-pub use super::metrics::{Metrics, RpcMetrics};
+pub use super::metrics::Metrics;
 
 /// Rate limit middleware
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct RateLimit {
-    pub(crate) inner: Arc<governor::RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
+    pub(crate) limiter: Arc<governor::RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     pub(crate) clock: QuantaClock,
 }
 
 impl RateLimit {
     pub fn new(max_burst: NonZeroU32) -> Self {
         let clock = QuantaClock::default();
-        Self { inner: Arc::new(RateLimiter::direct_with_clock(Quota::per_minute(max_burst), &clock)), clock }
+        Self { limiter: Arc::new(RateLimiter::direct_with_clock(Quota::per_minute(max_burst), &clock)), clock }
     }
 }
 
 const MAX_JITTER: Duration = Duration::from_millis(50);
 const MAX_RETRIES: usize = 10;
 
-#[derive(Debug, Clone, Default)]
-pub struct MiddlewareLayer {
-    rate_limit: Option<RateLimit>,
-    metrics: Option<Metrics>,
+#[derive(Clone, Debug)]
+pub struct RpcLayerRateLimit {
+    rate_limit: RateLimit,
 }
 
-impl MiddlewareLayer {
-    pub fn new() -> Self {
-        Self::default()
+impl RpcLayerRateLimit {
+    pub fn new(n: NonZeroU32) -> Self {
+        Self { rate_limit: RateLimit::new(n) }
     }
+}
 
-    /// Enable new rate limit middleware enforced per minute.
-    pub fn with_rate_limit_per_minute(self, n: NonZeroU32) -> Self {
-        Self { rate_limit: Some(RateLimit::new(n)), metrics: self.metrics }
+impl<S> tower::Layer<S> for RpcLayerRateLimit {
+    type Service = RpcMiddleWareServiceRateLimit<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcMiddleWareServiceRateLimit { inner, rate_limit: self.rate_limit.clone() }
     }
+}
 
+#[derive(Clone, Debug)]
+pub struct RpcLayerMetrics {
+    metrics: Metrics,
+}
+
+impl RpcLayerMetrics {
     /// Enable metrics middleware.
-    pub fn with_metrics(self, metrics: Metrics) -> Self {
-        Self { rate_limit: self.rate_limit, metrics: Some(metrics) }
+    pub fn new(metrics: Metrics) -> Self {
+        Self { metrics }
     }
 
     /// Register a new websocket connection.
     pub fn ws_connect(&self) {
-        if let Some(m) = self.metrics.as_ref() {
-            m.ws_connect()
-        }
+        self.metrics.ws_connect()
     }
 
     /// Register that a websocket connection was closed.
     pub fn ws_disconnect(&self, now: Instant) {
-        if let Some(m) = self.metrics.as_ref() {
-            m.ws_disconnect(now)
-        }
+        self.metrics.ws_disconnect(now)
     }
 }
 
-impl<S> tower::Layer<S> for MiddlewareLayer {
-    type Service = Middleware<S>;
+impl<S> tower::Layer<S> for RpcLayerMetrics {
+    type Service = RpcMiddleWareServiceMetrics<S>;
 
-    fn layer(&self, service: S) -> Self::Service {
-        Middleware { service, rate_limit: self.rate_limit.clone(), metrics: self.metrics.clone() }
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcMiddleWareServiceMetrics { inner, metrics: self.metrics.clone() }
     }
 }
 
-pub struct Middleware<S> {
-    service: S,
-    rate_limit: Option<RateLimit>,
-    metrics: Option<Metrics>,
+#[derive(Clone, Debug)]
+pub struct RpcMiddleWareServiceRateLimit<S> {
+    inner: S,
+    rate_limit: RateLimit,
 }
 
-impl<'a, S> RpcServiceT<'a> for Middleware<S>
+impl<'a, S> RpcServiceT<'a> for RpcMiddleWareServiceRateLimit<S>
 where
-    S: Send + Sync + RpcServiceT<'a> + Clone + 'static,
+    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
 {
     type Future = BoxFuture<'a, MethodResponse>;
 
-    fn call(&self, req: Request<'a>) -> Self::Future {
-        let now = Instant::now();
-
-        if let Some(m) = self.metrics.as_ref() {
-            m.on_call(&req)
-        }
-
-        let service = self.service.clone();
+    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
+        let inner = self.inner.clone();
         let rate_limit = self.rate_limit.clone();
-        let metrics = self.metrics.clone();
 
         async move {
-            let mut is_rate_limited = false;
+            let mut attempts = 0;
+            let jitter = Jitter::up_to(MAX_JITTER);
+            let mut rate_limited = false;
 
-            if let Some(limit) = rate_limit.as_ref() {
-                let mut attempts = 0;
-                let jitter = Jitter::up_to(MAX_JITTER);
-
-                loop {
-                    if attempts >= MAX_RETRIES {
-                        return MethodResponse::error(
-                            req.id,
-                            ErrorObject::owned(-32999, "RPC rate limit exceeded", None::<()>),
-                        );
-                    }
-
-                    if let Err(rejected) = limit.inner.check() {
-                        tokio::time::sleep(jitter + rejected.wait_time_from(limit.clock.now())).await;
-                    } else {
-                        break;
-                    }
-
-                    is_rate_limited = true;
-                    attempts += 1;
+            loop {
+                if attempts >= MAX_RETRIES {
+                    return MethodResponse::error(
+                        req.id,
+                        ErrorObject::owned(-32999, "RPC rate limit exceeded", None::<()>),
+                    );
                 }
+
+                if let Err(rejected) = rate_limit.limiter.check() {
+                    tokio::time::sleep(jitter + rejected.wait_time_from(rate_limit.clock.now())).await;
+                    rate_limited = true;
+                } else {
+                    break;
+                }
+
+                attempts += 1;
             }
 
-            let rp = service.call(req.clone()).await;
+            // This should be ok as a way to flag rate limited requests as the
+            // JSON RPC spec discourages the use of NULL as an id in a _request_
+            // since it is used for_responses_ with an unknown id.
+            if rate_limited == true {
+                req.id = jsonrpsee::types::Id::Null;
+            }
+
+            inner.call(req).await
+        }
+        .boxed()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RpcMiddleWareServiceMetrics<S> {
+    inner: S,
+    metrics: Metrics,
+}
+
+impl<'a, S> RpcServiceT<'a> for RpcMiddleWareServiceMetrics<S>
+where
+    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+{
+    type Future = BoxFuture<'a, MethodResponse>;
+
+    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
+        let inner = self.inner.clone();
+        let metrics = self.metrics.clone();
+        metrics.on_call(&req);
+
+        async move {
+            let is_rate_limited = if matches!(req.id, jsonrpsee::types::params::Id::Null) {
+                req.id = jsonrpsee::types::params::Id::Number(1);
+                true
+            } else {
+                false
+            };
+
+            let now = std::time::Instant::now();
+
+            let rp = inner.call(req.clone()).await;
 
             let method = req.method_name();
             let status = rp.as_error_code().unwrap_or(200);
@@ -149,9 +185,7 @@ where
                 "{method} {status} {res_len} - {response_time:?}",
             );
 
-            if let Some(m) = metrics.as_ref() {
-                m.on_response(&req, &rp, is_rate_limited, now)
-            }
+            metrics.on_response(&req, &rp, is_rate_limited, now);
 
             rp
         }
@@ -159,13 +193,13 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct VersionMiddleware<S> {
+#[derive(Clone, Debug)]
+pub struct RpcMiddlewareServiceVerions<S> {
     inner: S,
 }
 
 #[derive(thiserror::Error, Debug)]
-enum VersionMiddlewareError {
+enum HttpMiddlewareServiceVersionError {
     #[error("Failed to read request body: {0}")]
     BodyReadError(#[from] hyper::Error),
     #[error("Failed to parse JSON: {0}")]
@@ -178,7 +212,7 @@ enum VersionMiddlewareError {
     UnsupportedVersion,
 }
 
-impl From<RpcVersionError> for VersionMiddlewareError {
+impl From<RpcVersionError> for HttpMiddlewareServiceVersionError {
     fn from(e: RpcVersionError) -> Self {
         match e {
             RpcVersionError::InvalidNumber(_) => Self::InvalidVersion,
@@ -190,93 +224,119 @@ impl From<RpcVersionError> for VersionMiddlewareError {
     }
 }
 
-impl<S> VersionMiddleware<S> {
+#[derive(Clone)]
+pub struct VersionMiddlewareLayer;
+
+impl<S> tower::Layer<S> for VersionMiddlewareLayer {
+    type Service = RpcMiddlewareServiceVerions<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcMiddlewareServiceVerions::new(inner)
+    }
+}
+
+impl<S> RpcMiddlewareServiceVerions<S> {
     pub fn new(inner: S) -> Self {
         Self { inner }
     }
 }
 
-#[derive(Clone)]
-pub struct VersionMiddlewareLayer;
-
-impl<S> Layer<S> for VersionMiddlewareLayer {
-    type Service = VersionMiddleware<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        VersionMiddleware::new(inner)
-    }
-}
-
-impl<S> Service<hyper::Request<Body>> for VersionMiddleware<S>
+impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceVerions<S>
 where
-    S: Service<hyper::Request<Body>, Response = Response<Body>> + Clone + Send + 'static,
-    S::Future: Send + 'static,
+    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
 {
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = S::Future;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, mut req: hyper::Request<Body>) -> Self::Future {
-        let mut inner = self.inner.clone();
-
-        Box::pin(async move {
-            match add_rpc_version_to_method(&mut req).await {
-                Ok(()) => inner.call(req).await,
-                Err(e) => {
-                    let error = match e {
-                        VersionMiddlewareError::InvalidUrlFormat => {
-                            ErrorObject::owned(-32600, "Invalid URL format. Use /rpc/v{version}", None::<()>)
-                        }
-                        VersionMiddlewareError::InvalidVersion => {
-                            ErrorObject::owned(-32600, "Invalid RPC version specified", None::<()>)
-                        }
-                        VersionMiddlewareError::UnsupportedVersion => {
-                            ErrorObject::owned(-32601, "Unsupported RPC version specified", None::<()>)
-                        }
-                        _ => ErrorObject::owned(-32603, "Internal error", None::<()>),
-                    };
-
-                    let body = json!({
-                        "jsonrpc": "2.0",
-                        "error": error,
-                        "id": null
-                    })
-                    .to_string();
-
-                    Ok(Response::builder()
-                        .header("Content-Type", "application/json")
-                        .body(Body::from(body))
-                        .unwrap_or_else(|_| Response::new(Body::from("Internal server error"))))
-                }
-            }
-        })
+    fn call(&self, req: jsonrpsee::types::Request<'a>) -> Self::Future {
+        self.inner.call(req)
     }
 }
 
-async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(), VersionMiddlewareError> {
+// impl<S> Service<hyper::Request<Body>> for RpcMiddlewareServiceVerion<S>
+// where
+//     S: Service<hyper::Request<Body>, Response = Response<Body>> + Clone + Send + 'static,
+//     S::Future: Send + 'static,
+// {
+//     type Response = S::Response;
+//     type Error = S::Error;
+//     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+//
+//     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+//         self.inner.poll_ready(cx)
+//     }
+//
+//     fn call(&mut self, mut req: hyper::Request<Body>) -> Self::Future {
+//         let mut inner = self.inner.clone();
+//
+//         Box::pin(async move {
+//             match add_rpc_version_to_method(&mut req).await {
+//                 Ok(()) => inner.call(req).await,
+//                 Err(e) => {
+//                     let error = match e {
+//                         HttpMiddlewareServiceVersionError::InvalidUrlFormat => {
+//                             ErrorObject::owned(-32600, "Invalid URL format. Use /rpc/v{version}", None::<()>)
+//                         }
+//                         HttpMiddlewareServiceVersionError::InvalidVersion => {
+//                             ErrorObject::owned(-32600, "Invalid RPC version specified", None::<()>)
+//                         }
+//                         HttpMiddlewareServiceVersionError::UnsupportedVersion => {
+//                             ErrorObject::owned(-32601, "Unsupported RPC version specified", None::<()>)
+//                         }
+//                         _ => ErrorObject::owned(-32603, "Internal error", None::<()>),
+//                     };
+//
+//                     let body = json!({
+//                         "jsonrpc": "2.0",
+//                         "error": error,
+//                         "id": null
+//                     })
+//                     .to_string();
+//
+//                     Ok(Response::builder()
+//                         .header("Content-Type", "application/json")
+//                         .body(Body::from(body))
+//                         .unwrap_or_else(|_| Response::new(Body::from("Internal server error"))))
+//                 }
+//             }
+//         })
+//     }
+// }
+
+async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(), HttpMiddlewareServiceVersionError> {
+    if ws::is_upgrade_request(req) {
+        log::debug!(target: "rpc_version", "request version not mutated on websocket connection calls");
+        return Ok(());
+    }
+
+    log::debug!(target: "rpc_version", "adding rpc version call");
+
     let path = req.uri().path().to_string();
     let version = RpcVersion::from_request_path(&path)?;
+
+    log::debug!(target: "rpc_version", "found version {version}");
 
     let whole_body = hyper::body::to_bytes(req.body_mut()).await?;
     let json: Value = serde_json::from_slice(&whole_body)?;
 
+    log::trace!(target: "rpc_version", "request body is {}", serde_json::to_string_pretty(&json).unwrap_or_default());
+
     // in case of batched requests, the request is an array of JSON-RPC requests
     let mut batched_request = false;
     let mut items = if let Value::Array(items) = json {
+        log::debug!(target: "rpc_version", "request is batched");
         batched_request = true;
         items
     } else {
+        log::debug!(target: "rpc_version", "request is not batched");
         vec![json]
     };
 
     for item in items.iter_mut() {
         if let Some(method) = item.get_mut("method").as_deref().and_then(Value::as_str) {
+            log::debug!(target: "rpc_version", "resolving method: {method}");
             let new_method =
                 format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
+            log::debug!(target: "rpc_version", "added version to method: {new_method}");
 
             item["method"] = Value::String(new_method);
         }
