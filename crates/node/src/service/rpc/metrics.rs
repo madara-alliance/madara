@@ -4,7 +4,7 @@ use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
 use opentelemetry::{
     global::Error,
-    metrics::{Counter as OtelCounter, Histogram as OtelHistogram},
+    metrics::{Counter, Histogram},
 };
 
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
@@ -15,17 +15,17 @@ use opentelemetry::{global, KeyValue};
 #[derive(Debug, Clone)]
 pub struct RpcMetrics {
     /// Histogram over RPC execution times.
-    calls_time: OtelHistogram<f64>,
+    calls_time: Histogram<f64>,
     /// Number of calls started.
-    calls_started: OtelCounter<u64>,
+    calls_started: Counter<u64>,
     /// Number of calls completed.
-    calls_finished: OtelCounter<u64>,
+    calls_finished: Counter<u64>,
     /// Number of Websocket sessions opened.
-    ws_sessions_opened: Option<OtelCounter<u64>>,
+    ws_sessions_opened: Option<Counter<u64>>,
     /// Number of Websocket sessions closed.
-    ws_sessions_closed: Option<OtelCounter<u64>>,
+    ws_sessions_closed: Option<Counter<u64>>,
     /// Histogram over RPC websocket sessions.
-    ws_sessions_time: OtelHistogram<f64>,
+    ws_sessions_time: Histogram<f64>,
 }
 
 impl RpcMetrics {

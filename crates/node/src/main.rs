@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.analytics_params.analytics_collection_endpoint.clone(),
     )
     .context("Initializing analytics service")?;
-    analytics.setup().unwrap();
+    let _ = analytics.setup()?;
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
@@ -206,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
     app.start_and_drive_to_end().await?;
 
     tracing::info!("Shutting down analytics");
-    analytics.shutdown();
+    let _ = analytics.shutdown();
 
     Ok(())
 }

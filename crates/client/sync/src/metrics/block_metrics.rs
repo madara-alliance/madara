@@ -1,24 +1,24 @@
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{
     global::{self, Error},
-    metrics::{Counter as OtelCounter, Histogram as OtelHistogram},
+    metrics::{Counter, Histogram},
     KeyValue,
 };
 
 #[derive(Clone, Debug)]
 pub struct BlockMetrics {
     // L2 network metrics
-    pub l2_block_number: OtelHistogram<f64>,
-    pub l2_sync_time: OtelHistogram<f64>,
-    pub l2_avg_sync_time: OtelHistogram<f64>,
-    pub l2_latest_sync_time: OtelHistogram<f64>,
-    pub l2_state_size: OtelHistogram<f64>,
-    pub transaction_count: OtelCounter<u64>,
-    pub event_count: OtelCounter<u64>,
+    pub l2_block_number: Histogram<f64>,
+    pub l2_sync_time: Histogram<f64>,
+    pub l2_avg_sync_time: Histogram<f64>,
+    pub l2_latest_sync_time: Histogram<f64>,
+    pub l2_state_size: Histogram<f64>,
+    pub transaction_count: Counter<u64>,
+    pub event_count: Counter<u64>,
     // L1 network metrics
     // gas price is also define in eth/client.rs but this would be the gas used in the block and it's price
-    pub l1_gas_price_wei: OtelHistogram<f64>,
-    pub l1_gas_price_strk: OtelHistogram<f64>,
+    pub l1_gas_price_wei: Histogram<f64>,
+    pub l1_gas_price_strk: Histogram<f64>,
 }
 
 impl BlockMetrics {

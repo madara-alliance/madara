@@ -1,12 +1,12 @@
 use crate::{Column, DatabaseExt, DB};
 use mc_analytics::register_gauge_metric_instrument;
 use opentelemetry::global::Error;
-use opentelemetry::metrics::Gauge as OtelGauge;
+use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 #[derive(Clone, Debug)]
 pub struct DbMetrics {
-    pub db_size: OtelGauge<u64>,
-    pub column_sizes: OtelGauge<u64>,
+    pub db_size: Gauge<u64>,
+    pub column_sizes: Gauge<u64>,
 }
 
 impl DbMetrics {

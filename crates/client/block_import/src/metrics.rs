@@ -2,7 +2,7 @@ use mc_analytics::register_gauge_metric_instrument;
 use mc_db::MadaraBackend;
 use mp_block::Header;
 use num_traits::FromPrimitive;
-use opentelemetry::metrics::Gauge as OtelGauge;
+use opentelemetry::metrics::Gauge;
 use opentelemetry::{
     global::{self, Error},
     KeyValue,
@@ -21,16 +21,16 @@ pub struct BlockMetrics {
     pub last_db_metrics_update_instant: Mutex<Option<Instant>>,
 
     // L2 network metrics
-    pub l2_block_number: OtelGauge<f64>,
-    pub l2_sync_time: OtelGauge<f64>,
-    pub l2_avg_sync_time: OtelGauge<f64>,
-    pub l2_latest_sync_time: OtelGauge<f64>,
-    pub l2_state_size: OtelGauge<f64>, // TODO: remove this, as well as the return value from db_metrics update.
-    pub transaction_count: OtelGauge<f64>,
-    pub event_count: OtelGauge<f64>,
+    pub l2_block_number: Gauge<f64>,
+    pub l2_sync_time: Gauge<f64>,
+    pub l2_avg_sync_time: Gauge<f64>,
+    pub l2_latest_sync_time: Gauge<f64>,
+    pub l2_state_size: Gauge<f64>, // TODO: remove this, as well as the return value from db_metrics update.
+    pub transaction_count: Gauge<f64>,
+    pub event_count: Gauge<f64>,
     // L1 network metrics
-    pub l1_gas_price_wei: OtelGauge<f64>,
-    pub l1_gas_price_strk: OtelGauge<f64>,
+    pub l1_gas_price_wei: Gauge<f64>,
+    pub l1_gas_price_strk: Gauge<f64>,
 }
 
 impl BlockMetrics {

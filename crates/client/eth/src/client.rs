@@ -10,7 +10,7 @@ use alloy::{
 };
 use mc_analytics::register_gauge_metric_instrument;
 use opentelemetry::{global, KeyValue};
-use opentelemetry::{global::Error, metrics::Gauge as OtelGauge};
+use opentelemetry::{global::Error, metrics::Gauge};
 
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
@@ -21,10 +21,10 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
     // L1 network metrics
-    pub l1_block_number: OtelGauge<u64>,
+    pub l1_block_number: Gauge<u64>,
     // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
-    pub l1_gas_price_wei: OtelGauge<u64>,
-    pub l1_gas_price_strk: OtelGauge<f64>,
+    pub l1_gas_price_wei: Gauge<u64>,
+    pub l1_gas_price_strk: Gauge<f64>,
 }
 
 impl L1BlockMetrics {
