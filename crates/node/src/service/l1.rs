@@ -34,7 +34,7 @@ impl L1SyncService {
         let eth_client = if !config.sync_l1_disabled {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
-                let l1_block_metrics = L1BlockMetrics::register().expect("Registering prometheus metrics");
+                let l1_block_metrics = L1BlockMetrics::register().expect("Registering metrics");
                 Some(
                     EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
                         .await

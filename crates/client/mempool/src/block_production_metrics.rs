@@ -6,7 +6,6 @@ pub struct BlockProductionMetrics {
     pub block_gauge: Gauge<u64>,
     pub block_counter: Counter<u64>,
     pub transaction_counter: Counter<u64>,
-    pub accepted_transaction_counter: Counter<u64>,
 }
 
 impl BlockProductionMetrics {
@@ -40,13 +39,6 @@ impl BlockProductionMetrics {
             "transaction".to_string(),
         );
 
-        let accepted_transaction_counter = register_counter_metric_instrument(
-            &mempool_meter,
-            "accepted_transaction_count".to_string(),
-            "A counter to show accepted transactions in the mempool".to_string(),
-            "transaction".to_string(),
-        );
-
-        Self { block_gauge, block_counter, transaction_counter, accepted_transaction_counter }
+        Self { block_gauge, block_counter, transaction_counter }
     }
 }

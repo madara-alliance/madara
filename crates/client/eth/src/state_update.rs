@@ -35,20 +35,14 @@ pub async fn listen_and_update_state(
     block_metrics: &L1BlockMetrics,
     chain_id: Felt,
 ) -> anyhow::Result<()> {
-    println!("Listening for LogStateUpdate event");
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-    println!("Event filter");
     let mut event_stream = event_filter.watch().await.context("Failed to watch event filter")?.into_stream();
 
-    println!("Event stream: ");
-
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
-        println!("Event result: ");
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        println!("Format event: ");
         update_l1(backend, format_event, block_metrics, chain_id)?;
     }
 

@@ -111,8 +111,7 @@ impl RpcMetrics {
             req.method_name(),
             req.params(),
         );
-        let x = req.method_name().to_string();
-        self.calls_started.add(1, &[KeyValue::new("method", x)]);
+        self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
     }
 
     pub(crate) fn on_response(
@@ -134,17 +133,18 @@ impl RpcMetrics {
             micros,
         );
 
-        let x = req.method_name().to_string();
         self.calls_time.record(
             micros as f64,
-            &[KeyValue::new("method", x), KeyValue::new("rate_limited", is_rate_limited.to_string())],
+            &[
+                KeyValue::new("method", req.method_name().to_string()),
+                KeyValue::new("rate_limited", is_rate_limited.to_string()),
+            ],
         );
 
-        let method_name = req.method_name().to_string();
         self.calls_finished.add(
             1,
             &[
-                KeyValue::new("method", method_name),
+                KeyValue::new("method", req.method_name().to_string()),
                 KeyValue::new("success", rp.is_success().to_string()),
                 KeyValue::new("rate_limited", is_rate_limited.to_string()),
             ],

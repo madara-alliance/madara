@@ -29,10 +29,6 @@ pub struct BlockProductionService {
 }
 impl BlockProductionService {
     #[allow(clippy::too_many_arguments)]
-    #[tracing::instrument(
-        name = "BlockProductionService::new",
-        skip(config, db_service, mempool, block_import, l1_data_provider, is_devnet, _telemetry)
-    )]
     pub fn new(
         config: &BlockProductionParams,
         db_service: &DatabaseService,
