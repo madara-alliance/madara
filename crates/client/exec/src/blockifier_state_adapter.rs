@@ -41,17 +41,6 @@ impl StateReader for BlockifierStateAdapter {
             ) {
                 return Ok(Felt::ZERO);
             }
-
-            return self
-                .backend
-                .get_block_hash(&BlockId::Number(requested_block_number))
-                .map_err(|err| {
-                    log::warn!("Failed to retrieve block hash for block number {requested_block_number}: {err:#}");
-                    StateError::StateReadError(format!(
-                        "Failed to retrieve block hash for block number {requested_block_number}",
-                    ))
-                })?
-                .ok_or(StateError::OldBlockHashNotProvided);
         }
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };

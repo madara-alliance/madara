@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(snos): added special address while closing block for SNOS
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
 - fix(primitives): fixed storage entries not being sorted in state commitment
 - fix(devnet): devnet predeployed contracts stable address across systems (re)
