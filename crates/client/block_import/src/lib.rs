@@ -141,7 +141,7 @@ impl BlockImporter {
         };
 
         Ok(Self {
-            verify_apply: VerifyApply::new(Arc::clone(&backend), Arc::clone(&pool)),
+            verify_apply: VerifyApply::new(Arc::clone(&backend)),
             pool,
             metrics: BlockMetrics::register(starting_block).context("Registering metrics for block import")?,
             backend,

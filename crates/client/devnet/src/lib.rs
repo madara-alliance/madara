@@ -5,11 +5,12 @@ use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
-use starknet_types_core::felt::Felt;
+use starknet_types_core::{
+    felt::Felt,
+    hash::{Poseidon, StarkHash},
+};
 use std::{collections::HashMap, time::SystemTime};
 
 mod balances;
@@ -103,19 +104,17 @@ impl ChainGenesisDescription {
             get_storage_var_address("Account_public_key", &[])
         }
 
-        pub fn from_seed(seed: u64) -> Felt {
-            // Use a fixed seed for deterministic RNG
-            let mut rng = StdRng::seed_from_u64(seed);
-            let mut buffer = [0u8; 32];
-            rng.fill_bytes(&mut buffer);
+        // We may want to make this seed a cli argument in the future.
+        let seed = Felt::from_hex_unchecked("0x1278b36872363a1276387");
 
-            Felt::from_bytes_be_slice(&buffer)
+        fn rand_from_i(seed: Felt, i: u64) -> Felt {
+            Poseidon::hash(&seed, &(31 ^ !i).into())
         }
 
         Ok(DevnetKeys(
             (0..n_addr)
                 .map(|addr_idx| {
-                    let secret_scalar = from_seed(addr_idx);
+                    let secret_scalar = rand_from_i(seed, addr_idx);
                     let key = SigningKey::from_secret_scalar(secret_scalar);
                     let pubkey = key.verifying_key();
 

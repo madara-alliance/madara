@@ -487,6 +487,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 instant = interval_block_time.tick() => {
                     if let Err(err) = self.on_block_time().await {
                         tracing::error!("Block production task has errored: {err:#}");
+                        // Clear pending block. The reason we do this is because if the error happened because the closed
+                        // block is invalid or has not been saved properly, we want to avoid redoing the same error in the next
+                        // block. So we drop all the transactions in the pending block just in case.
+                        // If the problem happened after the block was closed and saved to the db, this will do nothing.
+                        if let Err(err) = self.backend.clear_pending_block() {
+                            tracing::error!("Error while clearing the pending block in recovery of block production error: {err:#}");
+                        }
                     }
                     // ensure the pending block tick and block time match up
                     interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());

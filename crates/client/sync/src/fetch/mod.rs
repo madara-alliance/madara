@@ -124,6 +124,7 @@ mod test_l2_fetch_task {
         }
 
         ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_signature();
 
         let polling_interval = Duration::from_millis(100);
         let task = tokio::spawn({

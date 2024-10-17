@@ -8,6 +8,9 @@ repository.workspace = true
 version.workspace = true
 homepage.workspace = true
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
@@ -23,6 +26,7 @@ env_logger.workspace = true
 blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
+lazy_static.workspace = true
 
 [features]
 testing = ["blockifier/testing", "mc-db/testing", "mockall"]
@@ -52,11 +56,9 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 log.workspace = true
+mockall = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
-
-mockall = { workspace = true, optional = true }
-
 
 #Instrumentation
 once_cell = { workspace = true }

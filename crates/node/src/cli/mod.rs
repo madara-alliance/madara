@@ -178,6 +178,10 @@ impl RunCmd {
     pub fn is_sequencer(&self) -> bool {
         self.sequencer || self.devnet
     }
+
+    pub fn is_devnet(&self) -> bool {
+        self.devnet
+    }
 }
 
 /// Starknet network types.

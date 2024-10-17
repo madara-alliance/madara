@@ -2,6 +2,22 @@
 
 ## Next release
 
+- fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
+- fix(primitives): fixed storage entries not being sorted in state commitment
+- fix(devnet): devnet predeployed contracts stable address across systems (re)
+- chore: Fixed README table format
+- fix(cli): fixed devnet cli arguments
+- fix(db): max rocksdb LOG files count and size and add more memory metrics
+- fix(devnet): devnet predeployed contracts stable address across systems
+- feat: gas fee flag added
+- fix(mempool): fixed proptesting of the inner mempool
+- fix(clippy): disallow printlns in workspace
+- fix(db): storing a block needs to clear the current pending block
+- fix(sync): Fixed pipeline stalling on machines with few cpu cores
+- fix(rpc): handle batched requests in middleware
+- chore: padded devnet address display with 64 chars
+- feat(script): added more capabilities to the launcher script
+- fix(fgw): sync from other nodes and block signature
 - fix: added more launcher capabilities
 - fix(cleanup): Updated EditorConfig to 4-space indents
 - fix(tests): Fixed local testing scripts

@@ -45,7 +45,7 @@ pub fn rerun_if_git_head_changed() {
     while manifest_dir.parent().is_some() {
         match get_git_paths(&manifest_dir) {
             Err(err) => {
-                eprintln!("cargo:warning=Unable to read the Git repository: {}", err);
+                println!("cargo:warning=Unable to read the Git repository: {}", err);
 
                 return;
             }
