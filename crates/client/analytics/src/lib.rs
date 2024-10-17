@@ -1,3 +1,4 @@
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -7,6 +8,7 @@ use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemp
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
 use opentelemetry_sdk::{runtime, Resource};
+use std::fmt::Display;
 use std::str::FromStr as _;
 use std::time::Duration;
 use tracing::Level;
@@ -20,65 +22,49 @@ pub struct Analytics {
     meter_provider: Option<SdkMeterProvider>,
     service_name: String,
     log_level: Level,
-    collection_endpoint: Url,
+    collection_endpoint: Option<Url>,
 }
 
 impl Analytics {
-    pub fn new(service_name: String, log_level: String, collection_endpoint: Url) -> anyhow::Result<Self> {
+    pub fn new(service_name: String, log_level: String, collection_endpoint: Option<Url>) -> anyhow::Result<Self> {
         let log_level = Level::from_str(&log_level).unwrap_or(Level::INFO);
         Ok(Self { meter_provider: None, service_name, log_level, collection_endpoint })
     }
 
     pub fn setup(&mut self) -> anyhow::Result<()> {
-        println!("Setting up analytics service");
-        let otel_endpoint = self.collection_endpoint.clone();
-        println!("OTEL endpoint: {}", otel_endpoint);
         let level = self.log_level;
-        println!("Log level: {}", level);
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(level))
             .with(tracing_subscriber::fmt::layer().with_target(false));
-        println!("Tracing subscriber:");
 
-        if !otel_endpoint.host_str().unwrap().is_empty() {
-            let meter_provider = self.init_metric_provider();
-            self.meter_provider = Some(meter_provider);
-            let tracer = self.init_tracer_provider();
-            println!("Tracer: {}", "hi");
-
-            // Opentelemetry will not provide a global API to manage the logger
-            // provider. Application users must manage the lifecycle of the logger
-            // provider on their own. Dropping logger providers will disable log
-            // emitting.
-
-            let logger_provider = self.init_logs().unwrap();
-            println!("Logger provider");
-            // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
-            let layer = OpenTelemetryTracingBridge::new(&logger_provider);
-            println!("Layer: ");
-
-            tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
-            println!("Analytics service setup complete");
-            Ok(())
-        } else {
-            println!("OTEL endpoint is empty");
+        if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
-            println!("Analytics basic service setup complete");
-            Ok(())
-        }
+            return Ok(());
+        };
+
+        let tracer = self.init_tracer_provider()?;
+        let logger_provider = self.init_logs()?;
+        self.meter_provider = Some(self.init_metric_provider()?);
+
+        let layer = OpenTelemetryTracingBridge::new(&logger_provider);
+        tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
+
+        tracing::info!("OTEL initialized");
+        Ok(())
     }
 
-    fn init_tracer_provider(&self) -> Tracer {
-        let batch_config = BatchConfigBuilder::default()
-    // Increasing the queue size and batch size, only increase in queue size delays full channel error.
-    .build();
+    fn init_tracer_provider(&self) -> anyhow::Result<Tracer> {
+        //  Guard clause if otel is disabled
+        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
+            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel tracer provider"));
+        };
+
+        let batch_config = BatchConfigBuilder::default().build();
 
         let provider = opentelemetry_otlp::new_pipeline()
             .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter().tonic().with_endpoint(self.collection_endpoint.to_string()),
-            )
+            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_endpoint.to_string()))
             .with_trace_config(Config::default().with_resource(Resource::new(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 format!("{}{}", self.service_name, "_trace_service"),
@@ -88,11 +74,16 @@ impl Analytics {
             .expect("Failed to install tracer provider");
 
         global::set_tracer_provider(provider.clone());
-        provider.tracer(format!("{}{}", self.service_name, "_subscriber"))
+        Ok(provider.tracer(format!("{}{}", self.service_name, "_subscriber")))
     }
 
-    fn init_metric_provider(&self) -> SdkMeterProvider {
-        let export_config = ExportConfig { endpoint: self.collection_endpoint.to_string(), ..ExportConfig::default() };
+    fn init_metric_provider(&self) -> anyhow::Result<SdkMeterProvider> {
+        //  Guard clause if otel is disabled
+        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
+            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel metric provider"));
+        };
+
+        let export_config = ExportConfig { endpoint: otel_endpoint.to_string(), ..ExportConfig::default() };
 
         // Creates and builds the OTLP exporter
         let exporter =
@@ -117,41 +108,42 @@ impl Analytics {
             )]))
             .build();
         global::set_meter_provider(provider.clone());
-        provider
+        Ok(provider)
     }
 
-    fn init_logs(&self) -> Result<LoggerProvider, opentelemetry::logs::LogError> {
-        opentelemetry_otlp::new_pipeline()
+    fn init_logs(&self) -> anyhow::Result<LoggerProvider> {
+        //  Guard clause if otel is disabled
+        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
+            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel log provider"));
+        };
+
+        let logger = opentelemetry_otlp::new_pipeline()
             .logging()
             .with_resource(Resource::new(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 format!("{}{}", self.service_name, "_logs_service"),
             )]))
-            .with_exporter(
-                opentelemetry_otlp::new_exporter().tonic().with_endpoint(self.collection_endpoint.to_string()),
-            )
-            .install_batch(runtime::Tokio)
+            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_endpoint.to_string()))
+            .install_batch(runtime::Tokio)?;
+
+        Ok(logger)
     }
 
-    pub fn shutdown(&self) {
+    pub fn shutdown(&self) -> anyhow::Result<()> {
         // guard clause if otel is disabled
-        if self.collection_endpoint.to_string().is_empty() {
-            return;
+        if self.collection_endpoint.is_none() {
+            return Ok(());
         }
 
         if let Some(meter_provider) = self.meter_provider.clone() {
             global::shutdown_tracer_provider();
             let _ = meter_provider.shutdown();
         }
+
+        Ok(())
     }
 }
 
-// Utils
-use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
-
-use std::fmt::Display;
-
-// TODO: this could be optimized by using generics
 pub trait GaugeType<T> {
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<T>;
 }
@@ -161,7 +153,6 @@ impl GaugeType<f64> for f64 {
         meter.f64_gauge(name).with_description(description).with_unit(unit).init()
     }
 }
-
 impl GaugeType<u64> for u64 {
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<u64> {
         meter.u64_gauge(name).with_description(description).with_unit(unit).init()
@@ -191,6 +182,7 @@ impl CounterType<f64> for f64 {
         meter.f64_counter(name).with_description(description).with_unit(unit).init()
     }
 }
+
 pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
     crate_meter: &Meter,
     instrument_name: String,
@@ -209,7 +201,6 @@ impl HistogramType<f64> for f64 {
         meter.f64_histogram(name).with_description(description).with_unit(unit).init()
     }
 }
-
 impl HistogramType<u64> for u64 {
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<u64> {
         meter.u64_histogram(name).with_description(description).with_unit(unit).init()

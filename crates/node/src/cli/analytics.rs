@@ -14,7 +14,7 @@ pub struct AnalyticsParams {
 
     /// Endpoint of the analytics server.
     #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_collection_endpoint, default_value = "http://localhost:4317")]
-    pub analytics_collection_endpoint: Url,
+    pub analytics_collection_endpoint: Option<Url>,
 }
 
 #[derive(Debug, thiserror::Error)]
