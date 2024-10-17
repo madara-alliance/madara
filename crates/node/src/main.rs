@@ -26,7 +26,6 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // crate::util::setup_logging()?;
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
@@ -67,7 +66,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    // TODO: analytics service is the first one to get registered now, no need to make it a service now, just use setup like logger.
     let telemetry_service: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;

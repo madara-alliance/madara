@@ -23,14 +23,9 @@ pub struct BlockMetrics {
 
 impl BlockMetrics {
     pub fn register() -> Result<Self, Error> {
-        tracing::trace!("Registering Block metrics.");
-        // TODO: Remove this println
-        println!("Registering Block metrics.");
-
         let common_scope_attributes = vec![KeyValue::new("crate", "block")];
         let block_meter = global::meter_with_version(
             "crates.block.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

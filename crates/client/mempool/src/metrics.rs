@@ -12,7 +12,6 @@ impl MempoolMetrics {
         let common_scope_attributes = vec![KeyValue::new("crate", "mempool")];
         let mempool_meter = global::meter_with_version(
             "crates.mempool.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

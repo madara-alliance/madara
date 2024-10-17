@@ -38,7 +38,6 @@ impl BlockMetrics {
         let common_scope_attributes = vec![KeyValue::new("crate", "block_import")];
         let block_import_meter = global::meter_with_version(
             "crates.block_import.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

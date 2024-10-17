@@ -14,7 +14,6 @@ impl BlockProductionMetrics {
         let common_scope_attributes = vec![KeyValue::new("crate", "block_production")];
         let mempool_meter = global::meter_with_version(
             "crates.block_production.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

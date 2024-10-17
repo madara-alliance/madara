@@ -34,7 +34,6 @@ impl RpcMetrics {
         let common_scope_attributes = vec![KeyValue::new("crate", "rpc")];
         let rpc_meter = global::meter_with_version(
             "crates.rpc.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

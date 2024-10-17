@@ -23,7 +23,6 @@ members = [
   "crates/primitives/utils",
   "crates/proc-macros",
   "crates/tests",
-  "crates/client/analytics",
 ]
 resolver = "2"
 default-members = [
@@ -37,6 +36,7 @@ default-members = [
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
+  "crates/client/analytics",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",

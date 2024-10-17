@@ -17,7 +17,6 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use url::Url;
 
-#[derive(Debug, Clone)]
 pub struct Analytics {
     meter_provider: Option<SdkMeterProvider>,
     service_name: String,
@@ -32,8 +31,6 @@ impl Analytics {
     }
 
     pub fn setup(&mut self) -> anyhow::Result<()> {
-        let level = self.log_level;
-
         let format = tracing_subscriber::fmt::format()
             .pretty()
             .with_level(true)
@@ -45,8 +42,8 @@ impl Analytics {
             .with_ansi(true);
 
         let tracing_subscriber = tracing_subscriber::registry()
-            .with(tracing_subscriber::filter::LevelFilter::from_level(level))
-            .with(tracing_subscriber::fmt::layer().with_target(false).event_format(format));
+            .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
+            .with(tracing_subscriber::fmt::layer().event_format(format));
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
