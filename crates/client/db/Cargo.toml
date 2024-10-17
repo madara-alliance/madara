@@ -17,12 +17,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+mc-analytics = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
-mc-analytics = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 

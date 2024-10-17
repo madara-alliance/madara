@@ -32,7 +32,6 @@ starknet-types-core.workspace = true
 # Other
 anyhow.workspace = true
 bytes.workspace = true
-tracing.workspace = true
 hyper.workspace = true
 log.workspace = true
 reqwest.workspace = true
@@ -40,6 +39,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]

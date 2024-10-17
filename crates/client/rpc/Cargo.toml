@@ -44,7 +44,6 @@ starknet_api = { workspace = true, default-features = true }
 
 # Others
 anyhow = { workspace = true }
-tracing = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
@@ -53,3 +52,4 @@ log = { workspace = true, default-features = true }
 paste = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }

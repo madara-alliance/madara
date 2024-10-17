@@ -18,10 +18,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway.workspace = true
-mc-analytics.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true

@@ -34,11 +34,11 @@ starknet_api = { workspace = true }
 # Other
 anyhow = { workspace = true }
 
-tracing = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 
 [dev-dependencies]
