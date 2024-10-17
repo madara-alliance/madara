@@ -27,11 +27,11 @@ const PENDING_BLOCK: BlockId = BlockId::Tag(BlockTag::Pending);
 
 lazy_static::lazy_static! {
     // TODO: Keystore path?
-    pub static ref ACCOUNT_ADDRESS: Felt = felt!("0x9ea0674c4d7b87b4afcb4c4ddc783b0c07e758778b9a1d133adc97cddfe38f");
-    pub static ref PRIVATE_KEY: SigningKey = SigningKey::from_secret_scalar(felt!("0x7a9779748888c95d96bbbce041b5109c6ffc0c4f30561c0170384a5922d9e91"));
+    pub static ref ACCOUNT_ADDRESS: Felt = felt!("0x029aed70d5adfa054273b9f7b76a4c4bc3a0120fd5fd36a2e5f9e59f033a2330");
+    pub static ref PRIVATE_KEY: SigningKey = SigningKey::from_secret_scalar(felt!("0x0410c6eadd73918ea90b6658d24f5f2c828e39773819c1443d8602a3c72344c2"));
 
-    pub static ref PRAGMA_FEEDS_REGISTRY_ADDRESS: Felt = felt!("0x13c3404ff9802442d0bf389afcf2fab9201b47c2268fcaa4bd36ba1978af76");
-    pub static ref PRAGMA_DISPATCHER_ADDRESS: Felt = felt!("0x4d997c57f63d509f483927ce74135a4e12de834144d9e90044ac03f6024267e");
+    pub static ref PRAGMA_FEEDS_REGISTRY_ADDRESS: Felt = felt!("0x78e7c09a40d87f72533d63b7f097d1546146aff028cbc3cd22fb2a51d92f606");
+    pub static ref PRAGMA_DISPATCHER_ADDRESS: Felt = felt!("0x250351b8a09278d6195a145bf13cbd69d6db12492111ef6548a8cd985eb982f");
 
     pub static ref MAX_FEE: Felt = felt!("2386F26FC10000"); // 0.01 eth
 
