@@ -1,8 +1,8 @@
 use anyhow::Context;
 use chrono::Local;
 use clap::builder::styling::{AnsiColor, Color, Style};
-use log::{kv::Key, Level};
 use std::{io::Write, time::Duration};
+use tracing::log::{kv::Key, Level};
 
 pub fn setup_rayon_threadpool() -> anyhow::Result<()> {
     let available_parallelism = std::thread::available_parallelism()?;
@@ -18,20 +18,20 @@ pub fn raise_fdlimit() {
     let recommended = 10000;
     match fdlimit::raise_fd_limit() {
         Ok(Outcome::LimitRaised { to, .. }) if to < recommended => {
-            log::warn!(
+            tracing::warn!(
                     "The file-descriptor limit for the current process is {to}, which is lower than the recommended {recommended}."
                 );
         }
         Ok(Outcome::LimitRaised { to, .. }) => {
-            log::debug!("File-descriptor limit was raised to {to}.");
+            tracing::debug!("File-descriptor limit was raised to {to}.");
         }
         Err(error) => {
-            log::warn!(
+            tracing::warn!(
                 "Error while trying to raise the file-descriptor limit for the process: {error:#}. The recommended file-descriptor limit is {recommended}."
             );
         }
         Ok(Outcome::Unsupported) => {
-            log::debug!("Unsupported platform for raising file-descriptor limit.");
+            tracing::debug!("Unsupported platform for raising file-descriptor limit.");
         }
     }
 }

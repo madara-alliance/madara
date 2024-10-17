@@ -21,7 +21,7 @@ pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
 impl MadaraBackend {
     /// Get the devnet predeployed contracts keys.
-    #[tracing::instrument(skip(self), fields(service_name = "DevnetDB"))]
+    #[tracing::instrument(skip(self), fields(module = "DevnetDB"))]
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         let col = self.db.get_column(Column::Devnet);
         let Some(res) = self.db.get_cf(&col, DEVNET_KEYS)? else {
@@ -32,7 +32,7 @@ impl MadaraBackend {
     }
 
     /// Set the devnet predeployed contracts keys.
-    #[tracing::instrument(skip(self, devnet_keys), fields(service_name = "DevnetDB"))]
+    #[tracing::instrument(skip(self, devnet_keys), fields(module = "DevnetDB"))]
     pub fn set_devnet_predeployed_keys(&self, devnet_keys: DevnetPredeployedKeys) -> Result<()> {
         let nonce_column = self.db.get_column(Column::Devnet);
         let mut writeopts = WriteOptions::default();

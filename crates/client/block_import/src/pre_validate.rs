@@ -145,7 +145,7 @@ fn class_conversion(
 ) -> Result<ConvertedClass, BlockImportError> {
     match class {
         DeclaredClass::Sierra(sierra) => {
-            log::trace!("Converting class with hash {:#x}", sierra.class_hash);
+            tracing::trace!("Converting class with hash {:#x}", sierra.class_hash);
             if !validation.trust_class_hashes {
                 let class_hash = sierra
                     .contract_class
@@ -173,7 +173,7 @@ fn class_conversion(
             }))
         }
         DeclaredClass::Legacy(legacy) => {
-            log::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
+            tracing::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
             if !validation.trust_class_hashes {
                 let class_hash = legacy
                     .contract_class
@@ -181,7 +181,7 @@ fn class_conversion(
                     .map_err(|e| BlockImportError::ComputeClassHash { class_hash: legacy.class_hash, error: e })?;
                 if class_hash != legacy.class_hash {
                     // TODO: For now we skip the exceptions for the legacy class hash mismatch
-                    log::debug!("Class hash mismatch: got {:#x}, expected {:#x}", class_hash, legacy.class_hash,);
+                    tracing::debug!("Class hash mismatch: got {:#x}, expected {:#x}", class_hash, legacy.class_hash,);
                     // return Err(BlockImportError::ClassHash { got: class_hash, expected: legacy.class_hash });
                 }
             }

@@ -98,6 +98,6 @@ impl PerfStopwatch {
 #[macro_export]
 macro_rules! stopwatch_end {
     ($stopwatch:expr, $($arg:tt)+) => {
-        log::debug!($($arg)+, $stopwatch.elapsed())
+        tracing::debug!($($arg)+, $stopwatch.elapsed())
     }
 }

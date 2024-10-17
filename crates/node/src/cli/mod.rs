@@ -117,7 +117,7 @@ impl RunCmd {
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
-                log::warn!("Failed to get random pokemon name: {}", e);
+                tracing::warn!("Failed to get random pokemon name: {}", e);
                 "madara".to_string()
             });
 
@@ -132,7 +132,7 @@ impl RunCmd {
             (Some(preset), _, _) => ChainConfig::from(preset),
             // Read the config path if provided
             (_, Some(path), _) => ChainConfig::from_yaml(path).map_err(|err| {
-                log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
+                tracing::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
                 anyhow::anyhow!("Failed to load chain config from file")
             })?,
             // Devnet default preset is Devnet if not provided by CLI
@@ -163,7 +163,7 @@ impl RunCmd {
             Some(NetworkType::Integration) => ChainConfig::starknet_integration(),
             Some(NetworkType::Devnet) => ChainConfig::madara_devnet(),
             None => {
-                log::error!("{}", "Chain config path is not set");
+                tracing::error!("{}", "Chain config path is not set");
                 anyhow::bail!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`")
             }
         };

@@ -57,13 +57,13 @@ async fn l2_verify_and_apply_task(
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
-        log::info!(
+        tracing::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             header.block_number,
             trim_hash(&block_hash),
             trim_hash(&header.global_state_root)
         );
-        log::debug!(
+        tracing::debug!(
             "Block import #{} ({:#x}) has state root {:#x}",
             header.block_number,
             block_hash,
@@ -81,10 +81,10 @@ async fn l2_verify_and_apply_task(
         );
 
         if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| header.block_number % backup_every_n_blocks == 0) {
-            log::info!("⏳ Backing up database at block {}...", header.block_number);
+            tracing::info!("⏳ Backing up database at block {}...", header.block_number);
             let sw = PerfStopwatch::new();
             backend.backup().await.context("backing up database")?;
-            log::info!("✅ Database backup is done ({:?})", sw.elapsed());
+            tracing::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
     }
 
@@ -134,7 +134,7 @@ async fn l2_pending_block_task(
     // clear pending status
     {
         backend.clear_pending_block().context("Clearing pending block")?;
-        log::debug!("l2_pending_block_task: startup: wrote no pending");
+        tracing::debug!("l2_pending_block_task: startup: wrote no pending");
     }
 
     // we start the pending block task only once the node has been fully sync
@@ -143,12 +143,12 @@ async fn l2_pending_block_task(
         return Ok(());
     }
 
-    log::debug!("Start pending block poll");
+    tracing::debug!("Start pending block poll");
 
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
-        log::debug!("Getting pending block...");
+        tracing::debug!("Getting pending block...");
 
         let current_block_hash = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))
@@ -171,7 +171,7 @@ async fn l2_pending_block_task(
         };
 
         if let Err(err) = import_block().await {
-            log::debug!("Error while importing pending block: {err:#}");
+            tracing::debug!("Error while importing pending block: {err:#}");
         }
     }
 

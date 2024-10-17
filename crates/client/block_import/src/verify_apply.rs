@@ -73,7 +73,7 @@ pub fn verify_apply_inner(
     // Block hash
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
 
-    log::debug!("verify_apply_inner store block {}", header.block_number);
+    tracing::debug!("verify_apply_inner store block {}", header.block_number);
 
     // store block, also uses rayon heavily internally
     backend
@@ -205,15 +205,15 @@ fn update_tries(
         return Ok(global_state_root);
     }
 
-    log::debug!(
+    tracing::debug!(
         "Deployed contracts: [{:?}]",
         block.state_diff.deployed_contracts.iter().map(|c| c.address.hex_display()).format(", ")
     );
-    log::debug!(
+    tracing::debug!(
         "Declared classes: [{:?}]",
         block.state_diff.declared_classes.iter().map(|c| c.class_hash.hex_display()).format(", ")
     );
-    log::debug!(
+    tracing::debug!(
         "Deprecated declared classes: [{:?}]",
         block.state_diff.deprecated_declared_classes.iter().map(|c| c.hex_display()).format(", ")
     );

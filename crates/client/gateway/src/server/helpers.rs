@@ -39,7 +39,7 @@ where
     let body = match serde_json::to_string(body) {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to serialize response body: {}", e);
+            tracing::error!("Failed to serialize response body: {}", e);
             return internal_error_response(&e.to_string());
         }
     };
@@ -48,7 +48,7 @@ where
     match Response::builder().status(status).header(header::CONTENT_TYPE, "application/json").body(Body::from(body)) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }
@@ -64,7 +64,7 @@ pub(crate) fn create_response_with_json_body(status: StatusCode, body: &str) -> 
     {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }

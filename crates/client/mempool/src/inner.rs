@@ -496,32 +496,32 @@ mod tests {
             for op in &self.0 {
                 match op {
                     Operation::Insert(insert) => {
-                        log::trace!("Insert {:?}", insert);
+                        tracing::trace!("Insert {:?}", insert);
                         let res = mempool.insert_tx(insert.0.clone(), insert.1);
-                        log::trace!("Result {:?}", res);
+                        tracing::trace!("Result {:?}", res);
                         inserted.insert(insert.0.tx_hash());
                     }
                     Operation::Pop => {
-                        log::trace!("Pop");
+                        tracing::trace!("Pop");
                         let res = mempool.pop_next();
                         if let Some(res) = &res {
                             inserted.remove(&res.tx_hash());
                         }
-                        log::trace!("Popped {:?}", res.map(|el| Insert(el, false)));
+                        tracing::trace!("Popped {:?}", res.map(|el| Insert(el, false)));
                     }
                 }
                 mempool.check_invariants();
             }
 
             loop {
-                log::trace!("Pop");
+                tracing::trace!("Pop");
                 let Some(res) = mempool.pop_next() else { break };
                 inserted.remove(&res.tx_hash());
-                log::trace!("Popped {:?}", Insert(res, false));
+                tracing::trace!("Popped {:?}", Insert(res, false));
                 mempool.check_invariants();
             }
             assert!(inserted.is_empty());
-            log::trace!("Done :)");
+            tracing::trace!("Done :)");
         }
     }
 
@@ -530,7 +530,7 @@ mod tests {
         #[test]
         fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
             let _ = env_logger::builder().is_test(true).try_init();
-            log::set_max_level(log::LevelFilter::Trace);
+            tracing::log::set_max_level(tracing::log::LevelFilter::Trace);
             pb.check();
         }
     }

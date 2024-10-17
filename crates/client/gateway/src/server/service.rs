@@ -56,7 +56,7 @@ pub async fn start_server(
         }
     });
 
-    log::info!("🌐 Gateway endpoint started at {}", listener.local_addr());
+    tracing::info!("🌐 Gateway endpoint started at {}", listener.local_addr());
 
     let server = Server::builder(listener).serve(make_service).with_graceful_shutdown(graceful_shutdown());
 

@@ -105,7 +105,7 @@ impl RpcMetrics {
     }
 
     pub(crate) fn on_call(&self, req: &Request, transport_label: &'static str) {
-        log::trace!(
+        tracing::trace!(
             target: "rpc_metrics",
             "[{transport_label}] on_call name={} params={:?}",
             req.method_name(),
@@ -123,11 +123,11 @@ impl RpcMetrics {
         transport_label: &'static str,
         now: Instant,
     ) {
-        log::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
-        log::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
+        tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
+        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
 
         let micros = now.elapsed().as_micros();
-        log::debug!(
+        tracing::debug!(
             target: "rpc_metrics",
             "[{transport_label}] {} call took {} μs",
             req.method_name(),

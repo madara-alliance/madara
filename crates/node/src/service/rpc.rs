@@ -37,7 +37,7 @@ impl RpcService {
             (RpcMethods::Unsafe, _) => (true, true),
             (RpcMethods::Auto, false) => (true, true),
             (RpcMethods::Auto, true) => {
-                log::warn!(
+                tracing::warn!(
                     "Option `--rpc-external` will hide node operator endpoints. To enable them, please pass \
                      `--rpc-methods unsafe`."
                 );

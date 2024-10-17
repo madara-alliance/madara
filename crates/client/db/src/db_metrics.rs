@@ -52,8 +52,6 @@ impl DbMetrics {
             let column_size = cf_metadata.size;
             storage_size += column_size;
 
-            println!("Updating DB metrics.");
-
             self.column_sizes.record(column_size, &[KeyValue::new("column", column.rocksdb_name())]);
         }
 

@@ -5416,7 +5416,6 @@ dependencies = [
  "hyper 0.14.29",
  "ip_network",
  "jsonrpsee",
- "log",
  "mc-analytics",
  "mc-block-import",
  "mc-db",
@@ -5652,7 +5651,6 @@ dependencies = [
  "futures",
  "httpmock",
  "lazy_static",
- "log",
  "mc-analytics",
  "mc-db",
  "mc-mempool",
@@ -5692,7 +5690,6 @@ version = "0.7.0"
 dependencies = [
  "blockifier",
  "cairo-vm",
- "log",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -5739,6 +5736,7 @@ dependencies = [
  "starknet-types-core",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -5814,6 +5812,7 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -5874,6 +5873,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6093,7 +6093,6 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.7.0",
  "cairo-vm",
- "log",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
@@ -6105,6 +6104,7 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

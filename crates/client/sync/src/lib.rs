@@ -27,7 +27,7 @@ pub async fn sync(
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
-        log::warn!("Forcing unordered state. This will most probably break your database.");
+        tracing::warn!("Forcing unordered state. This will most probably break your database.");
         (starting_block, true)
     } else {
         (
@@ -40,7 +40,7 @@ pub async fn sync(
         )
     };
 
-    log::info!("⛓️  Starting L2 sync from block {}", starting_block);
+    tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
     let mut provider = FeederClient::new(fetch_config.gateway, fetch_config.feeder_gateway);
     if let Some(api_key) = fetch_config.api_key {

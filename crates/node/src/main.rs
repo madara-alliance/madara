@@ -55,13 +55,13 @@ async fn main() -> anyhow::Result<()> {
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
-    log::info!("🥷  {} Node", GREET_IMPL_NAME);
-    log::info!("✌️  Version {}", node_version);
-    log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
-    log::info!("🏷  Node Name: {}", node_name);
+    tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
+    tracing::info!("✌️  Version {}", node_version);
+    tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
+    tracing::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
-    log::info!("👤 Role: {}", role);
-    log::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
+    tracing::info!("👤 Role: {}", role);
+    tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
 
     let sys_info = SysInfo::probe();
     sys_info.show();
@@ -194,12 +194,12 @@ async fn main() -> anyhow::Result<()> {
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            log::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
             panic!();
         } else {
             // This log is immediately flooded with devnet accounts and so this can be missed.
             // Should we add a delay here to make this clearly visisble?
-            log::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
         }
     }
 

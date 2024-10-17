@@ -14,8 +14,8 @@ pub async fn gas_price_worker_once(
     gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
     match update_gas_price(eth_client, l1_gas_provider.clone()).await {
-        Ok(_) => log::trace!("Updated gas prices"),
-        Err(e) => log::error!("Failed to update gas prices: {:?}", e),
+        Ok(_) => tracing::trace!("Updated gas prices"),
+        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
     }
 
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();

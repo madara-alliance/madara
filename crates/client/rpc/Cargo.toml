@@ -41,6 +41,7 @@ starknet_api = { workspace = true, default-features = true }
 
 # Others
 anyhow = { workspace = true }
+tracing = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",

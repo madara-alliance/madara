@@ -35,7 +35,7 @@ pub struct TxIndex(pub u64);
 impl MadaraBackend {
     /// This function checks a that the program was started on a db of the wrong chain (ie. main vs
     /// sepolia) and returns an error if it does.
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub(crate) fn check_configuration(&self) -> anyhow::Result<()> {
         let expected = &self.chain_config;
         let col = self.db.get_column(Column::BlockStorageMeta);
@@ -64,7 +64,7 @@ impl MadaraBackend {
 
     // DB read operations
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::TxHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(tx_hash)?)?;
@@ -73,7 +73,7 @@ impl MadaraBackend {
         Ok(Some(block_n))
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
@@ -82,7 +82,7 @@ impl MadaraBackend {
         Ok(Some(block_n))
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_state_update(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let col = self.db.get_column(Column::BlockNToStateDiff);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
@@ -91,7 +91,7 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
@@ -100,7 +100,7 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInner>> {
         let col = self.db.get_column(Column::BlockNToBlockInner);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
@@ -109,7 +109,7 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
@@ -177,7 +177,7 @@ impl MadaraBackend {
         Ok(res)
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_pending_block_state_update(&self) -> Result<StateDiff> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else {
@@ -188,7 +188,7 @@ impl MadaraBackend {
         Ok(res)
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
@@ -198,7 +198,7 @@ impl MadaraBackend {
 
     // DB write
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub(crate) fn block_db_store_pending(&self, block: &MadaraPendingBlock, state_update: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
@@ -211,7 +211,7 @@ impl MadaraBackend {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub(crate) fn block_db_clear_pending(&self) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
@@ -224,7 +224,7 @@ impl MadaraBackend {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let mut writeopts = WriteOptions::default(); // todo move that in db
@@ -233,13 +233,13 @@ impl MadaraBackend {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn clear_last_confirmed_block(&self) -> Result<()> {
         self.write_last_confirmed_block(0)
     }
 
     /// Also clears pending block
-    #[tracing::instrument(skip(self), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub(crate) fn block_db_store_block(&self, block: &MadaraBlock, state_diff: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
@@ -303,7 +303,7 @@ impl MadaraBackend {
 
     // BlockId
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_n(&self, id: &impl DbBlockIdResolvable) -> Result<Option<u64>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
@@ -312,7 +312,7 @@ impl MadaraBackend {
         }
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_hash(&self, id: &impl DbBlockIdResolvable) -> Result<Option<Felt>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
@@ -322,7 +322,7 @@ impl MadaraBackend {
         }
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
@@ -331,26 +331,26 @@ impl MadaraBackend {
         }
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn contains_block(&self, id: &impl DbBlockIdResolvable) -> Result<bool> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(false) };
         // todo: optimize this
         Ok(self.storage_to_info(&ty)?.is_some())
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_info(&ty)
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_inner(&ty)
     }
 
-    #[tracing::instrument(skip(self, id), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraMaybePendingBlock>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         let Some(info) = self.storage_to_info(&ty)? else { return Ok(None) };
@@ -361,7 +361,7 @@ impl MadaraBackend {
     // Tx hashes and tx status
 
     /// Returns the index of the tx.
-    #[tracing::instrument(skip(self, tx_hash), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, tx_hash), fields(module = "BlockDB"))]
     pub fn find_tx_hash_block_info(&self, tx_hash: &Felt) -> Result<Option<(MadaraMaybePendingBlockInfo, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
@@ -378,7 +378,7 @@ impl MadaraBackend {
     }
 
     /// Returns the index of the tx.
-    #[tracing::instrument(skip(self, tx_hash), fields(service_name = "BlockDB"))]
+    #[tracing::instrument(skip(self, tx_hash), fields(module = "BlockDB"))]
     pub fn find_tx_hash_block(&self, tx_hash: &Felt) -> Result<Option<(MadaraMaybePendingBlock, TxIndex)>> {
         match self.tx_hash_to_block_n(tx_hash)? {
             Some(block_n) => {
