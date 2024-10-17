@@ -40,7 +40,7 @@ pub fn contract_trie_root(
 
     let mut contract_storage_trie = backend.contract_storage_trie();
 
-    log::debug!("contract_storage_trie inserting");
+    tracing::debug!("contract_storage_trie inserting");
 
     // First we insert the contract storage changes
     for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
@@ -53,7 +53,7 @@ pub fn contract_trie_root(
         contract_leafs.insert(*address, Default::default());
     }
 
-    log::debug!("contract_storage_trie commit");
+    tracing::debug!("contract_storage_trie commit");
 
     // Then we commit them
     contract_storage_trie.commit(BasicId::new(block_number))?;
@@ -88,12 +88,12 @@ pub fn contract_trie_root(
         contract_trie.insert(bonsai_identifier::CONTRACT, &k, &v)?;
     }
 
-    log::debug!("contract_trie committing");
+    tracing::debug!("contract_trie committing");
 
     contract_trie.commit(BasicId::new(block_number))?;
     let root_hash = contract_trie.root_hash(bonsai_identifier::CONTRACT)?;
 
-    log::debug!("contract_trie committed");
+    tracing::debug!("contract_trie committed");
 
     Ok(root_hash)
 }

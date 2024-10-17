@@ -7,6 +7,7 @@ use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
 
 /// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
+#[tracing::instrument(skip(importer, state_diff, declared_classes), fields(module = "BlockProductionTask"))]
 pub async fn close_block(
     importer: &BlockImporter,
     block: MadaraPendingBlock,

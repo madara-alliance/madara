@@ -17,7 +17,7 @@ pub enum GatewayError {
 
 impl From<MadaraStorageError> for GatewayError {
     fn from(e: MadaraStorageError) -> Self {
-        log::error!(target: "gateway_errors", "Storage error: {}", e);
+        tracing::error!(target: "gateway_errors", "Storage error: {}", e);
         Self::InternalServerError(e.to_string())
     }
 }
@@ -40,7 +40,7 @@ impl<T, E: Display> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!(target: "gateway_errors", "{context}: {err:#}");
+                tracing::error!(target: "gateway_errors", "{context}: {err:#}");
                 Err(GatewayError::InternalServerError(err.to_string()))
             }
         }
@@ -56,7 +56,7 @@ impl<T> OptionExt<T> for Option<T> {
         match self {
             Some(val) => Ok(val),
             None => {
-                log::error!(target: "gateway_errors", "{context}");
+                tracing::error!(target: "gateway_errors", "{context}");
                 Err(GatewayError::InternalServerError(context.to_string()))
             }
         }

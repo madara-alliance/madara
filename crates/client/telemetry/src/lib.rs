@@ -30,7 +30,7 @@ pub struct TelemetryHandle(Option<Arc<mpsc::Sender<TelemetryEvent>>>);
 impl TelemetryHandle {
     pub fn send(&self, verbosity: VerbosityLevel, message: serde_json::Value) {
         if message.get("msg").is_none() {
-            log::warn!("Telemetry messages should have a message type");
+            tracing::warn!("Telemetry messages should have a message type");
         }
         if let Some(tx) = &self.0 {
             // drop the message if the channel if full.
@@ -107,14 +107,14 @@ impl Service for TelemetryService {
                 let websocket = match client.get(endpoint).upgrade().send().await {
                     Ok(ws) => ws,
                     Err(err) => {
-                        log::warn!("Could not connect to telemetry endpoint '{endpoint}': {err:?}");
+                        tracing::warn!("Could not connect to telemetry endpoint '{endpoint}': {err:?}");
                         return None;
                     }
                 };
                 let websocket = match websocket.into_websocket().await {
                     Ok(ws) => ws,
                     Err(err) => {
-                        log::warn!("Could not connect websocket to telemetry endpoint '{endpoint}': {err:?}");
+                        tracing::warn!("Could not connect websocket to telemetry endpoint '{endpoint}': {err:?}");
                         return None;
                     }
                 };
@@ -125,7 +125,7 @@ impl Service for TelemetryService {
             let rx = &mut rx;
 
             while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv()).await {
-                log::debug!(
+                tracing::debug!(
                     "Sending telemetry event '{}'.",
                     event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")
                 );
@@ -136,11 +136,13 @@ impl Service for TelemetryService {
                 futures::future::join_all(clients.iter_mut().map(|client| async move {
                     if let Some((websocket, verbosity, endpoint)) = client {
                         if *verbosity >= event.verbosity as u8 {
-                            log::trace!("send telemetry to '{endpoint}'");
+                            tracing::trace!("send telemetry to '{endpoint}'");
                             match websocket.send(Message::Text(msg.clone())).await {
                                 Ok(_) => {}
                                 Err(err) => {
-                                    log::warn!("Could not connect send telemetry to endpoint '{endpoint}': {err:#}");
+                                    tracing::warn!(
+                                        "Could not connect send telemetry to endpoint '{endpoint}': {err:#}"
+                                    );
                                 }
                             }
                         }
