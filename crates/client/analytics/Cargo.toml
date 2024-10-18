@@ -30,6 +30,6 @@ opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
-tracing-opentelemetry = "0.26.0"
+tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
