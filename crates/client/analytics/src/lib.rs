@@ -15,6 +15,7 @@ use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::EnvFilter;
 use url::Url;
 
 pub struct Analytics {
@@ -43,7 +44,8 @@ impl Analytics {
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
-            .with(tracing_subscriber::fmt::layer().event_format(format));
+            .with(tracing_subscriber::fmt::layer().event_format(format))
+            .with(EnvFilter::from_default_env());
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
