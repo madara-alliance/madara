@@ -33,7 +33,7 @@ impl SyncService {
     ) -> anyhow::Result<Self> {
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
 
-        log::info!("🛰️ Using feeder url: {} ", fetch_config.gateway.as_str());
+        tracing::info!("🛰️ Using feeder url: {} ", fetch_config.gateway.as_str());
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),

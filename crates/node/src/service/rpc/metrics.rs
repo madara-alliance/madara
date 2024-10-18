@@ -2,64 +2,91 @@ use std::time::Instant;
 
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use mc_metrics::{Counter, CounterVec, HistogramOpts, HistogramVec, MetricsRegistry, Opts, PrometheusError, U64};
+use opentelemetry::{
+    global::Error,
+    metrics::{Counter, Histogram},
+};
 
-/// Histogram time buckets in microseconds.
-const HISTOGRAM_BUCKETS: [f64; 11] =
-    [5.0, 25.0, 100.0, 500.0, 1_000.0, 2_500.0, 10_000.0, 25_000.0, 100_000.0, 1_000_000.0, 10_000_000.0];
+use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
+use opentelemetry::{global, KeyValue};
 
 /// Metrics for RPC middleware storing information about the number of requests started/completed,
 /// calls started/completed and their timings.
 #[derive(Debug, Clone)]
 pub struct RpcMetrics {
     /// Histogram over RPC execution times.
-    calls_time: HistogramVec,
+    calls_time: Histogram<f64>,
     /// Number of calls started.
-    calls_started: CounterVec<U64>,
+    calls_started: Counter<u64>,
     /// Number of calls completed.
-    calls_finished: CounterVec<U64>,
+    calls_finished: Counter<u64>,
     /// Number of Websocket sessions opened.
-    ws_sessions_opened: Option<Counter<U64>>,
+    ws_sessions_opened: Option<Counter<u64>>,
     /// Number of Websocket sessions closed.
-    ws_sessions_closed: Option<Counter<U64>>,
+    ws_sessions_closed: Option<Counter<u64>>,
     /// Histogram over RPC websocket sessions.
-    ws_sessions_time: HistogramVec,
+    ws_sessions_time: Histogram<f64>,
 }
 
 impl RpcMetrics {
     /// Create an instance of metrics
-    pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
-        Ok(Self {
-            calls_time: registry.register(HistogramVec::new(
-                HistogramOpts::new("rpc_calls_time", "Total time [μs] of processed RPC calls")
-                    .buckets(HISTOGRAM_BUCKETS.to_vec()),
-                &["protocol", "method", "is_rate_limited"],
-            )?)?,
-            calls_started: registry.register(CounterVec::new(
-                Opts::new("rpc_calls_started", "Number of received RPC calls (unique un-batched requests)"),
-                &["protocol", "method"],
-            )?)?,
-            calls_finished: registry.register(CounterVec::new(
-                Opts::new("rpc_calls_finished", "Number of processed RPC calls (unique un-batched requests)"),
-                &["protocol", "method", "is_error", "is_rate_limited"],
-            )?)?,
-            ws_sessions_opened: registry
-                .register(Counter::new("rpc_sessions_opened", "Number of persistent RPC sessions opened")?)?
-                .into(),
-            ws_sessions_closed: registry
-                .register(Counter::new("rpc_sessions_closed", "Number of persistent RPC sessions closed")?)?
-                .into(),
-            ws_sessions_time: registry.register(HistogramVec::new(
-                HistogramOpts::new("rpc_sessions_time", "Total time [s] for each websocket session")
-                    .buckets(HISTOGRAM_BUCKETS.to_vec()),
-                &["protocol"],
-            )?)?,
-        })
+    pub fn register() -> Result<Self, Error> {
+        let common_scope_attributes = vec![KeyValue::new("crate", "rpc")];
+        let rpc_meter = global::meter_with_version(
+            "crates.rpc.opentelemetry",
+            Some("0.17"),
+            Some("https://opentelemetry.io/schemas/1.2.0"),
+            Some(common_scope_attributes.clone()),
+        );
+
+        let calls_started = register_counter_metric_instrument(
+            &rpc_meter,
+            "calls_started".to_string(),
+            "A counter to show block state at given time".to_string(),
+            "".to_string(),
+        );
+
+        let calls_finished = register_counter_metric_instrument(
+            &rpc_meter,
+            "calls_finished".to_string(),
+            "A counter to show block state at given time".to_string(),
+            "".to_string(),
+        );
+
+        let calls_time = register_histogram_metric_instrument(
+            &rpc_meter,
+            "calls_time".to_string(),
+            "A histogram to show the time taken for RPC calls".to_string(),
+            "".to_string(),
+        );
+
+        let ws_sessions_opened = Some(register_counter_metric_instrument(
+            &rpc_meter,
+            "ws_sessions_opened".to_string(),
+            "A counter to show the number of websocket sessions opened".to_string(),
+            "".to_string(),
+        ));
+
+        let ws_sessions_closed = Some(register_counter_metric_instrument(
+            &rpc_meter,
+            "ws_sessions_closed".to_string(),
+            "A counter to show the number of websocket sessions closed".to_string(),
+            "".to_string(),
+        ));
+
+        let ws_sessions_time = register_histogram_metric_instrument(
+            &rpc_meter,
+            "ws_sessions_time".to_string(),
+            "A histogram to show the time taken for RPC websocket sessions".to_string(),
+            "".to_string(),
+        );
+
+        Ok(Self { calls_time, calls_started, calls_finished, ws_sessions_opened, ws_sessions_closed, ws_sessions_time })
     }
 
     pub(crate) fn ws_connect(&self) {
         if let Some(counter) = self.ws_sessions_opened.as_ref() {
-            counter.inc()
+            counter.add(1, &[]);
         }
     }
 
@@ -67,20 +94,19 @@ impl RpcMetrics {
         let micros = now.elapsed().as_secs();
 
         if let Some(counter) = self.ws_sessions_closed.as_ref() {
-            counter.inc()
+            counter.add(1, &[]);
         }
-        self.ws_sessions_time.with_label_values(&["ws"]).observe(micros as _);
+        self.ws_sessions_time.record(micros as f64, &[]);
     }
 
     pub(crate) fn on_call(&self, req: &Request, transport_label: &'static str) {
-        log::trace!(
+        tracing::trace!(
             target: "rpc_metrics",
             "[{transport_label}] on_call name={} params={:?}",
             req.method_name(),
             req.params(),
         );
-
-        self.calls_started.with_label_values(&[transport_label, req.method_name()]).inc();
+        self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
     }
 
     pub(crate) fn on_response(
@@ -91,29 +117,33 @@ impl RpcMetrics {
         transport_label: &'static str,
         now: Instant,
     ) {
-        log::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
-        log::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
+        tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
+        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
 
         let micros = now.elapsed().as_micros();
-        log::debug!(
+        tracing::debug!(
             target: "rpc_metrics",
             "[{transport_label}] {} call took {} μs",
             req.method_name(),
             micros,
         );
-        self.calls_time
-            .with_label_values(&[transport_label, req.method_name(), if is_rate_limited { "true" } else { "false" }])
-            .observe(micros as _);
-        self.calls_finished
-            .with_label_values(&[
-                transport_label,
-                req.method_name(),
-                // the label "is_error", so `success` should be regarded as false
-                // and vice-versa to be registered correctly.
-                if rp.is_success() { "false" } else { "true" },
-                if is_rate_limited { "true" } else { "false" },
-            ])
-            .inc();
+
+        self.calls_time.record(
+            micros as f64,
+            &[
+                KeyValue::new("method", req.method_name().to_string()),
+                KeyValue::new("rate_limited", is_rate_limited.to_string()),
+            ],
+        );
+
+        self.calls_finished.add(
+            1,
+            &[
+                KeyValue::new("method", req.method_name().to_string()),
+                KeyValue::new("success", rp.is_success().to_string()),
+                KeyValue::new("rate_limited", is_rate_limited.to_string()),
+            ],
+        );
     }
 }
 

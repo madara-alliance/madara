@@ -22,9 +22,9 @@ pub async fn pre_validate(
     block: UnverifiedFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedBlock, BlockImportError> {
-    log::debug!("spawning pre_validate");
+    tracing::debug!("spawning pre_validate");
     let res = pool.spawn_rayon_task(move || pre_validate_inner(block, validation)).await;
-    log::debug!("finished pre_validate");
+    tracing::debug!("finished pre_validate");
     res
 }
 
@@ -34,9 +34,9 @@ pub async fn pre_validate_pending(
     block: UnverifiedPendingFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-    log::debug!("spawning pre_validate (pending)");
+    tracing::debug!("spawning pre_validate (pending)");
     let res = pool.spawn_rayon_task(move || pre_validate_pending_inner(block, validation)).await;
-    log::debug!("finished pre_validate (pending)");
+    tracing::debug!("finished pre_validate (pending)");
     res
 }
 
@@ -151,7 +151,7 @@ fn class_conversion(
 ) -> Result<ConvertedClass, BlockImportError> {
     match class {
         DeclaredClass::Sierra(sierra) => {
-            log::trace!("Converting class with hash {:#x}", sierra.class_hash);
+            tracing::trace!("Converting class with hash {:#x}", sierra.class_hash);
             if !validation.trust_class_hashes {
                 let class_hash = sierra
                     .contract_class
@@ -179,7 +179,7 @@ fn class_conversion(
             }))
         }
         DeclaredClass::Legacy(legacy) => {
-            log::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
+            tracing::trace!("Converting legacy class with hash {:#x}", legacy.class_hash);
             if !validation.trust_class_hashes {
                 let class_hash = legacy
                     .contract_class
@@ -187,7 +187,7 @@ fn class_conversion(
                     .map_err(|e| BlockImportError::ComputeClassHash { class_hash: legacy.class_hash, error: e })?;
                 if class_hash != legacy.class_hash {
                     // TODO: For now we skip the exceptions for the legacy class hash mismatch
-                    log::debug!("Class hash mismatch: got {:#x}, expected {:#x}", class_hash, legacy.class_hash,);
+                    tracing::debug!("Class hash mismatch: got {:#x}, expected {:#x}", class_hash, legacy.class_hash,);
                     // return Err(BlockImportError::ClassHash { got: class_hash, expected: legacy.class_hash });
                 }
             }

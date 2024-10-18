@@ -14,8 +14,8 @@ pub async fn gas_price_worker_once(
     gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
     match update_gas_price(eth_client, l1_gas_provider.clone()).await {
-        Ok(_) => log::trace!("Updated gas prices"),
-        Err(e) => log::error!("Failed to update gas prices: {:?}", e),
+        Ok(_) => tracing::trace!("Updated gas prices"),
+        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
     }
 
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
@@ -83,11 +83,12 @@ async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: G
     let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
 
-    log::debug!("Gas price fetched is: {:?}", eth_gas_price);
+    tracing::debug!("Gas price fetched is: {:?}", eth_gas_price);
 
     // Update the metrics
-    eth_client.l1_block_metrics.l1_block_number.set(latest_block_number as f64);
-    eth_client.l1_block_metrics.l1_gas_price_wei.set(eth_gas_price as f64);
+
+    eth_client.l1_block_metrics.l1_block_number.record(latest_block_number, &[]);
+    eth_client.l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
 
     // We're ignoring l1_gas_price_strk
 
