@@ -2,7 +2,8 @@ use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
     account_transaction::AccountTransaction,
     objects::{FeeType, GasVector, HasRelatedFeeType, TransactionExecutionInfo},
-    transaction_execution::Transaction, transactions::L1HandlerTransaction
+    transaction_execution::Transaction,
+    transactions::L1HandlerTransaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_core::types::MsgToL2;

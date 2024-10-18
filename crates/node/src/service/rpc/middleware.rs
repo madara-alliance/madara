@@ -278,7 +278,7 @@ async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(),
             let new_method = if let Some((prefix, suffix)) = method.split_once('_') {
                 format!("{}_{}_{}", prefix, version.name(), suffix)
             } else {
-                format!("starknet_{}_{}", version.name(), method)
+                format!("{}_{}", version.name(), method)
             };
             item["method"] = Value::String(new_method);
         }
