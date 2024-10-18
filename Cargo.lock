@@ -5607,6 +5607,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "env_logger 0.11.3",
+ "lazy_static",
  "log",
  "mc-block-import",
  "mc-db",

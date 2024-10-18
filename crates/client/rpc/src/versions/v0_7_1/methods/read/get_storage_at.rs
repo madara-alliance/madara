@@ -47,11 +47,10 @@ pub fn get_storage_at(
 
     let block_number = block_id.resolve_db_block_id(&starknet.backend)?;
 
-    // Skip contract check if block number > 10 and contract_address is Felt::ONE
-    let skip_contract_check = match block_number {
-        Some(DbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE => true,
-        _ => false,
-    };
+    let skip_contract_check = matches!(
+        block_number,
+        Some(DbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
+    );
 
     if !skip_contract_check {
         starknet

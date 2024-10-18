@@ -3,7 +3,6 @@ use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
-use mp_block::BlockId;
 use mp_class::ClassInfo;
 use mp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
