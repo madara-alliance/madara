@@ -316,7 +316,7 @@ mod tests {
             )
             .unwrap();
 
-        tracing::debug!("{:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
+        tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
         l1_data_provider.expect_get_da_mode().return_const(L1DataAvailabilityMode::Blob);
