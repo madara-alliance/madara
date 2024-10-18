@@ -251,7 +251,7 @@ async fn get_transaction_status(
 ) -> anyhow::Result<TransactionStatus> {
     const POLLING_INTERVAL: Duration = Duration::from_millis(100);
     const ERROR_RETRY_INTERVAL: Duration = Duration::from_millis(10);
-    const MAX_RETRIES: u32 = 200;
+    const MAX_RETRIES: u32 = 20;
 
     let mut retries = 0;
     loop {
