@@ -1,6 +1,6 @@
 [package]
 name = "mc-analytics"
-description = "Madara client for open telemetry analytics service"
+description = "Madara client open telemetry analytics service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
