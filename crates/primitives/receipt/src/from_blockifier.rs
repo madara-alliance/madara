@@ -75,7 +75,8 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         Transaction::L1HandlerTransaction(tx) => match get_l1_handler_message_hash(tx) {
             Ok(hash) => Some(hash),
             Err(err) => {
-                panic!("Error getting l1 handler message hash: {:?}", err);
+                log::error!("Error getting l1 handler message hash: {:?}", err);
+                None
             }
         },
         _ => None,

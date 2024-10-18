@@ -60,10 +60,6 @@ pub fn broadcasted_declare_v0_to_blockifier(
     let TransactionWithHash { transaction, hash } =
         TransactionWithHash::from_broadcasted_declare_v0(transaction, chain_id, starknet_version, class_hash);
 
-    let deployed_address = match &transaction {
-        Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
-        _ => None,
-    };
     let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
     Ok((
@@ -72,7 +68,7 @@ pub fn broadcasted_declare_v0_to_blockifier(
             TransactionHash(hash),
             class_info,
             None,
-            deployed_address.map(|address| address.try_into().unwrap()),
+            None,
             is_query,
         )?,
         extra_class_info,
@@ -178,7 +174,7 @@ pub fn broadcasted_to_blockifier(
             TransactionHash(hash),
             class_info,
             None,
-            deployed_address.map(|address| address.try_into().unwrap()),
+            deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
             is_query,
         )?,
         extra_class_info,

@@ -20,7 +20,10 @@ impl TransactionWithHash {
         let transaction: Transaction = match tx {
             starknet_core::types::BroadcastedTransaction::Invoke(tx) => Transaction::Invoke(tx.into()),
             starknet_core::types::BroadcastedTransaction::Declare(tx) => {
-                Transaction::Declare(DeclareTransaction::from_broadcasted(tx, class_hash.unwrap()))
+                Transaction::Declare(DeclareTransaction::from_broadcasted(
+                    tx,
+                    class_hash.expect("Class hash must be provided for DeclareTransaction"),
+                ))
             }
             starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
@@ -35,8 +38,10 @@ impl TransactionWithHash {
         class_hash: Option<Felt>,
     ) -> Self {
         let is_query = tx.is_query;
-        let transaction: Transaction =
-            Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(tx, class_hash.unwrap()));
+        let transaction: Transaction = Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(
+            tx,
+            class_hash.expect("Class hash must be provided for DeclareTransactionV0"),
+        ));
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
