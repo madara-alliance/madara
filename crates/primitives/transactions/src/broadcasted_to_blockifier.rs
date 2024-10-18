@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
+use crate::{
+    into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0, Transaction, TransactionWithHash,
+};
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -28,6 +30,49 @@ pub enum BroadcastedToBlockifierError {
     LegacyContractClassesNotSupported,
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
+}
+
+pub fn broadcasted_declare_v0_to_blockifier(
+    transaction: BroadcastedDeclareTransactionV0,
+    chain_id: Felt,
+    starknet_version: StarknetVersion,
+) -> Result<
+    (blockifier::transaction::transaction_execution::Transaction, Option<ConvertedClass>),
+    BroadcastedToBlockifierError,
+> {
+    let (class_info, class_hash, extra_class_info) = {
+        let compressed_legacy_class: CompressedLegacyContractClass = (*transaction.contract_class).clone();
+        let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
+        let compressed_legacy_class: CompressedLegacyContractClass = (*transaction.contract_class).clone();
+        let class_blockifier =
+            compressed_legacy_class.to_blockifier_class().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
+
+        let class_info = LegacyClassInfo { contract_class: Arc::new(compressed_legacy_class) };
+
+        (
+            Some(blockifier::execution::contract_class::ClassInfo::new(&class_blockifier, 0, 0)?),
+            Some(class_hash),
+            Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: class_info })),
+        )
+    };
+
+    let is_query = transaction.is_query;
+    let TransactionWithHash { transaction, hash } =
+        TransactionWithHash::from_broadcasted_declare_v0(transaction, chain_id, starknet_version, class_hash);
+
+    let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+
+    Ok((
+        blockifier::transaction::transaction_execution::Transaction::from_api(
+            transaction,
+            TransactionHash(hash),
+            class_info,
+            None,
+            None,
+            is_query,
+        )?,
+        extra_class_info,
+    ))
 }
 
 pub fn broadcasted_to_blockifier(
@@ -129,7 +174,7 @@ pub fn broadcasted_to_blockifier(
             TransactionHash(hash),
             class_info,
             None,
-            deployed_address.map(|address| address.try_into().unwrap()),
+            deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
             is_query,
         )?,
         extra_class_info,
