@@ -203,7 +203,7 @@ impl Job for DaJob {
     }
 }
 
-#[tracing::instrument(skip(elements), ret)]
+#[tracing::instrument(skip(elements))]
 pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
     let xs: Vec<BigUint> = (0..*BLOB_LEN)
         .map(|i| {

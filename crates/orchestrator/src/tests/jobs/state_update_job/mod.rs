@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
 use std::fs::read_to_string;
 use std::path::PathBuf;
-use std::{env, fs};
 
 use assert_matches::assert_matches;
 use bytes::Bytes;
@@ -27,7 +27,7 @@ use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
 use crate::jobs::types::{JobStatus, JobType};
 use crate::jobs::{Job, JobError};
 use crate::tests::common::default_job_item;
-use crate::tests::config::TestConfigBuilder;
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().expect("Failed to get Current Path");
@@ -60,17 +60,7 @@ async fn test_process_job_works(
     #[case] blocks_to_process: String,
     #[case] processing_start_index: u8,
 ) {
-    // Will be used by storage client which we call while storing the data.
-
-    use crate::tests::config::ConfigType;
-
-    let aws_region = env::var("AWS_REGION").unwrap();
-    println!("AWS_REGION: {}", aws_region);
-
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
-
-    let aws_region = env::var("AWS_REGION").unwrap();
-    println!("AWS_REGION: {}", aws_region);
 
     // Mocking the settlement client.
     let mut settlement_client = MockSettlementClient::new();

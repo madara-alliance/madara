@@ -27,14 +27,14 @@ pub enum WorkerError {
 
 #[async_trait]
 pub trait Worker: Send + Sync {
-    async fn run_worker_if_enabled(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
+    async fn run_worker_if_enabled(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         if !self.is_worker_enabled(config.clone()).await? {
             return Ok(());
         }
         self.run_worker(config).await
     }
 
-    async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>>;
+    async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()>;
 
     // Assumption
     // If say a job for block X fails, we don't want the worker to respawn another job for the same
@@ -46,7 +46,7 @@ pub trait Worker: Send + Sync {
     // Checks if any of the jobs have failed
     // Failure : JobStatus::VerificationFailed, JobStatus::VerificationTimeout, JobStatus::Failed
     // Halts any new job creation till all the count of failed jobs is not Zero.
-    async fn is_worker_enabled(&self, config: Arc<Config>) -> Result<bool, Box<dyn Error>> {
+    async fn is_worker_enabled(&self, config: Arc<Config>) -> color_eyre::Result<bool> {
         let failed_jobs = config
             .database()
             .get_jobs_by_statuses(vec![JobStatus::VerificationFailed, JobStatus::VerificationTimeout], Some(1))

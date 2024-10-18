@@ -81,6 +81,11 @@ COPY --from=builder /usr/src/madara-orchestrator/package.json .
 COPY --from=builder /usr/src/madara-orchestrator/migrate-mongo-config.js .
 COPY --from=builder /usr/src/madara-orchestrator/migrations ./migrations
 
+# To be fixed by this https://github.com/keep-starknet-strange/snos/issues/404
+RUN mkdir -p /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/af74c75/crates/starknet-os/kzg
+COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/af74c75/crates/starknet-os/kzg/trusted_setup.txt
+COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/src/madara-orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
+
 # Create a startup script
 RUN echo '#!/bin/bash\n\
     npm run migrate up\n\

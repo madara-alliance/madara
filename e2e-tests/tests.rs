@@ -13,7 +13,7 @@ use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
 use orchestrator::data_storage::DataStorage;
-use orchestrator::jobs::constants::JOB_METADATA_SNOS_BLOCK;
+use orchestrator::jobs::constants::{JOB_METADATA_SNOS_BLOCK, JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY};
 use orchestrator::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use orchestrator::queue::job_queue::{JobQueueMessage, WorkerTriggerType};
 use rstest::rstest;
@@ -397,7 +397,10 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
         job_type: JobType::StateTransition,
         status: JobStatus::Completed,
         external_id: ExternalId::Number(0),
-        metadata: HashMap::new(),
+        metadata: HashMap::from([(
+            JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(),
+            (l2_block_number.parse::<u32>().unwrap() - 1).to_string(),
+        )]),
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),

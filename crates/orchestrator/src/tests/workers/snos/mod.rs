@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
-use crate::jobs::types::{JobStatus, JobType};
+use crate::jobs::types::JobType;
 use crate::jobs::{Job, MockJob};
 use crate::queue::job_queue::SNOS_JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
@@ -39,20 +39,30 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
     // Mocking db function expectations
     if !db_val {
-        db.expect_get_latest_job_by_type_and_status()
-            .times(1)
-            .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+        db.expect_get_latest_job_by_type().with(eq(JobType::SnosRun)).returning(|_| Ok(None));
+        db.expect_get_job_by_internal_id_and_type()
+            .with(eq(0.to_string()), eq(JobType::SnosRun))
             .returning(|_, _| Ok(None));
-        start_job_index = 1;
+        db.expect_get_job_by_internal_id_and_type()
+            .with(eq(1.to_string()), eq(JobType::SnosRun))
+            .returning(|_, _| Ok(None));
+
+        start_job_index = 0;
         block = 5;
     } else {
         let uuid_temp = Uuid::new_v4();
-
-        db.expect_get_latest_job_by_type_and_status()
-            .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+        db.expect_get_latest_job_by_type()
+            .with(eq(JobType::SnosRun))
+            .returning(move |_| Ok(Some(get_job_item_mock_by_id("1".to_string(), uuid_temp))));
+        db.expect_get_job_by_internal_id_and_type()
+            .with(eq(0.to_string()), eq(JobType::SnosRun))
+            .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("0".to_string(), uuid_temp))));
+        db.expect_get_job_by_internal_id_and_type()
+            .with(eq(1.to_string()), eq(JobType::SnosRun))
             .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("1".to_string(), uuid_temp))));
-        block = 6;
+
         start_job_index = 2;
+        block = 6;
     }
 
     for i in start_job_index..block + 1 {
@@ -65,12 +75,10 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
         let job_item = get_job_item_mock_by_id(i.clone().to_string(), uuid);
         let job_item_cloned = job_item.clone();
-
-        job_handler.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item_cloned.clone()));
+        job_handler.expect_create_job().returning(move |_, _, _| Ok(job_item_cloned.clone()));
 
         // creating jobs call expectations
         db.expect_create_job()
-            .times(1)
             .withf(move |item| item.internal_id == i.clone().to_string())
             .returning(move |_| Ok(job_item.clone()));
     }
@@ -78,7 +86,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
-    ctx.expect().times(5).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Queue function call simulations
     queue

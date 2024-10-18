@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use aws_config::environment::EnvironmentVariableCredentialsProvider;
 use aws_config::meta::region::RegionProviderChain;
-use aws_config::Region;
+use aws_config::{from_env, Region};
 use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target};
+use aws_sdk_s3::config::ProvideCredentials;
 use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::types::QueueAttributeName::VisibilityTimeout;
 use orchestrator::config::ProviderConfig;
@@ -29,7 +31,9 @@ pub struct LocalStack {
 impl LocalStack {
     pub async fn new() -> Self {
         let region_provider = Region::new(get_env_var_or_panic("AWS_REGION"));
-        let config = aws_config::from_env().region(region_provider).load().await;
+
+        let creds = EnvironmentVariableCredentialsProvider::new().provide_credentials().await.unwrap();
+        let config = from_env().region(region_provider).credentials_provider(creds).load().await;
         let provider_config = Arc::new(ProviderConfig::AWS(Box::from(config.clone())));
 
         Self {
@@ -58,7 +62,7 @@ impl LocalStack {
 
         // Creating SQS queues
         let mut queue_attributes = HashMap::new();
-        queue_attributes.insert(VisibilityTimeout, "1".into());
+        queue_attributes.insert(VisibilityTimeout, "10000".into());
 
         let queue_names = vec![
             DATA_SUBMISSION_JOB_PROCESSING_QUEUE,

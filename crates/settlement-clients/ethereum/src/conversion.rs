@@ -276,7 +276,6 @@ mod tests {
         // Blob Data
         let blob_data_file_path =
             format!("{}{}{}{}", current_path.clone(), "/src/test_data/blob_data/", fork_block_no, ".txt");
-        println!("{}", blob_data_file_path);
         let blob_data = fs::read_to_string(blob_data_file_path).expect("Failed to read the blob data txt file");
 
         // Blob Commitment

@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -6,131 +6,148 @@ use async_trait::async_trait;
 use crate::config::Config;
 use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
 use crate::jobs::create_job;
-use crate::jobs::types::{JobItem, JobStatus, JobType};
+use crate::jobs::types::{JobStatus, JobType};
 use crate::workers::Worker;
 
 pub struct UpdateStateWorker;
 
 #[async_trait]
 impl Worker for UpdateStateWorker {
-    /// 1. Fetch the last successful state update job
-    /// 2. Fetch all successful proving jobs covering blocks after the last state update
-    /// 3. Create state updates for all the blocks that don't have a state update job
-    async fn run_worker(&self, config: Arc<Config>) -> Result<(), Box<dyn Error>> {
+    async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
 
-        let latest_successful_job =
-            config.database().get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await?;
+        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
 
-        match latest_successful_job {
+        let (completed_da_jobs, last_block_processed_in_last_job) = match latest_job {
             Some(job) => {
-                tracing::debug!(job_id = %job.id, "Found latest successful state transition job");
-                let successful_da_jobs_without_successor = config
-                    .database()
-                    .get_jobs_without_successor(JobType::DataSubmission, JobStatus::Completed, JobType::StateTransition)
-                    .await?;
-
-                if successful_da_jobs_without_successor.is_empty() {
-                    tracing::debug!("No new data submission jobs to process");
+                if job.status != JobStatus::Completed {
+                    log::warn!(
+                        "There's already a pending update state job. Parallel jobs can cause nonce issues or can \
+                         completely fail as the update logic needs to be strictly ordered. Returning safely..."
+                    );
                     return Ok(());
                 }
 
-                tracing::debug!(
-                    count = successful_da_jobs_without_successor.len(),
-                    "Found data submission jobs without state transition"
-                );
+                let mut blocks_processed_in_last_job: Vec<u64> = job
+                    .metadata
+                    .get(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY)
+                    .unwrap()
+                    .split(',')
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
 
-                let mut metadata = job.metadata;
-                let blocks_to_settle =
-                    Self::parse_job_items_into_block_number_list(successful_da_jobs_without_successor.clone());
-                metadata.insert(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(), blocks_to_settle.clone());
+                // ideally it's already sorted, but just to be safe
+                blocks_processed_in_last_job.sort();
 
-                tracing::trace!(blocks_to_settle = %blocks_to_settle, "Prepared blocks to settle for state transition");
+                let last_block_processed_in_last_job =
+                    blocks_processed_in_last_job[blocks_processed_in_last_job.len() - 1];
 
-                // Creating a single job for all the pending blocks.
-                let new_job_id = successful_da_jobs_without_successor[0].internal_id.clone();
-                match create_job(JobType::StateTransition, new_job_id.clone(), metadata, config).await {
-                    Ok(_) => tracing::info!(job_id = %new_job_id, "Successfully created new state transition job"),
-                    Err(e) => {
-                        tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
-                        return Err(e.into());
-                    }
-                }
-
-                tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
-                Ok(())
+                (
+                    config
+                        .database()
+                        .get_jobs_after_internal_id_by_job_type(
+                            JobType::DataSubmission,
+                            JobStatus::Completed,
+                            last_block_processed_in_last_job.to_string(),
+                        )
+                        .await?,
+                    Some(last_block_processed_in_last_job),
+                )
             }
             None => {
                 tracing::warn!("No previous state transition job found, fetching latest data submission job");
                 // Getting latest DA job in case no latest state update job is present
-                let latest_successful_jobs_without_successor = config
-                    .database()
-                    .get_jobs_without_successor(JobType::DataSubmission, JobStatus::Completed, JobType::StateTransition)
-                    .await?;
+                (
+                    config
+                        .database()
+                        .get_jobs_without_successor(
+                            JobType::DataSubmission,
+                            JobStatus::Completed,
+                            JobType::StateTransition,
+                        )
+                        .await?,
+                    None,
+                )
+            }
+        };
 
-                if latest_successful_jobs_without_successor.is_empty() {
-                    tracing::debug!("No data submission jobs found to process");
+        let mut blocks_to_process: Vec<u64> =
+            completed_da_jobs.iter().map(|j| j.internal_id.parse::<u64>().unwrap()).collect();
+        blocks_to_process.sort();
+
+        // no DA jobs completed after the last settled block
+        if blocks_to_process.is_empty() {
+            log::warn!("No DA jobs completed after the last settled block. Returning safely...");
+            return Ok(());
+        }
+
+        match last_block_processed_in_last_job {
+            Some(last_block_processed_in_last_job) => {
+                // DA job for the block just after the last settled block
+                // is not yet completed
+                if blocks_to_process[0] != last_block_processed_in_last_job + 1 {
+                    log::warn!(
+                        "DA job for the block just after the last settled block is not yet completed. Returning \
+                         safely..."
+                    );
                     return Ok(());
                 }
-
-                let job = latest_successful_jobs_without_successor[0].clone();
-                let mut metadata = job.metadata;
-
-                let blocks_to_settle =
-                    Self::parse_job_items_into_block_number_list(latest_successful_jobs_without_successor.clone());
-                metadata.insert(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(), blocks_to_settle.clone());
-
-                tracing::trace!(job_id = %job.id, blocks_to_settle = %blocks_to_settle, "Prepared blocks to settle for initial state transition");
-
-                match create_job(JobType::StateTransition, job.internal_id.clone(), metadata, config).await {
-                    Ok(_) => tracing::info!(job_id = %job.id, "Successfully created initial state transition job"),
-                    Err(e) => {
-                        tracing::error!(job_id = %job.id, error = %e, "Failed to create initial state transition job");
-                        return Err(e.into());
-                    }
+            }
+            None => {
+                if blocks_to_process[0] != 0 {
+                    log::warn!("DA job for the first block is not yet completed. Returning safely...");
+                    return Ok(());
                 }
-
-                tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
-                Ok(())
             }
         }
+
+        let blocks_to_process: Vec<u64> = find_successive_blocks_in_vector(blocks_to_process);
+
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(),
+            blocks_to_process.iter().map(|ele| ele.to_string()).collect::<Vec<String>>().join(","),
+        );
+
+        // Creating a single job for all the pending blocks.
+        let new_job_id = blocks_to_process[0].to_string();
+        match create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone()).await {
+            Ok(_) => tracing::info!(job_id = %new_job_id, "Successfully created new state transition job"),
+            Err(e) => {
+                tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
+                return Err(e.into());
+            }
+        }
+
+        tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+        Ok(())
     }
 }
 
-impl UpdateStateWorker {
-    /// To parse the block numbers from the vector of jobs.
-    pub fn parse_job_items_into_block_number_list(job_items: Vec<JobItem>) -> String {
-        job_items.iter().map(|j| j.internal_id.clone()).collect::<Vec<String>>().join(",")
-    }
+/// Gets the successive list of blocks from all the blocks processed in previous jobs
+/// Eg : input_vec : [1,2,3,4,7,8,9,11]
+/// We will take the first 4 block numbers and send it for processing
+pub fn find_successive_blocks_in_vector(block_numbers: Vec<u64>) -> Vec<u64> {
+    block_numbers
+        .iter()
+        .enumerate()
+        .take_while(|(index, block_number)| **block_number == (block_numbers[0] + *index as u64))
+        .map(|(_, block_number)| *block_number)
+        .collect()
 }
 
 #[cfg(test)]
 mod test_update_state_worker_utils {
-    use chrono::{SubsecRound, Utc};
     use rstest::rstest;
-    use uuid::Uuid;
-
-    use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-    use crate::workers::update_state::UpdateStateWorker;
 
     #[rstest]
-    fn test_parse_job_items_into_block_number_list() {
-        let mut job_vec = Vec::new();
-        for i in 0..3 {
-            job_vec.push(JobItem {
-                id: Uuid::new_v4(),
-                internal_id: i.to_string(),
-                job_type: JobType::ProofCreation,
-                status: JobStatus::Completed,
-                external_id: ExternalId::Number(0),
-                metadata: Default::default(),
-                version: 0,
-                created_at: Utc::now().round_subsecs(0),
-                updated_at: Utc::now().round_subsecs(0),
-            });
-        }
-
-        let block_string = UpdateStateWorker::parse_job_items_into_block_number_list(job_vec);
-        assert_eq!(block_string, String::from("0,1,2"));
+    #[case(vec![], vec![])]
+    #[case(vec![1], vec![1])]
+    #[case(vec![1, 2, 3, 4, 5], vec![1, 2, 3, 4, 5])]
+    #[case(vec![1, 2, 3, 4, 7, 8, 9, 11], vec![1, 2, 3, 4])]
+    #[case(vec![1, 3, 5, 7, 9], vec![1])]
+    fn test_find_successive_blocks(#[case] input: Vec<u64>, #[case] expected: Vec<u64>) {
+        let result = super::find_successive_blocks_in_vector(input);
+        assert_eq!(result, expected);
     }
 }

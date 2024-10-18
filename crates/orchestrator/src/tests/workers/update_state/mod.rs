@@ -1,123 +1,207 @@
-use std::error::Error;
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use da_client_interface::MockDaClient;
-use httpmock::MockServer;
 use mockall::predicate::eq;
-use rstest::rstest;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
-use url::Url;
+use rstest::*;
 use uuid::Uuid;
 
-use crate::database::MockDatabase;
+use crate::jobs::constants::JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY;
 use crate::jobs::job_handler_factory::mock_factory;
+use crate::jobs::state_update_job::StateUpdateJob;
 use crate::jobs::types::{JobStatus, JobType};
-use crate::jobs::{Job, MockJob};
-use crate::queue::job_queue::UPDATE_STATE_JOB_PROCESSING_QUEUE;
-use crate::queue::MockQueueProvider;
-use crate::tests::config::TestConfigBuilder;
-use crate::tests::workers::utils::{get_job_by_mock_id_vector, get_job_item_mock_by_id};
+use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::workers::update_state::UpdateStateWorker;
 use crate::workers::Worker;
 
 #[rstest]
-#[case(false, 0)]
-#[case(true, 5)]
 #[tokio::test]
-async fn test_update_state_worker(
-    #[case] last_successful_job_exists: bool,
-    #[case] number_of_processed_jobs: usize,
-) -> Result<(), Box<dyn Error>> {
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabase::new();
-    let mut queue = MockQueueProvider::new();
-
-    // Mocking the get_job_handler function.
-    let mut job_handler = MockJob::new();
-
-    // Mocking db function expectations
-    // If no successful state update jobs exist
-    if !last_successful_job_exists {
-        db.expect_get_latest_job_by_type_and_status()
-            .with(eq(JobType::StateTransition), eq(JobStatus::Completed))
-            .times(1)
-            .returning(|_, _| Ok(None));
-
-        db.expect_get_jobs_without_successor()
-            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq(JobType::StateTransition))
-            .times(1)
-            .returning(|_, _, _| Ok(vec![]));
-    } else {
-        // if successful state update job exists
-
-        // mocking the return value of first function call (getting last successful jobs):
-        db.expect_get_latest_job_by_type_and_status()
-            .with(eq(JobType::StateTransition), eq(JobStatus::Completed))
-            .times(1)
-            .returning(|_, _| Ok(Some(get_job_item_mock_by_id("1".to_string(), Uuid::new_v4()))));
-
-        // mocking the return values of second function call (getting completed proving worker jobs)
-        let job_vec =
-            get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2);
-        let job_vec_clone = job_vec.clone();
-        db.expect_get_jobs_after_internal_id_by_job_type()
-            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq("1".to_string()))
-            .returning(move |_, _, _| Ok(job_vec.clone()));
-        db.expect_get_jobs_without_successor()
-            .with(eq(JobType::DataSubmission), eq(JobStatus::Completed), eq(JobType::StateTransition))
-            .returning(move |_, _, _| Ok(job_vec_clone.clone()));
-
-        // mocking getting of the jobs (when there is a safety check for any pre-existing job during job
-        // creation)
-        let completed_jobs =
-            get_job_by_mock_id_vector(JobType::ProofCreation, JobStatus::Completed, number_of_processed_jobs as u64, 2);
-        db.expect_get_job_by_internal_id_and_type()
-            .times(1)
-            .with(eq(completed_jobs[0].internal_id.to_string()), eq(JobType::StateTransition))
-            .returning(|_, _| Ok(None));
-
-        // mocking the creation of jobs
-        let job_item = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-        let job_item_cloned = job_item.clone();
-
-        job_handler.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
-
-        db.expect_create_job()
-            .times(1)
-            .withf(move |item| item.internal_id == *"1".to_string())
-            .returning(move |_| Ok(job_item_cloned.clone()));
-    }
-
-    let y: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
-    let ctx = mock_factory::get_job_handler_context();
-    // Mocking the `get_job_handler` call in create_job function.
-    if last_successful_job_exists {
-        ctx.expect().times(1).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&y));
-    }
-
-    // Queue function call simulations
-    queue
-        .expect_send_message_to_queue()
-        .returning(|_, _, _| Ok(()))
-        .withf(|queue, _payload, _delay| queue == UPDATE_STATE_JOB_PROCESSING_QUEUE);
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
-    ));
-
-    // mock block number (madara) : 5
+async fn update_state_worker_with_pending_jobs() {
     let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
         .build()
         .await;
 
-    let update_state_worker = UpdateStateWorker {};
-    update_state_worker.run_worker(services.config).await?;
+    let unique_id = Uuid::new_v4();
+    let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
+    job_item.status = JobStatus::PendingVerification;
+    job_item.job_type = JobType::StateTransition;
+    services.config.database().create_job(job_item).await.unwrap();
 
-    Ok(())
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+    assert_eq!(latest_job.status, JobStatus::PendingVerification);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+    assert_eq!(latest_job.id, unique_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn update_state_worker_first_block() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    let unique_id = Uuid::new_v4();
+    let mut job_item = get_job_item_mock_by_id("0".to_string(), unique_id);
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+    assert_eq!(latest_job.status, JobStatus::Created);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+    assert_eq!(latest_job.metadata.get(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY).unwrap(), "0");
+}
+
+#[rstest]
+#[tokio::test]
+async fn update_state_worker_first_block_missing() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    // skiip first block from DA completion
+    let mut job_item = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    // update state worker should not create any job
+    assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn update_state_worker_selects_consective_blocks() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    let mut job_item_one = get_job_item_mock_by_id("0".to_string(), Uuid::new_v4());
+    job_item_one.status = JobStatus::Completed;
+    job_item_one.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item_one).await.unwrap();
+
+    let mut job_item_two = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
+    job_item_two.status = JobStatus::Completed;
+    job_item_two.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item_two).await.unwrap();
+
+    // skip block 3
+    let mut job_item_three = get_job_item_mock_by_id("3".to_string(), Uuid::new_v4());
+    job_item_three.status = JobStatus::Completed;
+    job_item_three.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item_three).await.unwrap();
+
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+    // update state worker should not create any job
+    assert_eq!(latest_job.status, JobStatus::Created);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+    assert_eq!(latest_job.metadata.get(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY).unwrap(), "0,1");
+}
+
+#[rstest]
+#[tokio::test]
+async fn update_state_worker_continues_from_previous_state_update() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    // add DA completion job for block 5
+    let mut job_item = get_job_item_mock_by_id("5".to_string(), Uuid::new_v4());
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    // add state transition job for blocks 0-4
+    let mut job_item = get_job_item_mock_by_id("0".to_string(), Uuid::new_v4());
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::StateTransition;
+    let mut metadata = HashMap::new();
+    metadata.insert(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(), "0,1,2,3,4".to_string());
+    job_item.metadata = metadata;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+    println!("latest job item {:?}", latest_job);
+    // update state worker should not create any job
+    assert_eq!(latest_job.status, JobStatus::Created);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+    assert_eq!(latest_job.metadata.get(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY).unwrap(), "5");
+}
+
+#[rstest]
+#[tokio::test]
+async fn update_state_worker_next_block_missing() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    // add DA completion job for block 5
+    let mut job_item = get_job_item_mock_by_id("6".to_string(), Uuid::new_v4());
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::DataSubmission;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    // add state transition job for blocks 0-4
+    let unique_id = Uuid::new_v4();
+    let mut job_item = get_job_item_mock_by_id("0".to_string(), unique_id);
+    job_item.status = JobStatus::Completed;
+    job_item.job_type = JobType::StateTransition;
+    let mut metadata = HashMap::new();
+    metadata.insert(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(), "0,1,2,3,4".to_string());
+    job_item.metadata = metadata;
+    services.config.database().create_job(job_item).await.unwrap();
+
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+
+    let update_state_worker = UpdateStateWorker {};
+    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+    assert_eq!(latest_job.id, unique_id);
 }
