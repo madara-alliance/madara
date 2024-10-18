@@ -12,7 +12,7 @@ jobs:
       - name: Generate binary hash
         id: binary_hash
         run: |
-          BINARY_PATH=./target/release/madara
+          BINARY_PATH=target/release/madara
           if [ -f "$BINARY_PATH" ]; then
             HASH=$(sha256sum $BINARY_PATH | awk '{ print $1 }')
             echo "hash=$HASH" >> $GITHUB_OUTPUT
