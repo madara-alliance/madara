@@ -13,7 +13,7 @@ pub struct AnalyticsParams {
     pub analytics_log_level: String,
 
     /// Endpoint of the analytics server.
-    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_collection_endpoint, default_value = "http://localhost:4317")]
+    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_collection_endpoint, default_value = None)]
     pub analytics_collection_endpoint: Option<Url>,
 }
 
