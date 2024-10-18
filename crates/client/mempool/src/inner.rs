@@ -146,6 +146,7 @@ impl NonceChain {
     ) -> Result<(InsertedPosition, ReplacedState), TxInsersionError> {
         let mempool_tx_arrived_at = mempool_tx.arrived_at;
         let mempool_tx_nonce = mempool_tx.nonce();
+        #[cfg(debug_assertions)]
         let mempool_tx_hash = mempool_tx.tx_hash();
 
         let replaced = if force {
@@ -176,7 +177,7 @@ impl NonceChain {
             self.front_nonce = mempool_tx_nonce;
             #[cfg(debug_assertions)]
             {
-                self.front_tx_hash = mempool_tx.tx_hash();
+                self.front_tx_hash = mempool_tx_hash;
             }
             InsertedPosition::Front { former_head_arrived_at }
         } else {
