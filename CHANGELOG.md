@@ -2,7 +2,6 @@
 
 ## Next release
 
-
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
 - fix(snos): added special address while closing block for SNOS
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
