@@ -159,6 +159,7 @@ impl NonceChain {
             match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx.clone())) {
                 btree_map::Entry::Occupied(entry) => {
                     // duplicate nonce, either it's because the hash is duplicated or nonce conflict with another tx.
+                    #[cfg(debug_assertions)]
                     if entry.key().0.tx_hash() == mempool_tx_hash {
                         return Err(TxInsersionError::DuplicateTxn);
                     } else {
