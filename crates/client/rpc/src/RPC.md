@@ -73,6 +73,10 @@ server. This is done with tower in the following steps:
 2. Request filtering middleware is set up. This includes host origin filtering
    and CORS filtering.
 
+> [!NOTE]
+> Rpc middleware will apply to both websocket and http rpc requests, which is
+> why we do not apply versioning in the http middleware.
+
 3. Request constraints are set, such as the maximum number of connections and
    request / response size constraints.
 
@@ -87,9 +91,5 @@ server. This is done with tower in the following steps:
 > The `starknet` prefix comes from the secondary macro expansion of
 > `#[rpc(server, namespace = "starknet)]`
 
-> [!NOTE]
-> Rpc middleware will apply to both websocket and http rpc requests, which is
-> why we do not apply versioning in the http middleware.
-
-4. Finally, the RPC service is added to tower as `RpcServiceBuilder`. Note that
+5. Finally, the RPC service is added to tower as `RpcServiceBuilder`. Note that
    the actual RPC selection logic is handled behind the hood by `jsonrpsee`.
