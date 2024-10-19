@@ -100,11 +100,11 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter.set_data_gas_price_sync_enabled(false);
     }
     if let Some(strk_fix_gas) = run_cmd.l1_sync_params.strk_gas_price {
-        l1_gas_setter.update_eth_l1_gas_price(strk_fix_gas as u128);
+        l1_gas_setter.update_strk_l1_gas_price(strk_fix_gas as u128);
         l1_gas_setter.set_strk_gas_price_sync_enabled(false);
     }
     if let Some(strk_fix_blob_gas) = run_cmd.l1_sync_params.strk_blob_gas_price {
-        l1_gas_setter.update_eth_l1_data_gas_price(strk_fix_blob_gas as u128);
+        l1_gas_setter.update_strk_l1_data_gas_price(strk_fix_blob_gas as u128);
         l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
     }
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
