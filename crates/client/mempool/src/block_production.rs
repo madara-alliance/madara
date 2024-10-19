@@ -1,15 +1,10 @@
 // TODO: Move this into its own crate.
-
-use crate::close_block::close_block;
-use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::transaction_execution::Transaction;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -32,6 +27,10 @@ use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
+
+use crate::close_block::close_block;
+use crate::header::make_pending_header;
+use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -247,12 +246,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(
-                    txs_to_process
-                        .iter()
-                        .skip(cur_len)
-                        .map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))),
-                );
+                txs_to_process_blockifier
+                    .extend(txs_to_process.iter().skip(cur_len).map(|tx| clone_transaction(&tx.tx)));
             }
 
             if txs_to_process.is_empty() {
@@ -286,11 +281,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             self.declared_classes.push(class);
                         }
 
-                        self.block.inner.receipts.push(from_blockifier_execution_info(
-                            &execution_info,
-                            &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
-                        ));
-                        let converted_tx = TransactionWithHash::from(clone_account_tx(&mempool_tx.tx)); // TODO: too many tx clones!
+                        self.block
+                            .inner
+                            .receipts
+                            .push(from_blockifier_execution_info(&execution_info, &clone_transaction(&mempool_tx.tx)));
+                        let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -411,8 +406,30 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (new_state_diff, _n_executed) =
+        let (mut new_state_diff, _n_executed) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+
+        // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
+        // at address 0x1 with the block number as the key
+        if block_n >= 10 {
+            let prev_block_number = block_n - 10;
+            let prev_block_hash = self
+                .backend
+                .get_block_hash(&BlockId::Number(prev_block_number))
+                .map_err(|err| {
+                    Error::Unexpected(
+                        format!("Error fetching block hash for block {prev_block_number}: {err:#}").into(),
+                    )
+                })?
+                .ok_or_else(|| {
+                    Error::Unexpected(format!("No block hash found for block number {prev_block_number}").into())
+                })?;
+            let address = Felt::ONE;
+            new_state_diff.storage_diffs.push(ContractStorageDiffItem {
+                address,
+                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
+            });
+        }
 
         // Convert the pending block to a closed block and save to db.
         let parent_block_hash = Felt::ZERO; // temp parent block hash

@@ -103,7 +103,18 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter.update_eth_l1_data_gas_price(fix_blob_gas as u128);
         l1_gas_setter.set_data_gas_price_sync_enabled(false);
     }
+    if let Some(strk_fix_gas) = run_cmd.l1_sync_params.strk_gas_price {
+        l1_gas_setter.update_eth_l1_gas_price(strk_fix_gas as u128);
+        l1_gas_setter.set_strk_gas_price_sync_enabled(false);
+    }
+    if let Some(strk_fix_blob_gas) = run_cmd.l1_sync_params.strk_blob_gas_price {
+        l1_gas_setter.update_eth_l1_data_gas_price(strk_fix_blob_gas as u128);
+        l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
+    }
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+    // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
+    let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
@@ -114,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
         chain_config.eth_core_contract_address,
         run_cmd.is_sequencer(),
         run_cmd.is_devnet(),
+        Arc::clone(&mempool),
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -125,7 +137,6 @@ async fn main() -> anyhow::Result<()> {
     {
         // Block production service. (authority)
         true => {
-            let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
             let mempool_provider = Arc::new(MempoolAddTxProvider::new(Arc::clone(&mempool)));
             let starknet = Arc::new(Starknet::new(
                 Arc::clone(db_service.backend()),

@@ -18,6 +18,7 @@ mc-db.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-convert.workspace = true
+mp-transactions.workspace = true
 
 # Other
 anyhow = { workspace = true }

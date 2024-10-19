@@ -14,7 +14,7 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_transactions::{BroadcastedDeclareTransactionV0, InvokeTransaction, InvokeTransactionV0, Transaction};
 use rstest::fixture;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -28,6 +28,12 @@ pub struct TestTransactionProvider;
 #[cfg(test)]
 #[async_trait]
 impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_v0_transaction(
+        &self,
+        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
     async fn add_declare_transaction(
         &self,
         _declare_transaction: BroadcastedDeclareTransaction,
