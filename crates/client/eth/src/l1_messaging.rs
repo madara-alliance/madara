@@ -1,8 +1,8 @@
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
+use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
-use alloy::providers::Provider;
 use alloy::sol_types::SolValue;
 use anyhow::Context;
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
@@ -56,11 +56,10 @@ pub async fn sync(
         }
     };
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
-    let current_block_number = client.provider.get_block_number().await?;
 
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
-        .to_block(current_block_number - 64)
+        .to_block(BlockNumberOrTag::Finalized)
         .watch()
         .await
         .context("Failed to watch event filter")?
