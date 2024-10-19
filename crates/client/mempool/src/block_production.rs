@@ -422,7 +422,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             let address = Felt::ONE;
             new_state_diff.storage_diffs.push(ContractStorageDiffItem {
                 address,
-                storage_entries: vec![StorageEntry { key: Felt::from(block_n), value: prev_block_hash }],
+                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
             });
         }
 
