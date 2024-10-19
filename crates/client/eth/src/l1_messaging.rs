@@ -14,6 +14,7 @@ use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+use alloy::providers::Provider;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -55,9 +56,11 @@ pub async fn sync(
         }
     };
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
+    let current_block_number = client.provider.get_block_number().await?;
 
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
+        .to_block(current_block_number - 64)
         .watch()
         .await
         .context("Failed to watch event filter")?
