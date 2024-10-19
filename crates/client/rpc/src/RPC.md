@@ -68,24 +68,24 @@ trait yourTraitV0_7_1 {
 server. This is done with tower in the following steps:
 
 - RPC apis are built and combined into a single `RpcModule` using
-   `versioned_rpc_api`, and all other configurations are loaded.
+  `versioned_rpc_api`, and all other configurations are loaded.
 
 - Request filtering middleware is set up. This includes host origin filtering
-   and CORS filtering.
+  and CORS filtering.
 
 > [!NOTE]
 > Rpc middleware will apply to both websocket and http rpc requests, which is
 > why we do not apply versioning in the http middleware.
 
 - Request constraints are set, such as the maximum number of connections and
-   request / response size constraints.
+  request / response size constraints.
 
 - Additional service layers are added on each rpc call inside `service_fn`.
-   These are composed into versioning, rate limiting (which is optional) and
-   metrics layers. Importantly, version filtering with `RpcMiddlewareServiceVersion`
-   will transforms rpc methods request with header `/rpc/v{version}` and a json rpc
-   body with a `{method}` field into the correct `starknet_{version}_{method}` rpc
-   method call, as this is how we version them internally with jsonrpsee.
+  These are composed into versioning, rate limiting (which is optional) and
+  metrics layers. Importantly, version filtering with `RpcMiddlewareServiceVersion`
+  will transforms rpc methods request with header `/rpc/v{version}` and a json rpc
+  body with a `{method}` field into the correct `starknet_{version}_{method}` rpc
+  method call, as this is how we version them internally with jsonrpsee.
 
 > [!NOTE]
 > The `starknet` prefix comes from the secondary macro expansion of
