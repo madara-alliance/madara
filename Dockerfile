@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM rust:1.78 AS builder
+FROM rust:1.81 AS builder
 # Install build dependencies
 RUN apt-get -y update && \
     apt-get install -y clang && \

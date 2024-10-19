@@ -24,6 +24,7 @@ pub struct L1SyncService {
 }
 
 impl L1SyncService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: &L1SyncParams,
         db: &DatabaseService,
@@ -32,8 +33,9 @@ impl L1SyncService {
         chain_id: ChainId,
         l1_core_address: H160,
         authority: bool,
+        devnet: bool,
     ) -> anyhow::Result<Self> {
-        let eth_client = if !config.sync_l1_disabled {
+        let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
                 let l1_block_metrics =
@@ -54,7 +56,8 @@ impl L1SyncService {
 
         // Note: gas price should be synced in case the madara is running in sequencer mode,
         // we haven't set any fix price for the gas, hence gas price should be none
-        let gas_price_sync_enabled = authority && (config.gas_price.is_none() || config.blob_gas_price.is_none());
+        let gas_price_sync_enabled =
+            authority && !devnet && (config.gas_price.is_none() || config.blob_gas_price.is_none());
         let gas_price_poll = config.gas_price_poll;
 
         if gas_price_sync_enabled {
