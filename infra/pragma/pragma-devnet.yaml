@@ -25,5 +25,5 @@ bouncer_config:
     n_events: 18446744073709551615
     state_diff_size: 131072
 sequencer_address: "0x123"
-eth_core_contract_address: "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057"
-eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
+eth_core_contract_address: "0xe669694cd3b40576ce2342a51a9092b95d5a93db"
+eth_gps_statement_verifier: "0xD407A4857ab736101E6085ecD471214dDb877Bc8"
