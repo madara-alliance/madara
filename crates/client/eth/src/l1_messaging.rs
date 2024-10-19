@@ -2,6 +2,7 @@ use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
 use alloy::primitives::{keccak256, FixedBytes, U256};
+use alloy::providers::Provider;
 use alloy::sol_types::SolValue;
 use anyhow::Context;
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
@@ -14,8 +15,6 @@ use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use alloy::providers::Provider;
-
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
