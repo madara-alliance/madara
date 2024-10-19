@@ -67,20 +67,20 @@ trait yourTraitV0_7_1 {
 `RpcService` is responsible for starting the rpc service, and hence the rpc
 server. This is done with tower in the following steps:
 
-1. RPC apis are built and combined into a single `RpcModule` using
+- RPC apis are built and combined into a single `RpcModule` using
    `versioned_rpc_api`, and all other configurations are loaded.
 
-2. Request filtering middleware is set up. This includes host origin filtering
+- Request filtering middleware is set up. This includes host origin filtering
    and CORS filtering.
 
 > [!NOTE]
 > Rpc middleware will apply to both websocket and http rpc requests, which is
 > why we do not apply versioning in the http middleware.
 
-3. Request constraints are set, such as the maximum number of connections and
+- Request constraints are set, such as the maximum number of connections and
    request / response size constraints.
 
-4. Additional service layers are added on each rpc call inside `service_fn`.
+- Additional service layers are added on each rpc call inside `service_fn`.
    These are composed into versioning, rate limiting (which is optional) and
    metrics layers. Importantly, version filtering with `RpcMiddlewareServiceVersion`
    will transforms rpc methods request with header `/rpc/v{version}` and a json rpc
@@ -91,5 +91,4 @@ server. This is done with tower in the following steps:
 > The `starknet` prefix comes from the secondary macro expansion of
 > `#[rpc(server, namespace = "starknet)]`
 
-5. Finally, the RPC service is added to tower as `RpcServiceBuilder`. Note that
-   the actual RPC selection logic is handled behind the hood by `jsonrpsee`.
+- Finally, the RPC service is added to tower as `RpcServiceBuilder`. Note that
