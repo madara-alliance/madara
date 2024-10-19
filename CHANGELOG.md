@@ -2,6 +2,7 @@
 
 ## Next release
 
+- refactor(rpc): re-worked rpc tower server and added proper websocket support
 - fix(db): max rocksdb LOG files count and size and add more memory metrics
 - fix(devnet): devnet predeployed contracts stable address across systems
 - feat: gas fee flag added
