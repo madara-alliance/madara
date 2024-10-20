@@ -58,3 +58,4 @@ log.workspace = true
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+indexmap.workspace = true
