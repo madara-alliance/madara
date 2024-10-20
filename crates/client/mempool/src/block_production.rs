@@ -160,13 +160,14 @@ fn finalize_execution_state<S: StateReader>(
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
 
-    println!("Thesea are the state maps!! - {:?}", csd);
-    let mut declared_contracts = csd.declared_contracts.clone();
-    declared_contracts.retain(|key, _| !csd.compiled_class_hashes.contains_key(key));
-    let deprecated_classes: IndexMap<ClassHash, bool> = IndexMap::from_iter(csd.declared_contracts.clone());
-    let csd: CommitmentStateDiff = csd.into();
-    println!("Thesea are the csd!! - {:?}", csd);
-    let state_update = csd_to_state_diff(backend, on_top_of, &csd, deprecated_classes)?;
+    // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
+    // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
+    let mut deprecated_declared_contracts = csd.declared_contracts.clone();
+    // Cairo 1 delcared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
+    // So we remove them from `deprecated_declared_contracts` as only use them for Cairo 0 contracts
+    deprecated_declared_contracts.retain(|key, _| !csd.compiled_class_hashes.contains_key(key));
+    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(csd.declared_contracts.clone());
+    let state_update = csd_to_state_diff(backend, on_top_of, &csd.into(), deprecated_declared_contracts)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
