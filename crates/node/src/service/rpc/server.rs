@@ -189,12 +189,12 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
         .map(|name| {
             let mut split = name.split("_");
             let namespace = split.next().expect("Should not be empty");
-            let v1 = split.next().expect("Should not be empty");
-            let v2 = split.next().expect("Should not be empty");
-            let v3 = split.next().expect("Should not be empty");
+            let major = split.next().expect("Should not be empty");
+            let minor = split.next().expect("Should not be empty");
+            let patch = split.next().expect("Should not be empty");
             let method = split.next().expect("Should not be empty");
 
-            format!("rpc/{v1}_{v2}_{v3}/{namespace}_{method}")
+            format!("rpc/{major}_{minor}_{patch}/{namespace}_{method}")
         })
         .collect::<Vec<_>>();
 
