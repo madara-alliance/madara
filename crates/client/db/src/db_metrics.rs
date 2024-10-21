@@ -89,10 +89,10 @@ impl DbMetrics {
         let mut builder = MemoryUsageBuilder::new().context("Creating memory usage builder")?;
         builder.add_db(db);
         let mem_usage = builder.build().context("Getting memory usage")?;
-        self.mem_table_total.record(mem_usage.approximate_mem_table_total() as _, &[]);
-        self.mem_table_unflushed.record(mem_usage.approximate_mem_table_unflushed() as _, &[]);
-        self.mem_table_readers_total.record(mem_usage.approximate_mem_table_readers_total() as _, &[]);
-        self.cache_total.record(mem_usage.approximate_cache_total() as _, &[]);
+        self.mem_table_total.record(mem_usage.approximate_mem_table_total(), &[]);
+        self.mem_table_unflushed.record(mem_usage.approximate_mem_table_unflushed(), &[]);
+        self.mem_table_readers_total.record(mem_usage.approximate_mem_table_readers_total(), &[]);
+        self.cache_total.record(mem_usage.approximate_cache_total(), &[]);
 
         Ok(storage_size)
     }
