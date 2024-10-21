@@ -26,7 +26,7 @@ impl ExecutionContext {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
-            log::debug!("executing {hash:#}");
+            tracing::debug!("executing {hash:#}");
             tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxReexecError {
                 block_n: self.db_id,
                 hash,
@@ -41,7 +41,7 @@ impl ExecutionContext {
             .enumerate()
             .map(|(index, tx): (_, Transaction)| {
                 let hash = tx.tx_hash();
-                log::debug!("executing {hash:#} (trace)");
+                tracing::debug!("executing {hash:#} (trace)");
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
 

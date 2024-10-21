@@ -135,11 +135,11 @@ pub async fn start_server(
                     .iter()
                     .any(|ips| ips.contains(proxy_ip.unwrap_or(ip)))
                 {
-                    log::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is trusted, disabling rate-limit", proxy_ip);
+                    tracing::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is trusted, disabling rate-limit", proxy_ip);
                     None
                 } else {
                     if !rate_limit_whitelisted_ips.is_empty() {
-                        log::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is not trusted, rate-limit enabled", proxy_ip);
+                        tracing::debug!(target: "rpc", "ip={ip}, proxy_ip={:?} is not trusted, rate-limit enabled", proxy_ip);
                     }
                     rate_limit
                 };
@@ -188,7 +188,7 @@ pub async fn start_server(
         .serve(make_service);
 
     join_set.spawn(async move {
-        log::info!(
+        tracing::info!(
             "📱 Running JSON-RPC server at {} (allowed origins={})",
             local_addr.map_or_else(|| "unknown".to_string(), |a| a.to_string()),
             format_cors(cors.as_ref())
