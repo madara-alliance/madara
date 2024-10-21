@@ -101,6 +101,8 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
+            feeder_gateway_url: chain_config.feeder_gateway_url,
+            gateway_url: chain_config.gateway_url,
             native_fee_token_address: chain_config_overrides.native_fee_token_address,
             parent_fee_token_address: chain_config_overrides.parent_fee_token_address,
             latest_protocol_version: chain_config_overrides.latest_protocol_version,
