@@ -22,6 +22,14 @@ pub struct L1SyncParams {
     #[clap(env = "MADARA_DATA_GAS_PRICE", long, alias = "blob-gas-price")]
     pub blob_gas_price: Option<u64>,
 
+    /// Fix the strk gas price. If the strk gas price is fixed it won't fetch eth <-> strk price from the oracle.
+    #[clap(env = "MADARA_STRK_GAS_PRICE", long, alias = "strk-gas-price")]
+    pub strk_gas_price: Option<u64>,
+
+    /// Fix the strk blob gas price. If the strk blob gas price is fixed it won't fetch eth <-> strk price from the oracle.
+    #[clap(env = "MADARA_STRK_DATA_GAS_PRICE", long, alias = "strk-blob-gas-price")]
+    pub strk_blob_gas_price: Option<u64>,
+
     /// Time in which the gas price worker will fetch the gas price.
     #[clap(
 		env = "MADARA_GAS_PRICE_POLL",

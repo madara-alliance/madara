@@ -9,6 +9,8 @@ pub struct GasPriceProvider {
     last_update: Arc<Mutex<SystemTime>>,
     gas_price_sync_enabled: Arc<AtomicBool>,
     data_gas_price_sync_enabled: Arc<AtomicBool>,
+    strk_gas_price_sync_enabled: Arc<AtomicBool>,
+    strk_data_gas_price_sync_enabled: Arc<AtomicBool>,
 }
 
 impl GasPriceProvider {
@@ -18,6 +20,8 @@ impl GasPriceProvider {
             last_update: Arc::new(Mutex::new(SystemTime::now())),
             gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
             data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            strk_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            strk_data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -33,6 +37,14 @@ impl GasPriceProvider {
     }
 
     pub fn set_data_gas_price_sync_enabled(&self, enabled: bool) {
+        self.data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_strk_gas_price_sync_enabled(&self, enabled: bool) {
+        self.gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_strk_data_gas_price_sync_enabled(&self, enabled: bool) {
         self.data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
     }
 
@@ -61,14 +73,14 @@ impl GasPriceProvider {
     }
 
     pub fn update_strk_l1_gas_price(&self, new_price: u128) {
-        if self.gas_price_sync_enabled.load(Ordering::Relaxed) {
+        if self.strk_gas_price_sync_enabled.load(Ordering::Relaxed) {
             let mut prices = self.gas_prices.lock().unwrap();
             prices.strk_l1_gas_price = new_price;
         }
     }
 
     pub fn update_strk_l1_data_gas_price(&self, new_price: u128) {
-        if self.data_gas_price_sync_enabled.load(Ordering::Relaxed) {
+        if self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed) {
             let mut prices = self.gas_prices.lock().unwrap();
             prices.strk_l1_data_gas_price = new_price;
         }
