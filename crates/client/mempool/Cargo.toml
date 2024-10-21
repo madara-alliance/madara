@@ -27,6 +27,7 @@ blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
+indexmap.workspace = true
 
 [features]
 testing = ["blockifier/testing", "mc-db/testing", "mockall"]
@@ -54,6 +55,7 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
+indexmap.workspace = true
 log.workspace = true
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true

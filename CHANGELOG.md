@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: contract 0 state diff fixed
 - feat: declare v0, l1 handler support added
 - feat: strk gas price cli param added
 - fix(snos): added special address while closing block for SNOS
