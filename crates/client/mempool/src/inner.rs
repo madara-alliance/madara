@@ -150,13 +150,13 @@ impl NonceChain {
         let mempool_tx_hash = mempool_tx.tx_hash();
 
         let replaced = if force {
-            if self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx.clone()), ()).is_some() {
+            if self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx), ()).is_some() {
                 ReplacedState::Replaced
             } else {
                 ReplacedState::NotReplaced
             }
         } else {
-            match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx.clone())) {
+            match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx)) {
                 btree_map::Entry::Occupied(entry) => {
                     // duplicate nonce, either it's because the hash is duplicated or nonce conflict with another tx.
                     #[cfg(debug_assertions)]
