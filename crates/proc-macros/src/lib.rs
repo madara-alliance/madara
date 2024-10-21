@@ -216,7 +216,7 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quote::{quote, ToTokens};
+    use quote::quote;
     use syn::parse_quote;
 
     #[test]
@@ -247,11 +247,12 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             indoc::indoc!(
-                "
+                r#"
                 Namespace cannot be empty.
                 Please provide a non-empty namespace string.
-                Example: #[versioned_rpc(\"V0_7_1\", \"starknet\")]
-            "
+
+                ex: #[versioned_rpc("V0_7_1", "starknet")]
+            "#
             )
         );
     }
