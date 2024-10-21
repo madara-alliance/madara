@@ -23,6 +23,10 @@ const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572
 const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
 
+lazy_static::lazy_static! {
+    static ref PEDERSEN_EMPTY: Felt = Pedersen::hash_array(&[]);
+}
+
 impl Transaction {
     pub fn compute_hash(&self, chain_id: Felt, version: StarknetVersion, offset_version: bool) -> Felt {
         let legacy = version.is_legacy();
@@ -73,7 +77,7 @@ impl Transaction {
             Transaction::Declare(_)
             | Transaction::DeployAccount(_)
             | Transaction::Deploy(_)
-            | Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
+            | Transaction::L1Handler(_) => *PEDERSEN_EMPTY,
         };
 
         Pedersen::hash(&tx_hash, &signature_hash)
@@ -84,7 +88,7 @@ impl Transaction {
             Transaction::Invoke(tx) => tx.compute_hash_signature::<Pedersen>(),
             Transaction::Declare(tx) => tx.compute_hash_signature::<Pedersen>(),
             Transaction::DeployAccount(tx) => tx.compute_hash_signature::<Pedersen>(),
-            Transaction::Deploy(_) | Transaction::L1Handler(_) => Pedersen::hash_array(&[]),
+            Transaction::Deploy(_) | Transaction::L1Handler(_) => *PEDERSEN_EMPTY,
         };
 
         Pedersen::hash(&tx_hash, &signature_hash)
