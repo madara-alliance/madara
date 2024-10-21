@@ -15,6 +15,7 @@ use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::EnvFilter;
 use utils::env_utils::{get_env_var_optional, get_env_var_or_default, get_env_var_or_panic};
 
 lazy_static! {
@@ -29,7 +30,8 @@ pub fn setup_analytics() -> Option<SdkMeterProvider> {
 
     let tracing_subscriber = tracing_subscriber::registry()
         .with(tracing_subscriber::filter::LevelFilter::from_level(level))
-        .with(tracing_subscriber::fmt::layer().with_target(false));
+        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::from_default_env());
 
     if let Some(otel_endpoint) = otel_endpoint {
         let meter_provider = init_metric_provider(&otel_endpoint);
