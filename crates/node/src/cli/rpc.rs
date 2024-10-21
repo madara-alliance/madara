@@ -4,7 +4,6 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use clap::ValueEnum;
-use ip_network::IpNetwork;
 use jsonrpsee::server::BatchRequestConfig;
 
 /// Available RPC methods.
@@ -98,21 +97,6 @@ pub struct RpcParams {
     /// 10 calls per minute per connection.
     #[arg(env = "MADARA_RPC_RATE_LIMIT", long)]
     pub rpc_rate_limit: Option<NonZeroU32>,
-
-    /// Disable RPC rate limiting for certain ip addresses or ranges.
-    ///
-    /// Each IP address must be in the following notation: `1.2.3.4/24`.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT_WHITELISTED_IPS", long, num_args = 1..)]
-    pub rpc_rate_limit_whitelisted_ips: Vec<IpNetwork>,
-
-    /// Trust proxy headers for disable rate limiting.
-    ///
-    /// When using a reverse proxy setup, the real requester IP is usually added to the headers as `X-Real-IP` or `X-Forwarded-For`.
-    /// By default, the RPC server will not trust these headers.
-    ///
-    /// This is currently only useful for rate-limiting reasons.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT_TRUST_PROXY_HEADERS", long)]
-    pub rpc_rate_limit_trust_proxy_headers: bool,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]

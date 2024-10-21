@@ -63,8 +63,6 @@ impl RpcService {
                 metrics,
                 cors: config.cors(),
                 rate_limit: config.rpc_rate_limit,
-                rate_limit_whitelisted_ips: config.rpc_rate_limit_whitelisted_ips.clone(),
-                rate_limit_trust_proxy_headers: config.rpc_rate_limit_trust_proxy_headers,
             }),
             server_handle: None,
         })

@@ -2,14 +2,11 @@
 #![allow(clippy::borrow_interior_mutable_const)]
 
 use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::num::NonZeroU32;
-use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Context;
-use forwarded_header_value::ForwardedHeaderValue;
-use ip_network::IpNetwork;
 use tokio::task::JoinSet;
 use tower::Service;
 
@@ -38,10 +35,6 @@ pub struct ServerConfig {
     pub batch_config: jsonrpsee::server::BatchRequestConfig,
     /// Rate limit calls per minute.
     pub rate_limit: Option<NonZeroU32>,
-    /// Disable rate limit for certain ips.
-    pub rate_limit_whitelisted_ips: Vec<IpNetwork>,
-    /// Trust proxy headers for rate limiting.
-    pub rate_limit_trust_proxy_headers: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -69,8 +62,6 @@ pub async fn start_server(
         message_buffer_capacity,
         rpc_api,
         rate_limit,
-        rate_limit_whitelisted_ips,
-        rate_limit_trust_proxy_headers,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -106,21 +97,13 @@ pub async fn start_server(
         service_builder: builder.to_service_builder(),
     };
 
-    let make_service = hyper::service::make_service_fn(move |addr: &hyper::server::conn::AddrStream| {
+    let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
-        let rate_limit_whitelisted_ips = rate_limit_whitelisted_ips.clone();
-        let ip = addr.remote_addr().ip();
 
         async move {
             let cfg = cfg.clone();
-            let rate_limit_whitelisted_ips = rate_limit_whitelisted_ips.clone();
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
-                let proxy_ip = if rate_limit_trust_proxy_headers { get_proxy_ip(&req) } else { None };
-                let is_whitelisted_ip =
-                    rate_limit_whitelisted_ips.iter().any(|ips| ips.contains(proxy_ip.unwrap_or(ip)));
-                let rate_limit_cfg = if is_whitelisted_ip { None } else { rate_limit };
-
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
@@ -130,7 +113,7 @@ pub async fn start_server(
 
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
                     .layer_fn(move |service| RpcMiddlewareServiceVersion::new(service, path.clone()))
-                    .option_layer(rate_limit_cfg.map(RpcMiddlewareLayerRateLimit::new))
+                    .option_layer(rate_limit.map(RpcMiddlewareLayerRateLimit::new))
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
@@ -176,10 +159,6 @@ pub async fn start_server(
 
     Ok(server_handle)
 }
-
-const X_FORWARDED_FOR: hyper::header::HeaderName = hyper::header::HeaderName::from_static("x-forwarded-for");
-const X_REAL_IP: hyper::header::HeaderName = hyper::header::HeaderName::from_static("x-real-ip");
-const FORWARDED: hyper::header::HeaderName = hyper::header::HeaderName::from_static("forwarded");
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192
 pub(crate) fn host_filtering(
@@ -245,7 +224,6 @@ pub(crate) fn try_into_cors(maybe_cors: Option<&Vec<String>>) -> anyhow::Result<
         }
         Ok(tower_http::cors::CorsLayer::new().allow_origin(tower_http::cors::AllowOrigin::list(list)))
     } else {
-        // allow all cors
         Ok(tower_http::cors::CorsLayer::permissive())
     }
 }
@@ -256,39 +234,4 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
     } else {
         format!("{:?}", ["*"])
     }
-}
-
-/// Extracts the IP addr from the HTTP request.
-///
-/// It is extracted in the following order:
-/// 1. `Forwarded` header.
-/// 2. `X-Forwarded-For` header.
-/// 3. `X-Real-Ip`.
-pub(crate) fn get_proxy_ip(req: &hyper::Request<hyper::Body>) -> Option<IpAddr> {
-    if let Some(ip) = req
-        .headers()
-        .get(&FORWARDED)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| ForwardedHeaderValue::from_forwarded(v).ok())
-        .and_then(|v| v.remotest_forwarded_for_ip())
-    {
-        return Some(ip);
-    }
-
-    if let Some(ip) = req
-        .headers()
-        .get(&X_FORWARDED_FOR)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| ForwardedHeaderValue::from_x_forwarded_for(v).ok())
-        .and_then(|v| v.remotest_forwarded_for_ip())
-    {
-        return Some(ip);
-    }
-
-    if let Some(ip) = req.headers().get(&X_REAL_IP).and_then(|v| v.to_str().ok()).and_then(|v| IpAddr::from_str(v).ok())
-    {
-        return Some(ip);
-    }
-
-    None
 }

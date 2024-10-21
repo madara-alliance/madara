@@ -44,50 +44,20 @@ impl RpcMiddlewareLayerRateLimit {
 }
 
 impl<S> tower::Layer<S> for RpcMiddlewareLayerRateLimit {
-    type Service = RpcMiddleWareServiceRateLimit<S>;
+    type Service = RpcMiddlewareServiceRateLimit<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        RpcMiddleWareServiceRateLimit { inner, rate_limit: self.rate_limit.clone() }
+        RpcMiddlewareServiceRateLimit { inner, rate_limit: self.rate_limit.clone() }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct RpcMiddlewareLayerMetrics {
-    metrics: Metrics,
-}
-
-impl RpcMiddlewareLayerMetrics {
-    /// Enable metrics middleware.
-    pub fn new(metrics: Metrics) -> Self {
-        Self { metrics }
-    }
-
-    /// Register a new websocket connection.
-    pub fn ws_connect(&self) {
-        self.metrics.ws_connect()
-    }
-
-    /// Register that a websocket connection was closed.
-    pub fn ws_disconnect(&self, now: Instant) {
-        self.metrics.ws_disconnect(now)
-    }
-}
-
-impl<S> tower::Layer<S> for RpcMiddlewareLayerMetrics {
-    type Service = RpcMiddleWareServiceMetrics<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        RpcMiddleWareServiceMetrics { inner, metrics: self.metrics.clone() }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RpcMiddleWareServiceRateLimit<S> {
+pub struct RpcMiddlewareServiceRateLimit<S> {
     inner: S,
     rate_limit: RateLimit,
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddleWareServiceRateLimit<S>
+impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceRateLimit<S>
 where
     S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
 {
@@ -134,12 +104,42 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct RpcMiddleWareServiceMetrics<S> {
+pub struct RpcMiddlewareLayerMetrics {
+    metrics: Metrics,
+}
+
+impl RpcMiddlewareLayerMetrics {
+    /// Enable metrics middleware.
+    pub fn new(metrics: Metrics) -> Self {
+        Self { metrics }
+    }
+
+    /// Register a new websocket connection.
+    pub fn ws_connect(&self) {
+        self.metrics.ws_connect()
+    }
+
+    /// Register that a websocket connection was closed.
+    pub fn ws_disconnect(&self, now: Instant) {
+        self.metrics.ws_disconnect(now)
+    }
+}
+
+impl<S> tower::Layer<S> for RpcMiddlewareLayerMetrics {
+    type Service = RpcMiddlewareServiceMetrics<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcMiddlewareServiceMetrics { inner, metrics: self.metrics.clone() }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RpcMiddlewareServiceMetrics<S> {
     inner: S,
     metrics: Metrics,
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddleWareServiceMetrics<S>
+impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceMetrics<S>
 where
     S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
 {
