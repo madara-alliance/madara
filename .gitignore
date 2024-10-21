@@ -48,6 +48,9 @@ madara.log
 starknet-e2e-test/contracts/cache
 starknet-e2e-test/contracts/build
 
+# proptest report
+**/proptest-regressions/
+
 # vscode settings
 .vscode/settings.json
 
