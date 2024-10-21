@@ -6,9 +6,11 @@ use crate::{
 use anyhow::Context;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
+use mp_convert::ToFelt;
 use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::channel_wait_or_graceful_shutdown;
 use serde::Deserialize;
+use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -33,7 +35,7 @@ pub async fn listen_and_update_state(
     eth_client: &EthereumClient,
     backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
-    chain_id: Felt,
+    chain_id: ChainId,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
@@ -43,7 +45,7 @@ pub async fn listen_and_update_state(
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(backend, format_event, block_metrics, chain_id)?;
+        update_l1(backend, format_event, block_metrics, chain_id.clone())?;
     }
 
     Ok(())
@@ -53,12 +55,12 @@ pub fn update_l1(
     backend: &MadaraBackend,
     state_update: L1StateUpdate,
     block_metrics: &L1BlockMetrics,
-    chain_id: Felt,
+    chain_id: ChainId,
 ) -> anyhow::Result<()> {
     // This is a provisory check to avoid updating the state with an L1StateUpdate that should not have been detected
     //
     // TODO: Remove this check when the L1StateUpdate is properly verified
-    if state_update.block_number > 500000u64 || chain_id == MAIN_CHAIN_ID {
+    if state_update.block_number > 500000u64 || chain_id.to_felt() == MAIN_CHAIN_ID {
         log::info!(
             "🔄 Updated L1 head #{} ({}) with state root ({})",
             state_update.block_number,
@@ -80,7 +82,7 @@ pub fn update_l1(
 pub async fn state_update_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
-    chain_id: Felt,
+    chain_id: ChainId,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -90,7 +92,7 @@ pub async fn state_update_worker(
     // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
     // Get and store the latest verified state
     let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
-    update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id)?;
+    update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id)
@@ -109,7 +111,6 @@ mod eth_client_event_subscription_test {
     use mc_db::DatabaseService;
     use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
     use rstest::*;
     use tempfile::TempDir;
     use url::Url;
@@ -190,7 +191,7 @@ mod eth_client_event_subscription_test {
                     &eth_client,
                     db.backend(),
                     &eth_client.l1_block_metrics,
-                    chain_info.chain_id.clone().to_felt(),
+                    chain_info.chain_id.clone(),
                 )
                 .await
             })
