@@ -145,7 +145,7 @@ where
                 method = method,
                 status = status,
                 res_len = res_len,
-                response_time = response_time.as_micros() as u64,
+                response_time = response_time.as_micros(),
                 "{method} {status} {res_len} - {response_time:?}",
             );
 

@@ -1,4 +1,5 @@
 use clap::Args;
+use mp_utils::parsers::parse_url;
 use tracing::Level;
 use url::Url;
 
@@ -14,16 +15,6 @@ pub struct AnalyticsParams {
     pub analytics_log_level: Level,
 
     /// Endpoint of the analytics server.
-    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_collection_endpoint, default_value = None)]
+    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_url, default_value = None)]
     pub analytics_collection_endpoint: Option<Url>,
-}
-
-#[derive(Debug, thiserror::Error)]
-enum AnalyticsError {
-    #[error("invalid collection endpoint: {0}")]
-    CollectionEndpointParsingError(String),
-}
-
-fn parse_collection_endpoint(s: &str) -> Result<Url, AnalyticsError> {
-    Url::parse(s).map_err(|_| AnalyticsError::CollectionEndpointParsingError(s.to_string()))
 }
