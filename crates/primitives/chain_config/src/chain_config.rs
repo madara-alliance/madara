@@ -284,6 +284,8 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
             // A random sequencer address for fee transfers to work in block production.
             sequencer_address: Felt::from_hex_unchecked(
                 "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
