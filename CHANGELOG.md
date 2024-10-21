@@ -3,6 +3,7 @@
 ## Next release
 
 - fix(block_hash): block hash mismatch on transaction with an empty signature
+- feat: declare v0, l1 handler support added
 - feat: strk gas price cli param added
 - fix(snos): added special address while closing block for SNOS
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
