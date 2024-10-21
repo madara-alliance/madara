@@ -243,6 +243,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
+            feeder_gateway_url: Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
@@ -255,6 +257,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
+            feeder_gateway_url: Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
