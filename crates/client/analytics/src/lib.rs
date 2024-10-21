@@ -9,13 +9,11 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
 use opentelemetry_sdk::{runtime, Resource};
 use std::fmt::Display;
-use std::str::FromStr as _;
 use std::time::Duration;
 use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
-use tracing_subscriber::EnvFilter;
 use url::Url;
 
 pub struct Analytics {
@@ -26,8 +24,11 @@ pub struct Analytics {
 }
 
 impl Analytics {
-    pub fn new(service_name: String, log_level: String, collection_endpoint: Option<Url>) -> anyhow::Result<Self> {
-        let log_level = Level::from_str(&log_level).unwrap_or(Level::INFO);
+    pub fn new(
+        service_name: String,
+        log_level: tracing::Level,
+        collection_endpoint: Option<Url>,
+    ) -> anyhow::Result<Self> {
         Ok(Self { meter_provider: None, service_name, log_level, collection_endpoint })
     }
 
@@ -44,8 +45,7 @@ impl Analytics {
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
-            .with(tracing_subscriber::fmt::layer().event_format(format))
-            .with(EnvFilter::from_default_env());
+            .with(tracing_subscriber::fmt::layer().event_format(format));
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
@@ -65,9 +65,10 @@ impl Analytics {
 
     fn init_tracer_provider(&self) -> anyhow::Result<Tracer> {
         //  Guard clause if otel is disabled
-        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
-            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel tracer provider"));
-        };
+        let otel_endpoint = self
+            .collection_endpoint
+            .clone()
+            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
 
         let batch_config = BatchConfigBuilder::default().build();
 
