@@ -115,7 +115,7 @@ pub fn versioned_rpc_api(
         rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     }
     if ws {
-        // V0.8.0 ...
+        rpc_api.merge(versions::v0_8_0::StarknetWsRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
     }
 
     Ok(rpc_api)
