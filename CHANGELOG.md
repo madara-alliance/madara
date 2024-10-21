@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: contract 0 state diff fixed
 - feat: strk gas price cli param added
 - fix(snos): added special address while closing block for SNOS
 - fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
