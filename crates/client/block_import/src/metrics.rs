@@ -21,13 +21,13 @@ pub struct BlockMetrics {
     pub last_db_metrics_update_instant: Mutex<Option<Instant>>,
 
     // L2 network metrics
-    pub l2_block_number: Gauge<f64>,
+    pub l2_block_number: Gauge<u64>,
     pub l2_sync_time: Gauge<f64>,
     pub l2_avg_sync_time: Gauge<f64>,
     pub l2_latest_sync_time: Gauge<f64>,
     pub l2_state_size: Gauge<f64>, // TODO: remove this, as well as the return value from db_metrics update.
-    pub transaction_count: Gauge<f64>,
-    pub event_count: Gauge<f64>,
+    pub transaction_count: Gauge<u64>,
+    pub event_count: Gauge<u64>,
     // L1 network metrics
     pub l1_gas_price_wei: Gauge<f64>,
     pub l1_gas_price_strk: Gauge<f64>,
@@ -143,9 +143,9 @@ impl BlockMetrics {
         self.l2_latest_sync_time.record(latest_sync_time, &[]);
         self.l2_avg_sync_time.record(total_sync_time / (block_header.block_number - self.starting_block) as f64, &[]);
 
-        self.l2_block_number.record(block_header.block_number as f64, &[]);
-        self.transaction_count.record(f64::from_u64(block_header.transaction_count).unwrap_or(0f64), &[]);
-        self.event_count.record(f64::from_u64(block_header.event_count).unwrap_or(0f64), &[]);
+        self.l2_block_number.record(block_header.block_number, &[]);
+        self.transaction_count.record(block_header.transaction_count, &[]);
+        self.event_count.record(block_header.event_count, &[]);
 
         self.l1_gas_price_wei.record(f64::from_u128(block_header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64), &[]);
         self.l1_gas_price_strk.record(f64::from_u128(block_header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64), &[]);

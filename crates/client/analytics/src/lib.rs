@@ -89,9 +89,10 @@ impl Analytics {
 
     fn init_metric_provider(&self) -> anyhow::Result<SdkMeterProvider> {
         //  Guard clause if otel is disabled
-        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
-            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel metric provider"));
-        };
+        let otel_endpoint = self
+            .collection_endpoint
+            .clone()
+            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
 
         let export_config = ExportConfig { endpoint: otel_endpoint.to_string(), ..ExportConfig::default() };
 
@@ -123,9 +124,10 @@ impl Analytics {
 
     fn init_logs(&self) -> anyhow::Result<LoggerProvider> {
         //  Guard clause if otel is disabled
-        let Some(otel_endpoint) = self.collection_endpoint.clone() else {
-            return Err(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel log provider"));
-        };
+        let otel_endpoint = self
+            .collection_endpoint
+            .clone()
+            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
 
         let logger = opentelemetry_otlp::new_pipeline()
             .logging()

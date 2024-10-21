@@ -83,7 +83,7 @@ impl MadaraBackend {
         }
     }
 
-    #[tracing::instrument(skip(self, id, contract_addr), fields(module = "ContractDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "ContractDB"))]
     pub fn is_contract_deployed_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -108,7 +108,7 @@ impl MadaraBackend {
         )
     }
 
-    #[tracing::instrument(skip(self, id, contract_addr), fields(module = "ContractDB"))]
+    #[tracing::instrument(skip(self, id), fields(module = "ContractDB"))]
     pub fn get_contract_nonce_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -119,7 +119,7 @@ impl MadaraBackend {
         })
     }
 
-    #[tracing::instrument(skip(self, id, contract_addr, key), fields(module = "ContractDB"))]
+    #[tracing::instrument(skip(self, id, key), fields(module = "ContractDB"))]
     pub fn get_contract_storage_at(
         &self,
         id: &impl DbBlockIdResolvable,

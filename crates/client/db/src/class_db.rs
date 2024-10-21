@@ -26,7 +26,7 @@ impl MadaraBackend {
         nonpending_col: Column,
     ) -> Result<Option<V>, MadaraStorageError> {
         // todo: smallint here to avoid alloc
-        tracing::debug!("get encoded {key:#x}");
+        tracing::debug!("class db get encoded kv, key={key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
         // Get from pending db, then normal db if not found.
@@ -36,7 +36,7 @@ impl MadaraBackend {
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
-        tracing::debug!("get encoded: not in pending");
+        tracing::debug!("class db get encoded kv, state is not pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
@@ -75,12 +75,12 @@ impl MadaraBackend {
         if !valid {
             return Ok(None);
         }
-        tracing::debug!("valid");
+        tracing::debug!("class db get class info, state is valid");
 
         Ok(Some(info.class_info))
     }
 
-    #[tracing::instrument(skip(self, class_hash), fields(module = "ClassDB"))]
+    #[tracing::instrument(skip(self), fields(module = "ClassDB"))]
     pub fn contains_class(&self, class_hash: &Felt) -> Result<bool, MadaraStorageError> {
         let col = self.db.get_column(Column::ClassInfo);
         let key_encoded = bincode::serialize(class_hash)?;
@@ -111,7 +111,7 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
-    #[tracing::instrument(skip(self, block_id, converted_classes, col_info, col_compiled), fields(module = "ClassDB"))]
+    #[tracing::instrument(skip(self, converted_classes, col_info, col_compiled), fields(module = "ClassDB"))]
     pub(crate) fn store_classes(
         &self,
         block_id: DbBlockId,
@@ -174,7 +174,7 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
-    #[tracing::instrument(skip(self, block_number, converted_classes), fields(module = "ClassDB"))]
+    #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
     pub(crate) fn class_db_store_block(
         &self,
         block_number: u64,
