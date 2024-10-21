@@ -12,7 +12,7 @@
 //!
 //! Given this code:
 //! ```rust,ignore
-//! #[versioned_starknet_rpc("V0_7_1")]
+//! #[versioned_rpc("V0_7_1", "starknet")]
 //! pub trait JsonRpc {
 //!     #[method(name = "blockNumber", aliases = ["block_number"])]
 //!     fn block_number(&self) -> anyhow::Result<u64>;
@@ -37,13 +37,17 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 
+#[derive(Debug)]
 struct VersionedRpcAttr {
     version: String,
+    namespace: String,
 }
 
 impl syn::parse::Parse for VersionedRpcAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let version = input.parse::<syn::LitStr>()?.value();
+        input.parse::<syn::Token![,]>()?;
+        let namespace = input.parse::<syn::LitStr>()?.value();
 
         if !version.starts_with('V') {
             return Err(syn::Error::new(Span::call_site(), "Version must start with 'V'"));
@@ -64,7 +68,21 @@ impl syn::parse::Parse for VersionedRpcAttr {
             }
         }
 
-        Ok(VersionedRpcAttr { version })
+        if namespace.trim().is_empty() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                indoc::indoc!(
+                    r#"
+                    Namespace cannot be empty.
+                    Please provide a non-empty namespace string.
+
+                    ex: #[versioned_rpc("V0_7_1", "starknet")]
+                "#
+                ),
+            ));
+        }
+
+        Ok(VersionedRpcAttr { version, namespace })
     }
 }
 
@@ -74,8 +92,8 @@ enum CallType {
 }
 
 #[proc_macro_attribute]
-pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let VersionedRpcAttr { version } = syn::parse_macro_input!(attr as VersionedRpcAttr);
+pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let VersionedRpcAttr { version, namespace } = syn::parse_macro_input!(attr as VersionedRpcAttr);
     let mut item_trait = syn::parse_macro_input!(input as syn::ItemTrait);
 
     let trait_name = &item_trait.ident;
@@ -88,11 +106,11 @@ pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStr
             return Err(syn::Error::new(
                 item.span(),
                 indoc::indoc! {r#"
-                    Traits marked with `versioned_starknet_rpc` can only contain methods
+                    Traits marked with `versioned_rpc` can only contain methods
 
                     ex:
 
-                    #[versioned_starknet_rpc("V0_7_0")]
+                    #[versioned_rpc("V0_7_0", "starknet")]
                     trait MyTrait {
                         #[method(name = "foo", blocking)]
                         fn foo();
@@ -184,7 +202,7 @@ pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStr
     }
 
     let trait_with_version = syn::ItemTrait {
-        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, namespace = "starknet")])],
+        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, namespace = #namespace)])],
         ident: train_name_with_version,
         ..item_trait
     };
@@ -193,4 +211,55 @@ pub fn versioned_starknet_rpc(attr: TokenStream, input: TokenStream) -> TokenStr
         #trait_with_version
     }
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::{quote, ToTokens};
+    use syn::parse_quote;
+
+    #[test]
+    fn test_versioned_rpc_attribute_parsing() {
+        let attr: VersionedRpcAttr = parse_quote!("V0_7_1", "starknet");
+        assert_eq!(attr.version, "V0_7_1");
+        assert_eq!(attr.namespace, "starknet");
+    }
+
+    #[test]
+    fn test_versioned_rpc_attribute_parsing_invalid_version() {
+        let result: syn::Result<VersionedRpcAttr> = syn::parse2(quote!("0_7_1", "starknet"));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Version must start with 'V'");
+    }
+
+    #[test]
+    fn test_versioned_rpc_attribute_parsing_invalid_parts() {
+        let result: syn::Result<VersionedRpcAttr> = syn::parse2(quote!("V0_7", "starknet"));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Version must have exactly three parts (VMAJOR_MINOR_PATCH)");
+    }
+
+    #[test]
+    fn test_versioned_rpc_attribute_parsing_empty_namespace() {
+        let result: syn::Result<VersionedRpcAttr> = syn::parse2(quote!("V0_7_1", ""));
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            indoc::indoc!(
+                "
+                Namespace cannot be empty.
+                Please provide a non-empty namespace string.
+                Example: #[versioned_rpc(\"V0_7_1\", \"starknet\")]
+            "
+            )
+        );
+    }
+
+    #[test]
+    fn test_version_method_name() {
+        let attr: Attribute = parse_quote!(#[method(name = "blockNumber")]);
+        let result = version_method_name(&attr, "V0_7_1").unwrap();
+        assert_eq!(result.to_token_stream().to_string(), "# [method (name = \"V0_7_1_blockNumber\")]");
+    }
 }

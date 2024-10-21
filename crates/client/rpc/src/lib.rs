@@ -97,6 +97,7 @@ pub fn versioned_rpc_api(
     read: bool,
     write: bool,
     trace: bool,
+    internal: bool,
     ws: bool,
 ) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
@@ -109,6 +110,9 @@ pub fn versioned_rpc_api(
     }
     if trace {
         rpc_api.merge(versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if internal {
+        rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     }
     if ws {
         // V0.8.0 ...
