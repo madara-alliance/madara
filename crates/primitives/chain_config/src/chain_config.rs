@@ -273,6 +273,8 @@ impl ChainConfig {
         Self {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
