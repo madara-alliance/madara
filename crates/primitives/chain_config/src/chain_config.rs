@@ -23,6 +23,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
+use url::Url;
 
 use mp_utils::serde::{deserialize_duration, deserialize_private_key};
 
@@ -72,6 +73,10 @@ pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
+
+    // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
+    pub feeder_gateway_url: Url,
+    pub gateway_url: Url,
 
     /// For starknet, this is the STRK ERC-20 contract on starknet.
     pub native_fee_token_address: ContractAddress,
@@ -175,6 +180,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Mainnet".into(),
             chain_id: ChainId::Mainnet,
+            feeder_gateway_url: Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
