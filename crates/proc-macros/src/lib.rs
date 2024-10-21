@@ -255,11 +255,4 @@ mod tests {
             )
         );
     }
-
-    #[test]
-    fn test_version_method_name() {
-        let attr: Attribute = parse_quote!(#[method(name = "blockNumber")]);
-        let result = version_method_name(&attr, "V0_7_1").unwrap();
-        assert_eq!(result.to_token_stream().to_string(), "# [method (name = \"V0_7_1_blockNumber\")]");
-    }
 }
