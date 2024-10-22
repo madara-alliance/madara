@@ -50,6 +50,7 @@ jsonrpsee = { workspace = true, default-features = true, features = [
 ] }
 log = { workspace = true, default-features = true }
 paste = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

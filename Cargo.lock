@@ -5547,6 +5547,7 @@ dependencies = [
  "mp-transactions",
  "paste",
  "rstest 0.18.2",
+ "serde",
  "serde_json",
  "starknet-core 0.11.0",
  "starknet-providers",

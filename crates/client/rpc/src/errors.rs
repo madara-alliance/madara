@@ -208,3 +208,49 @@ impl From<StarknetApiError> for StarknetRpcApiError {
         StarknetRpcApiError::ErrUnexpectedError { data: err.to_string() }
     }
 }
+
+#[derive(Debug)]
+pub enum WsResult {
+    Ok,
+    Err(StarknetWsApiError),
+}
+
+#[cfg_attr(test, derive(PartialEq, Eq))]
+#[derive(Debug)]
+pub enum StarknetWsApiError {
+    TooManyBlocksBack,
+}
+
+impl StarknetWsApiError {
+    fn code(&self) -> i32 {
+        match self {
+            StarknetWsApiError::TooManyBlocksBack => 68,
+        }
+    }
+    fn message(&self) -> &str {
+        match self {
+            StarknetWsApiError::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+        }
+    }
+}
+
+impl jsonrpsee::IntoSubscriptionCloseResponse for WsResult {
+    fn into_response(self) -> jsonrpsee::SubscriptionCloseResponse {
+        #[derive(serde::Serialize)]
+        struct StarknetSubscriptionError<'a> {
+            code: i32,
+            message: &'a str,
+        }
+
+        match self {
+            WsResult::Ok => jsonrpsee::SubscriptionCloseResponse::None,
+            WsResult::Err(err) => jsonrpsee::SubscriptionCloseResponse::NotifErr(
+                jsonrpsee::SubscriptionMessage::from_json(&StarknetSubscriptionError {
+                    code: err.code(),
+                    message: err.message(),
+                })
+                .unwrap(),
+            ),
+        }
+    }
+}
