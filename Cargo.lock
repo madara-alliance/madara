@@ -4592,6 +4592,19 @@ dependencies = [
 
 [[package]]
 name = "hyper-tls"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
+dependencies = [
+ "bytes",
+ "hyper 0.14.30",
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+]
+
+[[package]]
+name = "hyper-tls"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
@@ -5249,16 +5262,13 @@ dependencies = [
  "mp-chain-config",
  "mp-convert",
  "mp-utils",
- "primitive-types",
  "rand",
  "rayon",
  "reqwest 0.12.8",
  "serde",
  "serde_json",
  "serde_yaml",
- "starknet-core 0.11.0",
  "starknet-providers",
- "starknet-signers",
  "starknet_api",
  "thiserror",
  "tokio",
@@ -5458,7 +5468,9 @@ dependencies = [
  "anyhow",
  "bytes",
  "flate2",
+ "http 1.1.0",
  "hyper 0.14.30",
+ "hyper-tls 0.5.0",
  "log",
  "mc-db",
  "mc-rpc",
@@ -5466,15 +5478,14 @@ dependencies = [
  "mp-class",
  "mp-gateway",
  "mp-utils",
- "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-core 0.11.0",
- "starknet-signers",
  "starknet-types-core",
  "thiserror",
  "tokio",
+ "tower 0.4.13",
  "url",
 ]
 
@@ -5563,6 +5574,7 @@ dependencies = [
  "anyhow",
  "futures",
  "httpmock",
+ "hyper 0.14.30",
  "log",
  "mc-block-import",
  "mc-db",
@@ -5577,7 +5589,6 @@ dependencies = [
  "mp-transactions",
  "mp-utils",
  "regex",
- "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core 0.11.0",
@@ -5848,7 +5859,6 @@ dependencies = [
  "serde_yaml",
  "starknet-core 0.11.0",
  "starknet-crypto 0.7.2",
- "starknet-types-core",
  "tokio",
  "url",
 ]
@@ -6843,7 +6853,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.4.1",
  "hyper-rustls 0.27.3",
- "hyper-tls",
+ "hyper-tls 0.6.0",
  "hyper-util",
  "ipnet",
  "js-sys",
@@ -8650,6 +8660,8 @@ dependencies = [
  "futures-util",
  "pin-project",
  "pin-project-lite",
+ "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

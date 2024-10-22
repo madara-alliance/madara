@@ -26,19 +26,20 @@ mp-utils.workspace = true
 
 # Starknet
 starknet-core.workspace = true
-starknet-signers.workspace = true
 starknet-types-core.workspace = true
 
 # Other
 anyhow.workspace = true
 bytes.workspace = true
+http.workspace = true
+hyper-tls.workspace = true
 hyper.workspace = true
 log.workspace = true
-reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tower = { version = "0.4", features = ["timeout", "retry", "util", "limit"] }
 url.workspace = true
 
 [dev-dependencies]
