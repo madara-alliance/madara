@@ -210,6 +210,7 @@ impl Header {
                 self.parent_block_hash,
             ])
         } else {
+            // Based off https://github.com/starkware-libs/sequencer/blob/78ceca6aa230a63ca31f29f746fbb26d312fe381/crates/starknet_api/src/block_hash/block_hash_calculator.rs#L67
             Poseidon::hash_array(&[
                 Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH0"),
                 Felt::from(self.block_number),

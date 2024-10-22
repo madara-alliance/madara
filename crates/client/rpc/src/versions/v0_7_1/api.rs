@@ -10,8 +10,8 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use m_proc_macros::versioned_starknet_rpc;
-
+use m_proc_macros::versioned_rpc;
+use mp_transactions::BroadcastedDeclareTransactionV0;
 // Starknet RPC API trait and types
 //
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
@@ -19,7 +19,19 @@ use m_proc_macros::versioned_starknet_rpc;
 // This crate uses `jsonrpsee` to define such an API in Rust terms.
 
 /// Starknet write rpc interface.
-#[versioned_starknet_rpc("V0_7_1")]
+///
+
+#[versioned_rpc("V0_7_1", "madara")]
+pub trait MadaraWriteRpcApi {
+    /// Submit a new class v0 declaration transaction
+    #[method(name = "addDeclareV0Transaction")]
+    async fn add_declare_v0_transaction(
+        &self,
+        declare_transaction_v0: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult>;
+}
+
+#[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetWriteRpcApi {
     /// Submit a new transaction to be added to the chain
     #[method(name = "addInvokeTransaction")]
@@ -28,14 +40,14 @@ pub trait StarknetWriteRpcApi {
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult>;
 
-    /// Submit a new class declaration transaction
+    /// Submit a new deploy account transaction
     #[method(name = "addDeployAccountTransaction")]
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult>;
 
-    /// Submit a new deploy account transaction
+    /// Submit a new class declaration transaction
     #[method(name = "addDeclareTransaction")]
     async fn add_declare_transaction(
         &self,
@@ -43,7 +55,7 @@ pub trait StarknetWriteRpcApi {
     ) -> RpcResult<DeclareTransactionResult>;
 }
 
-#[versioned_starknet_rpc("V0_7_1")]
+#[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetReadRpcApi {
     /// Get the Version of the StarkNet JSON-RPC Specification Being Used
     #[method(name = "specVersion")]
@@ -144,7 +156,7 @@ pub trait StarknetReadRpcApi {
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
 }
 
-#[versioned_starknet_rpc("V0_7_1")]
+#[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetTraceRpcApi {
     /// Returns the execution trace of a transaction by simulating it in the runtime.
     #[method(name = "simulateTransactions")]

@@ -6,9 +6,11 @@
 //! TODO: mempool size limits
 //! TODO(perf): should we box the MempoolTransaction?
 
-use crate::{clone_account_tx, contract_addr, nonce, tx_hash};
+use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transaction_execution::Transaction;
 use core::fmt;
+use mc_exec::execution::TxInfo;
 use mp_class::ConvertedClass;
 use mp_convert::FeltHexDisplay;
 use starknet_api::{
@@ -25,7 +27,7 @@ use std::{
 pub type ArrivedAtTimestamp = SystemTime;
 
 pub struct MempoolTransaction {
-    pub tx: AccountTransaction,
+    pub tx: Transaction,
     pub arrived_at: ArrivedAtTimestamp,
     pub converted_class: Option<ConvertedClass>,
 }
@@ -45,7 +47,7 @@ impl fmt::Debug for MempoolTransaction {
 impl Clone for MempoolTransaction {
     fn clone(&self) -> Self {
         Self {
-            tx: clone_account_tx(&self.tx),
+            tx: clone_transaction(&self.tx),
             arrived_at: self.arrived_at,
             converted_class: self.converted_class.clone(),
         }
@@ -144,6 +146,7 @@ impl NonceChain {
     ) -> Result<(InsertedPosition, ReplacedState), TxInsersionError> {
         let mempool_tx_arrived_at = mempool_tx.arrived_at;
         let mempool_tx_nonce = mempool_tx.nonce();
+        #[cfg(debug_assertions)]
         let mempool_tx_hash = mempool_tx.tx_hash();
 
         let replaced = if force {
@@ -156,6 +159,7 @@ impl NonceChain {
             match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx)) {
                 btree_map::Entry::Occupied(entry) => {
                     // duplicate nonce, either it's because the hash is duplicated or nonce conflict with another tx.
+                    #[cfg(debug_assertions)]
                     if entry.key().0.tx_hash() == mempool_tx_hash {
                         return Err(TxInsersionError::DuplicateTxn);
                     } else {
@@ -292,7 +296,7 @@ impl MempoolInner {
         assert!(tx_queue.is_empty());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for (contract, _) in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
-            if let AccountTransaction::DeployAccount(tx) = &contract.0.tx {
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &contract.0.tx {
                 deployed_contracts.decrement(tx.contract_address)
             }
         }
@@ -304,7 +308,11 @@ impl MempoolInner {
         let contract_addr = mempool_tx.contract_address();
         let arrived_at = mempool_tx.arrived_at;
         let deployed_contract_address =
-            if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx { Some(tx.contract_address) } else { None };
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                Some(tx.contract_address)
+            } else {
+                None
+            };
 
         let is_replaced = match self.nonce_chains.entry(contract_addr) {
             hash_map::Entry::Occupied(mut entry) => {
@@ -387,7 +395,7 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let AccountTransaction::DeployAccount(tx) = &mempool_tx.tx {
+        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
             self.deployed_contracts.decrement(tx.contract_address);
         }
 
@@ -414,6 +422,7 @@ mod tests {
         test_utils::{contracts::FeatureContract, CairoVersion},
         transaction::{transaction_execution::Transaction, transaction_types::TransactionType},
     };
+    use mc_exec::execution::TxInfo;
     use mp_convert::ToFelt;
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
@@ -426,6 +435,9 @@ mod tests {
         },
     };
     use starknet_types_core::felt::Felt;
+
+    use blockifier::abi::abi_utils::selector_from_name;
+    use starknet_api::transaction::Fee;
     use std::{collections::HashSet, fmt, time::Duration};
 
     lazy_static::lazy_static! {
@@ -460,6 +472,7 @@ mod tests {
                 Declare,
                 DeployAccount,
                 InvokeFunction,
+                L1Handler,
             }
 
             <(TxTy, u8, u8, u8, bool)>::arbitrary()
@@ -520,6 +533,16 @@ mod tests {
                                 account_deployment_data: Default::default(),
                             }),
                         ),
+                        // TODO: maybe update the values?
+                        TxTy::L1Handler => starknet_api::transaction::Transaction::L1Handler(
+                            starknet_api::transaction::L1HandlerTransaction {
+                                version: TransactionVersion::ZERO,
+                                nonce,
+                                contract_address: contract_addr,
+                                entry_point_selector: selector_from_name("l1_handler_set_value"),
+                                calldata: Default::default(),
+                            },
+                        ),
                     };
 
                     let deployed = if let starknet_api::transaction::Transaction::DeployAccount(tx) = &tx {
@@ -536,12 +559,17 @@ mod tests {
                         None
                     };
 
+                    // providing dummy l1 gas for now
+                    let l1_gas_paid = match &tx {
+                        starknet_api::transaction::Transaction::L1Handler(_) => Some(Fee(1)),
+                        _ => None,
+                    };
+
                     let tx_hash = tx.calculate_transaction_hash(&ChainId::Mainnet, &TransactionVersion::THREE).unwrap();
 
                     let tx =
-                        Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), None, deployed, false).unwrap();
-
-                    let Transaction::AccountTransaction(tx) = tx else { unimplemented!() };
+                        Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), l1_gas_paid, deployed, false)
+                            .unwrap();
 
                     Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
                 })

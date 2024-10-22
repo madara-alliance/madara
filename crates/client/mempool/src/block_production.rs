@@ -9,7 +9,6 @@ use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::transaction_execution::Transaction;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -31,6 +30,10 @@ use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
+
+use crate::close_block::close_block;
+use crate::header::make_pending_header;
+use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -252,12 +255,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(
-                    txs_to_process
-                        .iter()
-                        .skip(cur_len)
-                        .map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))),
-                );
+                txs_to_process_blockifier
+                    .extend(txs_to_process.iter().skip(cur_len).map(|tx| clone_transaction(&tx.tx)));
             }
 
             if txs_to_process.is_empty() {
@@ -291,11 +290,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             self.declared_classes.push(class);
                         }
 
-                        self.block.inner.receipts.push(from_blockifier_execution_info(
-                            &execution_info,
-                            &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
-                        ));
-                        let converted_tx = TransactionWithHash::from(clone_account_tx(&mempool_tx.tx)); // TODO: too many tx clones!
+                        self.block
+                            .inner
+                            .receipts
+                            .push(from_blockifier_execution_info(&execution_info, &clone_transaction(&mempool_tx.tx)));
+                        let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -439,7 +438,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             let address = Felt::ONE;
             new_state_diff.storage_diffs.push(ContractStorageDiffItem {
                 address,
-                storage_entries: vec![StorageEntry { key: Felt::from(block_n), value: prev_block_hash }],
+                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
             });
         }
 

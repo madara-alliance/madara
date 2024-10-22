@@ -3,9 +3,8 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
-use mc_mempool::GasPriceProvider;
+use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_convert::ToFelt;
 use mp_utils::service::Service;
 use starknet_api::core::ChainId;
 use std::sync::Arc;
@@ -20,6 +19,7 @@ pub struct L1SyncService {
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
     gas_price_poll: Duration,
+    mempool: Arc<Mempool>,
 }
 
 impl L1SyncService {
@@ -32,6 +32,7 @@ impl L1SyncService {
         l1_core_address: H160,
         authority: bool,
         devnet: bool,
+        mempool: Arc<Mempool>,
     ) -> anyhow::Result<Self> {
         let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -75,6 +76,7 @@ impl L1SyncService {
             chain_id,
             gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll,
+            mempool,
         })
     }
 }
@@ -82,7 +84,8 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
-        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, .. } = self.clone();
+        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
+            self.clone();
 
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
@@ -92,10 +95,11 @@ impl Service for L1SyncService {
                 mc_eth::sync::l1_sync_worker(
                     &db_backend,
                     &eth_client,
-                    chain_id.to_felt(),
+                    chain_id,
                     l1_gas_provider,
                     gas_price_sync_disabled,
                     gas_price_poll,
+                    mempool,
                 )
                 .await
             });
