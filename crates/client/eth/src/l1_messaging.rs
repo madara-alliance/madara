@@ -1,22 +1,20 @@
-use alloy::eips::BlockNumberOrTag;
-use anyhow::Context;
-use futures::StreamExt;
-use std::sync::Arc;
-
 use crate::client::StarknetCoreContract::LogMessageToL2;
 use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
+use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
-use blockifier::transaction::transactions::L1HandlerTransaction as BlockifierL1HandlerTransaction;
+use anyhow::Context;
+use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
+use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
+use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::channel_wait_or_graceful_shutdown;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{
-    Calldata, Fee, L1HandlerTransaction, Transaction, TransactionHash, TransactionVersion,
-};
+use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionVersion};
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -39,7 +37,12 @@ impl EthereumClient {
     }
 }
 
-pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &ChainId) -> anyhow::Result<()> {
+pub async fn sync(
+    backend: &MadaraBackend,
+    client: &EthereumClient,
+    chain_id: &ChainId,
+    mempool: Arc<Mempool>,
+) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
@@ -53,14 +56,14 @@ pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &C
         }
     };
     let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
+
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
-        .select(BlockNumberOrTag::Finalized)
+        .to_block(BlockNumberOrTag::Finalized)
         .watch()
         .await
         .context("Failed to watch event filter")?
         .into_stream();
-
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {
             tracing::info!(
@@ -92,7 +95,9 @@ pub async fn sync(backend: &MadaraBackend, client: &EthereumClient, chain_id: &C
                 continue;
             }
 
-            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id).await {
+            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id, mempool.clone())
+                .await
+            {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
                         "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
@@ -127,7 +132,8 @@ async fn process_l1_message(
     l1_block_number: &Option<u64>,
     event_index: &Option<u64>,
     chain_id: &ChainId,
-) -> anyhow::Result<Option<TransactionHash>> {
+    mempool: Arc<Mempool>,
+) -> anyhow::Result<Option<Felt>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
 
@@ -147,17 +153,22 @@ async fn process_l1_message(
     };
 
     let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction: BlockifierL1HandlerTransaction =
-        BlockifierL1HandlerTransaction { tx: transaction.clone(), tx_hash, paid_fee_on_l1: Fee(event.fee.try_into()?) };
-
-    // TODO: submit tx to mempool
+    let blockifier_transaction = BlockifierTransation::from_api(
+        Transaction::L1Handler(transaction),
+        tx_hash,
+        None,
+        Some(Fee(event.fee.try_into()?)),
+        None,
+        false,
+    )?;
+    let res = mempool.accept_l1_handler_tx(blockifier_transaction)?;
 
     // TODO: remove unwraps
+    // Ques: shall it panic if no block number of event_index?
     let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
-    // TODO: replace by tx hash from mempool
-    Ok(Some(blockifier_transaction.tx_hash))
+    Ok(Some(res.transaction_hash))
 }
 
 pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
@@ -211,7 +222,7 @@ mod l1_messaging_tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use super::Felt;
+    use crate::l1_messaging::sync;
     use crate::{
         client::{
             EthereumClient, L1BlockMetrics,
@@ -229,15 +240,15 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
     use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
+    use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
-
-    use crate::l1_messaging::sync;
 
     use self::DummyContract::DummyContractInstance;
 
@@ -248,6 +259,7 @@ mod l1_messaging_tests {
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
         eth_client: EthereumClient,
+        mempool: Arc<Mempool>,
     }
 
     // LogMessageToL2 from https://etherscan.io/tx/0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843
@@ -348,6 +360,11 @@ mod l1_messaging_tests {
                 .expect("Failed to create database service"),
         );
 
+        let l1_gas_setter = GasPriceProvider::new();
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), Arc::clone(&l1_data_provider)));
+
         // Set up metrics service
         let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
         let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
@@ -367,7 +384,7 @@ mod l1_messaging_tests {
             l1_block_metrics: l1_block_metrics.clone(),
         };
 
-        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client }
+        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -386,13 +403,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -438,13 +455,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -485,13 +502,13 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id).await })
+            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
         // Mock cancelled message
