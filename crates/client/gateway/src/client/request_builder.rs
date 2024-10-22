@@ -1,26 +1,27 @@
 use std::{borrow::Cow, collections::HashMap};
 
+use hyper::client::HttpConnector;
+use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
+use hyper::{Body, Client};
+use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
+use hyper_tls::HttpsConnector;
 use mp_block::{BlockId, BlockTag};
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Client, Response,
-};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
 use url::Url;
 
 use crate::error::{SequencerError, StarknetError};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RequestBuilder<'a> {
-    client: &'a Client,
+    client: &'a Client<HttpsConnector<HttpConnector>>,
     url: Url,
     params: HashMap<Cow<'static, str>, String>,
     headers: HeaderMap,
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(client: &'a Client, base_url: Url, headers: HeaderMap) -> Self {
+    pub fn new(client: &'a Client<HttpsConnector<HttpConnector>>, base_url: Url, headers: HeaderMap) -> Self {
         Self { client, url: base_url, params: HashMap::new(), headers }
     }
 
@@ -71,8 +72,19 @@ impl<'a> RequestBuilder<'a> {
         unpack(self.send_get_raw().await?).await
     }
 
-    pub async fn send_get_raw(self) -> Result<Response, SequencerError> {
-        self.client.get(self.url).headers(self.headers).query(&self.params).send().await.map_err(Into::into)
+    pub async fn send_get_raw(self) -> Result<Response<Body>, SequencerError> {
+        let uri = self.build_uri()?;
+
+        let mut req_builder = Request::builder().method("GET").uri(uri);
+
+        for (key, value) in self.headers.iter() {
+            req_builder = req_builder.header(key, value);
+        }
+
+        let req = req_builder.body(Body::empty()).unwrap();
+
+        let response = self.client.request(req).await?;
+        Ok(response)
     }
 
     #[allow(dead_code)]
@@ -80,33 +92,52 @@ impl<'a> RequestBuilder<'a> {
     where
         T: DeserializeOwned,
     {
-        let mut request = self.client.post(self.url);
+        let uri = self.build_uri()?;
+
+        let mut req_builder = Request::builder().method("POST").uri(uri);
 
         for (key, value) in self.headers.iter() {
-            request = request.header(key, value);
+            req_builder = req_builder.header(key, value);
         }
 
-        let response = request.form(&self.params).send().await?;
-        Ok(response.json().await?)
+        let body = serde_json::to_string(&self.params)?;
+
+        let req = req_builder.header(CONTENT_TYPE, "application/json").body(Body::from(body))?;
+
+        let response = self.client.request(req).await?;
+        unpack(response).await
+    }
+
+    fn build_uri(&self) -> Result<Uri, SequencerError> {
+        let mut url = self.url.clone();
+        let query: String =
+            self.params.iter().map(|(key, value)| format!("{}={}", key, value)).collect::<Vec<String>>().join("&");
+
+        if !query.is_empty() {
+            url.set_query(Some(&query));
+        }
+
+        let uri: Uri = url.as_str().try_into().map_err(|_| SequencerError::InvalidUrl(url))?;
+        Ok(uri)
     }
 }
 
-async fn unpack<T>(response: reqwest::Response) -> Result<T, SequencerError>
+async fn unpack<T>(response: Response<Body>) -> Result<T, SequencerError>
 where
     T: ::serde::de::DeserializeOwned,
 {
     let http_status = response.status();
-    if http_status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+    if http_status == StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
     } else if !http_status.is_success() {
-        let body = response.bytes().await?;
+        let body = hyper::body::to_bytes(response.into_body()).await?;
         let starknet_error = serde_json::from_slice::<StarknetError>(&body)
             .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error, body })?;
 
         return Err(starknet_error.into());
     }
 
-    let body = response.bytes().await?;
+    let body = hyper::body::to_bytes(response.into_body()).await?;
     let res =
         serde_json::from_slice(&body).map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
 

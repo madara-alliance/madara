@@ -1,11 +1,11 @@
 use crate::l2::L2SyncConfig;
 use anyhow::Context;
 use fetch::fetchers::FetchConfig;
+use hyper::header::{HeaderName, HeaderValue};
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_gateway::client::builder::FeederClient;
 use mc_telemetry::TelemetryHandle;
-use reqwest::header::{HeaderName, HeaderValue};
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;

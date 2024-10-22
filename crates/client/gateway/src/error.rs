@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use reqwest::StatusCode;
+use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::Felt;
 use starknet_types_core::felt::FromStrError;
@@ -8,10 +8,16 @@ use starknet_types_core::felt::FromStrError;
 pub enum SequencerError {
     #[error("Starknet error: {0:#}")]
     StarknetError(#[from] StarknetError),
-    #[error("Reqwest error: {0:#}")]
-    ReqwestError(#[from] reqwest::Error),
+    #[error("Hyper error: {0:#}")]
+    ReqwestError(#[from] hyper::Error),
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(url::Url),
+    #[error("HTTP error: {0:#}")]
+    HttpError(#[from] hyper::http::Error),
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error, body: Bytes },
+    #[error("Error serializing request: {0:#}")]
+    SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
     #[error("Failed to parse returned error with http status {http_status}: {serde_error:#}")]
