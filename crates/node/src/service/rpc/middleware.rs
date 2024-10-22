@@ -176,6 +176,10 @@ enum VersionMiddlewareError {
     InvalidVersion,
     #[error("Unsupported version specified")]
     UnsupportedVersion,
+    #[error("Invalid method format. Namespace required: {0}")]
+    InvalidMethodFormat(String),
+    #[error("Missing method in RPC request")]
+    MissingMethod,
 }
 
 impl From<RpcVersionError> for VersionMiddlewareError {
@@ -275,12 +279,15 @@ async fn add_rpc_version_to_method(req: &mut hyper::Request<Body>) -> Result<(),
 
     for item in items.iter_mut() {
         if let Some(method) = item.get_mut("method").as_deref().and_then(Value::as_str) {
-            let new_method =
-                format!("starknet_{}_{}", version.name(), method.strip_prefix("starknet_").unwrap_or(method));
-
+            let new_method = if let Some((prefix, suffix)) = method.split_once('_') {
+                format!("{}_{}_{}", prefix, version.name(), suffix)
+            } else {
+                return Err(VersionMiddlewareError::InvalidMethodFormat(method.to_string()));
+            };
             item["method"] = Value::String(new_method);
+        } else {
+            return Err(VersionMiddlewareError::MissingMethod);
         }
-        // we don't need to throw an error here, the request will be rejected later if the method is not supported
     }
 
     let response = if batched_request { serde_json::to_vec(&items)? } else { serde_json::to_vec(&items[0])? };
