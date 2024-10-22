@@ -55,7 +55,6 @@ async fn l2_verify_and_apply_task(
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
-
         log::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
             header.block_number,
