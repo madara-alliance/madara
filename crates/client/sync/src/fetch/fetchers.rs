@@ -230,6 +230,7 @@ async fn fetch_class_updates(
                 retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
+                log::debug!("contract class here is: {:?}", contract_class);
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
             };
             let contract_class = Arc::try_unwrap(contract_class)
