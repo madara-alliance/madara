@@ -26,12 +26,31 @@ use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
 
+#[derive(Clone)]
+pub struct StorageProofConfig {
+    pub max_keys: usize,
+    pub max_tries: usize,
+}
+
+impl Default for StorageProofConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StorageProofConfig {
+    pub fn new() -> Self {
+        Self { max_keys: 1024, max_tries: 5 }
+    }
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     chain_config: Arc<ChainConfig>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    storage_proof_config: StorageProofConfig,
 }
 
 impl Starknet {
@@ -40,7 +59,7 @@ impl Starknet {
         chain_config: Arc<ChainConfig>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
     ) -> Self {
-        Self { backend, add_transaction_provider, chain_config }
+        Self { backend, add_transaction_provider, chain_config, storage_proof_config: StorageProofConfig::new() }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {

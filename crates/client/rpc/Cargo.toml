@@ -51,4 +51,5 @@ log = { workspace = true, default-features = true }
 paste = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 thiserror = { workspace = true }

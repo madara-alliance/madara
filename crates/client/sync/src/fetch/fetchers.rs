@@ -88,6 +88,7 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 }
 
 pub async fn fetch_pending_block_and_updates(
+    current_block_hash: Felt,
     chain_id: &ChainId,
     provider: &SequencerGatewayProvider,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
@@ -104,7 +105,10 @@ pub async fn fetch_pending_block_and_updates(
             block.block_number,
             block_hash,
         );
-        return Ok(None)
+        return Ok(None);
+    }
+    if block.parent_block_hash != current_block_hash {
+        return Ok(None);
     }
 
     let class_update = fetch_class_updates(chain_id, &state_update, block_id, provider).await?;
@@ -378,7 +382,12 @@ mod test_l2_fetchers {
         // Mock class hash
         ctx.mock_class_hash("cairo/target/dev/madara_contracts_TestContract.contract_class.json");
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result = fetch_pending_block_and_updates(
+            Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
+            &ctx.backend.chain_config().chain_id,
+            &ctx.provider,
+        )
+        .await;
 
         let pending_block = result.expect("Failed to fetch pending block").expect("No pending block");
 
@@ -458,7 +467,8 @@ mod test_l2_fetchers {
         // Mock a "pending block not found" scenario
         ctx.mock_block_pending_not_found();
 
-        let result = fetch_pending_block_and_updates(&ctx.backend.chain_config().chain_id, &ctx.provider).await;
+        let result =
+            fetch_pending_block_and_updates(Felt::ZERO, &ctx.backend.chain_config().chain_id, &ctx.provider).await;
 
         assert!(
             matches!(result, Err(FetchError::Provider(ProviderError::StarknetError(StarknetError::BlockNotFound)))),

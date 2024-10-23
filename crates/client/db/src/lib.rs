@@ -1,28 +1,28 @@
 //! Madara database
 
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::{fmt, fs};
-
 use anyhow::{Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
-use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use tokio::sync::{mpsc, oneshot};
-
-pub mod block_db;
-mod error;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
     Options, SliceTransform,
 };
+use snapshots::Snapshots;
+use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use std::{fmt, fs};
+use tokio::sync::{mpsc, oneshot};
+
+mod error;
+
+pub mod block_db;
 pub mod bonsai_db;
 pub mod class_db;
 pub mod contract_db;
@@ -30,16 +30,16 @@ pub mod db_block_id;
 pub mod db_metrics;
 pub mod devnet_db;
 pub mod l1_db;
+mod rocksdb_snapshot;
+mod snapshots;
 pub mod storage_updates;
 pub mod tests;
 
-pub use bonsai_trie::{MultiProof, ProofNode};
+pub use bonsai_db::GlobalTrie;
+pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
-pub type GlobalTrie<'a, H> = BonsaiStorage<BasicId, BonsaiDb<'a>, H>;
-
-pub type DB = DBWithThreadMode<MultiThreaded>;
-
 pub use rocksdb;
+pub type DB = DBWithThreadMode<MultiThreaded>;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
@@ -52,7 +52,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
     opts.create_missing_column_families(true);
     opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
-    opts.optimize_level_style_compaction(4096 * 1024 * 1024);
+    opts.optimize_level_style_compaction(4 * 1024 * 1024);
     opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(cores);
@@ -301,6 +301,7 @@ pub struct MadaraBackend {
     last_flush_time: Mutex<Option<Instant>>,
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
+    snapshots: Arc<Snapshots>,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -376,12 +377,15 @@ impl MadaraBackend {
     #[cfg(feature = "testing")]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
+        let db = open_rocksdb(temp_dir.as_ref(), true).unwrap();
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(16)));
         Arc::new(Self {
             backup_handle: None,
-            db: open_rocksdb(temp_dir.as_ref(), true).unwrap(),
+            db,
             last_flush_time: Default::default(),
             chain_config,
             db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
+            snapshots,
             _temp_dir: Some(temp_dir),
         })
     }
@@ -418,6 +422,7 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path, true)?;
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(16)));
 
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register(metrics_registry).context("Registering db metrics")?,
@@ -425,6 +430,7 @@ impl MadaraBackend {
             db,
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
+            snapshots,
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });
@@ -471,21 +477,22 @@ impl MadaraBackend {
     pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
         &self,
         map: DatabaseKeyMapping,
-    ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
-        let bonsai = BonsaiStorage::new(
-            BonsaiDb::new(&self.db, map),
-            BonsaiStorageConfig {
-                max_saved_trie_logs: Some(0),
-                max_saved_snapshots: Some(0),
-                snapshot_interval: u64::MAX,
-            },
+    ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
+        let config = BonsaiStorageConfig {
+            // max_saved_trie_logs: Some(0),
+            // max_saved_snapshots: Some(0),
+            // snapshot_interval: u64::MAX,
+            max_saved_trie_logs: Some(128),
+            max_saved_snapshots: Some(16),
+            snapshot_interval: 8,
+        };
+
+        BonsaiStorage::new(
+            BonsaiDb::new(Arc::clone(&self.db), Arc::clone(&self.snapshots), map),
+            config,
             // Every global tree has keys of 251 bits.
             251,
         )
-        // TODO(bonsai-trie): change upstream to reflect that.
-        .expect("New bonsai storage can never error");
-
-        bonsai
     }
 
     pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {

@@ -17,7 +17,8 @@ fn sequencer_gateway_provider() -> SequencerGatewayProvider {
 #[rstest]
 #[tokio::test]
 async fn test_can_fetch_pending_block(sequencer_gateway_provider: SequencerGatewayProvider) {
-    let block = fetch_pending_block_and_updates(&ChainId::Mainnet, &sequencer_gateway_provider).await.unwrap();
+    let block =
+        fetch_pending_block_and_updates(Felt::ZERO, &ChainId::Mainnet, &sequencer_gateway_provider).await.unwrap();
     // ignore as we can't check much here :/
     drop(block);
 }

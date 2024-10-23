@@ -1,9 +1,11 @@
-use super::v0_7_1::StarknetReadRpcApiV0_7_1Server;
+use super::v0_7_1::{StarknetReadRpcApiV0_7_1Server, StarknetTraceRpcApiV0_7_1Server, StarknetWriteRpcApiV0_7_1Server};
 use crate::Starknet;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::proc_macros::rpc;
 use m_proc_macros::versioned_starknet_rpc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
@@ -13,22 +15,78 @@ use starknet_core::types::{
     SyncStatusType, Transaction, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionTraceWithHash,
 };
 use starknet_types_core::felt::Felt;
-use std::collections::HashMap;
 
 mod get_storage_proof;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProofNode {
-    Binary { left: Felt, right: Felt },
-    Edge { child: Felt, path: Felt, length: usize },
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractStorageKeysItem {
+    #[serde_as(as = "UfeHex")]
+    pub contract_address: Felt,
+    #[serde_as(as = "Vec<UfeHex>")]
+    pub storage_keys: Vec<Felt>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MerkleNode {
+    Binary {
+        #[serde_as(as = "UfeHex")]
+        left: Felt,
+        #[serde_as(as = "UfeHex")]
+        right: Felt,
+    },
+    Edge {
+        #[serde_as(as = "UfeHex")]
+        child: Felt,
+        #[serde_as(as = "UfeHex")]
+        path: Felt,
+        length: usize,
+    },
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeHashToNodeMappingItem {
+    #[serde_as(as = "UfeHex")]
+    pub node_hash: Felt,
+    pub node: MerkleNode,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractLeavesDataItem {
+    #[serde_as(as = "UfeHex")]
+    pub nonce: Felt,
+    #[serde_as(as = "UfeHex")]
+    pub class_hash: Felt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractsProof {
+    pub nodes: Vec<NodeHashToNodeMappingItem>,
+    pub contract_leaves_data: Vec<ContractLeavesDataItem>,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalRoots {
+    #[serde_as(as = "UfeHex")]
+    pub contracts_tree_root: Felt,
+    #[serde_as(as = "UfeHex")]
+    pub classes_tree_root: Felt,
+    #[serde_as(as = "UfeHex")]
+    pub block_hash: Felt,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetStorageProofResult {
-    pub classes_proof: HashMap<Felt, ProofNode>,
-    pub contracts_proof: HashMap<Felt, ProofNode>,
-    pub contracts_storage_proofs: HashMap<Felt, HashMap<Felt, ProofNode>>,
+    pub classes_proof: Vec<NodeHashToNodeMappingItem>,
+    pub contracts_proof: ContractsProof,
+    pub contracts_storage_proofs: Vec<Vec<NodeHashToNodeMappingItem>>,
+    pub global_roots: GlobalRoots,
 }
 
 // Starknet RPC API trait and types
@@ -166,10 +224,10 @@ pub trait StarknetReadRpcApi {
     #[method(name = "getStorageProof")]
     fn get_storage_proof(
         &self,
-        block_id: Option<BlockId>,
-        class_hashes: Vec<Felt>,
-        contract_addresses: Vec<Felt>,
-        contracts_storage_keys: HashMap<Felt, Vec<Felt>>,
+        block_id: BlockId,
+        class_hashes: Option<Vec<Felt>>,
+        contract_addresses: Option<Vec<Felt>>,
+        contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult>;
 }
 
@@ -272,10 +330,10 @@ impl StarknetReadRpcApiV0_8_0Server for Starknet {
 
     fn get_storage_proof(
         &self,
-        block_id: Option<BlockId>,
-        class_hashes: Vec<Felt>,
-        contract_addresses: Vec<Felt>,
-        contracts_storage_keys: HashMap<Felt, Vec<Felt>>,
+        block_id: BlockId,
+        class_hashes: Option<Vec<Felt>>,
+        contract_addresses: Option<Vec<Felt>>,
+        contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
         get_storage_proof::get_storage_proof(self, block_id, class_hashes, contract_addresses, contracts_storage_keys)
     }
@@ -287,19 +345,19 @@ impl StarknetWriteRpcApiV0_8_0Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        StarknetWriteRpcApiV0_8_0Server::add_declare_transaction(self, declare_transaction).await
+        StarknetWriteRpcApiV0_7_1Server::add_declare_transaction(self, declare_transaction).await
     }
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        StarknetWriteRpcApiV0_8_0Server::add_deploy_account_transaction(self, deploy_account_transaction).await
+        StarknetWriteRpcApiV0_7_1Server::add_deploy_account_transaction(self, deploy_account_transaction).await
     }
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
     ) -> RpcResult<InvokeTransactionResult> {
-        StarknetWriteRpcApiV0_8_0Server::add_invoke_transaction(self, invoke_transaction).await
+        StarknetWriteRpcApiV0_7_1Server::add_invoke_transaction(self, invoke_transaction).await
     }
 }
 #[async_trait]
@@ -310,14 +368,14 @@ impl StarknetTraceRpcApiV0_8_0Server for Starknet {
         transactions: Vec<BroadcastedTransaction>,
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>> {
-        StarknetTraceRpcApiV0_8_0Server::simulate_transactions(self, block_id, transactions, simulation_flags).await
+        StarknetTraceRpcApiV0_7_1Server::simulate_transactions(self, block_id, transactions, simulation_flags).await
     }
 
     async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>> {
-        StarknetTraceRpcApiV0_8_0Server::trace_block_transactions(self, block_id).await
+        StarknetTraceRpcApiV0_7_1Server::trace_block_transactions(self, block_id).await
     }
 
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TransactionTraceWithHash> {
-        StarknetTraceRpcApiV0_8_0Server::trace_transaction(self, transaction_hash).await
+        StarknetTraceRpcApiV0_7_1Server::trace_transaction(self, transaction_hash).await
     }
 }

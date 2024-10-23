@@ -32,6 +32,7 @@ starknet_api = { workspace = true }
 # Other
 anyhow.workspace = true
 bincode = { workspace = true }
+librocksdb-sys = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true

@@ -73,7 +73,9 @@ license = "Apache-2.0"
 [workspace.dependencies]
 rocksdb = { version = "0.22", features = [
   # "multi-threaded-cf",
-] }
+  # ] }
+], git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+librocksdb-sys = { version = "0.17.0+9.0.0", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 # Bonsai trie dependencies
 bonsai-trie = { default-features = false, path = "../bonsai-trie", features = [
@@ -165,6 +167,10 @@ rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_with = { version = "2.3.2", default-features = false, features = [
+  "alloc",
+  "macros",
+] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "1.0"

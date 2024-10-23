@@ -1,8 +1,8 @@
 use mc_db::MadaraStorageError;
 use serde::Serialize;
 use serde_json::json;
-use starknet_api::{core::ContractAddress, StarknetApiError};
-use starknet_core::types::{BlockId, Felt, StarknetError};
+use starknet_api::StarknetApiError;
+use starknet_core::types::{Felt, StarknetError};
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -27,14 +27,6 @@ pub enum StorageProofTrie {
     Classes,
     Contracts,
     ContractStorage(Felt),
-}
-
-#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
-pub struct ProofKeyNotInTreeError {
-    pub block_n: u64,
-    #[serde(flatten)]
-    pub trie: StorageProofTrie,
-    pub key: Felt,
 }
 
 // Comes from the RPC Spec:
@@ -106,8 +98,8 @@ pub enum StarknetRpcApiError {
     UnimplementedMethod,
     #[error("Proof limit exceeded")]
     ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
-    #[error("Requested key is not in tree")]
-    ProofKeyNotInTree(ProofKeyNotInTreeError),
+    #[error("Cannot create a storage proof for a block that old")]
+    CannotMakeProofOnOldBlock,
 }
 
 impl From<&StarknetRpcApiError> for i32 {
@@ -145,7 +137,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
-            StarknetRpcApiError::ProofKeyNotInTree { .. } => 10001,
+            StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }
     }
 }
@@ -162,7 +154,6 @@ impl StarknetRpcApiError {
             StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
                 Some(json!({ "kind": kind, "limit": limit, "got": got }))
             }
-            StarknetRpcApiError::ProofKeyNotInTree(err) => Some(json!(err)),
             _ => None,
         }
     }
