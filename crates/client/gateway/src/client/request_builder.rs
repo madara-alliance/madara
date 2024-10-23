@@ -8,20 +8,27 @@ use hyper_tls::HttpsConnector;
 use mp_block::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
+use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
 use crate::error::{SequencerError, StarknetError};
 
+use super::builder::{PauseLayerMiddleware, RetryPolicy};
+
 #[derive(Debug)]
 pub struct RequestBuilder<'a> {
-    client: &'a Client<HttpsConnector<HttpConnector>>,
+    client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, Body>>>>,
     url: Url,
     params: HashMap<Cow<'static, str>, String>,
     headers: HeaderMap,
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(client: &'a Client<HttpsConnector<HttpConnector>>, base_url: Url, headers: HeaderMap) -> Self {
+    pub fn new(
+        client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, Body>>>>,
+        base_url: Url,
+        headers: HeaderMap,
+    ) -> Self {
         Self { client, url: base_url, params: HashMap::new(), headers }
     }
 
@@ -83,7 +90,7 @@ impl<'a> RequestBuilder<'a> {
 
         let req = req_builder.body(Body::empty()).unwrap();
 
-        let response = self.client.request(req).await?;
+        let response = self.client.clone().call(req).await?;
         Ok(response)
     }
 
@@ -104,7 +111,7 @@ impl<'a> RequestBuilder<'a> {
 
         let req = req_builder.header(CONTENT_TYPE, "application/json").body(Body::from(body))?;
 
-        let response = self.client.request(req).await?;
+        let response = self.client.clone().call(req).await?;
         unpack(response).await
     }
 
