@@ -59,17 +59,17 @@ pub enum Error {
 fn csd_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-    csd: StateMaps,
+    state_map: StateMaps,
 ) -> Result<StateDiff, Error> {
     // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
     // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
-    let mut deprecated_declared_contracts = csd.declared_contracts.clone();
+    let mut deprecated_declared_contracts = state_map.declared_contracts.clone();
     let CommitmentStateDiff {
         address_to_class_hash,
         address_to_nonce,
         storage_updates,
         class_hash_to_compiled_class_hash,
-    } = CommitmentStateDiff::from(csd);
+    } = CommitmentStateDiff::from(state_map);
 
     // Cairo 1 declared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
     // So we remove them from `deprecated_declared_contracts` as we only use them for Cairo 0 contracts
@@ -158,13 +158,13 @@ fn finalize_execution_state<S: StateReader>(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
-    let csd = tx_executor
+    let state_map = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    let state_update = csd_to_state_diff(backend, on_top_of, csd)?;
+    let state_update = csd_to_state_diff(backend, on_top_of, state_map)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
