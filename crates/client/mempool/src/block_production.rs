@@ -59,7 +59,7 @@ pub enum Error {
     Unexpected(Cow<'static, str>),
 }
 
-fn csd_to_state_diff(
+fn state_map_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     diff: StateMaps,
@@ -174,7 +174,7 @@ fn finalize_execution_state<S: StateReader>(
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    let state_update = csd_to_state_diff(backend, on_top_of, state_map)?;
+    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
