@@ -5711,6 +5711,7 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -8903,6 +8904,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]
