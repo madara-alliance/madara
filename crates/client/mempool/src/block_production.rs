@@ -165,7 +165,7 @@ fn finalize_execution_state<S: StateReader>(
     // Cairo 1 delcared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
     // So we remove them from `deprecated_declared_contracts` as only use them for Cairo 0 contracts
     deprecated_declared_contracts.retain(|key, _| !csd.compiled_class_hashes.contains_key(key));
-    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(csd.declared_contracts.clone());
+    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(deprecated_declared_contracts);
     let state_update = csd_to_state_diff(backend, on_top_of, &csd.into(), deprecated_declared_contracts)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
