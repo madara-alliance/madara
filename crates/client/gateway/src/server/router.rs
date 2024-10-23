@@ -1,6 +1,6 @@
 use std::{convert::Infallible, sync::Arc};
 
-use hyper::{Body, Method, Request, Response};
+use hyper::{body::Incoming, Method, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 
@@ -12,15 +12,15 @@ use super::helpers::{not_found_response, service_unavailable_response};
 
 // Main router to redirect to the appropriate sub-router
 pub(crate) async fn main_router(
-    req: Request<Body>,
+    req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
     feeder_gateway_enable: bool,
     gateway_enable: bool,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<String>, Infallible> {
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
-        ("health", _, _) => Ok(Response::new(Body::from("OK"))),
+        ("health", _, _) => Ok(Response::new("OK".to_string().into())),
         (path, true, _) if path.starts_with("feeder_gateway/") => feeder_gateway_router(req, path, backend).await,
         (path, _, true) if path.starts_with("gateway/") => gateway_router(req, path, add_transaction_provider).await,
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
@@ -34,10 +34,10 @@ pub(crate) async fn main_router(
 
 // Router for requests related to feeder_gateway
 async fn feeder_gateway_router(
-    req: Request<Body>,
+    req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_block") => {
             Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
@@ -69,10 +69,10 @@ async fn feeder_gateway_router(
 
 // Router for requests related to feeder
 async fn gateway_router(
-    req: Request<Body>,
+    req: Request<Incoming>,
     path: &str,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<String>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "gateway/add_transaction") => {
             Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))

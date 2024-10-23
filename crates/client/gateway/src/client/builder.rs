@@ -1,8 +1,10 @@
-use hyper::client::HttpConnector;
+use hyper::body::Incoming;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
-use hyper::{Body, Client};
 use hyper::{Request, Response};
 use hyper_tls::HttpsConnector;
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
@@ -17,7 +19,7 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct FeederClient {
-    pub(crate) client: PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, Body>>>>,
+    pub(crate) client: PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
     #[allow(dead_code)]
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
@@ -29,7 +31,7 @@ impl FeederClient {
     pub fn new(gateway_url: Url, feeder_gateway_url: Url) -> Self {
         let pause_until = Arc::new(RwLock::new(None));
         let connector = HttpsConnector::new();
-        let base_client = Client::builder().build::<_, Body>(connector);
+        let base_client = Client::builder(TokioExecutor::new()).build::<_, String>(connector);
 
         let timeout_layer = Timeout::new(base_client, Duration::from_secs(20)); // Timeout after 20 seconds
         let retry_policy = RetryPolicy::new(5, Duration::from_secs(1), Arc::clone(&pause_until)); // Retry 5 times with 1 second backoff
@@ -116,13 +118,14 @@ impl RetryPolicy {
     }
 }
 
-impl<Req> Policy<Req, Response<Body>, Box<dyn Error + Send + Sync>> for RetryPolicy
-where
-    Req: Clone,
-{
+impl Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
-    fn retry(&self, _: &Req, result: Result<&Response<Body>, &Box<dyn Error + Send + Sync>>) -> Option<Self::Future> {
+    fn retry(
+        &self,
+        _: &Request<String>,
+        result: Result<&Response<Incoming>, &Box<dyn Error + Send + Sync>>,
+    ) -> Option<Self::Future> {
         let pause_until = self.pause_until.clone();
 
         match result {
@@ -163,12 +166,12 @@ where
         }
     }
 
-    fn clone_request(&self, req: &Req) -> Option<Req> {
+    fn clone_request(&self, req: &Request<String>) -> Option<Request<String>> {
         Some(req.clone())
     }
 }
 
-fn get_retry_after(response: &Response<Body>) -> Option<Duration> {
+fn get_retry_after(response: &Response<Incoming>) -> Option<Duration> {
     if let Some(retry_after_header) = response.headers().get("Retry-After") {
         if let Ok(retry_after_str) = retry_after_header.to_str() {
             if let Ok(retry_seconds) = retry_after_str.parse::<u64>() {
@@ -177,17 +180,6 @@ fn get_retry_after(response: &Response<Body>) -> Option<Duration> {
         }
     }
     None
-}
-
-#[derive(Clone, Debug)]
-pub struct PauseLayer {
-    pause_until: Arc<RwLock<Option<Instant>>>,
-}
-
-impl PauseLayer {
-    pub fn new(pause_until: Arc<RwLock<Option<Instant>>>) -> Self {
-        PauseLayer { pause_until }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -202,14 +194,13 @@ impl<S> PauseLayerMiddleware<S> {
     }
 }
 
-impl<S, ReqBody> Service<Request<ReqBody>> for PauseLayerMiddleware<S>
+impl<S> Service<Request<String>> for PauseLayerMiddleware<S>
 where
-    S: Service<Request<ReqBody>, Response = Response<Body>, Error = Box<dyn Error + Send + Sync>>
+    S: Service<Request<String>, Response = Response<Incoming>, Error = Box<dyn Error + Send + Sync>>
         + Clone
         + Send
         + 'static,
     S::Future: Send + 'static,
-    ReqBody: Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -219,7 +210,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+    fn call(&mut self, req: Request<String>) -> Self::Future {
         let pause_until = self.pause_until.clone();
         let mut inner = self.inner.clone();
 
