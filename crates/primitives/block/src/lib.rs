@@ -5,12 +5,14 @@ pub mod header;
 use std::fmt::Display;
 
 pub use header::Header;
-use header::PendingHeader;
+use header::{L1DataAvailabilityMode, PendingHeader};
 use mp_chain_config::StarknetVersion;
 use mp_receipt::TransactionReceipt;
 use mp_transactions::Transaction;
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
+
+use crate::header::GasPrices;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -26,6 +28,14 @@ impl MadaraMaybePendingBlockInfo {
             MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
         }
     }
+
+    pub fn as_nonpending_owned(self) -> Option<MadaraBlockInfo> {
+        match self {
+            MadaraMaybePendingBlockInfo::Pending(_) => None,
+            MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
+        }
+    }
+
     pub fn as_pending(&self) -> Option<&MadaraPendingBlockInfo> {
         match self {
             MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
@@ -68,9 +78,116 @@ impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
         Self::Pending(value)
     }
 }
+
 impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
         Self::NotPending(value)
+    }
+}
+
+impl From<MadaraBlockInfo> for starknet_api::block::BlockHeader {
+    fn from(info: MadaraBlockInfo) -> Self {
+        #[inline(always)]
+        fn block_header(block_hash: Felt) -> starknet_api::block::BlockHash {
+            starknet_api::block::BlockHash(block_hash)
+        }
+
+        #[inline(always)]
+        fn block_number(n: u64) -> starknet_api::block::BlockNumber {
+            starknet_api::block::BlockNumber(n)
+        }
+
+        #[inline(always)]
+        fn l1_gas_price(fri: u128, wei: u128) -> starknet_api::block::GasPricePerToken {
+            starknet_api::block::GasPricePerToken {
+                price_in_fri: starknet_api::block::GasPrice(fri),
+                price_in_wei: starknet_api::block::GasPrice(wei),
+            }
+        }
+
+        #[inline(always)]
+        fn state_root(root: Felt) -> starknet_api::core::GlobalRoot {
+            starknet_api::core::GlobalRoot(root)
+        }
+
+        #[inline(always)]
+        fn sequencer(address: Felt) -> starknet_api::core::SequencerContractAddress {
+            starknet_api::core::SequencerContractAddress(starknet_api::core::ContractAddress(
+                starknet_api::core::PatriciaKey::try_from(address).unwrap(),
+            ))
+        }
+
+        #[inline(always)]
+        fn timestamp(time: u64) -> starknet_api::block::BlockTimestamp {
+            starknet_api::block::BlockTimestamp(time)
+        }
+
+        #[inline(always)]
+        fn l1_da_mode(da_mode: L1DataAvailabilityMode) -> starknet_api::data_availability::L1DataAvailabilityMode {
+            match da_mode {
+                L1DataAvailabilityMode::Calldata => starknet_api::data_availability::L1DataAvailabilityMode::Calldata,
+                L1DataAvailabilityMode::Blob => starknet_api::data_availability::L1DataAvailabilityMode::Blob,
+            }
+        }
+
+        #[inline(always)]
+        fn state_diff_commitment(commitment: Option<Felt>) -> Option<starknet_api::core::StateDiffCommitment> {
+            commitment.map(|felt| starknet_api::core::StateDiffCommitment(starknet_api::hash::PoseidonHash(felt)))
+        }
+
+        #[inline(always)]
+        fn state_diff_len(len: Option<u64>) -> Option<usize> {
+            len.map(|len| usize::try_from(len).unwrap_or_default())
+        }
+
+        #[inline(always)]
+        fn transaction_commitment(commitment: Felt) -> Option<starknet_api::core::TransactionCommitment> {
+            Some(starknet_api::core::TransactionCommitment(commitment))
+        }
+
+        #[inline(always)]
+        fn event_commitment(commitment: Felt) -> Option<starknet_api::core::EventCommitment> {
+            Some(starknet_api::core::EventCommitment(commitment))
+        }
+
+        #[inline(always)]
+        fn usize_from_u64(n: u64) -> usize {
+            usize::try_from(n).unwrap_or_default()
+        }
+
+        #[inline(always)]
+        fn receipt_commitment(commitment: Option<Felt>) -> Option<starknet_api::core::ReceiptCommitment> {
+            commitment.map(|commitment| starknet_api::core::ReceiptCommitment(commitment))
+        }
+
+        #[inline(always)]
+        fn starknet_version(version: StarknetVersion) -> starknet_api::block::StarknetVersion {
+            starknet_api::block::StarknetVersion(version.to_string())
+        }
+
+        let MadaraBlockInfo { header, block_hash, .. } = info;
+        let GasPrices { eth_l1_gas_price, strk_l1_gas_price, eth_l1_data_gas_price, strk_l1_data_gas_price } =
+            header.l1_gas_price;
+
+        Self {
+            block_hash: block_header(block_hash),
+            parent_hash: block_header(header.parent_block_hash),
+            block_number: block_number(header.block_number),
+            l1_gas_price: l1_gas_price(strk_l1_gas_price, eth_l1_gas_price),
+            l1_data_gas_price: l1_gas_price(strk_l1_data_gas_price, eth_l1_data_gas_price),
+            state_root: state_root(header.global_state_root),
+            sequencer: sequencer(header.sequencer_address),
+            timestamp: timestamp(header.block_timestamp),
+            l1_da_mode: l1_da_mode(header.l1_da_mode),
+            state_diff_commitment: state_diff_commitment(header.state_diff_commitment),
+            state_diff_length: state_diff_len(header.state_diff_length),
+            transaction_commitment: transaction_commitment(header.transaction_commitment),
+            event_commitment: event_commitment(header.event_commitment),
+            n_transactions: usize_from_u64(header.transaction_count),
+            n_events: usize_from_u64(header.event_count),
+            receipt_commitment: receipt_commitment(header.receipt_commitment),
+            starknet_version: starknet_version(header.protocol_version),
+        }
     }
 }
 
@@ -92,6 +209,7 @@ impl From<starknet_core::types::BlockTag> for BlockTag {
         }
     }
 }
+
 impl From<BlockTag> for starknet_core::types::BlockTag {
     fn from(value: BlockTag) -> Self {
         match value {

@@ -5694,6 +5694,7 @@ dependencies = [
  "serde",
  "starknet-core 0.11.0",
  "starknet-types-core",
+ "starknet_api",
  "thiserror",
 ]
 

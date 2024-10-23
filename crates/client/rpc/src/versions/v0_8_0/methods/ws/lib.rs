@@ -1,7 +1,11 @@
+use std::borrow::Cow;
+
 use crate::{
     errors::{StarknetWsApiError, WsResult},
     versions::v0_8_0::StarknetWsRpcApiV0_8_0Server,
 };
+
+use super::BLOCK_PAST_LIMIT;
 
 #[jsonrpsee::core::async_trait]
 impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
@@ -34,9 +38,46 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
 
     async fn subscribe_new_heads(
         &self,
-        subscription_sink: jsonrpsee::PendingSubscriptionSink,
+        pending: jsonrpsee::PendingSubscriptionSink,
         block_id: starknet_core::types::BlockId,
     ) -> WsResult {
-        WsResult::Err(StarknetWsApiError::TooManyBlocksBack)
+        let Ok(sink) = pending.accept().await else {
+            return WsResult::Err(StarknetWsApiError::internal(Cow::from("Failed to establish websocket connection")));
+        };
+
+        match block_id {
+            starknet_core::types::BlockId::Number(block_n) => {
+                let block_info = self.backend.get_block_info(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest));
+
+                let Ok(Some(block_info)) = block_info else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(
+                        "Failed to retrieve latest block info from database",
+                    )));
+                };
+
+                let Some(block_info) = block_info.as_nonpending_owned() else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(
+                        "Retrieve pending block info for non-pending block",
+                    )));
+                };
+
+                let target = block_info.header.block_number.saturating_sub(BLOCK_PAST_LIMIT);
+
+                if block_n < target {
+                    return WsResult::Err(StarknetWsApiError::TooManyBlocksBack);
+                }
+
+                let header = starknet_api::block::BlockHeader::from(block_info);
+                let msg = jsonrpsee::SubscriptionMessage::from_json(&header).unwrap();
+                if let Err(e) = sink.send(msg).await {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to respond to websocket request: {e}"
+                    ))));
+                }
+            }
+            _ => todo!(),
+        }
+
+        return WsResult::Ok;
     }
 }

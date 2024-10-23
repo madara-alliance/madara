@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use mc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
@@ -210,31 +212,38 @@ impl From<StarknetApiError> for StarknetRpcApiError {
 }
 
 #[derive(Debug)]
-pub enum WsResult {
+pub enum WsResult<'a> {
     Ok,
-    Err(StarknetWsApiError),
+    Err(StarknetWsApiError<'a>),
 }
 
 #[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(Debug)]
-pub enum StarknetWsApiError {
+pub enum StarknetWsApiError<'a> {
     TooManyBlocksBack,
+    Internal { context: Cow<'a, str> },
 }
 
-impl StarknetWsApiError {
+impl<'a> StarknetWsApiError<'a> {
     fn code(&self) -> i32 {
         match self {
-            StarknetWsApiError::TooManyBlocksBack => 68,
+            Self::TooManyBlocksBack => 68,
+            Self::Internal { context: _ } => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
         }
     }
     fn message(&self) -> &str {
         match self {
-            StarknetWsApiError::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::Internal { context } => context,
         }
+    }
+
+    pub fn internal(context: Cow<'a, str>) -> Self {
+        Self::Internal { context }
     }
 }
 
-impl jsonrpsee::IntoSubscriptionCloseResponse for WsResult {
+impl<'a> jsonrpsee::IntoSubscriptionCloseResponse for WsResult<'a> {
     fn into_response(self) -> jsonrpsee::SubscriptionCloseResponse {
         #[derive(serde::Serialize)]
         struct StarknetSubscriptionError<'a> {

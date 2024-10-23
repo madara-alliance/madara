@@ -325,6 +325,35 @@ impl MadaraBackend {
         self.storage_to_info(&ty)
     }
 
+    pub fn get_block_info_stream<'a>(
+        &'a self,
+        id: &impl DbBlockIdResolvable,
+    ) -> Result<Option<impl Iterator<Item = MadaraMaybePendingBlockInfo> + 'a>> {
+        let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
+
+        let iter = match id {
+            DbBlockId::Number(block_n) => {
+                let handle = self.db.get_column(Column::BlockNToBlockInfo);
+                let key = bincode::serialize(&block_n)?;
+                let iter = self.db.iterator_cf(&handle, rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward));
+                iter.map_while(|kv| {
+                    if let Ok((_, bytes)) = kv {
+                        if let Ok(info) = bincode::deserialize::<MadaraMaybePendingBlockInfo>(&bytes) {
+                            Some(info)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+            }
+            _ => todo!(),
+        };
+
+        Ok(Some(iter))
+    }
+
     pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_inner(&ty)
