@@ -153,24 +153,37 @@ fn finalize_execution_state<S: StateReader>(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
+
+    // 1. Get the commitment state diff from the transaction executor
     let csd = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
-    // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
+    
+
+    // 2. Handle deprecated declared contracts (Cairo 0 contracts)
     let mut deprecated_declared_contracts = csd.declared_contracts.clone();
-    // Cairo 1 delcared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
-    // So we remove them from `deprecated_declared_contracts` as only use them for Cairo 0 contracts
+    log::info!("Declared contracts: {:?}", deprecated_declared_contracts);
     deprecated_declared_contracts.retain(|key, _| !csd.compiled_class_hashes.contains_key(key));
-    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(csd.declared_contracts.clone());
+    log::info!("Processed deprecated declared contracts. Count: {} and map: {:?}", deprecated_declared_contracts.len(), deprecated_declared_contracts);
+    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(deprecated_declared_contracts);
+    
+    log::info!("Processed deprecated declared contracts. Count: {} and map: {:?}", deprecated_declared_contracts.len(), deprecated_declared_contracts);
+
+    // 3. Convert the commitment state diff to a state diff
     let state_update = csd_to_state_diff(backend, on_top_of, &csd.into(), deprecated_declared_contracts)?;
+    
+    log::info!("Converted commitment state diff to state diff: {:?}", state_update);
 
+    // 4. Get the visited segments from the transaction executor
     let visited_segments = get_visited_segments(tx_executor)?;
-
-    Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
+    
+    // 5. Get the accumulated weights from the bouncer
+    let accumulated_weights = *tx_executor.bouncer.get_accumulated_weights();
+    
+    Ok((state_update, visited_segments, accumulated_weights))
 }
 
 /// The block production task consumes transactions from the mempool in batches.

@@ -197,7 +197,7 @@ impl MempoolProvider for Mempool {
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = DeclareTransactionResult {
+        let res: DeclareTransactionResult = DeclareTransactionResult {
             transaction_hash: transaction_hash(&tx),
             class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
         };
