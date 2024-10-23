@@ -29,6 +29,8 @@ use std::time::Instant;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
 use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
+use std::collections::HashMap;
+
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -56,25 +58,40 @@ pub enum Error {
     Unexpected(Cow<'static, str>),
 }
 
+trait StateMapExtension {
+    fn to_commitment_state_diff(self) -> (CommitmentStateDiff, HashMap<Felt, bool>);
+}
+
+impl StateMapExtension for StateMaps {
+    fn to_commitment_state_diff(self) -> (CommitmentStateDiff, HashMap<Felt, bool>) {
+        let mut deprecated_declared_contracts: HashMap<Felt, bool> = self.declared_contracts
+            .iter()
+            .map(|(k, _)| (k.0, true))
+            .collect();
+
+        let commitment_state_diff: CommitmentStateDiff = self.into();
+
+        // Remove Cairo 1 contracts from deprecated_declared_contracts
+        for class_hash in commitment_state_diff.class_hash_to_compiled_class_hash.keys() {
+            deprecated_declared_contracts.remove(&class_hash.0);
+        }
+
+        (commitment_state_diff, deprecated_declared_contracts)
+    }
+}
+
 fn csd_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     state_map: StateMaps,
 ) -> Result<StateDiff, Error> {
-    // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
-    // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
-    let mut deprecated_declared_contracts = state_map.declared_contracts.clone();
-    let CommitmentStateDiff {
+    let (CommitmentStateDiff {
         address_to_class_hash,
         address_to_nonce,
         storage_updates,
         class_hash_to_compiled_class_hash,
-    } = CommitmentStateDiff::from(state_map);
+    }, deprecated_declared_contracts) = state_map.to_commitment_state_diff();
 
-    // Cairo 1 declared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
-    // So we remove them from `deprecated_declared_contracts` as we only use them for Cairo 0 contracts
-    deprecated_declared_contracts.retain(|key, _| !class_hash_to_compiled_class_hash.contains_key(key));
-    let deprecated_classes: Vec<Felt> = deprecated_declared_contracts.into_keys().map(|c| c.0).collect();
 
     let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
     for (contract_address, new_class_hash) in address_to_class_hash {
@@ -108,7 +125,7 @@ fn csd_to_state_diff(
                     .collect(),
             })
             .collect(),
-        deprecated_declared_classes: deprecated_classes,
+        deprecated_declared_classes: deprecated_declared_contracts.into_keys().collect(),
         declared_classes: class_hash_to_compiled_class_hash
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
