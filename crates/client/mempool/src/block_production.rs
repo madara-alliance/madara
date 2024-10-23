@@ -3,7 +3,7 @@
 use crate::block_production_metrics::BlockProductionMetrics;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
+use crate::{L1DataProvider, MempoolProvider, MempoolTransaction};
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -31,9 +31,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::close_block::close_block;
-use crate::header::make_pending_header;
-use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
+use crate::clone_transaction;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {

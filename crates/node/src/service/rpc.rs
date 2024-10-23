@@ -44,7 +44,7 @@ impl RpcService {
                 (true, false)
             }
         };
-      
+
         let (read, write, trace, internal) = (rpcs, rpcs, rpcs, node_operator);
         let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider.clone());
         let metrics = RpcMetrics::register()?;

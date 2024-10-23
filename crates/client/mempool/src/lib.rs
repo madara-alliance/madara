@@ -197,7 +197,7 @@ impl MempoolProvider for Mempool {
         self.accept_tx(tx, classes)?;
         Ok(res)
     }
-  
+
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
         let (tx, classes) = broadcasted_declare_v0_to_blockifier(
