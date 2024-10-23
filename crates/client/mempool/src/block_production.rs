@@ -2,7 +2,7 @@
 
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
-use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps};
+use blockifier::state::cached_state::StateMaps;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use mc_block_import::{BlockImportError, BlockImporter};
@@ -19,8 +19,10 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
+use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
@@ -57,43 +59,56 @@ pub enum Error {
     Unexpected(Cow<'static, str>),
 }
 
-trait StateMapExtension {
-    fn to_commitment_state_diff(self) -> (CommitmentStateDiff, HashMap<Felt, bool>);
-}
-
-impl StateMapExtension for StateMaps {
-    fn to_commitment_state_diff(self) -> (CommitmentStateDiff, HashMap<Felt, bool>) {
-        let mut deprecated_declared_contracts: HashMap<Felt, bool> =
-            self.declared_contracts.keys().map(|k| (k.0, true)).collect();
-
-        let commitment_state_diff: CommitmentStateDiff = self.into();
-
-        // Remove Cairo 1 contracts from deprecated_declared_contracts
-        for class_hash in commitment_state_diff.class_hash_to_compiled_class_hash.keys() {
-            deprecated_declared_contracts.remove(&class_hash.0);
-        }
-
-        (commitment_state_diff, deprecated_declared_contracts)
-    }
-}
-
 fn csd_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-    state_map: StateMaps,
+    diff: StateMaps,
 ) -> Result<StateDiff, Error> {
-    let (
-        CommitmentStateDiff {
-            address_to_class_hash,
-            address_to_nonce,
-            storage_updates,
-            class_hash_to_compiled_class_hash,
-        },
-        deprecated_declared_contracts,
-    ) = state_map.to_commitment_state_diff();
+    let mut backing_map = HashMap::<ContractAddress, usize>::default();
+    let mut storage_diffs = Vec::<ContractStorageDiffItem>::default();
+    for ((address, key), value) in diff.storage {
+        match backing_map.entry(address) {
+            hash_map::Entry::Vacant(e) => {
+                e.insert(storage_diffs.len());
+                storage_diffs.push(ContractStorageDiffItem {
+                    address: address.to_felt(),
+                    storage_entries: vec![StorageEntry { key: key.to_felt(), value }],
+                });
+            }
+            hash_map::Entry::Occupied(e) => {
+                storage_diffs[*e.get()].storage_entries.push(StorageEntry { key: key.to_felt(), value });
+            }
+        }
+    }
 
-    let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
-    for (contract_address, new_class_hash) in address_to_class_hash {
+    let mut deprecated_declared_classes = Vec::default();
+    for (class_hash, _) in diff.declared_contracts {
+        if !diff.compiled_class_hashes.contains_key(&class_hash) {
+            deprecated_declared_classes.push(class_hash.to_felt());
+        }
+    }
+
+    let declared_classes = diff
+        .compiled_class_hashes
+        .iter()
+        .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
+            class_hash: class_hash.to_felt(),
+            compiled_class_hash: compiled_class_hash.to_felt(),
+        })
+        .collect();
+
+    let nonces = diff
+        .nonces
+        .into_iter()
+        .map(|(contract_address, nonce)| NonceUpdate {
+            contract_address: contract_address.to_felt(),
+            nonce: nonce.to_felt(),
+        })
+        .collect();
+
+    let mut deployed_contracts = Vec::new();
+    let mut replaced_classes = Vec::new();
+    for (contract_address, new_class_hash) in diff.compiled_class_hashes {
         let replaced = if let Some(on_top_of) = on_top_of {
             backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
         } else {
@@ -114,31 +129,10 @@ fn csd_to_state_diff(
     }
 
     Ok(StateDiff {
-        storage_diffs: storage_updates
-            .into_iter()
-            .map(|(address, storage_entries)| ContractStorageDiffItem {
-                address: address.to_felt(),
-                storage_entries: storage_entries
-                    .into_iter()
-                    .map(|(key, value)| StorageEntry { key: key.to_felt(), value })
-                    .collect(),
-            })
-            .collect(),
-        deprecated_declared_classes: deprecated_declared_contracts.into_keys().collect(),
-        declared_classes: class_hash_to_compiled_class_hash
-            .into_iter()
-            .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
-                class_hash: class_hash.to_felt(),
-                compiled_class_hash: compiled_class_hash.to_felt(),
-            })
-            .collect(),
-        nonces: address_to_nonce
-            .into_iter()
-            .map(|(contract_address, nonce)| NonceUpdate {
-                contract_address: contract_address.to_felt(),
-                nonce: nonce.to_felt(),
-            })
-            .collect(),
+        storage_diffs,
+        deprecated_declared_classes,
+        declared_classes,
+        nonces,
         deployed_contracts,
         replaced_classes,
     })
