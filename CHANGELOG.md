@@ -3,6 +3,7 @@
 ## Next release
 
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
+- fix(network): added the FGW and gateway url to the chain config
 - fix(block_hash): block hash mismatch on transaction with an empty signature
 - feat: declare v0, l1 handler support added
 - feat: strk gas price cli param added

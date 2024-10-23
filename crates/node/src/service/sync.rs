@@ -1,4 +1,4 @@
-use crate::cli::{NetworkType, SyncParams};
+use crate::cli::SyncParams;
 use anyhow::Context;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
@@ -26,14 +26,13 @@ impl SyncService {
     pub async fn new(
         config: &SyncParams,
         chain_config: Arc<ChainConfig>,
-        network: NetworkType,
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
         telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), network);
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone());
 
-        tracing::info!("🛰️ Using feeder url: {} ", fetch_config.gateway.as_str());
+        tracing::info!("🛰️ Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
