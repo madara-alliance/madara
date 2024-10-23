@@ -2,10 +2,9 @@
 
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
-use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps};
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
-use indexmap::IndexMap;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -20,7 +19,6 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
-use starknet_api::core::ClassHash;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -61,15 +59,22 @@ pub enum Error {
 fn csd_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-    csd: &CommitmentStateDiff,
-    deprecated_classes: IndexMap<ClassHash, bool>,
+    csd: StateMaps,
 ) -> Result<StateDiff, Error> {
+    // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
+    // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
+    let mut deprecated_declared_contracts = csd.declared_contracts.clone();
     let CommitmentStateDiff {
         address_to_class_hash,
         address_to_nonce,
         storage_updates,
         class_hash_to_compiled_class_hash,
-    } = csd;
+    } = CommitmentStateDiff::from(csd);
+
+    // Cairo 1 declared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
+    // So we remove them from `deprecated_declared_contracts` as we only use them for Cairo 0 contracts
+    deprecated_declared_contracts.retain(|key, _| !class_hash_to_compiled_class_hash.contains_key(key));
+    let deprecated_classes: Vec<Felt> = deprecated_declared_contracts.into_keys().map(|c| c.0).collect();
 
     let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
     for (contract_address, new_class_hash) in address_to_class_hash {
@@ -99,13 +104,13 @@ fn csd_to_state_diff(
                 address: address.to_felt(),
                 storage_entries: storage_entries
                     .into_iter()
-                    .map(|(key, value)| StorageEntry { key: key.to_felt(), value: *value })
+                    .map(|(key, value)| StorageEntry { key: key.to_felt(), value })
                     .collect(),
             })
             .collect(),
-        deprecated_declared_classes: deprecated_classes.into_iter().map(|c| c.0 .0).collect(),
+        deprecated_declared_classes: deprecated_classes,
         declared_classes: class_hash_to_compiled_class_hash
-            .iter()
+            .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
                 class_hash: class_hash.to_felt(),
                 compiled_class_hash: compiled_class_hash.to_felt(),
@@ -159,14 +164,7 @@ fn finalize_execution_state<S: StateReader>(
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    // `StateMaps` to `CommitmentStateDiff` conversion drops declared_contracts. This causes
-    // Cairo 0 contracts to be removed from the state diff. So we keep track of them separately.
-    let mut deprecated_declared_contracts = csd.declared_contracts.clone();
-    // Cairo 1 delcared contracts are present in both the declared_contracts and the compiled_class_hashes maps.
-    // So we remove them from `deprecated_declared_contracts` as only use them for Cairo 0 contracts
-    deprecated_declared_contracts.retain(|key, _| !csd.compiled_class_hashes.contains_key(key));
-    let deprecated_declared_contracts: IndexMap<ClassHash, bool> = IndexMap::from_iter(deprecated_declared_contracts);
-    let state_update = csd_to_state_diff(backend, on_top_of, &csd.into(), deprecated_declared_contracts)?;
+    let state_update = csd_to_state_diff(backend, on_top_of, csd)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
