@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use mp_block::MadaraMaybePendingBlockInfo;
+
 use crate::{
     errors::{StarknetWsApiError, WsResult},
     versions::v0_8_0::StarknetWsRpcApiV0_8_0Server,
@@ -57,7 +59,7 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
 
                 let Some(block_info) = block_info.as_nonpending_owned() else {
                     return WsResult::Err(StarknetWsApiError::internal(Cow::from(
-                        "Retrieve pending block info for non-pending block",
+                        "Retrieved pending block info for non-pending block",
                     )));
                 };
 
@@ -67,17 +69,25 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                     return WsResult::Err(StarknetWsApiError::TooManyBlocksBack);
                 }
 
-                let header = starknet_api::block::BlockHeader::from(block_info);
-                let msg = jsonrpsee::SubscriptionMessage::from_json(&header).unwrap();
-                if let Err(e) = sink.send(msg).await {
-                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
-                        "Failed to respond to websocket request: {e}"
-                    ))));
+                let Ok(Some(stream)) = self.backend.get_block_info_stream_from_block_n(block_n) else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(
+                        "Failed to initiate block info stream from database",
+                    )));
+                };
+
+                for block_info in stream {
+                    let header = starknet_api::block::BlockHeader::from(block_info);
+                    let msg = jsonrpsee::SubscriptionMessage::from_json(&header).unwrap();
+                    if let Err(e) = sink.send(msg).await {
+                        return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                            "Failed to respond to websocket request: {e}"
+                        ))));
+                    }
                 }
             }
             _ => todo!(),
         }
 
-        return WsResult::Ok;
+        WsResult::Ok
     }
 }
