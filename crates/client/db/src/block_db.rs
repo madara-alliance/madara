@@ -71,7 +71,7 @@ impl MadaraBackend {
         Ok(Some(block_n))
     }
 
-    fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
+    pub fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -105,6 +105,11 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
+    }
+
+    pub fn get_block_info_from_block_hash(&self, block_hash: Felt) -> Result<Option<MadaraBlockInfo>> {
+        let Ok(Some(block_n)) = self.block_hash_to_block_n(&block_hash) else { return Ok(None) };
+        self.get_block_info_from_block_n(block_n)
     }
 
     fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInner>> {
@@ -255,14 +260,16 @@ impl MadaraBackend {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
-        tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block.info)?);
+        tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
-        // updates subscribers
-        self.block_info_notify.notify_waiters();
+        // susbcribers
+        if self.sender_block_info.receiver_count() > 0 {
+            let _ = self.sender_block_info.send(block.info.clone());
+        }
 
         // clear pending
         tx.delete_cf(&meta, ROW_PENDING_INFO);
@@ -340,8 +347,8 @@ impl MadaraBackend {
         self.storage_to_info(&ty)
     }
 
-    pub async fn wait_for_block_info(&self) {
-        self.block_info_notify.notified().await;
+    pub fn subscribe_block_info(&self) -> tokio::sync::broadcast::Receiver<mp_block::MadaraBlockInfo> {
+        self.sender_block_info.subscribe()
     }
 
     pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {

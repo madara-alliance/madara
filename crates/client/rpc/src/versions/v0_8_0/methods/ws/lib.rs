@@ -45,51 +45,141 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
             return WsResult::Err(StarknetWsApiError::internal(Cow::from("Failed to establish websocket connection")));
         };
 
-        match block_id {
-            starknet_core::types::BlockId::Number(mut block_n) => {
+        let mut block_n = match block_id {
+            starknet_core::types::BlockId::Number(block_n) => {
                 let Ok(Some(block_info)) = self.backend.get_block_info_from_block_latest() else {
-                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(
-                        "Failed to retrieve latest block info from database",
-                    )));
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to retrieve block info for block {block_n}",
+                    ))));
                 };
 
                 if block_n < block_info.header.block_number.saturating_sub(BLOCK_PAST_LIMIT) {
                     return WsResult::Err(StarknetWsApiError::TooManyBlocksBack);
                 }
 
-                loop {
-                    for n in block_n.. {
-                        let block_info = match self.backend.get_block_info_from_block_n(n) {
-                            Ok(Some(block_info)) => block_info,
-                            Ok(None) => break,
-                            Err(e) => {
-                                return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
-                                    "Failed to retrieve block info for block {n}: {e}"
-                                ))))
-                            }
-                        };
+                block_n
+            }
+            starknet_core::types::BlockId::Hash(block_hash) => {
+                let Ok(Some(block_n)) = self.backend.block_hash_to_block_n(&block_hash) else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to retrieve block info at hash {block_hash:#x}"
+                    ))));
+                };
 
-                        log::info!("Sending block {n}");
+                block_n
+            }
+            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest) => {
+                let Ok(Some(block_n)) = self.backend.get_latest_block_n() else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to retrieve block info for latest block"
+                    ))));
+                };
 
-                        let header = starknet_api::block::BlockHeader::from(block_info);
-                        let msg = jsonrpsee::SubscriptionMessage::from_json(&header).unwrap();
-                        if let Err(e) = sink.send(msg).await {
-                            return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
-                                "Failed to respond to websocket request: {e}"
-                            ))));
-                        }
+                block_n
+            }
+            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending) => {
+                return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                    "`starknet_subscribeNewHeads` does not support pending blocks"
+                ))))
+            }
+        };
+
+        log::info!("Catching up blocks...");
+
+        let mut rx = self.backend.subscribe_block_info();
+        for n in block_n.. {
+            if sink.is_closed() {
+                return WsResult::Ok;
+            }
+
+            let block_info = match self.backend.get_block_info_from_block_n(n) {
+                Ok(Some(block_info)) => block_info,
+                Ok(None) => break,
+                Err(e) => {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to retrieve block info for block {n}: {e}"
+                    ))))
+                }
+            };
+
+            let header = starknet_api::block::BlockHeader::from(block_info);
+            let Ok(msg) = jsonrpsee::SubscriptionMessage::from_json(&header) else {
+                return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                    "Failed to create response message on block {n}"
+                ))));
+            };
+
+            log::info!("Sending block header for block {n}");
+
+            if let Err(e) = sink.send(msg).await {
+                return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                    "Failed to respond to websocket request: {e}"
+                ))));
+            }
+
+            block_n += 1;
+        }
+
+        log::info!("Skipping to latest block...");
+
+        loop {
+            let Ok(block_info) = rx.recv().await else {
+                return WsResult::Err(StarknetWsApiError::internal(Cow::from("Failed to retrieve block info")));
+            };
+
+            if block_info.header.block_number == block_n {
+                log::info!("Caught up with the latest block");
+
+                let header = starknet_api::block::BlockHeader::from(block_info);
+                let Ok(msg) = jsonrpsee::SubscriptionMessage::from_json(&header) else {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to create response message on block {block_n}"
+                    ))));
+                };
+
+                log::info!("Sending block header for block {block_n}");
+
+                if let Err(e) = sink.send(msg).await {
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                        "Failed to respond to websocket request: {e}"
+                    ))));
+                }
+
+                break;
+            }
+        }
+
+        log::info!("Waiting for next block...");
+
+        loop {
+            tokio::select! {
+                block_info = rx.recv() => {
+                    let Ok(block_info) = block_info else {
+                        return WsResult::Err(StarknetWsApiError::internal(Cow::from("Failed to retrieve block info")));
+                    };
+
+                    log::info!("Sending block header for block {}", block_info.header.block_number);
+
+                    let header = starknet_api::block::BlockHeader::from(block_info);
+                    let Ok(msg) = jsonrpsee::SubscriptionMessage::from_json(&header) else {
+                        return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                            "Failed to create response message on block {block_n}"
+                        ))));
+                    };
+
+                    if let Err(e) = sink.send(msg).await {
+                        return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
+                            "Failed to respond to websocket request: {e}"
+                        ))));
                     }
-
-                    log::info!("Waiting for new blocks");
-
-                    self.backend.wait_for_block_info().await;
-
-                    log::info!("New blocks received");
-
-                    block_n = block_info.header.block_number + 1;
+                },
+                _ = sink.closed() => {
+                    log::info!("Websocket connection has been closed");
+                    return WsResult::Ok
                 }
             }
-            _ => todo!(),
+
+            log::info!("Next block received!");
         }
     }
 }
