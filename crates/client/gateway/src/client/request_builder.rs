@@ -1,13 +1,17 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use hyper::client::HttpConnector;
+use bytes::Buf;
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
-use hyper::{Body, Client};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use hyper_tls::HttpsConnector;
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
 use mp_block::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
+use tower::Service;
 use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
@@ -17,7 +21,7 @@ use super::builder::{PauseLayerMiddleware, RetryPolicy};
 
 #[derive(Debug)]
 pub struct RequestBuilder<'a> {
-    client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, Body>>>>,
+    client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
     url: Url,
     params: HashMap<Cow<'static, str>, String>,
     headers: HeaderMap,
@@ -25,7 +29,7 @@ pub struct RequestBuilder<'a> {
 
 impl<'a> RequestBuilder<'a> {
     pub fn new(
-        client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, Body>>>>,
+        client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
         base_url: Url,
         headers: HeaderMap,
     ) -> Self {
@@ -79,7 +83,7 @@ impl<'a> RequestBuilder<'a> {
         unpack(self.send_get_raw().await?).await
     }
 
-    pub async fn send_get_raw(self) -> Result<Response<Body>, SequencerError> {
+    pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
         let uri = self.build_uri()?;
 
         let mut req_builder = Request::builder().method("GET").uri(uri);
@@ -88,9 +92,9 @@ impl<'a> RequestBuilder<'a> {
             req_builder = req_builder.header(key, value);
         }
 
-        let req = req_builder.body(Body::empty()).unwrap();
+        let req = req_builder.body(String::new()).unwrap();
 
-        let response = self.client.clone().call(req).await?;
+        let response: Response<Incoming> = self.client.clone().call(req).await.unwrap();
         Ok(response)
     }
 
@@ -109,9 +113,9 @@ impl<'a> RequestBuilder<'a> {
 
         let body = serde_json::to_string(&self.params)?;
 
-        let req = req_builder.header(CONTENT_TYPE, "application/json").body(Body::from(body))?;
+        let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
 
-        let response = self.client.clone().call(req).await?;
+        let response = self.client.clone().call(req).await.unwrap();
         unpack(response).await
     }
 
@@ -129,24 +133,24 @@ impl<'a> RequestBuilder<'a> {
     }
 }
 
-async fn unpack<T>(response: Response<Body>) -> Result<T, SequencerError>
+async fn unpack<T>(response: Response<Incoming>) -> Result<T, SequencerError>
 where
     T: ::serde::de::DeserializeOwned,
 {
     let http_status = response.status();
+    let whole_body = response.collect().await.unwrap().aggregate();
+
     if http_status == StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
     } else if !http_status.is_success() {
-        let body = hyper::body::to_bytes(response.into_body()).await?;
-        let starknet_error = serde_json::from_slice::<StarknetError>(&body)
-            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error, body })?;
+        let starknet_error = serde_json::from_reader::<_, StarknetError>(whole_body.reader())
+            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error })?;
 
         return Err(starknet_error.into());
     }
 
-    let body = hyper::body::to_bytes(response.into_body()).await?;
-    let res =
-        serde_json::from_slice(&body).map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
+    let res = serde_json::from_reader(whole_body.reader())
+        .map_err(|serde_error| SequencerError::DeserializeBody { serde_error })?;
 
     Ok(res)
 }

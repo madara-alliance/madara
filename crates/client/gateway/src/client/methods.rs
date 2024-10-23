@@ -1,7 +1,7 @@
 use super::{builder::FeederClient, request_builder::RequestBuilder};
 use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
-use mp_class::{CompressedLegacyContractClass, ContractClass, FlattenedSierraClass};
+use mp_class::ContractClass;
 use mp_gateway::{
     block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
     state_update::{
@@ -9,8 +9,8 @@ use mp_gateway::{
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
     },
 };
-use starknet_core::types::{contract::legacy::LegacyContractClass, Felt};
-use std::{borrow::Cow, sync::Arc};
+use starknet_core::types::Felt;
+use std::borrow::Cow;
 
 impl FeederClient {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
@@ -85,17 +85,7 @@ impl FeederClient {
             .with_block_id(block_id)
             .with_class_hash(class_hash);
 
-        match request.send_get::<FlattenedSierraClass>().await {
-            Ok(class_sierra) => Ok(ContractClass::Sierra(Arc::new(class_sierra))),
-            Err(SequencerError::DeserializeBody { serde_error: _, body }) => {
-                // if it failed with flattebed sierra, it might be a legacy class.
-                let class_legacy = serde_json::from_slice::<LegacyContractClass>(&body)
-                    .map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
-                let class_compressed: CompressedLegacyContractClass = class_legacy.compress()?.into();
-                Ok(ContractClass::Legacy(Arc::new(class_compressed)))
-            }
-            Err(err) => Err(err),
-        }
+        request.send_get::<ContractClass>().await
     }
 }
 
