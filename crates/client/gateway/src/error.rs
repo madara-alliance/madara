@@ -13,6 +13,8 @@ pub enum SequencerError {
     InvalidUrl(url::Url),
     #[error("HTTP error: {0:#}")]
     HttpError(#[from] hyper::http::Error),
+    #[error("Error calling HTTP client: {0:#}")]
+    HttpCallError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error },
     #[error("Error serializing request: {0:#}")]

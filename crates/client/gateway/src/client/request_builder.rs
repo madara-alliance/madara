@@ -1,38 +1,31 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use bytes::Buf;
+use http::Method;
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
-use hyper_tls::HttpsConnector;
-use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::client::legacy::Client;
 use mp_block::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
 use tower::Service;
-use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
 use crate::error::{SequencerError, StarknetError};
 
-use super::builder::{PauseLayerMiddleware, RetryPolicy};
+use super::builder::PausedClient;
 
 #[derive(Debug)]
 pub struct RequestBuilder<'a> {
-    client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
+    client: &'a PausedClient,
     url: Url,
     params: HashMap<Cow<'static, str>, String>,
     headers: HeaderMap,
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(
-        client: &'a PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
-        base_url: Url,
-        headers: HeaderMap,
-    ) -> Self {
+    pub fn new(client: &'a PausedClient, base_url: Url, headers: HeaderMap) -> Self {
         Self { client, url: base_url, params: HashMap::new(), headers }
     }
 
@@ -86,15 +79,14 @@ impl<'a> RequestBuilder<'a> {
     pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
         let uri = self.build_uri()?;
 
-        let mut req_builder = Request::builder().method("GET").uri(uri);
+        let mut req_builder = Request::builder().method(Method::GET).uri(uri);
 
-        for (key, value) in self.headers.iter() {
-            req_builder = req_builder.header(key, value);
-        }
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let req = req_builder.body(String::new()).unwrap();
+        let req = req_builder.body(String::new())?;
 
-        let response: Response<Incoming> = self.client.clone().call(req).await.unwrap();
+        let response: Response<Incoming> =
+            self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         Ok(response)
     }
 
@@ -105,17 +97,15 @@ impl<'a> RequestBuilder<'a> {
     {
         let uri = self.build_uri()?;
 
-        let mut req_builder = Request::builder().method("POST").uri(uri);
+        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
 
-        for (key, value) in self.headers.iter() {
-            req_builder = req_builder.header(key, value);
-        }
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
         let body = serde_json::to_string(&self.params)?;
 
         let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
 
-        let response = self.client.clone().call(req).await.unwrap();
+        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         unpack(response).await
     }
 
@@ -138,7 +128,7 @@ where
     T: ::serde::de::DeserializeOwned,
 {
     let http_status = response.status();
-    let whole_body = response.collect().await.unwrap().aggregate();
+    let whole_body = response.collect().await?.aggregate();
 
     if http_status == StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));

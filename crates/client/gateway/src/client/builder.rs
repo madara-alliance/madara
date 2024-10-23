@@ -1,3 +1,5 @@
+use futures::FutureExt;
+use http::StatusCode;
 use hyper::body::Incoming;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{Request, Response};
@@ -12,14 +14,17 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tower::retry::Policy;
+use tower::retry;
 use tower::Service;
 use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
+type HttpsClient = Client<HttpsConnector<HttpConnector>, String>;
+type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
+pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
 #[derive(Debug, Clone)]
 pub struct FeederClient {
-    pub(crate) client: PauseLayerMiddleware<Retry<RetryPolicy, Timeout<Client<HttpsConnector<HttpConnector>, String>>>>,
+    pub(crate) client: PausedClient,
     #[allow(dead_code)]
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
@@ -118,7 +123,7 @@ impl RetryPolicy {
     }
 }
 
-impl Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
+impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
     fn retry(
@@ -130,12 +135,15 @@ impl Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> f
 
         match result {
             Ok(response) => {
-                // TOO_MANY_REQUESTS
-                if response.status().as_u16() == 429 {
+                if response.status() == StatusCode::TOO_MANY_REQUESTS {
                     let retry_after = get_retry_after(response).unwrap_or(Duration::from_secs(10)); // Default 10 seconds
 
                     let next_policy = self.clone();
                     let fut = async move {
+                        if (*pause_until.read().await).is_none() {
+                            log::info!("The fetching process has been rate limited, retrying");
+                        }
+
                         let mut pause_lock = pause_until.write().await;
                         *pause_lock = Some(Instant::now() + retry_after);
 
@@ -143,8 +151,9 @@ impl Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> f
                         tokio::time::sleep(retry_after).await;
 
                         next_policy
-                    };
-                    Some(Box::pin(fut))
+                    }
+                    .boxed();
+                    Some(fut)
                 } else {
                     None
                 }
@@ -156,11 +165,13 @@ impl Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> f
                     backoff: self.backoff,
                     pause_until: self.pause_until.clone(),
                 };
-                let fut = tokio::time::sleep(self.backoff);
-                Some(Box::pin(async move {
-                    fut.await;
+                let sleep = tokio::time::sleep(self.backoff);
+                let fut = async move {
+                    sleep.await;
                     next_policy
-                }))
+                }
+                .boxed();
+                Some(fut)
             }
             _ => None, // No more retries
         }

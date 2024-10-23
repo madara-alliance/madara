@@ -20,7 +20,7 @@ pub(crate) async fn main_router(
 ) -> Result<Response<String>, Infallible> {
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
-        ("health", _, _) => Ok(Response::new("OK".to_string().into())),
+        ("health", _, _) => Ok(Response::new("OK".to_string())),
         (path, true, _) if path.starts_with("feeder_gateway/") => feeder_gateway_router(req, path, backend).await,
         (path, _, true) if path.starts_with("gateway/") => gateway_router(req, path, add_transaction_provider).await,
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
