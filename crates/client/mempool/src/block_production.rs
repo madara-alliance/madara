@@ -31,7 +31,6 @@ use crate::header::make_pending_header;
 use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
 use std::collections::HashMap;
 
-
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
     /// Number of batches executed before reaching the bouncer capacity.
@@ -64,10 +63,8 @@ trait StateMapExtension {
 
 impl StateMapExtension for StateMaps {
     fn to_commitment_state_diff(self) -> (CommitmentStateDiff, HashMap<Felt, bool>) {
-        let mut deprecated_declared_contracts: HashMap<Felt, bool> = self.declared_contracts
-            .iter()
-            .map(|(k, _)| (k.0, true))
-            .collect();
+        let mut deprecated_declared_contracts: HashMap<Felt, bool> =
+            self.declared_contracts.iter().map(|(k, _)| (k.0, true)).collect();
 
         let commitment_state_diff: CommitmentStateDiff = self.into();
 
@@ -85,13 +82,15 @@ fn csd_to_state_diff(
     on_top_of: &Option<DbBlockId>,
     state_map: StateMaps,
 ) -> Result<StateDiff, Error> {
-    let (CommitmentStateDiff {
-        address_to_class_hash,
-        address_to_nonce,
-        storage_updates,
-        class_hash_to_compiled_class_hash,
-    }, deprecated_declared_contracts) = state_map.to_commitment_state_diff();
-
+    let (
+        CommitmentStateDiff {
+            address_to_class_hash,
+            address_to_nonce,
+            storage_updates,
+            class_hash_to_compiled_class_hash,
+        },
+        deprecated_declared_contracts,
+    ) = state_map.to_commitment_state_diff();
 
     let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
     for (contract_address, new_class_hash) in address_to_class_hash {
