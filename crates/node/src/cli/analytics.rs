@@ -7,7 +7,7 @@ use url::Url;
 #[derive(Debug, Clone, Args)]
 pub struct AnalyticsParams {
     /// Name of the service.
-    #[arg(env = "MADARA_ANALYTICS_SERVICE_NAME", long, alias = "analytics", default_value = "madara-analytics")]
+    #[arg(env = "MADARA_ANALYTICS_SERVICE_NAME", long, alias = "analytics", default_value = "madara_analytics")]
     pub analytics_service_name: String,
 
     /// Log level of the service.
