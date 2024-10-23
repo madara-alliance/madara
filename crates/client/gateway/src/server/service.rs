@@ -4,8 +4,8 @@ use std::{
 };
 
 use anyhow::Context;
-use hyper::{server::conn::http2, service::service_fn};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper::{server::conn::http1, service::service_fn};
+use hyper_util::rt::TokioIo;
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use tokio::net::TcpListener;
@@ -52,7 +52,7 @@ pub async fn start_server(
                 )
             });
 
-            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, service).await {
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                 log::error!("Error serving connection: {:?}", err);
             }
         });
