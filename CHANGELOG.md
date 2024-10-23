@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: contract 0 state diff fixed
 - refactor(rpc): re-worked rpc tower server and added proper websocket support
 - fix(network): added the FGW and gateway url to the chain config
 - fix(block_hash): block hash mismatch on transaction with an empty signature
