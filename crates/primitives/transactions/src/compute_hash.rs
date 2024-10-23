@@ -22,6 +22,8 @@ const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572
 
 const L1_GAS: &[u8] = b"L1_GAS";
 const L2_GAS: &[u8] = b"L2_GAS";
+const PEDERSEN_EMPTY: Felt =
+    Felt::from_hex_unchecked("0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804");
 
 impl Transaction {
     pub fn compute_hash(&self, chain_id: Felt, version: StarknetVersion, offset_version: bool) -> Felt {
@@ -58,60 +60,53 @@ impl Transaction {
     /// computing the transaction commitent uses a hash value that combines
     /// the transaction hash with the array of signature values.
     pub fn compute_hash_with_signature(&self, tx_hash: Felt, starknet_version: StarknetVersion) -> Felt {
-        let include_signature = starknet_version >= StarknetVersion::V0_11_1;
+        if starknet_version < StarknetVersion::V0_11_1 {
+            self.compute_hash_with_signature_pre_v0_11_1(tx_hash)
+        } else if starknet_version < StarknetVersion::V0_13_2 {
+            self.compute_hash_with_signature_pre_v0_13_2(tx_hash)
+        } else {
+            self.compute_hash_with_signature_latest(tx_hash)
+        }
+    }
 
-        let leaf = match self {
-            Transaction::Invoke(tx) => {
-                // Include signatures for Invoke transactions or for all transactions
-                if starknet_version < StarknetVersion::V0_13_2 {
-                    let signature_hash = tx.compute_hash_signature::<Pedersen>();
-                    Pedersen::hash(&tx_hash, &signature_hash)
-                } else {
-                    let elements: Vec<Felt> = std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
-                    Poseidon::hash_array(&elements)
-                }
-            }
-            Transaction::Declare(tx) => {
-                if include_signature {
-                    if starknet_version < StarknetVersion::V0_13_2 {
-                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
-                        Pedersen::hash(&tx_hash, &signature_hash)
-                    } else {
-                        let elements: Vec<Felt> =
-                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
-                        Poseidon::hash_array(&elements)
-                    }
-                } else {
-                    let signature_hash = Pedersen::hash_array(&[]);
-                    Pedersen::hash(&tx_hash, &signature_hash)
-                }
-            }
-            Transaction::DeployAccount(tx) => {
-                if include_signature {
-                    if starknet_version < StarknetVersion::V0_13_2 {
-                        let signature_hash = tx.compute_hash_signature::<Pedersen>();
-                        Pedersen::hash(&tx_hash, &signature_hash)
-                    } else {
-                        let elements: Vec<Felt> =
-                            std::iter::once(tx_hash).chain(tx.signature().iter().copied()).collect();
-                        Poseidon::hash_array(&elements)
-                    }
-                } else {
-                    let signature_hash = Pedersen::hash_array(&[]);
-                    Pedersen::hash(&tx_hash, &signature_hash)
-                }
-            }
-            _ => {
-                if starknet_version < StarknetVersion::V0_13_2 {
-                    let signature_hash = Pedersen::hash_array(&[]);
-                    Pedersen::hash(&tx_hash, &signature_hash)
-                } else {
-                    Poseidon::hash_array(&[tx_hash, Felt::ZERO])
-                }
-            }
+    fn compute_hash_with_signature_pre_v0_11_1(&self, tx_hash: Felt) -> Felt {
+        let signature_hash = match self {
+            Transaction::Invoke(tx) => tx.compute_hash_signature::<Pedersen>(),
+            Transaction::Declare(_)
+            | Transaction::DeployAccount(_)
+            | Transaction::Deploy(_)
+            | Transaction::L1Handler(_) => PEDERSEN_EMPTY,
         };
 
-        leaf
+        Pedersen::hash(&tx_hash, &signature_hash)
+    }
+
+    fn compute_hash_with_signature_pre_v0_13_2(&self, tx_hash: Felt) -> Felt {
+        let signature_hash = match self {
+            Transaction::Invoke(tx) => tx.compute_hash_signature::<Pedersen>(),
+            Transaction::Declare(tx) => tx.compute_hash_signature::<Pedersen>(),
+            Transaction::DeployAccount(tx) => tx.compute_hash_signature::<Pedersen>(),
+            Transaction::Deploy(_) | Transaction::L1Handler(_) => PEDERSEN_EMPTY,
+        };
+
+        Pedersen::hash(&tx_hash, &signature_hash)
+    }
+
+    fn compute_hash_with_signature_latest(&self, tx_hash: Felt) -> Felt {
+        let signature = match self {
+            Transaction::Invoke(tx) => tx.signature(),
+            Transaction::Declare(tx) => tx.signature(),
+            Transaction::DeployAccount(tx) => tx.signature(),
+            Transaction::Deploy(_) | Transaction::L1Handler(_) => &[],
+        };
+
+        let elements = if signature.is_empty() {
+            vec![tx_hash, Felt::ZERO]
+        } else {
+            std::iter::once(tx_hash).chain(signature.iter().copied()).collect()
+        };
+
+        Poseidon::hash_array(&elements)
     }
 }
 
@@ -706,5 +701,10 @@ mod tests {
         let expected_contract_address =
             Felt::from_hex_unchecked("0x734743d11641ecb3d92bafae091346fec3b2c75f7808e39f8b23d9287636e45");
         assert_eq!(contract_address, expected_contract_address,);
+    }
+
+    #[test]
+    fn test_pedersen_empty() {
+        assert_eq!(PEDERSEN_EMPTY, Pedersen::hash_array(&[]))
     }
 }
