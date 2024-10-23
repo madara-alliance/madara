@@ -1,12 +1,11 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+use mp_chain_config::ChainConfig;
 use starknet_api::core::ChainId;
 
 use mc_sync::fetch::fetchers::FetchConfig;
 use mp_utils::parsers::{parse_duration, parse_url};
 use url::Url;
-
-use crate::cli::NetworkType;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
@@ -69,13 +68,13 @@ pub struct SyncParams {
 }
 
 impl SyncParams {
-    pub fn block_fetch_config(&self, chain_id: ChainId, network: NetworkType) -> FetchConfig {
+    pub fn block_fetch_config(&self, chain_id: ChainId, chain_config: Arc<ChainConfig>) -> FetchConfig {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
-                url.join("/gateway/").expect("Error parsing url (this should not panic)"),
-                url.join("/feeder_gateway/").expect("Error parsing url (this should not panic)"),
+                url.join("/gateway/").expect("Error parsing url"),
+                url.join("/feeder_gateway/").expect("Error parsing url"),
             ),
-            None => (network.gateway(), network.feeder_gateway()),
+            None => (chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone()),
         };
 
         let polling = if self.no_sync_polling { None } else { Some(self.sync_polling_interval) };

@@ -23,6 +23,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
+use url::Url;
 
 use mp_utils::serde::{deserialize_duration, deserialize_private_key};
 
@@ -72,6 +73,10 @@ pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
+
+    // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
+    pub feeder_gateway_url: Url,
+    pub gateway_url: Url,
 
     /// For starknet, this is the STRK ERC-20 contract on starknet.
     pub native_fee_token_address: ContractAddress,
@@ -175,6 +180,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Mainnet".into(),
             chain_id: ChainId::Mainnet,
+            feeder_gateway_url: Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
@@ -236,6 +243,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
+            feeder_gateway_url: Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
@@ -248,6 +257,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
+            feeder_gateway_url: Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
@@ -262,6 +273,8 @@ impl ChainConfig {
         Self {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
             ..ChainConfig::starknet_sepolia()
         }
@@ -271,6 +284,8 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
             // A random sequencer address for fee transfers to work in block production.
             sequencer_address: Felt::from_hex_unchecked(
                 "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
