@@ -87,9 +87,21 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
+    pub fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
+        let Some(res) = res else { return Ok(None) };
+        let block = bincode::deserialize(&res)?;
+        Ok(Some(block))
+    }
+
+    pub fn get_block_info_from_block_latest(&self) -> Result<Option<MadaraBlockInfo>> {
+        let Ok(Some(block_n)) = &self.get_latest_block_n() else {
+            return Ok(None);
+        };
+
+        let col = self.db.get_column(Column::BlockNToBlockInfo);
+        let res = self.db.get_cf(&col, bincode::serialize(block_n)?)?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -249,6 +261,9 @@ impl MadaraBackend {
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
+        // updates subscribers
+        self.block_info_notify.notify_waiters();
+
         // clear pending
         tx.delete_cf(&meta, ROW_PENDING_INFO);
         tx.delete_cf(&meta, ROW_PENDING_INNER);
@@ -325,26 +340,8 @@ impl MadaraBackend {
         self.storage_to_info(&ty)
     }
 
-    pub fn get_block_info_stream_from_block_n<'a>(
-        &'a self,
-        block_n: u64,
-    ) -> Result<Option<impl Iterator<Item = MadaraBlockInfo> + 'a>> {
-        let handle = self.db.get_column(Column::BlockNToBlockInfo);
-        let key = bincode::serialize(&block_n)?;
-        let iter = self.db.iterator_cf(&handle, rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward));
-        let iter = iter.map_while(|kv| {
-            if let Ok((_, bytes)) = kv {
-                if let Ok(info) = bincode::deserialize(&bytes) {
-                    Some(info)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        });
-
-        Ok(Some(iter))
+    pub async fn wait_for_block_info(&self) {
+        self.block_info_notify.notified().await;
     }
 
     pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {
