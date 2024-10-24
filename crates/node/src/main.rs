@@ -172,7 +172,6 @@ async fn main() -> anyhow::Result<()> {
     let rpc_service = RpcService::new(
         &run_cmd.rpc_params,
         &db_service,
-        Arc::clone(&chain_config),
         prometheus_service.registry(),
         Arc::clone(&rpc_add_txs_method_provider),
     )

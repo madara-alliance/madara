@@ -6,7 +6,6 @@ use tokio::task::JoinSet;
 use mc_db::DatabaseService;
 use mc_metrics::MetricsRegistry;
 use mc_rpc::{providers::AddTransactionProvider, versioned_rpc_api, Starknet};
-use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 
 use metrics::RpcMetrics;
@@ -26,7 +25,6 @@ impl RpcService {
     pub fn new(
         config: &RpcParams,
         db: &DatabaseService,
-        chain_config: Arc<ChainConfig>,
         metrics_handle: &MetricsRegistry,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
@@ -47,7 +45,7 @@ impl RpcService {
             }
         };
         let (read, write, trace, internal, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
-        let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
+        let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register(metrics_handle)?;
 
         Ok(Self {
