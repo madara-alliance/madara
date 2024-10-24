@@ -43,17 +43,17 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
             }
             starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest) => {
                 let Ok(Some(block_n)) = self.backend.get_latest_block_n() else {
-                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
-                        "Failed to retrieve block info for latest block"
-                    ))));
+                    return WsResult::Err(StarknetWsApiError::internal(Cow::from(
+                        "Failed to retrieve block info for latest block",
+                    )));
                 };
 
                 block_n
             }
             starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending) => {
-                return WsResult::Err(StarknetWsApiError::internal(Cow::from(format!(
-                    "`starknet_subscribeNewHeads` does not support pending blocks"
-                ))))
+                return WsResult::Err(StarknetWsApiError::internal(Cow::from(
+                    "`starknet_subscribeNewHeads` does not support pending blocks",
+                )))
             }
         };
 

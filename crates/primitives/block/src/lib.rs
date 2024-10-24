@@ -150,7 +150,7 @@ impl From<MadaraBlockInfo> for starknet_api::block::BlockHeader {
 
         #[inline(always)]
         fn receipt_commitment(commitment: Option<Felt>) -> Option<starknet_api::core::ReceiptCommitment> {
-            commitment.map(|commitment| starknet_api::core::ReceiptCommitment(commitment))
+            commitment.map(starknet_api::core::ReceiptCommitment)
         }
 
         #[inline(always)]
