@@ -13,17 +13,23 @@ services:
     volumes:
       - madara_files_prod:/var/lib/madara
     entrypoint: ["tini", "--"]
-    command:
-      - /usr/local/bin/madara
-      - --devnet
-      - --override-devnet-chain-id
-      - --chain-config-override=chain_id=KKRT,block_time=1s
-      - --base-path=var/lib/madara
-      - --rpc-port=9944
-      - --rpc-external
-      - --rpc-cors=*
+    command: >
+      /usr/local/bin/madara
+      --base-path=${MADARA_BASE_PATH:-/var/lib/madara}
+      --rpc-port=${MADARA_RPC_PORT:-9944}
+      --rpc-external
+      --rpc-cors=*
+      --${MADARA_MODE:-sequencer}
+      ${MADARA_PRESET:+--preset=${MADARA_PRESET}}
+      ${MADARA_CHAIN_CONFIG:+--chain-config-path=${MADARA_CHAIN_CONFIG}}
+    environment:
+      - MADARA_BASE_PATH=${MADARA_BASE_PATH:-/var/lib/madara}
+      - MADARA_MODE=${MADARA_MODE:-sequencer}
+      - MADARA_PRESET=${MADARA_PRESET:-}
+      - MADARA_CHAIN_CONFIG=${MADARA_CHAIN_CONFIG:-}
+      - MADARA_RPC_PORT=${MADARA_RPC_PORT:-9944}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/"]
+      test: ["CMD", "curl", "-f", "http://localhost:${MADARA_RPC_PORT:-9944}/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,7 +52,7 @@ services:
     image: quay.io/apibara/starknet:1.5.0
     command:
       - start
-      - --rpc=http://starknet:9944/
+      - --rpc=http://starknet:${MADARA_RPC_PORT:-9944}/
       - --wait-for-rpc
       - --data=/data
       - --head-refresh-interval-ms=1000
@@ -72,7 +78,7 @@ services:
       - STARTING_BLOCK=0
       - STREAM_URL=http://apibara-dna:7171
       - SINK_TYPE=mongo
-      - STARKNET_NETWORK=http://starknet:9944/
+      - STARKNET_NETWORK=http://starknet:${MADARA_RPC_PORT:-9944}/
       - ALLOW_NET=
       - MONGO_REPLACE_DATA_INSIDE_TRANSACTION=false
       - KAKAROT_ADDRESS=0x6b09c5cca7e5ef944dc3be7514cc1ae5a6e267f0f1f2b5520e90dc00aecf6e1
@@ -93,7 +99,7 @@ services:
       - 3030:3030
     environment:
       - KAKAROT_RPC_URL=0.0.0.0:3030
-      - STARKNET_NETWORK=http://starknet:9944/
+      - STARKNET_NETWORK=http://starknet:${MADARA_RPC_PORT:-9944}/
       - RUST_LOG=kakarot_rpc=info
       - MONGO_CONNECTION_STRING=mongodb://mongo:mongo@mongo:27017
       - MONGO_DATABASE_NAME=kakarot-local
@@ -121,7 +127,7 @@ services:
         condition: service_started
     environment:
       STARKNET_NETWORK: madara
-      MADARA_RPC_URL: http://starknet:9944/
+      MADARA_RPC_URL: http://starknet:${MADARA_RPC_PORT:-9944}/
       MADARA_ACCOUNT_ADDRESS: 0x04c8c5928b98558300b2c5769f5306ff85864b8f1aee449dde8e4cfc53b42944
       MADARA_PRIVATE_KEY: 0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07
       MADARA_EVM_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -131,7 +137,7 @@ services:
       bash -c '
       export PATH=$$PATH:/root/.cargo/bin;
       uv --version;
-      until curl -s http://starknet:9944/; do
+      until curl -s http://starknet:${MADARA_RPC_PORT:-9944}/; do
         echo "Waiting for starknet client to be available...";
         sleep 5;
       done;
