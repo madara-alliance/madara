@@ -2,11 +2,20 @@ name: Starknet-js Compatibility Tests
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["build"]
+    types:
+      - completed
   workflow_call:
+    inputs:
+      binary_hash:
+        required: true
+        type: string
 
 jobs:
   js-test:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v3
       - name: Restore Madara binary
@@ -14,9 +23,7 @@ jobs:
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-madara-bin-
-          restore-keys: |
-            ${{ runner.os }}-madara-bin-
+          key: ${{ runner.os }}-madara-bin-${{ inputs.binary_hash }}
           fail-on-cache-miss: true
       - name: Restore Cairo build artifacts
         uses: actions/cache@v3
