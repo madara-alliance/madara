@@ -74,15 +74,13 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
             oracle_provider.fetch_eth_strk_price().await.expect("failed to retrieve ETH/STRK price");
         let strk_gas_price = (BigDecimal::new((*eth_gas_price).into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent()
-        .0;
+        .as_bigint_and_exponent();
         let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent()
-        .0;
+        .as_bigint_and_exponent();
 
-        l1_gas_provider.update_strk_l1_gas_price(strk_gas_price.to_str_radix(10).parse::<u128>()?);
-        l1_gas_provider.update_strk_l1_data_gas_price(strk_data_gas_price.to_str_radix(10).parse::<u128>()?);
+        l1_gas_provider.update_strk_l1_gas_price(strk_gas_price.0.to_str_radix(10).parse::<u128>()?);
+        l1_gas_provider.update_strk_l1_data_gas_price(strk_data_gas_price.0.to_str_radix(10).parse::<u128>()?);
     }
 
     l1_gas_provider.update_last_update_timestamp();
