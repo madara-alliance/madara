@@ -3,6 +3,10 @@ name: Starknet-js Compatibility Tests
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      binary_hash:
+        required: true
+        type: string
 
 jobs:
   js-test:
@@ -14,9 +18,7 @@ jobs:
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-madara-bin-
-          restore-keys: |
-            ${{ runner.os }}-madara-bin-
+          key: ${{ runner.os }}-madara-bin-${{ inputs.binary_hash }}
           fail-on-cache-miss: true
       - name: Restore Cairo build artifacts
         uses: actions/cache@v3
