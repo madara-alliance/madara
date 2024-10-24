@@ -2,7 +2,7 @@
 
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
-use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::state::cached_state::StateMaps;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use mc_block_import::{BlockImportError, BlockImporter};
@@ -19,8 +19,11 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
@@ -56,20 +59,56 @@ pub enum Error {
     Unexpected(Cow<'static, str>),
 }
 
-fn csd_to_state_diff(
+fn state_map_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-    csd: &CommitmentStateDiff,
+    diff: StateMaps,
 ) -> Result<StateDiff, Error> {
-    let CommitmentStateDiff {
-        address_to_class_hash,
-        address_to_nonce,
-        storage_updates,
-        class_hash_to_compiled_class_hash,
-    } = csd;
+    let mut backing_map = HashMap::<ContractAddress, usize>::default();
+    let mut storage_diffs = Vec::<ContractStorageDiffItem>::default();
+    for ((address, key), value) in diff.storage {
+        match backing_map.entry(address) {
+            hash_map::Entry::Vacant(e) => {
+                e.insert(storage_diffs.len());
+                storage_diffs.push(ContractStorageDiffItem {
+                    address: address.to_felt(),
+                    storage_entries: vec![StorageEntry { key: key.to_felt(), value }],
+                });
+            }
+            hash_map::Entry::Occupied(e) => {
+                storage_diffs[*e.get()].storage_entries.push(StorageEntry { key: key.to_felt(), value });
+            }
+        }
+    }
 
-    let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
-    for (contract_address, new_class_hash) in address_to_class_hash {
+    let mut deprecated_declared_classes = Vec::default();
+    for (class_hash, _) in diff.declared_contracts {
+        if !diff.compiled_class_hashes.contains_key(&class_hash) {
+            deprecated_declared_classes.push(class_hash.to_felt());
+        }
+    }
+
+    let declared_classes = diff
+        .compiled_class_hashes
+        .iter()
+        .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
+            class_hash: class_hash.to_felt(),
+            compiled_class_hash: compiled_class_hash.to_felt(),
+        })
+        .collect();
+
+    let nonces = diff
+        .nonces
+        .into_iter()
+        .map(|(contract_address, nonce)| NonceUpdate {
+            contract_address: contract_address.to_felt(),
+            nonce: nonce.to_felt(),
+        })
+        .collect();
+
+    let mut deployed_contracts = Vec::new();
+    let mut replaced_classes = Vec::new();
+    for (contract_address, new_class_hash) in diff.compiled_class_hashes {
         let replaced = if let Some(on_top_of) = on_top_of {
             backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
         } else {
@@ -90,31 +129,10 @@ fn csd_to_state_diff(
     }
 
     Ok(StateDiff {
-        storage_diffs: storage_updates
-            .into_iter()
-            .map(|(address, storage_entries)| ContractStorageDiffItem {
-                address: address.to_felt(),
-                storage_entries: storage_entries
-                    .into_iter()
-                    .map(|(key, value)| StorageEntry { key: key.to_felt(), value: *value })
-                    .collect(),
-            })
-            .collect(),
-        deprecated_declared_classes: vec![],
-        declared_classes: class_hash_to_compiled_class_hash
-            .iter()
-            .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
-                class_hash: class_hash.to_felt(),
-                compiled_class_hash: compiled_class_hash.to_felt(),
-            })
-            .collect(),
-        nonces: address_to_nonce
-            .into_iter()
-            .map(|(contract_address, nonce)| NonceUpdate {
-                contract_address: contract_address.to_felt(),
-                nonce: nonce.to_felt(),
-            })
-            .collect(),
+        storage_diffs,
+        deprecated_declared_classes,
+        declared_classes,
+        nonces,
         deployed_contracts,
         replaced_classes,
     })
@@ -150,13 +168,13 @@ fn finalize_execution_state<S: StateReader>(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
-    let csd = tx_executor
+    let state_map = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    let state_update = csd_to_state_diff(backend, on_top_of, &csd.into())?;
+    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
