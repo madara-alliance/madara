@@ -21,7 +21,7 @@ use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::{ChainConfig, RpcVersion};
 use mp_convert::ToFelt;
 
-use errors::{StarknetRpcApiError, StarknetRpcResult};
+pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
 
