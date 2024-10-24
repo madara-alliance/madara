@@ -17,8 +17,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Other
+anyhow = { workspace = true }
 num-bigint = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
-reqwest = { workspace = true }
