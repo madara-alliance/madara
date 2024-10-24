@@ -5720,6 +5720,7 @@ dependencies = [
  "anyhow",
  "blockifier",
  "lazy_static",
+ "log",
  "mp-utils",
  "primitive-types",
  "rstest 0.18.2",
@@ -5729,6 +5730,7 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -8932,6 +8934,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]

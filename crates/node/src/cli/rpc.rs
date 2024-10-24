@@ -4,7 +4,6 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use clap::ValueEnum;
-use ip_network::IpNetwork;
 use jsonrpsee::server::BatchRequestConfig;
 
 /// Available RPC methods.
@@ -99,21 +98,6 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_RATE_LIMIT", long)]
     pub rpc_rate_limit: Option<NonZeroU32>,
 
-    /// Disable RPC rate limiting for certain ip addresses or ranges.
-    ///
-    /// Each IP address must be in the following notation: `1.2.3.4/24`.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT_WHITELISTED_IPS", long, num_args = 1..)]
-    pub rpc_rate_limit_whitelisted_ips: Vec<IpNetwork>,
-
-    /// Trust proxy headers for disable rate limiting.
-    ///
-    /// When using a reverse proxy setup, the real requester IP is usually added to the headers as `X-Real-IP` or `X-Forwarded-For`.
-    /// By default, the RPC server will not trust these headers.
-    ///
-    /// This is currently only useful for rate-limiting reasons.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT_TRUST_PROXY_HEADERS", long)]
-    pub rpc_rate_limit_trust_proxy_headers: bool,
-
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
     pub rpc_max_request_size: u32,
@@ -147,14 +131,25 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_MAX_BATCH_REQUEST_LEN", long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
     pub rpc_max_batch_request_len: Option<u32>,
 
-    /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC servers.
+    /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC
+    /// servers.
     ///
     /// For most purposes, an origin can be thought of as just `protocol://domain`.
-    /// By default, only browser requests from localhost will work.
+    /// Default behavior depends on `rpc_external`:
     ///
-    /// This argument is a comma separated list of origins, or the special `all` value.
+    ///     - If rpc_external is set, CORS will default to allow all incoming
+    ///     addresses.
+    ///     - If rpc_external is not set, CORS will default to allow only
+    ///     connections from `localhost`.
     ///
-    /// Learn more about CORS and web security at <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
+    /// > If the rpcs are permissive, the same will be true for core, and
+    /// > vise-versa.
+    ///
+    /// This argument is a comma separated list of origins, or the special `all`
+    /// value.
+    ///
+    /// Learn more about CORS and web security at
+    /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
 }
@@ -162,12 +157,16 @@ pub struct RpcParams {
 impl RpcParams {
     pub fn cors(&self) -> Option<Vec<String>> {
         let cors = self.rpc_cors.clone().unwrap_or_else(|| {
-            Cors::List(vec![
-                "http://localhost:*".into(),
-                "http://127.0.0.1:*".into(),
-                "https://localhost:*".into(),
-                "https://127.0.0.1:*".into(),
-            ])
+            if self.rpc_external {
+                Cors::All
+            } else {
+                Cors::List(vec![
+                    "http://localhost:*".into(),
+                    "http://127.0.0.1:*".into(),
+                    "https://localhost:*".into(),
+                    "https://127.0.0.1:*".into(),
+                ])
+            }
         });
 
         match cors {

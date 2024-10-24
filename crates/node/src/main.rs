@@ -164,9 +164,6 @@ async fn main() -> anyhow::Result<()> {
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
-                    run_cmd.network.context(
-                        "You should provide a `--network` argument to ensure you're syncing from the right FGW",
-                    )?,
                     &db_service,
                     importer,
                     telemetry_service.new_handle(),
@@ -175,24 +172,13 @@ async fn main() -> anyhow::Result<()> {
                 .context("Initializing sync service")?;
 
                 (
-                ServiceGroup::default().with(sync_service),
-                // TODO(rate-limit): we may get rate limited with this unconfigured provider?
-                Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                    run_cmd
-                        .network
-                        .context(
-                            "You should provide a `--network` argument to ensure you're syncing from the right gateway",
-                        )?
-                        .gateway(),
-                    run_cmd
-                        .network
-                        .context(
-                            "You should provide a `--network` argument to ensure you're syncing from the right FGW",
-                        )?
-                        .feeder_gateway(),
-                    chain_config.chain_id.to_felt(),
-                ))),
-            )
+                    ServiceGroup::default().with(sync_service),
+                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
+                        chain_config.gateway_url.clone(),
+                        chain_config.feeder_gateway_url.clone(),
+                        chain_config.chain_id.to_felt(),
+                    ))),
+                )
             }
         };
 
