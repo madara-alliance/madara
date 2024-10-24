@@ -17,6 +17,7 @@ use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
+use mp_oracle::Oracle;
 use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
@@ -89,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         .context("Initializing importer service")?,
     );
 
-    let l1_gas_setter = GasPriceProvider::new();
+    let mut l1_gas_setter = GasPriceProvider::new();
 
     if let Some(fix_gas) = run_cmd.l1_sync_params.gas_price {
         l1_gas_setter.update_eth_l1_gas_price(fix_gas as u128);
@@ -107,6 +108,18 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter.update_strk_l1_data_gas_price(strk_fix_blob_gas as u128);
         l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
     }
+    if let Some(ref oracle_url) = run_cmd.l1_sync_params.oracle_url {
+        if let Some(ref oracle_api_key) = run_cmd.l1_sync_params.oracle_api_key {
+            let oracle = Oracle::new("Pragma", oracle_url.to_string(), oracle_api_key.clone())?;
+            l1_gas_setter.set_oracle_provider(oracle);
+        }
+    }
+
+    if l1_gas_setter.is_oracle_needed() && l1_gas_setter.oracle_provider.is_none() {
+        log::error!("STRK gas is not fixed and oracle is not provided");
+        panic!();
+    }
+
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service

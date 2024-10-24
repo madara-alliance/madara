@@ -106,6 +106,7 @@ mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+mp-oracle = { path = "crates/primitives/oracle", default-features = false }
 
 # Madara client
 mc-telemetry = { path = "crates/client/telemetry" }
