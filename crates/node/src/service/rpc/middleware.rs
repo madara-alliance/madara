@@ -211,7 +211,7 @@ where
                 return inner.call(req).await;
             }
 
-            let Ok(version) = RpcVersion::from_request_path(&path) else {
+            let Ok(version) = RpcVersion::from_request_path(&path).map(|v| v.name()) else {
                 return jsonrpsee::MethodResponse::error(
                     req.id,
                     jsonrpsee::types::ErrorObject::owned(
@@ -222,7 +222,7 @@ where
                 );
             };
 
-            let Some(method_without_namespace) = req.method.strip_prefix("starknet_") else {
+            let Some((namespace, method)) = req.method.split_once('_') else {
                 return jsonrpsee::MethodResponse::error(
                     req.id(),
                     jsonrpsee::types::ErrorObject::owned(
@@ -233,7 +233,7 @@ where
                 );
             };
 
-            let method_new = format!("starknet_{}_{}", version.name(), method_without_namespace);
+            let method_new = format!("{namespace}_{version}_{method}");
             req.method = jsonrpsee::core::Cow::from(method_new);
 
             inner.call(req).await
