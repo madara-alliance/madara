@@ -5261,6 +5261,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-convert",
+ "mp-oracle",
  "mp-utils",
  "primitive-types",
  "rand",
@@ -5511,6 +5512,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-oracle",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -5788,6 +5790,17 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.11.0",
  "starknet-types-core",
+]
+
+[[package]]
+name = "mp-oracle"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "num-bigint",
+ "reqwest 0.12.8",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

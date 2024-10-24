@@ -1,9 +1,8 @@
 use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_oracle::Oracle;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-
-use crate::oracle::Oracle;
 
 #[derive(Clone)]
 pub struct GasPriceProvider {

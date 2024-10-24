@@ -43,7 +43,6 @@ mod close_block;
 pub mod header;
 mod inner;
 mod l1;
-pub mod oracle;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
