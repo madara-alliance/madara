@@ -2,6 +2,7 @@
 
 ## Next release
 
+- code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
 - fix(compile): wrong struct field being used in state map conversion
 - fix: contract 0 state diff fixed
 - refactor(rpc): re-worked rpc tower server and added proper websocket support

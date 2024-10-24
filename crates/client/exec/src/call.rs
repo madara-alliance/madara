@@ -20,7 +20,7 @@ impl ExecutionContext {
         entry_point_selector: &Felt,
         calldata: &[Felt],
     ) -> Result<Vec<Felt>, Error> {
-        log::debug!("calling contract {contract_address:#x}");
+        tracing::debug!("calling contract {contract_address:#x}");
 
         // We don't need a tx_executor here
 

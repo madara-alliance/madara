@@ -167,12 +167,12 @@ where
             let res_len = rp.as_result().len();
             let response_time = now.elapsed();
 
-            log::info!(
+            tracing::info!(
                 target: "rpc_calls",
                 method = method,
                 status = status,
                 res_len = res_len,
-                response_time = response_time.as_micros();
+                response_time = response_time.as_micros(),
                 "{method} {status} {res_len} - {response_time:?}",
             );
 

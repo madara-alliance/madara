@@ -102,7 +102,6 @@ pub async fn start_server(
 
         async move {
             let cfg = cfg.clone();
-
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
 
@@ -148,7 +147,7 @@ pub async fn start_server(
         .serve(make_service);
 
     join_set.spawn(async move {
-        log::info!("📱 Running JSON-RPC server at {} (allowed origins={})", local_addr, format_cors(cors.as_ref()));
+        tracing::info!("📱 Running JSON-RPC server at {} (allowed origins={})", local_addr, format_cors(cors.as_ref()));
         server
             .with_graceful_shutdown(async {
                 wait_or_graceful_shutdown(stop_handle.shutdown()).await;

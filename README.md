@@ -467,6 +467,26 @@ For more detailed information and examples on each method, please refer to the [
 > ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution.
 > Ensure you handle errors appropriately as per the JSON-RPC schema.
 
+## 📊 Analytics
+
+Madara comes packed with OTEL integration, supporting export of traces, metrics and logs.
+
+- OTEL version `v0.25.0`
+- `Trace` and `Logs` are implemented using [tokio tracing](https://github.com/tokio-rs/tracing).
+- `Metric` uses OTEL provided metrics.
+
+### Basic Command-Line Option
+
+- **`--analytics-collection-endpoint <URL>`**: Endpoint for OTLP collector, if not provided then OTLP is not enabled.
+- **`--analytics-log-level <Log Level>`**: Picked up from `RUST_LOG` automatically, can be provided using this flag as well.
+- **`--analytics-service-name <Name>`**: Allows to customize the collection service name.
+
+#### Setting up Signoz
+
+- Signoz Dashboard JSONs are provided at `infra/Signoz/dashboards`.
+- Signoz Docker Standalone can be setup following this [guide](https://signoz.io/docs/install/docker/).
+- Ensure to configure the correct service_name after importing the json to the dashboard.
+
 ## ✔ Supported Features
 
 Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
