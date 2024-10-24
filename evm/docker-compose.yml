@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   starknet:
@@ -137,8 +137,7 @@ services:
       done;
       exec uv run deploy
       '
-    restart: 'no'
-
+    restart: "no"
 
 networks:
   internal_prod:

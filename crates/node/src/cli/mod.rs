@@ -24,7 +24,6 @@ use clap::ArgGroup;
 use mp_chain_config::ChainConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
-use url::Url;
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
@@ -202,23 +201,6 @@ pub enum NetworkType {
 }
 
 impl NetworkType {
-    pub fn uri(&self) -> &'static str {
-        match self {
-            NetworkType::Main => "https://alpha-mainnet.starknet.io",
-            NetworkType::Test => "https://alpha-sepolia.starknet.io",
-            NetworkType::Integration => "https://integration-sepolia.starknet.io",
-            NetworkType::Devnet => unreachable!("Gateway url isn't needed for a devnet sequencer"),
-        }
-    }
-
-    pub fn gateway(&self) -> Url {
-        Url::parse(&format!("{}/gateway/", self.uri())).expect("Invalid uri")
-    }
-
-    pub fn feeder_gateway(&self) -> Url {
-        Url::parse(&format!("{}/feeder_gateway/", self.uri())).expect("Invalid uri")
-    }
-
     pub fn chain_id(&self) -> ChainId {
         match self {
             NetworkType::Main => ChainId::Mainnet,
