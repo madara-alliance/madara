@@ -2,6 +2,10 @@ name: Starknet-js Compatibility Tests
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["build"]
+    types:
+      - completed
   workflow_call:
     inputs:
       binary_hash:
@@ -11,6 +15,7 @@ on:
 jobs:
   js-test:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v3
       - name: Restore Madara binary
