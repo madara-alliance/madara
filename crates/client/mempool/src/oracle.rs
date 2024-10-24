@@ -1,6 +1,5 @@
 use std::fmt;
 
-use alloy::transports::http::reqwest;
 use anyhow::{bail, Ok};
 use serde::{Deserialize, Serialize};
 
@@ -8,31 +7,56 @@ pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "oracle_name", content = "config")]
-pub enum OracleConfig {
+pub enum Oracle {
     Pragma(PragmaOracle),
 }
 
-impl OracleConfig {
+impl Oracle {
+    pub fn new(oracle_name: &str, url: String, key: String) -> anyhow::Result<Self> {
+        match oracle_name {
+            "Pragma" => Ok(Oracle::Pragma(PragmaOracle::new(url, key))),
+            _ => bail!("Unknown Oracle name"),
+        }
+    }
+
+    pub fn set_base_url(&mut self, url: String) {
+        match self {
+            Oracle::Pragma(pragma_oracle) => pragma_oracle.api_url = url,
+        }
+    }
+
+    pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
+        match self {
+            Oracle::Pragma(pragma_oracle) => pragma_oracle.fetch_eth_strk_price().await,
+        }
+    }
+
+    pub fn set_api_key(&mut self, key: String) {
+        match self {
+            Oracle::Pragma(pragma_oracle) => pragma_oracle.api_key = key,
+        }
+    }
+
     pub fn get_fetch_url(&self, base: String, quote: String) -> String {
         match self {
-            OracleConfig::Pragma(pragma_oracle) => pragma_oracle.get_fetch_url(base, quote),
+            Oracle::Pragma(pragma_oracle) => pragma_oracle.get_fetch_url(base, quote),
         }
     }
 
     pub fn get_api_key(&self) -> &String {
         match self {
-            OracleConfig::Pragma(oracle) => &oracle.api_key,
+            Oracle::Pragma(oracle) => &oracle.api_key,
         }
     }
 
     pub fn is_in_bounds(&self, price: u128) -> bool {
         match self {
-            OracleConfig::Pragma(oracle) => oracle.price_bounds.low <= price && price <= oracle.price_bounds.high,
+            Oracle::Pragma(oracle) => oracle.price_bounds.low <= price && price <= oracle.price_bounds.high,
         }
     }
 }
 
-impl Default for OracleConfig {
+impl Default for Oracle {
     fn default() -> Self {
         Self::Pragma(PragmaOracle::default())
     }
@@ -65,8 +89,32 @@ impl Default for PragmaOracle {
 }
 
 impl PragmaOracle {
+    pub fn new(api_url: String, api_key: String) -> Self {
+        Self {
+            api_url,
+            api_key,
+            aggregation_method: AggregationMethod::Median,
+            interval: Interval::OneMinute,
+            price_bounds: Default::default(),
+        }
+    }
+
     fn get_fetch_url(&self, base: String, quote: String) -> String {
         format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
+    }
+
+    pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
+        let response = reqwest::Client::new()
+            .get(self.get_fetch_url(String::from("eth"), String::from("strk")))
+            .header("x-api-key", self.api_key.clone())
+            .send()
+            .await
+            .expect("failed to retrieve price from pragma oracle");
+
+        let oracle_api_response = response.json::<PragmaApiResponse>().await.expect("failed to parse api response");
+        let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)?;
+
+        Ok((eth_strk_price, oracle_api_response.decimals))
     }
 }
 
@@ -139,33 +187,4 @@ fn default_oracle_api_url() -> String {
 struct PragmaApiResponse {
     price: String,
     decimals: u32,
-}
-
-pub struct PragmaV1 {
-    config: OracleConfig,
-}
-
-impl PragmaV1 {
-    pub fn new(config: OracleConfig) -> Self {
-        Self {
-            config,
-        }
-    }
-
-    pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
-        let response = reqwest::Client::new()
-        .get(self.config.get_fetch_url(String::from("eth"), String::from("strk")))
-        .header("x-api-key", self.config.get_api_key())
-        .send()
-        .await
-        .expect("failed to retrieve price from pragma oracle");
-        
-        let oracle_api_response = response.json::<PragmaApiResponse>().await.expect("failed to parse api response");
-        let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)?;
-
-        if !self.config.is_in_bounds(eth_strk_price){
-            bail!("ETH/STRK price is out of bound, please check configuration");
-        }
-        Ok((eth_strk_price, oracle_api_response.decimals))
-    }
 }

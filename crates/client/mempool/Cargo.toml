@@ -56,5 +56,7 @@ starknet_api.workspace = true
 anyhow.workspace = true
 log.workspace = true
 mockall = { workspace = true, optional = true }
+reqwest.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

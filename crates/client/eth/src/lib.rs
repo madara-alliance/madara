@@ -5,4 +5,3 @@ pub mod l1_messaging;
 pub mod state_update;
 pub mod sync;
 pub mod utils;
-pub mod oracle;
