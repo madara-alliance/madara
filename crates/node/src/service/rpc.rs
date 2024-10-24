@@ -45,9 +45,9 @@ impl RpcService {
             }
         };
 
-        let (read, write, trace, internal) = (rpcs, rpcs, rpcs, node_operator);
-        let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider.clone());
-        let metrics = RpcMetrics::register()?;
+        let (read, write, trace, internal, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
+        let starknet = Starknet::new(Arc::clone(db.backend()), chain_config.clone(), add_txs_method_provider);
+        let metrics = RpcMetrics::register(metrics_handle)?;
 
         Ok(Self {
             server_config: Some(ServerConfig {
@@ -58,12 +58,10 @@ impl RpcService {
                 max_payload_out_mb: config.rpc_max_response_size,
                 max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                 message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                rpc_api: versioned_rpc_api(&starknet, read, write, trace, internal)?,
+                rpc_api: versioned_rpc_api(&starknet, read, write, trace, internal, ws)?,
                 metrics,
                 cors: config.cors(),
                 rate_limit: config.rpc_rate_limit,
-                rate_limit_whitelisted_ips: config.rpc_rate_limit_whitelisted_ips.clone(),
-                rate_limit_trust_proxy_headers: config.rpc_rate_limit_trust_proxy_headers,
             }),
             server_handle: None,
         })

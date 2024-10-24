@@ -3,6 +3,9 @@
 ## Next release
 
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
+- fix(compile): wrong struct field being used in state map conversion
+- fix: contract 0 state diff fixed
+- refactor(rpc): re-worked rpc tower server and added proper websocket support
 - fix(network): added the FGW and gateway url to the chain config
 - fix(block_hash): block hash mismatch on transaction with an empty signature
 - feat: declare v0, l1 handler support added
