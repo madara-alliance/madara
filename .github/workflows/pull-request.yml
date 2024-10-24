@@ -48,4 +48,3 @@ jobs:
     name: Build Madara
     uses: ./.github/workflows/build.yml
     needs: changelog
-
