@@ -4,7 +4,10 @@ use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response};
 use mc_db::MadaraBackend;
-use mc_rpc::providers::AddTransactionProvider;
+use mc_rpc::{
+    providers::AddTransactionProvider,
+    versions::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions, Starknet,
+};
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
@@ -219,6 +222,20 @@ pub async fn handle_get_state_update(
             Ok(json_response)
         }
     }
+}
+
+pub async fn handle_get_block_traces(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+
+    let block_traces =
+        trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id.into()).await?;
+
+    Ok(create_json_response(hyper::StatusCode::OK, &block_traces))
 }
 
 pub async fn handle_get_class_by_hash(

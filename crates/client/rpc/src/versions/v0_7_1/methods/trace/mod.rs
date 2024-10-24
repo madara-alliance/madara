@@ -1,5 +1,5 @@
 pub(crate) mod simulate_transactions;
-pub(crate) mod trace_block_transactions;
+pub mod trace_block_transactions;
 pub(crate) mod trace_transaction;
 
 use jsonrpsee::core::{async_trait, RpcResult};

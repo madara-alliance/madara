@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: add fgw get_block_traces
 - refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix: contract 0 state diff fixed
 - refactor(rpc): re-worked rpc tower server and added proper websocket support

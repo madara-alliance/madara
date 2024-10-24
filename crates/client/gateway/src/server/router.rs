@@ -5,8 +5,9 @@ use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 
 use super::handler::{
-    handle_add_transaction, handle_get_block, handle_get_class_by_hash, handle_get_compiled_class_by_class_hash,
-    handle_get_contract_addresses, handle_get_public_key, handle_get_signature, handle_get_state_update,
+    handle_add_transaction, handle_get_block, handle_get_block_traces, handle_get_class_by_hash,
+    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key,
+    handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
 
@@ -21,7 +22,9 @@ pub(crate) async fn main_router(
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
-        (path, true, _) if path.starts_with("feeder_gateway/") => feeder_gateway_router(req, path, backend).await,
+        (path, true, _) if path.starts_with("feeder_gateway/") => {
+            feeder_gateway_router(req, path, backend, add_transaction_provider).await
+        }
         (path, _, true) if path.starts_with("gateway/") => gateway_router(req, path, add_transaction_provider).await,
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("gateway/") => Ok(service_unavailable_response("Feeder")),
@@ -37,6 +40,7 @@ async fn feeder_gateway_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_block") => {
@@ -47,6 +51,9 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_state_update") => {
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_traces") => {
+            Ok(handle_get_block_traces(req, backend, add_transaction_provider).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_class_by_hash") => {
             Ok(handle_get_class_by_hash(req, backend).await.unwrap_or_else(Into::into))
