@@ -25,6 +25,7 @@ mp-transactions = { workspace = true }
 blockifier = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
+starknet_api = { workspace = true, default-features = true }
 
 # Other
 primitive-types.workspace = true
