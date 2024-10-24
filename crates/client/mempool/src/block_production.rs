@@ -108,7 +108,7 @@ fn state_map_to_state_diff(
 
     let mut deployed_contracts = Vec::new();
     let mut replaced_classes = Vec::new();
-    for (contract_address, new_class_hash) in diff.compiled_class_hashes {
+    for (contract_address, new_class_hash) in diff.class_hashes {
         let replaced = if let Some(on_top_of) = on_top_of {
             backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
         } else {
