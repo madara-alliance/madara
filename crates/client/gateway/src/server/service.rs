@@ -1,17 +1,13 @@
 use std::{
-    convert::Infallible,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
 };
 
 use anyhow::Context;
-use hyper::{
-    service::{make_service_fn, service_fn},
-    Server,
-};
+use hyper::{server::conn::http2, service::service_fn};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::graceful_shutdown;
 use tokio::net::TcpListener;
 
 use super::router::main_router;
@@ -34,17 +30,19 @@ pub async fn start_server(
         Ipv4Addr::LOCALHOST
     };
     let addr = SocketAddr::new(listen_addr.into(), gateway_port);
+    let listener = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
 
-    let socket = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
+    log::info!("🌐 Gateway endpoint started at {}", addr);
 
-    let listener = hyper::server::conn::AddrIncoming::from_listener(socket)
-        .with_context(|| format!("Opening socket server at {addr}"))?;
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
 
-    let make_service = make_service_fn(move |_| {
         let db_backend = Arc::clone(&db_backend);
         let add_transaction_provider = Arc::clone(&add_transaction_provider);
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
+
+        tokio::task::spawn(async move {
+            let service = service_fn(move |req| {
                 main_router(
                     req,
                     Arc::clone(&db_backend),
@@ -52,15 +50,11 @@ pub async fn start_server(
                     feeder_gateway_enable,
                     gateway_enable,
                 )
-            }))
-        }
-    });
+            });
 
-    log::info!("🌐 Gateway endpoint started at {}", listener.local_addr());
-
-    let server = Server::builder(listener).serve(make_service).with_graceful_shutdown(graceful_shutdown());
-
-    server.await.context("gateway server")?;
-
-    Ok(())
+            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, service).await {
+                log::error!("Error serving connection: {:?}", err);
+            }
+        });
+    }
 }

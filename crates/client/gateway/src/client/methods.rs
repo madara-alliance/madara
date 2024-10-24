@@ -1,7 +1,7 @@
 use super::{builder::FeederClient, request_builder::RequestBuilder};
 use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
-use mp_class::{CompressedLegacyContractClass, ContractClass, FlattenedSierraClass};
+use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::{
     block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
     state_update::{
@@ -9,6 +9,7 @@ use mp_gateway::{
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
     },
 };
+use serde_json::Value;
 use starknet_core::types::{contract::legacy::LegacyContractClass, Felt};
 use std::{borrow::Cow, sync::Arc};
 
@@ -85,16 +86,17 @@ impl FeederClient {
             .with_block_id(block_id)
             .with_class_hash(class_hash);
 
-        match request.send_get::<FlattenedSierraClass>().await {
-            Ok(class_sierra) => Ok(ContractClass::Sierra(Arc::new(class_sierra))),
-            Err(SequencerError::DeserializeBody { serde_error: _, body }) => {
-                // if it failed with flattebed sierra, it might be a legacy class.
-                let class_legacy = serde_json::from_slice::<LegacyContractClass>(&body)
-                    .map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
-                let class_compressed: CompressedLegacyContractClass = class_legacy.compress()?.into();
-                Ok(ContractClass::Legacy(Arc::new(class_compressed)))
-            }
-            Err(err) => Err(err),
+        let value = request.send_get::<Value>().await?;
+
+        if value.get("sierra_program").is_some() {
+            let sierra: FlattenedSierraClass = serde_json::from_value(value)?;
+            Ok(ContractClass::Sierra(Arc::new(sierra)))
+        } else if value.get("program").is_some() {
+            let legacy: LegacyContractClass = serde_json::from_value(value)?;
+            Ok(ContractClass::Legacy(Arc::new(legacy.compress()?.into())))
+        } else {
+            let err = serde::de::Error::custom("Unknown contract type".to_string());
+            Err(SequencerError::DeserializeBody { serde_error: err })
         }
     }
 }
@@ -107,6 +109,7 @@ mod tests {
         Compression,
     };
     use mp_block::BlockTag;
+    use mp_class::CompressedLegacyContractClass;
     use rstest::*;
     use serde::de::DeserializeOwned;
     use starknet_core::types::Felt;

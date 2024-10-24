@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use hyper::{Body, Response};
+use hyper::Response;
 use mc_db::MadaraStorageError;
 
 use crate::error::StarknetError;
@@ -22,8 +22,8 @@ impl From<MadaraStorageError> for GatewayError {
     }
 }
 
-impl From<GatewayError> for Response<Body> {
-    fn from(e: GatewayError) -> Response<Body> {
+impl From<GatewayError> for Response<String> {
+    fn from(e: GatewayError) -> Response<String> {
         match e {
             GatewayError::StarknetError(e) => e.into(),
             GatewayError::InternalServerError(msg) => internal_error_response(&msg),
