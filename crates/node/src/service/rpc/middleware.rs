@@ -222,7 +222,9 @@ where
                 );
             };
 
-            let Some(method_without_namespace) = req.method.strip_prefix("starknet_") else {
+            let (prefix, suffix) = if let Some((prefix, suffix)) = req.method.split_once('_') {
+                (prefix, suffix)
+            } else {
                 return jsonrpsee::MethodResponse::error(
                     req.id(),
                     jsonrpsee::types::ErrorObject::owned(
@@ -233,7 +235,18 @@ where
                 );
             };
 
-            let method_new = format!("starknet_{}_{}", version.name(), method_without_namespace);
+            // let Some(method_without_namespace) = req.method.strip_prefix("starknet_") else {
+            //     return jsonrpsee::MethodResponse::error(
+            //         req.id(),
+            //         jsonrpsee::types::ErrorObject::owned(
+            //             jsonrpsee::types::error::METHOD_NOT_FOUND_CODE,
+            //             jsonrpsee::types::error::METHOD_NOT_FOUND_MSG,
+            //             Some(req.method_name()),
+            //         ),
+            //     );
+            // };
+
+            let method_new = format!("{}_{}_{}", prefix, version.name(), suffix);
             req.method = jsonrpsee::core::Cow::from(method_new);
 
             inner.call(req).await

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mp_state_update::{DeclaredClassItem, DeployedContractItem, StorageEntry};
+use mp_state_update::{DeclaredClassItem, DeployedContractItem, ReplacedClassItem, StorageEntry};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
@@ -93,7 +93,7 @@ pub struct StateDiff {
     pub old_declared_contracts: Vec<Felt>,
     pub declared_classes: Vec<DeclaredClassItem>,
     pub nonces: HashMap<Felt, Felt>,
-    pub replaced_classes: Vec<DeployedContractItem>,
+    pub replaced_classes: Vec<ReplacedClassItem>,
 }
 
 impl From<mp_state_update::StateDiff> for StateDiff {
@@ -112,14 +112,7 @@ impl From<mp_state_update::StateDiff> for StateDiff {
                 .into_iter()
                 .map(|mp_state_update::NonceUpdate { contract_address, nonce }| (contract_address, nonce))
                 .collect(),
-            replaced_classes: state_diff
-                .replaced_classes
-                .into_iter()
-                .map(|mp_state_update::ReplacedClassItem { contract_address, class_hash }| DeployedContractItem {
-                    address: contract_address,
-                    class_hash,
-                })
-                .collect(),
+            replaced_classes: state_diff.replaced_classes,
         }
     }
 }
@@ -135,13 +128,7 @@ impl From<StateDiff> for mp_state_update::StateDiff {
             deprecated_declared_classes: state_diff.old_declared_contracts,
             declared_classes: state_diff.declared_classes,
             deployed_contracts: state_diff.deployed_contracts,
-            replaced_classes: state_diff
-                .replaced_classes
-                .into_iter()
-                .map(|DeployedContractItem { address: contract_address, class_hash }| {
-                    mp_state_update::ReplacedClassItem { contract_address, class_hash }
-                })
-                .collect(),
+            replaced_classes: state_diff.replaced_classes,
             nonces: state_diff
                 .nonces
                 .into_iter()
