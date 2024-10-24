@@ -131,14 +131,25 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_MAX_BATCH_REQUEST_LEN", long, conflicts_with_all = &["rpc_disable_batch_requests"], value_name = "LEN")]
     pub rpc_max_batch_request_len: Option<u32>,
 
-    /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC servers.
+    /// Specify browser *origins* allowed to access the HTTP & WebSocket RPC
+    /// servers.
     ///
     /// For most purposes, an origin can be thought of as just `protocol://domain`.
-    /// By default, only browser requests from localhost will work.
+    /// Default behavior depends on `rpc_external`:
     ///
-    /// This argument is a comma separated list of origins, or the special `all` value.
+    ///     - If rpc_external is set, CORS will default to allow all incoming
+    ///     addresses.
+    ///     - If rpc_external is not set, CORS will default to allow only
+    ///     connections from `localhost`.
     ///
-    /// Learn more about CORS and web security at <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
+    /// > If the rpcs are permissive, the same will be true for core, and
+    /// > vise-versa.
+    ///
+    /// This argument is a comma separated list of origins, or the special `all`
+    /// value.
+    ///
+    /// Learn more about CORS and web security at
+    /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
 }
@@ -146,12 +157,16 @@ pub struct RpcParams {
 impl RpcParams {
     pub fn cors(&self) -> Option<Vec<String>> {
         let cors = self.rpc_cors.clone().unwrap_or_else(|| {
-            Cors::List(vec![
-                "http://localhost:*".into(),
-                "http://127.0.0.1:*".into(),
-                "https://localhost:*".into(),
-                "https://127.0.0.1:*".into(),
-            ])
+            if self.rpc_external {
+                Cors::All
+            } else {
+                Cors::List(vec![
+                    "http://localhost:*".into(),
+                    "http://127.0.0.1:*".into(),
+                    "https://localhost:*".into(),
+                    "https://127.0.0.1:*".into(),
+                ])
+            }
         });
 
         match cors {
