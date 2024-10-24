@@ -29,13 +29,6 @@ impl MadaraMaybePendingBlockInfo {
         }
     }
 
-    pub fn as_nonpending_owned(self) -> Option<MadaraBlockInfo> {
-        match self {
-            MadaraMaybePendingBlockInfo::Pending(_) => None,
-            MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
-        }
-    }
-
     pub fn as_pending(&self) -> Option<&MadaraPendingBlockInfo> {
         match self {
             MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
