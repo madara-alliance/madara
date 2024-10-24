@@ -2,7 +2,11 @@
 
 ## Next release
 
+<<<<<<< HEAD
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
+=======
+- fix(compile): wrong struct field being used in state map conversion
+>>>>>>> main
 - fix: contract 0 state diff fixed
 - refactor(rpc): re-worked rpc tower server and added proper websocket support
 - fix(network): added the FGW and gateway url to the chain config

@@ -5504,6 +5504,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rstest 0.18.2",
+ "serde_json",
  "starknet-core 0.11.0",
  "starknet-types-core",
  "starknet_api",
