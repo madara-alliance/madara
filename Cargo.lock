@@ -4017,16 +4017,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "forwarded-header-value"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8835f84f38484cc86f110a805655697908257fb9a7af005234060891557198e9"
-dependencies = [
- "nonempty",
- "thiserror",
-]
-
-[[package]]
 name = "fragile"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4554,9 +4544,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50dfd22e0e76d0f662d429a5f80fcaf3855009297eab6a0a9f8543834744ba05"
+checksum = "bbbff0a806a4728c99295b254c8838933b5b082d75e3cb70c8dab21fdfbcfa9a"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -4565,6 +4555,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -4594,7 +4585,7 @@ checksum = "08afdbb5c31130e3034af566421053ab03787c640246a446327f550d11bcb333"
 dependencies = [
  "futures-util",
  "http 1.1.0",
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "hyper-util",
  "rustls 0.23.14",
  "rustls-pki-types",
@@ -4611,7 +4602,7 @@ checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
 dependencies = [
  "bytes",
  "http-body-util",
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "hyper-util",
  "native-tls",
  "tokio",
@@ -4630,7 +4621,7 @@ dependencies = [
  "futures-util",
  "http 1.1.0",
  "http-body 1.0.1",
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -4794,12 +4785,6 @@ checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
 dependencies = [
  "cfg-if",
 ]
-
-[[package]]
-name = "ip_network"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa2f047c0a98b2f299aa5d6d7088443570faae494e9ae1305e48be000c9e0eb1"
 
 [[package]]
 name = "ipnet"
@@ -5241,11 +5226,9 @@ dependencies = [
  "clap",
  "env_logger 0.11.5",
  "fdlimit",
- "forwarded-header-value",
  "futures",
  "governor",
  "hyper 0.14.30",
- "ip_network",
  "jsonrpsee",
  "log",
  "mc-block-import",
@@ -5263,16 +5246,13 @@ dependencies = [
  "mp-convert",
  "mp-oracle",
  "mp-utils",
- "primitive-types",
  "rand",
  "rayon",
  "reqwest 0.12.8",
  "serde",
  "serde_json",
  "serde_yaml",
- "starknet-core 0.11.0",
  "starknet-providers",
- "starknet-signers",
  "starknet_api",
  "thiserror",
  "tokio",
@@ -5473,7 +5453,12 @@ dependencies = [
  "anyhow",
  "bytes",
  "flate2",
- "hyper 0.14.30",
+ "futures",
+ "http 1.1.0",
+ "http-body-util",
+ "hyper 1.5.0",
+ "hyper-tls",
+ "hyper-util",
  "log",
  "mc-db",
  "mc-rpc",
@@ -5481,15 +5466,14 @@ dependencies = [
  "mp-class",
  "mp-gateway",
  "mp-utils",
- "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-core 0.11.0",
- "starknet-signers",
  "starknet-types-core",
  "thiserror",
  "tokio",
+ "tower 0.4.13",
  "url",
 ]
 
@@ -5564,7 +5548,6 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
- "paste",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core 0.11.0",
@@ -5581,6 +5564,7 @@ dependencies = [
  "anyhow",
  "futures",
  "httpmock",
+ "hyper 1.5.0",
  "log",
  "mc-block-import",
  "mc-db",
@@ -5595,7 +5579,6 @@ dependencies = [
  "mp-transactions",
  "mp-utils",
  "regex",
- "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core 0.11.0",
@@ -5877,7 +5860,6 @@ dependencies = [
  "serde_yaml",
  "starknet-core 0.11.0",
  "starknet-crypto 0.7.2",
- "starknet-types-core",
  "tokio",
  "url",
 ]
@@ -5933,12 +5915,6 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
-
-[[package]]
-name = "nonempty"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
 
 [[package]]
 name = "nonzero_ext"
@@ -6870,7 +6846,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "hyper-rustls 0.27.3",
  "hyper-tls",
  "hyper-util",
@@ -8679,6 +8655,8 @@ dependencies = [
  "futures-util",
  "pin-project",
  "pin-project-lite",
+ "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

@@ -2,8 +2,10 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::Context;
 use hyper::{
+    body::Body,
+    server::Server,
     service::{make_service_fn, service_fn},
-    Body, Request, Response, Server, StatusCode,
+    Request, Response, StatusCode,
 };
 use mp_utils::{service::Service, wait_or_graceful_shutdown, StopHandle};
 use prometheus::{core::Collector, Encoder, TextEncoder};

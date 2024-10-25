@@ -251,7 +251,7 @@ pub enum FunctionStateMutability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CompiledSierra(String);
+pub struct CompiledSierra(pub String);
 
 impl AsRef<str> for CompiledSierra {
     fn as_ref(&self) -> &str {
