@@ -2,7 +2,11 @@
 
 ## Next release
 
+<<<<<<< HEAD
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
+=======
+- feat: add fgw get_block_traces
+>>>>>>> main
 - refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix(namespace): versioning now works for methods without `starknet` namesapce
 - fix(compile): wrong struct field being used in state map conversion

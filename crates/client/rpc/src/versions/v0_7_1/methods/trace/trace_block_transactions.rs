@@ -26,7 +26,9 @@ pub async fn trace_block_transactions(
         .transactions
         .into_iter()
         .zip(block.info.tx_hashes())
-        .map(|(tx, hash)| to_blockifier_transactions(starknet, block_id.into(), tx, &TransactionHash(*hash)))
+        .map(|(tx, hash)| {
+            to_blockifier_transactions(starknet.clone_backend(), block_id.into(), tx, &TransactionHash(*hash))
+        })
         .collect::<Result<_, _>>()?;
 
     let executions_results = exec_context.re_execute_transactions([], transactions, true, true)?;
