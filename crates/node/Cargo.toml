@@ -49,11 +49,9 @@ chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
 fdlimit.workspace = true
-forwarded-header-value = "0.1.1"
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
 hyper = { version = "0.14", features = ["server"] }
-ip_network.workspace = true
 jsonrpsee.workspace = true
 log.workspace = true
 rand.workspace = true

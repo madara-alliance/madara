@@ -22,6 +22,7 @@ mc-rpc.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 starknet-core.workspace = true
