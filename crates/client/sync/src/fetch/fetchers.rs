@@ -98,7 +98,7 @@ pub async fn fetch_pending_block_and_updates(
                 Ok(block) => Ok(Some(block)),
                 // Ignore (this is the case where we returned a closed block when we asked for a pending one)
                 // When the FGW does not have a pending block, it can return the latest block instead
-                Err(SequencerError::DeserializeBody { body: _, serde_error }) => {
+                Err(SequencerError::DeserializeBody { serde_error }) => {
                     log::debug!("Serde error when fetching the pending block: {serde_error:#}");
                     Ok(None)
                 }

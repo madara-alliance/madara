@@ -22,7 +22,7 @@ mp-utils.workspace = true
 # Other
 anyhow.workspace = true
 async-trait.workspace = true
-hyper.workspace = true
+hyper = "0.14"
 log.workspace = true
 prometheus.workspace = true
 thiserror.workspace = true
