@@ -1,2 +1,3 @@
 target
 crates/client/sync/test-data/*.json
+cairo-artifacts
