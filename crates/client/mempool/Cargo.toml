@@ -27,6 +27,7 @@ blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
+serde_json.workspace = true
 
 [features]
 testing = ["blockifier/testing", "mc-db/testing", "mockall"]
