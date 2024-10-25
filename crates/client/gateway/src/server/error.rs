@@ -2,8 +2,9 @@ use std::fmt::{self, Display};
 
 use hyper::Response;
 use mc_db::MadaraStorageError;
+use mc_rpc::StarknetRpcApiError;
 
-use crate::error::StarknetError;
+use crate::error::{StarknetError, StarknetErrorCode};
 
 use super::helpers::internal_error_response;
 
@@ -59,6 +60,69 @@ impl<T> OptionExt<T> for Option<T> {
                 log::error!(target: "gateway_errors", "{context}");
                 Err(GatewayError::InternalServerError(context.to_string()))
             }
+        }
+    }
+}
+
+impl From<StarknetRpcApiError> for GatewayError {
+    fn from(e: StarknetRpcApiError) -> Self {
+        match e {
+            StarknetRpcApiError::InternalServerError => {
+                GatewayError::InternalServerError("Internal server error".to_string())
+            }
+            StarknetRpcApiError::BlockNotFound => GatewayError::StarknetError(StarknetError::block_not_found()),
+            StarknetRpcApiError::InvalidContractClass => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InvalidContractClass,
+                "Invalid contract class".to_string(),
+            )),
+            StarknetRpcApiError::ClassAlreadyDeclared => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::ClassAlreadyDeclared,
+                "Class already declared".to_string(),
+            )),
+            StarknetRpcApiError::InsufficientMaxFee => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InsufficientMaxFee,
+                "Insufficient max fee".to_string(),
+            )),
+            StarknetRpcApiError::InsufficientAccountBalance => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InsufficientAccountBalance,
+                "Insufficient account balance".to_string(),
+            )),
+            StarknetRpcApiError::ValidationFailure { error } => {
+                GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::ValidateFailure, error))
+            }
+            StarknetRpcApiError::CompilationFailed => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::CompilationFailed,
+                "Compilation failed".to_string(),
+            )),
+            StarknetRpcApiError::ContractClassSizeTooLarge => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::ContractBytecodeSizeTooLarge,
+                "Contract class size is too large".to_string(),
+            )),
+            StarknetRpcApiError::NonAccount => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::NotPermittedContract,
+                "Sender address is not an account contract".to_string(),
+            )),
+            StarknetRpcApiError::DuplicateTxn => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::DuplicatedTransaction,
+                "A transaction with the same hash already exists in the mempool".to_string(),
+            )),
+            StarknetRpcApiError::CompiledClassHashMismatch => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InvalidCompiledClassHash,
+                "The compiled class hash did not match the one supplied in the transaction".to_string(),
+            )),
+            StarknetRpcApiError::UnsupportedTxnVersion => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InvalidTransactionVersion,
+                "The transaction version is not supported".to_string(),
+            )),
+            StarknetRpcApiError::UnsupportedContractClassVersion => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::InvalidContractClassVersion,
+                "The contract class version is not supported".to_string(),
+            )),
+            StarknetRpcApiError::ErrUnexpectedError { data } => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::TransactionFailed,
+                format!("An unexpected error occurred: {}", data),
+            )),
+            e => GatewayError::InternalServerError(format!("Unexpected error: {:#?}", e)),
         }
     }
 }
