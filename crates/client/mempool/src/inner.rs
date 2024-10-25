@@ -95,7 +95,6 @@ pub struct NonceChain {
     transactions: BTreeMap<OrderMempoolTransactionByNonce, ()>,
     front_arrived_at: ArrivedAtTimestamp,
     front_nonce: Nonce,
-    #[cfg(debug_assertions)]
     front_tx_hash: TransactionHash,
 }
 
@@ -121,7 +120,6 @@ impl NonceChain {
     pub fn new_with_first_tx(tx: MempoolTransaction) -> Self {
         Self {
             front_arrived_at: tx.arrived_at,
-            #[cfg(debug_assertions)]
             front_tx_hash: tx.tx_hash(),
             front_nonce: tx.nonce(),
             transactions: iter::once((OrderMempoolTransactionByNonce(tx), ())).collect(),
@@ -146,7 +144,6 @@ impl NonceChain {
     ) -> Result<(InsertedPosition, ReplacedState), TxInsersionError> {
         let mempool_tx_arrived_at = mempool_tx.arrived_at;
         let mempool_tx_nonce = mempool_tx.nonce();
-        #[cfg(debug_assertions)]
         let mempool_tx_hash = mempool_tx.tx_hash();
 
         let replaced = if force {
@@ -175,10 +172,7 @@ impl NonceChain {
             // We insrted at the front here
             let former_head_arrived_at = core::mem::replace(&mut self.front_arrived_at, mempool_tx_arrived_at);
             self.front_nonce = mempool_tx_nonce;
-            #[cfg(debug_assertions)]
-            {
-                self.front_tx_hash = mempool_tx_hash;
-            }
+            self.front_tx_hash = mempool_tx_hash;
             InsertedPosition::Front { former_head_arrived_at }
         } else {
             InsertedPosition::Other

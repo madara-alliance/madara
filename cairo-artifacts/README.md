@@ -18,7 +18,9 @@ asdf shell scarb $SCARB_VERSION
 scarb build
 starkli class-hash target/dev/openzeppelin_AccountUpgradeable.contract_class.json
 ```
-should always return class hash `0x00e2eb8f5672af4e6a4e8a8f1b44989685e668489b0a25437733756c5a34a1d6`, and `target/dev/openzeppelin_AccountUpgradeable.contract_class.json` should match the file in this
+
+should always return class hash `0x00e2eb8f5672af4e6a4e8a8f1b44989685e668489b0a25437733756c5a34a1d6`, and
+`target/dev/openzeppelin_AccountUpgradeable.contract_class.json` should match the file in this
 folder.
 
 `openzeppelin_ERC20Upgradeable.contract_class.json` is compiled using the same scarb and OZ versions.
