@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let node_version = env!("DEOXYS_BUILD_VERSION");
+    let node_version = env!("MADARA_BUILD_VERSION");
 
     log::info!("🥷  {} Node", GREET_IMPL_NAME);
     log::info!("✌️  Version {}", node_version);
