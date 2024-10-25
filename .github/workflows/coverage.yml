@@ -43,12 +43,13 @@ jobs:
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
+          PROPTEST_CASES: 10
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev -- --test-threads=1
+          cargo test --profile dev --workspace -- --test-threads=1
 
       - name: Generate coverage info
         run: |

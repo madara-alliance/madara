@@ -23,8 +23,10 @@ members = [
   "crates/primitives/utils",
   "crates/proc-macros",
   "crates/tests",
+  "crates/cairo-test-contracts",
 ]
 resolver = "2"
+# Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
   "crates/client/db",
   "crates/client/exec",
@@ -48,7 +50,6 @@ default-members = [
   "crates/primitives/chain_config",
   "crates/primitives/utils",
   "crates/proc-macros",
-  "crates/tests",
 ]
 
 [workspace.lints.rust]
@@ -119,6 +120,9 @@ mc-metrics = { path = "crates/client/metrics" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
+
+# Madara misc
+m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"

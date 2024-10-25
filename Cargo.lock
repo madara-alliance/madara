@@ -5207,6 +5207,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "m-cairo-test-contracts"
+version = "0.7.0"
+
+[[package]]
 name = "m-proc-macros"
 version = "0.7.0"
 dependencies = [
@@ -5352,6 +5356,7 @@ dependencies = [
  "blockifier",
  "env_logger 0.11.5",
  "log",
+ "m-cairo-test-contracts",
  "mc-block-import",
  "mc-db",
  "mc-mempool",
@@ -5563,6 +5568,7 @@ dependencies = [
  "futures",
  "httpmock",
  "log",
+ "m-cairo-test-contracts",
  "mc-block-import",
  "mc-db",
  "mc-gateway",

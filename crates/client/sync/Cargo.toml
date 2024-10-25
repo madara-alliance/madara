@@ -15,6 +15,18 @@ m = []
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[dev-dependencies]
+
+httpmock.workspace = true
+tempfile.workspace = true
+rstest.workspace = true
+regex.workspace = true
+
+mc-db = { workspace = true, features = ["testing"] }
+mc-block-import = { workspace = true, features = ["testing"] }
+# Compile the test contracts in test cfg.
+m-cairo-test-contracts.workspace = true
+
 [dependencies]
 
 # Madara
@@ -51,11 +63,3 @@ tokio = { workspace = true, features = [
   "signal",
 ] }
 url.workspace = true
-
-[dev-dependencies]
-httpmock.workspace = true
-tempfile.workspace = true
-rstest.workspace = true
-regex.workspace = true
-mc-db = { workspace = true, features = ["testing"] }
-mc-block-import = { workspace = true, features = ["testing"] }
