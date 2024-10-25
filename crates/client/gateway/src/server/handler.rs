@@ -6,7 +6,8 @@ use hyper::{body::Incoming, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::{
     providers::AddTransactionProvider,
-    versions::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions, Starknet,
+    versions::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
+    Starknet,
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
@@ -238,7 +239,8 @@ pub async fn handle_get_block_traces(
         traces: Vec<TransactionTraceWithHash>,
     }
 
-    let traces = trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id.into()).await?;
+    let traces =
+        v0_7_1_trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id.into()).await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))
