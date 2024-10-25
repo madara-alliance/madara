@@ -1,6 +1,6 @@
 use crate::{
-    BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult, PreValidatedBlock,
-    PreValidatedPendingBlock, RayonPool, UnverifiedHeader, ValidatedCommitments,
+    global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
+    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
 };
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -18,7 +18,6 @@ mod classes;
 mod contracts;
 
 pub struct VerifyApply {
-    pool: Arc<RayonPool>,
     pub(crate) backend: Arc<MadaraBackend>,
     // Only one thread at once can verify_apply. This is the update trie step cannot be parallelized over blocks, and in addition
     // our database does not support concurrent write access.
@@ -26,20 +25,28 @@ pub struct VerifyApply {
 }
 
 impl VerifyApply {
-    pub fn new(backend: Arc<MadaraBackend>, pool: Arc<RayonPool>) -> Self {
-        Self { pool, backend, mutex: Default::default() }
+    pub fn new(backend: Arc<MadaraBackend>) -> Self {
+        Self { backend, mutex: Default::default() }
     }
 
     /// This function wraps the [`verify_apply_inner`] step, which runs on the rayon pool, in a tokio-friendly future.
+    ///
+    /// NOTE: we do not use [`crate::rayon::RayonPool`], but [`global_spawn_rayon_task`] - this is because that would allow for a deadlock if we were to share
+    /// the semaphore with the [`crate::pre_validate`] task.
+    /// This is fine because the [`VerifyApply::mutex`] ensures correct backpressure handling.
     pub async fn verify_apply(
         &self,
         block: PreValidatedBlock,
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
+        log::debug!("acquiring verify_apply exclusive");
         let _exclusive = self.mutex.lock().await;
+        log::debug!("acquired verify_apply exclusive");
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await
+        let res = global_spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await;
+        log::debug!("releasing verify_apply exclusive");
+        res
     }
 
     /// See [`Self::verify_apply`].
@@ -48,10 +55,14 @@ impl VerifyApply {
         block: PreValidatedPendingBlock,
         validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
+        log::debug!("acquiring verify_apply exclusive (pending)");
         let _exclusive = self.mutex.lock().await;
+        log::debug!("acquired verify_apply exclusive (pending)");
 
         let backend = Arc::clone(&self.backend);
-        self.pool.spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await
+        let res = global_spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await;
+        log::debug!("releasing verify_apply exclusive (pending)");
+        res
     }
 }
 
@@ -285,9 +296,9 @@ fn block_hash(
         transaction_commitment,
         event_count,
         event_commitment,
-        state_diff_length,
-        state_diff_commitment,
-        receipt_commitment,
+        state_diff_length: Some(state_diff_length),
+        state_diff_commitment: Some(state_diff_commitment),
+        receipt_commitment: Some(receipt_commitment),
         protocol_version,
         l1_gas_price,
         l1_da_mode,
@@ -319,7 +330,6 @@ mod verify_apply_tests {
 
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
 
-    use mp_utils::tests_common::set_workdir;
     use rstest::*;
     use starknet_api::{core::ChainId, felt};
     use std::sync::Arc;
@@ -328,8 +338,8 @@ mod verify_apply_tests {
     ///
     /// This function creates a new MadaraBackend instance with a test configuration, useful for isolated test environments.
     #[fixture]
-    pub fn setup_test_backend(_set_workdir: ()) -> Arc<MadaraBackend> {
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+    pub fn setup_test_backend() -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(ChainConfig::madara_test());
         MadaraBackend::open_for_testing(chain_config.clone())
     }
 
@@ -560,8 +570,8 @@ mod verify_apply_tests {
             felt!("0x1"),
             felt!("0xa"),
             Err(BlockImportError::BlockHash {
-                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"), 
-                expected: felt!("0xdeadbeef") 
+                got: felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
+                expected: felt!("0xdeadbeef")
             })
         )]
     // Case 3: Special trusted case for Mainnet blocks 1466-2242

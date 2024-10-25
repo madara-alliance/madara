@@ -4,7 +4,6 @@
 
 mod constants;
 mod errors;
-mod macros;
 pub mod providers;
 #[cfg(test)]
 pub mod test_utils;
@@ -108,10 +107,30 @@ impl Starknet {
 }
 
 /// Returns the RpcModule merged with all the supported RPC versions.
-pub fn versioned_rpc_api(starknet: &Starknet, read: bool, write: bool, trace: bool) -> anyhow::Result<RpcModule<()>> {
+pub fn versioned_rpc_api(
+    starknet: &Starknet,
+    read: bool,
+    write: bool,
+    trace: bool,
+    internal: bool,
+    ws: bool,
+) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
-
-    merge_rpc_versions!(rpc_api, starknet, read, write, trace, v0_7_1, v0_8_0,);
+    if read {
+        rpc_api.merge(versions::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if write {
+        rpc_api.merge(versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if trace {
+        rpc_api.merge(versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if internal {
+        rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if ws {
+        // V0.8.0 ...
+    }
 
     Ok(rpc_api)
 }

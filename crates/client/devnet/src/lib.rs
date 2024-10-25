@@ -5,11 +5,12 @@ use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
-use starknet_types_core::felt::Felt;
+use starknet_types_core::{
+    felt::Felt,
+    hash::{Poseidon, StarkHash},
+};
 use std::{collections::HashMap, time::SystemTime};
 
 mod balances;
@@ -101,19 +102,17 @@ impl ChainGenesisDescription {
             get_storage_var_address("Account_public_key", &[])
         }
 
-        pub fn from_seed(seed: u64) -> Felt {
-            // Use a fixed seed for deterministic RNG
-            let mut rng = StdRng::seed_from_u64(seed);
-            let mut buffer = [0u8; 32];
-            rng.fill_bytes(&mut buffer);
+        // We may want to make this seed a cli argument in the future.
+        let seed = Felt::from_hex_unchecked("0x1278b36872363a1276387");
 
-            Felt::from_bytes_be_slice(&buffer)
+        fn rand_from_i(seed: Felt, i: u64) -> Felt {
+            Poseidon::hash(&seed, &(31 ^ !i).into())
         }
 
         Ok(DevnetKeys(
             (0..n_addr)
                 .map(|addr_idx| {
-                    let secret_scalar = from_seed(addr_idx);
+                    let secret_scalar = rand_from_i(seed, addr_idx);
                     let key = SigningKey::from_secret_scalar(secret_scalar);
                     let pubkey = key.verifying_key();
 
@@ -197,7 +196,6 @@ mod tests {
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
-    use mp_utils::tests_common::*;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
@@ -298,7 +296,7 @@ mod tests {
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
 
-        let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+        let chain_config = Arc::new(ChainConfig::madara_devnet());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer =
@@ -339,8 +337,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("./cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(_set_workdir: (), mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
+    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -400,7 +398,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_deploy(_set_workdir: (), mut chain: DevnetForTesting) {
+    fn test_account_deploy(mut chain: DevnetForTesting) {
         let key = SigningKey::from_random();
         log::debug!("Secret Key : {:?}", key.secret_scalar());
 
@@ -498,12 +496,7 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(
-        _set_workdir: (),
-        mut chain: DevnetForTesting,
-        #[case] transfer_amount: u128,
-        #[case] expect_reverted: bool,
-    ) {
+    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
         println!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();

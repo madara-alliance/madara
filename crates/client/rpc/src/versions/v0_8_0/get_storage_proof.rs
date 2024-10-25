@@ -140,12 +140,12 @@ pub fn get_storage_proof(
             Ok(ContractLeavesDataItem {
                 nonce: starknet
                     .backend
-                    .get_contract_nonce_at(&DbBlockId::BlockN(block_n), contract_addr)
+                    .get_contract_nonce_at(&DbBlockId::Number(block_n), contract_addr)
                     .or_internal_server_error("Getting contract nonce")?
                     .unwrap_or(Felt::ZERO),
                 class_hash: starknet
                     .backend
-                    .get_contract_class_hash_at(&DbBlockId::BlockN(block_n), contract_addr)
+                    .get_contract_class_hash_at(&DbBlockId::Number(block_n), contract_addr)
                     .or_internal_server_error("Getting contract class hash")?
                     .unwrap_or(Felt::ZERO),
             })

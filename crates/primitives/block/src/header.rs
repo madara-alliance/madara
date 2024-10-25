@@ -66,9 +66,12 @@ pub struct Header {
     pub event_count: u64,
     /// A commitment to the events produced in this block
     pub event_commitment: Felt,
-    pub state_diff_length: u64,
-    pub state_diff_commitment: Felt,
-    pub receipt_commitment: Felt,
+    /// The number of state diff elements
+    pub state_diff_length: Option<u64>,
+    /// A commitment to the state diff elements
+    pub state_diff_commitment: Option<Felt>,
+    /// A commitment to the receipts produced in this block
+    pub receipt_commitment: Option<Felt>,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
@@ -114,8 +117,11 @@ impl GasPrices {
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum L1DataAvailabilityMode {
+    #[serde(alias = "Calldata")]
     Calldata,
+    #[serde(alias = "Blob")]
     #[default]
     Blob,
 }
@@ -159,9 +165,9 @@ impl Header {
         transaction_commitment: Felt,
         event_count: u64,
         event_commitment: Felt,
-        state_diff_length: u64,
-        state_diff_commitment: Felt,
-        receipt_commitment: Felt,
+        state_diff_length: Option<u64>,
+        state_diff_commitment: Option<Felt>,
+        receipt_commitment: Option<Felt>,
         protocol_version: StarknetVersion,
         gas_prices: GasPrices,
         l1_da_mode: L1DataAvailabilityMode,
@@ -191,30 +197,36 @@ impl Header {
             self.compute_hash_inner_pre_v0_7(chain_id)
         } else if self.protocol_version < StarknetVersion::V0_13_2 {
             Pedersen::hash_array(&[
-                Felt::from(self.block_number),      // block number
-                self.global_state_root,             // global state root
-                self.sequencer_address,             // sequencer address
-                Felt::from(self.block_timestamp),   // block timestamp
-                Felt::from(self.transaction_count), // number of transactions
-                self.transaction_commitment,        // transaction commitment
-                Felt::from(self.event_count),       // number of events
-                self.event_commitment,              // event commitment
-                Felt::ZERO,                         // reserved: protocol version
-                Felt::ZERO,                         // reserved: extra data
-                self.parent_block_hash,             // parent block hash
+                Felt::from(self.block_number),
+                self.global_state_root,
+                self.sequencer_address,
+                Felt::from(self.block_timestamp),
+                Felt::from(self.transaction_count),
+                self.transaction_commitment,
+                Felt::from(self.event_count),
+                self.event_commitment,
+                Felt::ZERO, // reserved: protocol version
+                Felt::ZERO, // reserved: extra data
+                self.parent_block_hash,
             ])
         } else {
+            // Based off https://github.com/starkware-libs/sequencer/blob/78ceca6aa230a63ca31f29f746fbb26d312fe381/crates/starknet_api/src/block_hash/block_hash_calculator.rs#L67
             Poseidon::hash_array(&[
                 Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH0"),
                 Felt::from(self.block_number),
                 self.global_state_root,
                 self.sequencer_address,
                 Felt::from(self.block_timestamp),
-                concat_counts(self.transaction_count, self.event_count, self.state_diff_length, self.l1_da_mode),
-                self.state_diff_commitment,
+                concat_counts(
+                    self.transaction_count,
+                    self.event_count,
+                    self.state_diff_length.unwrap_or(0),
+                    self.l1_da_mode,
+                ),
+                self.state_diff_commitment.unwrap_or(Felt::ZERO),
                 self.transaction_commitment,
                 self.event_commitment,
-                self.receipt_commitment,
+                self.receipt_commitment.unwrap_or(Felt::ZERO),
                 self.l1_gas_price.eth_l1_gas_price.into(),
                 self.l1_gas_price.strk_l1_gas_price.into(),
                 self.l1_gas_price.eth_l1_data_gas_price.into(),
@@ -291,9 +303,9 @@ mod tests {
             Felt::from(7),
             8,
             Felt::from(9),
-            10,
-            Felt::from(11),
-            Felt::from(12),
+            Some(10),
+            Some(Felt::from(11)),
+            Some(Felt::from(12)),
             "0.13.2".parse().unwrap(),
             GasPrices {
                 eth_l1_gas_price: 14,
@@ -345,9 +357,9 @@ mod tests {
             transaction_commitment: Felt::from(7),
             event_count: 8,
             event_commitment: Felt::from(9),
-            state_diff_length: 10,
-            state_diff_commitment: Felt::from(11),
-            receipt_commitment: Felt::from(12),
+            state_diff_length: Some(10),
+            state_diff_commitment: Some(Felt::from(11)),
+            receipt_commitment: Some(Felt::from(12)),
             protocol_version,
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: 14,

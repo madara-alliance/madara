@@ -1,10 +1,10 @@
----
 name: Workflow - Pull Request
 
 on:
   workflow_dispatch:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: pr-checks-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -16,25 +16,40 @@ permissions:
 jobs:
   changelog:
     name: Enforce CHANGELOG
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/changelog.yml
 
   linters:
     name: Run linters
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/linters.yml
     needs: changelog
 
   rust_check:
     name: Run check
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/rust-check.yml
     needs: changelog
 
   linters_cargo:
     name: Run Cargo linters
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/linters-cargo.yml
     needs: rust_check
 
   coverage:
     name: Run Coverage
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/coverage.yml
     needs: changelog
     secrets: inherit
+
+  build:
+    name: Build Madara
+    uses: ./.github/workflows/build.yml
+    needs: changelog
+
+  js_test:
+    name: Run JS Tests
+    uses: ./.github/workflows/starknet-js-test.yml
+    needs: build

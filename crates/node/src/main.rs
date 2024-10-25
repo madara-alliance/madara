@@ -1,6 +1,5 @@
 //! Madara node command line.
 #![warn(missing_docs)]
-#![warn(clippy::unwrap_used)]
 
 mod cli;
 mod service;
@@ -10,8 +9,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
+use cli::{NetworkType, RunCmd};
 use mc_block_import::BlockImporter;
-
 use mc_db::DatabaseService;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
@@ -19,12 +18,8 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-
+use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
-
-use cli::{NetworkType, RunCmd};
-use service::L1SyncService;
-use service::{BlockProductionService, RpcService, SyncService};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -37,7 +32,14 @@ async fn main() -> anyhow::Result<()> {
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
-    let chain_config = run_cmd.get_config()?;
+    // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
+    let chain_config = if run_cmd.is_sequencer() {
+        run_cmd.chain_config()?
+    } else if run_cmd.network.is_some() {
+        run_cmd.set_preset_from_network()?
+    } else {
+        run_cmd.chain_config()?
+    };
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("DEOXYS_BUILD_VERSION");
@@ -46,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("✌️  Version {}", node_version);
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
-    let role = if run_cmd.is_authority() { "authority" } else { "full node" };
+    let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     log::info!("👤 Role: {}", role);
     log::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
 
@@ -55,11 +57,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    let telemetry_service = TelemetryService::new(
-        run_cmd.telemetry_params.telemetry_disabled,
-        run_cmd.telemetry_params.telemetry_endpoints.clone(),
-    )
-    .context("Initializing telemetry service")?;
+    let telemetry_service =
+        TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
+            .context("Initializing telemetry service")?;
     let prometheus_service = MetricsService::new(
         run_cmd.prometheus_params.prometheus_disabled,
         run_cmd.prometheus_params.prometheus_external,
@@ -84,17 +84,33 @@ async fn main() -> anyhow::Result<()> {
             run_cmd.sync_params.unsafe_starting_block,
             // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
             /* always_force_flush */
-            run_cmd.is_authority(),
+            run_cmd.is_sequencer(),
         )
         .context("Initializing importer service")?,
     );
 
     let l1_gas_setter = GasPriceProvider::new();
-    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-    if run_cmd.block_production_params.devnet {
-        run_cmd.l1_sync_params.sync_l1_disabled = true;
-        run_cmd.l1_sync_params.gas_price_sync_disabled = true;
+
+    if let Some(fix_gas) = run_cmd.l1_sync_params.gas_price {
+        l1_gas_setter.update_eth_l1_gas_price(fix_gas as u128);
+        l1_gas_setter.set_gas_price_sync_enabled(false);
     }
+    if let Some(fix_blob_gas) = run_cmd.l1_sync_params.blob_gas_price {
+        l1_gas_setter.update_eth_l1_data_gas_price(fix_blob_gas as u128);
+        l1_gas_setter.set_data_gas_price_sync_enabled(false);
+    }
+    if let Some(strk_fix_gas) = run_cmd.l1_sync_params.strk_gas_price {
+        l1_gas_setter.update_strk_l1_gas_price(strk_fix_gas as u128);
+        l1_gas_setter.set_strk_gas_price_sync_enabled(false);
+    }
+    if let Some(strk_fix_blob_gas) = run_cmd.l1_sync_params.strk_blob_gas_price {
+        l1_gas_setter.update_strk_l1_data_gas_price(strk_fix_blob_gas as u128);
+        l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
+    }
+    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+    // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
+    let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
@@ -103,7 +119,9 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
-        run_cmd.is_authority(),
+        run_cmd.is_sequencer(),
+        run_cmd.is_devnet(),
+        Arc::clone(&mempool),
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -111,17 +129,16 @@ async fn main() -> anyhow::Result<()> {
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
     let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.is_authority() {
+        match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
-                let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
-
                 let block_production_service = BlockProductionService::new(
                     &run_cmd.block_production_params,
                     &db_service,
                     Arc::clone(&mempool),
                     importer,
                     Arc::clone(&l1_data_provider),
+                    run_cmd.devnet,
                     prometheus_service.registry(),
                     telemetry_service.new_handle(),
                 )?;
@@ -134,7 +151,6 @@ async fn main() -> anyhow::Result<()> {
                 let sync_service = SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
-                    run_cmd.network,
                     &db_service,
                     importer,
                     telemetry_service.new_handle(),
@@ -144,10 +160,9 @@ async fn main() -> anyhow::Result<()> {
 
                 (
                     ServiceGroup::default().with(sync_service),
-                    // TODO(rate-limit): we may get rate limited with this unconfigured provider?
                     Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                        run_cmd.network.gateway(),
-                        run_cmd.network.feeder_gateway(),
+                        chain_config.gateway_url.clone(),
+                        chain_config.feeder_gateway_url.clone(),
                         chain_config.chain_id.to_felt(),
                     ))),
                 )
@@ -159,9 +174,13 @@ async fn main() -> anyhow::Result<()> {
         &db_service,
         Arc::clone(&chain_config),
         prometheus_service.registry(),
-        rpc_add_txs_method_provider,
+        Arc::clone(&rpc_add_txs_method_provider),
     )
     .context("Initializing rpc service")?;
+
+    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+        .await
+        .context("Initializing gateway service")?;
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
@@ -170,15 +189,18 @@ async fn main() -> anyhow::Result<()> {
         .with(l1_service)
         .with(block_provider_service)
         .with(rpc_service)
+        .with(gateway_service)
         .with(telemetry_service)
         .with(prometheus_service);
 
-    if run_cmd.block_production_params.devnet && run_cmd.network != NetworkType::Devnet {
+    // Check if the devnet is running with the correct chain id.
+    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            panic!("‼️ You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", run_cmd.network);
+            log::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            panic!();
         } else {
-            // this log is immediately flooded with devnet accounts and so this can be missed.
-            // should we add a delay here to make this clearly visisble?
+            // This log is immediately flooded with devnet accounts and so this can be missed.
+            // Should we add a delay here to make this clearly visisble?
             log::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
         }
     }

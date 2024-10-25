@@ -20,7 +20,7 @@ jobs:
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.78
+          toolchain: 1.81
 
       - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
         with:
@@ -42,6 +42,7 @@ jobs:
       - name: Build and run tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
           cargo build --bin madara --profile dev

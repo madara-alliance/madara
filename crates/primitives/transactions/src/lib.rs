@@ -1,6 +1,6 @@
-use mp_convert::ToFelt;
-use starknet_api::transaction::TransactionVersion;
+use serde::{Deserialize, Serialize};
 use starknet_types_core::{felt::Felt, hash::StarkHash};
+use std::sync::Arc;
 
 mod broadcasted_to_blockifier;
 mod from_blockifier;
@@ -12,7 +12,15 @@ mod to_starknet_core;
 
 pub mod compute_hash;
 pub mod utils;
-pub use broadcasted_to_blockifier::{broadcasted_to_blockifier, BroadcastedToBlockifierError};
+
+use mp_convert::{hex_serde::U128AsHex, hex_serde::U64AsHex, ToFelt};
+// pub use from_starknet_provider::TransactionTypeError;
+pub use broadcasted_to_blockifier::{
+    broadcasted_declare_v0_to_blockifier, broadcasted_to_blockifier, BroadcastedToBlockifierError,
+};
+use mp_class::CompressedLegacyContractClass;
+use serde_with::serde_as;
+use starknet_api::transaction::TransactionVersion;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -36,6 +44,26 @@ impl TransactionWithHash {
     pub fn new(transaction: Transaction, hash: Felt) -> Self {
         Self { transaction, hash }
     }
+}
+
+#[derive(Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BroadcastedDeclareTransactionV0 {
+    /// The address of the account contract sending the declaration transaction
+    pub sender_address: Felt,
+    /// The maximal fee that can be charged for including the transaction
+    pub max_fee: Felt,
+    /// Signature
+    pub signature: Vec<Felt>,
+    /// The class to be declared
+    pub contract_class: Arc<CompressedLegacyContractClass>,
+    /// If set to `true`, uses a query-only transaction version that's invalid for execution
+    pub is_query: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct L1HandlerTransactionResult {
+    /// The hash of the invoke transaction
+    pub transaction_hash: Felt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -601,23 +629,49 @@ impl DeployAccountTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub enum DataAvailabilityMode {
     #[default]
     L1 = 0,
     L2 = 1,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+impl serde::Serialize for DataAvailabilityMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
+}
 
+impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Ok(DataAvailabilityMode::L1),
+            1 => Ok(DataAvailabilityMode::L2),
+            _ => Err(serde::de::Error::custom("Invalid value for DataAvailabilityMode")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceBounds {
+    #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,
+    #[serde_as(as = "U128AsHex")]
     pub max_price_per_unit: u128,
 }
 
@@ -672,6 +726,7 @@ impl From<starknet_core::types::DataAvailabilityMode> for DataAvailabilityMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mp_class::{CompressedLegacyContractClass, LegacyEntryPointsByType};
 
     #[test]
     fn test_tx_with_hash() {
@@ -940,6 +995,60 @@ mod tests {
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);
+    }
+
+    #[test]
+    fn test_broadcasted_declare_transaction_v0_serialization() {
+        let contract_class = CompressedLegacyContractClass {
+            program: Vec::new(),
+            entry_points_by_type: LegacyEntryPointsByType {
+                constructor: Vec::new(),
+                external: Vec::new(),
+                l1_handler: Vec::new(),
+            },
+            abi: None,
+        };
+
+        let tx = BroadcastedDeclareTransactionV0 {
+            sender_address: Felt::from(1),
+            max_fee: Felt::from(1000),
+            signature: vec![Felt::from(2), Felt::from(3)],
+            contract_class: Arc::new(contract_class),
+            is_query: false,
+        };
+
+        let serialized = serde_json::to_string(&tx).unwrap();
+        let deserialized: BroadcastedDeclareTransactionV0 = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(tx, deserialized);
+    }
+
+    #[test]
+    fn test_broadcasted_declare_transaction_v0_deserialization() {
+        let json = r#"
+        {
+            "sender_address": "0x1",
+            "max_fee": "0x3e8",
+            "signature": ["0x2", "0x3"],
+            "contract_class": {
+                "program": [],
+                "entry_points_by_type": {
+                    "CONSTRUCTOR": [],
+                    "EXTERNAL": [],
+                    "L1_HANDLER": []
+                },
+                "abi": null
+            },
+            "is_query": false
+        }
+        "#;
+
+        let deserialized: BroadcastedDeclareTransactionV0 = serde_json::from_str(json).unwrap();
+
+        assert_eq!(deserialized.sender_address, Felt::from(1));
+        assert_eq!(deserialized.max_fee, Felt::from(1000));
+        assert_eq!(deserialized.signature, vec![Felt::from(2), Felt::from(3)]);
+        assert!(!deserialized.is_query);
     }
 
     pub(crate) fn dummy_tx_invoke_v0() -> InvokeTransactionV0 {

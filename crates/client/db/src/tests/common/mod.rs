@@ -18,8 +18,7 @@ pub mod temp_db {
     use crate::DatabaseService;
     use mp_chain_config::ChainConfig;
     pub async fn temp_db() -> DatabaseService {
-        let chain_config =
-            std::sync::Arc::new(ChainConfig::test_config().expect("failed to retrieve test chain config"));
+        let chain_config = std::sync::Arc::new(ChainConfig::madara_test());
         DatabaseService::open_for_testing(chain_config)
     }
 }

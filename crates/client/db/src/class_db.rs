@@ -35,7 +35,6 @@ impl MadaraBackend {
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
-        log::debug!("get encoded: not in pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
@@ -67,7 +66,7 @@ impl MadaraBackend {
 
         let valid = match (requested_id, info.block_id) {
             (DbBlockId::Pending, _) => true,
-            (DbBlockId::BlockN(block_n), DbBlockId::BlockN(real_block_n)) => real_block_n <= block_n,
+            (DbBlockId::Number(block_n), DbBlockId::Number(real_block_n)) => real_block_n <= block_n,
             _ => false,
         };
         if !valid {
@@ -78,9 +77,10 @@ impl MadaraBackend {
         Ok(Some(info.class_info))
     }
 
-    pub fn contains_class(&self, id: &impl DbBlockIdResolvable, class_hash: &Felt) -> Result<bool, MadaraStorageError> {
-        // TODO(perf): make fast path, this only needs one db contains() call and no deserialization in most cases (block id pending/latest)
-        Ok(self.get_class_info(id, class_hash)?.is_some())
+    pub fn contains_class(&self, class_hash: &Felt) -> Result<bool, MadaraStorageError> {
+        let col = self.db.get_column(Column::ClassInfo);
+        let key_encoded = bincode::serialize(class_hash)?;
+        Ok(self.db.get_pinned_cf(&col, &key_encoded)?.is_some())
     }
 
     pub fn get_sierra_compiled(
@@ -123,12 +123,18 @@ impl MadaraBackend {
                 for converted_class in chunk {
                     let class_hash = converted_class.class_hash();
                     let key_bin = bincode::serialize(&class_hash)?;
-                    // TODO: find a way to avoid this allocation
-                    batch.put_cf(
-                        col,
-                        &key_bin,
-                        bincode::serialize(&ClassInfoWithBlockNumber { class_info: converted_class.info(), block_id })?,
-                    );
+                    // this is a patch because some legacy classes are declared multiple times
+                    if !self.contains_class(&class_hash)? {
+                        // TODO: find a way to avoid this allocation
+                        batch.put_cf(
+                            col,
+                            &key_bin,
+                            bincode::serialize(&ClassInfoWithBlockNumber {
+                                class_info: converted_class.info(),
+                                block_id,
+                            })?,
+                        );
+                    }
                 }
                 self.db.write_opt(batch, &writeopts)?;
                 Ok::<_, MadaraStorageError>(())
@@ -167,7 +173,7 @@ impl MadaraBackend {
         block_number: u64,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.store_classes(DbBlockId::BlockN(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
+        self.store_classes(DbBlockId::Number(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
     }
 
     /// NB: This functions needs to run on the rayon thread pool

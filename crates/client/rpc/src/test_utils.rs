@@ -13,8 +13,7 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
-use mp_utils::tests_common::*;
+use mp_transactions::{BroadcastedDeclareTransactionV0, InvokeTransaction, InvokeTransactionV0, Transaction};
 use rstest::fixture;
 use starknet_core::types::{
     BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
@@ -30,6 +29,12 @@ pub struct TestTransactionProvider;
 #[cfg(test)]
 #[async_trait]
 impl AddTransactionProvider for TestTransactionProvider {
+    async fn add_declare_v0_transaction(
+        &self,
+        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<DeclareTransactionResult> {
+        unimplemented!()
+    }
     async fn add_declare_transaction(
         &self,
         _declare_transaction: BroadcastedDeclareTransaction,
@@ -51,8 +56,8 @@ impl AddTransactionProvider for TestTransactionProvider {
 }
 
 #[fixture]
-pub fn rpc_test_setup(_set_workdir: ()) -> (Arc<MadaraBackend>, Starknet) {
-    let chain_config = Arc::new(ChainConfig::test_config().unwrap());
+pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
+    let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let rpc = Starknet::new(backend.clone(), chain_config.clone(), Arc::new(TestTransactionProvider));
     (backend, rpc)
@@ -181,9 +186,9 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
                             event_count: 0,
                             event_commitment: Felt::from_hex_unchecked("0xb"),
-                            state_diff_length: 5,
-                            state_diff_commitment: Felt::from_hex_unchecked("0xb1"),
-                            receipt_commitment: Felt::from_hex_unchecked("0xb4"),
+                            state_diff_length: Some(5),
+                            state_diff_commitment: Some(Felt::from_hex_unchecked("0xb1")),
+                            receipt_commitment: Some(Felt::from_hex_unchecked("0xb4")),
                             protocol_version: StarknetVersion::V0_13_1_1,
                             l1_gas_price: GasPrices {
                                 eth_l1_gas_price: 123,

@@ -2,10 +2,9 @@
 
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
-use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::state::cached_state::StateMaps;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::transaction_execution::Transaction;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
@@ -20,7 +19,11 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
@@ -28,7 +31,7 @@ use std::time::Instant;
 
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{clone_account_tx, L1DataProvider, MempoolProvider, MempoolTransaction};
+use crate::{clone_transaction, L1DataProvider, MempoolProvider, MempoolTransaction};
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -52,22 +55,60 @@ pub enum Error {
     ExecutionContext(#[from] mc_exec::Error),
     #[error("Import error: {0:#}")]
     Import(#[from] mc_block_import::BlockImportError),
+    #[error("Unexpected error: {0:#}")]
+    Unexpected(Cow<'static, str>),
 }
 
-fn csd_to_state_diff(
+fn state_map_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-    csd: &CommitmentStateDiff,
+    diff: StateMaps,
 ) -> Result<StateDiff, Error> {
-    let CommitmentStateDiff {
-        address_to_class_hash,
-        address_to_nonce,
-        storage_updates,
-        class_hash_to_compiled_class_hash,
-    } = csd;
+    let mut backing_map = HashMap::<ContractAddress, usize>::default();
+    let mut storage_diffs = Vec::<ContractStorageDiffItem>::default();
+    for ((address, key), value) in diff.storage {
+        match backing_map.entry(address) {
+            hash_map::Entry::Vacant(e) => {
+                e.insert(storage_diffs.len());
+                storage_diffs.push(ContractStorageDiffItem {
+                    address: address.to_felt(),
+                    storage_entries: vec![StorageEntry { key: key.to_felt(), value }],
+                });
+            }
+            hash_map::Entry::Occupied(e) => {
+                storage_diffs[*e.get()].storage_entries.push(StorageEntry { key: key.to_felt(), value });
+            }
+        }
+    }
 
-    let (mut deployed_contracts, mut replaced_classes) = (Vec::new(), Vec::new());
-    for (contract_address, new_class_hash) in address_to_class_hash {
+    let mut deprecated_declared_classes = Vec::default();
+    for (class_hash, _) in diff.declared_contracts {
+        if !diff.compiled_class_hashes.contains_key(&class_hash) {
+            deprecated_declared_classes.push(class_hash.to_felt());
+        }
+    }
+
+    let declared_classes = diff
+        .compiled_class_hashes
+        .iter()
+        .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
+            class_hash: class_hash.to_felt(),
+            compiled_class_hash: compiled_class_hash.to_felt(),
+        })
+        .collect();
+
+    let nonces = diff
+        .nonces
+        .into_iter()
+        .map(|(contract_address, nonce)| NonceUpdate {
+            contract_address: contract_address.to_felt(),
+            nonce: nonce.to_felt(),
+        })
+        .collect();
+
+    let mut deployed_contracts = Vec::new();
+    let mut replaced_classes = Vec::new();
+    for (contract_address, new_class_hash) in diff.class_hashes {
         let replaced = if let Some(on_top_of) = on_top_of {
             backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
         } else {
@@ -88,31 +129,10 @@ fn csd_to_state_diff(
     }
 
     Ok(StateDiff {
-        storage_diffs: storage_updates
-            .into_iter()
-            .map(|(address, storage_entries)| ContractStorageDiffItem {
-                address: address.to_felt(),
-                storage_entries: storage_entries
-                    .into_iter()
-                    .map(|(key, value)| StorageEntry { key: key.to_felt(), value: *value })
-                    .collect(),
-            })
-            .collect(),
-        deprecated_declared_classes: vec![],
-        declared_classes: class_hash_to_compiled_class_hash
-            .iter()
-            .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
-                class_hash: class_hash.to_felt(),
-                compiled_class_hash: compiled_class_hash.to_felt(),
-            })
-            .collect(),
-        nonces: address_to_nonce
-            .into_iter()
-            .map(|(contract_address, nonce)| NonceUpdate {
-                contract_address: contract_address.to_felt(),
-                nonce: nonce.to_felt(),
-            })
-            .collect(),
+        storage_diffs,
+        deprecated_declared_classes,
+        declared_classes,
+        nonces,
         deployed_contracts,
         replaced_classes,
     })
@@ -148,13 +168,13 @@ fn finalize_execution_state<S: StateReader>(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
-    let csd = tx_executor
+    let state_map = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    let state_update = csd_to_state_diff(backend, on_top_of, &csd.into())?;
+    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 
@@ -235,8 +255,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         loop {
             // Take transactions from mempool.
             let to_take = batch_size.saturating_sub(txs_to_process.len());
+            let cur_len = txs_to_process.len();
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
+
+                txs_to_process_blockifier
+                    .extend(txs_to_process.iter().skip(cur_len).map(|tx| clone_transaction(&tx.tx)));
             }
 
             if txs_to_process.is_empty() {
@@ -246,16 +270,16 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
             stats.n_batches += 1;
 
-            txs_to_process_blockifier
-                .extend(txs_to_process.iter().map(|tx| Transaction::AccountTransaction(clone_account_tx(&tx.tx))));
-
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
             let block_now_full = all_results.len() < txs_to_process_blockifier.len();
 
+            txs_to_process_blockifier.drain(..all_results.len()); // remove the used txs
+
             for exec_result in all_results {
-                let mut mempool_tx = txs_to_process.pop_front().expect("Vector length mismatch");
+                let mut mempool_tx =
+                    txs_to_process.pop_front().ok_or_else(|| Error::Unexpected("Vector length mismatch".into()))?;
                 match exec_result {
                     Ok(execution_info) => {
                         // Reverted transactions appear here as Ok too.
@@ -270,11 +294,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             self.declared_classes.push(class);
                         }
 
-                        self.block.inner.receipts.push(from_blockifier_execution_info(
-                            &execution_info,
-                            &Transaction::AccountTransaction(clone_account_tx(&mempool_tx.tx)),
-                        ));
-                        let converted_tx = TransactionWithHash::from(clone_account_tx(&mempool_tx.tx)); // TODO: too many tx clones!
+                        self.block
+                            .inner
+                            .receipts
+                            .push(from_blockifier_execution_info(&execution_info, &clone_transaction(&mempool_tx.tx)));
+                        let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -283,7 +307,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
                         // We reject them.
                         // Note that this is a big DoS vector.
-                        log::error!("Rejected transaction {} for unexpected error: {err:#}", mempool_tx.tx_hash());
+                        log::error!(
+                            "Rejected transaction {:#x} for unexpected error: {err:#}",
+                            mempool_tx.tx_hash().to_felt()
+                        );
                         stats.n_rejected += 1;
                     }
                 }
@@ -392,8 +419,30 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (new_state_diff, _n_executed) =
+        let (mut new_state_diff, _n_executed) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+
+        // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
+        // at address 0x1 with the block number as the key
+        if block_n >= 10 {
+            let prev_block_number = block_n - 10;
+            let prev_block_hash = self
+                .backend
+                .get_block_hash(&BlockId::Number(prev_block_number))
+                .map_err(|err| {
+                    Error::Unexpected(
+                        format!("Error fetching block hash for block {prev_block_number}: {err:#}").into(),
+                    )
+                })?
+                .ok_or_else(|| {
+                    Error::Unexpected(format!("No block hash found for block number {prev_block_number}").into())
+                })?;
+            let address = Felt::ONE;
+            new_state_diff.storage_diffs.push(ContractStorageDiffItem {
+                address,
+                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
+            });
+        }
 
         // Convert the pending block to a closed block and save to db.
 
@@ -450,6 +499,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 instant = interval_block_time.tick() => {
                     if let Err(err) = self.on_block_time().await {
                         log::error!("Block production task has errored: {err:#}");
+                        // Clear pending block. The reason we do this is because if the error happened because the closed
+                        // block is invalid or has not been saved properly, we want to avoid redoing the same error in the next
+                        // block. So we drop all the transactions in the pending block just in case.
+                        // If the problem happened after the block was closed and saved to the db, this will do nothing.
+                        if let Err(err) = self.backend.clear_pending_block() {
+                            log::error!("Error while clearing the pending block in recovery of block production error: {err:#}");
+                        }
                     }
                     // ensure the pending block tick and block time match up
                     interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
@@ -478,5 +534,146 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     fn block_n(&self) -> u64 {
         self.executor.block_context.block_info().block_number.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{collections::HashMap, sync::Arc};
+
+    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
+    use mc_db::MadaraBackend;
+    use mp_chain_config::ChainConfig;
+    use mp_convert::ToFelt;
+    use mp_state_update::{
+        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry,
+    };
+    use starknet_api::{
+        class_hash, contract_address,
+        core::{ClassHash, ContractAddress, PatriciaKey},
+        felt, patricia_key,
+    };
+    use starknet_core::types::Felt;
+
+    #[test]
+    fn state_map_to_state_diff() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let mut nonces = HashMap::new();
+        nonces.insert(contract_address!(1u32), nonce!(1));
+        nonces.insert(contract_address!(2u32), nonce!(2));
+        nonces.insert(contract_address!(3u32), nonce!(3));
+
+        let mut class_hashes = HashMap::new();
+        class_hashes.insert(contract_address!(1u32), class_hash!("0xc1a551"));
+        class_hashes.insert(contract_address!(2u32), class_hash!("0xc1a552"));
+        class_hashes.insert(contract_address!(3u32), class_hash!("0xc1a553"));
+
+        let mut storage = HashMap::new();
+        storage.insert((contract_address!(1u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(1u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(1u32), storage_key!(3u32)), felt!(3u32));
+
+        storage.insert((contract_address!(2u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(2u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(2u32), storage_key!(3u32)), felt!(3u32));
+
+        storage.insert((contract_address!(3u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(3u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(3u32), storage_key!(3u32)), felt!(3u32));
+
+        let mut compiled_class_hashes = HashMap::new();
+        // "0xc1a553" is marked as deprecated by not having a compiled
+        // class hashe
+        compiled_class_hashes.insert(class_hash!("0xc1a551"), compiled_class_hash!(0x1));
+        compiled_class_hashes.insert(class_hash!("0xc1a552"), compiled_class_hash!(0x2));
+
+        let mut declared_contracts = HashMap::new();
+        declared_contracts.insert(class_hash!("0xc1a551"), true);
+        declared_contracts.insert(class_hash!("0xc1a552"), true);
+        declared_contracts.insert(class_hash!("0xc1a553"), true);
+
+        let state_map = StateMaps { nonces, class_hashes, storage, compiled_class_hashes, declared_contracts };
+
+        let storage_diffs = vec![
+            ContractStorageDiffItem {
+                address: felt!(1u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+            ContractStorageDiffItem {
+                address: felt!(2u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+            ContractStorageDiffItem {
+                address: felt!(3u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+        ];
+
+        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+
+        let declared_classes = vec![
+            DeclaredClassItem {
+                class_hash: class_hash!("0xc1a551").to_felt(),
+                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
+            },
+            DeclaredClassItem {
+                class_hash: class_hash!("0xc1a552").to_felt(),
+                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
+            },
+        ];
+
+        let nonces = vec![
+            NonceUpdate { contract_address: felt!(1u32), nonce: felt!(1u32) },
+            NonceUpdate { contract_address: felt!(2u32), nonce: felt!(2u32) },
+            NonceUpdate { contract_address: felt!(3u32), nonce: felt!(3u32) },
+        ];
+
+        let deployed_contracts = vec![
+            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
+            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
+            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+        ];
+
+        let replaced_classes = vec![];
+
+        let expected = StateDiff {
+            storage_diffs,
+            deprecated_declared_classes,
+            declared_classes,
+            nonces,
+            deployed_contracts,
+            replaced_classes,
+        };
+
+        let mut actual = super::state_map_to_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
+
+        actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+        actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));
+        actual.deprecated_declared_classes.sort();
+        actual.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+        actual.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+        actual.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
+        actual.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+
+        assert_eq!(
+            actual,
+            expected,
+            "actual: {}\nexpected: {}",
+            serde_json::to_string_pretty(&actual).unwrap_or_default(),
+            serde_json::to_string_pretty(&expected).unwrap_or_default()
+        );
     }
 }

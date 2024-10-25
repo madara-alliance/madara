@@ -1,8 +1,7 @@
 use super::v0_7_1::{StarknetReadRpcApiV0_7_1Server, StarknetTraceRpcApiV0_7_1Server, StarknetWriteRpcApiV0_7_1Server};
 use crate::Starknet;
 use jsonrpsee::core::{async_trait, RpcResult};
-use jsonrpsee::proc_macros::rpc;
-use m_proc_macros::versioned_starknet_rpc;
+use m_proc_macros::versioned_rpc;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -96,7 +95,7 @@ pub struct GetStorageProofResult {
 // This crate uses `jsonrpsee` to define such an API in Rust terms.
 
 /// Starknet write rpc interface.
-#[versioned_starknet_rpc("V0_8_0")]
+#[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWriteRpcApi {
     /// Submit a new transaction to be added to the chain
     #[method(name = "addInvokeTransaction")]
@@ -120,7 +119,7 @@ pub trait StarknetWriteRpcApi {
     ) -> RpcResult<DeclareTransactionResult>;
 }
 
-#[versioned_starknet_rpc("V0_8_0")]
+#[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetReadRpcApi {
     /// Get the Version of the StarkNet JSON-RPC Specification Being Used
     #[method(name = "specVersion")]
@@ -231,7 +230,7 @@ pub trait StarknetReadRpcApi {
     ) -> RpcResult<GetStorageProofResult>;
 }
 
-#[versioned_starknet_rpc("V0_8_0")]
+#[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetTraceRpcApi {
     /// Returns the execution trace of a transaction by simulating it in the runtime.
     #[method(name = "simulateTransactions")]

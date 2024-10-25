@@ -8,6 +8,11 @@ repository.workspace = true
 version.workspace = true
 homepage.workspace = true
 
+[lints.clippy]
+# We cannot inherit the lints because we use unsafe in this crate.
+print_stdout = "warn"
+print_stderr = "warn"
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
@@ -36,7 +41,6 @@ librocksdb-sys = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
-rstest = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }

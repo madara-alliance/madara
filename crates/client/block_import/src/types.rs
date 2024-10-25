@@ -105,7 +105,7 @@ pub struct LegacyDeclaredClass {
 
 impl From<LegacyClassUpdate> for LegacyDeclaredClass {
     fn from(value: LegacyClassUpdate) -> Self {
-        Self { class_hash: value.class_hash, contract_class: value.contract_class.into() }
+        Self { class_hash: value.class_hash, contract_class: value.contract_class }
     }
 }
 
@@ -120,7 +120,7 @@ impl From<SierraClassUpdate> for SierraDeclaredClass {
     fn from(value: SierraClassUpdate) -> Self {
         Self {
             class_hash: value.class_hash,
-            contract_class: value.contract_class.into(),
+            contract_class: value.contract_class,
             compiled_class_hash: value.compiled_class_hash,
         }
     }
@@ -189,7 +189,6 @@ pub struct PreValidatedBlock {
     pub receipts: Vec<TransactionReceipt>,
     pub commitments: ValidatedCommitments,
     pub converted_classes: Vec<ConvertedClass>,
-
     pub unverified_global_state_root: Option<Felt>,
     pub unverified_block_hash: Option<Felt>,
     pub unverified_block_number: Option<u64>,

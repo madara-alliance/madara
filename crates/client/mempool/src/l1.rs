@@ -1,4 +1,5 @@
 use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -6,6 +7,10 @@ use std::time::SystemTime;
 pub struct GasPriceProvider {
     gas_prices: Arc<Mutex<GasPrices>>,
     last_update: Arc<Mutex<SystemTime>>,
+    gas_price_sync_enabled: Arc<AtomicBool>,
+    data_gas_price_sync_enabled: Arc<AtomicBool>,
+    strk_gas_price_sync_enabled: Arc<AtomicBool>,
+    strk_data_gas_price_sync_enabled: Arc<AtomicBool>,
 }
 
 impl GasPriceProvider {
@@ -13,38 +18,72 @@ impl GasPriceProvider {
         GasPriceProvider {
             gas_prices: Arc::new(Mutex::new(GasPrices::default())),
             last_update: Arc::new(Mutex::new(SystemTime::now())),
+            gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            strk_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            strk_data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
     pub fn set_gas_prices(&self, new_prices: GasPrices) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        *prices = new_prices;
+        self.update_eth_l1_gas_price(new_prices.eth_l1_gas_price);
+        self.update_strk_l1_gas_price(new_prices.strk_l1_gas_price);
+        self.update_eth_l1_data_gas_price(new_prices.eth_l1_data_gas_price);
+        self.update_strk_l1_data_gas_price(new_prices.strk_l1_data_gas_price);
+    }
+
+    pub fn set_gas_price_sync_enabled(&self, enabled: bool) {
+        self.gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_data_gas_price_sync_enabled(&self, enabled: bool) {
+        self.data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_strk_gas_price_sync_enabled(&self, enabled: bool) {
+        self.gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_strk_data_gas_price_sync_enabled(&self, enabled: bool) {
+        self.data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
     }
 
     pub fn update_last_update_timestamp(&self) {
-        let now = SystemTime::now();
-        let mut timestamp = self.last_update.lock().unwrap();
-        *timestamp = now;
+        if self.gas_price_sync_enabled.load(Ordering::Relaxed)
+            || self.data_gas_price_sync_enabled.load(Ordering::Relaxed)
+        {
+            let now = SystemTime::now();
+            let mut timestamp = self.last_update.lock().unwrap();
+            *timestamp = now;
+        }
     }
 
     pub fn update_eth_l1_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.eth_l1_gas_price = new_price;
+        if self.gas_price_sync_enabled.load(Ordering::Relaxed) {
+            let mut prices = self.gas_prices.lock().unwrap();
+            prices.eth_l1_gas_price = new_price;
+        }
     }
 
     pub fn update_eth_l1_data_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.eth_l1_data_gas_price = new_price;
+        if self.data_gas_price_sync_enabled.load(Ordering::Relaxed) {
+            let mut prices = self.gas_prices.lock().unwrap();
+            prices.eth_l1_data_gas_price = new_price;
+        }
     }
 
     pub fn update_strk_l1_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.strk_l1_gas_price = new_price;
+        if self.strk_gas_price_sync_enabled.load(Ordering::Relaxed) {
+            let mut prices = self.gas_prices.lock().unwrap();
+            prices.strk_l1_gas_price = new_price;
+        }
     }
 
     pub fn update_strk_l1_data_gas_price(&self, new_price: u128) {
-        let mut prices = self.gas_prices.lock().unwrap();
-        prices.strk_l1_data_gas_price = new_price;
+        if self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed) {
+            let mut prices = self.gas_prices.lock().unwrap();
+            prices.strk_l1_data_gas_price = new_price;
+        }
     }
 }
 

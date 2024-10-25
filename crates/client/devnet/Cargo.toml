@@ -8,6 +8,9 @@ repository.workspace = true
 version.workspace = true
 homepage.workspace = true
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
@@ -37,7 +40,6 @@ mp-convert.workspace = true
 mp-receipt.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
-mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
@@ -49,6 +51,5 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 log.workspace = true
-rand.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

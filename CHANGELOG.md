@@ -2,6 +2,49 @@
 
 ## Next release
 
+- refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
+- fix(namespace): versioning now works for methods without `starknet` namesapce
+- fix(compile): wrong struct field being used in state map conversion
+- fix: contract 0 state diff fixed
+- refactor(rpc): re-worked rpc tower server and added proper websocket support
+- fix(network): added the FGW and gateway url to the chain config
+- fix(block_hash): block hash mismatch on transaction with an empty signature
+- feat: declare v0, l1 handler support added
+- feat: strk gas price cli param added
+- fix(snos): added special address while closing block for SNOS
+- fix(mempool): validator errors were ignored in `mempool/rsc/lib.rs`
+- fix(primitives): fixed storage entries not being sorted in state commitment
+- fix(devnet): devnet predeployed contracts stable address across systems (re)
+- chore: Fixed README table format
+- fix(cli): fixed devnet cli arguments
+- fix(db): max rocksdb LOG files count and size and add more memory metrics
+- fix(devnet): devnet predeployed contracts stable address across systems
+- feat: gas fee flag added
+- fix(mempool): fixed proptesting of the inner mempool
+- fix(clippy): disallow printlns in workspace
+- fix(db): storing a block needs to clear the current pending block
+- fix(sync): Fixed pipeline stalling on machines with few cpu cores
+- fix(rpc): handle batched requests in middleware
+- chore: padded devnet address display with 64 chars
+- feat(script): added more capabilities to the launcher script
+- fix(fgw): sync from other nodes and block signature
+- fix: added more launcher capabilities
+- fix(cleanup): Updated EditorConfig to 4-space indents
+- fix(tests): Fixed local testing scripts
+- fix: override chain config
+- fix: estimate_fee should through an error if any txn fails
+- fix: rejected transaction block production panic
+- fix(sync): pending block retrying mechanism
+- feat(clean): dc_db: rename `DbBlockId::BlockN` to `DbBlockId::Number`
+- feat(cli): Environment variables can be used to specify Madara parameters
+- fix:(tests): Add testing feature to mc-db dev dependency (#294)
+- feat: new crate gateway client & server
+- test: Starknet-js basic tests added
+- test: add block conversion task test
+- fix(docs): updated readme and fixed launcher
+- fix(ci): added gateway key to fix rate limit on tests
+- feat(cli): launcher script and release workflows
+- fix: cleaned cli settings for sequencer, devnet and full
 - feat: move to karnot runner
 - fix: docker file fixes for devnet
 - fix(block-production): fix bouncer calculation and declared classes

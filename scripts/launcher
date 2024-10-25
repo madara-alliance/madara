@@ -40,21 +40,23 @@ case "$OS" in
   *)          echo "Unsupported OS: $OS"; exit 1;;
 esac
 
-# Couleurs et styles
+# Colors and styles
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 RED=$(tput setaf 1)
 CYAN=$(tput setaf 6)
+BLUE=$(tput setaf 4)
 NC=$(tput sgr0) # No Color
 BOLD=$(tput bold)
+ITALIC=$(tput sitm)
 UNDERLINE=$(tput smul)
 BLINK=$(tput blink)
 
-# Icônes ASCII pour les liens sociaux
+# Icons for social links
 GITHUB_ICON="🔗 GitHub: "
 DOCS_ICON="📄 Documentation: "
 
-# Fonction pour la barre de progression
+# Function for progress bar
 progress_bar() {
     local duration=${1}
     already_done() { for ((done=0; done<$elapsed; done++)); do printf "▇"; done }
@@ -73,24 +75,127 @@ progress_bar() {
 # ASCII Art
 ascii_art() {
 echo -e "${RED}
-                      ____                            
-                     / __ \___  ____  _  ____  _______
-                    / / / / _ \/ __ \| |/_/ / / / ___/
-                   / /_/ /  __/ /_/ />  </ /_/ (__  ) 
-                  /_____/\___/\____/_/|_|\__, /____/  
-                                        /____/${NC}v0.1.0-alpha
+                    __  ___          __                
+                   /  |/  /___ _____/ /___ __________ _
+                  / /|_/ / __ \`/ __  / __ \`/ ___/ __ \`/
+                 / /  / / /_/ / /_/ / /_/ / /  / /_/ / 
+                /_/  /_/\__,_/\__,_/\__,_/_/   \__,_/  
+                                       ${NC}v0.7.0-alpha
 "
 }
 
+# Preset Chain Config URLs
+PRESETS=("starknet_mainnet" "starknet_testnet" "devnet")
+PRESET_URLS=(
+  "https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/mainnet.yaml"
+  "https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/testnet.yaml"
+  "https://raw.githubusercontent.com/madara-alliance/madara/main/configs/presets/devnet.yaml"
+)
+
 # Welcome message
-clear
-ascii_art
-echo -e "${GREEN}${BOLD}Welcome to Madara launcher!${NC}"
-echo -e "${GREEN}This script allows you to easily launch a Madara instance with your desired parameters.${NC}"
-echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
-echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://kasar.io${NC}"
-# Save cursor position
-tput sc
+welcome_message() {
+    clear
+    ascii_art
+    echo -e "${GREEN}${BOLD}Welcome to the Madara Launcher!${NC}"
+    echo -e "${GREEN}This script allows you to easily launch a Madara instance using Docker with your desired parameters.${NC}"
+    echo -e "${GREEN}For more information, please refer to our documentation:${NC}"
+    echo -e "${CYAN}${DOCS_ICON}${UNDERLINE}https://docs.madara.build${NC}"
+    # Save cursor position
+    tput sc
+}
+
+
+# Function to play with an existing node running
+node_menu() {
+    echo -e "\n${YELLOW}${BOLD}Your client is running correctly, what would you like to do next:${NC}"
+    echo -e "${YELLOW}1. Re-install the current Madara client${NC}"
+    echo -e "${YELLOW}2. Interact with your Madara client${NC}"
+    echo -e "${YELLOW}3. Display logs of your Madara client${NC}"
+    echo -e "${YELLOW}4. Node informations${NC}"
+    read -p "> " USER_CHOICE
+
+    if [ "$USER_CHOICE" == "1" ]; then
+        tput rc
+        tput ed
+        # Re-install the node
+        echo -e "\n${GREEN}You have chosen re-installing your current client${NC}"
+        echo -e "\n${YELLOW}Re-installing the node will delete all data and re-install the node. Do you wish to proceed? (yes/no)${NC}"
+        read -p "> " CONFIRM
+        if [ "$CONFIRM" == "yes" ]; then
+            echo -e "${YELLOW}Stopping the current container...${NC}"
+            docker stop madara-client
+            echo -e "${YELLOW}Removing the current container...${NC}"
+            docker rm madara-client
+            echo -e "${YELLOW}Removing current cache...${NC}"
+            rm -rf "${BASE_PATH}"
+            echo -e "${YELLOW}Re-starting the client launcher...${NC}"
+            curl -sL https://raw.githubusercontent.com/madara-alliance/madara/refs/heads/main/scripts/launcher -o launcher && chmod +x launcher && ./launcher
+        else
+            echo -e "\n${GREEN}Operation cancelled.${NC}"
+        fi
+    elif [ "$USER_CHOICE" == "2" ]; then
+        if [ "$RPC_ACCESS" != "yes" ]; then
+            echo -e "\n${RED}RPC access is not enabled. Please re-install your client with RPC access enabled.${NC}"
+        else
+            tput rc
+            tput ed
+            echo -e "\n${GREEN}You have chosen interacting with your current client${NC}"
+            echo -e "\n${YELLOW}For a full list of RPC endpoints, you can use this playground:${NC} ${CYAN}https://rpc-request-builder.voyager.online/${NC}"
+            echo -e "${YELLOW}Note: change the RPC URL to http://localhost:${RPC_PORT}${NC}"
+            echo -e "\n${YELLOW}We will perform the following RPC request to retrieve the latest block with transactions:${NC}"
+            echo -e "\n${CYAN}curl --location 'http://localhost:${RPC_PORT}' \\"
+            echo -e "--header 'Content-Type: application/json' \\"
+            echo -e "--data '{"
+            echo -e "    \"jsonrpc\": \"2.0\","
+            echo -e "    \"method\": \"starknet_getBlockWithTxs\","
+            echo -e "    \"params\": {"
+            echo -e "        \"block_id\": \"latest\""
+            echo -e "    },"
+            echo -e "    \"id\": 1"
+            echo -e "}'${NC}"
+            echo -e "\n${YELLOW}Do you want to proceed? (yes/no)${NC}"
+            read -p "> " CONFIRM
+            if [ "$CONFIRM" == "yes" ]; then
+                curl --location "http://localhost:${RPC_PORT}" \
+                --header 'Content-Type: application/json' \
+                --data '{
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getBlockWithTxs",
+                    "params": {
+                        "block_id": "latest"
+                    },
+                    "id": 1
+                }'
+            else
+                echo -e "\n${GREEN}Operation cancelled.${NC}"
+            fi
+        fi
+    elif [ "$USER_CHOICE" == "3" ]; then
+        # Display logs of the sequencer
+        echo -e "\n${YELLOW}Displaying logs of the sequencer...${NC}"
+        docker logs -f madara-client
+    elif [ "$USER_CHOICE" == "4" ]; then
+        # Node informations
+        echo -e "\n${GREEN}Fetching node information...${NC}"
+    else
+        echo -e "${RED}Invalid choice. Exiting...${NC}"
+    fi
+}
+
+welcome_message
+
+if docker ps -a --format '{{.Names}}' | grep -Eq "^madara-client\$"; then
+    echo -e "\n${GREEN}A Madara client is already running.${NC}"
+    echo -e "${YELLOW}Container details:${NC}"
+    docker inspect madara-client --format '
+        Name: {{.Name}}
+        ID: {{.Id}}
+        Image: {{.Config.Image}}
+        Status: {{.State.Status}}
+        StartedAt: {{.State.StartedAt}}
+        Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
+    node_menu
+fi
 
 # Check for dependencies
 echo -e "\n${GREEN}We will now proceed to a dependency check${NC}"
@@ -106,33 +211,34 @@ if [ "$PROCEED" != "yes" ]; then
     exit 1
 fi
 
-# Define dependencies and their check commands
-if [ "$OS" == "Linux" ]; then
-  DEPENDENCIES=(
-      "curl:command -v curl"
-      "rustup:command -v rustup"
-      "cargo:command -v cargo"
-      "g++:command -v g++"
-      "protobuf-compiler:command -v protoc"
-      "libasound2-dev:dpkg -s libasound2-dev"
-      "pkg-config:command -v pkg-config"
-      "zstd:command -v zstd"
-  )
-elif [ "$OS" == "Mac" ]; then
-  DEPENDENCIES=(
-      "curl:command -v curl"
-      "rustup:command -v rustup"
-      "cargo:command -v cargo"
-      "g++:command -v g++"
-      "protobuf-compiler:command -v protoc"
-      "pkg-config:command -v pkg-config"
-      "zstd:command -v zstd"
-  )
-fi
+# Define dependencies and their check commands (excluding Docker)
+DEPENDENCIES=(
+    "curl:command -v curl"
+    "git:command -v git"
+    "yq:command -v yq"
+)
 
 # Function to check for a dependency
 check_dependency() {
     eval "$1" >/dev/null 2>&1
+}
+
+# Function to check if Docker is installed
+check_docker_installed() {
+    if ! command -v docker >/dev/null 2>&1; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Function to check if Docker daemon is running
+check_docker_running() {
+    if ! docker info >/dev/null 2>&1; then
+        return 1
+    else
+        return 0
+    fi
 }
 
 # Check dependencies
@@ -145,111 +251,159 @@ for DEP in "${DEPENDENCIES[@]}"; do
     fi
 done
 
+# Check for Docker
+DOCKER_MISSING=false
+DOCKER_NOT_RUNNING=false
+
+if ! check_docker_installed; then
+    DOCKER_MISSING=true
+elif ! check_docker_running; then
+    DOCKER_NOT_RUNNING=true
+fi
+
 # Report missing dependencies
-if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
-    echo -e "${YELLOW}The following dependencies are missing:${NC}"
+if [ ${#MISSING_DEPS[@]} -ne 0 ] || [ "$DOCKER_MISSING" = true ]; then
+    echo -e "${YELLOW}\nThe following dependencies are missing or not running:${NC}"
     for DEP in "${MISSING_DEPS[@]}"; do
         echo -e "${YELLOW}- $DEP${NC}"
     done
-    
+    if [ "$DOCKER_MISSING" = true ]; then
+        echo -e "${YELLOW}- Docker${NC}"
+    fi
+
     echo -e "\n${YELLOW}${BOLD}Do you want to install the missing dependencies? (yes/no)${NC}"
     read -p "> " INSTALL_DEPS
-    
+
     if [ "$INSTALL_DEPS" != "yes" ]; then
         echo -e "\n${RED}Installation aborted.${NC}"
         exit 1
     else
         echo -e "\n${GREEN}Installing missing dependencies...${NC}"
         if [ "$OS" == "Linux" ]; then
-          sudo apt update
-          for DEP in "${MISSING_DEPS[@]}"; do
-              if ! sudo apt install -y "$DEP"; then
-                  echo -e "${RED}Failed to install $DEP.${NC}"
-                  STILL_MISSING_DEPS+=("$DEP")
-              fi
-          done
+            sudo apt update
+            for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "yq" ]; then
+                    echo -e "${GREEN}Installing yq...${NC}"
+                    sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+                    sudo chmod +x /usr/local/bin/yq
+                    continue
+                fi
+                if ! sudo apt install -y "$DEP"; then
+                    echo -e "${RED}Failed to install $DEP.${NC}"
+                fi
+            done
+            if [ "$DOCKER_MISSING" = true ]; then
+                echo -e "${GREEN}Installing Docker...${NC}"
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                rm get-docker.sh
+                sudo usermod -aG docker $USER
+                newgrp docker
+                sudo systemctl start docker
+            fi
         elif [ "$OS" == "Mac" ]; then
-          for DEP in "${MISSING_DEPS[@]}"; do
-              if ! brew install "$DEP"; then
-                  echo -e "${RED}Failed to install $DEP.${NC}"
-                  STILL_MISSING_DEPS+=("$DEP")
-              fi
-          done
+            for DEP in "${MISSING_DEPS[@]}"; do
+                if [ "$DEP" == "yq" ]; then
+                    echo -e "${GREEN}Installing yq via Homebrew...${NC}"
+                    if ! brew install yq; then
+                        echo -e "${RED}Failed to install yq.${NC}"
+                    fi
+                    continue
+                fi
+                if ! brew install "$DEP"; then
+                    echo -e "${RED}Failed to install $DEP.${NC}"
+                fi
+            done
+            if [ "$DOCKER_MISSING" = true ]; then
+                echo -e "${GREEN}Installing Docker via Homebrew...${NC}"
+                if ! brew install --cask docker; then
+                    echo -e "${RED}Failed to install Docker.${NC}"
+                else
+                    echo -e "${GREEN}Docker installed.\nTrying to open /Applications/Docker.app to start the Docker daemon.${NC}"
+                    open /Applications/Docker.app
+                    # Wait for Docker daemon to start
+                    echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
+                    while ! docker info >/dev/null 2>&1; do
+                        sleep 1
+                    done
+                    echo -e "${GREEN}Docker daemon is running.${NC}"
+                fi
+            fi
         fi
     fi
-    
-    # Re-check dependencies to ensure all are installed
-    echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
-    RECHECK_MISSING_DEPS=()
-    for DEP in "${MISSING_DEPS[@]}"; do
-        DEP_CHECK="${DEPENDENCIES[@]#*:}"
-        if ! check_dependency "$DEP_CHECK"; then
-            RECHECK_MISSING_DEPS+=("$DEP")
-        fi
-    done
+fi
 
-    if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
-        echo -e "\n${RED}The following dependencies could not be installed:${NC}"
-        for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
-            echo -e "${RED}- $DEP${NC}"
+# Check if Docker daemon is running
+if [ "$DOCKER_NOT_RUNNING" = true ]; then
+    echo -e "\n${YELLOW}Docker is installed but not running.${NC}"
+    if [ "$OS" == "Linux" ]; then
+        echo -e "${GREEN}Starting Docker daemon...${NC}"
+        sudo systemctl start docker
+        if ! sudo systemctl is-active --quiet docker; then
+            echo -e "${RED}Failed to start Docker daemon.${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}Docker daemon is running.${NC}"
+        fi
+    elif [ "$OS" == "Mac" ]; then
+        echo -e "${GREEN}Trying to open /Applications/Docker.app to start the Docker daemon.${NC}"
+        open /Applications/Docker.app
+        # Wait for Docker daemon to start
+        echo -e "${GREEN}Waiting for Docker daemon to start...${NC}"
+        while ! docker info >/dev/null 2>&1; do
+            sleep 1
         done
-        exit 1
-    else
-        echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
+        echo -e "${GREEN}Docker daemon is running.${NC}"
     fi
+fi
+
+# Re-check dependencies to ensure all are installed and running
+echo -e "\n${GREEN}Verifying installation of dependencies...${NC}"
+RECHECK_MISSING_DEPS=()
+for DEP in "${DEPENDENCIES[@]}"; do
+    DEP_NAME="${DEP%%:*}"
+    DEP_CHECK="${DEP##*:}"
+    if ! check_dependency "$DEP_CHECK"; then
+        RECHECK_MISSING_DEPS+=("$DEP_NAME")
+    fi
+done
+
+# Re-check Docker
+if ! check_docker_installed; then
+    RECHECK_MISSING_DEPS+=("Docker")
+elif ! check_docker_running; then
+    RECHECK_MISSING_DEPS+=("Docker daemon not running")
+fi
+
+if [ ${#RECHECK_MISSING_DEPS[@]} -ne 0 ]; then
+    echo -e "\n${RED}The following dependencies could not be installed or are not running:${NC}"
+    for DEP in "${RECHECK_MISSING_DEPS[@]}"; do
+        echo -e "${RED}- $DEP${NC}"
+    done
+    exit 1
 else
-    echo -e "\n${GREEN}All dependencies are installed.${NC}"
+    echo -e "\n${GREEN}All dependencies are successfully installed and verified.${NC}"
 fi
 
-
-echo -e "\n${GREEN}We will now proceed with the download and installation of the binary from GitHub:${NC}"
-echo -e "${CYAN}${GITHUB_ICON}${UNDERLINE}https://github.com/madara-alliance/madara${NC}"
-
-echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}"
-read -p "> " PROCEED
+# Choose the mode
+echo -e "\n🕹️ ${YELLOW}${BOLD}On which mode would you like to run Madara? (Enter a number)${NC}\n"
+echo "${YELLOW}1. Full Node ${ITALIC}(Syncronize state from a specific Network)${NC}"
+echo "${YELLOW}2. Sequencer ${ITALIC}(Produce state for a specific Network)${NC}"
+echo "${YELLOW}3. Devnet ${ITALIC}(Launch a test network with pre-funded accounts) ${NC}"
+while true; do
+    read -p "> " MODE_CHOICE
+    case $MODE_CHOICE in
+        1) MODE="full"; break ;;
+        2) MODE="sequencer"; break ;;
+        3) MODE="devnet"; break ;;
+        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
+    esac
+done
 
 tput rc
 tput ed
 
-if [ "$PROCEED" != "yes" ]; then
-    echo -e "${RED}Operation aborted.${NC}"
-    exit 1
-fi
-
-# Function to check if a command exists
-command_exists () {
-    type "$1" &> /dev/null ;
-}
-
-# Check if curl is installed
-if ! command_exists curl ; then
-    echo -e "${RED}Error: curl is not installed. Please install curl and try again.${NC}"
-    exit 1
-fi
-
-# Check if rustup is installed
-if ! command_exists rustup ; then
-    echo -e "${YELLOW}Installing rustup...${NC}"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
-fi
-
-# Check if cargo is installed
-if ! command_exists cargo ; then
-    echo -e "${RED}Error: cargo is not installed. Please install Rust and try again.${NC}"
-    exit 1
-fi
-
-# Install the binary from a given URL
-BIN_URL="https://example.com/path/to/your/binary"  # Replace with actual URL
-BIN_NAME="madara"  # Replace with the actual name of the binary
-
-echo -e "\n${GREEN}Downloading the binary...${NC}"
-curl -L $BIN_URL -o /usr/local/bin/$BIN_NAME
-chmod +x /usr/local/bin/$BIN_NAME
-
-tput rc
-tput ed
+echo -e "\n${GREEN}Madara will run in ${BOLD}${MODE}${NC}${GREEN} mode.${NC}"
 
 # Ask for the node name
 while true; do
@@ -265,31 +419,267 @@ done
 tput rc
 tput ed
 
-# Choose the network
-echo -e "\n🌐 ${YELLOW}${BOLD}On which network? (Enter a number)${NC}\n"
-echo "${YELLOW}1. Mainnet${NC}"
-echo "${YELLOW}2. Testnet${NC}"
-echo "${YELLOW}3. Integration${NC}"
-while true; do
-    read -p "> " NETWORK_CHOICE
-    case $NETWORK_CHOICE in
-        1) NETWORK="main"; break ;;
-        2) NETWORK="test"; break ;;
-        3) NETWORK="integration"; break ;;
-        *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, or 3.${NC}" ;;
-    esac
-done
-
-tput rc
-tput ed
+echo -e "\n${GREEN}Your node has been correctly named: ${BOLD}${NODE_NAME}${NC}${GREEN}.${NC}"
 
 # Ask for the database path
-echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database? (default: /tmp/madara)${NC}"
+echo -e "\n💾 ${YELLOW}${BOLD}Where would you like to store your database?${NC}${YELLOW} (it will be mapped to /data inside your container) (default: /tmp/madara)${NC}"
 read -p "> " BASE_PATH
 BASE_PATH=${BASE_PATH:-/tmp/madara}
 
 tput rc
 tput ed
+
+# Create the base path directory if it doesn't exist
+if [ ! -d "$BASE_PATH" ]; then
+    mkdir -p "$BASE_PATH"
+fi
+
+# Modify Chain Config Function
+modify_chain_config() {
+    local config_file="$1"
+    local OVERRIDES_FILE="$BASE_PATH/overrides.txt"
+    > "$OVERRIDES_FILE"  # Empty the overrides file
+
+    # Read all leaf nodes with their paths and values
+    config_entries=()
+    while IFS= read -r line; do
+        config_entries+=("$line")
+    done < <(yq eval '.. | select(tag != "!!map" and tag != "!!seq") | [path | join("."), .] | @tsv' "$config_file")
+
+    tput rc
+    tput ed
+
+    echo -e "url is $PRESET_URL"
+
+    # Display all parameters with improved formatting
+    echo -e "\n${YELLOW}${BOLD}Here are all the parameters of your chosen configuration:${NC}\n"
+
+    prev_prefix=""
+    for i in "${!config_entries[@]}"; do
+        entry="${config_entries[$i]}"
+        path=$(echo "$entry" | cut -f1)
+        value=$(echo "$entry" | cut -f2-)
+
+        # Extract the top-level prefix for grouping
+        prefix=$(echo "$path" | cut -d'.' -f1)
+
+        # Add a new line and header when a new group starts
+        if [[ "$prefix" != "$prev_prefix" ]]; then
+            echo -e "${BLUE}${BOLD}$prefix:${NC}"
+            prev_prefix="$prefix"
+        fi
+
+        # Indent sub-parameters
+        sub_path=$(echo "$path" | cut -d'.' -f2-)
+        if [[ -n "$sub_path" ]]; then
+            display_path="  - ${sub_path}"
+        else
+            display_path="  - $prefix"
+        fi
+
+        echo -e "${YELLOW}$((i+1)). ${display_path} = ${value}${NC}"
+    done
+
+    # Ask user which parameters to modify
+    echo -e "\n${YELLOW}Enter the numbers of the parameters you wish to modify, separated by spaces (e.g., 1 3 5).${NC}"
+    echo -e "${YELLOW}Press Enter to continue without modifying any parameters.${NC}"
+    read -p "> " MODIFY_NUMBERS
+
+    # Check if the user wants to skip modifications
+    if [[ -z "$MODIFY_NUMBERS" ]]; then
+        echo -e "${GREEN}No parameters selected for modification. Proceeding with the original configuration.${NC}"
+        CONFIG_MODIFIED="false"
+    else
+        CONFIG_MODIFIED="true"
+        selected_indices=($MODIFY_NUMBERS)
+
+        for index in "${selected_indices[@]}"; do
+            # Subtract 1 to convert to zero-based index
+            idx=$((index - 1))
+            if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#config_entries[@]}" ]; then
+                entry="${config_entries[$idx]}"
+                path=$(echo "$entry" | cut -f1)
+                value=$(echo "$entry" | cut -f2-)
+                echo -e "\n${YELLOW}Parameter: ${path}${NC}"
+                echo -e "${GREEN}Current value: ${value}${NC}"
+                echo -e "${YELLOW}Enter new value for ${path}:${NC}"
+                read -p "> " NEW_VALUE
+                echo "${path}=${NEW_VALUE}" >> "$OVERRIDES_FILE"
+            else
+                echo -e "${RED}Invalid selection: $index${NC}"
+            fi
+        done
+    fi
+
+    # Apply the overrides to the original config file and write to $BASE_PATH/chain_config.yaml
+    MODIFIED_CONFIG_PATH="$BASE_PATH/chain_config.yaml"
+    cp "$config_file" "$MODIFIED_CONFIG_PATH"
+
+    if [[ "$CONFIG_MODIFIED" == "true" ]]; then
+        while IFS= read -r line; do
+            key=$(echo "$line" | cut -d'=' -f1)
+            val=$(echo "$line" | cut -d'=' -f2-)
+
+            # Check if the value is numeric (integer or floating point)
+            if [[ "$val" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+                # Set the value without quotes for numeric types
+                yq eval -i ".${key} = ${val}" "$MODIFIED_CONFIG_PATH"
+            else
+                # Keep the value in quotes for strings
+                yq eval -i ".${key} = \"${val}\"" "$MODIFIED_CONFIG_PATH"
+            fi
+        done < "$OVERRIDES_FILE"
+    fi
+
+    # Set CHAIN_CONFIG_FILE to the path of the modified chain config
+    CHAIN_CONFIG_FILE="$MODIFIED_CONFIG_PATH"
+}
+
+# Choose the network based on the mode
+if [ "$MODE" == "sequencer" ] || [ "$MODE" == "devnet" ]; then
+    # For sequencer and devnet modes
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose one of the available presets or provide a custom chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Devnet${NC}"
+    echo "${YELLOW}4. Custom Chain config${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1)
+                PRESET="${PRESETS[0]}"
+                PRESET_URL="${PRESET_URLS[0]}"
+                ;;
+            2)
+                PRESET="${PRESETS[1]}"
+                PRESET_URL="${PRESET_URLS[1]}"
+                ;;
+            3)
+                PRESET="${PRESETS[2]}"
+                PRESET_URL="${PRESET_URLS[2]}"
+                ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    PRESET="custom"
+                    PRESET_PATH="$CUSTOM_CHAIN_CONFIG"
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                    continue
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}"; continue ;;
+        esac
+
+        OVERRIDE_DEVNET_CHAIN_ID="false"
+        if [ "$MODE" == "devnet" ] && { [ "$PRESET" == "starknet_mainnet" ] || [ "$PRESET" == "starknet_testnet" ]; }; then
+            echo -e "\n❗ You're running a devnet with the network config of \"${PRESET}\". This means that devnet transactions can be replayed on the actual network."
+            echo -e "\n${YELLOW}Do you want to proceed or use the devnet chain config instead?${NC}"
+            echo -e "${YELLOW}1. Switch to devnet config (recommended)${NC}"
+            echo -e "${YELLOW}2. Continue with ${PRESET} chain config${NC}"
+            while true; do
+                read -p "> " USER_CHOICE
+                case $USER_CHOICE in
+                    1)
+                        # Switch to devnet config
+                        PRESET="${PRESETS[2]}" # "devnet" at index 2
+                        PRESET_URL="${PRESET_URLS[2]}"
+                        # Re-download the devnet chain config
+                        PRESET_PATH=$(mktemp)
+                        curl -s -o "$PRESET_PATH" "$PRESET_URL"
+                        if [ $? -ne 0 ] || [ ! -s "$PRESET_PATH" ]; then
+                            echo -e "${RED}Failed to download the chain config file from $PRESET_URL.${NC}"
+                            exit 1
+                        fi
+                        break
+                        ;;
+                    2)
+                        # Continue with the current configuration
+                        OVERRIDE_DEVNET_CHAIN_ID="true"
+                        break
+                        ;;
+                    *)
+                        echo -e "${YELLOW}Invalid choice. Please enter 1 or 2.${NC}"
+                        ;;
+                esac
+            done
+        fi
+
+        # Now, if a preset was selected (options 1-3), download the chain config file
+        if [ "$PRESET" != "custom" ]; then
+            # Download the chain config file to a temporary location
+            PRESET_PATH=$(mktemp)
+            curl -s -o "$PRESET_PATH" "$PRESET_URL"
+            if [ $? -ne 0 ] || [ ! -s "$PRESET_PATH" ]; then
+                echo -e "${RED}Failed to download the chain config file from $PRESET_URL.${NC}"
+                exit 1
+            fi
+        fi
+
+        # Call modify_chain_config with the chain config file
+        modify_chain_config "$PRESET_PATH"
+        break
+    done
+else
+    # For full node mode
+    echo -e "\n🌐 ${YELLOW}${BOLD}Please choose a Network or provide a custom Chain config path: (Enter a number)${NC}\n"
+    echo "${YELLOW}1. Starknet Mainnet${NC}"
+    echo "${YELLOW}2. Starknet Testnet${NC}"
+    echo "${YELLOW}3. Test Network${NC}"
+    echo "${YELLOW}4. Custom Network${NC}"
+    while true; do
+        read -p "> " NETWORK_CHOICE
+        case $NETWORK_CHOICE in
+            1)
+                NETWORK="mainnet"
+                PRESET="${PRESETS[0]}"
+                PRESET_URL="${PRESET_URLS[0]}"
+                ;;
+            2)
+                NETWORK="testnet"
+                PRESET="${PRESETS[1]}"
+                PRESET_URL="${PRESET_URLS[1]}"
+                ;;
+            3)
+                NETWORK="test"
+                PRESET="${PRESETS[2]}"
+                PRESET_URL="${PRESET_URLS[2]}"
+                ;;
+            4)
+                echo -e "\n${YELLOW}Please provide the path to your custom chain config:${NC}"
+                read -p "> " CUSTOM_CHAIN_CONFIG
+                if [ -f "$CUSTOM_CHAIN_CONFIG" ]; then
+                    NETWORK="custom"
+                    PRESET_PATH="$CUSTOM_CHAIN_CONFIG"
+                else
+                    echo -e "${RED}File not found. Please provide a valid path.${NC}"
+                    continue
+                fi
+                ;;
+            *) echo -e "${YELLOW}Invalid choice, please enter 1, 2, 3, or 4.${NC}"; continue ;;
+        esac
+        # For options 1-3, download the chain config file and call modify_chain_config
+        if [ "$NETWORK" != "custom" ]; then
+            PRESET_PATH=$(mktemp)
+            curl -s -o "$PRESET_PATH" "$PRESET_URL"
+            if [ $? -ne 0 ] || [ ! -s "$PRESET_PATH" ]; then
+                echo -e "${RED}Failed to download the chain config file from $PRESET_URL.${NC}"
+                exit 1
+            fi
+        fi
+
+        # Call modify_chain_config with the chain config file
+        modify_chain_config "$PRESET_PATH"
+        break
+    done
+fi
+
+# Exceptional clear of screen
+clear
+welcome_message
+
+echo -e "\n${GREEN}You have chosen to run your node under the preset or custom chain config.${NC}"
 
 # Ask for RPC access
 while true; do
@@ -306,59 +696,175 @@ tput ed
 
 if [ "$RPC_ACCESS" == "yes" ]; then
     RPC_OPTS="--rpc-cors '*' --rpc-external"
-    echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (default: 9933)${NC}"
-    read -p "> " RPC_PORT
-    RPC_PORT=${RPC_PORT:-9933}
+    echo -e "\n🚪 ${YELLOW}${BOLD}On which port do you want RPC access? (it will be mapped to the same port inside your container) (default: 9944)${NC}"
+    
+    while true; do
+        read -p "> " RPC_PORT
+        RPC_PORT=${RPC_PORT:-9944}
+
+        # Check if the port is a valid number between 1 and 65535
+        if ! [[ "$RPC_PORT" =~ ^[0-9]+$ ]] || [ "$RPC_PORT" -lt 1 ] || [ "$RPC_PORT" -gt 65535 ]; then
+            echo -e "${RED}⚠️  Invalid port number. Please enter a valid port between 1 and 65535.${NC}"
+            continue
+        fi
+
+        # Check if the port is already in use
+        if lsof -i :"$RPC_PORT" &>/dev/null; then
+            echo -e "${RED}⚠️  Port $RPC_PORT is already in use. Please choose another port.${NC}"
+            continue
+        fi
+
+        break
+    done
+
     RPC_OPTS="$RPC_OPTS --rpc-port $RPC_PORT"
+    PORT_MAPPING="-p $RPC_PORT:$RPC_PORT"
 else
     RPC_OPTS=""
+    PORT_MAPPING=""
 fi
 
 tput rc
 tput ed
 
 # Ask for the L1 endpoint URL
-while true; do
-    echo -e "\n🔗 ${YELLOW}${BOLD}Enter the URL of the L1 endpoint:${NC}"
-    read -p "> " L1_ENDPOINT
-    if [[ $L1_ENDPOINT =~ ^https?:// ]]; then
-        break
-    else
-        echo -e "${RED}Please enter a valid URL starting with http:// or https://.${NC}"
+if [ "$MODE" == "full" ] || [ "$MODE" == "sequencer" ]; then
+    while true; do
+        echo -e "\n🔗 ${YELLOW}${BOLD}Provide an L1 RPC endpoint (URL format):${NC}"
+        read -p "> " L1_ENDPOINT
+        if [[ $L1_ENDPOINT =~ ^https?:// ]]; then
+            break
+        else
+            echo -e "${RED}Please enter a valid URL starting with http:// or https://.${NC}"
+        fi
+    done
+fi
+
+tput rc
+tput ed
+
+# Check if the image is available locally
+IMAGE_NAME="ghcr.io/madara-alliance/madara:latest"
+if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
+    echo -e "\n📦 ${GREEN}Docker image '$IMAGE_NAME' is already available locally.${NC}"
+else
+    echo -e "\n🐳 ${YELLOW}${BOLD}Docker image not found locally. Pulling from GitHub Packages...${NC}"
+    docker pull $IMAGE_NAME
+fi
+
+# Function to format the Docker command for display
+format_command_for_display() {
+    local cmd_array=("$@")
+    local formatted_cmd=""
+    local indent="    "  # Adjust the indentation as needed
+
+    for ((i=0; i<${#cmd_array[@]}; i++)); do
+        arg="${cmd_array[i]}"
+        next_arg="${cmd_array[i+1]}"
+        
+        # Start a new line if the argument is a Docker option or the image name
+        if [[ "$arg" == docker || "$arg" == run || "$arg" == "-d" ]]; then
+            formatted_cmd+="$arg "
+        elif [[ "$arg" == -* || "$arg" == "$IMAGE_NAME" ]]; then
+            formatted_cmd+="\\\n$indent$arg"
+        else
+            formatted_cmd+=" $arg"
+        fi
+    done
+
+    echo -e "$formatted_cmd"
+}
+
+# Build the DOCKER_COMMAND array as before
+DOCKER_COMMAND=("docker" "run" "-d" "--name" "madara-client" "-v" "${BASE_PATH}:/data")
+
+# Add PORT_MAPPING if it's not empty
+if [ -n "$PORT_MAPPING" ]; then
+    DOCKER_COMMAND+=(${PORT_MAPPING})
+fi
+
+# Add Docker options before the image name
+if [ "$MODE" == "full" ] && [ "$CONFIG_MODIFIED" == "false" ] && [ "$NETWORK" != "custom" ]; then
+    DOCKER_COMMAND+=("--network" "${NETWORK}")
+fi
+
+# Add the image name
+DOCKER_COMMAND+=("$IMAGE_NAME")
+
+# Add container arguments after the image name
+DOCKER_COMMAND+=("--${MODE}" "--name" "${NODE_NAME}" "--base-path" "/data")
+
+if [ "$MODE" == "full" ] && [ "$CONFIG_MODIFIED" == "false" ] && [ "$NETWORK" != "custom" ]; then
+    # Add RPC_OPTS if it's not empty
+    if [ -n "$RPC_OPTS" ]; then
+        DOCKER_COMMAND+=(${RPC_OPTS})
     fi
-done
+    DOCKER_COMMAND+=("--l1-endpoint" "${L1_ENDPOINT}")
+else
+    DOCKER_COMMAND+=("--chain-config-path" "/data/chain_config.yaml")
+
+    # Add RPC_OPTS if it's not empty
+    if [ -n "$RPC_OPTS" ]; then
+        DOCKER_COMMAND+=(${RPC_OPTS})
+    fi
+
+    # Add --override-devnet-chain-id if applicable
+    if [ "$OVERRIDE_DEVNET_CHAIN_ID" == "true" ]; then
+        DOCKER_COMMAND+=("--override-devnet-chain-id")
+    fi
+
+    # Add --l1-endpoint if applicable
+    if [ "$MODE" == "sequencer" ]; then
+        DOCKER_COMMAND+=("--l1-endpoint" "${L1_ENDPOINT}")
+    fi
+fi
+
+echo -e "\n${GREEN}Your docker image is ready to be used.${NC}"
 
 tput rc
 tput ed
 
-# Synchronize via snapshot or genesis
-echo -e "\n🔄 ${YELLOW}${BOLD}Which sync mode would you like? (Enter a number)${NC}\n"
-echo "${YELLOW}1. Snap sync (fast)${NC}"
-echo "${YELLOW}2. Full sync (safe)${NC}"
-while true; do
-    read -p "> " SYNC_CHOICE
-    case $SYNC_CHOICE in
-        1) SYNC_OPT="--snap"; break ;;
-        2) SYNC_OPT=""; break ;;
-        *) echo -e "${YELLOW}Invalid choice, please enter 1 or 2.${NC}" ;;
-    esac
-done
-
-tput rc
-tput ed
-
-# Build the final command
-COMMAND="/usr/local/bin/$BIN_NAME run --name $NODE_NAME --network=$NETWORK --base-path=$BASE_PATH $RPC_OPTS --l1-endpoint $L1_ENDPOINT $SYNC_OPT"
-
-echo -e "\n🔄 ${YELLOW}${BOLD}The following command will be executed:${NC}\n"
-echo -e "${CYAN}$COMMAND${NC}"
+# Output the formatted Docker command
+echo -e "\n🔄 The following Docker command will be executed:\n"
+formatted_command=$(format_command_for_display "${DOCKER_COMMAND[@]}")
+echo -e "${CYAN}${formatted_command}${NC}"
 
 # Confirm before executing
 echo -e "\n${YELLOW}${BOLD}Do you want to proceed? (yes/no)${NC}\n"
 read -p "> " CONFIRM
 if [ "$CONFIRM" == "yes" ]; then
-    echo -e "\n${GREEN}Starting the node...${NC}"
-    eval $COMMAND
+    echo -e "\n${GREEN}Starting the Madara node via Docker...${NC}"
+    # Stop and remove any existing container with the same name
+    if docker ps -a --format '{{.Names}}' | grep -Eq "^madara-client\$"; then
+        echo -e "\n${YELLOW}A container named 'madara-client' already exists. Stopping and removing it...${NC}"
+        docker stop madara-client
+        docker rm madara-client
+    fi
+    # Execute the Docker command
+    "${DOCKER_COMMAND[@]}"
+    tput rc
+    tput ed
+    # After checking if the Madara Docker container is running
+    if docker ps --format '{{.Names}}' | grep -q '^madara-client$'; then
+        echo -e "\n${GREEN}Madara client is running.${NC}"
+        echo -e "${YELLOW}Container details:${NC}"
+        docker inspect madara-client --format '
+            Name: {{.Name}}
+            ID: {{.Id}}
+            Image: {{.Config.Image}}
+            Status: {{.State.Status}}
+            StartedAt: {{.State.StartedAt}}
+            Ports: {{range $p, $conf := .NetworkSettings.Ports}}{{$p}}: {{(index $conf 0).HostPort}}{{end}}'
+
+        echo -e "\n${YELLOW}Client Logs:${NC}"
+        timeout 4 docker logs -f madara-client
+
+        # Call the end_menu function
+        node_menu
+
+    else
+        echo -e "${RED}Madara client is not running.${NC}"
+    fi
 else
     echo -e "${RED}Command execution aborted.${NC}"
 fi

@@ -3,7 +3,6 @@ use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
-use mp_block::BlockId;
 use mp_class::ClassInfo;
 use mp_convert::{felt_to_u64, ToFelt};
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
@@ -41,17 +40,6 @@ impl StateReader for BlockifierStateAdapter {
             ) {
                 return Ok(Felt::ZERO);
             }
-
-            return self
-                .backend
-                .get_block_hash(&BlockId::Number(requested_block_number))
-                .map_err(|err| {
-                    log::warn!("Failed to retrieve block hash for block number {requested_block_number}: {err:#}");
-                    StateError::StateReadError(format!(
-                        "Failed to retrieve block hash for block number {requested_block_number}",
-                    ))
-                })?
-                .ok_or(StateError::OldBlockHashNotProvided);
         }
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else { return Ok(Felt::ZERO) };

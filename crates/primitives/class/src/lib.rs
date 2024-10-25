@@ -142,6 +142,7 @@ impl FlattenedSierraClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub struct EntryPointsByType {
     pub constructor: Vec<SierraEntryPoint>,
     pub external: Vec<SierraEntryPoint>,
@@ -190,6 +191,7 @@ pub struct LegacyFunctionAbiEntry {
     pub name: String,
     pub inputs: Vec<LegacyTypedParameter>,
     pub outputs: Vec<LegacyTypedParameter>,
+    #[serde(rename = "stateMutability")]
     pub state_mutability: Option<FunctionStateMutability>,
 }
 
@@ -223,6 +225,7 @@ pub struct LegacyTypedParameter {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyFunctionAbiType {
     Function,
     L1Handler,
@@ -230,22 +233,31 @@ pub enum LegacyFunctionAbiType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyEventAbiType {
     Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LegacyStructAbiType {
     Struct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FunctionStateMutability {
     View,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CompiledSierra(String);
+pub struct CompiledSierra(pub String);
+
+impl AsRef<str> for CompiledSierra {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 const MISSED_CLASS_HASHES_JSON: &[u8] = include_bytes!("../resources/missed_classes.json");
 

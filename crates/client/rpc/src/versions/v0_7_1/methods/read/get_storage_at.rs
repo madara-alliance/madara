@@ -1,9 +1,9 @@
-use starknet_core::types::BlockId;
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
+use mc_db::db_block_id::{DbBlockId, DbBlockIdResolvable};
+use starknet_core::types::BlockId;
+use starknet_types_core::felt::Felt;
 
 /// Get the value of the storage at the given address and key.
 ///
@@ -45,17 +45,25 @@ pub fn get_storage_at(
         return Err(StarknetRpcApiError::BlockNotFound);
     }
 
-    // Check if contract exists
-    starknet
-        .backend
-        .get_contract_class_hash_at(&block_id, &contract_address) // TODO: contains api without deser
-        .or_internal_server_error("Failed to check if contract is deployed")?
-        .ok_or(StarknetRpcApiError::ContractNotFound)?;
+    let block_number = block_id.resolve_db_block_id(&starknet.backend)?;
+
+    let skip_contract_check = matches!(
+        block_number,
+        Some(DbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
+    );
+
+    if !skip_contract_check {
+        starknet
+            .backend
+            .get_contract_class_hash_at(&block_id, &contract_address)
+            .or_internal_server_error("Failed to check if contract is deployed")?
+            .ok_or(StarknetRpcApiError::ContractNotFound)?;
+    }
 
     let storage = starknet
         .backend
         .get_contract_storage_at(&block_id, &contract_address, &key)
-        .or_internal_server_error("Error getting contract class hash at")?
+        .or_internal_server_error("Error getting contract storage at")?
         .unwrap_or(Felt::ZERO);
 
     Ok(storage)

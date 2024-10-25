@@ -7,23 +7,32 @@ repository.workspace = true
 version.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [dependencies]
 
 # Starknet
-blockifier = { workspace = true }
-starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
+blockifier.workspace = true
+starknet-types-core.workspace = true
+starknet_api.workspace = true
 
 # Madara
-
 mp-utils.workspace = true
 
 # Other
-anyhow = { workspace = true }
-lazy_static = { workspace = true }
+anyhow.workspace = true
+lazy_static.workspace = true
+log.workspace = true
 primitive-types.workspace = true
-rstest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde_json.workspace = true
+serde_yaml.workspace = true
 thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true

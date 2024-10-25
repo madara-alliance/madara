@@ -38,21 +38,26 @@ pub mod tests;
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
-pub use rocksdb;
 pub type DB = DBWithThreadMode<MultiThreaded>;
+pub use rocksdb;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
+#[allow(clippy::identity_op)] // allow 1 * MiB
+#[allow(non_upper_case_globals)] // allow KiB/MiB/GiB names
 pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
+    const KiB: usize = 1024;
+    const MiB: usize = 1024 * KiB;
+    const GiB: usize = 1024 * MiB;
+
     let mut opts = Options::default();
     opts.set_report_bg_io_stats(true);
     opts.set_use_fsync(false);
     opts.create_if_missing(create);
     opts.create_missing_column_families(true);
-    opts.set_bytes_per_sync(1024 * 1024);
     opts.set_keep_log_file_num(1);
-    opts.optimize_level_style_compaction(4 * 1024 * 1024);
+    opts.optimize_level_style_compaction(4 * GiB);
     opts.set_compression_type(DBCompressionType::Zstd);
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     opts.increase_parallelism(cores);
@@ -60,6 +65,10 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
     opts.set_atomic_flush(true);
     opts.set_manual_wal_flush(true);
     opts.set_max_subcompactions(cores as _);
+
+    opts.set_max_log_file_size(1 * MiB);
+    opts.set_keep_log_file_num(3);
+    opts.set_log_level(rocksdb::LogLevel::Warn);
 
     let mut env = Env::new().context("Creating rocksdb env")?;
     // env.set_high_priority_background_threads(cores); // flushes
