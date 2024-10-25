@@ -396,7 +396,7 @@ impl MadaraBackend {
             last_flush_time: Default::default(),
             chain_config,
             db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
-            sender_block_info: tokio::sync::broadcast::channel(1024).0,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
             _temp_dir: Some(temp_dir),
         })
     }
@@ -440,7 +440,7 @@ impl MadaraBackend {
             db,
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
-            sender_block_info: tokio::sync::broadcast::channel(1024).0,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });
