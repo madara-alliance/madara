@@ -225,7 +225,7 @@ where
         let pause_until = self.pause_until.clone();
         let mut inner = self.inner.clone();
 
-        let fut = async move {
+        async move {
             // Check if a pause is active
             let pause_duration = {
                 let lock = pause_until.read().await;
@@ -246,8 +246,7 @@ where
             }
 
             inner.call(req).await
-        };
-
-        Box::pin(fut)
+        }
+        .boxed()
     }
 }
