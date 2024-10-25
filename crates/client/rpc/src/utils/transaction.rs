@@ -1,18 +1,20 @@
+use std::sync::Arc;
+
 use blockifier::execution::contract_class::ClassInfo;
 use blockifier::transaction::transaction_execution as btx;
+use mc_db::MadaraBackend;
 use mp_block::BlockId;
 use mp_convert::ToFelt;
 use starknet_api::transaction::{Transaction, TransactionHash};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::Starknet;
 
 /// Convert an starknet-api Transaction to a blockifier Transaction
 ///
 /// **note:** this function does not support deploy transaction
 /// because it is not supported by blockifier
-pub(crate) fn to_blockifier_transactions(
-    starknet: &Starknet,
+pub fn to_blockifier_transactions(
+    backend: Arc<MadaraBackend>,
     block_id: BlockId,
     transaction: mp_transactions::Transaction,
     tx_hash: &TransactionHash,
@@ -28,15 +30,14 @@ pub(crate) fn to_blockifier_transactions(
         Transaction::Declare(ref declare_tx) => {
             let class_hash = declare_tx.class_hash();
 
-            let Ok(Some(class_info)) = starknet.backend.get_class_info(&block_id, &class_hash.to_felt()) else {
+            let Ok(Some(class_info)) = backend.get_class_info(&block_id, &class_hash.to_felt()) else {
                 log::error!("Failed to retrieve class from class_hash '{class_hash}'");
                 return Err(StarknetRpcApiError::ContractNotFound);
             };
 
             match class_info {
                 mp_class::ClassInfo::Sierra(info) => {
-                    let compiled_class = starknet
-                        .backend
+                    let compiled_class = backend
                         .get_sierra_compiled(&block_id, &info.compiled_class_hash)
                         .map_err(|e| {
                             log::error!("Failed to retrieve sierra compiled class from class_hash '{class_hash}': {e}");

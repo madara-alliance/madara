@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: fetch eth/strk price and sync strk gas price
+- feat: add fgw get_block_traces
 - refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix(namespace): versioning now works for methods without `starknet` namesapce
 - fix(compile): wrong struct field being used in state map conversion
