@@ -38,9 +38,7 @@ mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
-starknet-core.workspace = true
 starknet-providers.workspace = true
-starknet-signers.workspace = true
 starknet_api.workspace = true
 
 # Other
@@ -51,14 +49,11 @@ chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger.workspace = true
 fdlimit.workspace = true
-forwarded-header-value = "0.1.1"
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
-hyper.workspace = true
-ip_network.workspace = true
+hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
 log.workspace = true
-primitive-types.workspace = true
 rand.workspace = true
 rayon.workspace = true
 reqwest.workspace = true

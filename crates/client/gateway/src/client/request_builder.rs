@@ -1,26 +1,31 @@
 use std::{borrow::Cow, collections::HashMap};
 
+use bytes::Buf;
+use http::Method;
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
+use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
+use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use mp_block::{BlockId, BlockTag};
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Client, Response,
-};
 use serde::de::DeserializeOwned;
 use starknet_types_core::felt::Felt;
+use tower::Service;
 use url::Url;
 
 use crate::error::{SequencerError, StarknetError};
 
-#[derive(Debug, Clone)]
+use super::builder::PausedClient;
+
+#[derive(Debug)]
 pub struct RequestBuilder<'a> {
-    client: &'a Client,
+    client: &'a PausedClient,
     url: Url,
     params: HashMap<Cow<'static, str>, String>,
     headers: HeaderMap,
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(client: &'a Client, base_url: Url, headers: HeaderMap) -> Self {
+    pub fn new(client: &'a PausedClient, base_url: Url, headers: HeaderMap) -> Self {
         Self { client, url: base_url, params: HashMap::new(), headers }
     }
 
@@ -71,8 +76,18 @@ impl<'a> RequestBuilder<'a> {
         unpack(self.send_get_raw().await?).await
     }
 
-    pub async fn send_get_raw(self) -> Result<Response, SequencerError> {
-        self.client.get(self.url).headers(self.headers).query(&self.params).send().await.map_err(Into::into)
+    pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
+        let uri = self.build_uri()?;
+
+        let mut req_builder = Request::builder().method(Method::GET).uri(uri);
+
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
+
+        let req = req_builder.body(String::new())?;
+
+        let response: Response<Incoming> =
+            self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+        Ok(response)
     }
 
     #[allow(dead_code)]
@@ -80,35 +95,52 @@ impl<'a> RequestBuilder<'a> {
     where
         T: DeserializeOwned,
     {
-        let mut request = self.client.post(self.url);
+        let uri = self.build_uri()?;
 
-        for (key, value) in self.headers.iter() {
-            request = request.header(key, value);
+        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
+
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
+
+        let body = serde_json::to_string(&self.params)?;
+
+        let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
+
+        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+        unpack(response).await
+    }
+
+    fn build_uri(&self) -> Result<Uri, SequencerError> {
+        let mut url = self.url.clone();
+        let query: String =
+            self.params.iter().map(|(key, value)| format!("{}={}", key, value)).collect::<Vec<String>>().join("&");
+
+        if !query.is_empty() {
+            url.set_query(Some(&query));
         }
 
-        let response = request.form(&self.params).send().await?;
-        Ok(response.json().await?)
+        let uri: Uri = url.as_str().try_into().map_err(|_| SequencerError::InvalidUrl(url))?;
+        Ok(uri)
     }
 }
 
-async fn unpack<T>(response: reqwest::Response) -> Result<T, SequencerError>
+async fn unpack<T>(response: Response<Incoming>) -> Result<T, SequencerError>
 where
     T: ::serde::de::DeserializeOwned,
 {
     let http_status = response.status();
-    if http_status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+    let whole_body = response.collect().await?.aggregate();
+
+    if http_status == StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
     } else if !http_status.is_success() {
-        let body = response.bytes().await?;
-        let starknet_error = serde_json::from_slice::<StarknetError>(&body)
-            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error, body })?;
+        let starknet_error = serde_json::from_reader::<_, StarknetError>(whole_body.reader())
+            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error })?;
 
         return Err(starknet_error.into());
     }
 
-    let body = response.bytes().await?;
-    let res =
-        serde_json::from_slice(&body).map_err(|serde_error| SequencerError::DeserializeBody { serde_error, body })?;
+    let res = serde_json::from_reader(whole_body.reader())
+        .map_err(|serde_error| SequencerError::DeserializeBody { serde_error })?;
 
     Ok(res)
 }

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use hyper::{body, Body, Request, Response};
+use bytes::Buf;
+use http_body_util::BodyExt;
+use hyper::{body::Incoming, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
@@ -26,7 +28,10 @@ use super::{
     },
 };
 
-pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+pub async fn handle_get_block(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
@@ -80,9 +85,9 @@ pub async fn handle_get_block(req: Request<Body>, backend: Arc<MadaraBackend>) -
 }
 
 pub async fn handle_get_signature(
-    req: Request<Body>,
+    req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-) -> Result<Response<Body>, GatewayError> {
+) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
@@ -112,9 +117,9 @@ pub async fn handle_get_signature(
 }
 
 pub async fn handle_get_state_update(
-    req: Request<Body>,
+    req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-) -> Result<Response<Body>, GatewayError> {
+) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
 
@@ -217,9 +222,9 @@ pub async fn handle_get_state_update(
 }
 
 pub async fn handle_get_class_by_hash(
-    req: Request<Body>,
+    req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-) -> Result<Response<Body>, GatewayError> {
+) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
 
@@ -240,7 +245,7 @@ pub async fn handle_get_class_by_hash(
                 .as_ref()
                 .serialize_to_json()
                 .or_internal_server_error("Failed to serialize legacy class")?;
-            create_response_with_json_body(hyper::StatusCode::OK, &class)
+            create_response_with_json_body(hyper::StatusCode::OK, class)
         }
     };
 
@@ -248,9 +253,9 @@ pub async fn handle_get_class_by_hash(
 }
 
 pub async fn handle_get_compiled_class_by_class_hash(
-    req: Request<Body>,
+    req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-) -> Result<Response<Body>, GatewayError> {
+) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
 
@@ -274,10 +279,10 @@ pub async fn handle_get_compiled_class_by_class_hash(
         .or_internal_server_error(format!("Retrieving compiled Sierra class from class hash {class_hash:x}"))?
         .ok_or(StarknetError::class_not_found(class_hash))?;
 
-    Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.as_ref()))
+    Ok(create_response_with_json_body(hyper::StatusCode::OK, class_compiled.0))
 }
 
-pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Result<Response<String>, GatewayError> {
     let chain_config = &backend.chain_config();
     Ok(create_json_response(
         hyper::StatusCode::OK,
@@ -288,18 +293,18 @@ pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Resul
     ))
 }
 
-pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<Body>, GatewayError> {
+pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<String>, GatewayError> {
     let public_key = &backend.chain_config().private_key.public;
     Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
 }
 
 pub async fn handle_add_transaction(
-    req: Request<Body>,
+    req: Request<Incoming>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Result<Response<Body>, GatewayError> {
-    let whole_body = body::to_bytes(req.into_body()).await.or_internal_server_error("Failed to read request body")?;
+) -> Result<Response<String>, GatewayError> {
+    let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
-    let transaction = serde_json::from_slice::<BroadcastedTransaction>(whole_body.as_ref())
+    let transaction = serde_json::from_reader::<_, BroadcastedTransaction>(whole_body.reader())
         .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
 
     let response = match transaction {
@@ -314,7 +319,7 @@ pub async fn handle_add_transaction(
 async fn declare_transaction(
     tx: BroadcastedDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Response<Body> {
+) -> Response<String> {
     match add_transaction_provider.add_declare_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
@@ -324,7 +329,7 @@ async fn declare_transaction(
 async fn deploy_account_transaction(
     tx: BroadcastedDeployAccountTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Response<Body> {
+) -> Response<String> {
     match add_transaction_provider.add_deploy_account_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
@@ -334,7 +339,7 @@ async fn deploy_account_transaction(
 async fn invoke_transaction(
     tx: BroadcastedInvokeTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
-) -> Response<Body> {
+) -> Response<String> {
     match add_transaction_provider.add_invoke_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),

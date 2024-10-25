@@ -3,6 +3,11 @@
 ## Next release
 
 - fix(compilation): devnet contract artifacts are not compiled by `cargo build` anymore
+- refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
+- fix(namespace): versioning now works for methods without `starknet` namesapce
+- fix(compile): wrong struct field being used in state map conversion
+- fix: contract 0 state diff fixed
+- refactor(rpc): re-worked rpc tower server and added proper websocket support
 - fix(network): added the FGW and gateway url to the chain config
 - fix(block_hash): block hash mismatch on transaction with an empty signature
 - feat: declare v0, l1 handler support added
