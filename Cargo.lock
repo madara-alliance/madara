@@ -5522,6 +5522,7 @@ dependencies = [
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
+ "serde_json",
  "starknet-core 0.11.0",
  "starknet-types-core",
  "starknet_api",
