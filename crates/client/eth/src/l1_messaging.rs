@@ -59,7 +59,6 @@ pub async fn sync(
 
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
-        .to_block(BlockNumberOrTag::Finalized)
         .watch()
         .await
         .context("Failed to watch event filter")?
