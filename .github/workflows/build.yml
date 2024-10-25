@@ -28,8 +28,10 @@ jobs:
         with:
           version: nightly
       - name: Build
+        # also build test contracts for js-tests.
         run: |
           cargo build --release --bin madara
+          cargo build --release -p m-cairo-test-contracts
       - name: Generate binary hash
         id: binary_hash
         run: |
