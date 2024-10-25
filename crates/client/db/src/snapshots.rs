@@ -23,6 +23,10 @@ impl Snapshots {
     }
 
     pub fn create_new(&self, id: BasicId) {
+        if self.max_saved_snapshots == Some(0) {
+            return;
+        }
+
         let mut snapshots = self.snapshots.write().expect("Poisoned lock");
 
         if let btree_map::Entry::Vacant(entry) = snapshots.entry(id) {

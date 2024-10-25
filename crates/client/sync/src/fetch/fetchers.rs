@@ -131,6 +131,7 @@ pub async fn fetch_pending_block_and_updates(
 
     let converted = convert_sequencer_block_pending(block, state_update, class_update)
         .context("Parsing the FGW pending block format")?;
+
     Ok(Some(converted))
 }
 

@@ -21,6 +21,8 @@ use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
 
 mod error;
+mod rocksdb_snapshot;
+mod snapshots;
 
 pub mod block_db;
 pub mod bonsai_db;
@@ -30,8 +32,6 @@ pub mod db_block_id;
 pub mod db_metrics;
 pub mod devnet_db;
 pub mod l1_db;
-mod rocksdb_snapshot;
-mod snapshots;
 pub mod storage_updates;
 pub mod tests;
 
@@ -302,6 +302,13 @@ impl DatabaseExt for DB {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct TrieLogConfig {
+    pub max_saved_trie_logs: usize,
+    pub max_saved_snapshots: usize,
+    pub snapshot_interval: u64,
+}
+
 /// Madara client database backend singleton.
 #[derive(Debug)]
 pub struct MadaraBackend {
@@ -311,6 +318,7 @@ pub struct MadaraBackend {
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
+    trie_log_config: TrieLogConfig,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -339,6 +347,7 @@ impl DatabaseService {
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
         metrics_registry: &MetricsRegistry,
+        trie_log_config: TrieLogConfig,
     ) -> anyhow::Result<Self> {
         log::info!("💾 Opening database at: {}", base_path.display());
 
@@ -348,6 +357,7 @@ impl DatabaseService {
             restore_from_latest_backup,
             chain_config,
             metrics_registry,
+            trie_log_config,
         )
         .await?;
 
@@ -387,7 +397,7 @@ impl MadaraBackend {
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref(), true).unwrap();
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(16)));
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(0)));
         Arc::new(Self {
             backup_handle: None,
             db,
@@ -395,6 +405,7 @@ impl MadaraBackend {
             chain_config,
             db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
             snapshots,
+            trie_log_config: Default::default(),
             _temp_dir: Some(temp_dir),
         })
     }
@@ -406,6 +417,7 @@ impl MadaraBackend {
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
         metrics_registry: &MetricsRegistry,
+        trie_log_config: TrieLogConfig,
     ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
@@ -431,7 +443,7 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path, true)?;
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(16)));
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(trie_log_config.max_saved_snapshots)));
 
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register(metrics_registry).context("Registering db metrics")?,
@@ -440,6 +452,7 @@ impl MadaraBackend {
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
             snapshots,
+            trie_log_config,
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });
@@ -491,9 +504,9 @@ impl MadaraBackend {
             // max_saved_trie_logs: Some(0),
             // max_saved_snapshots: Some(0),
             // snapshot_interval: u64::MAX,
-            max_saved_trie_logs: Some(128),
-            max_saved_snapshots: Some(16),
-            snapshot_interval: 8,
+            max_saved_trie_logs: Some(self.trie_log_config.max_saved_trie_logs),
+            max_saved_snapshots: Some(self.trie_log_config.max_saved_snapshots),
+            snapshot_interval: self.trie_log_config.snapshot_interval,
         };
 
         BonsaiStorage::new(

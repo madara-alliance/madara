@@ -11,7 +11,7 @@ use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
 use mc_block_import::BlockImporter;
-use mc_db::DatabaseService;
+use mc_db::{DatabaseService, TrieLogConfig};
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_metrics::MetricsService;
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
@@ -73,6 +73,11 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.db_params.restore_from_latest_backup,
         Arc::clone(&chain_config),
         prometheus_service.registry(),
+        TrieLogConfig {
+            max_saved_trie_logs: run_cmd.db_params.db_max_saved_trie_logs,
+            max_saved_snapshots: run_cmd.db_params.db_max_saved_snapshots,
+            snapshot_interval: run_cmd.db_params.db_snapshot_interval,
+        },
     )
     .await
     .context("Initializing db service")?;
