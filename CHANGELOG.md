@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(namespace): versioning now works for methods without `starknet` namesapce
 - fix(compile): wrong struct field being used in state map conversion
 - fix: contract 0 state diff fixed
 - refactor(rpc): re-worked rpc tower server and added proper websocket support
