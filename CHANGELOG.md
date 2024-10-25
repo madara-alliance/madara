@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(compilation): devnet contract artifacts are not compiled by `cargo build` anymore
 - feat: add fgw get_block_traces
 - refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix(namespace): versioning now works for methods without `starknet` namesapce

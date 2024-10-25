@@ -19,12 +19,12 @@ subshell() {
         sleep 1
     done
 
-    cargo test --profile dev
+    cargo test --profile dev --workspace $@
 
     cargo llvm-cov report --lcov --output-path lcov.info
     cargo llvm-cov report
 }
 
-(subshell && r=$?) || r=$?
+(subshell $@ && r=$?) || r=$?
 pkill -P $$
 exit $r

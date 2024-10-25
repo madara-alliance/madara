@@ -28,6 +28,9 @@ blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 
+# Compile the test contracts in test cfg.
+m-cairo-test-contracts.workspace = true
+
 [dependencies]
 
 # Madara
