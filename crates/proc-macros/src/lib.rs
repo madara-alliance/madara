@@ -202,7 +202,7 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     let trait_with_version = syn::ItemTrait {
-        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, namespace = #namespace)])],
+        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, client, namespace = #namespace)])],
         ident: train_name_with_version,
         ..item_trait
     };
