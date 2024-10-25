@@ -1,9 +1,11 @@
-use std::borrow::Cow;
+use std::fmt::Display;
 
 use mc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
+
+use crate::utils::display_internal_server_error;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -211,58 +213,111 @@ impl From<StarknetApiError> for StarknetRpcApiError {
     }
 }
 
-#[derive(Debug)]
-pub enum WsResult<'a> {
-    Ok,
-    Err(StarknetWsApiError<'a>),
-}
-
 #[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(Debug)]
-pub enum StarknetWsApiError<'a> {
+pub enum StarknetWsApiError {
     TooManyBlocksBack,
-    Internal { context: Cow<'a, str> },
+    Pending,
+    Internal,
 }
 
-impl<'a> StarknetWsApiError<'a> {
+impl StarknetWsApiError {
+    #[inline]
     fn code(&self) -> i32 {
         match self {
             Self::TooManyBlocksBack => 68,
-            Self::Internal { context: _ } => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            Self::Pending => 69,
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
         }
     }
+    #[inline]
     fn message(&self) -> &str {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
-            Self::Internal { context } => {
-                log::debug!("{context}");
-                jsonrpsee::types::error::INTERNAL_ERROR_MSG
+            // See https://github.com/starkware-libs/starknet-specs/pull/237
+            Self::Pending => "The pending block is not supported on this method call",
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_MSG,
+        }
+    }
+
+    #[inline]
+    pub fn internal_server_error<C: std::fmt::Display>(context: C) -> Self {
+        display_internal_server_error(context);
+        StarknetWsApiError::Internal
+    }
+}
+
+impl Display for StarknetWsApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"code\": {}, \"message\": {}", self.code(), self.message())
+    }
+}
+
+pub trait ErrorExtWs<T> {
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
+
+impl<T, E: std::fmt::Display> ErrorExtWs<T> for Result<T, E> {
+    #[inline]
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context, err));
+                Err(StarknetWsApiError::Internal)
             }
         }
     }
 
-    pub fn internal(context: Cow<'a, str>) -> Self {
-        Self::Internal { context }
+    #[inline]
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context_fn(), err));
+                Err(StarknetWsApiError::Internal)
+            }
+        }
     }
 }
 
-impl<'a> jsonrpsee::IntoSubscriptionCloseResponse for WsResult<'a> {
-    fn into_response(self) -> jsonrpsee::SubscriptionCloseResponse {
-        #[derive(serde::Serialize)]
-        struct StarknetSubscriptionError<'a> {
-            code: i32,
-            message: &'a str,
-        }
+pub trait OptionExtWs<T> {
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
 
+impl<T> OptionExtWs<T> for Option<T> {
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
         match self {
-            WsResult::Ok => jsonrpsee::SubscriptionCloseResponse::None,
-            WsResult::Err(err) => jsonrpsee::SubscriptionCloseResponse::NotifErr(
-                jsonrpsee::SubscriptionMessage::from_json(&StarknetSubscriptionError {
-                    code: err.code(),
-                    message: err.message(),
-                })
-                .unwrap(),
-            ),
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context);
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context_fn());
+                Err(StarknetWsApiError::Internal)
+            }
         }
     }
 }

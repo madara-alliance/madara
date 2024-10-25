@@ -71,7 +71,7 @@ impl MadaraBackend {
         Ok(Some(block_n))
     }
 
-    pub fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
+    fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -87,29 +87,12 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    pub fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
+    fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
         let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
-    }
-
-    pub fn get_block_info_from_block_latest(&self) -> Result<Option<MadaraBlockInfo>> {
-        let Ok(Some(block_n)) = &self.get_latest_block_n() else {
-            return Ok(None);
-        };
-
-        let col = self.db.get_column(Column::BlockNToBlockInfo);
-        let res = self.db.get_cf(&col, bincode::serialize(block_n)?)?;
-        let Some(res) = res else { return Ok(None) };
-        let block = bincode::deserialize(&res)?;
-        Ok(Some(block))
-    }
-
-    pub fn get_block_info_from_block_hash(&self, block_hash: Felt) -> Result<Option<MadaraBlockInfo>> {
-        let Ok(Some(block_n)) = self.block_hash_to_block_n(&block_hash) else { return Ok(None) };
-        self.get_block_info_from_block_n(block_n)
     }
 
     fn get_block_inner_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInner>> {
