@@ -160,8 +160,8 @@ mod test {
         Starknet,
     };
 
-    fn block_generator<'a>(backend: &'a mc_db::MadaraBackend) -> impl Iterator<Item = NewHead> + 'a {
-        (0..).into_iter().map(|n| {
+    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = NewHead> + '_ {
+        (0..).map(|n| {
             backend
                 .store_block(
                     mp_block::MadaraMaybePendingBlock {

@@ -234,7 +234,10 @@ impl<'a> StarknetWsApiError<'a> {
     fn message(&self) -> &str {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
-            Self::Internal { context } => context,
+            Self::Internal { context } => {
+                log::debug!("{context}");
+                jsonrpsee::types::error::INTERNAL_ERROR_MSG
+            }
         }
     }
 
