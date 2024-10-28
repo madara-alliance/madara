@@ -62,6 +62,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
     opts.set_max_subcompactions(cores as _);
 
     opts.set_max_log_file_size(1 * MiB);
+    opts.set_max_open_files(512); // 512 is the value used by substrate for reference
     opts.set_keep_log_file_num(3);
     opts.set_log_level(rocksdb::LogLevel::Warn);
 
