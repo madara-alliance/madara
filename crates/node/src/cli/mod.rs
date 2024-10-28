@@ -1,19 +1,18 @@
+pub mod analytics;
 pub mod block_production;
 pub mod chain_config_overrides;
 pub mod db;
 pub mod gateway;
 pub mod l1;
-pub mod prometheus;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-
 use crate::cli::l1::L1SyncParams;
+use analytics::AnalyticsParams;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
-pub use prometheus::*;
 pub use rpc::*;
 use starknet_api::core::ChainId;
 use std::str::FromStr;
@@ -66,11 +65,11 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
-    pub telemetry_params: TelemetryParams,
+    pub analytics_params: AnalyticsParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
-    pub prometheus_params: PrometheusParams,
+    pub telemetry_params: TelemetryParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -117,7 +116,7 @@ impl RunCmd {
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
-                log::warn!("Failed to get random pokemon name: {}", e);
+                tracing::warn!("Failed to get random pokemon name: {}", e);
                 "madara".to_string()
             });
 
@@ -132,7 +131,7 @@ impl RunCmd {
             (Some(preset), _, _) => ChainConfig::from(preset),
             // Read the config path if provided
             (_, Some(path), _) => ChainConfig::from_yaml(path).map_err(|err| {
-                log::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
+                tracing::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
                 anyhow::anyhow!("Failed to load chain config from file")
             })?,
             // Devnet default preset is Devnet if not provided by CLI
@@ -163,7 +162,7 @@ impl RunCmd {
             Some(NetworkType::Integration) => ChainConfig::starknet_integration(),
             Some(NetworkType::Devnet) => ChainConfig::madara_devnet(),
             None => {
-                log::error!("{}", "Chain config path is not set");
+                tracing::error!("{}", "Chain config path is not set");
                 anyhow::bail!("No network specified. Please provide a network with `--network <NETWORK>` or a custom Chain config path with `--chain-config-path <CHAIN CONFIG FILE PATH>` or use a preset with `--preset <PRESET NAME>`")
             }
         };

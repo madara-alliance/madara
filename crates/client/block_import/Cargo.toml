@@ -29,8 +29,9 @@ serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
+# madara
+mc-analytics.workspace = true
 mc-db.workspace = true
-mc-metrics.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -43,6 +44,23 @@ bonsai-trie.workspace = true
 starknet-core.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
 
 [dev-dependencies]
 tempfile.workspace = true

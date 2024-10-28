@@ -30,11 +30,12 @@ m-cairo-test-contracts.workspace = true
 [dependencies]
 
 # Madara
+mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway.workspace = true
-mc-metrics.workspace = true
 mc-telemetry.workspace = true
+
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -47,6 +48,22 @@ mp-utils.workspace = true
 starknet-core.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 
 # Other

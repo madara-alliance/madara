@@ -99,7 +99,7 @@ pub async fn fetch_pending_block_and_updates(
                 // Ignore (this is the case where we returned a closed block when we asked for a pending one)
                 // When the FGW does not have a pending block, it can return the latest block instead
                 Err(SequencerError::DeserializeBody { serde_error }) => {
-                    log::debug!("Serde error when fetching the pending block: {serde_error:#}");
+                    tracing::debug!("Serde error when fetching the pending block: {serde_error:#}");
                     Ok(None)
                 }
                 Err(err) => Err(err),
@@ -119,7 +119,7 @@ pub async fn fetch_pending_block_and_updates(
     );
 
     if block.parent_block_hash != parent_block_hash {
-        log::debug!(
+        tracing::debug!(
             "Fetched a pending block, but mismatched parent block hash: parent_block_hash={:#x}",
             block.parent_block_hash
         );
@@ -187,9 +187,9 @@ where
                 }
 
                 if let SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::RateLimited, .. }) = err {
-                    log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
+                    tracing::info!("The fetching process has been rate limited, retrying in {:?}", delay)
                 } else {
-                    log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
+                    tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
                 if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
@@ -271,7 +271,7 @@ async fn fetch_class(
     provider: &FeederClient,
 ) -> Result<(Felt, ContractClass), SequencerError> {
     let contract_class = provider.get_class_by_hash(class_hash, block_id.into()).await?;
-    log::debug!("Got the contract class {:?}", class_hash);
+    tracing::debug!("Got the contract class {:?}", class_hash);
     Ok((class_hash, contract_class))
 }
 
