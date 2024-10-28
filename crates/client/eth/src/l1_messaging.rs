@@ -15,6 +15,7 @@ use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+use log::log;
 
 impl EthereumClient {
     /// Get cancellation status of an L1 to L2 message
@@ -43,7 +44,7 @@ pub async fn sync(
     chain_id: &ChainId,
     mempool: Arc<Mempool>,
 ) -> anyhow::Result<()> {
-    tracing::info!("⟠ Starting L1 Messages Syncing...");
+    log::info!("⟠  Starting L1 Messages Syncing...");
 
     let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
         Ok(Some(blk)) => blk,
@@ -51,11 +52,12 @@ pub async fn sync(
             unreachable!("Should never be None")
         }
         Err(e) => {
-            tracing::error!("⟠ Madara Messaging DB unavailable: {:?}", e);
+            log::error!("⟠ Madara Messaging DB unavailable: {:?}", e);
             return Err(e.into());
         }
     };
-    let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
+    log::info!("last_synced_event_block: {last_synced_event_block:?}");
+    let event_filter = client.l1_core_contract.event_filter::<LogMessageToL2>();
 
     let mut event_stream = event_filter
         .from_block(last_synced_event_block.block_number)
@@ -64,9 +66,14 @@ pub async fn sync(
         .await
         .context("Failed to watch event filter")?
         .into_stream();
+
+    log::info!("About to loop...");
+
+
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+        log::info!("event_result: {event_result:?}");
         if let Ok((event, meta)) = event_result {
-            tracing::info!(
+            log::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
                 meta.block_number,
                 meta.transaction_hash,
@@ -76,10 +83,10 @@ pub async fn sync(
 
             // Check if cancellation was initiated
             let event_hash = get_l1_to_l2_msg_hash(&event)?;
-            tracing::info!("⟠ Checking for cancelation, event hash : {:?}", event_hash);
+            log::info!("⟠ Checking for cancelation, event hash : {:?}", event_hash);
             let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
             if cancellation_timestamp != Felt::ZERO {
-                tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
+                log::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
                 let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
                 // cancelled message nonce should be inserted to avoid reprocessing
                 match backend.has_l1_messaging_nonce(tx_nonce) {
@@ -88,7 +95,7 @@ pub async fn sync(
                     }
                     Ok(true) => {}
                     Err(e) => {
-                        tracing::error!("⟠ Unexpected DB error: {:?}", e);
+                        log::error!("⟠ Unexpected DB error: {:?}", e);
                         return Err(e.into());
                     }
                 };
@@ -99,7 +106,7 @@ pub async fn sync(
                 .await
             {
                 Ok(Some(tx_hash)) => {
-                    tracing::info!(
+                    log::info!(
                         "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
                         transaction hash on L2: {:?}",
                         meta.block_number,
@@ -110,7 +117,7 @@ pub async fn sync(
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    tracing::error!(
+                    log::error!(
                         "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
                     log_index: {:?}, error: {:?}",
                         meta.block_number,
@@ -122,6 +129,9 @@ pub async fn sync(
             }
         }
     }
+
+    log::info!("Looping done!!!");
+
 
     Ok(())
 }
@@ -143,11 +153,11 @@ async fn process_l1_message(
             backend.set_l1_messaging_nonce(tx_nonce)?;
         }
         Ok(true) => {
-            tracing::debug!("⟠ Event already processed: {:?}", transaction);
+            log::debug!("⟠ Event already processed: {:?}", transaction);
             return Ok(None);
         }
         Err(e) => {
-            tracing::error!("⟠ Unexpected DB error: {:?}", e);
+            log::error!("⟠ Unexpected DB error: {:?}", e);
             return Err(e.into());
         }
     };
@@ -219,7 +229,6 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 
 #[cfg(test)]
 mod l1_messaging_tests {
-
     use std::{sync::Arc, time::Duration};
 
     use crate::l1_messaging::sync;

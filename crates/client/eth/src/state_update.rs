@@ -22,9 +22,9 @@ pub struct L1StateUpdate {
 
 /// Get the last Starknet state update verified on the L1
 pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
-    let block_number = client.get_last_verified_block_number().await?;
-    let block_hash = client.get_last_verified_block_hash().await?;
-    let global_root = client.get_last_state_root().await?;
+    let block_number = client.get_last_verified_block_number().await.context("get_last_verified_block_number")?;
+    let block_hash = client.get_last_verified_block_hash().await.context("get_last_verified_block_hash")?;
+    let global_root = client.get_last_state_root().await.context("get_last_state_root")?;
 
     Ok(L1StateUpdate { global_root, block_number, block_hash })
 }

@@ -26,9 +26,9 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_logging()?;
-    crate::util::setup_rayon_threadpool()?;
-    crate::util::raise_fdlimit();
+    util::setup_logging()?;
+    util::setup_rayon_threadpool()?;
+    util::raise_fdlimit();
 
     let mut run_cmd: RunCmd = RunCmd::parse();
 
@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let node_version = env!("DEOXYS_BUILD_VERSION");
 
     log::info!("🥷  {} Node", GREET_IMPL_NAME);
-    log::info!("✌️  Version {}", node_version);
+    log::info!("✌️ Version {}", node_version);
     log::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     log::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };

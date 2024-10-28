@@ -81,7 +81,7 @@ impl EthereumClient {
     ) -> anyhow::Result<()> {
         let l1_core_contract_bytecode = provider.get_code_at(l1_core_address).await?;
         if l1_core_contract_bytecode.is_empty() {
-            bail!("The L1 Core Contract could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
+            bail!("The L1 Core Contract at {l1_core_address} could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
         }
         Ok(())
     }
@@ -116,7 +116,11 @@ impl EthereumClient {
 
     /// Get the last Starknet block number verified on L1
     pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
-        let block_number = self.l1_core_contract.stateBlockNumber().call().await?;
+        let builder = self.l1_core_contract.stateBlockNumber();
+        let call = builder.call();
+        log::info!("Just before stateBlockNumber await...");
+        let block_number = call.await?;
+        log::info!("get_last_verified_block_number {:?}", block_number);
         let last_block_number: u64 = (block_number._0).as_u64();
         Ok(last_block_number)
     }

@@ -69,10 +69,14 @@ pub fn setup_logging() -> anyhow::Result<()> {
                         // }
                     };
 
-                    writeln!(
-                        fmt,
-                        "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}]{brackets:#} 🌐 {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
-                    )
+                    if method.to_string() != "starknet_V0_7_1_getTransactionStatus" {
+                        writeln!(
+                            fmt,
+                            "{brackets}[{brackets:#}{ts} {rpc_style}HTTP{rpc_style:#}{brackets}]{brackets:#} 🌐 {method} {status_color}{status}{status_color:#} {res_len} bytes - {time_color}{response_time:?}{time_color:#}",
+                        )
+                    } else {
+                        Ok(())
+                    }
                 }
                 Level::Info => {
                     writeln!(
