@@ -5,8 +5,6 @@ use opentelemetry::{global, KeyValue};
 use utils::metrics::lib::{register_gauge_metric_instrument, Metrics};
 use utils::register_metric;
 
-use crate::telemetry::OTEL_SERVICE_NAME;
-
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
 
 pub struct OrchestratorMetrics {
@@ -28,7 +26,7 @@ impl Metrics for OrchestratorMetrics {
         // Register all instruments
         let block_gauge = register_gauge_metric_instrument(
             &orchestrator_meter,
-            format!("{}{}", *OTEL_SERVICE_NAME, "_block_state"),
+            "block_state".to_string(),
             "A gauge to show block state at given time".to_string(),
             "block".to_string(),
         );

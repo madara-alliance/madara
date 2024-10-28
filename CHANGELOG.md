@@ -66,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- fixed metrics name, signoz dashboard.
 - fixes logs based on RUST_LOG
 - fixes after sepolia testing
 - all failed jobs should move to failed state
