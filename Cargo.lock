@@ -4653,7 +4653,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3203a961e5c83b6f5498933e78b6b263e208c197b63e9c6c53cc82ffd3f63793"
 dependencies = [
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "hyper-util",
  "pin-project-lite",
  "tokio",
@@ -5321,7 +5321,6 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
- "primitive-types",
  "rand",
  "rayon",
  "reqwest 0.12.8",
@@ -5628,8 +5627,8 @@ dependencies = [
  "starknet-types-core",
  "thiserror",
  "tokio",
- "tracing",
  "tower 0.4.13",
+ "tracing",
  "url",
 ]
 
@@ -5718,8 +5717,8 @@ dependencies = [
  "httpmock",
  "hyper 1.5.0",
  "log",
- "mc-analytics",
  "m-cairo-test-contracts",
+ "mc-analytics",
  "mc-block-import",
  "mc-db",
  "mc-gateway",
@@ -8944,7 +8943,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.4.1",
+ "hyper 1.5.0",
  "hyper-timeout",
  "hyper-util",
  "percent-encoding",
