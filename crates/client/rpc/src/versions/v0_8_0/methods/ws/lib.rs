@@ -21,7 +21,7 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                     .backend
                     .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                     .or_else_internal_server_error(err)?
-                    .ok_or_else_internal_server_error(err)?;
+                    .ok_or(StarknetWsApiError::NoBlocks)?;
 
                 if block_n < block_latest.saturating_sub(BLOCK_PAST_LIMIT) {
                     return Err(StarknetWsApiError::TooManyBlocksBack.into());
@@ -35,7 +35,7 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                     .backend
                     .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                     .or_else_internal_server_error(err)?
-                    .ok_or_else_internal_server_error(err)?;
+                    .ok_or(StarknetWsApiError::BlockNotFound)?;
 
                 let block_n = self
                     .backend

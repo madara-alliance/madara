@@ -217,6 +217,8 @@ impl From<StarknetApiError> for StarknetRpcApiError {
 #[derive(Debug)]
 pub enum StarknetWsApiError {
     TooManyBlocksBack,
+    NoBlocks,
+    BlockNotFound,
     Pending,
     Internal,
 }
@@ -226,6 +228,8 @@ impl StarknetWsApiError {
     fn code(&self) -> i32 {
         match self {
             Self::TooManyBlocksBack => 68,
+            Self::NoBlocks => 32,
+            Self::BlockNotFound => 24,
             Self::Pending => 69,
             Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
         }
@@ -234,6 +238,8 @@ impl StarknetWsApiError {
     fn message(&self) -> &str {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::NoBlocks => "There are no blocks",
+            Self::BlockNotFound => "Block not found",
             // See https://github.com/starkware-libs/starknet-specs/pull/237
             Self::Pending => "The pending block is not supported on this method call",
             Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_MSG,
