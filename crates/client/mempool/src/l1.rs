@@ -53,11 +53,11 @@ impl GasPriceProvider {
     }
 
     pub fn set_strk_gas_price_sync_enabled(&self, enabled: bool) {
-        self.gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+        self.strk_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
     }
 
     pub fn set_strk_data_gas_price_sync_enabled(&self, enabled: bool) {
-        self.data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
+        self.strk_data_gas_price_sync_enabled.store(enabled, Ordering::Relaxed);
     }
 
     pub fn update_last_update_timestamp(&self) {
