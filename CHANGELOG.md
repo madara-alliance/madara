@@ -2,7 +2,6 @@
 
 ## Next release
 
-
 - feat: fetch eth/strk price and sync strk gas price
 - fix(rocksdb): update max open files opt
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
