@@ -1,3 +1,4 @@
+use ::time::UtcOffset;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
@@ -8,8 +9,11 @@ use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemp
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
 use opentelemetry_sdk::{runtime, Resource};
+use std::fmt;
 use std::fmt::Display;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use time::{format_description, OffsetDateTime};
+use tracing::field::{Field, Visit};
 use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -33,19 +37,12 @@ impl Analytics {
     }
 
     pub fn setup(&mut self) -> anyhow::Result<()> {
-        let format = tracing_subscriber::fmt::format()
-            .pretty()
-            .with_level(true)
-            .with_target(true)
-            .with_thread_names(true)
-            .with_thread_ids(true)
-            .with_file(false)
-            .with_timer(tracing_subscriber::fmt::time::SystemTime)
-            .with_ansi(true);
+        let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+        let custom_formatter = CustomFormatter { local_offset };
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
-            .with(tracing_subscriber::fmt::layer().event_format(format));
+            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter));
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
@@ -226,4 +223,152 @@ pub fn register_histogram_metric_instrument<T: HistogramType<T> + Display>(
     unit: String,
 ) -> Histogram<T> {
     T::register_histogram(crate_meter, instrument_name, desc, unit)
+}
+
+use tracing::Subscriber;
+use tracing_subscriber::{
+    fmt::{format::Writer, FmtContext, FormatEvent, FormatFields},
+    registry::LookupSpan,
+};
+
+struct ValueVisitor {
+    field_name: String,
+    value: String,
+}
+
+impl Visit for ValueVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == self.field_name {
+            self.value = format!("{:?}", value);
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == self.field_name {
+            self.value = value.to_string();
+        }
+    }
+}
+
+struct CustomFormatter {
+    local_offset: UtcOffset,
+}
+
+impl<S, N> FormatEvent<S, N> for CustomFormatter
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        _ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        let now = SystemTime::now();
+        let datetime: OffsetDateTime = now.into();
+        let local_datetime = datetime.to_offset(self.local_offset);
+        let format =
+            format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]:[subsecond digits:3]").unwrap();
+        let ts = local_datetime.format(&format).unwrap();
+
+        let brackets_style = console::Style::new().dim();
+
+        let metadata = event.metadata();
+        let level = metadata.level();
+        let target = metadata.target();
+
+        let get_field_value = |field_name: &str| -> String {
+            let mut visitor = ValueVisitor { field_name: field_name.to_string(), value: String::new() };
+            event.record(&mut visitor);
+            visitor.value.trim_matches('"').to_string()
+        };
+
+        match (level, target) {
+            (&Level::INFO, "rpc_calls") => {
+                let status = get_field_value("status");
+                let method = get_field_value("method");
+                let res_len = get_field_value("res_len");
+                let response_time = get_field_value("response_time");
+
+                let rpc_style = console::Style::new().magenta();
+
+                let status_style =
+                    if status == "200" { console::Style::new().green() } else { console::Style::new().red() };
+
+                let time_style = if response_time.parse::<f64>().unwrap_or(0.0) <= 5.0 {
+                    console::Style::new()
+                } else {
+                    console::Style::new().yellow()
+                };
+
+                writeln!(
+                    writer,
+                    "{} {} {} {} {} {} {} {} bytes - {} ms",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    brackets_style.apply_to("["),
+                    rpc_style.apply_to("HTTP"),
+                    brackets_style.apply_to("]"),
+                    method,
+                    status_style.apply_to(&status),
+                    res_len,
+                    time_style.apply_to(&response_time),
+                )
+            }
+            (&Level::INFO, _) => {
+                let message = get_field_value("message");
+
+                writeln!(
+                    writer,
+                    "{} {} {}",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    message,
+                )
+            }
+            (&Level::WARN, _) => {
+                let message = get_field_value("message");
+                writeln!(
+                    writer,
+                    "{} {} {}",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    message,
+                )
+            }
+            (&Level::ERROR, "rpc_errors") => {
+                let message = get_field_value("message");
+
+                writeln!(
+                    writer,
+                    "{} {} {}",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    message,
+                )
+            }
+            (&Level::ERROR, _) => {
+                let message = get_field_value("message");
+                writeln!(
+                    writer,
+                    "{} {} {}",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    message,
+                )
+            }
+            _ => {
+                let message = get_field_value("message");
+
+                writeln!(
+                    writer,
+                    "{} {} {}",
+                    brackets_style.apply_to(format!("[{ts}]")),
+                    brackets_style.apply_to(format!("[{level}]")),
+                    message,
+                )
+            }
+        }
+    }
 }

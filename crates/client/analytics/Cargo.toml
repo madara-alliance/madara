@@ -27,6 +27,8 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+console = "0.15" # for styled output
+time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
