@@ -85,16 +85,11 @@ version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-rocksdb = { version = "0.22", features = [
-  # "multi-threaded-cf",
-  # ] }
-], git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = { version = "0.22", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { version = "0.17.0", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, path = "../bonsai-trie", features = [
-  # bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "iterator", features = [
-  # bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "trie-log", features = [
   "std",
 ] }
 

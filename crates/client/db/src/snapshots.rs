@@ -22,6 +22,7 @@ impl Snapshots {
         Self { db, snapshots: Default::default(), max_saved_snapshots }
     }
 
+    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     pub fn create_new(&self, id: BasicId) {
         if self.max_saved_snapshots == Some(0) {
             return;
@@ -30,7 +31,7 @@ impl Snapshots {
         let mut snapshots = self.snapshots.write().expect("Poisoned lock");
 
         if let btree_map::Entry::Vacant(entry) = snapshots.entry(id) {
-            log::debug!("Making snap at {id:?}");
+            tracing::debug!("Making snap at {id:?}");
             entry.insert(Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db))));
 
             if let Some(max_saved_snapshots) = self.max_saved_snapshots {
@@ -41,8 +42,9 @@ impl Snapshots {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     pub fn get_closest(&self, id: BasicId) -> Option<(BasicId, Arc<SnapshotWithDBArc<DB>>)> {
-        log::debug!("get closest {id:?} {self:?}");
+        tracing::debug!("get closest {id:?} {self:?}");
         let snapshots = self.snapshots.read().expect("Poisoned lock");
         snapshots.range(..&id).next().map(|(id, snapshot)| (*id, Arc::clone(snapshot)))
     }

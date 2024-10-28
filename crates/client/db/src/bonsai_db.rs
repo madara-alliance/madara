@@ -67,7 +67,7 @@ impl BonsaiDatabase for BonsaiDb {
 
     #[tracing::instrument(skip(self, prefix), fields(module = "BonsaiDB"))]
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
-        tracing::trace!("Getting from RocksDB: {:?}", prefix);
+        tracing::trace!("Getting by prefix from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
         let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
         Ok(iter
@@ -105,8 +105,6 @@ impl BonsaiDatabase for BonsaiDb {
 
         // NB: we don't need old value as the trie log is not used :)
         // this actually speeds up things quite a lot
-
-        log::debug!("Insert!: {:?}", key.as_slice());
 
         let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
@@ -194,8 +192,9 @@ impl BonsaiDatabase for BonsaiTransaction {
         Default::default()
     }
 
+    #[tracing::instrument(skip(self, key), fields(module = "BonsaiDB"))]
     fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        log::trace!("Getting from RocksDB: {:?}", key);
+        tracing::trace!("Getting from RocksDB: {:?}", key);
         if let Some(val) = self.changed.get(&to_changed_key(key)) {
             return Ok(val.clone());
         }
@@ -207,8 +206,9 @@ impl BonsaiDatabase for BonsaiTransaction {
         unreachable!("unused for now")
     }
 
+    #[tracing::instrument(skip(self, key), fields(module = "BonsaiDB"))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        log::trace!("Checking if RocksDB contains: {:?}", key);
+        tracing::trace!("Checking if RocksDB contains: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
     }
@@ -233,14 +233,13 @@ impl BonsaiDatabase for BonsaiTransaction {
     }
 
     fn remove_by_prefix(&mut self, _prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
-        unreachable!()
+        unreachable!("unused yet")
     }
 
     fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        // self.txn.
-        // unreachable!()
+        // TODO: this is not really used yet, this whole abstraction does not really make sense anyway, this needs to be modified
+        // upstream in bonsai-trie
         Ok(())
-        // Ok(self.txn.rebuild_from_writebatch(&batch)?)
     }
 }
 
@@ -248,13 +247,15 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
     type Transaction<'a> = BonsaiTransaction where Self: 'a;
     type DatabaseError = DbError;
 
+    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     fn snapshot(&mut self, id: BasicId) {
-        log::debug!("Generating RocksDB snapshot");
+        tracing::debug!("Generating RocksDB snapshot");
         self.snapshots.create_new(id);
     }
 
+    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     fn transaction(&self, id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
-        log::trace!("Generating RocksDB transaction");
+        tracing::trace!("Generating RocksDB transaction");
         if let Some((id, snapshot)) = self.snapshots.get_closest(id) {
             Some((
                 id,
