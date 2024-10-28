@@ -1,4 +1,5 @@
 //! End to end tests for madara.
+#![cfg(test)]
 
 mod rpc;
 mod storage_proof;
@@ -28,7 +29,7 @@ async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(mut cond: 
         };
 
         attempt += 1;
-        if attempt >= 10 {
+        if attempt >= 180 {
             panic!("No answer from the node after {attempt} attempts: {:#}", err)
         }
 
@@ -66,7 +67,7 @@ impl MadaraCmd {
                 res.error_for_status()?;
                 anyhow::Ok(())
             },
-            Duration::from_millis(2000),
+            Duration::from_millis(1000),
         )
         .await;
         self.ready = true;
@@ -87,7 +88,7 @@ impl MadaraCmd {
                     Err(err) => bail!(err),
                 }
             },
-            Duration::from_millis(20000),
+            Duration::from_millis(1000),
         )
         .await;
         self
