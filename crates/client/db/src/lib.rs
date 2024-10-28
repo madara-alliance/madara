@@ -302,11 +302,17 @@ impl DatabaseExt for DB {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TrieLogConfig {
     pub max_saved_trie_logs: usize,
     pub max_saved_snapshots: usize,
     pub snapshot_interval: u64,
+}
+
+impl Default for TrieLogConfig {
+    fn default() -> Self {
+        Self { max_saved_trie_logs: 0, max_saved_snapshots: 0, snapshot_interval: 5 }
+    }
 }
 
 /// Madara client database backend singleton.
@@ -499,9 +505,6 @@ impl MadaraBackend {
         map: DatabaseKeyMapping,
     ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
         let config = BonsaiStorageConfig {
-            // max_saved_trie_logs: Some(0),
-            // max_saved_snapshots: Some(0),
-            // snapshot_interval: u64::MAX,
             max_saved_trie_logs: Some(self.trie_log_config.max_saved_trie_logs),
             max_saved_snapshots: Some(self.trie_log_config.max_saved_snapshots),
             snapshot_interval: self.trie_log_config.snapshot_interval,

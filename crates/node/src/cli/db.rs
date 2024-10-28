@@ -28,6 +28,6 @@ pub struct DbParams {
 
     /// A database snapshot is created every `db_snapshot_interval` commits.
     /// See `db_max_saved_snapshots` to understand what snapshots are used for.
-    #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 1)]
+    #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 5)]
     pub db_snapshot_interval: u64,
 }
