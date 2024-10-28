@@ -42,8 +42,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 tower = { version = "0.4", features = ["timeout", "retry", "util", "limit"] }
+tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
