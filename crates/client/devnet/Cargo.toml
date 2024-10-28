@@ -19,7 +19,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
-mc-metrics = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
@@ -56,3 +55,19 @@ anyhow.workspace = true
 log.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

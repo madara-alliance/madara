@@ -45,7 +45,7 @@ pub async fn l2_fetch_task(
                     code: StarknetErrorCode::BlockNotFound,
                     ..
                 }))) => {
-                    log::info!("🥳 The sync process has caught up with the tip of the chain");
+                    tracing::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
                 val => {

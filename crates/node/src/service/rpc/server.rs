@@ -148,7 +148,11 @@ pub async fn start_server(
         .serve(make_service);
 
     join_set.spawn(async move {
-        log::info!("📱 Running JSON-RPC server at {} (allowed origins={})", local_addr, format_cors(cors.as_ref()));
+        tracing::info!(
+            "📱 Running JSON-RPC server at {} (allowed origins={})",
+            local_addr.to_string(),
+            format_cors(cors.as_ref())
+        );
         server
             .with_graceful_shutdown(async {
                 wait_or_graceful_shutdown(stop_handle.shutdown()).await;

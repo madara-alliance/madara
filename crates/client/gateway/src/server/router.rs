@@ -29,7 +29,7 @@ pub(crate) async fn main_router(
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("gateway/") => Ok(service_unavailable_response("Feeder")),
         _ => {
-            log::debug!(target: "feeder_gateway", "Main router received invalid request: {path}");
+            tracing::debug!(target: "feeder_gateway", "Main router received invalid request: {path}");
             Ok(not_found_response())
         }
     }
@@ -68,7 +68,7 @@ async fn feeder_gateway_router(
             Ok(handle_get_public_key(backend).await.unwrap_or_else(Into::into))
         }
         _ => {
-            log::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");
+            tracing::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");
             Ok(not_found_response())
         }
     }
@@ -85,7 +85,7 @@ async fn gateway_router(
             Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))
         }
         _ => {
-            log::debug!(target: "feeder_gateway", "Gateway received invalid request: {path}");
+            tracing::debug!(target: "feeder_gateway", "Gateway received invalid request: {path}");
             Ok(not_found_response())
         }
     }

@@ -580,7 +580,7 @@ mod tests {
     struct MempoolInvariantsProblem(Vec<Operation>);
     impl MempoolInvariantsProblem {
         fn check(&self) {
-            log::debug!("\n\n\n\n\nCase: {:#?}", self);
+            tracing::debug!("\n\n\n\n\nCase: {:#?}", self);
             let mut mempool = MempoolInner::default();
             mempool.check_invariants();
 
@@ -606,14 +606,14 @@ mod tests {
                 } else {
                     assert!(inserted.is_empty())
                 }
-                log::trace!("Popped {:?}", res.map(|el| Insert(el, false)));
+                tracing::trace!("Popped {:?}", res.map(|el| Insert(el, false)));
             };
 
             for op in &self.0 {
                 match op {
                     Operation::Insert(insert) => {
                         let force = insert.1;
-                        log::trace!("Insert {:?}", insert);
+                        tracing::trace!("Insert {:?}", insert);
                         let res = mempool.insert_tx(insert.0.clone(), insert.1);
 
                         let expected = if !force
@@ -638,20 +638,20 @@ mod tests {
                             inserted_contract_nonce_pairs.insert((insert.0.nonce(), insert.0.contract_address()));
                         }
 
-                        log::trace!("Result {:?}", res);
+                        tracing::trace!("Result {:?}", res);
                     }
                     Operation::Pop => {
-                        log::trace!("Pop");
+                        tracing::trace!("Pop");
                         let res = mempool.pop_next();
                         handle_pop(res, &mut inserted, &mut inserted_contract_nonce_pairs, &mut new_contracts);
                     }
                 }
-                log::trace!("State: {mempool:#?}");
+                tracing::trace!("State: {mempool:#?}");
                 mempool.check_invariants();
             }
 
             loop {
-                log::trace!("Pop");
+                tracing::trace!("Pop");
                 let Some(res) = mempool.pop_next() else { break };
                 handle_pop(Some(res), &mut inserted, &mut inserted_contract_nonce_pairs, &mut new_contracts);
                 mempool.check_invariants();
@@ -659,7 +659,7 @@ mod tests {
             assert!(inserted.is_empty());
             assert!(inserted_contract_nonce_pairs.is_empty());
             assert!(new_contracts.is_empty());
-            log::trace!("Done :)");
+            tracing::trace!("Done :)");
         }
     }
 
@@ -668,7 +668,7 @@ mod tests {
         #[test]
         fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
             let _ = env_logger::builder().is_test(true).try_init();
-            log::set_max_level(log::LevelFilter::Trace);
+            tracing::log::set_max_level(tracing::log::LevelFilter::Trace);
             pb.check();
         }
     }

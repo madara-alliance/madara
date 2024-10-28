@@ -6,8 +6,8 @@ members = [
   "crates/client/eth",
   "crates/client/rpc",
   "crates/client/gateway",
+  "crates/client/analytics",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
@@ -35,10 +35,10 @@ default-members = [
   "crates/client/gateway",
   "crates/client/rpc",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
+  "crates/client/analytics",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -109,6 +109,7 @@ mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 
 # Madara client
+mc-analytics = { path = "crates/client/analytics" }
 mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
@@ -116,7 +117,6 @@ mc-rpc = { path = "crates/client/rpc" }
 mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
-mc-metrics = { path = "crates/client/metrics" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
@@ -196,7 +196,6 @@ tokio = { version = "1.34", features = ["signal", "rt"] }
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
 bincode = "1.3"
-prometheus = "0.13.4"
 fdlimit = "0.3.0"
 proptest = "1.5.0"
 proptest-derive = "0.5.0"
@@ -210,6 +209,26 @@ itertools = "0.13.0"
 regex = "1.10.5"
 bytes = "1.6.0"
 crypto-bigint = "0.5.5"
+
+# Instrumentation
+opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
+opentelemetry-stdout = { version = "0.25.0" }
+opentelemetry-otlp = { version = "0.25.0", features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { version = "0.25.0" }
+opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
+tracing = { version = "0.1.40", default-features = false }
+tracing-core = { version = "0.1.32", default-features = false }
+tracing-subscriber = { version = "0.3.18", features = [
+  "env-filter",
+  "registry",
+  "std",
+] }
+tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
