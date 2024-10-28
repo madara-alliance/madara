@@ -150,7 +150,7 @@ pub async fn start_server(
     join_set.spawn(async move {
         tracing::info!(
             "📱 Running JSON-RPC server at {} (allowed origins={})",
-            local_addr.map_or_else(|| "unknown".to_string(), |a| a.to_string()),
+            local_addr.to_string(),
             format_cors(cors.as_ref())
         );
         server
