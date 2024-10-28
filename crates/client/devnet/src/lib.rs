@@ -52,19 +52,19 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo-artifacts/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
+    include_bytes!("../../../../cairo-artifacts/openzeppelin_ERC20Upgradeable.contract_class.json");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
+    include_bytes!("../../../../cairo-artifacts/openzeppelin_AccountUpgradeable.contract_class.json");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -343,13 +343,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
+    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
 
-        let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
+        let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
 
         // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json

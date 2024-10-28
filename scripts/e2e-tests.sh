@@ -20,7 +20,7 @@ subshell() {
         sleep 1
     done
 
-    cargo test --profile dev $@
+    cargo test --profile dev --workspace $@
 }
 
 (subshell $@ && r=$?) || r=$?

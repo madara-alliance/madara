@@ -4,6 +4,7 @@ pub(crate) mod transaction;
 use std::fmt;
 
 use crate::StarknetRpcApiError;
+pub use transaction::to_blockifier_transactions;
 
 pub fn display_internal_server_error(err: impl fmt::Display) {
     tracing::error!(target: "rpc_errors", "{:#}", err);

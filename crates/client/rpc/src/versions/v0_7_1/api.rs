@@ -1,5 +1,4 @@
 use jsonrpsee::core::RpcResult;
-use jsonrpsee::proc_macros::rpc;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,

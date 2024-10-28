@@ -4,7 +4,6 @@
 
 mod constants;
 mod errors;
-mod macros;
 pub mod providers;
 #[cfg(test)]
 pub mod test_utils;
@@ -22,7 +21,7 @@ use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::{ChainConfig, RpcVersion};
 use mp_convert::ToFelt;
 
-use errors::{StarknetRpcApiError, StarknetRpcResult};
+pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
 
@@ -30,21 +29,20 @@ use utils::ResultExt;
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
-    chain_config: Arc<ChainConfig>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
 }
 
 impl Starknet {
-    pub fn new(
-        backend: Arc<MadaraBackend>,
-        chain_config: Arc<ChainConfig>,
-        add_transaction_provider: Arc<dyn AddTransactionProvider>,
-    ) -> Self {
-        Self { backend, add_transaction_provider, chain_config }
+    pub fn new(backend: Arc<MadaraBackend>, add_transaction_provider: Arc<dyn AddTransactionProvider>) -> Self {
+        Self { backend, add_transaction_provider }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
         Arc::clone(&self.backend)
+    }
+
+    pub fn clone_chain_config(&self) -> Arc<ChainConfig> {
+        Arc::clone(self.backend.chain_config())
     }
 
     pub fn get_block_info(
@@ -72,7 +70,7 @@ impl Starknet {
     }
 
     pub fn chain_id(&self) -> Felt {
-        self.chain_config.chain_id.clone().to_felt()
+        self.backend.chain_config().chain_id.clone().to_felt()
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
@@ -99,14 +97,25 @@ pub fn versioned_rpc_api(
     write: bool,
     trace: bool,
     internal: bool,
+    ws: bool,
 ) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
-    merge_rpc_versions!(
-        rpc_api, starknet, read, write, trace, internal,
-        v0_7_1, // We can add new versions by adding the version module below
-                // , v0_8_0 (for example)
-    );
+    if read {
+        rpc_api.merge(versions::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if write {
+        rpc_api.merge(versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if trace {
+        rpc_api.merge(versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if internal {
+        rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    }
+    if ws {
+        // V0.8.0 ...
+    }
 
     Ok(rpc_api)
 }
