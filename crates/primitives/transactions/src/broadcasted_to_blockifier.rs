@@ -88,7 +88,7 @@ pub fn broadcasted_to_blockifier(
             starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
                 let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
                 let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
-                log::debug!("Computed legacy class hash: {:?}", class_hash);
+                tracing::debug!("Computed legacy class hash: {:?}", class_hash);
                 let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
                 let class_blockifier = compressed_legacy_class
                     .to_blockifier_class()

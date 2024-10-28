@@ -62,7 +62,7 @@ pub fn get_bal_contract(
         .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &high_key)
         .unwrap()
         .unwrap_or(Felt::ZERO);
-    log::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
+    tracing::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
 
     assert_eq!(high, Felt::ZERO); // for now we never use high let's keep it out of the api
                                   // (blockifier does not even support it fully I believe, as the total supply of STRK/ETH would not reach the high bits.)
@@ -82,6 +82,7 @@ pub fn get_fee_tokens_balance(
 }
 
 impl DevnetKeys {
+    #[tracing::instrument(skip(backend), fields(module = "DevnetKeys"))]
     pub fn from_db(backend: &MadaraBackend) -> anyhow::Result<Self> {
         let keys = backend
             .get_devnet_predeployed_keys()
@@ -105,6 +106,7 @@ impl DevnetKeys {
         Ok(Self(keys))
     }
 
+    #[tracing::instrument(skip(self, backend), fields(module = "DevnetKeys"))]
     pub fn save_to_db(&self, backend: &MadaraBackend) -> anyhow::Result<()> {
         let keys = mc_db::devnet_db::DevnetPredeployedKeys(
             self.0

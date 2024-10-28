@@ -4,7 +4,6 @@ use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
-use mc_metrics::MetricsRegistry;
 use mp_block::H160;
 use mp_utils::service::Service;
 use starknet_api::core::ChainId;
@@ -28,7 +27,6 @@ impl L1SyncService {
     pub async fn new(
         config: &L1SyncParams,
         db: &DatabaseService,
-        metrics_handle: &MetricsRegistry,
         l1_gas_provider: GasPriceProvider,
         chain_id: ChainId,
         l1_core_address: H160,
@@ -39,8 +37,7 @@ impl L1SyncService {
         let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
-                let l1_block_metrics =
-                    L1BlockMetrics::register(metrics_handle).expect("Registering prometheus metrics");
+                let l1_block_metrics = L1BlockMetrics::register().expect("Registering metrics");
                 Some(
                     EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
                         .await
@@ -66,7 +63,7 @@ impl L1SyncService {
                 .clone()
                 .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
-            log::info!("⏳ Getting initial L1 gas prices");
+            tracing::info!("⏳ Getting initial L1 gas prices");
             mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)
                 .await
                 .context("Getting initial ethereum gas prices")?;
