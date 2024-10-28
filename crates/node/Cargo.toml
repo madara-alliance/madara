@@ -28,15 +28,14 @@ mc-devnet = { workspace = true }
 mc-eth = { workspace = true }
 mc-gateway = { workspace = true }
 mc-mempool = { workspace = true }
-mc-metrics = { workspace = true }
 mc-rpc = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
-mp-utils = { workspace = true }
 mp-oracle = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 blockifier.workspace = true
