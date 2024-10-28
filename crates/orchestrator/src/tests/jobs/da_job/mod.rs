@@ -53,7 +53,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     let state_update = MaybePendingStateUpdate::Update(state_update);
     let state_update = serde_json::to_value(&state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
-    let server = services.server.unwrap();
+    let server = services.starknet_server.unwrap();
     get_nonce_attached(&server, nonces_file.as_str());
 
     let state_update_mock = server.mock(|when, then| {
@@ -104,7 +104,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
         .configure_da_client(ConfigType::Actual)
         .build()
         .await;
-    let server = services.server.unwrap();
+    let server = services.starknet_server.unwrap();
     let internal_id = "1";
 
     let pending_state_update = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
@@ -196,7 +196,7 @@ async fn test_da_job_process_job_success(
         .configure_da_client(da_client.into())
         .build()
         .await;
-    let server = services.server.unwrap();
+    let server = services.starknet_server.unwrap();
 
     let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
 

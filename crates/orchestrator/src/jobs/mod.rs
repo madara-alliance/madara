@@ -39,6 +39,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum JobError {
+    #[error("Job id {id:?} is invalid.")]
+    InvalidId { id: String },
+
     #[error("Job already exists for internal_id {internal_id:?} and job_type {job_type:?}. Skipping!")]
     JobAlreadyExists { internal_id: String, job_type: JobType },
 
@@ -160,7 +163,7 @@ pub async fn create_job(
         .await
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
-    // this is technicaly a redundant check, we've another check inside `create_job`
+    // this is technically a redundant check, we've another check inside `create_job`
     if existing_job.is_some() {
         return Err(JobError::JobAlreadyExists { internal_id, job_type });
     }

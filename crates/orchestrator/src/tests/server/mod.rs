@@ -1,47 +1,22 @@
+pub mod job_routes;
 use std::io::Read;
-use std::net::SocketAddr;
 
 use axum::http::StatusCode;
 use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
-use url::Url;
-use utils::env_utils::get_env_var_or_default;
 
 use crate::queue::init_consumers;
-use crate::routes::app_router;
-use crate::tests::config::TestConfigBuilder;
-
-#[fixture]
-pub async fn setup_server() -> SocketAddr {
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse("http://localhost:9944".to_string().as_str()).expect("Failed to parse URL"),
-    ));
-
-    TestConfigBuilder::new().configure_starknet_client(provider.into()).build().await;
-
-    let host = get_env_var_or_default("HOST", "127.0.0.1");
-    let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");
-    let address = format!("{}:{}", host, port);
-
-    let listener = tokio::net::TcpListener::bind(address.clone()).await.expect("Failed to get listener");
-    let addr = listener.local_addr().unwrap();
-    let app = app_router();
-
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("Failed to start axum server");
-    });
-
-    addr
-}
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 #[rstest]
 #[tokio::test]
-async fn test_health_endpoint(#[future] setup_server: SocketAddr) {
-    let addr = setup_server.await;
+async fn test_health_endpoint() {
+    dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
 
+    let services = TestConfigBuilder::new().configure_api_server(ConfigType::Actual).build().await;
+
+    let addr = services.api_server_address.unwrap();
     let client = hyper::Client::new();
     let response = client
         .request(Request::builder().uri(format!("http://{}/health", addr)).body(Body::empty()).unwrap())

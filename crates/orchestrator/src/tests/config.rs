@@ -1,5 +1,7 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use da_client_interface::{DaClient, MockDaClient};
 use httpmock::MockServer;
 use prover_client_interface::{MockProverClient, ProverClient};
@@ -15,6 +17,7 @@ use crate::config::{get_aws_config, Config, ProviderConfig};
 use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::{Database, MockDatabase};
 use crate::queue::{MockQueueProvider, QueueProvider};
+use crate::routes::{get_server_url, setup_server};
 use crate::tests::common::{create_sns_arn, create_sqs_queues, drop_database};
 
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
@@ -22,6 +25,7 @@ use crate::tests::common::{create_sns_arn, create_sqs_queues, drop_database};
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
 
 pub enum MockType {
+    Server(Router),
     RpcUrl(Url),
     StarknetClient(Arc<JsonRpcClient<HttpTransport>>),
     DaClient(Box<dyn DaClient>),
@@ -91,6 +95,8 @@ pub struct TestConfigBuilder {
     queue_type: ConfigType,
     /// Storage client
     storage_type: ConfigType,
+    /// API Service
+    api_server_type: ConfigType,
 }
 
 impl Default for TestConfigBuilder {
@@ -100,10 +106,12 @@ impl Default for TestConfigBuilder {
 }
 
 pub struct TestConfigBuilderReturns {
-    pub server: Option<MockServer>,
+    pub starknet_server: Option<MockServer>,
     pub config: Arc<Config>,
     pub provider_config: Arc<ProviderConfig>,
+    pub api_server_address: Option<SocketAddr>,
 }
+
 impl TestConfigBuilder {
     /// Create a new config
     pub fn new() -> TestConfigBuilder {
@@ -117,6 +125,7 @@ impl TestConfigBuilder {
             queue_type: ConfigType::default(),
             storage_type: ConfigType::default(),
             alerts_type: ConfigType::default(),
+            api_server_type: ConfigType::default(),
         }
     }
 
@@ -164,6 +173,11 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_api_server(mut self, api_server_type: ConfigType) -> TestConfigBuilder {
+        self.api_server_type = api_server_type;
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
 
@@ -182,9 +196,10 @@ impl TestConfigBuilder {
             database_type,
             queue_type,
             storage_type,
+            api_server_type,
         } = self;
 
-        let (starknet_rpc_url, starknet_client, server) =
+        let (starknet_rpc_url, starknet_client, starknet_server) =
             implement_client::init_starknet_client(starknet_rpc_url_type, starknet_client_type).await;
         let alerts = implement_client::init_alerts(alerts_type, &settings_provider, provider_config.clone()).await;
         let da_client = implement_client::init_da_client(da_client_type, &settings_provider).await;
@@ -221,7 +236,35 @@ impl TestConfigBuilder {
             alerts,
         ));
 
-        TestConfigBuilderReturns { server, config, provider_config: provider_config.clone() }
+        let api_server_address = implement_api_server(api_server_type, config.clone()).await;
+
+        TestConfigBuilderReturns {
+            starknet_server,
+            config,
+            provider_config: provider_config.clone(),
+            api_server_address,
+        }
+    }
+}
+
+async fn implement_api_server(api_server_type: ConfigType, config: Arc<Config>) -> Option<SocketAddr> {
+    match api_server_type {
+        ConfigType::Mock(client) => {
+            if let MockType::Server(router) = client {
+                let (api_server_url, listener) = get_server_url().await;
+                let app = Router::new().merge(router);
+
+                tokio::spawn(async move {
+                    axum::serve(listener, app).await.expect("Failed to start axum server");
+                });
+
+                Some(api_server_url)
+            } else {
+                panic!(concat!("Mock client is not a ", stringify!($client_type)));
+            }
+        }
+        ConfigType::Actual => Some(setup_server(config.clone()).await),
+        ConfigType::Dummy => None,
     }
 }
 
