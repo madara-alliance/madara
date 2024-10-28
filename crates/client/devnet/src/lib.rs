@@ -52,19 +52,19 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo_0/madara_contracts_UDC.json");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!("../../../../cairo-artifacts/madara_contracts_UDC.json");
 const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_ERC20.contract_class.json");
+    include_bytes!("../../../../cairo-artifacts/openzeppelin_ERC20Upgradeable.contract_class.json");
 const ERC20_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../cairo/target/dev/madara_contracts_AccountUpgradeable.contract_class.json");
+    include_bytes!("../../../../cairo-artifacts/openzeppelin_AccountUpgradeable.contract_class.json");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -77,6 +77,7 @@ pub struct ChainGenesisDescription {
 }
 
 impl ChainGenesisDescription {
+    #[tracing::instrument(fields(module = "ChainGenesisDescription"))]
     pub fn base_config() -> anyhow::Result<Self> {
         let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
@@ -92,6 +93,7 @@ impl ChainGenesisDescription {
         })
     }
 
+    #[tracing::instrument(skip(self), fields(module = "ChainGenesisDescription"))]
     pub fn add_devnet_contracts(&mut self, n_addr: u64) -> anyhow::Result<DevnetKeys> {
         let account_class =
             InitiallyDeclaredClass::new_sierra(ACCOUNT_CLASS_DEFINITION).context("Failed to add account class")?;
@@ -144,6 +146,7 @@ impl ChainGenesisDescription {
         ))
     }
 
+    #[tracing::instrument(skip(self, chain_config), fields(module = "ChainGenesisDescription"))]
     pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
@@ -186,9 +189,10 @@ mod tests {
     use mc_block_import::{BlockImporter, BlockValidationContext};
     use mc_db::MadaraBackend;
     use mc_mempool::block_production::BlockProductionTask;
+    use mc_mempool::block_production_metrics::BlockProductionMetrics;
     use mc_mempool::MempoolProvider;
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
-    use mc_metrics::MetricsRegistry;
+
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
@@ -233,7 +237,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            log::debug!("tx: {:?}", tx);
+            tracing::debug!("tx: {:?}", tx);
 
             self.mempool.accept_invoke_tx(tx).unwrap()
         }
@@ -299,8 +303,7 @@ mod tests {
         let chain_config = Arc::new(ChainConfig::madara_devnet());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
-        let importer =
-            Arc::new(BlockImporter::new(Arc::clone(&backend), &MetricsRegistry::dummy(), None, true).unwrap());
+        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None, true).unwrap());
 
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
@@ -313,7 +316,7 @@ mod tests {
             )
             .unwrap();
 
-        log::debug!("{:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
+        tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
         l1_data_provider.expect_get_da_mode().return_const(L1DataAvailabilityMode::Blob);
@@ -325,10 +328,13 @@ mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider)));
+        let metrics = BlockProductionMetrics::register();
+
         let block_production = BlockProductionTask::new(
             Arc::clone(&backend),
             Arc::clone(&importer),
             Arc::clone(&mempool),
+            metrics,
             Arc::clone(&l1_data_provider),
         )
         .unwrap();
@@ -337,13 +343,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json")]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract_path: &str) {
+    #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
+    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
         println!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
 
-        let sierra_class: SierraClass = serde_json::from_reader(std::fs::File::open(contract_path).unwrap()).unwrap();
+        let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
 
         // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
@@ -382,7 +388,7 @@ mod tests {
 
         assert_eq!(block.inner.transactions.len(), 1);
         assert_eq!(block.inner.receipts.len(), 1);
-        log::debug!("receipt: {:?}", block.inner.receipts[0]);
+        tracing::debug!("receipt: {:?}", block.inner.receipts[0]);
 
         let class_info =
             chain.backend.get_class_info(&BlockId::Tag(BlockTag::Pending), &calculated_class_hash).unwrap().unwrap();
@@ -400,16 +406,16 @@ mod tests {
     #[rstest]
     fn test_account_deploy(mut chain: DevnetForTesting) {
         let key = SigningKey::from_random();
-        log::debug!("Secret Key : {:?}", key.secret_scalar());
+        tracing::debug!("Secret Key : {:?}", key.secret_scalar());
 
         let pubkey = key.verifying_key();
-        log::debug!("Public Key : {:?}", pubkey.scalar());
+        tracing::debug!("Public Key : {:?}", pubkey.scalar());
 
         // using the class hash of the first account as the account class hash
         let account_class_hash = chain.contracts.0[0].class_hash;
         let calculated_address =
             calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
-        log::debug!("Calculated Address : {:?}", calculated_address);
+        tracing::debug!("Calculated Address : {:?}", calculated_address);
 
         // =====================================================================================
         // Transferring the funds from pre deployed account into the calculated address
@@ -441,7 +447,7 @@ mod tests {
             }),
             contract_0,
         );
-        log::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
+        tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
         chain.block_production.on_pending_time_tick().unwrap();
@@ -534,7 +540,7 @@ mod tests {
             contract_0,
         );
 
-        log::info!("tx hash: {:#x}", result.transaction_hash);
+        tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
         chain.block_production.set_current_pending_tick(1);
         chain.block_production.on_pending_time_tick().unwrap();
@@ -543,7 +549,7 @@ mod tests {
 
         assert_eq!(block.inner.transactions.len(), 1);
         assert_eq!(block.inner.receipts.len(), 1);
-        log::info!("receipt: {:?}", block.inner.receipts[0]);
+        tracing::info!("receipt: {:?}", block.inner.receipts[0]);
 
         let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
 

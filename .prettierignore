@@ -1,2 +1,4 @@
 target
 crates/client/sync/test-data/*.json
+infra/Signoz
+cairo-artifacts
