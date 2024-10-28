@@ -28,8 +28,11 @@ jobs:
         with:
           version: nightly
       - name: Build
+        # also build test contracts for js-tests.
         run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo build --release --bin madara
+          cargo build --release -p m-cairo-test-contracts
       - name: Generate binary hash
         id: binary_hash
         run: |

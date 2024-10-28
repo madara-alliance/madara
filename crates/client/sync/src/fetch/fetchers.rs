@@ -99,7 +99,7 @@ pub async fn fetch_pending_block_and_updates(
                 // Ignore (this is the case where we returned a closed block when we asked for a pending one)
                 // When the FGW does not have a pending block, it can return the latest block instead
                 Err(SequencerError::DeserializeBody { serde_error }) => {
-                    log::debug!("Serde error when fetching the pending block: {serde_error:#}");
+                    tracing::debug!("Serde error when fetching the pending block: {serde_error:#}");
                     Ok(None)
                 }
                 Err(err) => Err(err),
@@ -119,7 +119,7 @@ pub async fn fetch_pending_block_and_updates(
     );
 
     if block.parent_block_hash != parent_block_hash {
-        log::debug!(
+        tracing::debug!(
             "Fetched a pending block, but mismatched parent block hash: parent_block_hash={:#x}",
             block.parent_block_hash
         );
@@ -187,9 +187,9 @@ where
                 }
 
                 if let SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::RateLimited, .. }) = err {
-                    log::info!("The fetching process has been rate limited, retrying in {:?}", delay)
+                    tracing::info!("The fetching process has been rate limited, retrying in {:?}", delay)
                 } else {
-                    log::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
+                    tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
                 if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
@@ -271,7 +271,7 @@ async fn fetch_class(
     provider: &FeederClient,
 ) -> Result<(Felt, ContractClass), SequencerError> {
     let contract_class = provider.get_class_by_hash(class_hash, block_id.into()).await?;
-    log::debug!("Got the contract class {:?}", class_hash);
+    tracing::debug!("Got the contract class {:?}", class_hash);
     Ok((class_hash, contract_class))
 }
 
@@ -361,7 +361,7 @@ mod test_l2_fetchers {
         ctx.mock_block_pending();
 
         // Mock class hash
-        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
 
         let result = fetch_pending_block_and_updates(
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
@@ -624,7 +624,7 @@ mod test_l2_fetchers {
 
         // Mock partial data scenario
         ctx.mock_block_partial_data(5);
-        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
 
         let result = ctx.provider.get_state_update_with_block(FetchBlockId::BlockN(5).into()).await;
 
@@ -647,7 +647,7 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         ctx.mock_block(5);
-        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
 
         // WARN: the mock server is set up to ALWAYS return state update with
         // block, DO NOT call `get_state_update` on it!
@@ -723,7 +723,7 @@ mod test_l2_fetchers {
         let ctx = TestContext::new(test_setup);
 
         let class_hash = Felt::from_hex_unchecked("0x78401746828463e2c3f92ebb261fc82f7d4d4c8d9a80a356c44580dab124cb0");
-        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
 
         let (fetched_hash, _contract_class) =
             fetch_class(class_hash, FetchBlockId::BlockN(5), &ctx.provider).await.expect("Failed to fetch class");

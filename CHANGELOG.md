@@ -2,6 +2,11 @@
 
 ## Next release
 
+- fix(rocksdb): update max open files opt
+- code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
+- fix(version constants): 0.13.2 was mapped to wrong constants
+- fix(compilation): devnet contract artifacts are not compiled by `cargo build` anymore
+- feat: add fgw get_block_traces
 - refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix(namespace): versioning now works for methods without `starknet` namesapce
 - fix(compile): wrong struct field being used in state map conversion

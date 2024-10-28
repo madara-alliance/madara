@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use mc_metrics::MetricsRegistry;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
@@ -67,6 +66,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
     opts.set_max_subcompactions(cores as _);
 
     opts.set_max_log_file_size(1 * MiB);
+    opts.set_max_open_files(512); // 512 is the value used by substrate for reference
     opts.set_keep_log_file_num(3);
     opts.set_log_level(rocksdb::LogLevel::Warn);
 
@@ -76,7 +76,7 @@ pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
 
     opts.set_env(&env);
 
-    log::debug!("opening db at {:?}", path.display());
+    tracing::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
         path,
@@ -102,13 +102,13 @@ fn spawn_backup_db_task(
         .context("Opening backup engine")?;
 
     if restore_from_latest_backup {
-        log::info!("⏳ Restoring latest backup...");
-        log::debug!("restore path is {db_path:?}");
+        tracing::info!("⏳ Restoring latest backup...");
+        tracing::debug!("restore path is {db_path:?}");
         fs::create_dir_all(db_path).with_context(|| format!("creating directories {:?}", db_path))?;
 
         let opts = rocksdb::backup::RestoreOptions::default();
         engine.restore_from_latest_backup(db_path, db_path, &opts).context("Restoring database")?;
-        log::debug!("restoring latest backup done");
+        tracing::debug!("restoring latest backup done");
     }
 
     db_restored_cb.send(()).ok().context("Receiver dropped")?;
@@ -346,17 +346,15 @@ impl DatabaseService {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-        metrics_registry: &MetricsRegistry,
         trie_log_config: TrieLogConfig,
     ) -> anyhow::Result<Self> {
-        log::info!("💾 Opening database at: {}", base_path.display());
+        tracing::info!("💾 Opening database at: {}", base_path.display());
 
         let handle = MadaraBackend::open(
             base_path.to_owned(),
             backup_dir.clone(),
             restore_from_latest_backup,
             chain_config,
-            metrics_registry,
             trie_log_config,
         )
         .await?;
@@ -383,7 +381,7 @@ struct BackupRequest {
 
 impl Drop for MadaraBackend {
     fn drop(&mut self) {
-        log::info!("⏳ Gracefully closing the database...");
+        tracing::info!("⏳ Gracefully closing the database...");
         self.maybe_flush(true).expect("Error when flushing the database"); // flush :)
     }
 }
@@ -403,7 +401,7 @@ impl MadaraBackend {
             db,
             last_flush_time: Default::default(),
             chain_config,
-            db_metrics: DbMetrics::register(&MetricsRegistry::dummy()).unwrap(),
+            db_metrics: DbMetrics::register().unwrap(),
             snapshots,
             trie_log_config: Default::default(),
             _temp_dir: Some(temp_dir),
@@ -416,7 +414,6 @@ impl MadaraBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-        metrics_registry: &MetricsRegistry,
         trie_log_config: TrieLogConfig,
     ) -> Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
@@ -433,9 +430,9 @@ impl MadaraBackend {
                     .expect("Database backup thread")
             });
 
-            log::debug!("blocking on db restoration");
+            tracing::debug!("blocking on db restoration");
             restored_cb_recv.await.context("Restoring database")?;
-            log::debug!("done blocking on db restoration");
+            tracing::debug!("done blocking on db restoration");
 
             Some(sender)
         } else {
@@ -446,7 +443,7 @@ impl MadaraBackend {
         let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(trie_log_config.max_saved_snapshots)));
 
         let backend = Arc::new(Self {
-            db_metrics: DbMetrics::register(metrics_registry).context("Registering db metrics")?,
+            db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
             db,
             last_flush_time: Default::default(),
@@ -469,7 +466,7 @@ impl MadaraBackend {
                 None => true,
             };
         if will_flush {
-            log::debug!("doing a db flush");
+            tracing::debug!("doing a db flush");
             let mut opts = FlushOptions::default();
             opts.set_wait(true);
             // we have to collect twice here :/
@@ -483,6 +480,7 @@ impl MadaraBackend {
         Ok(will_flush)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn backup(&self) -> Result<()> {
         let (callback_sender, callback_recv) = oneshot::channel();
         let _res = self

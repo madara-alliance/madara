@@ -27,6 +27,7 @@ fn make_storage_key_prefix(contract_address: Felt, storage_key: Felt) -> [u8; 64
 }
 
 impl MadaraBackend {
+    #[tracing::instrument(skip(self, id, k, make_bin_prefix), fields(module = "ContractDB"))]
     fn resolve_history_kv<K: serde::Serialize, V: serde::de::DeserializeOwned, B: AsRef<[u8]>>(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -82,6 +83,7 @@ impl MadaraBackend {
         }
     }
 
+    #[tracing::instrument(skip(self, id), fields(module = "ContractDB"))]
     pub fn is_contract_deployed_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -91,6 +93,7 @@ impl MadaraBackend {
         Ok(self.get_contract_class_hash_at(id, contract_addr)?.is_some())
     }
 
+    #[tracing::instrument(skip(self, id, contract_addr), fields(module = "ContractDB"))]
     pub fn get_contract_class_hash_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -105,6 +108,7 @@ impl MadaraBackend {
         )
     }
 
+    #[tracing::instrument(skip(self, id), fields(module = "ContractDB"))]
     pub fn get_contract_nonce_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -115,6 +119,7 @@ impl MadaraBackend {
         })
     }
 
+    #[tracing::instrument(skip(self, id, key), fields(module = "ContractDB"))]
     pub fn get_contract_storage_at(
         &self,
         id: &impl DbBlockIdResolvable,
@@ -131,6 +136,10 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(
+        skip(self, block_number, contract_class_updates, contract_nonces_updates, contract_kv_updates),
+        fields(module = "ContractDB")
+    )]
     pub(crate) fn contract_db_store_block(
         &self,
         block_number: u64,
@@ -194,6 +203,10 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(
+        skip(self, contract_class_updates, contract_nonces_updates, contract_kv_updates),
+        fields(module = "ContractDB")
+    )]
     pub(crate) fn contract_db_store_pending(
         &self,
         contract_class_updates: &[(Felt, Felt)],
@@ -236,6 +249,7 @@ impl MadaraBackend {
         Ok(())
     }
 
+    #[tracing::instrument(fields(module = "ContractDB"))]
     pub(crate) fn contract_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);

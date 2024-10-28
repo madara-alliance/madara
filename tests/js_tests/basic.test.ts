@@ -1,6 +1,10 @@
 import { RpcProvider, Account, Contract, CallData, cairo } from "starknet";
-import { RPC_URL, SIGNER_PRIVATE, SIGNER_PUBLIC } from "./constant";
-import { readContractSierra, readContractCasm } from "./utils";
+import { RPC_URL, SIGNER_PRIVATE, SIGNER_CONTRACT_ADDRESS } from "./constant";
+import {
+  readContractSierra,
+  readContractCasm,
+  readContractSierraInArtifacts,
+} from "./utils";
 import { hash, stark, ec } from "starknet";
 
 /**
@@ -35,7 +39,7 @@ describe("Starknet Contract Tests", () => {
   beforeAll(async () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: RPC_URL });
-    account = new Account(provider, SIGNER_PUBLIC, SIGNER_PRIVATE);
+    account = new Account(provider, SIGNER_CONTRACT_ADDRESS, SIGNER_PRIVATE);
   });
 
   // Run tests in specified order
@@ -134,7 +138,9 @@ async function deployContract({ provider, account }: TestContext) {
  */
 async function deployAccount({ provider, account }: TestContext) {
   // Read the Sierra contract class for the account
-  const sierra = readContractSierra("madara_contracts_AccountUpgradeable");
+  const sierra = readContractSierraInArtifacts(
+    "openzeppelin_AccountUpgradeable",
+  );
 
   // Compute the class hash of the account contract
   let classHash = hash.computeContractClassHash(sierra);
@@ -196,7 +202,9 @@ async function transferFunds({ provider, account }: TestContext) {
     "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 
   // Read the ERC20 contract class
-  const erc20ContractData = readContractSierra("madara_contracts_ERC20");
+  const erc20ContractData = readContractSierraInArtifacts(
+    "openzeppelin_ERC20Upgradeable",
+  );
 
   // Create an instance of the ERC20 contract
   const erc20Instance = new Contract(
@@ -209,8 +217,9 @@ async function transferFunds({ provider, account }: TestContext) {
   erc20Instance.connect(account);
 
   // Get the initial balances of sender and receiver
-  const preTransactSenderBalance =
-    await erc20Instance.balance_of(SIGNER_PUBLIC);
+  const preTransactSenderBalance = await erc20Instance.balance_of(
+    SIGNER_CONTRACT_ADDRESS,
+  );
   const preTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
@@ -234,8 +243,9 @@ async function transferFunds({ provider, account }: TestContext) {
   await provider.waitForTransaction(transferResponse.transaction_hash);
 
   // Get the final balances of sender and receiver
-  const postTransactSenderBalance =
-    await erc20Instance.balance_of(SIGNER_PUBLIC);
+  const postTransactSenderBalance = await erc20Instance.balance_of(
+    SIGNER_CONTRACT_ADDRESS,
+  );
   const postTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 

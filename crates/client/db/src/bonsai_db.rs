@@ -58,14 +58,16 @@ impl BonsaiDatabase for BonsaiDb {
         Self::Batch::default()
     }
 
+    #[tracing::instrument(skip(self, key), fields(module = "BonsaiDB"))]
     fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        log::trace!("Getting from RocksDB: {:?}", key);
+        tracing::trace!("Getting from RocksDB: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         Ok(self.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, prefix), fields(module = "BonsaiDB"))]
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
-        log::trace!("Getting from RocksDB: {:?}", prefix);
+        tracing::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
         let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
         Ok(iter
@@ -84,19 +86,21 @@ impl BonsaiDatabase for BonsaiDb {
             .collect())
     }
 
+    #[tracing::instrument(skip(self, key), fields(module = "BonsaiDB"))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        log::trace!("Checking if RocksDB contains: {:?}", key);
+        tracing::trace!("Checking if RocksDB contains: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         Ok(self.db.get_cf(&handle, key.as_slice()).map(|value| value.is_some())?)
     }
 
+    #[tracing::instrument(skip(self, key, value, batch), fields(module = "BonsaiDB"))]
     fn insert(
         &mut self,
         key: &DatabaseKey,
         value: &[u8],
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        log::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
+        tracing::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
         let handle = self.db.get_column(self.column_mapping.map(key));
 
         // NB: we don't need old value as the trie log is not used :)
@@ -113,12 +117,13 @@ impl BonsaiDatabase for BonsaiDb {
         Ok(old_value.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, key, batch), fields(module = "BonsaiDB"))]
     fn remove(
         &mut self,
         key: &DatabaseKey,
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        log::trace!("Removing from RocksDB: {:?}", key);
+        tracing::trace!("Removing from RocksDB: {:?}", key);
         let handle = self.db.get_column(self.column_mapping.map(key));
         let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
@@ -129,7 +134,9 @@ impl BonsaiDatabase for BonsaiDb {
         Ok(old_value.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, prefix), fields(module = "BonsaiDB"))]
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
+        tracing::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.db.get_column(self.column_mapping.map(prefix));
         let iter = self.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
         let mut batch = self.create_batch();
@@ -149,6 +156,7 @@ impl BonsaiDatabase for BonsaiDb {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, batch), fields(module = "BonsaiDB"))]
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         Ok(self.db.write_opt(batch, &self.write_opt)?)
     }
@@ -196,23 +204,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
-        unreachable!()
-        // log::trace!("Getting from RocksDB: {:?}", prefix);
-        // let handle = self.db.get_column(self.column_mapping.map(prefix));
-        // let iter = self.snapshot.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
-        // Ok(iter
-        //     .map_while(|kv| {
-        //         if let Ok((key, value)) = kv {
-        //             if key.starts_with(prefix.as_slice()) {
-        //                 Some((key.to_vec().into(), value.to_vec().into()))
-        //             } else {
-        //                 None
-        //             }
-        //         } else {
-        //             None
-        //         }
-        //     })
-        //     .collect())
+        unreachable!("unused for now")
     }
 
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
@@ -282,7 +274,6 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
     where
         Self: 'a,
     {
-        // transaction.txn.commit()?;
-        unreachable!()
+        unreachable!("unused for now")
     }
 }

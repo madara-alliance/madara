@@ -4,9 +4,10 @@ pub(crate) mod transaction;
 use std::fmt;
 
 use crate::StarknetRpcApiError;
+pub use transaction::to_blockifier_transactions;
 
 pub fn display_internal_server_error(err: impl fmt::Display) {
-    log::error!(target: "rpc_errors", "{:#}", err);
+    tracing::error!(target: "rpc_errors", "{:#}", err);
 }
 
 #[macro_export]
@@ -66,7 +67,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!(target: "rpc_errors", "Contract storage error: {context}: {:#}", E::into(err));
+                tracing::error!(target: "rpc_errors", "Contract storage error: {context}: {:#}", E::into(err));
                 Err(StarknetRpcApiError::ContractError)
             }
         }

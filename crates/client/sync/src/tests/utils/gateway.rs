@@ -5,7 +5,6 @@ use mc_gateway::client::builder::FeederClient;
 use mp_chain_config::ChainConfig;
 use rstest::*;
 use serde_json::{json, Value};
-use std::fs;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
@@ -214,9 +213,8 @@ impl TestContext {
         });
     }
 
-    pub fn mock_class_hash(&self, path: &str) {
-        let file_content = fs::read_to_string(path).expect("Failed to read file");
-        let json: Value = serde_json::from_str(&file_content).expect("Failed to parse JSON");
+    pub fn mock_class_hash(&self, contract_file: &[u8]) {
+        let json: Value = serde_json::from_slice(contract_file).expect("Failed to parse JSON");
 
         // Convert ABI to string
         let abi_string = serde_json::to_string(&json["abi"]).expect("Failed to serialize ABI");
