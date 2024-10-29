@@ -58,6 +58,7 @@ impl MadaraBackend {
     /// # Panics
     ///
     /// This function does not panic.
+    #[tracing::instrument(skip(self), fields(module = "L1DB"))]
     pub fn messaging_last_synced_l1_block_with_event(&self) -> Result<Option<LastSyncedEventBlock>> {
         let messaging_column = self.db.get_column(Column::L1Messaging);
         let Some(res) = self.db.get_cf(&messaging_column, LAST_SYNCED_L1_EVENT_BLOCK)? else {
@@ -96,6 +97,7 @@ impl MadaraBackend {
     /// # Panics
     ///
     /// This function does not panic.
+    #[tracing::instrument(skip(self), fields(module = "L1DB"))]
     pub fn messaging_update_last_synced_l1_block_with_event(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
@@ -112,11 +114,13 @@ impl MadaraBackend {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, nonce), fields(module = "L1DB"))]
     pub fn has_l1_messaging_nonce(&self, nonce: Nonce) -> Result<bool> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         Ok(self.db.get_pinned_cf(&nonce_column, bincode::serialize(&nonce)?)?.is_some())
     }
 
+    #[tracing::instrument(skip(self, nonce), fields(module = "L1DB"))]
     pub fn set_l1_messaging_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         let mut writeopts = WriteOptions::default();

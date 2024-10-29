@@ -1,37 +1,37 @@
 use std::collections::HashMap;
 
-use hyper::{header, Body, Request, Response, StatusCode};
+use hyper::{body::Incoming, header, Request, Response, StatusCode};
 use mp_block::{BlockId, BlockTag};
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
 
 use crate::error::{StarknetError, StarknetErrorCode};
 
-pub(crate) fn service_unavailable_response(service_name: &str) -> Response<Body> {
+pub(crate) fn service_unavailable_response(service_name: &str) -> Response<String> {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
-        .body(Body::from(format!("{} Service disabled", service_name)))
+        .body(format!("{} Service disabled", service_name))
         .expect("Failed to build SERVICE_UNAVAILABLE response with a valid status and body")
 }
 
-pub(crate) fn not_found_response() -> Response<Body> {
+pub(crate) fn not_found_response() -> Response<String> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Body::from("Not Found"))
+        .body("Not Found".to_string())
         .expect("Failed to build NOT_FOUND response with a valid status and body")
 }
 
-pub(crate) fn internal_error_response(msg: &str) -> Response<Body> {
+pub(crate) fn internal_error_response(msg: &str) -> Response<String> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::from(format!("Internal Server Error: {msg}")))
+        .body(format!("Internal Server Error: {msg}"))
         .expect("Failed to build INTERNAL_SERVER_ERROR response with a valid status and body")
 }
 
 /// Creates a JSON response with the given status code and a body that can be serialized to JSON.
 ///
 /// If the serialization fails, this function returns a 500 Internal Server Error response.
-pub(crate) fn create_json_response<T>(status: StatusCode, body: &T) -> Response<Body>
+pub(crate) fn create_json_response<T>(status: StatusCode, body: &T) -> Response<String>
 where
     T: Serialize,
 {
@@ -39,16 +39,16 @@ where
     let body = match serde_json::to_string(body) {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to serialize response body: {}", e);
+            tracing::error!("Failed to serialize response body: {}", e);
             return internal_error_response(&e.to_string());
         }
     };
 
     // Build the response with the specified status code and serialized body
-    match Response::builder().status(status).header(header::CONTENT_TYPE, "application/json").body(Body::from(body)) {
+    match Response::builder().status(status).header(header::CONTENT_TYPE, "application/json").body(body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }
@@ -57,8 +57,7 @@ where
 /// Creates a JSON response with the given status code and a body that can be serialized to JSON.
 ///
 /// If the serialization fails, this function returns a 500 Internal Server Error response.
-pub(crate) fn create_string_response(status: StatusCode, body: String) -> Response<Body> {
-    let body = Body::from(body);
+pub(crate) fn create_string_response(status: StatusCode, body: String) -> Response<String> {
     // Build the response with the specified status code and serialized body
     match Response::builder().status(status).body(body) {
         Ok(response) => response,
@@ -70,22 +69,18 @@ pub(crate) fn create_string_response(status: StatusCode, body: String) -> Respon
 }
 
 /// Creates a JSON response with the given status code and a body that is already serialized to a string.
-pub(crate) fn create_response_with_json_body(status: StatusCode, body: &str) -> Response<Body> {
+pub(crate) fn create_response_with_json_body(status: StatusCode, body: String) -> Response<String> {
     // Build the response with the specified status code and serialized body
-    match Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(body.to_string()))
-    {
+    match Response::builder().status(status).header(header::CONTENT_TYPE, "application/json").body(body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }
 }
 
-pub(crate) fn get_params_from_request(req: &Request<Body>) -> HashMap<String, String> {
+pub(crate) fn get_params_from_request(req: &Request<Incoming>) -> HashMap<String, String> {
     let query = req.uri().query().unwrap_or("");
     let params = query.split('&');
     let mut query_params = HashMap::new();
@@ -123,7 +118,7 @@ pub(crate) fn include_block_params(params: &HashMap<String, String>) -> bool {
     params.get("includeBlock").map_or(false, |v| v == "true")
 }
 
-impl From<StarknetError> for hyper::Response<hyper::Body> {
+impl From<StarknetError> for Response<String> {
     fn from(error: StarknetError) -> Self {
         create_json_response(hyper::StatusCode::BAD_REQUEST, &error)
     }

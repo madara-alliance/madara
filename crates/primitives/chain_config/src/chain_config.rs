@@ -361,7 +361,7 @@ impl Default for ChainVersionedConstants {
             (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
             (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
             (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-            (StarknetVersion::V0_13_2, VersionedConstants::latest_constants().clone()),
+            (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2.deref().clone()),
         ]
         .into()
     }

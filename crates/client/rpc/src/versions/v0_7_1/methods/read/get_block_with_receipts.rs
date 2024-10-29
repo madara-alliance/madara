@@ -11,7 +11,7 @@ pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
-    log::debug!("block_id {block_id:?}");
+    tracing::debug!("get_block_with_receipts called with {:?}", block_id);
     let block = starknet.get_block(&block_id)?;
 
     let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())

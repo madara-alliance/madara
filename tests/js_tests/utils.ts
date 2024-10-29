@@ -25,3 +25,15 @@ export const readContractSierra = (name: string): CompiledSierra =>
       )
       .toString("ascii"),
   );
+
+export const readContractSierraInArtifacts = (name: string): CompiledSierra =>
+  json.parse(
+    fs
+      .readFileSync(
+        path.resolve(
+          __dirname,
+          `../../cairo-artifacts/${name}.contract_class.json`,
+        ),
+      )
+      .toString("ascii"),
+  );

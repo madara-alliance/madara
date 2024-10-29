@@ -28,15 +28,18 @@ impl ContractFeeTokensBalance {
 pub struct InitialBalances(pub HashMap<ContractAddress, ContractFeeTokensBalance>);
 
 impl InitialBalances {
+    #[tracing::instrument(skip(self, contract_address, bal), fields(module = "InitialBalances"))]
     pub fn with(mut self, contract_address: ContractAddress, bal: ContractFeeTokensBalance) -> Self {
         self.insert(contract_address, bal);
         self
     }
 
+    #[tracing::instrument(skip(self, contract_address, bal), fields(module = "InitialBalances"))]
     pub fn insert(&mut self, contract_address: ContractAddress, bal: ContractFeeTokensBalance) {
         self.0.insert(contract_address, bal);
     }
 
+    #[tracing::instrument(skip(self, chain_config, storage_diffs), fields(module = "InitialBalances"))]
     pub fn to_storage_diffs(&self, chain_config: &ChainConfig, storage_diffs: &mut StorageDiffs) {
         for (contract_address, bal) in &self.0 {
             // Storage key where the balance of that contract is stored. For both STRK and ETH it ends up
