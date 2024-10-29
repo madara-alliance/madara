@@ -390,6 +390,7 @@ impl MadaraBackend {
             last_flush_time: Default::default(),
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
             _temp_dir: Some(temp_dir),
         })
     }
