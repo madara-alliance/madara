@@ -82,15 +82,35 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
             block_n = block_n.saturating_add(1);
         }
 
-        // We need to check the block number at each iteration as the first
-        // time this is exectued we might already have received some blocks
-        // from the backend which we manually fecthed from db
+        // Catching up with the backend
         loop {
             tokio::select! {
                 block_info = rx.recv() => {
                     let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
                     if block_info.header.block_number == block_n {
+                        break send_block_header(&sink, block_info, block_n).await?;
+                    }
+                },
+                _ = sink.closed() => {
+                    return Ok(())
+                }
+            }
+        }
+
+        // New block headers
+        loop {
+            tokio::select! {
+                block_info = rx.recv() => {
+                    let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
+                    if block_info.header.block_number == block_n + 1 {
                         send_block_header(&sink, block_info, block_n).await?;
+                    } else {
+                        let err = format!(
+                            "Received non-sequential block {}, expected {}",
+                            block_info.header.block_number,
+                            block_n + 1
+                        );
+                        return Err(StarknetWsApiError::internal_server_error(err).into());
                     }
                     block_n = block_n.saturating_add(1);
                 },
