@@ -497,9 +497,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
         ];
 
-        self.metrics.block_counter.add(1, &[]);
         self.metrics.block_gauge.record(block_n, &attributes);
-        self.metrics.transaction_counter.add(n_txs as u64, &[]);
+        self.metrics.transaction_gauge.record(n_txs as u64, &[
+            KeyValue::new("block_number", block_n.to_string()),
+        ]);
 
         Ok(())
     }

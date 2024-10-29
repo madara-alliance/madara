@@ -1,11 +1,10 @@
-use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument};
-use opentelemetry::metrics::{Counter, Gauge};
+use mc_analytics::register_gauge_metric_instrument;
+use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 
 pub struct BlockProductionMetrics {
     pub block_gauge: Gauge<u64>,
-    pub block_counter: Counter<u64>,
-    pub transaction_counter: Counter<u64>,
+    pub transaction_gauge: Gauge<u64>,
 }
 
 impl BlockProductionMetrics {
@@ -25,19 +24,14 @@ impl BlockProductionMetrics {
             "A gauge to show block state at given time".to_string(),
             "block".to_string(),
         );
-        let block_counter = register_counter_metric_instrument(
+        
+        let transaction_gauge = register_gauge_metric_instrument(
             &mempool_meter,
-            "block_produced_count".to_string(),
-            "A counter to show block state at given time".to_string(),
-            "block".to_string(),
-        );
-        let transaction_counter = register_counter_metric_instrument(
-            &mempool_meter,
-            "transaction_counter".to_string(),
-            "A counter to show transaction state for the given block".to_string(),
+            "transaction_no".to_string(),
+            "A gauge to show transaction state for the given block".to_string(),
             "transaction".to_string(),
         );
 
-        Self { block_gauge, block_counter, transaction_counter }
+        Self { block_gauge, transaction_gauge }
     }
 }
