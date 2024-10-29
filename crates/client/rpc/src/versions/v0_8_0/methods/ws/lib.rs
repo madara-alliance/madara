@@ -67,8 +67,8 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
 
             let block_info = match self.backend.get_block_info(&mp_block::BlockId::Number(n)) {
                 Ok(Some(block_info)) => {
-                    let err = format!("Failed to retrieve block info for block {n}");
-                    block_info.as_nonpending_owned().ok_or_internal_server_error(err)?
+                    let err = || format!("Failed to retrieve block info for block {n}");
+                    block_info.as_nonpending_owned().ok_or_else_internal_server_error(err)?
                 }
                 Ok(None) => break,
                 Err(e) => {
