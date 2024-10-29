@@ -9,10 +9,11 @@ use super::BLOCK_PAST_LIMIT;
 impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
     async fn subscribe_new_heads(
         &self,
-        pending: jsonrpsee::PendingSubscriptionSink,
+        subscription_sink: jsonrpsee::PendingSubscriptionSink,
         block_id: starknet_core::types::BlockId,
     ) -> jsonrpsee::core::SubscriptionResult {
-        let sink = pending.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+        let sink =
+            subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
 
         let mut block_n = match block_id {
             starknet_core::types::BlockId::Number(block_n) => {
@@ -35,13 +36,13 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                     .backend
                     .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
                     .or_else_internal_server_error(err)?
-                    .ok_or(StarknetWsApiError::BlockNotFound)?;
+                    .ok_or(StarknetWsApiError::NoBlocks)?;
 
                 let block_n = self
                     .backend
                     .get_block_n(&block_id)
                     .or_else_internal_server_error(err)?
-                    .ok_or_else_internal_server_error(err)?;
+                    .ok_or(StarknetWsApiError::BlockNotFound)?;
 
                 if block_n < block_latest.saturating_sub(BLOCK_PAST_LIMIT) {
                     return Err(StarknetWsApiError::TooManyBlocksBack.into());
@@ -53,7 +54,7 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                 .backend
                 .get_latest_block_n()
                 .or_internal_server_error("Failed to retrieve block info for latest block")?
-                .ok_or_internal_server_error("Failed to retrieve block info for latest block")?,
+                .ok_or(StarknetWsApiError::NoBlocks)?,
             starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending) => {
                 return Err(StarknetWsApiError::Pending.into());
             }

@@ -296,6 +296,7 @@ impl<T, E: std::fmt::Display> ErrorExtWs<T> for Result<T, E> {
 }
 
 pub trait OptionExtWs<T> {
+    #[allow(dead_code)]
     fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
     fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
         self,
