@@ -136,6 +136,7 @@ starknet = "0.11.0"
 starknet-types-core = { version = "0.1.5", default-features = false, features = [
   "hash",
 ] }
+starknet-types-rpc = { version = "0.7.1", git = "https://github.com/starknet-io/types-rs" }
 
 blockifier = "=0.8.0-rc.3"
 starknet_api = "=0.13.0-rc.1"
@@ -162,6 +163,7 @@ flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
+  "client",
 ] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }

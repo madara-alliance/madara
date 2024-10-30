@@ -1,36 +1,67 @@
 // Source:
 // https://github.com/starkware-libs/papyrus/tree/main/crates/papyrus_proc_macros
 
-//! This macro is a wrapper around the "rpc" macro supplied by the jsonrpsee library that generates
-//! a server and client traits from a given trait definition. The wrapper gets a version id and
-//! prepends the version id to the trait name and to every method name (note method name refers to
-//! the name the API has for the function not the actual function name). We need this in order to be
-//! able to merge multiple versions of jsonrpc APIs into one server and not have a clash in method
-//! resolution.
+//! This macro is a wrapper around the "rpc" macro supplied by the jsonrpsee
+//! library that generate server and client traits from a given trait
+//! definition.
+//!
+//! We use this macro to add versioning information to these traits and their
+//! methods to more easily support multiple versions of the starknet rpc specs,
+//! as well as madara-specific extensions.
+//!
+//! # Attributes
+//!
+//! ---
+//!
+//! `versionsed_rpc` **attribute**
+//!
+//! ---
+//!
+//! `versioned_rpc` attributes is applied to traits to decorate them with a
+//! version and a namespace. The version and namespace are also added to each
+//! of its methods.
+//!
+//! **Arguments:**
+//! - `version`: valid sermver version string with capital `V` prepended
+//! - `namespace`: rpc method namspace, added to all methods
+//!
+//! ---
+//!
+//! `method` and `subscription` **attribute**
+//!
+//! ---
+//!
+//! These attributes annotate trait methods as rpc http or websocket pub/sub
+//! mehtods. When combined with `versioned_rpc`, extra versioning information
+//! is added to them.
+//!
+//! **Arguments:**
+//! - `name`: rpc method name, must not be a duplicate in the current namespace.
+//! - `and_versions`: implementations of this method will also work for the
+//!     supplied versions. Note that these versions must not already contain
+//!     a method with the same name.
 //!
 //! # Example:
 //!
 //! Given this code:
+//!
 //! ```rust,ignore
 //! #[versioned_rpc("V0_7_1", "starknet")]
 //! pub trait JsonRpc {
-//!     #[method(name = "blockNumber", aliases = ["block_number"])]
+//!     #[method(name = "blockNumber", and_versions = ["V0_8_0"])]
 //!     fn block_number(&self) -> anyhow::Result<u64>;
 //! }
 //! ```
 //!
-//! The macro will generate this code:
+//! The macro will generate the following code:
+//!
 //! ```rust,ignore
 //! #[rpc(server, namespace = "starknet")]
 //! pub trait JsonRpcV0_7_1 {
-//!     #[method(name = "V0_7_1_blockNumber", aliases = ["block_number"])]
+//!     #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_0blockNumber"])]
 //!     fn block_number(&self) -> anyhow::Result<u64>;
 //! }
 //! ```
-//!
-//! > [!NOTE]
-//! > This macro _will not_ override any other jsonrpsee attribute, meaning
-//! > it does not currently support renaming `aliases` or `unsubscribe_aliases`
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
@@ -43,44 +74,52 @@ struct VersionedRpcAttr {
     namespace: String,
 }
 
+fn validate_version(version: &str) -> Result<(), syn::Error> {
+    if !version.starts_with('V') {
+        return Err(syn::Error::new(Span::call_site(), "Version must start with 'V'"));
+    }
+
+    let parts: Vec<&str> = version[1..].split('_').collect();
+
+    if parts.len() != 3 {
+        return Err(syn::Error::new(Span::call_site(), "Version must have exactly three parts (VMAJOR_MINOR_PATCH)"));
+    }
+
+    for part in parts {
+        if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
+            return Err(syn::Error::new(Span::call_site(), "Each part of the version must be a non-empty number"));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_namespace(namespace: &str) -> Result<(), syn::Error> {
+    if namespace.trim().is_empty() {
+        Err(syn::Error::new(
+            Span::call_site(),
+            indoc::indoc!(
+                r#"
+                    Namespace cannot be empty.
+                    Please provide a non-empty namespace string.
+
+                    ex: #[versioned_rpc("V0_7_1", "starknet")]
+                "#
+            ),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 impl syn::parse::Parse for VersionedRpcAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let version = input.parse::<syn::LitStr>()?.value();
         input.parse::<syn::Token![,]>()?;
         let namespace = input.parse::<syn::LitStr>()?.value();
 
-        if !version.starts_with('V') {
-            return Err(syn::Error::new(Span::call_site(), "Version must start with 'V'"));
-        }
-
-        let parts: Vec<&str> = version[1..].split('_').collect();
-
-        if parts.len() != 3 {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                "Version must have exactly three parts (VMAJOR_MINOR_PATCH)",
-            ));
-        }
-
-        for part in parts {
-            if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
-                return Err(syn::Error::new(Span::call_site(), "Each part of the version must be a non-empty number"));
-            }
-        }
-
-        if namespace.trim().is_empty() {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                indoc::indoc!(
-                    r#"
-                    Namespace cannot be empty.
-                    Please provide a non-empty namespace string.
-
-                    ex: #[versioned_rpc("V0_7_1", "starknet")]
-                "#
-                ),
-            ));
-        }
+        validate_version(&version)?;
+        validate_namespace(&namespace)?;
 
         Ok(VersionedRpcAttr { version, namespace })
     }
@@ -120,7 +159,8 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
         };
 
         method.attrs.iter_mut().try_fold((), |_, attr| {
-            // We leave these errors to be handled by jsonrpsee
+            // We leave simple attribute parsing errors to be handled by
+            // jsonrpsee
             let path = attr.path();
             let ident = if path.is_ident("method") {
                 CallType::Method
@@ -134,15 +174,6 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
                 return Ok(());
             };
 
-            // This convoluted section is just the way by which we traverse
-            // the macro attribute list. We are looking for:
-            //
-            // - An assignment
-            // - With lvalue a Path expression with literal value `name` or
-            //  'unsubscribe'
-            // - With rvalue a literal
-            //
-            // Any other attribute is skipped over and is not overwritten
             let attr_args = meta_list
                 .parse_args_with(syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated)
                 .map_err(|_| {
@@ -154,43 +185,117 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
                                 ex: `#[method(name = "foo", blocking)]`
                             "#},
                     )
-                })?
-                .into_iter()
-                .map(|expr| {
+                })?;
+
+            // This convoluted section is just the way by which we traverse
+            // the macro attribute list. We are looking for:
+            //
+            // - An assignment
+            // - With lvalue a Path expression with literal value `name` or
+            //  'unsubscribe'
+            // - With rvalue a literal
+            //
+            // Any other attribute is skipped over and is not overwritten
+            let mut method_name = None;
+            let mut method_tokens = attr_args
+                .iter()
+                .filter_map(|expr| {
                     // There isn't really a more elegant way of doing this as
                     // `left` and `right` are boxed values and therefore cannot
                     // be pattern matched without being de-referenced
-                    let syn::Expr::Assign(expr) = expr else { return expr };
+                    let syn::Expr::Assign(expr) = expr else { return Some(expr.clone()) };
 
                     let syn::Expr::Path(syn::ExprPath { path, .. }) = *expr.left.clone() else {
-                        return syn::Expr::Assign(expr);
+                        return Some(syn::Expr::Assign(expr.clone()));
                     };
+
+                    // `and_versions` needs to be removed as it is not a valid
+                    // jsonrpsee macro attribute
+                    if path.is_ident("and_versions") {
+                        return None;
+                    }
+
                     let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(right), attrs }) = *expr.right.clone() else {
-                        return syn::Expr::Assign(expr);
+                        return Some(syn::Expr::Assign(expr.clone()));
                     };
 
                     if !path.is_ident("name") && !path.is_ident("unsubscribe") {
-                        return syn::Expr::Assign(expr);
+                        return Some(syn::Expr::Assign(expr.clone()));
                     }
 
+                    method_name = Some(right.value());
                     let method_with_version = format!("{version}_{}", right.value());
-                    syn::Expr::Assign(syn::ExprAssign {
+                    let expr = syn::Expr::Assign(syn::ExprAssign {
                         right: Box::new(syn::Expr::Lit(syn::ExprLit {
                             lit: syn::Lit::Str(syn::LitStr::new(&method_with_version, right.span())),
                             attrs,
                         })),
-                        ..expr
-                    })
+                        ..expr.clone()
+                    });
+
+                    Some(expr)
                 })
                 .collect::<Vec<_>>();
+
+            // Method name is required by jsonrpsee anyways and this makes it
+            // easier to work with
+            let Some(method) = method_name else {
+                return Err(syn::Error::new(
+                    meta_list.span(),
+                    indoc::indoc! {r#"
+                            The 'method' and 'subscription' attributes expect a name.
+
+                            ex: #[method(name = "foo")]
+                        "#
+                    },
+                ));
+            };
+
+            // Same parsing logic as above, except `and_versions` is a nested
+            // array and needs to be parsed for punctuations as well
+            let aliases_tokens = attr_args.iter().cloned().try_fold(Vec::default(), |mut acc, expr| {
+                let syn::Expr::Assign(expr) = expr else { return syn::Result::Ok(acc) };
+
+                let syn::Expr::Path(syn::ExprPath { path, .. }) = *expr.left.clone() else {
+                    return Ok(acc);
+                };
+                let syn::Expr::Array(syn::ExprArray { elems, .. }) = *expr.right.clone() else {
+                    return Ok(acc);
+                };
+
+                if !path.is_ident("and_versions") {
+                    return Ok(acc);
+                }
+
+                for elem in elems {
+                    if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(version), attrs }) = elem {
+                        let version_str = version.value();
+                        validate_version(&version_str)?;
+                        let method_with_version = format!("{namespace}_{}_{method}", version_str);
+
+                        let lit = syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Str(syn::LitStr::new(&method_with_version, version.span())),
+                            attrs,
+                        });
+
+                        acc.push(lit);
+                    }
+                }
+
+                Ok(acc)
+            })?;
+
+            if !aliases_tokens.is_empty() {
+                method_tokens.push(syn::parse_quote!(aliases = [#(#aliases_tokens),*]));
+            }
 
             // This is the part where we actually replace the attribute with
             // its versioned alternative. Note that the syntax #(#foo),*
             // indicates a pattern repetition here, where all the elements in
             // attr_args are expanded into rust code
             attr.meta = match ident {
-                CallType::Method => syn::parse_quote!(method(#(#attr_args),*)),
-                CallType::Subscribe => syn::parse_quote!(subscription(#(#attr_args),*)),
+                CallType::Method => syn::parse_quote!(method(#(#method_tokens),*)),
+                CallType::Subscribe => syn::parse_quote!(subscription(#(#method_tokens),*)),
             };
 
             Ok(())
@@ -202,7 +307,7 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     let trait_with_version = syn::ItemTrait {
-        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, namespace = #namespace)])],
+        attrs: vec![syn::parse_quote!(#[jsonrpsee::proc_macros::rpc(server, client, namespace = #namespace)])],
         ident: train_name_with_version,
         ..item_trait
     };
