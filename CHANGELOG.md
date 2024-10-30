@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(block_production): get l2-to-l1 messages recursively from the call tree
 - fix(rocksdb): update max open files opt
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
 - fix(version constants): 0.13.2 was mapped to wrong constants
