@@ -240,7 +240,7 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
@@ -362,7 +362,11 @@ mod l1_messaging_tests {
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), Arc::clone(&l1_data_provider)));
+        let mempool = Arc::new(Mempool::new(
+            Arc::clone(db.backend()),
+            Arc::clone(&l1_data_provider),
+            MempoolLimits::for_testing(),
+        ));
 
         // Set up metrics service
         let l1_block_metrics = L1BlockMetrics::register().unwrap();

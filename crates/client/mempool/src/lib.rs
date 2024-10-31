@@ -44,6 +44,8 @@ mod inner;
 mod l1;
 pub mod metrics;
 
+pub use inner::*;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Storage error: {0:#}")]
@@ -77,8 +79,14 @@ pub trait MempoolProvider: Send + Sync {
     where
         Self: Sized;
     fn take_tx(&self) -> Option<MempoolTransaction>;
-    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I)
-    where
+    fn re_add_txs<
+        I: IntoIterator<Item = MempoolTransaction> + 'static,
+        CI: IntoIterator<Item = MempoolTransaction> + 'static,
+    >(
+        &self,
+        txs: I,
+        consumed_txs: CI,
+    ) where
         Self: Sized;
     fn chain_id(&self) -> Felt;
 }
@@ -91,8 +99,13 @@ pub struct Mempool {
 }
 
 impl Mempool {
-    pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
-        Mempool { backend, l1_data_provider, inner: Default::default(), metrics: MempoolMetrics::register() }
+    pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>, limits: MempoolLimits) -> Self {
+        Mempool {
+            backend,
+            l1_data_provider,
+            inner: RwLock::new(MempoolInner::new(limits)),
+            metrics: MempoolMetrics::register(),
+        }
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
@@ -153,6 +166,11 @@ impl Mempool {
         self.metrics.accepted_transaction_counter.add(1, &[]);
 
         Ok(())
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn is_empty(&self) -> bool {
+        self.inner.read().expect("Poisoned lock").is_empty()
     }
 }
 
@@ -267,10 +285,16 @@ impl MempoolProvider for Mempool {
     }
 
     /// Warning: A lock is taken while a user-supplied function (iterator stuff) is run - Callers should be careful
-    #[tracing::instrument(skip(self, txs), fields(module = "Mempool"))]
-    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I) {
+    /// This is called by the block production after a batch of transaction is executed.
+    /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
+    #[tracing::instrument(skip(self, txs, consumed_txs), fields(module = "Mempool"))]
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction>, CI: IntoIterator<Item = MempoolTransaction>>(
+        &self,
+        txs: I,
+        consumed_txs: CI,
+    ) {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.re_add_txs(txs)
+        inner.re_add_txs(txs, consumed_txs)
     }
 
     fn chain_id(&self) -> Felt {
@@ -354,11 +378,9 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
+    use crate::{inner::MempoolLimits, Mempool, MockL1DataProvider};
     use starknet_core::types::Felt;
-
-    use crate::MockL1DataProvider;
+    use std::sync::Arc;
 
     #[rstest::fixture]
     fn backend() -> Arc<mc_db::MadaraBackend> {
@@ -415,7 +437,7 @@ mod test {
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mempool = crate::Mempool::new(backend, l1_data_provider);
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
         let result = mempool.accept_tx(tx_account_v0_valid, None);
         assert_matches::assert_matches!(result, Ok(()));
     }
@@ -426,7 +448,7 @@ mod test {
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mempool = crate::Mempool::new(backend, l1_data_provider);
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
         let result = mempool.accept_tx(tx_account_v1_invalid, None);
         assert_matches::assert_matches!(result, Err(crate::Error::Validation(_)));
     }

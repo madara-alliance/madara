@@ -4,7 +4,7 @@ use starknet_api::{core::Nonce, transaction::TransactionHash};
 use std::collections::{btree_map, BTreeMap};
 use std::{cmp, iter};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderMempoolTransactionByNonce(pub MempoolTransaction);
 
 impl PartialEq for OrderMempoolTransactionByNonce {
@@ -42,9 +42,9 @@ pub enum InsertedPosition {
     Other,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Debug)]
 pub enum ReplacedState {
-    Replaced,
+    Replaced { previous: MempoolTransaction },
     NotReplaced,
 }
 
@@ -85,9 +85,17 @@ impl NonceChain {
         let mempool_tx_hash = mempool_tx.tx_hash();
 
         let replaced = if force {
-            if self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx), ()).is_some() {
-                ReplacedState::Replaced
+            // double lookup here unfortunately.. that's because we're using the keys in a hacky way and can't update the
+            // entry key using the entry api.
+            let mempool_tx = OrderMempoolTransactionByNonce(mempool_tx);
+            if let Some((previous, _)) = self.transactions.get_key_value(&mempool_tx) {
+                let previous = previous.0.clone();
+                let inserted = self.transactions.insert(mempool_tx, ());
+                debug_assert!(inserted.is_some());
+                ReplacedState::Replaced { previous }
             } else {
+                let inserted = self.transactions.insert(mempool_tx, ());
+                debug_assert!(inserted.is_none());
                 ReplacedState::NotReplaced
             }
         } else {
@@ -116,8 +124,7 @@ impl NonceChain {
             InsertedPosition::Other
         };
 
-        #[cfg(debug_assertions)] // unknown field `front_tx_hash` in release if debug_assert_eq is used
-        assert_eq!(
+        debug_assert_eq!(
             self.transactions.first_key_value().expect("Getting the first tx").0 .0.tx_hash(),
             self.front_tx_hash
         );
@@ -130,10 +137,7 @@ impl NonceChain {
         let (tx, _) = self.transactions.pop_first().expect("Nonce chain should not be empty");
         if let Some((new_front, _)) = self.transactions.first_key_value() {
             self.front_arrived_at = new_front.0.arrived_at;
-            #[cfg(debug_assertions)]
-            {
-                self.front_tx_hash = new_front.0.tx_hash();
-            }
+            self.front_tx_hash = new_front.0.tx_hash();
             self.front_nonce = new_front.0.nonce();
             (tx.0, NonceChainNewState::NotEmpty)
         } else {

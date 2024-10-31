@@ -5689,7 +5689,6 @@ dependencies = [
  "assert_matches",
  "bitvec",
  "blockifier",
- "env_logger 0.11.5",
  "lazy_static",
  "log",
  "mc-analytics",
@@ -5725,6 +5724,7 @@ dependencies = [
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-test",
 ]
 
 [[package]]

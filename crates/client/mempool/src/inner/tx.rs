@@ -1,3 +1,4 @@
+use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_exec::execution::TxInfo;
 use mp_class::ConvertedClass;
@@ -7,8 +8,6 @@ use starknet_api::{
     transaction::TransactionHash,
 };
 use std::{fmt, time::SystemTime};
-
-use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 
 pub type ArrivedAtTimestamp = SystemTime;
 

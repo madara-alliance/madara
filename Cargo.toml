@@ -228,6 +228,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "registry",
   "std",
 ] }
+tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]

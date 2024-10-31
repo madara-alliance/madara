@@ -223,10 +223,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             }
         }
 
-        // Add back the unexecuted transactions to the mempool.
-        stats.n_re_added_to_mempool = txs_to_process.len();
-        self.mempool.re_add_txs(txs_to_process);
-
         let on_top_of = self
             .executor
             .block_state
@@ -242,6 +238,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             &self.backend,
             &on_top_of,
         )?;
+
+        // Add back the unexecuted transactions to the mempool.
+        stats.n_re_added_to_mempool = txs_to_process.len();
+        self.mempool.re_add_txs(txs_to_process, executed_txs);
 
         tracing::debug!(
             "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",

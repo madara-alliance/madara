@@ -190,8 +190,8 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
-    use mc_mempool::MempoolProvider;
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
+    use mc_mempool::{MempoolLimits, MempoolProvider};
 
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
@@ -209,6 +209,7 @@ mod tests {
         FlattenedSierraClass, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
     };
     use std::sync::Arc;
+    use std::time::Duration;
 
     struct DevnetForTesting {
         backend: Arc<MadaraBackend>,
@@ -222,7 +223,7 @@ mod tests {
             &self,
             mut tx: BroadcastedInvokeTransaction,
             contract: &DevnetPredeployedContract,
-        ) -> InvokeTransactionResult {
+        ) -> Result<InvokeTransactionResult, mc_mempool::Error> {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::Invoke(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
@@ -239,14 +240,14 @@ mod tests {
 
             tracing::debug!("tx: {:?}", tx);
 
-            self.mempool.accept_invoke_tx(tx).unwrap()
+            self.mempool.accept_invoke_tx(tx)
         }
 
         pub fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTransaction,
             contract: &DevnetPredeployedContract,
-        ) -> DeclareTransactionResult {
+        ) -> Result<DeclareTransactionResult, mc_mempool::Error> {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::Declare(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
@@ -262,14 +263,14 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_declare_tx(tx).unwrap()
+            self.mempool.accept_declare_tx(tx)
         }
 
         pub fn sign_and_add_deploy_account_tx(
             &self,
             mut tx: BroadcastedDeployAccountTransaction,
             contract: &DevnetPredeployedContract,
-        ) -> DeployAccountTransactionResult {
+        ) -> Result<DeployAccountTransactionResult, mc_mempool::Error> {
             let (blockifier_tx, _classes) = broadcasted_to_blockifier(
                 BroadcastedTransaction::DeployAccount(tx.clone()),
                 self.backend.chain_config().chain_id.to_felt(),
@@ -284,7 +285,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_deploy_account_tx(tx).unwrap()
+            self.mempool.accept_deploy_account_tx(tx)
         }
 
         /// (STRK in FRI, ETH in WEI)
@@ -295,6 +296,10 @@ mod tests {
 
     #[fixture]
     fn chain() -> DevnetForTesting {
+        chain_with_mempool_limits(MempoolLimits::for_testing())
+    }
+
+    fn chain_with_mempool_limits(mempool_limits: MempoolLimits) -> DevnetForTesting {
         let _ = env_logger::builder().is_test(true).try_init();
 
         let mut g = ChainGenesisDescription::base_config().unwrap();
@@ -327,7 +332,7 @@ mod tests {
             strk_l1_data_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider)));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider), mempool_limits));
         let metrics = BlockProductionMetrics::register();
 
         let block_production = BlockProductionTask::new(
@@ -375,7 +380,7 @@ mod tests {
                 is_query: false,
             });
 
-        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address);
+        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address).unwrap();
 
         let calculated_class_hash = sierra_class.class_hash().unwrap();
 
@@ -421,32 +426,34 @@ mod tests {
         // Transferring the funds from pre deployed account into the calculated address
         let contract_0 = &chain.contracts.0[0];
 
-        let transfer_txn = chain.sign_and_add_invoke_tx(
-            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
-                sender_address: contract_0.address,
-                calldata: Multicall::default()
-                    .with(Call {
-                        to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Selector::from("transfer"),
-                        calldata: vec![calculated_address, (9_999u128 * STRK_FRI_DECIMALS).into(), Felt::ZERO],
-                    })
-                    .flatten()
-                    .collect(),
-                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
-                nonce: Felt::ZERO,
-                resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                },
-                tip: 0,
-                paymaster_data: vec![],
-                account_deployment_data: vec![],
-                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                is_query: false,
-            }),
-            contract_0,
-        );
+        let transfer_txn = chain
+            .sign_and_add_invoke_tx(
+                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                    sender_address: contract_0.address,
+                    calldata: Multicall::default()
+                        .with(Call {
+                            to: ERC20_STRK_CONTRACT_ADDRESS,
+                            selector: Selector::from("transfer"),
+                            calldata: vec![calculated_address, (9_999u128 * STRK_FRI_DECIMALS).into(), Felt::ZERO],
+                        })
+                        .flatten()
+                        .collect(),
+                    signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                    nonce: Felt::ZERO,
+                    resource_bounds: ResourceBoundsMapping {
+                        l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    },
+                    tip: 0,
+                    paymaster_data: vec![],
+                    account_deployment_data: vec![],
+                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    is_query: false,
+                }),
+                contract_0,
+            )
+            .unwrap();
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
@@ -480,7 +487,7 @@ mod tests {
             is_query: false,
         });
 
-        let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account);
+        let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
         chain.block_production.on_pending_time_tick().unwrap();
@@ -513,32 +520,34 @@ mod tests {
         assert_eq!(chain.get_bal_strk_eth(contract_0.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
         assert_eq!(chain.get_bal_strk_eth(contract_1.address), (10_000 * STRK_FRI_DECIMALS, 10_000 * ETH_WEI_DECIMALS));
 
-        let result = chain.sign_and_add_invoke_tx(
-            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
-                sender_address: contract_0.address,
-                calldata: Multicall::default()
-                    .with(Call {
-                        to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Selector::from("transfer"),
-                        calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
-                    })
-                    .flatten()
-                    .collect(),
-                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
-                nonce: Felt::ZERO,
-                resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                },
-                tip: 0,
-                paymaster_data: vec![],
-                account_deployment_data: vec![],
-                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                is_query: false,
-            }),
-            contract_0,
-        );
+        let result = chain
+            .sign_and_add_invoke_tx(
+                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                    sender_address: contract_0.address,
+                    calldata: Multicall::default()
+                        .with(Call {
+                            to: ERC20_STRK_CONTRACT_ADDRESS,
+                            selector: Selector::from("transfer"),
+                            calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
+                        })
+                        .flatten()
+                        .collect(),
+                    signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                    nonce: Felt::ZERO,
+                    resource_bounds: ResourceBoundsMapping {
+                        l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    },
+                    tip: 0,
+                    paymaster_data: vec![],
+                    account_deployment_data: vec![],
+                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    is_query: false,
+                }),
+                contract_0,
+            )
+            .unwrap();
 
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
@@ -604,5 +613,134 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[rstest]
+    fn test_mempool_tx_limit() {
+        let chain = chain_with_mempool_limits(MempoolLimits {
+            max_age: Duration::from_millis(1000000),
+            max_declare_transactions: 2,
+            max_transactions: 5,
+        });
+        println!("{}", chain.contracts);
+
+        let contract_0 = &chain.contracts.0[0];
+        let contract_1 = &chain.contracts.0[1];
+
+        for nonce in 0..5 {
+            chain
+                .sign_and_add_invoke_tx(
+                    BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                        sender_address: contract_0.address,
+                        calldata: Multicall::default()
+                            .with(Call {
+                                to: ERC20_STRK_CONTRACT_ADDRESS,
+                                selector: Selector::from("transfer"),
+                                calldata: vec![contract_1.address, 15.into(), Felt::ZERO],
+                            })
+                            .flatten()
+                            .collect(),
+                        signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                        nonce: nonce.into(),
+                        resource_bounds: ResourceBoundsMapping {
+                            l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                            l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        },
+                        tip: 0,
+                        paymaster_data: vec![],
+                        account_deployment_data: vec![],
+                        nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                        fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                        is_query: false,
+                    }),
+                    contract_0,
+                )
+                .unwrap();
+        }
+
+        let result = chain.sign_and_add_invoke_tx(
+            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                sender_address: contract_0.address,
+                calldata: Multicall::default()
+                    .with(Call {
+                        to: ERC20_STRK_CONTRACT_ADDRESS,
+                        selector: Selector::from("transfer"),
+                        calldata: vec![contract_1.address, 15.into(), Felt::ZERO],
+                    })
+                    .flatten()
+                    .collect(),
+                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                nonce: 5.into(),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                is_query: false,
+            }),
+            contract_0,
+        );
+
+        assert_matches!(
+            result,
+            Err(mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(
+                mc_mempool::MempoolLimitReached::MaxTransactions { max: 5 }
+            )))
+        )
+    }
+
+    #[rstest]
+    fn test_mempool_age_limit() {
+        let max_age = Duration::from_millis(1000);
+        let mut chain =
+            chain_with_mempool_limits(MempoolLimits { max_age, max_declare_transactions: 2, max_transactions: 5 });
+        println!("{}", chain.contracts);
+
+        let contract_0 = &chain.contracts.0[0];
+        let contract_1 = &chain.contracts.0[1];
+
+        chain
+            .sign_and_add_invoke_tx(
+                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                    sender_address: contract_0.address,
+                    calldata: Multicall::default()
+                        .with(Call {
+                            to: ERC20_STRK_CONTRACT_ADDRESS,
+                            selector: Selector::from("transfer"),
+                            calldata: vec![contract_1.address, 15.into(), Felt::ZERO],
+                        })
+                        .flatten()
+                        .collect(),
+                    signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                    nonce: 0.into(),
+                    resource_bounds: ResourceBoundsMapping {
+                        l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    },
+                    tip: 0,
+                    paymaster_data: vec![],
+                    account_deployment_data: vec![],
+                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
+                    is_query: false,
+                }),
+                contract_0,
+            )
+            .unwrap();
+
+        std::thread::sleep(max_age); // max age reached
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
+
+        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+
+        // no transactions :)
+        assert_eq!(block.inner.transactions, vec![]);
+        assert_eq!(block.inner.receipts, vec![]);
+        assert!(chain.mempool.is_empty());
     }
 }
