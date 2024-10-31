@@ -2,207 +2,21 @@
 //! This is the chokepoint for all insertions and popping, as such, we want to make it as fast as possible.
 //! Insertion and popping should be O(log n).
 //! We also really don't want to poison the lock by panicking.
-//!
-//! TODO: mempool size limits
-//! TODO(perf): should we box the MempoolTransaction?
 
-use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use core::fmt;
-use mc_exec::execution::TxInfo;
-use mp_class::ConvertedClass;
-use mp_convert::FeltHexDisplay;
-use starknet_api::{
-    core::{ContractAddress, Nonce},
-    transaction::TransactionHash,
-};
+use deployed_contracts::DeployedContracts;
+use nonce_chain::{InsertedPosition, NonceChain, NonceChainNewState, ReplacedState};
+use starknet_api::core::ContractAddress;
 use std::{
     cmp,
-    collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap},
-    iter,
-    time::SystemTime,
+    collections::{hash_map, BTreeSet, HashMap},
 };
 
-pub type ArrivedAtTimestamp = SystemTime;
-
-pub struct MempoolTransaction {
-    pub tx: Transaction,
-    pub arrived_at: ArrivedAtTimestamp,
-    pub converted_class: Option<ConvertedClass>,
-}
-
-impl fmt::Debug for MempoolTransaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MempoolTransaction")
-            .field("tx_hash", &self.tx_hash().hex_display())
-            .field("nonce", &self.nonce().hex_display())
-            .field("contract_address", &self.contract_address().hex_display())
-            .field("tx_type", &self.tx.tx_type())
-            .field("arrived_at", &self.arrived_at)
-            .finish()
-    }
-}
-
-impl Clone for MempoolTransaction {
-    fn clone(&self) -> Self {
-        Self {
-            tx: clone_transaction(&self.tx),
-            arrived_at: self.arrived_at,
-            converted_class: self.converted_class.clone(),
-        }
-    }
-}
-
-impl MempoolTransaction {
-    pub fn nonce(&self) -> Nonce {
-        nonce(&self.tx)
-    }
-    pub fn contract_address(&self) -> ContractAddress {
-        contract_addr(&self.tx)
-    }
-    pub fn tx_hash(&self) -> TransactionHash {
-        tx_hash(&self.tx)
-    }
-}
-
-#[derive(Debug)]
-struct OrderMempoolTransactionByNonce(MempoolTransaction);
-
-impl PartialEq for OrderMempoolTransactionByNonce {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
-    }
-}
-impl Eq for OrderMempoolTransactionByNonce {}
-impl Ord for OrderMempoolTransactionByNonce {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.0.nonce().cmp(&other.0.nonce())
-    }
-}
-impl PartialOrd for OrderMempoolTransactionByNonce {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Invariants:
-/// - front_nonce, front_arrived_at and front_tx_hash must match the front transaction timestamp.
-/// - No nonce chain should ever be empty in the mempool.
-#[derive(Debug)]
-pub struct NonceChain {
-    /// Use a BTreeMap to so that we can use the entry api.
-    transactions: BTreeMap<OrderMempoolTransactionByNonce, ()>,
-    front_arrived_at: ArrivedAtTimestamp,
-    front_nonce: Nonce,
-    front_tx_hash: TransactionHash,
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub enum InsertedPosition {
-    Front { former_head_arrived_at: ArrivedAtTimestamp },
-    Other,
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub enum ReplacedState {
-    Replaced,
-    NotReplaced,
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub enum NonceChainNewState {
-    Empty,
-    NotEmpty,
-}
-
-impl NonceChain {
-    pub fn new_with_first_tx(tx: MempoolTransaction) -> Self {
-        Self {
-            front_arrived_at: tx.arrived_at,
-            front_tx_hash: tx.tx_hash(),
-            front_nonce: tx.nonce(),
-            transactions: iter::once((OrderMempoolTransactionByNonce(tx), ())).collect(),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn check_invariants(&self) {
-        assert!(!self.transactions.is_empty());
-        let (front, _) = self.transactions.first_key_value().unwrap();
-        assert_eq!(front.0.tx_hash(), self.front_tx_hash);
-        assert_eq!(front.0.nonce(), self.front_nonce);
-        assert_eq!(front.0.arrived_at, self.front_arrived_at);
-    }
-
-    /// Returns where in the chain it was inserted.
-    /// When `force` is `true`, this function should never return any error.
-    pub fn insert(
-        &mut self,
-        mempool_tx: MempoolTransaction,
-        force: bool,
-    ) -> Result<(InsertedPosition, ReplacedState), TxInsersionError> {
-        let mempool_tx_arrived_at = mempool_tx.arrived_at;
-        let mempool_tx_nonce = mempool_tx.nonce();
-        let mempool_tx_hash = mempool_tx.tx_hash();
-
-        let replaced = if force {
-            if self.transactions.insert(OrderMempoolTransactionByNonce(mempool_tx), ()).is_some() {
-                ReplacedState::Replaced
-            } else {
-                ReplacedState::NotReplaced
-            }
-        } else {
-            match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx)) {
-                btree_map::Entry::Occupied(entry) => {
-                    // duplicate nonce, either it's because the hash is duplicated or nonce conflict with another tx.
-                    if entry.key().0.tx_hash() == mempool_tx_hash {
-                        return Err(TxInsersionError::DuplicateTxn);
-                    } else {
-                        return Err(TxInsersionError::NonceConflict);
-                    }
-                }
-                btree_map::Entry::Vacant(entry) => *entry.insert(()),
-            }
-
-            ReplacedState::NotReplaced
-        };
-
-        let position = if self.front_nonce >= mempool_tx_nonce {
-            // We insrted at the front here
-            let former_head_arrived_at = core::mem::replace(&mut self.front_arrived_at, mempool_tx_arrived_at);
-            self.front_nonce = mempool_tx_nonce;
-            self.front_tx_hash = mempool_tx_hash;
-            InsertedPosition::Front { former_head_arrived_at }
-        } else {
-            InsertedPosition::Other
-        };
-
-        #[cfg(debug_assertions)] // unknown field `front_tx_hash` in release if debug_assert_eq is used
-        assert_eq!(
-            self.transactions.first_key_value().expect("Getting the first tx").0 .0.tx_hash(),
-            self.front_tx_hash
-        );
-
-        Ok((position, replaced))
-    }
-
-    pub fn pop(&mut self) -> (MempoolTransaction, NonceChainNewState) {
-        // TODO(perf): avoid double lookup
-        let (tx, _) = self.transactions.pop_first().expect("Nonce chain should not be empty");
-        if let Some((new_front, _)) = self.transactions.first_key_value() {
-            self.front_arrived_at = new_front.0.arrived_at;
-            #[cfg(debug_assertions)]
-            {
-                self.front_tx_hash = new_front.0.tx_hash();
-            }
-            self.front_nonce = new_front.0.nonce();
-            (tx.0, NonceChainNewState::NotEmpty)
-        } else {
-            (tx.0, NonceChainNewState::Empty)
-        }
-    }
-}
+mod deployed_contracts;
+mod nonce_chain;
+mod tx;
+pub use tx::*;
 
 #[derive(Clone, Debug)]
 struct AccountOrderedByTimestamp {
@@ -226,34 +40,6 @@ impl Ord for AccountOrderedByTimestamp {
 impl PartialOrd for AccountOrderedByTimestamp {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-/// This is used for quickly checking if the contract has been deployed for the same block it is invoked.
-/// When force inserting transaction, it may happen that we run into a duplicate deploy_account transaction. Keep a count for that purpose.
-#[derive(Debug, Clone, Default)]
-struct DeployedContracts(HashMap<ContractAddress, u64>);
-impl DeployedContracts {
-    fn decrement(&mut self, address: ContractAddress) {
-        match self.0.entry(address) {
-            hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() -= 1;
-                if entry.get() == &0 {
-                    entry.remove();
-                }
-            }
-            hash_map::Entry::Vacant(_) => unreachable!("invariant violated"),
-        }
-    }
-    fn increment(&mut self, address: ContractAddress) {
-        *self.0.entry(address).or_insert(0) += 1
-    }
-    #[cfg(test)]
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    fn contains(&self, address: &ContractAddress) -> bool {
-        self.0.contains_key(address)
     }
 }
 
@@ -420,18 +206,22 @@ mod tests {
     use proptest::prelude::*;
     use proptest_derive::Arbitrary;
     use starknet_api::{
-        core::{calculate_contract_address, ChainId},
+        core::{calculate_contract_address, ChainId, Nonce},
         data_availability::DataAvailabilityMode,
         transaction::{
             ContractAddressSalt, DeclareTransactionV3, DeployAccountTransactionV3, InvokeTransactionV3, Resource,
-            ResourceBounds, ResourceBoundsMapping, TransactionHasher, TransactionVersion,
+            ResourceBounds, ResourceBoundsMapping, TransactionHash, TransactionHasher, TransactionVersion,
         },
     };
     use starknet_types_core::felt::Felt;
 
     use blockifier::abi::abi_utils::selector_from_name;
     use starknet_api::transaction::Fee;
-    use std::{collections::HashSet, fmt, time::Duration};
+    use std::{
+        collections::HashSet,
+        fmt,
+        time::{Duration, SystemTime},
+    };
 
     lazy_static::lazy_static! {
         static ref DUMMY_CLASS: ClassInfo = {

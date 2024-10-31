@@ -187,9 +187,9 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use mc_block_import::{BlockImporter, BlockValidationContext};
+    use mc_block_production::metrics::BlockProductionMetrics;
+    use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
-    use mc_mempool::block_production::BlockProductionTask;
-    use mc_mempool::block_production_metrics::BlockProductionMetrics;
     use mc_mempool::MempoolProvider;
     use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
 

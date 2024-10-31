@@ -5303,6 +5303,7 @@ dependencies = [
  "log",
  "mc-analytics",
  "mc-block-import",
+ "mc-block-production",
  "mc-db",
  "mc-devnet",
  "mc-eth",
@@ -5429,6 +5430,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-block-production"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "bitvec",
+ "blockifier",
+ "env_logger 0.11.5",
+ "lazy_static",
+ "log",
+ "mc-analytics",
+ "mc-block-import",
+ "mc-db",
+ "mc-exec",
+ "mc-mempool",
+ "mockall",
+ "mp-block",
+ "mp-chain-config",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "proptest",
+ "proptest-derive",
+ "rstest 0.18.2",
+ "serde_json",
+ "starknet-core 0.11.0",
+ "starknet-types-core",
+ "starknet_api",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mc-db"
 version = "0.7.0"
 dependencies = [
@@ -5477,6 +5525,7 @@ dependencies = [
  "log",
  "m-cairo-test-contracts",
  "mc-block-import",
+ "mc-block-production",
  "mc-db",
  "mc-mempool",
  "mockall",

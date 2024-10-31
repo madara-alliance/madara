@@ -39,9 +39,6 @@ pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
-pub mod block_production;
-pub mod block_production_metrics;
-mod close_block;
 pub mod header;
 mod inner;
 mod l1;

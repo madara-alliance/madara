@@ -1,17 +1,14 @@
-use std::{io::Write, sync::Arc};
-
+use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
 use mc_block_import::{BlockImporter, BlockValidationContext};
+use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::{
-    block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
-};
+use mc_mempool::{L1DataProvider, Mempool};
 use mc_telemetry::TelemetryHandle;
 use mp_utils::service::Service;
+use std::{io::Write, sync::Arc};
 use tokio::task::JoinSet;
-
-use crate::cli::block_production::BlockProductionParams;
 
 struct StartParams {
     backend: Arc<MadaraBackend>,

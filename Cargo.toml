@@ -24,6 +24,7 @@ members = [
   "crates/proc-macros",
   "crates/tests",
   "crates/cairo-test-contracts",
+  "crates/client/block_production",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -118,6 +119,7 @@ mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-mempool = { path = "crates/client/mempool" }
+mc-block-production = { path = "crates/client/block_production" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
 
