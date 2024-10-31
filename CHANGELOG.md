@@ -3,6 +3,8 @@
 ## Next release
 
 - feat(mempool): mempool transaction limits
+- feat(confg): added chain config template and fgw example
+- feat(v0.8.0-rc0): starknet_subscribeNewHeads
 - fix(rocksdb): update max open files opt
 - code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
 - fix(version constants): 0.13.2 was mapped to wrong constants

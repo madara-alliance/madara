@@ -1,0 +1,31 @@
+chain_name: ""
+chain_id: ""
+feeder_gateway_url: ""
+gateway_url: ""
+native_fee_token_address: ""
+parent_fee_token_address: ""
+latest_protocol_version: ""
+block_time: ""
+pending_block_update_time: ""
+execution_batch_size:
+bouncer_config:
+  block_max_capacity:
+    builtin_count:
+      add_mod:
+      bitwise:
+      ecdsa:
+      ec_op:
+      keccak:
+      mul_mod:
+      pedersen:
+      poseidon:
+      range_check:
+      range_check96:
+    gas:
+    n_steps:
+    message_segment_length:
+    n_events:
+    state_diff_size:
+sequencer_address: ""
+eth_core_contract_address: ""
+eth_gps_statement_verifier: ""

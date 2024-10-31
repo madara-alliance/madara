@@ -3,6 +3,10 @@ chain_name: "Starknet Mainnet"
 
 chain_id: "SN_MAIN"
 
+# The URL of the gateway and Feeder Gateway your nodes should sync from.
+feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
+gateway_url: "http://localhost:8080/gateway/"
+
 # For starknet, this is the STRK ERC-20 contract on starknet.
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 

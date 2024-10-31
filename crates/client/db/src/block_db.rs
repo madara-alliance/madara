@@ -257,11 +257,18 @@ impl MadaraBackend {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
-        tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block.info)?);
+        tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
+
+        // susbcribers
+        if self.sender_block_info.receiver_count() > 0 {
+            if let Err(e) = self.sender_block_info.send(block.info.clone()) {
+                log::debug!("Failed to send block info to subscribers: {e}");
+            }
+        }
 
         // clear pending
         tx.delete_cf(&meta, ROW_PENDING_INFO);
@@ -342,6 +349,11 @@ impl MadaraBackend {
     pub fn get_block_info(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         self.storage_to_info(&ty)
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn subscribe_block_info(&self) -> tokio::sync::broadcast::Receiver<mp_block::MadaraBlockInfo> {
+        self.sender_block_info.subscribe()
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
