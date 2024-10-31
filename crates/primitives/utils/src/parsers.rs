@@ -37,7 +37,8 @@ pub fn parse_duration(s: &str) -> anyhow::Result<Duration> {
         "ms" => Ok(Duration::from_millis(value)),
         "s" => Ok(Duration::from_secs(value)),
         "min" => Ok(Duration::from_secs(value * 60)),
-        _ => bail!("Invalid duration suffix: {}. Expected 'ms', 's', or 'min'.", suffix),
+        "h" => Ok(Duration::from_secs(value * 60 * 60)),
+        _ => bail!("Invalid duration suffix: {}. Expected 'ms', 's', 'min' or 'h'.", suffix),
     }
 }
 

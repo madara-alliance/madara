@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use mc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
@@ -19,7 +21,7 @@ pub enum StarknetTransactionExecutionError {
 #[derive(thiserror::Error, Debug)]
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
-    FailedToReceiveTxn,
+    FailedToReceiveTxn { err: Option<Cow<'static, str>> },
     #[error("Contract not found")]
     ContractNotFound,
     #[error("Block not found")]
@@ -59,7 +61,7 @@ pub enum StarknetRpcApiError {
     #[error("Account balance is smaller than the transaction's max_fee")]
     InsufficientAccountBalance,
     #[error("Account validation failed")]
-    ValidationFailure { error: String },
+    ValidationFailure { error: Cow<'static, str> },
     #[error("Compilation failed")]
     CompilationFailed,
     #[error("Contract class size is too large")]
@@ -87,7 +89,7 @@ pub enum StarknetRpcApiError {
 impl From<&StarknetRpcApiError> for i32 {
     fn from(err: &StarknetRpcApiError) -> Self {
         match err {
-            StarknetRpcApiError::FailedToReceiveTxn => 1,
+            StarknetRpcApiError::FailedToReceiveTxn { .. } => 1,
             StarknetRpcApiError::ContractNotFound => 20,
             StarknetRpcApiError::BlockNotFound => 24,
             StarknetRpcApiError::InvalidTxnHash => 25,
@@ -128,6 +130,7 @@ impl StarknetRpcApiError {
         match self {
             StarknetRpcApiError::ErrUnexpectedError { data } => Some(json!(data)),
             StarknetRpcApiError::ValidationFailure { error } => Some(json!(error)),
+            StarknetRpcApiError::FailedToReceiveTxn { err } => err.as_ref().map(|err| json!(err)),
             StarknetRpcApiError::TxnExecutionError { tx_index, error } => Some(json!({
                 "transaction_index": tx_index,
                 "execution_error": error,
@@ -164,7 +167,7 @@ impl From<StarknetRpcApiError> for jsonrpsee::types::ErrorObjectOwned {
 impl From<StarknetError> for StarknetRpcApiError {
     fn from(err: StarknetError) -> Self {
         match err {
-            StarknetError::FailedToReceiveTransaction => StarknetRpcApiError::FailedToReceiveTxn,
+            StarknetError::FailedToReceiveTransaction => StarknetRpcApiError::FailedToReceiveTxn { err: None },
             StarknetError::ContractNotFound => StarknetRpcApiError::ContractNotFound,
             StarknetError::BlockNotFound => StarknetRpcApiError::BlockNotFound,
             StarknetError::InvalidTransactionIndex => StarknetRpcApiError::InvalidTxnIndex,
@@ -179,7 +182,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetError::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
             StarknetError::InsufficientMaxFee => StarknetRpcApiError::InsufficientMaxFee,
             StarknetError::InsufficientAccountBalance => StarknetRpcApiError::InsufficientAccountBalance,
-            StarknetError::ValidationFailure(error) => StarknetRpcApiError::ValidationFailure { error },
+            StarknetError::ValidationFailure(error) => StarknetRpcApiError::ValidationFailure { error: error.into() },
             StarknetError::CompilationFailed => StarknetRpcApiError::CompilationFailed,
             StarknetError::ContractClassSizeIsTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
             StarknetError::NonAccount => StarknetRpcApiError::NonAccount,
