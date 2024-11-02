@@ -36,18 +36,7 @@ jobs:
 
       - name: Build SNOS files
         run: |
-          # Downloading all the deps
-          cargo fetch
-          # Navigate to checkouts folder
-          cd /home/runner/.cargo/git/checkouts
-          # Navigating to snos
-          cd snos-59fe8329bb16fe65
-          # Navigating to the build
-          cd af74c75
-          # Activating the venv
-          source ~/cairo_venv/bin/activate
-          # Building the cairo lang repo requirements
-          ./scripts/setup-tests.sh
+          make snos
 
       - uses: Swatinem/rust-cache@v2
       - name: Format and clippy

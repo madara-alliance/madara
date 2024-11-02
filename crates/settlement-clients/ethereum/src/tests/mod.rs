@@ -141,7 +141,8 @@ mod settlement_client_tests {
         DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, STARKNET_CORE_CONTRACT,
         STARKNET_CORE_CONTRACT_ADDRESS, STARKNET_OPERATOR_ADDRESS,
     };
-    use crate::EthereumSettlementClient;
+    use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
+    use crate::{EthereumSettlementClient, Y_HIGH_POINT_OFFSET, Y_LOW_POINT_OFFSET};
 
     #[rstest]
     #[tokio::test]
@@ -166,8 +167,8 @@ mod settlement_client_tests {
         // Getting latest nonce after deployment
         let nonce = ethereum_settlement_client.get_nonce().await.expect("Unable to fetch nonce");
 
-        // keeping 11 elements because the code accesses 10th index as program output
-        let program_output = vec![[0; 32]; 11];
+        // keeping 16 elements because the code accesses 10th index as program output
+        let program_output = vec![[0; 32]; 16];
         // keeping one element as we've a check in build_proof
         let blob_data_vec = vec![vec![0; BYTES_PER_BLOB]];
 
@@ -298,8 +299,15 @@ mod settlement_client_tests {
         let blob_data_vec = get_blob_data(fork_block_no);
 
         let x_0_value_bytes32 = Bytes32::from(program_output[10]);
+        let y_0 = Bytes32::from(
+            convert_stark_bigint_to_u256(
+                bytes_be_to_u128(&program_output[Y_LOW_POINT_OFFSET]),
+                bytes_be_to_u128(&program_output[Y_HIGH_POINT_OFFSET]),
+            )
+            .to_be_bytes(),
+        );
 
-        let kzg_proof = EthereumSettlementClient::build_proof(blob_data_vec, x_0_value_bytes32)
+        let kzg_proof = EthereumSettlementClient::build_proof(blob_data_vec, x_0_value_bytes32, y_0)
             .expect("Unable to build KZG proof for given params.")
             .to_owned();
 

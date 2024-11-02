@@ -21,17 +21,11 @@ RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
     && cd .. \
     && rm -rf Python-3.9.16 Python-3.9.16.tgz
 
-# Install pip
+# Install pip and venv for Python 3.9
 RUN wget https://bootstrap.pypa.io/get-pip.py \
     && python3.9 get-pip.py \
-    && rm get-pip.py
-
-# Set up Python environment and install Cairo
-RUN python3.9 -m venv /usr/local/cairo_venv
-RUN pip3.9 install ecdsa fastecdsa sympy
-RUN pip3.9 install cairo-lang
-
-RUN python3.9 --version && pip3.9 --version
+    && rm get-pip.py \
+    && python3.9 -m pip install virtualenv
 
 # Copy the current directory contents into the container
 COPY . .
@@ -44,11 +38,14 @@ RUN rustup show
 # TODO : remove this step after snos build is sorted
 # Build cairo lang
 RUN cargo fetch
-RUN bash -c "cd /usr/local/cargo/git/checkouts \
-    && cd snos-* \
-    && cd * \
-    && source /usr/local/cairo_venv/bin/activate \
-    && ./scripts/setup-tests.sh"
+RUN python3.9 -m venv orchestrator_venv
+RUN . ./orchestrator_venv/bin/activate
+RUN pip install cairo-lang==0.13.2 "sympy<1.13.0"
+RUN mkdir -p build
+RUN git submodule update --init --recursive
+RUN cd cairo-lang
+RUN cd ..
+RUN cairo-compile cairo-lang/src/starkware/starknet/core/os/os.cairo --output build/os_latest.json --cairo_path cairo-lang/src
 # #############################################################
 
 WORKDIR /usr/src/madara-orchestrator
@@ -82,8 +79,8 @@ COPY --from=builder /usr/src/madara-orchestrator/migrate-mongo-config.js .
 COPY --from=builder /usr/src/madara-orchestrator/migrations ./migrations
 
 # To be fixed by this https://github.com/keep-starknet-strange/snos/issues/404
-RUN mkdir -p /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/af74c75/crates/starknet-os/kzg
-COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/af74c75/crates/starknet-os/kzg/trusted_setup.txt
+RUN mkdir -p /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/662d170/crates/starknet-os/kzg
+COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/662d170/crates/starknet-os/kzg/trusted_setup.txt
 COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/src/madara-orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
 
 # Create a startup script

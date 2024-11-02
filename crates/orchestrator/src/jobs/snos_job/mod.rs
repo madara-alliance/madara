@@ -30,6 +30,8 @@ pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
 
+pub const COMPILED_OS: &[u8] = include_bytes!("../../../../../build/os_latest.json");
+
 #[derive(Error, Debug, PartialEq)]
 pub enum SnosError {
     #[error("Block numbers to run must be specified (snos job #{internal_id:?})")]
@@ -105,7 +107,7 @@ impl Job for SnosJob {
         let snos_url = snos_url.trim_end_matches('/');
         tracing::debug!(job_id = %job.internal_id, "Calling prove_block function");
         let (cairo_pie, snos_output) =
-            prove_block(block_number, snos_url, LayoutName::all_cairo, false).await.map_err(|e| {
+            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, false).await.map_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
                 SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
             })?;

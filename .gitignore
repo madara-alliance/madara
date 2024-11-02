@@ -12,3 +12,12 @@ lcov.info
 **/*-SN.zip
 
 node_modules
+
+# env file created by makefile
+.makefile.json
+.pids.json
+
+# venv setup when building snos
+orchestrator_venv/
+
+build/

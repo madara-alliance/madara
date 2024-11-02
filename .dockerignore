@@ -2,7 +2,6 @@
 target/
 
 # Ignore version control files
-.git
 .gitignore
 
 # Ignore editor and IDE files
@@ -16,8 +15,8 @@ target/
 
 # TODO : uncomment this
 # Ignore any local environment files
-# .env
-# *.env
+ .env
+ .env.*
 
 # Ignore any test or documentation directories
 tests/
@@ -33,3 +32,5 @@ Cargo.lock
 # Ignore OS-specific files
 .DS_Store
 Thumbs.db
+
+Dockerfile

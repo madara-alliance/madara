@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- added makefile and submodules
 - Endpoints for triggering processing and verification jobs
 - Add multiple queues for processing and verification based on job type
 - added logs
@@ -66,6 +67,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- wait for transaction logic in ethereum settlement client
+- y_0 point evaluation in build kzg proof for ethereum settlement
 - fixed metrics name, signoz dashboard.
 - fixes logs based on RUST_LOG
 - fixes after sepolia testing

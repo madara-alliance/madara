@@ -40,7 +40,7 @@ pub trait SettlementClient: Send + Sync {
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus>;
 
     /// Should wait that the pending tx_hash is finalized
-    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<()>;
+    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<Option<u64>>;
 
     /// Should retrieves the last settled block in the settlement layer
     async fn get_last_settled_block(&self) -> Result<u64>;

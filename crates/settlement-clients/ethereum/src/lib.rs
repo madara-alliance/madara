@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use alloy::consensus::{
     BlobTransactionSidecar, SignableTransaction, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
@@ -12,13 +13,13 @@ use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::hex;
 use alloy::network::EthereumWallet;
 use alloy::primitives::{Address, B256, U256};
-use alloy::providers::{PendingTransactionConfig, Provider, ProviderBuilder};
+use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Bytes;
 use async_trait::async_trait;
 use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::{eyre, Ok};
+use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
@@ -40,9 +41,20 @@ use alloy::transports::http::Http;
 use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
+use tokio::time::sleep;
 use utils::settings::Settings;
 
+use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
+
 pub const ENV_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
+const X_0_POINT_OFFSET: usize = 10;
+const Y_LOW_POINT_OFFSET: usize = 14;
+const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
+
+// Ethereum Transaction Finality
+const MAX_TX_FINALISATION_ATTEMPTS: usize = 100;
+const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
+const TX_WAIT_SLEEP_DELAY_SECS: u64 = 5;
 
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
@@ -115,7 +127,11 @@ impl EthereumSettlementClient {
     }
 
     /// Build kzg proof for the x_0 point evaluation
-    pub fn build_proof(blob_data: Vec<Vec<u8>>, x_0_value: Bytes32) -> Result<KzgProof> {
+    pub fn build_proof(
+        blob_data: Vec<Vec<u8>>,
+        x_0_value: Bytes32,
+        y_0_value_program_output: Bytes32,
+    ) -> Result<KzgProof> {
         // Assuming that there is only one blob in the whole Vec<Vec<u8>> array for now.
         // Later we will add the support for multiple blob in single blob_data vec.
         assert_eq!(blob_data.len(), 1);
@@ -125,6 +141,14 @@ impl EthereumSettlementClient {
         let blob = Blob::new(fixed_size_blob);
         let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_SETTINGS)?;
         let (kzg_proof, y_0_value) = KzgProof::compute_kzg_proof(&blob, &x_0_value, &KZG_SETTINGS)?;
+
+        if y_0_value != y_0_value_program_output {
+            bail!(
+                "ERROR : y_0 value is different than expected. Expected {:?}, got {:?}",
+                y_0_value,
+                y_0_value_program_output
+            );
+        }
 
         // Verifying the proof for double check
         let eval = KzgProof::verify_kzg_proof(
@@ -198,11 +222,22 @@ impl SettlementClient for EthereumSettlementClient {
 
         let max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
 
+        // calculating y_0 point
+        let y_0 = Bytes32::from(
+            convert_stark_bigint_to_u256(
+                bytes_be_to_u128(&program_output[Y_LOW_POINT_OFFSET]),
+                bytes_be_to_u128(&program_output[Y_HIGH_POINT_OFFSET]),
+            )
+            .to_be_bytes(),
+        );
+
         // x_0_value : program_output[10]
         // Updated with starknet 0.13.2 spec
         let kzg_proof = Self::build_proof(
             state_diff,
-            Bytes32::from_bytes(program_output[10].as_slice()).expect("Not able to get x_0 point params."),
+            Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
+                .expect("Not able to get x_0 point params."),
+            y_0,
         )
         .expect("Unable to build KZG proof for given params.")
         .to_owned();
@@ -263,11 +298,17 @@ impl SettlementClient for EthereumSettlementClient {
 
         log::warn!("⏳ Waiting for txn finality.......");
 
-        // Prod feature only (may cause issues while testing with anvil)
-        let txn_hash = pending_transaction.tx_hash().to_string();
-        self.wait_for_tx_finality(&txn_hash).await?;
+        let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
 
-        Ok(txn_hash)
+        match res {
+            Some(_) => {
+                log::info!("Txn hash : {:?} Finalized ✅", pending_transaction.tx_hash().to_string());
+            }
+            None => {
+                log::error!("Txn hash not finalised");
+            }
+        }
+        Ok(pending_transaction.tx_hash().to_string())
     }
 
     /// Should verify the inclusion of a tx in the settlement layer
@@ -317,12 +358,22 @@ impl SettlementClient for EthereumSettlementClient {
     }
 
     /// Wait for a pending tx to achieve finality
-    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<()> {
-        let tx_hash = B256::from_str(tx_hash)?;
-        self.provider
-            .watch_pending_transaction(PendingTransactionConfig::new(tx_hash).with_required_confirmations(1))
-            .await?;
-        Ok(())
+    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<Option<u64>> {
+        for _ in 0..MAX_TX_FINALISATION_ATTEMPTS {
+            if let Some(receipt) =
+                self.provider.get_transaction_receipt(B256::from_str(tx_hash).expect("Unable to form")).await?
+            {
+                if let Some(block_number) = receipt.block_number {
+                    let latest_block = self.provider.get_block_number().await?;
+                    let confirmations = latest_block.saturating_sub(block_number);
+                    if confirmations >= REQUIRED_BLOCK_CONFIRMATIONS {
+                        return Ok(Some(block_number));
+                    }
+                }
+            }
+            sleep(Duration::from_secs(TX_WAIT_SLEEP_DELAY_SECS)).await;
+        }
+        Ok(None)
     }
 
     /// Get the last block settled through the core contract

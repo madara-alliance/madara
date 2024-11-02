@@ -202,7 +202,7 @@ impl SettlementClient for StarknetSettlementClient {
     }
 
     /// Wait for a pending tx to achieve finality
-    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<()> {
+    async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<Option<u64>> {
         let mut retries = 0;
         let duration_to_wait_between_polling = Duration::from_secs(self.tx_finality_retry_delay_in_seconds);
         sleep(duration_to_wait_between_polling).await;
@@ -220,7 +220,9 @@ impl SettlementClient for StarknetSettlementClient {
                 break;
             }
         }
-        Ok(())
+
+        let tx_receipt = self.account.provider().get_transaction_receipt(tx_hash).await?;
+        Ok(tx_receipt.block.block_number())
     }
 
     /// Returns the last block settled from the core contract.

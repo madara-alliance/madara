@@ -162,12 +162,44 @@ impl Database for MongoDb {
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
-        let filter = doc! {
-            "job_type": mongodb::bson::to_bson(&job_type)?,
-        };
-        let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "job_type": mongodb::bson::to_bson(&job_type)?
+                }
+            },
+            doc! {
+                "$addFields": {
+                    "numeric_internal_id": { "$toLong": "$internal_id" }
+                }
+            },
+            doc! {
+                "$sort": {
+                    "numeric_internal_id": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+            doc! {
+                "$project": {
+                    "numeric_internal_id": 0  // Remove the temporary field
+                }
+            },
+        ];
+
+        let mut cursor = self.get_job_collection().aggregate(pipeline, None).await?;
+
         tracing::debug!(job_type = ?job_type, category = "db_call", "Fetching latest job by type");
-        Ok(self.get_job_collection().find_one(filter, find_options).await?)
+
+        // Get the first (and only) result if it exists
+        match cursor.try_next().await? {
+            Some(doc) => {
+                let job: JobItem = mongodb::bson::from_document(doc)?;
+                Ok(Some(job))
+            }
+            None => Ok(None),
+        }
     }
 
     /// function to get jobs that don't have a successor job.
@@ -317,7 +349,12 @@ impl Database for MongoDb {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?,
-            "internal_id": { "$gt": internal_id.clone() }
+            "$expr": {
+                "$gt": [
+                    { "$toInt": "$internal_id" },  // Convert stored string to number
+                    { "$toInt": &internal_id }     // Convert input string to number
+                ]
+            }
         };
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
         tracing::debug!(job_type = ?job_type, job_status = ?job_status, internal_id = internal_id, category = "db_call", "Fetched jobs after internal ID by job type");
