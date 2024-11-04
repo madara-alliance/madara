@@ -62,7 +62,7 @@ pub(crate) fn create_string_response(status: StatusCode, body: String) -> Respon
     match Response::builder().status(status).body(body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }

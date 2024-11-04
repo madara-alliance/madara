@@ -22,7 +22,7 @@ mp-convert = { workspace = true }
 # Starknet
 blockifier = { workspace = true }
 cairo-vm = { workspace = true }
-log = { workspace = true }
+tracing.workspace = true
 rstest.workspace = true
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }

@@ -49,7 +49,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
 ] }
-log = { workspace = true, default-features = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

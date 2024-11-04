@@ -53,7 +53,6 @@ futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
-log.workspace = true
 rand.workspace = true
 rayon.workspace = true
 reqwest.workspace = true

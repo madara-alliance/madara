@@ -668,7 +668,7 @@ mod tests {
         #[test]
         fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
             let _ = env_logger::builder().is_test(true).try_init();
-            tracing::log::set_max_level(tracing::log::LevelFilter::Trace);
+            tracing::tracing::set_max_level(tracing::tracing::LevelFilter::Trace);
             pb.check();
         }
     }

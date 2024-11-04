@@ -141,7 +141,7 @@ impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + S
                     let next_policy = self.clone();
                     let fut = async move {
                         if (*pause_until.read().await).is_none() {
-                            log::info!("The fetching process has been rate limited, retrying");
+                            tracing::info!("The fetching process has been rate limited, retrying");
                         }
 
                         let mut pause_lock = pause_until.write().await;
