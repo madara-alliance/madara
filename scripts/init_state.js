@@ -75,7 +75,7 @@ async function bridgeToChain(bridge_address, starnet_expected_account_address) {
   const tx = await contract.deposit(
     ethers.parseEther("1"),
     starnet_expected_account_address,
-    { value: ethers.parseEther("2") },
+    { value: ethers.parseEther("1.01") },
   );
 
   tx.wait();
@@ -399,8 +399,8 @@ async function upgradeETHToken(
     "ℹ️ Sending transaction to declare and deploy new ERC20 contract for ETH...",
   );
   let new_erc20_declare_deploy = await account.declareAndDeploy({
-    contract: require("./artifacts/new_eth_token.sierra.json"),
-    casm: require("./artifacts/new_eth_token.casm.json"),
+    contract: require("./artifacts/starknet/new_eth_token.sierra.json"),
+    casm: require("./artifacts/starknet/new_eth_token.casm.json"),
     constructorCalldata: [
       "eee",
       "eeee",
@@ -421,8 +421,8 @@ async function upgradeETHToken(
   // https://sepolia.starkscan.co/tx/0x03e50d969b41bc98e4da481ec7a48151bb0738137473f8f32f52fa317b9a9fe4
   console.log("ℹ️ Sending transaction to declare and deploy EIC contract...");
   let eic_declare_deploy = await account.declareAndDeploy({
-    contract: require("./artifacts/eic_eth_token.sierra.json"),
-    casm: require("./artifacts/eic_eth_token.casm.json"),
+    contract: require("./artifacts/starknet/eic_eth_token.sierra.json"),
+    casm: require("./artifacts/starknet/eic_eth_token.casm.json"),
     constructorCalldata: [],
   });
   console.log("✅ Transaction successful.");
@@ -433,7 +433,7 @@ async function upgradeETHToken(
     "ℹ️ Sending transaction to add implementation to bridge contract...",
   );
   let eth_bridge = new starknet.Contract(
-    require("./artifacts/bridge_proxy_legacy.json").abi,
+    require("./artifacts/starknet/bridge_proxy_legacy.json").abi,
     l2_eth_token_address,
     account,
   );
@@ -524,8 +524,8 @@ async function upgradeETHBridge(
     "ℹ️ Sending transaction to declare and deploy new ETH bridge contract for ETH...",
   );
   let new_bridge_declare_deploy = await account.declareAndDeploy({
-    contract: require("./artifacts/new_eth_bridge.sierra.json"),
-    casm: require("./artifacts/new_eth_bridge.casm.json"),
+    contract: require("./artifacts/starknet/new_eth_bridge.sierra.json"),
+    casm: require("./artifacts/starknet/new_eth_bridge.casm.json"),
     constructorCalldata: ["0"],
   });
   console.log("✅ Transaction successful.");
@@ -536,8 +536,8 @@ async function upgradeETHBridge(
   // https://sepolia.starkscan.co/tx/0x02fde4be42ecb05b545f53adf9d4c1aed8392e6a3743e9f5b6b8333fc580e684
   console.log("ℹ️ Sending transaction to declare and deploy EIC contract...");
   let eic_declare_deploy = await account.declareAndDeploy({
-    contract: require("./artifacts/eic_eth_bridge.sierra.json"),
-    casm: require("./artifacts/eic_eth_bridge.casm.json"),
+    contract: require("./artifacts/starknet/eic_eth_bridge.sierra.json"),
+    casm: require("./artifacts/starknet/eic_eth_bridge.casm.json"),
     constructorCalldata: [],
   });
   console.log("✅ Transaction successful.");
@@ -548,7 +548,7 @@ async function upgradeETHBridge(
     "ℹ️ Sending transaction to add implementation to bridge contract...",
   );
   let eth_bridge = new starknet.Contract(
-    require("./artifacts/bridge_proxy_legacy.json").abi,
+    require("./artifacts/starknet/bridge_proxy_legacy.json").abi,
     l2_eth_bridge_address,
     account,
   );
@@ -614,12 +614,146 @@ async function upgradeETHBridge(
   console.log("✅ Transaction successful.");
 }
 
+async function upgradeL1EthBridge(l1_bridge_address) {
+  // deploy the new bridge which the proxy will use
+  const newEthBridge = require("./artifacts/eth/new_eth_bridge.json");
+  const contract = new ethers.ContractFactory(
+    newEthBridge.abi,
+    newEthBridge.bytecode,
+    wallet,
+  );
+  const ethBridgeReceipt = await contract.deploy();
+  await ethBridgeReceipt.waitForDeployment();
+  const ethBridgeAddress = await ethBridgeReceipt.getAddress();
+  console.log("✅ New L1 ETH bridge deployed at address:", ethBridgeAddress);
+
+  // deploy the EIC
+  const newEic = require("./artifacts/eth/eic_eth_bridge.json");
+  const eicContract = new ethers.ContractFactory(
+    newEic.abi,
+    newEic.bytecode,
+    wallet,
+  );
+  const eicReceipt = await eicContract.deploy();
+  await eicReceipt.waitForDeployment();
+  const eicAddress = await eicReceipt.getAddress();
+  console.log("✅ New EIC deployed at address:", eicAddress);
+
+  // add new implementation to the bridge
+  const bridge = new ethers.Contract(
+    l1_bridge_address,
+    [
+      {
+        type: "function",
+        name: "addImplementation",
+        inputs: [
+          {
+            name: "newImplementation",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "data",
+            type: "bytes",
+            internalType: "bytes",
+          },
+          {
+            name: "finalize",
+            type: "bool",
+            internalType: "bool",
+          },
+        ],
+        outputs: [],
+        stateMutability: "nonpayable",
+      },
+      {
+        type: "function",
+        name: "upgradeTo",
+        inputs: [
+          {
+            name: "newImplementation",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "data",
+            type: "bytes",
+            internalType: "bytes",
+          },
+          {
+            name: "finalize",
+            type: "bool",
+            internalType: "bool",
+          },
+        ],
+        outputs: [],
+        stateMutability: "payable",
+      },
+    ],
+    wallet,
+  );
+
+  // add new implementation to the bridge
+  let addImplementationTxn = await bridge.addImplementation(
+    ethBridgeAddress,
+    chainHexesToBytes([eicAddress, "0x0", "0x0"]),
+    false,
+  );
+  await addImplementationTxn.wait();
+  console.log("✅ New implementation added to the bridge");
+
+  // upgrade the bridge to the new implementation
+  let upgradeToTxn = await bridge.upgradeTo(
+    ethBridgeAddress,
+    chainHexesToBytes([eicAddress, "0x0", "0x0"]),
+    false,
+  );
+  await upgradeToTxn.wait();
+  console.log("✅ Bridge upgraded to the new implementation");
+}
+
+/**
+ * Chain arguments to one big endian Uint8Array.
+ * Support address (or other hex strings that fit in 256 bits).
+ * @param {string[]} hexes - Array of hex strings
+ * @returns {Uint8Array} - Concatenated big endian bytes
+ */
+// Taken from https://github.com/starknet-io/starkgate-contracts/blob/5a10fd263d29cd032b7229691d043520edae0737/src/solidity/conftest.py#L167
+function chainHexesToBytes(hexes) {
+  // Create an array to store all bytes
+  let result = new Uint8Array(hexes.length * 32);
+
+  hexes.forEach((hex, index) => {
+    // Remove '0x' prefix if present
+    hex = hex.replace("0x", "");
+
+    // Convert hex string to BigInt
+    const num = BigInt("0x" + hex);
+
+    // Convert to bytes and pad to 32 bytes
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      // Extract each byte from right to left (big endian)
+      bytes[31 - i] = Number((num >> BigInt(i * 8)) & BigInt(0xff));
+    }
+
+    // Add to result array
+    result.set(bytes, index * 32);
+  });
+
+  return result;
+}
+
 async function main() {
   // tage bridge address as an argument --bridge_address
   const l1_bridge_address = process.argv[2];
+  console.log("ℹ️ L1 bridge address:", l1_bridge_address);
   const core_contract_address = process.argv[3];
+  console.log("ℹ️ Core contract address:", core_contract_address);
   const l2_eth_token_address = process.argv[4];
+  console.log("ℹ️ L2 ETH token address:", l2_eth_token_address);
   const l2_eth_bridge_address = process.argv[5];
+  console.log("ℹ️ L2 ETH bridge address:", l2_eth_bridge_address);
   const bootstrapper_address =
     "0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860" ||
     process.argv[6];
@@ -659,6 +793,25 @@ async function main() {
       bootstrapper_private_key,
       bootstrapper_address,
     );
+  }
+
+  // upgrade L1 ETH bridge
+  const l1BridgeContract = new ethers.Contract(
+    l1_bridge_address,
+    ["function identify() external view returns (string)"],
+    eth_provider,
+  );
+  const identify = await l1BridgeContract.identify();
+  console.log("ℹ️ L1 ETH bridge identify:", identify);
+  if (
+    identify.includes(
+      // StarkWare_StarknetEthBridge_2023_1
+      "StarkWare_StarknetEthBridge_2023_1",
+    )
+  ) {
+    await upgradeL1EthBridge(l1_bridge_address);
+  } else {
+    console.log("ℹ️ L1 ETH bridge is already upgraded, proceeding");
   }
 
   const {

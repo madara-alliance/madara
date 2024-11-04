@@ -20,7 +20,7 @@ MADARA_DATA_PATH := $(shell pwd)/build/madara
 PATHFINDER_COMMIT := 138140e5fd967ede92806fd62de47c2e6b65712a
 PATHFINDER_DATA_PATH := $(shell pwd)/build/pathfinder
 PATHFINDER_PATH := $(shell pwd)/pathfinder
-ETHEREUM_WSS_RPC_URL := wss://eth-sepolia.g.alchemy.com/v2/<api_key>
+ETHEREUM_WSS_RPC_URL := wss://eth-sepolia.g.alchemy.com/v2/${ETHEREUM_API_KEY}
 
 # Environment file
 ENV_FILE := $(shell pwd)/.makefile.json
@@ -67,6 +67,9 @@ setup:
 	@echo "Starting ETH Bridge setup..."
 	@make eth-bridge
 
+	# we need to sleep for a little as it's possible the block hasn't been sealed yet
+	@sleep 10
+
 	@echo "Terminating previous Madara instance..."
 	$(call kill_pid,madara)
 
@@ -95,10 +98,6 @@ setup:
 		make snos; \
 	fi
 	@echo "Starknet OS built"
-
-	@echo "Starting orchestrator"
-	@make orchestrator
-	@echo "Setup completed."
 
 	@make cleanup
 
@@ -133,7 +132,7 @@ core-contract:
 	cd $(BOOTSTRAPPER_PATH) && \
 	rm -f $(BOOTSTRAP_OUTPUT_PATH) && \
 	git checkout $(BOOTSTRAPPER_COMMIT) && \
-	RUST_LOG=debug cargo run --release -- --mode core --operator-address $(OPERATOR_ADDRESS) --output-file $(BOOTSTRAP_OUTPUT_PATH) --verifier-address $(VERIFIER_ADDRESS) && \
+	RUST_LOG=debug cargo run --release -- --mode core --operator-address $(OPERATOR_ADDRESS) --output-file $(BOOTSTRAP_OUTPUT_PATH) --verifier-address $(VERIFIER_ADDRESS) --config-hash-version "StarknetOsConfig2" && \
 	cat $(BOOTSTRAP_OUTPUT_PATH) && \
     $(call save_json,"CORE_CONTRACT_ADDRESS",$$(jq -r .starknet_contract_address $(BOOTSTRAP_OUTPUT_PATH))) && \
     $(call save_json,"CORE_CONTRACT_IMPLEMENTATION_ADDRESS",$$(jq -r .starknet_contract_implementation_address $(BOOTSTRAP_OUTPUT_PATH)))
@@ -149,7 +148,6 @@ eth-bridge:
 	git checkout $(BOOTSTRAPPER_COMMIT) && \
 	export CORE_CONTRACT_ADDRESS=$$(jq -r '.CORE_CONTRACT_ADDRESS' $(ENV_FILE)) && \
 	export CORE_CONTRACT_IMPLEMENTATION_ADDRESS=$$(jq -r '.CORE_CONTRACT_IMPLEMENTATION_ADDRESS' $(ENV_FILE)) && \
-	echo "TODO: set core contract address" && \
 	RUST_LOG=debug cargo run --release -- --mode eth-bridge --core-contract-address $$CORE_CONTRACT_ADDRESS --core-contract-implementation-address $$CORE_CONTRACT_IMPLEMENTATION_ADDRESS  --output-file $(BOOTSTRAP_OUTPUT_PATH) && \
 	$(call save_json,"L1_BRIDGE_ADDRESS","$$(jq -r .eth_bridge_setup_outputs.l1_bridge_address $(BOOTSTRAP_OUTPUT_PATH))") && \
     $(call save_json,"L2_ETH_TOKEN_ADDRESS","$$(jq -r .eth_bridge_setup_outputs.l2_eth_proxy_address $(BOOTSTRAP_OUTPUT_PATH))") && \

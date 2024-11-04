@@ -1,2 +1,9 @@
 target/
 dashboards
+cairo-lang/
+madara/
+madara-bootstrapper/
+pathfinder/
+orchestrator_venv/
+build/
+node_modules/
