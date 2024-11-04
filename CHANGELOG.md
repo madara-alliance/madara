@@ -68,6 +68,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- indexing for get_jobs_without_successor
 - wait for transaction logic in ethereum settlement client
 - y_0 point evaluation in build kzg proof for ethereum settlement
 - fixed metrics name, signoz dashboard.
