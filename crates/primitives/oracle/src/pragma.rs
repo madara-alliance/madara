@@ -1,6 +1,6 @@
 use std::fmt;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
@@ -56,7 +56,9 @@ impl PragmaOracle {
 
         let oracle_api_response = response.json::<PragmaApiResponse>().await.context("failed to parse api response")?;
         let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)?;
-
+        if eth_strk_price ==  0 {
+            bail!("Pragma api returned 0 for eth/strk price");
+        }
         Ok((eth_strk_price, oracle_api_response.decimals))
     }
 }
