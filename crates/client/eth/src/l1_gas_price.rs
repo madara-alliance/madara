@@ -71,7 +71,7 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
     // fetch eth/strk price and update
     if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
         let (eth_strk_price, decimals) =
-            oracle_provider.fetch_eth_strk_price().await.expect("failed to retrieve ETH/STRK price");
+            oracle_provider.fetch_eth_strk_price().await.context("failed to retrieve ETH/STRK price")?;
         let strk_gas_price = (BigDecimal::new((*eth_gas_price).into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
         .as_bigint_and_exponent();
