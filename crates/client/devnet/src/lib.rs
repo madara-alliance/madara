@@ -295,7 +295,7 @@ mod tests {
 
     #[fixture]
     fn chain() -> DevnetForTesting {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();

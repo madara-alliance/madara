@@ -47,7 +47,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
-env_logger.workspace = true
 fdlimit.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true

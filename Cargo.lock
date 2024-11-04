@@ -3126,7 +3126,7 @@ version = "1.0.0-alpha.6"
 source = "git+https://github.com/starkware-libs/cairo?tag=v1.0.0-alpha.6#439da05a031c2eda263c4ce12d0b71d20f38205f"
 dependencies = [
  "chrono",
- "env_logger 0.9.3",
+ "env_logger",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -3141,7 +3141,7 @@ name = "cairo-lang-utils"
 version = "1.0.0-rc0"
 source = "git+https://github.com/starkware-libs/cairo?tag=v1.0.0-rc0#05867c82de42d5ee5cfa953dcca1cb826402f74b"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -3158,7 +3158,7 @@ version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af180baa613acd5b03179f8766a50087d44702b78c0b49a887fdb06d40226064"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -3831,16 +3831,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_filter"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
 name = "env_logger"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3851,19 +3841,6 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13fa619b91fb2381732789fc5de83b45675e882f66623b7d8cb4f643017018d"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "humantime",
- "log",
 ]
 
 [[package]]
@@ -5434,7 +5411,6 @@ dependencies = [
  "blockifier",
  "chrono",
  "clap",
- "env_logger 0.11.5",
  "fdlimit",
  "futures",
  "governor",
@@ -5610,7 +5586,6 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "blockifier",
- "env_logger 0.11.5",
  "m-cairo-test-contracts",
  "mc-block-import",
  "mc-db",
@@ -5649,7 +5624,6 @@ name = "mc-e2e-tests"
 version = "0.7.0"
 dependencies = [
  "anyhow",
- "env_logger 0.11.5",
  "flate2",
  "lazy_static",
  "reqwest 0.12.8",
@@ -5660,6 +5634,8 @@ dependencies = [
  "starknet-providers",
  "tempfile",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5775,7 +5751,6 @@ dependencies = [
  "assert_matches",
  "bitvec",
  "blockifier",
- "env_logger 0.11.5",
  "lazy_static",
  "mc-analytics",
  "mc-block-import",
@@ -5818,7 +5793,6 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "blockifier",
- "env_logger 0.11.5",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
