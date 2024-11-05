@@ -38,6 +38,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
+    // TODO: this function doesn't do much, should be hoisted out
     // Get the block numbers for the requested range
     let (from_block, to_block, latest_block) =
         block_range(starknet, filter.event_filter.from_block, filter.event_filter.to_block)?;
@@ -47,30 +48,40 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
         None => ContinuationToken { block_n: from_block, event_n: 0 },
     };
 
+    // PERF: this is minor but this could happen earlier
     // Verify that the requested range is valid
     if from_block > to_block {
         return Ok(EventsPage { events: vec![], continuation_token: None });
     }
 
     let from_block = continuation_token.block_n;
+    // PERF: this should at least be pre-allocated to some sensible default
     let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
+    // PERF: we should truncate from_block to the creation block of the contract
+    // if it is less than that
     for current_block in from_block..=to_block {
+        // PERF: this check can probably be hoisted out of this loop
         let (_pending, block) = if current_block <= latest_block {
+            // PERF: This is probably the main bottleneck: we should be able to
+            // mitigate this by implementing a db iterator
             (false, starknet.get_block(&BlockId::Number(current_block))?)
         } else {
             (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
         };
 
+        // PERF: collection needs to be more efficient
         let block_filtered_events: Vec<EmittedEvent> = get_block_events(starknet, &block)
             .into_iter()
             .filter(|event| event_match_filter(event, from_address, &keys))
             .collect();
 
+        // PERF: this condition needs to be moved out the loop as it needs to happen only once
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
             return Err(StarknetRpcApiError::InvalidContinuationToken);
         }
 
+        // PERF: same here, hoist this out of the loop
         #[allow(clippy::iter_skip_zero)]
         let block_filtered_reduced_events: Vec<EmittedEvent> = block_filtered_events
             .into_iter()
@@ -80,6 +91,8 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
 
         let num_events = block_filtered_reduced_events.len();
 
+        // PERF: any better way to do this? Pre-allocation should reduce some
+        // of the allocations already
         filtered_events.extend(block_filtered_reduced_events);
 
         if filtered_events.len() == chunk_size as usize {
@@ -96,13 +109,17 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
 #[inline]
 fn event_match_filter(event: &EmittedEvent, address: Option<Felt>, keys: &[Vec<Felt>]) -> bool {
     let match_from_address = address.map_or(true, |addr| addr == event.from_address);
+    // PERF: HOLY FUCK WE CHECK ALL EVENTS EVEN IF THEY COME FROM THE WRONG
+    // ADDRESS
     let match_keys = keys
         .iter()
         .enumerate()
         .all(|(i, keys)| event.keys.len() > i && (keys.is_empty() || keys.contains(&event.keys[i])));
+    // PERF: this can be short-circuited
     match_from_address && match_keys
 }
 
+// TODO: remove this function, this code can be dealt with manually
 fn block_range(
     starknet: &Starknet,
     from_block: Option<BlockId>,
@@ -123,6 +140,8 @@ fn block_range(
 }
 
 fn get_block_events(_starknet: &Starknet, block: &MadaraMaybePendingBlock) -> Vec<EmittedEvent> {
+    // PERF:: this check can probably be removed by handling pending blocks
+    // separatly
     let (block_hash, block_number) = match &block.info {
         MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
@@ -133,6 +152,8 @@ fn get_block_events(_starknet: &Starknet, block: &MadaraMaybePendingBlock) -> Ve
         receipt.events().iter().map(move |events| (tx_hash, events))
     });
 
+    // PERF: clone here is brutal, there must be a way to take ownership of this
+    // data
     tx_hash_and_events
         .map(|(transaction_hash, event)| EmittedEvent {
             from_address: event.from_address,
