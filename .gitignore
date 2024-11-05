@@ -60,6 +60,9 @@ starknet-e2e-test/contracts/build
 # rpc output
 output*
 
+# test output
+test_output*
+
 tmp/
 
 *.info

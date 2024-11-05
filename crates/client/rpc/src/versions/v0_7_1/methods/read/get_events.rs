@@ -156,3 +156,150 @@ fn get_block_events(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod test {
+    use jsonrpsee::http_client::HttpClientBuilder;
+
+    use crate::{
+        test_utils::rpc_test_setup,
+        versions::v0_7_1::{StarknetReadRpcApiV0_7_1Client, StarknetReadRpcApiV0_7_1Server},
+    };
+
+    fn block_info(n: u64) -> mp_block::MadaraMaybePendingBlockInfo {
+        mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+            header: mp_block::Header {
+                parent_block_hash: starknet_core::types::Felt::from(n),
+                block_number: n,
+                ..Default::default()
+            },
+            block_hash: starknet_core::types::Felt::from(n),
+            tx_hashes: vec![],
+        })
+    }
+
+    fn block_events(n: u64) -> Vec<mp_receipt::Event> {
+        vec![
+            mp_receipt::Event {
+                from_address: starknet_core::types::Felt::from(n),
+                keys: vec![
+                    starknet_core::types::Felt::ZERO,
+                    starknet_core::types::Felt::ONE,
+                    starknet_core::types::Felt::from(n),
+                ],
+                data: vec![],
+            },
+            mp_receipt::Event {
+                from_address: starknet_core::types::Felt::from(n),
+                keys: vec![
+                    starknet_core::types::Felt::ZERO,
+                    starknet_core::types::Felt::TWO,
+                    starknet_core::types::Felt::from(n),
+                ],
+                data: vec![],
+            },
+            mp_receipt::Event { from_address: starknet_core::types::Felt::from(n), keys: vec![], data: vec![] },
+        ]
+    }
+
+    fn block_inner(n: u64) -> mp_block::MadaraBlockInner {
+        mp_block::MadaraBlockInner {
+            transactions: vec![],
+            receipts: vec![
+                mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                    events: block_events(n),
+                    transaction_hash: starknet_core::types::Felt::from(n),
+                    ..Default::default()
+                }),
+                mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                    events: block_events(n),
+                    transaction_hash: starknet_core::types::Felt::from(n + 1),
+                    ..Default::default()
+                }),
+            ],
+        }
+    }
+
+    fn block_generator(
+        backend: &mc_db::MadaraBackend,
+    ) -> impl Iterator<Item = Vec<starknet_core::types::EmittedEvent>> + '_ {
+        (0..).map(|n| {
+            let info = block_info(n);
+            let inner = block_inner(n);
+
+            backend
+                .store_block(
+                    mp_block::MadaraMaybePendingBlock { info: info.clone(), inner: inner.clone() },
+                    mp_state_update::StateDiff::default(),
+                    vec![],
+                )
+                .expect("Storing block");
+
+            inner
+                .receipts
+                .into_iter()
+                .flat_map(move |receipt| {
+                    let block_hash = info.block_hash();
+                    let block_number = info.block_n();
+                    let transaction_hash = receipt.transaction_hash();
+                    receipt.events_owned().into_iter().map(move |event| starknet_core::types::EmittedEvent {
+                        from_address: event.from_address,
+                        keys: event.keys,
+                        data: event.data,
+                        block_hash,
+                        block_number,
+                        transaction_hash,
+                    })
+                })
+                .collect()
+        })
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_events(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("http://{}", server.local_addr().expect("Retrieving server local address"));
+
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
+        let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
+
+        let mut generator = block_generator(&backend);
+        let expected = generator.next().expect("Retrieving event from backend");
+
+        let events = client
+            .get_events(starknet_core::types::EventFilterWithPage {
+                event_filter: starknet_core::types::EventFilter {
+                    from_block: None,
+                    to_block: None,
+                    address: None,
+                    keys: None,
+                },
+                result_page_request: starknet_core::types::ResultPageRequest {
+                    continuation_token: None,
+                    chunk_size: 10,
+                },
+            })
+            .await
+            .expect("starknet_getEvents")
+            .events;
+
+        if events != expected {
+            let file_events = std::fs::File::open("./test_output_actual.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_events);
+            serde_json::to_writer_pretty(writter, &events).unwrap_or_default();
+
+            let file_expected = std::fs::File::open("./test_output_events.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_expected);
+            serde_json::to_writer_pretty(writter, &expected).unwrap_or_default();
+
+            panic!(
+                "actual: {}\nexpected:{}",
+                serde_json::to_string_pretty(&events).unwrap_or_default(),
+                serde_json::to_string_pretty(&expected).unwrap_or_default()
+            )
+        }
+    }
+}
