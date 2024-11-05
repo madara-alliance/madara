@@ -258,6 +258,7 @@ impl MadaraBackend {
         tx.delete_cf(&col, ROW_PENDING_INNER);
         tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
         tx.delete_cf(&col, ROW_PENDING_SEGMENTS);
+        tx.delete_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS);
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
