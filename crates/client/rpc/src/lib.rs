@@ -2,6 +2,8 @@
 //!
 //! It uses the madara client and backend in order to answer queries.
 
+#![feature(iter_collect_into)]
+
 mod constants;
 mod errors;
 pub mod providers;
