@@ -206,7 +206,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     fn continue_block(
         &mut self,
         bouncer_cap: BouncerWeights,
-    ) -> Result<(StateDiff, VisitedSegments, ContinueBlockStats), Error> {
+    ) -> Result<(StateDiff, VisitedSegments, BouncerWeights, ContinueBlockStats), Error> {
         let mut stats = ContinueBlockStats::default();
 
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
@@ -296,7 +296,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
 
         // TODO: save visited segments for SNOS.
-        let (state_diff, visited_segments, _weights) = finalize_execution_state::finalize_execution_state(
+        let (state_diff, visited_segments, bouncer_weights) = finalize_execution_state::finalize_execution_state(
             &executed_txs,
             &mut self.executor,
             &self.backend,
@@ -314,7 +314,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, visited_segments, stats))
+        Ok((state_diff, visited_segments, bouncer_weights, stats))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -361,7 +361,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         };
 
         let start_time = Instant::now();
-        let (state_diff, visited_segments, stats) = self.continue_block(bouncer_cap)?;
+        let (state_diff, visited_segments, bouncer_weights, stats) = self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             tracing::info!(
                 "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
@@ -378,6 +378,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             state_diff,
             self.declared_classes.clone(),
             Some(visited_segments),
+            Some(bouncer_weights),
         )?;
         // do not forget to flush :)
         self.backend
@@ -395,7 +396,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (mut new_state_diff, visited_segments, _stats) =
+        let (mut new_state_diff, visited_segments, _weights, _stats) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior

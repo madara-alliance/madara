@@ -1,5 +1,6 @@
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_state_update::{
@@ -16,6 +17,7 @@ impl MadaraBackend {
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
         visited_segments: Option<Vec<(Felt, Vec<usize>)>>,
+        bouncer_weights: Option<BouncerWeights>,
     ) -> Result<(), MadaraStorageError> {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
@@ -28,6 +30,7 @@ impl MadaraBackend {
                 &MadaraPendingBlock { info, inner: block.inner },
                 &state_diff_cpy,
                 visited_segments,
+                bouncer_weights,
             ),
             MadaraMaybePendingBlockInfo::NotPending(info) => {
                 self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)

@@ -57,10 +57,10 @@ mod tests {
         assert_eq!(parse_duration("200ms").unwrap(), Duration::from_millis(200));
         assert_eq!(parse_duration("5min").unwrap(), Duration::from_secs(300));
         assert_eq!(parse_duration("1 min").unwrap(), Duration::from_secs(60));
+        assert_eq!(parse_duration("5h").unwrap(), Duration::from_secs(5 * 60 * 60));
         assert_eq!(parse_duration("10 s").unwrap(), Duration::from_secs(10));
         assert!(parse_duration("2x").is_err());
         assert!(parse_duration("200").is_err());
-        assert!(parse_duration("5h").is_err());
         assert!(parse_duration("ms200").is_err());
         assert!(parse_duration("-5s").is_err());
         assert!(parse_duration("5.5s").is_err());

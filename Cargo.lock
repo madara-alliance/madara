@@ -5632,6 +5632,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
+ "blockifier",
  "bonsai-trie",
  "lazy_static",
  "log",
