@@ -17,22 +17,27 @@
 
 use crate::close_block::close_block;
 use crate::metrics::BlockProductionMetrics;
-use blockifier::blockifier::transaction_executor::TransactionExecutor;
-use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
+use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
+use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::state::state_api::UpdatableState;
 use blockifier::transaction::errors::TransactionExecutionError;
+use finalize_execution_state::{state_diff_to_state_map, StateDiffToStateMapError};
 use mc_block_import::{BlockImportError, BlockImporter};
+use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
-use mp_class::ConvertedClass;
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_class::compile::ClassCompilationError;
+use mp_class::{ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
 use opentelemetry::KeyValue;
+use starknet_api::core::ClassHash;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -43,6 +48,8 @@ use std::time::Instant;
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
+
+pub type VisitedSegments = Vec<(Felt, Vec<usize>)>;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -68,6 +75,10 @@ pub enum Error {
     Import(#[from] mc_block_import::BlockImportError),
     #[error("Unexpected error: {0:#}")]
     Unexpected(Cow<'static, str>),
+    #[error("Class compilation error when continuing the pending block: {0:#}")]
+    PendingClassCompilationError(#[from] ClassCompilationError),
+    #[error("State diff error when continuing the pending block: {0:#}")]
+    PendingStateDiff(#[from] StateDiffToStateMapError),
 }
 /// The block production task consumes transactions from the mempool in batches.
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
@@ -94,10 +105,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
-    #[tracing::instrument(
-        skip(backend, importer, mempool, l1_data_provider, metrics),
-        fields(module = "BlockProductionTask")
-    )]
+    // #[tracing::instrument(
+    //     skip(backend, importer, mempool, l1_data_provider, metrics),
+    //     fields(module = "BlockProductionTask")
+    // )]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
@@ -105,24 +116,78 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         metrics: BlockProductionMetrics,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        let parent_block_hash = backend
-            .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
-            .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
-        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
-            parent_block_hash,
-            backend.chain_config(),
-            l1_data_provider.as_ref(),
-        ));
-        // NB: we cannot continue a previously started pending block yet.
-        // let pending_block = backend.get_or_create_pending_block(|| CreatePendingBlockExtraInfo {
-        //     l1_gas_price: l1_data_provider.get_gas_prices(),
-        //     l1_da_mode: l1_data_provider.get_da_mode(),
-        // })?;
+        let (pending_block, state_diff, pcs) = match backend.get_block(&DbBlockId::Pending)? {
+            Some(pending) => {
+                let MadaraMaybePendingBlockInfo::Pending(info) = pending.info else {
+                    return Err(Error::Unexpected("Get a pending block".into()));
+                };
+                let pending_state_update = backend.get_pending_block_state_update()?;
+                (MadaraPendingBlock { info, inner: pending.inner }, pending_state_update, Default::default())
+            }
+            None => {
+                let parent_block_hash = backend
+                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+                    .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
+
+                (
+                    MadaraPendingBlock::new_empty(make_pending_header(
+                        parent_block_hash,
+                        backend.chain_config(),
+                        l1_data_provider.as_ref(),
+                    )),
+                    StateDiff::default(),
+                    Default::default(),
+                )
+            }
+        };
+
+        let declared_classes: Vec<ConvertedClass> = state_diff
+            .declared_classes
+            .iter()
+            .map(|item| {
+                let class_info = backend.get_class_info(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
+                    Error::Unexpected(format!("No class info for declared class {:#x}", item.class_hash).into())
+                })?;
+                let converted_class = match class_info {
+                    mp_class::ClassInfo::Sierra(info) => {
+                        let compiled =
+                            backend.get_sierra_compiled(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
+                                Error::Unexpected(
+                                    format!("No compiled class for declared class {:#x}", item.class_hash).into(),
+                                )
+                            })?;
+                        let compiled = Arc::new(compiled);
+                        ConvertedClass::Sierra(SierraConvertedClass { class_hash: item.class_hash, info, compiled })
+                    }
+                    mp_class::ClassInfo::Legacy(info) => {
+                        ConvertedClass::Legacy(LegacyConvertedClass { class_hash: item.class_hash, info })
+                    }
+                };
+
+                Ok(converted_class)
+            })
+            .collect::<Result<_, Error>>()?;
+
+        let class_hash_to_class = declared_classes
+            .iter()
+            .map(|c| {
+                Ok((
+                    ClassHash(c.class_hash()),
+                    match c {
+                        ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
+                        ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
+                    },
+                ))
+            })
+            .collect::<Result<_, Error>>()?;
+
         let mut executor =
             ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+        let block_state =
+            executor.block_state.as_mut().expect("Block state can not be None unless we take ownership of it");
 
-        let bouncer_config = backend.chain_config().bouncer_config.clone();
-        executor.bouncer = Bouncer::new(bouncer_config);
+        // Apply pending state
+        block_state.apply_writes(&state_diff_to_state_map(state_diff)?, &class_hash_to_class, &pcs);
 
         Ok(Self {
             importer,
@@ -131,14 +196,17 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             executor,
             current_pending_tick: 0,
             block: pending_block,
-            declared_classes: vec![],
+            declared_classes,
             l1_data_provider,
             metrics,
         })
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats), Error> {
+    fn continue_block(
+        &mut self,
+        bouncer_cap: BouncerWeights,
+    ) -> Result<(StateDiff, VisitedSegments, ContinueBlockStats), Error> {
         let mut stats = ContinueBlockStats::default();
 
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
@@ -150,9 +218,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let mut executed_txs = Vec::with_capacity(batch_size);
 
         // Cloning transactions: That's a lot of cloning, but we're kind of forced to do that because blockifier takes
-        // a `&[Transaction]` slice. In addition, declare transactions have their class behind an Arc. As a result, the
-        // `Transaction` struct, as of blockifier 0.8.0-rc.3, is only 320 bytes. So we'll consider that cloning is
-        // fine!
+        // a `&[Transaction]` slice. In addition, declare transactions have their class behind an Arc.
         loop {
             // Take transactions from mempool.
             let to_take = batch_size.saturating_sub(txs_to_process.len());
@@ -180,6 +246,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             for exec_result in all_results {
                 let mut mempool_tx =
                     txs_to_process.pop_front().ok_or_else(|| Error::Unexpected("Vector length mismatch".into()))?;
+
+                // Remove tx from mempool
+                self.backend.remove_mempool_transaction(&mempool_tx.tx_hash().to_felt())?;
+
                 match exec_result {
                     Ok(execution_info) => {
                         // Reverted transactions appear here as Ok too.
@@ -223,16 +293,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             }
         }
 
-        let on_top_of = self
-            .executor
-            .block_state
-            .as_ref()
-            .expect("Block state can not be None unless we take ownership of it")
-            .state
-            .on_top_of_block_id;
+        let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
 
         // TODO: save visited segments for SNOS.
-        let (state_diff, _visited_segments, _weights) = finalize_execution_state::finalize_execution_state(
+        let (state_diff, visited_segments, _weights) = finalize_execution_state::finalize_execution_state(
             &executed_txs,
             &mut self.executor,
             &self.backend,
@@ -250,7 +314,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, stats))
+        Ok((state_diff, visited_segments, stats))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -297,7 +361,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         };
 
         let start_time = Instant::now();
-        let (state_diff, stats) = self.continue_block(bouncer_cap)?;
+        let (state_diff, visited_segments, stats) = self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             tracing::info!(
                 "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
@@ -309,7 +373,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Store pending block
         // todo, prefer using the block import pipeline?
-        self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
+        self.backend.store_block(
+            self.block.clone().into(),
+            state_diff,
+            self.declared_classes.clone(),
+            Some(visited_segments),
+        )?;
         // do not forget to flush :)
         self.backend
             .maybe_flush(true)
@@ -326,7 +395,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (mut new_state_diff, _n_executed) =
+        let (mut new_state_diff, visited_segments, _stats) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
@@ -373,6 +442,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.backend.chain_config().chain_id.clone(),
             block_n,
             declared_classes,
+            visited_segments,
         )
         .await?;
         self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)

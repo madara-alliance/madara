@@ -1,63 +1,51 @@
-use mp_chain_config::StarknetVersion;
-use starknet_types_core::felt::Felt;
-
 use crate::{
-    BroadcastedDeclareTransactionV0, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1,
-    DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1,
-    DeployAccountTransactionV3, InvokeTransaction, InvokeTransactionV1, InvokeTransactionV3, Transaction,
-    TransactionWithHash,
+    broadcasted_to_blockifier::is_query, BroadcastedDeclareTransactionV0, DeclareTransaction, DeclareTransactionV0,
+    DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
+    DeployAccountTransactionV1, DeployAccountTransactionV3, InvokeTransaction, InvokeTransactionV1,
+    InvokeTransactionV3, Transaction, TransactionWithHash,
 };
+use mp_chain_config::StarknetVersion;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV1, BroadcastedDeclareTransactionV2,
+    BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1,
+    BroadcastedDeployAccountTransactionV3, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV1,
+    BroadcastedInvokeTransactionV3, BroadcastedTransaction,
+};
+use starknet_types_core::felt::Felt;
 
 // class_hash is required for DeclareTransaction
 impl TransactionWithHash {
     pub fn from_broadcasted(
-        tx: starknet_core::types::BroadcastedTransaction,
+        tx: BroadcastedTransaction,
         chain_id: Felt,
         starknet_version: StarknetVersion,
         class_hash: Option<Felt>,
     ) -> Self {
         let is_query = is_query(&tx);
-        let transaction: Transaction = match tx {
-            starknet_core::types::BroadcastedTransaction::Invoke(tx) => Transaction::Invoke(tx.into()),
-            starknet_core::types::BroadcastedTransaction::Declare(tx) => {
-                Transaction::Declare(DeclareTransaction::from_broadcasted(
-                    tx,
-                    class_hash.expect("Class hash must be provided for DeclareTransaction"),
-                ))
-            }
-            starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
+        let transaction = match tx {
+            BroadcastedTransaction::Invoke(tx) => Transaction::Invoke(tx.into()),
+            BroadcastedTransaction::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
+            BroadcastedTransaction::Declare(tx) => Transaction::Declare(DeclareTransaction::from_broadcasted(
+                tx,
+                class_hash.expect("Class hash must be provided for DeclareTransaction"),
+            )),
         };
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
-
-    pub fn from_broadcasted_declare_v0(
-        tx: BroadcastedDeclareTransactionV0,
-        chain_id: Felt,
-        starknet_version: StarknetVersion,
-        class_hash: Option<Felt>,
-    ) -> Self {
-        let is_query = tx.is_query;
-        let transaction: Transaction = Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(
-            tx,
-            class_hash.expect("Class hash must be provided for DeclareTransactionV0"),
-        ));
-        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
-        Self { hash, transaction }
-    }
 }
 
-impl From<starknet_core::types::BroadcastedInvokeTransaction> for InvokeTransaction {
-    fn from(tx: starknet_core::types::BroadcastedInvokeTransaction) -> Self {
+impl From<BroadcastedInvokeTransaction> for InvokeTransaction {
+    fn from(tx: BroadcastedInvokeTransaction) -> Self {
         match tx {
-            starknet_core::types::BroadcastedInvokeTransaction::V1(tx) => InvokeTransaction::V1(tx.into()),
-            starknet_core::types::BroadcastedInvokeTransaction::V3(tx) => InvokeTransaction::V3(tx.into()),
+            BroadcastedInvokeTransaction::V1(tx) => InvokeTransaction::V1(tx.into()),
+            BroadcastedInvokeTransaction::V3(tx) => InvokeTransaction::V3(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::BroadcastedInvokeTransactionV1> for InvokeTransactionV1 {
-    fn from(tx: starknet_core::types::BroadcastedInvokeTransactionV1) -> Self {
+impl From<BroadcastedInvokeTransactionV1> for InvokeTransactionV1 {
+    fn from(tx: BroadcastedInvokeTransactionV1) -> Self {
         Self {
             sender_address: tx.sender_address,
             calldata: tx.calldata,
@@ -68,8 +56,8 @@ impl From<starknet_core::types::BroadcastedInvokeTransactionV1> for InvokeTransa
     }
 }
 
-impl From<starknet_core::types::BroadcastedInvokeTransactionV3> for InvokeTransactionV3 {
-    fn from(tx: starknet_core::types::BroadcastedInvokeTransactionV3) -> Self {
+impl From<BroadcastedInvokeTransactionV3> for InvokeTransactionV3 {
+    fn from(tx: BroadcastedInvokeTransactionV3) -> Self {
         Self {
             sender_address: tx.sender_address,
             calldata: tx.calldata,
@@ -86,21 +74,21 @@ impl From<starknet_core::types::BroadcastedInvokeTransactionV3> for InvokeTransa
 }
 
 impl DeclareTransaction {
-    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransaction, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: BroadcastedDeclareTransaction, class_hash: Felt) -> Self {
         match tx {
-            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
+            BroadcastedDeclareTransaction::V1(tx) => {
                 DeclareTransaction::V1(DeclareTransactionV1::from_broadcasted(tx, class_hash))
             }
-            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => {
+            BroadcastedDeclareTransaction::V2(tx) => {
                 DeclareTransaction::V2(DeclareTransactionV2::from_broadcasted(tx, class_hash))
             }
-            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => {
+            BroadcastedDeclareTransaction::V3(tx) => {
                 DeclareTransaction::V3(DeclareTransactionV3::from_broadcasted(tx, class_hash))
             }
         }
     }
 
-    fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+    pub fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
         DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted_declare_v0(tx, class_hash))
     }
 }
@@ -112,7 +100,7 @@ impl DeclareTransactionV0 {
 }
 
 impl DeclareTransactionV1 {
-    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV1, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: BroadcastedDeclareTransactionV1, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             max_fee: tx.max_fee,
@@ -124,7 +112,7 @@ impl DeclareTransactionV1 {
 }
 
 impl DeclareTransactionV2 {
-    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV2, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: BroadcastedDeclareTransactionV2, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -137,7 +125,7 @@ impl DeclareTransactionV2 {
 }
 
 impl DeclareTransactionV3 {
-    fn from_broadcasted(tx: starknet_core::types::BroadcastedDeclareTransactionV3, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: BroadcastedDeclareTransactionV3, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -154,21 +142,17 @@ impl DeclareTransactionV3 {
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeployAccountTransaction> for DeployAccountTransaction {
-    fn from(tx: starknet_core::types::BroadcastedDeployAccountTransaction) -> Self {
+impl From<BroadcastedDeployAccountTransaction> for DeployAccountTransaction {
+    fn from(tx: BroadcastedDeployAccountTransaction) -> Self {
         match tx {
-            starknet_core::types::BroadcastedDeployAccountTransaction::V1(tx) => {
-                DeployAccountTransaction::V1(tx.into())
-            }
-            starknet_core::types::BroadcastedDeployAccountTransaction::V3(tx) => {
-                DeployAccountTransaction::V3(tx.into())
-            }
+            BroadcastedDeployAccountTransaction::V1(tx) => DeployAccountTransaction::V1(tx.into()),
+            BroadcastedDeployAccountTransaction::V3(tx) => DeployAccountTransaction::V3(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeployAccountTransactionV1> for DeployAccountTransactionV1 {
-    fn from(tx: starknet_core::types::BroadcastedDeployAccountTransactionV1) -> Self {
+impl From<BroadcastedDeployAccountTransactionV1> for DeployAccountTransactionV1 {
+    fn from(tx: BroadcastedDeployAccountTransactionV1) -> Self {
         Self {
             max_fee: tx.max_fee,
             signature: tx.signature,
@@ -180,8 +164,8 @@ impl From<starknet_core::types::BroadcastedDeployAccountTransactionV1> for Deplo
     }
 }
 
-impl From<starknet_core::types::BroadcastedDeployAccountTransactionV3> for DeployAccountTransactionV3 {
-    fn from(tx: starknet_core::types::BroadcastedDeployAccountTransactionV3) -> Self {
+impl From<BroadcastedDeployAccountTransactionV3> for DeployAccountTransactionV3 {
+    fn from(tx: BroadcastedDeployAccountTransactionV3) -> Self {
         Self {
             signature: tx.signature,
             nonce: tx.nonce,
@@ -194,23 +178,5 @@ impl From<starknet_core::types::BroadcastedDeployAccountTransactionV3> for Deplo
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
         }
-    }
-}
-
-fn is_query(tx: &starknet_core::types::BroadcastedTransaction) -> bool {
-    match tx {
-        starknet_core::types::BroadcastedTransaction::Invoke(tx) => match tx {
-            starknet_core::types::BroadcastedInvokeTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedInvokeTransaction::V3(tx) => tx.is_query,
-        },
-        starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
-            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => tx.is_query,
-        },
-        starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => match tx {
-            starknet_core::types::BroadcastedDeployAccountTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeployAccountTransaction::V3(tx) => tx.is_query,
-        },
     }
 }

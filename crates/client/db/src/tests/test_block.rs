@@ -25,8 +25,8 @@ mod block_tests {
         let block_hash = block.info.block_hash().unwrap();
         let state_diff = finalized_state_diff_zero();
 
-        backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
-        backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
+        backend.store_block(block.clone(), state_diff.clone(), vec![], None).unwrap();
+        backend.store_block(pending_block_one(), pending_state_diff_one(), vec![], None).unwrap();
 
         assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), DbBlockId::Number(0));
         assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), DbBlockId::Number(0));
@@ -53,7 +53,7 @@ mod block_tests {
         let block = finalized_block_zero(Header::default());
         let state_diff = finalized_state_diff_zero();
 
-        backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
+        backend.store_block(block.clone(), state_diff.clone(), vec![], None).unwrap();
 
         assert_eq!(backend.get_block_hash(&BLOCK_ID_0).unwrap().unwrap(), block.info.block_hash().unwrap());
         assert_eq!(BLOCK_ID_0.resolve_db_block_id(backend).unwrap().unwrap(), BLOCK_ID_0);
@@ -76,7 +76,7 @@ mod block_tests {
         let block = pending_block_one();
         let state_diff = pending_state_diff_one();
 
-        backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
+        backend.store_block(block.clone(), state_diff.clone(), vec![], None).unwrap();
 
         assert!(backend.get_block_hash(&BLOCK_ID_PENDING).unwrap().is_none());
         assert_eq!(backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap(), block.info);
@@ -92,8 +92,10 @@ mod block_tests {
         let db = temp_db().await;
         let backend = db.backend();
 
-        backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
-        backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
+        backend
+            .store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![], None)
+            .unwrap();
+        backend.store_block(pending_block_one(), pending_state_diff_one(), vec![], None).unwrap();
         backend.clear_pending_block().unwrap();
 
         assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().inner.transactions.is_empty());
@@ -103,11 +105,11 @@ mod block_tests {
             "fake pending block parent hash must match with latest block in db"
         );
 
-        backend.store_block(finalized_block_one(), finalized_state_diff_one(), vec![]).unwrap();
+        backend.store_block(finalized_block_one(), finalized_state_diff_one(), vec![], None).unwrap();
 
         let block_pending = pending_block_two();
         let state_diff = pending_state_diff_two();
-        backend.store_block(block_pending.clone(), state_diff.clone(), vec![]).unwrap();
+        backend.store_block(block_pending.clone(), state_diff.clone(), vec![], None).unwrap();
 
         assert!(backend.get_block_hash(&BLOCK_ID_PENDING).unwrap().is_none());
         assert_eq!(backend.get_block_info(&BLOCK_ID_PENDING).unwrap().unwrap(), block_pending.info);
@@ -121,10 +123,12 @@ mod block_tests {
         let db = temp_db().await;
         let backend = db.backend();
 
-        backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
+        backend
+            .store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![], None)
+            .unwrap();
 
         let latest_block = finalized_block_one();
-        backend.store_block(latest_block.clone(), finalized_state_diff_one(), vec![]).unwrap();
+        backend.store_block(latest_block.clone(), finalized_state_diff_one(), vec![], None).unwrap();
 
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
     }
@@ -149,7 +153,7 @@ mod block_tests {
         let block = finalized_block_zero(Header::default());
         let state_diff = finalized_state_diff_zero();
 
-        backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
+        backend.store_block(block.clone(), state_diff.clone(), vec![], None).unwrap();
 
         let tx_hash_1 = block.info.tx_hashes()[1];
         assert_eq!(backend.find_tx_hash_block_info(&tx_hash_1).unwrap().unwrap(), (block.info.clone(), TxIndex(1)));
@@ -161,10 +165,12 @@ mod block_tests {
         let db = temp_db().await;
         let backend = db.backend();
 
-        backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
+        backend
+            .store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![], None)
+            .unwrap();
 
         let block_pending = pending_block_one();
-        backend.store_block(block_pending.clone(), pending_state_diff_one(), vec![]).unwrap();
+        backend.store_block(block_pending.clone(), pending_state_diff_one(), vec![], None).unwrap();
 
         let tx_hash_1 = block_pending.info.tx_hashes()[1];
         assert_eq!(

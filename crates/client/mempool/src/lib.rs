@@ -1,9 +1,10 @@
+use anyhow::Context;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::DeployAccountTransaction;
 use blockifier::transaction::transactions::InvokeTransaction;
-use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction};
+use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction as BL1HandlerTransaction};
 use header::make_pending_header;
 use inner::MempoolInner;
 use mc_db::db_block_id::DbBlockId;
@@ -16,10 +17,11 @@ use mp_block::BlockTag;
 use mp_block::MadaraPendingBlockInfo;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_transactions::{
-    broadcasted_declare_v0_to_blockifier, broadcasted_to_blockifier, BroadcastedDeclareTransactionV0,
-};
-use mp_transactions::{BroadcastedToBlockifierError, L1HandlerTransactionResult};
+use mp_transactions::BroadcastedDeclareTransactionV0;
+use mp_transactions::BroadcastedToBlockifierError;
+use mp_transactions::BroadcastedTransactionExt;
+use mp_transactions::L1HandlerTransaction;
+use mp_transactions::L1HandlerTransactionResult;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_core::types::BroadcastedDeclareTransaction;
@@ -32,6 +34,9 @@ use starknet_core::types::InvokeTransactionResult;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::SystemTime;
+use tx::blockifier_to_saved_tx;
+use tx::saved_to_blockifier_tx;
 
 pub use inner::TxInsersionError;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
@@ -43,6 +48,7 @@ pub mod header;
 mod inner;
 mod l1;
 pub mod metrics;
+mod tx;
 
 pub use inner::*;
 
@@ -74,7 +80,11 @@ pub trait MempoolProvider: Send + Sync {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error>;
-    fn accept_l1_handler_tx(&self, tx: Transaction) -> Result<L1HandlerTransactionResult, Error>;
+    fn accept_l1_handler_tx(
+        &self,
+        tx: L1HandlerTransaction,
+        paid_fees_on_l1: u128,
+    ) -> Result<L1HandlerTransactionResult, Error>;
     fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
     where
         Self: Sized;
@@ -108,11 +118,30 @@ impl Mempool {
         }
     }
 
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
-        // The timestamp *does not* take the transaction validation time into account.
-        let arrived_at = ArrivedAtTimestamp::now();
+    pub fn load_txs_from_db(&mut self) -> Result<(), anyhow::Error> {
+        for (tx_hash, saved_tx, converted_class) in
+            self.backend.get_mempool_transactions().context("Getting mempool transactions")?
+        {
+            let (tx, arrived_at) = saved_to_blockifier_tx(saved_tx, tx_hash, &converted_class)
+                .context("Converting saved tx to blockifier")?;
 
+            if let Err(err) = self.accept_tx(tx, converted_class, arrived_at) {
+                match err {
+                    Error::InnerMempool(TxInsersionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
+                    err => log::warn!("Could not re-add mempool transaction from db: {err:#}"),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
+    fn accept_tx(
+        &self,
+        tx: Transaction,
+        converted_class: Option<ConvertedClass>,
+        arrived_at: SystemTime,
+    ) -> Result<(), Error> {
         // Get pending block.
         let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
             block
@@ -143,7 +172,8 @@ impl Mempool {
             None
         };
 
-        tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash(&tx).to_felt());
+        let tx_hash = tx_hash(&tx).to_felt();
+        tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
@@ -154,16 +184,20 @@ impl Mempool {
         }
 
         if !is_only_query(&tx) {
-            tracing::debug!("Adding to mempool tx_hash={:#x}", tx_hash(&tx).to_felt());
-            // Finally, add it to the nonce chain for the account nonce
+            tracing::debug!("Adding to inner mempool tx_hash={:#x}", tx_hash);
+            // Add to db
+            let saved_tx = blockifier_to_saved_tx(&tx, arrived_at);
+            self.backend.save_mempool_transaction(&saved_tx, tx_hash, &converted_class)?;
+
+            // Add it to the inner mempool
             let force = false;
             self.inner
                 .write()
                 .expect("Poisoned lock")
-                .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
-        }
+                .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?;
 
-        self.metrics.accepted_transaction_counter.add(1, &[]);
+            self.metrics.accepted_transaction_counter.add(1, &[]);
+        }
 
         Ok(())
     }
@@ -202,53 +236,50 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::Invoke(tx),
-            self.chain_id(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let tx = BroadcastedTransaction::Invoke(tx);
+        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
-        let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
-        self.accept_tx(tx, classes)?;
+        let res = InvokeTransactionResult { transaction_hash: transaction_hash(&btx) };
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
-        let (tx, classes) = broadcasted_declare_v0_to_blockifier(
-            tx,
-            self.chain_id(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = DeclareTransactionResult {
-            transaction_hash: transaction_hash(&tx),
-            class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
+            transaction_hash: transaction_hash(&btx),
+            class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
-
-        self.accept_tx(tx, classes)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
 
-    fn accept_l1_handler_tx(&self, tx: Transaction) -> Result<L1HandlerTransactionResult, Error> {
-        let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&tx) };
-        self.accept_tx(tx, None)?;
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
+    fn accept_l1_handler_tx(
+        &self,
+        tx: L1HandlerTransaction,
+        paid_fees_on_l1: u128,
+    ) -> Result<L1HandlerTransactionResult, Error> {
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
+
+        let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&btx) };
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::Declare(tx),
-            self.chain_id(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let tx = BroadcastedTransaction::Declare(tx);
+        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = DeclareTransactionResult {
-            transaction_hash: transaction_hash(&tx),
-            class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
+            transaction_hash: transaction_hash(&btx),
+            class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
-        self.accept_tx(tx, classes)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
 
@@ -257,17 +288,14 @@ impl MempoolProvider for Mempool {
         &self,
         tx: BroadcastedDeployAccountTransaction,
     ) -> Result<DeployAccountTransactionResult, Error> {
-        let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::DeployAccount(tx),
-            self.chain_id(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let tx = BroadcastedTransaction::DeployAccount(tx);
+        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = DeployAccountTransactionResult {
-            transaction_hash: transaction_hash(&tx),
-            contract_address: deployed_contract_address(&tx).expect("Created transaction should be deploy account"),
+            transaction_hash: transaction_hash(&btx),
+            contract_address: deployed_contract_address(&btx).expect("Created transaction should be deploy account"),
         };
-        self.accept_tx(tx, classes)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
 
@@ -368,7 +396,7 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
                 only_query: tx.only_query,
             }),
         }),
-        Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(L1HandlerTransaction {
+        Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(BL1HandlerTransaction {
             tx: tx.tx.clone(),
             tx_hash: tx.tx_hash,
             paid_fee_on_l1: tx.paid_fee_on_l1,
@@ -378,7 +406,7 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 
 #[cfg(test)]
 mod test {
-    use crate::{inner::MempoolLimits, Mempool, MockL1DataProvider};
+    use crate::{inner::MempoolLimits, ArrivedAtTimestamp, Mempool, MockL1DataProvider};
     use starknet_core::types::Felt;
     use std::sync::Arc;
 
@@ -438,7 +466,7 @@ mod test {
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
-        let result = mempool.accept_tx(tx_account_v0_valid, None);
+        let result = mempool.accept_tx(tx_account_v0_valid, None, ArrivedAtTimestamp::now());
         assert_matches::assert_matches!(result, Ok(()));
     }
 
@@ -449,7 +477,7 @@ mod test {
         tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
-        let result = mempool.accept_tx(tx_account_v1_invalid, None);
+        let result = mempool.accept_tx(tx_account_v1_invalid, None, ArrivedAtTimestamp::now());
         assert_matches::assert_matches!(result, Err(crate::Error::Validation(_)));
     }
 }

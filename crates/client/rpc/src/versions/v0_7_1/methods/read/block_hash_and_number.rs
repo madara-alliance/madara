@@ -52,6 +52,7 @@ mod tests {
                 },
                 StateDiff::default(),
                 vec![],
+                None,
             )
             .unwrap();
 
@@ -69,6 +70,7 @@ mod tests {
                 },
                 StateDiff::default(),
                 vec![],
+                None,
             )
             .unwrap();
 
@@ -89,6 +91,7 @@ mod tests {
                 },
                 StateDiff::default(),
                 vec![],
+                None,
             )
             .unwrap();
 
@@ -116,6 +119,7 @@ mod tests {
                 },
                 StateDiff::default(),
                 vec![],
+                None,
             )
             .unwrap();
 

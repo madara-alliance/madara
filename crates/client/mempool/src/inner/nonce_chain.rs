@@ -88,10 +88,10 @@ impl NonceChain {
             // double lookup here unfortunately.. that's because we're using the keys in a hacky way and can't update the
             // entry key using the entry api.
             let mempool_tx = OrderMempoolTransactionByNonce(mempool_tx);
-            if let Some((previous, _)) = self.transactions.get_key_value(&mempool_tx) {
+            if let Some((previous, _)) = self.transactions.remove_entry(&mempool_tx) {
                 let previous = previous.0.clone();
                 let inserted = self.transactions.insert(mempool_tx, ());
-                debug_assert!(inserted.is_some());
+                debug_assert!(inserted.is_none());
                 ReplacedState::Replaced { previous }
             } else {
                 let inserted = self.transactions.insert(mempool_tx, ());

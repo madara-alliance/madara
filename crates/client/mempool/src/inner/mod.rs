@@ -6,8 +6,10 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use deployed_contracts::DeployedContracts;
+use mp_convert::ToFelt;
 use nonce_chain::{InsertedPosition, NonceChain, NonceChainNewState, ReplacedState};
 use starknet_api::core::ContractAddress;
+use starknet_core::types::Felt;
 use std::{
     cmp,
     collections::{hash_map, BTreeSet, HashMap},
@@ -24,7 +26,7 @@ pub use tx::*;
 
 #[derive(Clone, Debug)]
 struct AccountOrderedByTimestamp {
-    contract_addr: ContractAddress,
+    contract_addr: Felt,
     timestamp: ArrivedAtTimestamp,
 }
 
@@ -54,7 +56,7 @@ impl PartialOrd for AccountOrderedByTimestamp {
 /// - See [`NonceChain`] invariants.
 pub(crate) struct MempoolInner {
     /// We have one nonce chain per contract address.
-    nonce_chains: HashMap<ContractAddress, NonceChain>,
+    nonce_chains: HashMap<Felt, NonceChain>,
     /// FCFS queue.
     tx_queue: BTreeSet<AccountOrderedByTimestamp>,
     deployed_contracts: DeployedContracts,
@@ -88,7 +90,7 @@ impl MempoolInner {
         for (k, v) in &self.nonce_chains {
             assert!(tx_queue.remove(&AccountOrderedByTimestamp { contract_addr: *k, timestamp: v.front_arrived_at }))
         }
-        assert!(tx_queue.is_empty());
+        assert_eq!(tx_queue, Default::default());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for (contract, _) in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
             if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &contract.0.tx {
@@ -110,7 +112,7 @@ impl MempoolInner {
             self.limiter.check_insert_limits(&limits_for_tx)?;
         }
 
-        let contract_addr = mempool_tx.contract_address();
+        let contract_addr = mempool_tx.contract_address().to_felt();
         let arrived_at = mempool_tx.arrived_at;
         let deployed_contract_address =
             if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
@@ -211,11 +213,16 @@ impl MempoolInner {
         // too bad there's no first_entry api, we should check if hashbrown has it to avoid the double lookup.
         while let Some(tx_queue_account) = self.tx_queue.first() {
             let tx_queue_account = tx_queue_account.clone(); // clone is cheap for this struct
-            let mempool_tx = self.pop_tx_queue_account(&tx_queue_account);
+            let nonce_chain = self
+                .nonce_chains
+                .get_mut(&tx_queue_account.contract_addr)
+                .expect("Nonce chain does not match tx queue");
+            let (k, _v) = nonce_chain.transactions.first_key_value().expect("Nonce chain without a tx");
 
-            if self.limiter.tx_age_exceeded(&TransactionCheckedLimits::limits_for(&mempool_tx)) {
-                let _res = self.tx_queue.pop_first().expect("cannot be empty, checked just above");
-                self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&mempool_tx));
+            if self.limiter.tx_age_exceeded(&TransactionCheckedLimits::limits_for(&k.0)) {
+                let tx = self.pop_tx_queue_account(&tx_queue_account);
+                let _res = self.tx_queue.pop_first().expect("Cannot be empty, checked just above");
+                self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx));
             } else {
                 break;
             }

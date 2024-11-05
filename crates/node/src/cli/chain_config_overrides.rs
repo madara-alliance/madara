@@ -48,7 +48,7 @@ pub struct ChainConfigOverridesInner {
     pub private_key: ZeroingPrivateKey,
     pub mempool_tx_limit: usize,
     pub mempool_declare_tx_limit: usize,
-    #[serde(deserialize_with = "deserialize_duration")]
+    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub mempool_tx_max_age: Duration,
 }
 

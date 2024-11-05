@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use mp_transactions::BroadcastedTransactionExt;
 use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
 use mc_exec::ExecutionContext;
-use mp_transactions::broadcasted_to_blockifier;
 
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
@@ -38,7 +38,7 @@ pub async fn estimate_fee(
 
     let transactions = request
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
+        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 

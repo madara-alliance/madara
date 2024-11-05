@@ -198,8 +198,8 @@ mod tests {
     use mp_class::ClassInfo;
     use mp_convert::felt_to_u128;
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
+    use mp_transactions::BroadcastedTransactionExt;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
     use starknet_core::types::{
@@ -224,12 +224,12 @@ mod tests {
             mut tx: BroadcastedInvokeTransaction,
             contract: &DevnetPredeployedContract,
         ) -> Result<InvokeTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = broadcasted_to_blockifier(
-                BroadcastedTransaction::Invoke(tx.clone()),
-                self.backend.chain_config().chain_id.to_felt(),
-                self.backend.chain_config().latest_protocol_version,
-            )
-            .unwrap();
+            let (blockifier_tx, _classes) = BroadcastedTransaction::Invoke(tx.clone())
+                .into_blockifier(
+                    self.backend.chain_config().chain_id.to_felt(),
+                    self.backend.chain_config().latest_protocol_version,
+                )
+                .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {
@@ -248,12 +248,12 @@ mod tests {
             mut tx: BroadcastedDeclareTransaction,
             contract: &DevnetPredeployedContract,
         ) -> Result<DeclareTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = broadcasted_to_blockifier(
-                BroadcastedTransaction::Declare(tx.clone()),
-                self.backend.chain_config().chain_id.to_felt(),
-                self.backend.chain_config().latest_protocol_version,
-            )
-            .unwrap();
+            let (blockifier_tx, _classes) = BroadcastedTransaction::Declare(tx.clone())
+                .into_blockifier(
+                    self.backend.chain_config().chain_id.to_felt(),
+                    self.backend.chain_config().latest_protocol_version,
+                )
+                .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {
@@ -271,12 +271,12 @@ mod tests {
             mut tx: BroadcastedDeployAccountTransaction,
             contract: &DevnetPredeployedContract,
         ) -> Result<DeployAccountTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = broadcasted_to_blockifier(
-                BroadcastedTransaction::DeployAccount(tx.clone()),
-                self.backend.chain_config().chain_id.to_felt(),
-                self.backend.chain_config().latest_protocol_version,
-            )
-            .unwrap();
+            let (blockifier_tx, _classes) = BroadcastedTransaction::DeployAccount(tx.clone())
+                .into_blockifier(
+                    self.backend.chain_config().chain_id.to_felt(),
+                    self.backend.chain_config().latest_protocol_version,
+                )
+                .unwrap();
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {

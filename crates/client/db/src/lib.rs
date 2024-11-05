@@ -10,7 +10,7 @@ use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
-    Options, SliceTransform,
+    Options, SliceTransform, WriteOptions,
 };
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
@@ -28,6 +28,7 @@ pub mod db_metrics;
 pub mod devnet_db;
 mod error;
 pub mod l1_db;
+pub mod mempool_db;
 pub mod storage_updates;
 pub mod tests;
 
@@ -99,7 +100,7 @@ fn spawn_backup_db_task(
     if restore_from_latest_backup {
         tracing::info!("⏳ Restoring latest backup...");
         tracing::debug!("restore path is {db_path:?}");
-        fs::create_dir_all(db_path).with_context(|| format!("creating directories {:?}", db_path))?;
+        fs::create_dir_all(db_path).with_context(|| format!("Creating parent directories {:?}", db_path))?;
 
         let opts = rocksdb::backup::RestoreOptions::default();
         engine.restore_from_latest_backup(db_path, db_path, &opts).context("Restoring database")?;
@@ -178,6 +179,8 @@ pub enum Column {
 
     /// Devnet: stores the private keys for the devnet predeployed contracts
     Devnet,
+
+    MempoolTransactions,
 }
 
 impl fmt::Debug for Column {
@@ -226,6 +229,7 @@ impl Column {
             PendingContractToNonces,
             PendingContractStorage,
             Devnet,
+            MempoolTransactions,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -263,6 +267,7 @@ impl Column {
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
             Devnet => "devnet",
+            MempoolTransactions => "mempool_transactions",
         }
     }
 
@@ -306,8 +311,13 @@ impl DatabaseExt for DB {
     }
 }
 
+fn make_write_opt_no_wal() -> WriteOptions {
+    let mut opts = WriteOptions::new();
+    opts.disable_wal(true);
+    opts
+}
+
 /// Madara client database backend singleton.
-#[derive(Debug)]
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -315,8 +325,22 @@ pub struct MadaraBackend {
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
+    write_opt_no_wal: WriteOptions,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
+}
+
+impl fmt::Debug for MadaraBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MadaraBackend")
+            .field("backup_handle", &self.backup_handle)
+            .field("db", &self.db)
+            .field("last_flush_time", &self.last_flush_time)
+            .field("chain_config", &self.chain_config)
+            .field("db_metrics", &self.db_metrics)
+            .field("sender_block_info", &self.sender_block_info)
+            .finish()
+    }
 }
 
 pub struct DatabaseService {
@@ -391,6 +415,7 @@ impl MadaraBackend {
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
+            write_opt_no_wal: make_write_opt_no_wal(),
             _temp_dir: Some(temp_dir),
         })
     }
@@ -434,6 +459,7 @@ impl MadaraBackend {
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
+            write_opt_no_wal: make_write_opt_no_wal(),
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });

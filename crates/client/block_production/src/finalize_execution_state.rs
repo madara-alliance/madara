@@ -1,7 +1,7 @@
 use std::collections::{hash_map, HashMap};
 
 use blockifier::{
-    blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping},
+    blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR},
     bouncer::BouncerWeights,
     state::{cached_state::StateMaps, state_api::StateReader},
     transaction::errors::TransactionExecutionError,
@@ -13,9 +13,59 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use starknet_api::core::ContractAddress;
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 
-use crate::Error;
+use crate::{Error, VisitedSegments};
+
+#[derive(Debug, thiserror::Error)]
+#[error("Error converting state diff to state map")]
+pub struct StateDiffToStateMapError;
+
+pub fn state_diff_to_state_map(diff: StateDiff) -> Result<StateMaps, StateDiffToStateMapError> {
+    Ok(StateMaps {
+        nonces: diff
+            .nonces
+            .into_iter()
+            .map(|entry| {
+                Ok((entry.contract_address.try_into().map_err(|_| StateDiffToStateMapError)?, Nonce(entry.nonce)))
+            })
+            .collect::<Result<_, StateDiffToStateMapError>>()?,
+        class_hashes: diff
+            .deployed_contracts
+            .into_iter()
+            .map(|entry| {
+                Ok((entry.address.try_into().map_err(|_| StateDiffToStateMapError)?, ClassHash(entry.class_hash)))
+            })
+            .chain(diff.replaced_classes.into_iter().map(|entry| {
+                Ok((
+                    entry.contract_address.try_into().map_err(|_| StateDiffToStateMapError)?,
+                    ClassHash(entry.class_hash),
+                ))
+            }))
+            .collect::<Result<_, StateDiffToStateMapError>>()?,
+        storage: diff
+            .storage_diffs
+            .into_iter()
+            .flat_map(|d| {
+                d.storage_entries.into_iter().map(move |e| {
+                    Ok((
+                        (
+                            d.address.try_into().map_err(|_| StateDiffToStateMapError)?,
+                            e.key.try_into().map_err(|_| StateDiffToStateMapError)?,
+                        ),
+                        e.value,
+                    ))
+                })
+            })
+            .collect::<Result<_, StateDiffToStateMapError>>()?,
+        declared_contracts: diff.declared_classes.iter().map(|d| (ClassHash(d.class_hash), true)).collect(),
+        compiled_class_hashes: diff
+            .declared_classes
+            .into_iter()
+            .map(|d| (ClassHash(d.class_hash), CompiledClassHash(d.compiled_class_hash)))
+            .collect(),
+    })
+}
 
 fn state_map_to_state_diff(
     backend: &MadaraBackend,
@@ -96,10 +146,7 @@ fn state_map_to_state_diff(
     })
 }
 
-pub const BLOCK_STATE_ACCESS_ERR: &str = "Error: The block state should be `Some`.";
-fn get_visited_segments<S: StateReader>(
-    tx_executor: &mut TransactionExecutor<S>,
-) -> Result<VisitedSegmentsMapping, Error> {
+fn get_visited_segments<S: StateReader>(tx_executor: &mut TransactionExecutor<S>) -> Result<VisitedSegments, Error> {
     let visited_segments = tx_executor
         .block_state
         .as_ref()
@@ -113,7 +160,7 @@ fn get_visited_segments<S: StateReader>(
                 .expect(BLOCK_STATE_ACCESS_ERR)
                 .get_compiled_contract_class(*class_hash)
                 .map_err(TransactionExecutionError::StateError)?;
-            Ok((*class_hash, contract_class.get_visited_segments(class_visited_pcs)?))
+            Ok((class_hash.to_felt(), contract_class.get_visited_segments(class_visited_pcs)?))
         })
         .collect::<Result<_, Error>>()?;
 
@@ -125,7 +172,7 @@ pub(crate) fn finalize_execution_state<S: StateReader>(
     tx_executor: &mut TransactionExecutor<S>,
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
+) -> Result<(StateDiff, VisitedSegments, BouncerWeights), Error> {
     let state_map = tx_executor
         .block_state
         .as_mut()

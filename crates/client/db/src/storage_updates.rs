@@ -15,6 +15,7 @@ impl MadaraBackend {
         block: MadaraMaybePendingBlock,
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
+        visited_segments: Option<Vec<(Felt, Vec<usize>)>>,
     ) -> Result<(), MadaraStorageError> {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
@@ -23,9 +24,11 @@ impl MadaraBackend {
         self.clear_pending_block()?;
 
         let task_block_db = || match block.info {
-            MadaraMaybePendingBlockInfo::Pending(info) => {
-                self.block_db_store_pending(&MadaraPendingBlock { info, inner: block.inner }, &state_diff_cpy)
-            }
+            MadaraMaybePendingBlockInfo::Pending(info) => self.block_db_store_pending(
+                &MadaraPendingBlock { info, inner: block.inner },
+                &state_diff_cpy,
+                visited_segments,
+            ),
             MadaraMaybePendingBlockInfo::NotPending(info) => {
                 self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
             }

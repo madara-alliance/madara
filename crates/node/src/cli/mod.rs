@@ -9,6 +9,7 @@ pub mod sync;
 pub mod telemetry;
 use crate::cli::l1::L1SyncParams;
 use analytics::AnalyticsParams;
+use anyhow::Context;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
@@ -130,10 +131,8 @@ impl RunCmd {
             // Read from the preset if provided
             (Some(preset), _, _) => ChainConfig::from(preset),
             // Read the config path if provided
-            (_, Some(path), _) => ChainConfig::from_yaml(path).map_err(|err| {
-                tracing::error!("Failed to load config from YAML at path '{}': {}", path.display(), err);
-                anyhow::anyhow!("Failed to load chain config from file")
-            })?,
+            (_, Some(path), _) => ChainConfig::from_yaml(path)
+                .with_context(|| format!("Failed to load config from YAML at path '{}'", path.display()))?,
             // Devnet default preset is Devnet if not provided by CLI
             (_, _, true) => ChainConfig::from(&ChainPreset::Devnet),
             _ => {

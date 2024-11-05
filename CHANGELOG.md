@@ -2,6 +2,8 @@
 
 ## Next release
 
+- feat(block_production): continue pending block on restart
+- feat(mempool): mempool transaction saving on db
 - feat(mempool): mempool transaction limits
 - feat(confg): added chain config template and fgw example
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
