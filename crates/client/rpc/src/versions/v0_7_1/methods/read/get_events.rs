@@ -226,7 +226,7 @@ mod test {
         }
     }
 
-    fn block_generator(
+    fn generator_events(
         backend: &mc_db::MadaraBackend,
     ) -> impl Iterator<Item = Vec<starknet_core::types::EmittedEvent>> + '_ {
         (0..).map(|n| {
@@ -261,6 +261,59 @@ mod test {
         })
     }
 
+    fn generator_blocks(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = mp_block::MadaraBlock> + '_ {
+        (0..).map(|n| {
+            let block = mp_block::MadaraMaybePendingBlock { info: block_info(n), inner: block_inner(n) };
+
+            backend.store_block(block.clone(), mp_state_update::StateDiff::default(), vec![]).expect("Storing block");
+
+            mp_block::MadaraBlock::try_from(block).unwrap()
+        })
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_block_stream(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+
+        let generator = generator_blocks(&backend);
+        let expected = Vec::from_iter(generator.take(10));
+
+        let block_stream = starknet.get_block_stream(0).expect("Retrieving block stream");
+        let blocks = block_stream.collect::<Vec<_>>();
+
+        if blocks != expected {
+            let file_blocks = std::fs::File::create("./test_output_actual.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_blocks);
+            serde_json::to_writer_pretty(writter, &blocks).unwrap_or_default();
+
+            let file_expected = std::fs::File::create("./test_output_events.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_expected);
+            serde_json::to_writer_pretty(writter, &expected).unwrap_or_default();
+
+            panic!(
+                "actual: {}\nexpected:{}",
+                serde_json::to_string_pretty(&blocks).unwrap_or_default(),
+                serde_json::to_string_pretty(&expected).unwrap_or_default()
+            )
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_block_stream2(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+
+        let block_stream = starknet.get_block_stream(0).expect("Retrieving block stream");
+
+        let generator = generator_blocks(&backend);
+        let _ = generator.take(10).last();
+
+        let blocks = block_stream.collect::<Vec<_>>();
+
+        assert_eq!(blocks, []);
+    }
+
     #[tokio::test]
     #[rstest::rstest]
     async fn get_events(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
@@ -272,7 +325,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let expected = generator.next().expect("Retrieving event from backend");
 
         let events = client
@@ -320,7 +373,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let mut expected = Vec::default();
 
         for _ in 0..3 {
@@ -378,7 +431,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let mut expected = Vec::default();
 
         for _ in 0..3 {
@@ -436,7 +489,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let mut expected = Vec::default();
 
         for _ in 0..3 {
@@ -496,7 +549,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let mut expected = Vec::default();
 
         for _ in 0..3 {
@@ -622,7 +675,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let _ = generator.next().expect("Retrieving event from backend");
         let expected = crate::StarknetRpcApiError::BlockNotFound;
 
@@ -663,7 +716,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let _ = generator.next().expect("Retrieving event from backend");
         let expected = crate::StarknetRpcApiError::BlockNotFound;
 
@@ -704,7 +757,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let _ = generator.next().expect("Retrieving event from backend");
         let expected = crate::StarknetRpcApiError::PageSizeTooBig;
 
@@ -747,7 +800,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let _ = generator.next().expect("Retrieving event from backend");
         let expected = crate::StarknetRpcApiError::InvalidContinuationToken;
 
@@ -790,7 +843,7 @@ mod test {
         let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
         let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
 
-        let mut generator = block_generator(&backend);
+        let mut generator = generator_events(&backend);
         let _ = generator.next().expect("Retrieving event from backend");
         let expected = crate::StarknetRpcApiError::InvalidContinuationToken;
 

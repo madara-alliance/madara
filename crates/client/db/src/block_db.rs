@@ -8,7 +8,7 @@ use mp_block::{
     MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use mp_state_update::StateDiff;
-use rocksdb::WriteOptions;
+use rocksdb::{Direction, IteratorMode, WriteOptions};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 
@@ -368,6 +368,31 @@ impl MadaraBackend {
         let Some(info) = self.storage_to_info(&ty)? else { return Ok(None) };
         let Some(inner) = self.storage_to_inner(&ty)? else { return Ok(None) };
         Ok(Some(MadaraMaybePendingBlock { info, inner }))
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_stream(&self, block_n: usize) -> Result<impl Iterator<Item = MadaraBlock> + '_> {
+        let handle_block_info = self.db.get_column(Column::BlockNToBlockInfo);
+        let handle_block_innr = self.db.get_column(Column::BlockNToBlockInner);
+
+        let key = bincode::serialize(&block_n)?;
+        let iter_mode = IteratorMode::From(&key, Direction::Forward);
+
+        let iter_block_info = self.db.iterator_cf(&handle_block_info, iter_mode.clone());
+        let iter_block_innr = self.db.iterator_cf(&handle_block_innr, iter_mode);
+
+        let iter = iter_block_info.zip(iter_block_innr).enumerate().map_while(move |(i, kvs)| {
+            if let (Ok((_, bytes_info)), Ok((_, bytes_innr))) = kvs {
+                let block_info = bincode::deserialize::<MadaraBlockInfo>(&bytes_info).ok();
+                let block_innr = bincode::deserialize::<MadaraBlockInner>(&bytes_innr).ok();
+
+                block_info.zip(block_innr).map(|(info, inner)| MadaraBlock { info, inner })
+            } else {
+                None
+            }
+        });
+
+        Ok(iter)
     }
 
     // Tx hashes and tx status

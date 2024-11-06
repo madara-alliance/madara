@@ -260,7 +260,7 @@ impl MadaraMaybePendingBlock {
 }
 
 /// Starknet block definition.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MadaraBlock {
     pub info: MadaraBlockInfo,
     pub inner: MadaraBlockInner,
