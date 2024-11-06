@@ -360,4 +360,200 @@ mod test {
             )
         }
     }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_events_with_keys_hard(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("http://{}", server.local_addr().expect("Retrieving server local address"));
+
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
+        let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
+
+        let mut generator = block_generator(&backend);
+        let mut expected = Vec::default();
+
+        for _ in 0..3 {
+            generator
+                .next()
+                .expect("Retrieving event from backend")
+                .into_iter()
+                .filter(|event| event.keys.len() > 1 && event.keys[1] == starknet_core::types::Felt::ONE)
+                .take(10 - expected.len())
+                .collect_into(&mut expected);
+        }
+
+        let events = client
+            .get_events(starknet_core::types::EventFilterWithPage {
+                event_filter: starknet_core::types::EventFilter {
+                    from_block: None,
+                    to_block: None,
+                    address: None,
+                    keys: Some(vec![vec![], vec![starknet_core::types::Felt::ONE]]),
+                },
+                result_page_request: starknet_core::types::ResultPageRequest {
+                    continuation_token: None,
+                    chunk_size: 10,
+                },
+            })
+            .await
+            .expect("starknet_getEvents")
+            .events;
+
+        if events != expected {
+            let file_events = std::fs::File::create("./test_output_actual.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_events);
+            serde_json::to_writer_pretty(writter, &events).unwrap_or_default();
+
+            let file_expected = std::fs::File::create("./test_output_events.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_expected);
+            serde_json::to_writer_pretty(writter, &expected).unwrap_or_default();
+
+            panic!(
+                "actual: {}\nexpected:{}",
+                serde_json::to_string_pretty(&events).unwrap_or_default(),
+                serde_json::to_string_pretty(&expected).unwrap_or_default()
+            )
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_events_with_keys_single(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("http://{}", server.local_addr().expect("Retrieving server local address"));
+
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
+        let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
+
+        let mut generator = block_generator(&backend);
+        let mut expected = Vec::default();
+
+        for _ in 0..3 {
+            generator
+                .next()
+                .expect("Retrieving event from backend")
+                .into_iter()
+                .filter(|event| event.keys.len() > 2 && event.keys[2] == starknet_core::types::Felt::TWO)
+                .take(10 - expected.len())
+                .collect_into(&mut expected);
+        }
+
+        let events = client
+            .get_events(starknet_core::types::EventFilterWithPage {
+                event_filter: starknet_core::types::EventFilter {
+                    from_block: None,
+                    to_block: None,
+                    address: None,
+                    keys: Some(vec![vec![], vec![], vec![starknet_core::types::Felt::TWO]]),
+                },
+                result_page_request: starknet_core::types::ResultPageRequest {
+                    continuation_token: None,
+                    chunk_size: 10,
+                },
+            })
+            .await
+            .expect("starknet_getEvents")
+            .events;
+
+        if events != expected {
+            let file_events = std::fs::File::create("./test_output_actual.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_events);
+            serde_json::to_writer_pretty(writter, &events).unwrap_or_default();
+
+            let file_expected = std::fs::File::create("./test_output_events.json").expect("Opening file");
+            let writter = std::io::BufWriter::new(file_expected);
+            serde_json::to_writer_pretty(writter, &expected).unwrap_or_default();
+
+            panic!(
+                "actual: {}\nexpected:{}",
+                serde_json::to_string_pretty(&events).unwrap_or_default(),
+                serde_json::to_string_pretty(&expected).unwrap_or_default()
+            )
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_events_block_no(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (_, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("http://{}", server.local_addr().expect("Retrieving server local address"));
+
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
+        let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
+        let expected = crate::StarknetRpcApiError::BlockNotFound;
+
+        let events = client
+            .get_events(starknet_core::types::EventFilterWithPage {
+                event_filter: starknet_core::types::EventFilter {
+                    from_block: None,
+                    to_block: None,
+                    address: None,
+                    keys: None,
+                },
+                result_page_request: starknet_core::types::ResultPageRequest {
+                    continuation_token: None,
+                    chunk_size: 10,
+                },
+            })
+            .await
+            .err()
+            .expect("starknet_getEvents");
+
+        let jsonrpsee::core::client::Error::Call(error_object) = events else {
+            panic!("starknet_getEvents");
+        };
+
+        assert_eq!(error_object.code(), Into::<i32>::into(&expected));
+        assert_eq!(error_object.message(), expected.to_string());
+        assert!(error_object.data().is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_events_block_invalid(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("http://{}", server.local_addr().expect("Retrieving server local address"));
+
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetReadRpcApiV0_7_1Server::into_rpc(starknet));
+        let client = HttpClientBuilder::default().build(&server_url).expect("Building client");
+
+        let mut generator = block_generator(&backend);
+        let _ = generator.next().expect("Retrieving event from backend");
+
+        let expected = crate::StarknetRpcApiError::BlockNotFound;
+
+        let events = client
+            .get_events(starknet_core::types::EventFilterWithPage {
+                event_filter: starknet_core::types::EventFilter {
+                    from_block: Some(starknet_core::types::BlockId::Number(1)),
+                    to_block: None,
+                    address: None,
+                    keys: None,
+                },
+                result_page_request: starknet_core::types::ResultPageRequest {
+                    continuation_token: None,
+                    chunk_size: 10,
+                },
+            })
+            .await
+            .err()
+            .expect("starknet_getEvents");
+
+        let jsonrpsee::core::client::Error::Call(error_object) = events else {
+            panic!("starknet_getEvents");
+        };
+
+        assert_eq!(error_object.code(), Into::<i32>::into(&expected));
+        assert_eq!(error_object.message(), expected.to_string());
+        assert!(error_object.data().is_none());
+    }
 }
