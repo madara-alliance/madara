@@ -4,7 +4,8 @@ ORCHESTRATOR_PATH := $(shell pwd)
 # Bootstrapper
 OPERATOR_ADDRESS := 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 BOOTSTRAP_OUTPUT_PATH := $(shell pwd)/build/bootstrap.json
-BOOTSTRAPPER_COMMIT := b0b647500c2ae3e3b0d99e345fa652989bca4726
+BOOTSTRAP_INPUT_PATH := $(shell pwd)/bootstrap_input.json
+BOOTSTRAPPER_COMMIT := f717bf179581da53d68fee03b50ef78e0628ee20
 BOOTSTRAPPER_PATH := $(shell pwd)/madara-bootstrapper
 VERIFIER_ADDRESS := 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
 
@@ -25,6 +26,7 @@ ETHEREUM_WSS_RPC_URL := wss://eth-sepolia.g.alchemy.com/v2/${ETHEREUM_API_KEY}
 # Environment file
 ENV_FILE := $(shell pwd)/.makefile.json
 PID_FILE := $(shell pwd)/.pids.json
+JSON_UPDATER := $(shell pwd)/scripts/save_json.sh
 
 .PHONY: all anvil madara core-contract update-madara eth-bridge pathfinder orchestrator cleanup
 
@@ -42,9 +44,10 @@ define kill_pid
 	./scripts/kill_pid.sh $1
 endef
 
-define save_json
-	echo "saving json\n"
-	sh ./scripts/save_json.sh $1 $2
+# function to update JSON
+# Usage: $(call update-json-safe,<json-file>,<key>,<value>)
+define update-json-safe
+	$(JSON_UPDATER) $(1) $(2) $(3)
 endef
 
 setup:
@@ -68,7 +71,7 @@ setup:
 	@make eth-bridge
 
 	# we need to sleep for a little as it's possible the block hasn't been sealed yet
-	@sleep 10
+	@sleep 20
 
 	@echo "Terminating previous Madara instance..."
 	$(call kill_pid,madara)
@@ -108,7 +111,7 @@ anvil:
 define update_core_contract_address
 	echo "Updating core contract address in YAML..."
 	if [ -f "$(ENV_FILE)" ]; then \
-		export CORE_CONTRACT_ADDRESS=$$(jq -r '.CORE_CONTRACT_ADDRESS' $(ENV_FILE)) && \
+		export CORE_CONTRACT_ADDRESS=$$(jq -r '.core_contract_address' $(BOOTSTRAP_INPUT_PATH)) && \
 		if [ -n "$$CORE_CONTRACT_ADDRESS" ]; then \
 			yq e '.eth_core_contract_address = strenv(CORE_CONTRACT_ADDRESS)' -i $(MADARA_PATH)/configs/presets/devnet.yaml; \
 			echo "Core contract address updated in YAML."; \
@@ -129,13 +132,16 @@ madara-bootstrap-mode:
 	cargo run --release -- --name madara --base-path $(MADARA_DATA_PATH) --rpc-port 9944 --rpc-cors "*" --rpc-external --sequencer --chain-config-path configs/presets/devnet.yaml --feeder-gateway-enable --gateway-enable --gateway-external --gas-price 0 --blob-gas-price 0 --rpc-methods unsafe --no-l1-sync
 
 core-contract:
+	$(call update-json-safe,$(BOOTSTRAP_INPUT_PATH),operator_address,$(OPERATOR_ADDRESS)) && \
+	$(call update-json-safe,$(BOOTSTRAP_INPUT_PATH),verifier_address,$(VERIFIER_ADDRESS)) && \
+	echo "values with which we are updating the bootstrapper input file" && \
 	cd $(BOOTSTRAPPER_PATH) && \
 	rm -f $(BOOTSTRAP_OUTPUT_PATH) && \
 	git checkout $(BOOTSTRAPPER_COMMIT) && \
-	RUST_LOG=debug cargo run --release -- --mode core --operator-address $(OPERATOR_ADDRESS) --output-file $(BOOTSTRAP_OUTPUT_PATH) --verifier-address $(VERIFIER_ADDRESS) --config-hash-version "StarknetOsConfig2" && \
-	cat $(BOOTSTRAP_OUTPUT_PATH) && \
-    $(call save_json,"CORE_CONTRACT_ADDRESS",$$(jq -r .starknet_contract_address $(BOOTSTRAP_OUTPUT_PATH))) && \
-    $(call save_json,"CORE_CONTRACT_IMPLEMENTATION_ADDRESS",$$(jq -r .starknet_contract_implementation_address $(BOOTSTRAP_OUTPUT_PATH)))
+	RUST_LOG=debug cargo run --release -- --mode setup-l1 --config $(BOOTSTRAP_INPUT_PATH) --output-file $(BOOTSTRAP_OUTPUT_PATH) && \
+    $(call update-json-safe,$(BOOTSTRAP_INPUT_PATH),core_contract_address,$$(jq -r .starknet_contract_address $(BOOTSTRAP_OUTPUT_PATH))) && \
+	$(call update-json-safe,$(BOOTSTRAP_INPUT_PATH),core_contract_implementation_address,$$(jq -r .starknet_contract_implementation_address $(BOOTSTRAP_OUTPUT_PATH)))
+	
 
 madara:
 	$(call update_core_contract_address) && \
@@ -146,17 +152,15 @@ madara:
 eth-bridge:
 	cd $(BOOTSTRAPPER_PATH) && \
 	git checkout $(BOOTSTRAPPER_COMMIT) && \
-	export CORE_CONTRACT_ADDRESS=$$(jq -r '.CORE_CONTRACT_ADDRESS' $(ENV_FILE)) && \
-	export CORE_CONTRACT_IMPLEMENTATION_ADDRESS=$$(jq -r '.CORE_CONTRACT_IMPLEMENTATION_ADDRESS' $(ENV_FILE)) && \
-	RUST_LOG=debug cargo run --release -- --mode eth-bridge --core-contract-address $$CORE_CONTRACT_ADDRESS --core-contract-implementation-address $$CORE_CONTRACT_IMPLEMENTATION_ADDRESS  --output-file $(BOOTSTRAP_OUTPUT_PATH) && \
-	$(call save_json,"L1_BRIDGE_ADDRESS","$$(jq -r .eth_bridge_setup_outputs.l1_bridge_address $(BOOTSTRAP_OUTPUT_PATH))") && \
-    $(call save_json,"L2_ETH_TOKEN_ADDRESS","$$(jq -r .eth_bridge_setup_outputs.l2_eth_proxy_address $(BOOTSTRAP_OUTPUT_PATH))") && \
-    $(call save_json,"L2_ETH_BRIDGE_ADDRESS","$$(jq -r .eth_bridge_setup_outputs.l2_eth_bridge_proxy_address $(BOOTSTRAP_OUTPUT_PATH))")
+	RUST_LOG=debug cargo run --release -- --mode eth-bridge --config $(BOOTSTRAP_INPUT_PATH) --output-file $(BOOTSTRAP_OUTPUT_PATH) && \
+	$(call update-json-safe,$(ENV_FILE),L1_BRIDGE_ADDRESS,$$(jq -r .eth_bridge_setup_outputs.l1_bridge_address $(BOOTSTRAP_OUTPUT_PATH))) && \
+    $(call update-json-safe,$(ENV_FILE),L2_ETH_TOKEN_ADDRESS,$$(jq -r .eth_bridge_setup_outputs.l2_eth_proxy_address $(BOOTSTRAP_OUTPUT_PATH))) && \
+    $(call update-json-safe,$(ENV_FILE),L2_ETH_BRIDGE_ADDRESS,$$(jq -r .eth_bridge_setup_outputs.l2_eth_bridge_proxy_address $(BOOTSTRAP_OUTPUT_PATH)))
 
 udc:
 	cd $(BOOTSTRAPPER_PATH) && \
 	git checkout $(BOOTSTRAPPER_COMMIT) && \
-	RUST_LOG=debug cargo run --release -- --mode udc
+	RUST_LOG=debug cargo run --release -- --mode udc --config $(BOOTSTRAP_INPUT_PATH)
 
 pathfinder:
 	cd $(PATHFINDER_PATH) && \
@@ -173,7 +177,7 @@ orchestrator-setup:
 	cd $(ORCHESTRATOR_PATH) && \
 	npm i && \
 	export L1_BRIDGE_ADDRESS=$$(jq -r '.L1_BRIDGE_ADDRESS' $(ENV_FILE)) && \
-	export CORE_CONTRACT_ADDRESS=$$(jq -r '.CORE_CONTRACT_ADDRESS' $(ENV_FILE)) && \
+	export CORE_CONTRACT_ADDRESS=$$(jq -r '.core_contract_address' $(BOOTSTRAP_INPUT_PATH)) && \
 	export L2_ETH_TOKEN_ADDRESS=$$(jq -r '.L2_ETH_TOKEN_ADDRESS' $(ENV_FILE)) && \
 	export L2_ETH_BRIDGE_ADDRESS=$$(jq -r '.L2_ETH_BRIDGE_ADDRESS' $(ENV_FILE)) && \
 	node scripts/init_state.js $$L1_BRIDGE_ADDRESS $$CORE_CONTRACT_ADDRESS $$L2_ETH_TOKEN_ADDRESS $$L2_ETH_BRIDGE_ADDRESS
