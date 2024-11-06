@@ -8,10 +8,8 @@ use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
-use rocksdb::{
-    BoundColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBWithThreadMode, Env, FlushOptions, MultiThreaded,
-    Options, SliceTransform,
-};
+use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
+use rocksdb_options::rocksdb_global_options;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -28,6 +26,7 @@ pub mod db_metrics;
 pub mod devnet_db;
 mod error;
 pub mod l1_db;
+mod rocksdb_options;
 pub mod storage_updates;
 pub mod tests;
 
@@ -38,39 +37,8 @@ pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
-#[allow(clippy::identity_op)] // allow 1 * MiB
-#[allow(non_upper_case_globals)] // allow KiB/MiB/GiB names
-pub fn open_rocksdb(path: &Path, create: bool) -> Result<Arc<DB>> {
-    const KiB: usize = 1024;
-    const MiB: usize = 1024 * KiB;
-    const GiB: usize = 1024 * MiB;
-
-    let mut opts = Options::default();
-    opts.set_report_bg_io_stats(true);
-    opts.set_use_fsync(false);
-    opts.create_if_missing(create);
-    opts.create_missing_column_families(true);
-    opts.set_keep_log_file_num(1);
-    opts.optimize_level_style_compaction(4 * GiB);
-    opts.set_compression_type(DBCompressionType::Zstd);
-    let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
-    opts.increase_parallelism(cores);
-
-    opts.set_atomic_flush(true);
-    opts.set_manual_wal_flush(true);
-    opts.set_max_subcompactions(cores as _);
-
-    opts.set_max_log_file_size(1 * MiB);
-    opts.set_max_open_files(512); // 512 is the value used by substrate for reference
-    opts.set_keep_log_file_num(3);
-    opts.set_log_level(rocksdb::LogLevel::Warn);
-
-    let mut env = Env::new().context("Creating rocksdb env")?;
-    // env.set_high_priority_background_threads(cores); // flushes
-    env.set_low_priority_background_threads(cores); // compaction
-
-    opts.set_env(&env);
-
+pub fn open_rocksdb(path: &Path) -> Result<Arc<DB>> {
+    let opts = rocksdb_global_options()?;
     tracing::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
@@ -265,31 +233,6 @@ impl Column {
             Devnet => "devnet",
         }
     }
-
-    /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
-    /// etc. TODO: add basic sensible defaults
-    pub(crate) fn rocksdb_options(&self) -> Options {
-        let mut opts = Options::default();
-        match self {
-            Column::ContractStorage => {
-                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_STORAGE_PREFIX_EXTRACTOR,
-                ));
-            }
-            Column::ContractToClassHashes => {
-                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR,
-                ));
-            }
-            Column::ContractToNonces => {
-                opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_NONCES_PREFIX_EXTRACTOR,
-                ));
-            }
-            _ => {}
-        }
-        opts
-    }
 }
 
 pub trait DatabaseExt {
@@ -386,7 +329,7 @@ impl MadaraBackend {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         Arc::new(Self {
             backup_handle: None,
-            db: open_rocksdb(temp_dir.as_ref(), true).unwrap(),
+            db: open_rocksdb(temp_dir.as_ref()).unwrap(),
             last_flush_time: Default::default(),
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
@@ -425,7 +368,7 @@ impl MadaraBackend {
             None
         };
 
-        let db = open_rocksdb(&db_path, true)?;
+        let db = open_rocksdb(&db_path)?;
 
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register().context("Registering db metrics")?,

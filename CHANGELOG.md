@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(db): fix number of files in db, startup hang, ram issues and flushing issues
 - feat(confg): added chain config template and fgw example
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
 - fix(rocksdb): update max open files opt
