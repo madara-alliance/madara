@@ -325,6 +325,7 @@ pub struct MadaraBackend {
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
     trie_log_config: TrieLogConfig,
+    sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -410,6 +411,7 @@ impl MadaraBackend {
             db_metrics: DbMetrics::register().unwrap(),
             snapshots,
             trie_log_config: Default::default(),
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
             _temp_dir: Some(temp_dir),
         })
     }
@@ -456,6 +458,7 @@ impl MadaraBackend {
             chain_config: Arc::clone(&chain_config),
             snapshots,
             trie_log_config,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });

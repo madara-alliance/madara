@@ -123,17 +123,15 @@ pub fn versioned_rpc_api(
     }
     if write {
         rpc_api.merge(versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-        rpc_api.merge(versions::v0_8_0::StarknetWriteRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
     }
     if trace {
         rpc_api.merge(versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-        rpc_api.merge(versions::v0_8_0::StarknetTraceRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
     }
     if internal {
         rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     }
     if ws {
-        // V0.8.0 ...
+        rpc_api.merge(versions::v0_8_0::StarknetWsRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
     }
 
     Ok(rpc_api)

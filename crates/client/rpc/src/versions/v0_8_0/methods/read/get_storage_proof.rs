@@ -1,10 +1,10 @@
-use super::{
-    ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots, MerkleNode,
-    NodeHashToNodeMappingItem,
-};
 use crate::{
     errors::{StarknetRpcApiError, StorageProofLimit, StorageProofTrie},
     utils::ResultExt,
+    versions::v0_8_0::{
+        ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots,
+        MerkleNode, NodeHashToNodeMappingItem,
+    },
     Starknet,
 };
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
