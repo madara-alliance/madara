@@ -371,7 +371,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_block_stream(&self, block_n: usize) -> Result<impl Iterator<Item = MadaraBlock> + '_> {
+    pub fn get_block_stream(&self, block_n: u64) -> Result<impl Iterator<Item = MadaraBlock> + '_> {
         let handle_block_info = self.db.get_column(Column::BlockNToBlockInfo);
         let handle_block_innr = self.db.get_column(Column::BlockNToBlockInner);
 

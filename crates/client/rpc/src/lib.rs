@@ -71,7 +71,7 @@ impl Starknet {
             .ok_or(StarknetRpcApiError::BlockNotFound)
     }
 
-    pub fn get_block_stream(&self, block_n: usize) -> StarknetRpcResult<impl Iterator<Item = MadaraBlock> + '_> {
+    pub fn get_block_stream(&self, block_n: u64) -> StarknetRpcResult<impl Iterator<Item = MadaraBlock> + '_> {
         self.backend.get_block_stream(block_n).map_err(|_| StarknetRpcApiError::BlockNotFound)
     }
 
