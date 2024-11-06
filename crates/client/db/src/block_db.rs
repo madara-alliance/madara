@@ -381,7 +381,7 @@ impl MadaraBackend {
         let iter_block_info = self.db.iterator_cf(&handle_block_info, iter_mode.clone());
         let iter_block_innr = self.db.iterator_cf(&handle_block_innr, iter_mode);
 
-        let iter = iter_block_info.zip(iter_block_innr).enumerate().map_while(move |(i, kvs)| {
+        let iter = iter_block_info.zip(iter_block_innr).map_while(move |kvs| {
             if let (Ok((_, bytes_info)), Ok((_, bytes_innr))) = kvs {
                 let block_info = bincode::deserialize::<MadaraBlockInfo>(&bytes_info).ok();
                 let block_innr = bincode::deserialize::<MadaraBlockInner>(&bytes_innr).ok();
