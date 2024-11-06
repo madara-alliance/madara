@@ -38,31 +38,9 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
-    let latest_block = starknet.get_block_n(&BlockId::Tag(BlockTag::Latest))?;
-
-    let from_block = match filter.event_filter.from_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block + 1,
-        Some(block_id) => {
-            let block_n = starknet.get_block_n(&block_id)?;
-            if block_n > latest_block {
-                return Err(StarknetRpcApiError::BlockNotFound);
-            }
-            block_n
-        }
-        None => 0,
-    };
-
-    let to_block = match filter.event_filter.to_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block + 1,
-        Some(block_id) => {
-            let block_n = starknet.get_block_n(&block_id)?;
-            if block_n > latest_block {
-                return Err(StarknetRpcApiError::BlockNotFound);
-            }
-            block_n
-        }
-        None => latest_block,
-    };
+    let block_latest = starknet.get_block_n(&BlockId::Tag(BlockTag::Latest))?;
+    let from_block = to_block_n(filter.event_filter.from_block, starknet, 0)?;
+    let to_block = to_block_n(filter.event_filter.to_block, starknet, block_latest)?;
 
     if from_block > to_block {
         return Ok(EventsPage { events: vec![], continuation_token: None });
@@ -79,7 +57,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
     let mut filtered_events: Vec<EmittedEvent> = Vec::with_capacity(16);
     for block_n in from_block..=to_block {
         // PERF: this check can probably be hoisted out of this loop
-        let block = if block_n <= latest_block {
+        let block = if block_n <= block_latest {
             // PERF: This is probably the main bottleneck: we should be able to
             // mitigate this by implementing a db iterator
             starknet.get_block(&BlockId::Number(block_n))?
@@ -118,6 +96,24 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPage) -> Sta
         }
     }
     Ok(EventsPage { events: filtered_events, continuation_token: None })
+}
+
+fn to_block_n(
+    id: Option<starknet_core::types::BlockId>,
+    starknet: &Starknet,
+    default: u64,
+) -> Result<u64, StarknetRpcApiError> {
+    match id {
+        Some(BlockId::Tag(BlockTag::Pending)) => Ok(default + 1),
+        Some(block_id) => starknet.get_block_n(&block_id).and_then(|block_n| {
+            if block_n > default {
+                Err(StarknetRpcApiError::BlockNotFound)
+            } else {
+                Ok(block_n)
+            }
+        }),
+        None => Ok(default),
+    }
 }
 
 fn get_block_events(
