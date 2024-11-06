@@ -25,8 +25,8 @@ pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 use providers::AddTransactionProvider;
 use utils::ResultExt;
 
-// TODO: maake it actually configurable.
-#[derive(Clone)]
+// TODO: make it actually configurable.
+#[derive(Clone, Debug)]
 pub struct StorageProofConfig {
     pub max_keys: usize,
     pub max_tries: usize,

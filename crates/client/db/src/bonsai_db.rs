@@ -256,8 +256,8 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     fn transaction(&self, id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
         tracing::trace!("Generating RocksDB transaction");
-        if let Some((id, snapshot)) = self.snapshots.get_closest(id) {
-            Some((
+        self.snapshots.get_closest(id).map(|(id, snapshot)| {
+            (
                 id,
                 BonsaiTransaction {
                     db: Arc::clone(&self.db),
@@ -265,10 +265,8 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
                     column_mapping: self.column_mapping.clone(),
                     changed: Default::default(),
                 },
-            ))
-        } else {
-            None
-        }
+            )
+        })
     }
 
     fn merge<'a>(&mut self, _transaction: Self::Transaction<'a>) -> Result<(), Self::DatabaseError>
