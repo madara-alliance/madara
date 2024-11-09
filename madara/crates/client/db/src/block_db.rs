@@ -355,6 +355,59 @@ impl MadaraBackend {
         Ok(())
     }
 
+    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<()> {
+        let mut tx = WriteBatchWithTransaction::default();
+
+        // TODO: this was grouped with the other columns in `fn block_db_store_block()`, we should
+        // probably clean it up if possible (or be sure some other mechanism will do so)
+        // 
+        // if we have the block struct with the txns from this block, it should be trivial to handle
+        //
+        // let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
+
+        let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
+        let meta = self.db.get_column(Column::BlockStorageMeta);
+
+        // clear pending
+        tx.delete_cf(&meta, ROW_PENDING_INFO);
+        tx.delete_cf(&meta, ROW_PENDING_INNER);
+        tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
+
+        let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
+        println!("reverting to {} from {}", revert_to, latest_block_n);
+        for block_n in (revert_to + 1 .. latest_block_n + 1).rev() {
+            println!("reverting block {}", block_n);
+
+            let block_n_encoded = bincode::serialize(&block_n)?;
+
+            let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;
+            let block_info: MadaraBlockInfo = bincode::deserialize(&res.unwrap())?; // TODO: unwrap
+
+            let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
+            
+            println!("  - original block hash: {:x}", block_info.block_hash);
+            println!("  - block height/hash: {} => {:x?}", block_n, block_hash_encoded);
+
+            tx.delete_cf(&block_n_to_block, &block_n_encoded);
+            tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
+            tx.delete_cf(&block_n_to_block_inner, &block_n_encoded);
+            tx.delete_cf(&block_n_to_state_diff, &block_n_encoded);
+
+        }
+        
+        // TODO: now that we cleared out all the blocks, we need to grab the next parent
+        //       and set it up for e.g. the latest block
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
+
+        Ok(())
+    }
+
     // Convenience functions
 
     pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {

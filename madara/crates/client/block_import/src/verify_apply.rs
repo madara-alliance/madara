@@ -373,6 +373,9 @@ fn reorg(
 		.revert_to(block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
 
+    backend.revert_to(block_number.checked_sub(1).unwrap())
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
+
 	// TODO: proper results
 	Ok(ReorgResult {
 		from: Default::default(),
