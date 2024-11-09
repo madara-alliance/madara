@@ -397,9 +397,9 @@ impl MadaraBackend {
             tx.delete_cf(&block_n_to_state_diff, &block_n_encoded);
 
         }
-        
-        // TODO: now that we cleared out all the blocks, we need to grab the next parent
-        //       and set it up for e.g. the latest block
+
+        let latest_block_n_encoded = bincode::serialize(&revert_to)?;
+        tx.put_cf(&meta, ROW_SYNC_TIP, latest_block_n_encoded);
 
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
