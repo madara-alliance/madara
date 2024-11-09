@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,6 +9,7 @@ use color_eyre::eyre::{eyre, Context};
 use constants::JOB_METADATA_FAILURE_REASON;
 use conversion::parse_string;
 use da_job::DaError;
+use futures::FutureExt;
 use mockall::automock;
 use mockall_double::double;
 use opentelemetry::KeyValue;
@@ -227,17 +229,32 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
 
     tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
     let job_handler = factory::get_job_handler(&job.job_type).await;
-    let external_id = match job_handler.process_job(config.clone(), &mut job).await {
-        Ok(external_id) => {
+    let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await {
+        Ok(Ok(external_id)) => {
             tracing::debug!(job_id = ?id, "Successfully processed job");
             external_id
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             // TODO: I think most of the times the errors will not be fixed automatically
             // if we just retry. But for some failures like DB issues, it might be possible
             // that retrying will work. So we can add a retry logic here to improve robustness.
             tracing::error!(job_id = ?id, error = ?e, "Failed to process job");
             return move_job_to_failed(&job, config.clone(), format!("Processing failed: {}", e)).await;
+        }
+        Err(panic) => {
+            let panic_msg = panic
+                .downcast_ref::<String>()
+                .map(|s| s.as_str())
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("Unknown panic message");
+
+            tracing::error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing");
+            return move_job_to_failed(
+                &job,
+                config.clone(),
+                format!("Job handler panicked with message: {}", panic_msg),
+            )
+            .await;
         }
     };
     tracing::debug!(job_id = ?id, "Incrementing process attempt count in metadata");

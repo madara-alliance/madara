@@ -192,6 +192,53 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
 
+/// Tests `process_job` function when job handler panics during execution.
+/// This test verifies that:
+/// 1. The panic is properly caught and handled
+/// 2. The job is moved to failed state
+/// 3. Appropriate error message is set in the job metadata
+#[rstest]
+#[tokio::test]
+async fn process_job_handles_panic() {
+    let job_item = build_job_item_by_type_and_status(JobType::SnosRun, JobStatus::Created, "1".to_string());
+
+    // Building config
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    let database_client = services.config.database();
+    // Creating job in database
+    database_client.create_job(job_item.clone()).await.unwrap();
+
+    let mut job_handler = MockJob::new();
+    // Setting up mock to panic when process_job is called
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| -> Result<String, JobError> { panic!("Simulated panic in process_job") });
+
+    // Mocking the `get_job_handler` call in process_job function
+    let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
+    let ctx = mock_factory::get_job_handler_context();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    assert!(process_job(job_item.id, services.config.clone()).await.is_ok());
+
+    // DB checks - verify the job was moved to failed state
+    let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(job_in_db.status, JobStatus::Failed);
+    assert!(
+        job_in_db
+            .metadata
+            .get(JOB_METADATA_FAILURE_REASON)
+            .unwrap()
+            .contains("Job handler panicked with message: Simulated panic in process_job")
+    );
+}
+
 /// Tests `process_job` function when job is already existing in the db and job status is not
 /// `Created` or `VerificationFailed`.
 #[rstest]
