@@ -55,7 +55,7 @@ impl PragmaOracle {
             .context("failed to retrieve price from pragma oracle")?;
 
         let oracle_api_response = response.json::<PragmaApiResponse>().await.context("failed to parse api response")?;
-        let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)?;
+        let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16).context("failed to parse price")?;
         if eth_strk_price ==  0 {
             bail!("Pragma api returned 0 for eth/strk price");
         }
