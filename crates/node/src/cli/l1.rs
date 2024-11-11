@@ -1,10 +1,11 @@
 use std::time::Duration;
-
+use serde::Deserialize;
 use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Deserialize)]
+#[serde(default)]
 pub struct L1SyncParams {
     /// Disable L1 sync.
     #[clap(env = "MADARA_SYNC_L1_DISABLED", long, alias = "no-l1-sync", conflicts_with = "l1_endpoint")]
@@ -38,4 +39,18 @@ pub struct L1SyncParams {
         value_parser = parse_duration,
     )]
     pub gas_price_poll: Duration,
+}
+
+impl Default for L1SyncParams {
+    fn default() -> Self {
+        Self {
+            sync_l1_disabled: false,
+            l1_endpoint: None,
+            gas_price: None,
+            blob_gas_price: None,
+            strk_gas_price: None,
+            strk_blob_gas_price: None,
+            gas_price_poll: Duration::from_secs(10),
+        }
+    }
 }

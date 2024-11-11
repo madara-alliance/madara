@@ -1,5 +1,8 @@
+use serde::Deserialize;
+
 /// Parameters used to config block production.
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Parser, Deserialize)]
+#[serde(default)]
 pub struct BlockProductionParams {
     /// Disable the block production service.
     /// The block production service is only enabled with the authority (sequencer) mode.
@@ -14,4 +17,14 @@ pub struct BlockProductionParams {
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(env = "MADARA_DEVNET_CONTRACTS", long, default_value_t = 10)]
     pub devnet_contracts: u64,
+}
+
+impl Default for BlockProductionParams {
+    fn default() -> Self {
+        Self {
+            block_production_disabled: false,
+            override_devnet_chain_id: false,
+            devnet_contracts: 10,
+        }
+    }
 }

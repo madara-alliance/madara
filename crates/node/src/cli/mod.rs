@@ -7,6 +7,7 @@ pub mod l1;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
+
 use crate::cli::l1::L1SyncParams;
 use analytics::AnalyticsParams;
 pub use block_production::*;
@@ -15,17 +16,19 @@ pub use db::*;
 pub use gateway::*;
 pub use rpc::*;
 use starknet_api::core::ChainId;
+use std::ffi::OsString;
 use std::str::FromStr;
 pub use sync::*;
 pub use telemetry::*;
 
-use clap::ArgGroup;
+use clap::{ArgGroup, Args, Error, Parser};
 use mp_chain_config::ChainConfig;
+use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Madara: High performance Starknet sequencer/full-node.
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Parser, Default, Deserialize)]
 #[clap(
     group(
         ArgGroup::new("mode")
@@ -44,7 +47,7 @@ use std::sync::Arc;
             .requires("full")
     ),
 )]
-
+#[serde(default)]
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
@@ -53,34 +56,42 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub db_params: DbParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub sync_params: SyncParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub l1_sync_params: L1SyncParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub analytics_params: AnalyticsParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub telemetry_params: TelemetryParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub gateway_params: GatewayParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub rpc_params: RpcParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(flatten)]
     pub block_production_params: BlockProductionParams,
 
     /// The node will run as a sequencer and produce its own state.
@@ -109,10 +120,19 @@ pub struct RunCmd {
 
     /// Overrides parameters from the Chain Config.
     #[clap(flatten)]
+    #[serde(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
 }
 
 impl RunCmd {
+    pub fn try_parse<I, T>(args: I) -> Result<RunCmd, Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone
+    {
+        RunCmd::try_parse_from(args)
+    }
+
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
@@ -184,7 +204,7 @@ impl RunCmd {
 }
 
 /// Starknet network types.
-#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize)]
 pub enum NetworkType {
     /// The main network (mainnet). Alias: mainnet
     #[value(alias("mainnet"))]
@@ -210,7 +230,7 @@ impl NetworkType {
     }
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, clap::ValueEnum, Deserialize)]
 #[value(rename_all = "kebab-case")]
 pub enum ChainPreset {
     Mainnet,
@@ -241,5 +261,37 @@ impl From<&ChainPreset> for ChainConfig {
             ChainPreset::Integration => ChainConfig::starknet_integration(),
             ChainPreset::Devnet => ChainConfig::madara_devnet(),
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_parsing_tests {
+    use tracing_core::Level;
+    use super::*;
+
+    #[test]
+    fn devnet() {
+        let run_cmd = RunCmd::try_parse(vec!["madara", "--devnet"]).map_err(|e| e.print()).unwrap();
+        assert!(run_cmd.devnet);
+        assert!(!run_cmd.full);
+        assert!(!run_cmd.sequencer);
+    }
+
+    #[test]
+    fn option() {
+        assert_eq!(parse_cli(&["--name=test"]).name, Some("test".to_string()));
+        assert_eq!(parse_cli(&[]).name, None);
+    }
+
+    #[test]
+    fn log_level() {
+        let run_cmd = parse_cli(&["--analytics-log-level=warn"]);
+        assert_eq!(run_cmd.analytics_params.analytics_log_level, Level::WARN);
+    }
+
+    fn parse_cli(extra_args: &[&str]) -> RunCmd {
+        let mut args = vec!["madara", "--devnet"];
+        args.extend(extra_args);
+        RunCmd::try_parse(args).map_err(|e| e.print()).unwrap()
     }
 }

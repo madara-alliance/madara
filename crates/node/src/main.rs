@@ -5,10 +5,10 @@ mod cli;
 mod service;
 mod util;
 
+use std::env;
 use std::sync::Arc;
 
 use anyhow::Context;
-use clap::Parser;
 use cli::{NetworkType, RunCmd};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
@@ -26,10 +26,10 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    crate::util::setup_rayon_threadpool()?;
-    crate::util::raise_fdlimit();
+    util::setup_rayon_threadpool()?;
+    util::raise_fdlimit();
 
-    let mut run_cmd: RunCmd = RunCmd::parse();
+    let mut run_cmd = RunCmd::try_parse(env::args()).unwrap_or_else(|e| e.exit());
 
     // Setting up analytics
 

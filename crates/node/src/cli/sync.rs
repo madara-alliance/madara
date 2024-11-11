@@ -1,5 +1,5 @@
 use std::{sync::Arc, time::Duration};
-
+use serde::Deserialize;
 use mp_chain_config::ChainConfig;
 use starknet_api::core::ChainId;
 
@@ -7,7 +7,8 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mp_utils::parsers::{parse_duration, parse_url};
 use url::Url;
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Deserialize)]
+#[serde(default)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
@@ -65,6 +66,23 @@ pub struct SyncParams {
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
+}
+
+impl Default for SyncParams {
+    fn default() -> Self {
+        Self {
+            sync_disabled: false,
+            unsafe_starting_block: None,
+            disable_root: false,
+            gateway_key: None,
+            gateway_url: None,
+            sync_polling_interval: Duration::from_secs(4),
+            pending_block_poll_interval: Duration::from_secs(2),
+            no_sync_polling: false,
+            n_blocks_to_sync: None,
+            backup_every_n_blocks: None,
+        }
+    }
 }
 
 impl SyncParams {

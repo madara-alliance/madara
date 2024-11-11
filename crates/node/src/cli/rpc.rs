@@ -5,9 +5,10 @@ use std::str::FromStr;
 
 use clap::ValueEnum;
 use jsonrpsee::server::BatchRequestConfig;
+use serde::Deserialize;
 
 /// Available RPC methods.
-#[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
+#[derive(Debug, Copy, Clone, PartialEq, ValueEnum, Deserialize)]
 #[value(rename_all = "kebab-case")]
 pub enum RpcMethods {
     /// Expose every RPC method only when RPC is listening on `localhost`,
@@ -33,7 +34,7 @@ pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
 /// is allowed to keep in memory per connection.
 pub const RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN: u32 = 64;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum Cors {
     /// All hosts allowed.
     All,
@@ -65,7 +66,8 @@ impl FromStr for Cors {
     }
 }
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Deserialize)]
+#[serde(default)]
 pub struct RpcParams {
     /// Disable the RPC server.
     #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
@@ -152,6 +154,26 @@ pub struct RpcParams {
     /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
+}
+
+impl Default for RpcParams {
+    fn default() -> Self {
+        Self {
+            rpc_disabled: false,
+            rpc_external: false,
+            rpc_methods: RpcMethods::Auto,
+            rpc_rate_limit: None,
+            rpc_max_request_size: RPC_DEFAULT_MAX_REQUEST_SIZE_MB,
+            rpc_max_response_size: RPC_DEFAULT_MAX_RESPONSE_SIZE_MB,
+            rpc_max_subscriptions_per_connection: RPC_DEFAULT_MAX_SUBS_PER_CONN,
+            rpc_port: RPC_DEFAULT_PORT,
+            rpc_max_connections: RPC_DEFAULT_MAX_CONNECTIONS,
+            rpc_message_buffer_capacity_per_connection: RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN,
+            rpc_disable_batch_requests: false,
+            rpc_max_batch_request_len: None,
+            rpc_cors: None,
+        }
+    }
 }
 
 impl RpcParams {

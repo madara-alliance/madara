@@ -18,9 +18,16 @@ use mp_utils::serde::{deserialize_duration, deserialize_private_key, serialize_d
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
-#[derive(Parser, Clone, Debug)]
+#[derive(Parser, Clone, Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct ChainConfigOverrideParams {
-    #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
+    #[clap(
+        env = "MADARA_CHAIN_CONFIG_OVERRIDE",
+        long = "chain-config-override",
+        value_parser = parse_key_value_yaml,
+        use_value_delimiter = true,
+        value_delimiter = ','
+    )]
     pub overrides: Vec<(String, Value)>,
 }
 

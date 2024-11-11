@@ -1,7 +1,9 @@
 use clap::Args;
+use serde::Deserialize;
 
 /// Parameters used to config gateway.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Args, Deserialize)]
+#[serde(default)]
 pub struct GatewayParams {
     /// Enable the feeder gateway server.
     #[arg(env = "MADARA_FEEDER_GATEWAY_ENABLE", long, alias = "feeder-gateway")]
@@ -16,6 +18,17 @@ pub struct GatewayParams {
     pub gateway_external: bool,
 
     /// The gateway port to listen at.
-    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value = "8080")]
+    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value_t = 8080)]
     pub gateway_port: u16,
+}
+
+impl Default for GatewayParams {
+    fn default() -> Self {
+        Self {
+            feeder_gateway_enable: false,
+            gateway_enable: false,
+            gateway_external: false,
+            gateway_port: 8080,
+        }
+    }
 }

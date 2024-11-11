@@ -1,7 +1,9 @@
 use clap::Args;
+use serde::Deserialize;
 
 /// Parameters used to config telemetry.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Args, Deserialize)]
+#[serde(default)]
 pub struct TelemetryParams {
     /// Enable connecting to the Madara telemetry server.
     #[arg(env = "MADARA_TELEMETRY", long, alias = "telemetry")]
@@ -20,6 +22,15 @@ pub struct TelemetryParams {
 		default_value = "wss://starknodes.com/submit 0",
 	)]
     pub telemetry_endpoints: Vec<(String, u8)>,
+}
+
+impl Default for TelemetryParams {
+    fn default() -> Self {
+        Self {
+            telemetry: false,
+            telemetry_endpoints: vec![("wss://starknodes.com/submit".into(), 0)],
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
