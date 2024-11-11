@@ -7,7 +7,7 @@ mod util;
 
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
 use mc_analytics::Analytics;
@@ -117,8 +117,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if l1_gas_setter.is_oracle_needed() && l1_gas_setter.oracle_provider.is_none() {
-        log::error!("STRK gas is not fixed and oracle is not provided");
-        panic!();
+        bail!("STRK gas is not fixed and oracle is not provided");
     }
 
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
