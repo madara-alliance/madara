@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: fetch eth/strk price and sync strk gas price
+- fix(error): Added a comment for non archive node L1 keys
 - feat(confg): added chain config template and fgw example
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
 - fix(rocksdb): update max open files opt
