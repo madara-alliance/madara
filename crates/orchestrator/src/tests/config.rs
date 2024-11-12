@@ -367,9 +367,7 @@ pub mod implement_client {
             ConfigType::Actual => {
                 let storage = get_storage_client(provider_config).await;
                 match get_env_var_or_panic("DATA_STORAGE").as_str() {
-                    "s3" => {
-                        storage.as_ref().build_test_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap()
-                    }
+                    "s3" => storage.as_ref().create_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap(),
                     _ => panic!("Unsupported Storage Client"),
                 }
                 storage

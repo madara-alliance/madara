@@ -21,7 +21,11 @@ use utils::settings::Settings;
 pub trait DataStorage: Send + Sync {
     async fn get_data(&self, key: &str) -> Result<Bytes>;
     async fn put_data(&self, data: Bytes, key: &str) -> Result<()>;
-    async fn build_test_bucket(&self, bucket_name: &str) -> Result<()>;
+    async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
+    async fn setup(&self, settings_provider: Box<dyn Settings>) -> Result<()> {
+        let bucket_name = settings_provider.get_settings_or_panic("STORAGE_BUCKET_NAME");
+        self.create_bucket(&bucket_name).await
+    }
 }
 
 /// **DataStorageConfig** : Trait method to represent the config struct needed for

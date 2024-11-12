@@ -82,7 +82,7 @@ impl DataStorage for AWSS3 {
         Ok(())
     }
 
-    async fn build_test_bucket(&self, bucket_name: &str) -> Result<()> {
+    async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
         self.client.create_bucket().bucket(bucket_name).send().await?;
         Ok(())
     }

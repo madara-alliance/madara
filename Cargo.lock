@@ -6936,6 +6936,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-credential-types",
+ "aws-sdk-eventbridge",
  "aws-sdk-s3",
  "aws-sdk-sns",
  "aws-sdk-sqs",

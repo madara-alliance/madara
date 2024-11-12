@@ -437,6 +437,6 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
 /// To set up s3 files needed for e2e test (test_orchestrator_workflow)
 #[allow(clippy::borrowed_box)]
 pub async fn setup_s3(s3_client: &Box<dyn DataStorage + Send + Sync>) -> color_eyre::Result<()> {
-    s3_client.build_test_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap();
+    s3_client.create_bucket(&get_env_var_or_panic("AWS_S3_BUCKET_NAME")).await.unwrap();
     Ok(())
 }

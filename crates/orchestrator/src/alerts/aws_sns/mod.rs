@@ -32,4 +32,11 @@ impl Alerts for AWSSNS {
         self.client.publish().topic_arn(self.topic_arn.clone()).message(message_body).send().await?;
         Ok(())
     }
+
+    async fn create_alert(&self, topic_name: &str) -> color_eyre::Result<()> {
+        let response = self.client.create_topic().name(topic_name).send().await?;
+        let topic_arn = response.topic_arn().expect("Topic Not found");
+        log::info!("SNS topic created. Topic ARN: {}", topic_arn);
+        Ok(())
+    }
 }
