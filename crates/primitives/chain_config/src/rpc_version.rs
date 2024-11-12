@@ -25,6 +25,7 @@ impl RpcVersion {
         RpcVersion([major, minor, patch])
     }
 
+    #[tracing::instrument(skip(path), fields(module = "RpcVersion"))]
     pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
         tracing::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
 
