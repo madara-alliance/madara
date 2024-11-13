@@ -191,14 +191,22 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
     let mut available_methods = rpc_api
         .method_names()
         .map(|name| {
-            let mut split = name.split("_");
-            let namespace = split.next().expect("Should not be empty");
-            let major = split.next().expect("Should not be empty");
-            let minor = split.next().expect("Should not be empty");
-            let patch = split.next().expect("Should not be empty");
-            let method = split.next().expect("Should not be empty");
+            let split = name.split("_").collect::<Vec<_>>();
 
-            format!("rpc/{major}_{minor}_{patch}/{namespace}_{method}")
+            if split.len() == 2 {
+                // method is version-agnostic
+                let namespace = split[0];
+                let method = split[1];
+                format!("rpc/{namespace}_{method}")
+            } else {
+                // versioned method
+                let namespace = split[0];
+                let major = split[1];
+                let minor = split[2];
+                let patch = split[3];
+                let method = split[4];
+                format!("rpc/{major}_{minor}_{patch}/{namespace}_{method}")
+            }
         })
         .collect::<Vec<_>>();
 

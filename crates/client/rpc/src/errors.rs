@@ -1,7 +1,11 @@
+use std::fmt::Display;
+
 use mc_db::MadaraStorageError;
 use serde_json::json;
 use starknet_api::StarknetApiError;
 use starknet_core::types::StarknetError;
+
+use crate::utils::display_internal_server_error;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -206,5 +210,121 @@ impl From<MadaraStorageError> for StarknetRpcApiError {
 impl From<StarknetApiError> for StarknetRpcApiError {
     fn from(err: StarknetApiError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: err.to_string() }
+    }
+}
+
+#[cfg_attr(test, derive(PartialEq, Eq))]
+#[derive(Debug)]
+pub enum StarknetWsApiError {
+    TooManyBlocksBack,
+    NoBlocks,
+    BlockNotFound,
+    Pending,
+    Internal,
+}
+
+impl StarknetWsApiError {
+    #[inline]
+    fn code(&self) -> i32 {
+        match self {
+            Self::TooManyBlocksBack => 68,
+            Self::NoBlocks => 32,
+            Self::BlockNotFound => 24,
+            Self::Pending => 69,
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+        }
+    }
+    #[inline]
+    fn message(&self) -> &str {
+        match self {
+            Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::NoBlocks => "There are no blocks",
+            Self::BlockNotFound => "Block not found",
+            // See https://github.com/starkware-libs/starknet-specs/pull/237
+            Self::Pending => "The pending block is not supported on this method call",
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_MSG,
+        }
+    }
+
+    #[inline]
+    pub fn internal_server_error<C: std::fmt::Display>(context: C) -> Self {
+        display_internal_server_error(context);
+        StarknetWsApiError::Internal
+    }
+}
+
+impl Display for StarknetWsApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"code\": {}, \"message\": {}", self.code(), self.message())
+    }
+}
+
+pub trait ErrorExtWs<T> {
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
+
+impl<T, E: std::fmt::Display> ErrorExtWs<T> for Result<T, E> {
+    #[inline]
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context, err));
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+
+    #[inline]
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context_fn(), err));
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+}
+
+pub trait OptionExtWs<T> {
+    #[allow(dead_code)]
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
+
+impl<T> OptionExtWs<T> for Option<T> {
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
+        match self {
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context);
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context_fn());
+                Err(StarknetWsApiError::Internal)
+            }
+        }
     }
 }

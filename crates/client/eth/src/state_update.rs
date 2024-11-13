@@ -39,7 +39,13 @@ pub async fn listen_and_update_state(
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-    let mut event_stream = event_filter.watch().await.context("Failed to watch event filter")?.into_stream();
+    let mut event_stream = event_filter
+        .watch()
+        .await
+        .context(
+            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+        )?
+        .into_stream();
 
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         let log = event_result.context("listening for events")?;
