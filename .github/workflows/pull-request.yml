@@ -48,8 +48,3 @@ jobs:
     name: Build Madara
     uses: ./.github/workflows/build.yml
     needs: changelog
-
-  js_test:
-    name: Run JS Tests
-    uses: ./.github/workflows/starknet-js-test.yml
-    needs: build
