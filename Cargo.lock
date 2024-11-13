@@ -6010,7 +6010,6 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
- "thiserror",
 ]
 
 [[package]]
@@ -6057,9 +6056,7 @@ dependencies = [
  "mp-convert",
  "serde",
  "starknet-core",
- "starknet-providers",
  "starknet-types-core",
- "thiserror",
 ]
 
 [[package]]
