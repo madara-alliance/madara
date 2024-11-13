@@ -1,4 +1,5 @@
 use mp_block::H160;
+use mp_convert::felt_to_h160;
 use mp_receipt::{Event, L1Gas, MsgToL1};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -265,6 +266,21 @@ pub struct MsgToL2 {
     pub selector: Felt,
     pub payload: Vec<Felt>,
     pub nonce: Option<Felt>,
+}
+
+impl TryFrom<&L1HandlerTransaction> for MsgToL2 {
+    type Error = ();
+
+    fn try_from(l1_handler: &L1HandlerTransaction) -> Result<Self, Self::Error> {
+        let (l1_address, payload) = l1_handler.calldata.split_first().ok_or(())?;
+        Ok(Self {
+            from_address: felt_to_h160(l1_address).map_err(|_| ())?,
+            to_address: l1_handler.contract_address,
+            selector: l1_handler.entry_point_selector,
+            payload: payload.to_vec(),
+            nonce: Some(l1_handler.nonce),
+        })
+    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
