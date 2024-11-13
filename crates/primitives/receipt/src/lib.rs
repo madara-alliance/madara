@@ -1,5 +1,4 @@
 mod from_blockifier;
-mod from_starknet_provider;
 mod into_starknet_core;
 pub use from_blockifier::from_blockifier_execution_info;
 
@@ -225,6 +224,12 @@ pub struct DeployAccountTransactionReceipt {
 pub struct FeePayment {
     pub amount: Felt,
     pub unit: PriceUnit,
+}
+
+impl From<Felt> for FeePayment {
+    fn from(fee: Felt) -> Self {
+        Self { amount: fee, unit: PriceUnit::Wei }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
