@@ -3,7 +3,7 @@
 ## Next release
 
 - fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
-- build: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
+- feat: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
 - feat(rpc): added `getCompiledCasm` method
 - fix(error): Added a comment for non archive node L1 keys
 - feat(confg): added chain config template and fgw example
