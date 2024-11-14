@@ -11,6 +11,7 @@ use mc_rpc::{
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
+use mp_gateway::error::StarknetError;
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
@@ -22,8 +23,6 @@ use starknet_core::types::{
     BroadcastedTransaction, TransactionTraceWithHash,
 };
 use starknet_types_core::felt::Felt;
-
-use crate::error::StarknetError;
 
 use super::{
     error::{GatewayError, OptionExt, ResultExt},

@@ -29,7 +29,7 @@ impl Service for GatewayService {
             let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
 
             join_set.spawn(async move {
-                mc_gateway::server::service::start_server(
+                mc_gateway_server::service::start_server(
                     db_backend,
                     add_transaction_provider,
                     config.feeder_gateway_enable,

@@ -1,17 +1,26 @@
-use super::{builder::GatewayProvider, request_builder::RequestBuilder};
-use crate::error::{SequencerError, StarknetError};
+use std::{borrow::Cow, sync::Arc};
+
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
+use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::{
     block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
     state_update::{
         ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
     },
+    user_transaction::{
+        UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
+    },
 };
+use serde::de::DeserializeOwned;
 use serde_json::Value;
-use starknet_core::types::{contract::legacy::LegacyContractClass, Felt};
-use std::{borrow::Cow, sync::Arc};
+use starknet_core::types::{
+    contract::legacy::LegacyContractClass, DeclareTransactionResult, DeployAccountTransactionResult, Felt,
+    InvokeTransactionResult,
+};
+
+use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
@@ -99,6 +108,38 @@ impl GatewayProvider {
             Err(SequencerError::DeserializeBody { serde_error: err })
         }
     }
+
+    async fn add_transaction<T>(&self, transaction: UserTransaction) -> Result<T, SequencerError>
+    where
+        T: DeserializeOwned,
+    {
+        let request = RequestBuilder::new(&self.client, self.gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("add_transaction")
+            .expect("Failed to add URI segment. This should not fail in prod.");
+
+        request.send_post(transaction).await
+    }
+
+    pub async fn add_invoke_transaction(
+        &self,
+        transaction: UserInvokeFunctionTransaction,
+    ) -> Result<InvokeTransactionResult, SequencerError> {
+        self.add_transaction(UserTransaction::InvokeFunction(transaction)).await
+    }
+
+    pub async fn add_declare_transaction(
+        &self,
+        transaction: UserDeclareTransaction,
+    ) -> Result<DeclareTransactionResult, SequencerError> {
+        self.add_transaction(UserTransaction::Declare(transaction)).await
+    }
+
+    pub async fn add_deploy_account_transaction(
+        &self,
+        transaction: UserDeployAccountTransaction,
+    ) -> Result<DeployAccountTransactionResult, SequencerError> {
+        self.add_transaction(UserTransaction::DeployAccount(transaction)).await
+    }
 }
 
 #[cfg(test)]
@@ -110,6 +151,7 @@ mod tests {
     };
     use mp_block::BlockTag;
     use mp_class::CompressedLegacyContractClass;
+    use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
     use rstest::*;
     use serde::de::DeserializeOwned;
     use starknet_core::types::Felt;
@@ -117,8 +159,6 @@ mod tests {
     use std::io::{BufReader, BufWriter, Read, Write};
     use std::ops::Drop;
     use std::path::PathBuf;
-
-    use crate::error::StarknetErrorCode;
 
     use super::*;
 

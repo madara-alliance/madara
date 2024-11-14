@@ -9,11 +9,11 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
-use mc_gateway::client::builder::GatewayProvider;
-use mc_gateway::error::SequencerError;
+use mc_gateway_provider::GatewayProvider;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;
+use mp_gateway::error::SequencerError;
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;

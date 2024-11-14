@@ -25,7 +25,6 @@ pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
 #[derive(Debug, Clone)]
 pub struct GatewayProvider {
     pub(crate) client: PausedClient,
-    #[allow(dead_code)]
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
     pub(crate) headers: HeaderMap,

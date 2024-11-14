@@ -3,8 +3,9 @@ use std::fmt::{self, Display};
 use hyper::Response;
 use mc_db::MadaraStorageError;
 use mc_rpc::StarknetRpcApiError;
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
 
-use crate::error::{StarknetError, StarknetErrorCode};
+use crate::helpers::create_json_response;
 
 use super::helpers::internal_error_response;
 
@@ -26,7 +27,7 @@ impl From<MadaraStorageError> for GatewayError {
 impl From<GatewayError> for Response<String> {
     fn from(e: GatewayError) -> Response<String> {
         match e {
-            GatewayError::StarknetError(e) => e.into(),
+            GatewayError::StarknetError(e) => create_json_response(hyper::StatusCode::BAD_REQUEST, &e),
             GatewayError::InternalServerError(msg) => internal_error_response(&msg),
         }
     }
