@@ -9,7 +9,7 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
-use mc_gateway::client::builder::FeederClient;
+use mc_gateway::client::builder::GatewayProvider;
 use mc_gateway::error::SequencerError;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
@@ -128,7 +128,7 @@ async fn l2_pending_block_task(
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
-    provider: Arc<FeederClient>,
+    provider: Arc<GatewayProvider>,
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     // clear pending status
@@ -193,7 +193,7 @@ pub struct L2SyncConfig {
 #[tracing::instrument(skip(backend, provider, config, chain_id, telemetry, block_importer), fields(module = "Sync"))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
-    provider: FeederClient,
+    provider: GatewayProvider,
     config: L2SyncConfig,
     chain_id: ChainId,
     telemetry: TelemetryHandle,

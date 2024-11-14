@@ -4,7 +4,7 @@ use fetch::fetchers::FetchConfig;
 use hyper::header::{HeaderName, HeaderValue};
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
-use mc_gateway::client::builder::FeederClient;
+use mc_gateway::client::builder::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
 use std::{sync::Arc, time::Duration};
 
@@ -42,7 +42,7 @@ pub async fn sync(
 
     tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-    let mut provider = FeederClient::new(fetch_config.gateway, fetch_config.feeder_gateway);
+    let mut provider = GatewayProvider::new(fetch_config.gateway, fetch_config.feeder_gateway);
     if let Some(api_key) = fetch_config.api_key {
         provider.add_header(
             HeaderName::from_static("x-throttling-bypass"),

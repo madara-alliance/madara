@@ -1,4 +1,4 @@
-use super::{builder::FeederClient, request_builder::RequestBuilder};
+use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
@@ -13,7 +13,7 @@ use serde_json::Value;
 use starknet_core::types::{contract::legacy::LegacyContractClass, Felt};
 use std::{borrow::Cow, sync::Arc};
 
-impl FeederClient {
+impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block")
@@ -225,13 +225,13 @@ mod tests {
     }
 
     #[fixture]
-    fn client_mainnet_fixture() -> FeederClient {
-        FeederClient::starknet_alpha_mainnet()
+    fn client_mainnet_fixture() -> GatewayProvider {
+        GatewayProvider::starknet_alpha_mainnet()
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_block(client_mainnet_fixture: FeederClient) {
+    async fn get_block(client_mainnet_fixture: GatewayProvider) {
         let block = client_mainnet_fixture.get_block(BlockId::Number(0)).await.unwrap();
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
         assert!(matches!(block, ProviderBlockPendingMaybe::NonPending(_)));
@@ -253,7 +253,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_state_update(client_mainnet_fixture: FeederClient) {
+    async fn get_state_update(client_mainnet_fixture: GatewayProvider) {
         let state_update = client_mainnet_fixture.get_state_update(BlockId::Number(0)).await.unwrap();
         assert!(matches!(state_update, ProviderStateUpdatePendingMaybe::NonPending(_)));
         assert_eq!(
@@ -284,7 +284,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_state_update_with_block_first_few_blocks(client_mainnet_fixture: FeederClient) {
+    async fn get_state_update_with_block_first_few_blocks(client_mainnet_fixture: GatewayProvider) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(0))
             .await
@@ -330,7 +330,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_state_update_with_block_latest(client_mainnet_fixture: FeederClient) {
+    async fn get_state_update_with_block_latest(client_mainnet_fixture: GatewayProvider) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Tag(BlockTag::Latest))
             .await
@@ -343,7 +343,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_state_update_with_block_pending(client_mainnet_fixture: FeederClient) {
+    async fn get_state_update_with_block_pending(client_mainnet_fixture: GatewayProvider) {
         let let_binding = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Tag(BlockTag::Pending))
             .await
@@ -356,7 +356,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_block_0(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_block_0(client_mainnet_fixture: GatewayProvider) {
         let class = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
             .await
@@ -372,7 +372,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_account(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_account(client_mainnet_fixture: GatewayProvider) {
         let class_account = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ACCOUNT), BlockId::Number(CLASS_ACCOUNT_BLOCK))
             .await
@@ -388,7 +388,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_proxy(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_proxy(client_mainnet_fixture: GatewayProvider) {
         let class_proxy = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_PROXY), BlockId::Number(CLASS_PROXY_BLOCK))
             .await
@@ -404,7 +404,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_erc20(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_erc20(client_mainnet_fixture: GatewayProvider) {
         let class_erc20 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC20), BlockId::Number(CLASS_ERC20_BLOCK))
             .await
@@ -420,7 +420,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_erc721(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_erc721(client_mainnet_fixture: GatewayProvider) {
         let class_erc721 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC721), BlockId::Number(CLASS_ERC721_BLOCK))
             .await
@@ -436,7 +436,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_class_by_hash_erc1155(client_mainnet_fixture: FeederClient) {
+    async fn get_class_by_hash_erc1155(client_mainnet_fixture: GatewayProvider) {
         let class_erc1155 = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_ERC1155), BlockId::Number(CLASS_ERC1155_BLOCK))
             .await
@@ -452,7 +452,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_signature_first_few_blocks(client_mainnet_fixture: FeederClient) {
+    async fn get_signature_first_few_blocks(client_mainnet_fixture: GatewayProvider) {
         let signature_block_0 = client_mainnet_fixture
             .get_signature(BlockId::Number(0))
             .await
@@ -483,7 +483,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_signature_latest(client_mainnet_fixture: FeederClient) {
+    async fn get_signature_latest(client_mainnet_fixture: GatewayProvider) {
         let signature_block_latest = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Latest)).await;
 
         assert!(matches!(signature_block_latest, Ok(ProviderBlockSignature { .. })))
@@ -491,7 +491,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_signature_pending(client_mainnet_fixture: FeederClient) {
+    async fn get_signature_pending(client_mainnet_fixture: GatewayProvider) {
         let signature_block_pending = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Pending)).await;
 
         assert!(matches!(

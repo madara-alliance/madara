@@ -23,7 +23,7 @@ type HttpsClient = Client<HttpsConnector<HttpConnector>, String>;
 type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
 pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
 #[derive(Debug, Clone)]
-pub struct FeederClient {
+pub struct GatewayProvider {
     pub(crate) client: PausedClient,
     #[allow(dead_code)]
     pub(crate) gateway_url: Url,
@@ -31,7 +31,7 @@ pub struct FeederClient {
     pub(crate) headers: HeaderMap,
 }
 
-impl FeederClient {
+impl GatewayProvider {
     pub fn new(gateway_url: Url, feeder_gateway_url: Url) -> Self {
         let pause_until = Arc::new(RwLock::new(None));
         let connector = HttpsConnector::new();
@@ -75,6 +75,15 @@ impl FeederClient {
                 .expect("Failed to parse Starknet Alpha Sepolia gateway url. This should not fail in prod."),
             Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/")
                 .expect("Failed to parse Starknet Alpha Sepolia feeder gateway url. This should not fail in prod."),
+        )
+    }
+    pub fn starknet_integration_sepolia() -> Self {
+        Self::new(
+            Url::parse("https://integration-sepolia.starknet.io/gateway/")
+                .expect("Failed to parse Starknet Integration Sepolia gateway url. This should not fail in prod."),
+            Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").expect(
+                "Failed to parse Starknet Integration Sepolia feeder gateway url. This should not fail in prod.",
+            ),
         )
     }
 }
