@@ -25,11 +25,13 @@ mc-db = { workspace = true, features = ["testing"] }
 m-proc-macros = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
+mc-gateway-provider = { workspace = true }
 mc-mempool = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
+mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
@@ -37,7 +39,6 @@ mp-transactions = { workspace = true }
 # Starknet
 blockifier = { workspace = true, default-features = true }
 starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true, default-features = true }

@@ -5389,6 +5389,7 @@ dependencies = [
  "fdlimit",
  "futures",
  "governor",
+ "http 1.1.0",
  "hyper 0.14.30",
  "jsonrpsee",
  "mc-analytics",
@@ -5396,14 +5397,14 @@ dependencies = [
  "mc-db",
  "mc-devnet",
  "mc-eth",
- "mc-gateway",
+ "mc-gateway-provider",
+ "mc-gateway-server",
  "mc-mempool",
  "mc-rpc",
  "mc-sync",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",
- "mp-convert",
  "mp-utils",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -5687,7 +5688,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-gateway"
+name = "mc-gateway-provider"
 version = "0.7.0"
 dependencies = [
  "anyhow",
@@ -5698,6 +5699,30 @@ dependencies = [
  "http-body-util",
  "hyper 1.5.0",
  "hyper-tls",
+ "hyper-util",
+ "mp-block",
+ "mp-class",
+ "mp-gateway",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "tokio",
+ "tower 0.4.13",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "mc-gateway-server"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "flate2",
+ "http-body-util",
+ "hyper 1.5.0",
  "hyper-util",
  "mc-db",
  "mc-rpc",
@@ -5712,9 +5737,7 @@ dependencies = [
  "starknet-types-core",
  "thiserror",
  "tokio",
- "tower 0.4.13",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -5771,11 +5794,13 @@ dependencies = [
  "m-proc-macros",
  "mc-db",
  "mc-exec",
+ "mc-gateway-provider",
  "mc-mempool",
  "mp-block",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-gateway",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -5783,7 +5808,6 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-core",
- "starknet-providers",
  "starknet-types-core",
  "starknet-types-rpc",
  "starknet_api",
@@ -5804,7 +5828,7 @@ dependencies = [
  "mc-analytics",
  "mc-block-import",
  "mc-db",
- "mc-gateway",
+ "mc-gateway-provider",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",
@@ -6018,6 +6042,8 @@ name = "mp-gateway"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "http 1.1.0",
+ "hyper 1.5.0",
  "mc-block-import",
  "mp-block",
  "mp-chain-config",
@@ -6031,6 +6057,8 @@ dependencies = [
  "serde_with",
  "starknet-core",
  "starknet-types-core",
+ "thiserror",
+ "url",
 ]
 
 [[package]]

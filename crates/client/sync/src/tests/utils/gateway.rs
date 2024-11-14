@@ -1,7 +1,7 @@
 use httpmock::MockServer;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mc_gateway::client::builder::GatewayProvider;
+use mc_gateway_provider::GatewayProvider;
 use mp_chain_config::ChainConfig;
 use rstest::*;
 use serde_json::{json, Value};
