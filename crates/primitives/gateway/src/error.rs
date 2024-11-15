@@ -1,6 +1,6 @@
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use starknet_types_core::felt::FromStrError;
 
 #[derive(Debug, thiserror::Error)]

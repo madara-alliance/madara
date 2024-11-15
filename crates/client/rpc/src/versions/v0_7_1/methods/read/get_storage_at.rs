@@ -1,9 +1,9 @@
+use mp_block::BlockId;
+use starknet_types_core::felt::Felt;
+
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
-use mc_db::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use starknet_core::types::BlockId;
-use starknet_types_core::felt::Felt;
 
 /// Get the value of the storage at the given address and key.
 ///
@@ -38,31 +38,15 @@ pub fn get_storage_at(
     key: Felt,
     block_id: BlockId,
 ) -> StarknetRpcResult<Felt> {
-    // Check if block exists. We have to return a different error in that case.
-    let block_exists =
-        starknet.backend.contains_block(&block_id).or_internal_server_error("Checking if block is in database")?;
-    if !block_exists {
-        return Err(StarknetRpcApiError::BlockNotFound);
-    }
-
-    let block_number = block_id.resolve_db_block_id(&starknet.backend)?;
-
-    let skip_contract_check = matches!(
-        block_number,
-        Some(DbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
-    );
-
-    if !skip_contract_check {
-        starknet
-            .backend
-            .get_contract_class_hash_at(&block_id, &contract_address)
-            .or_internal_server_error("Failed to check if contract is deployed")?
-            .ok_or(StarknetRpcApiError::ContractNotFound)?;
-    }
+    let resolved_block_id = starknet
+        .backend
+        .resolve_block_id(&block_id)
+        .or_internal_server_error("Error resolving block id")?
+        .ok_or(StarknetRpcApiError::BlockNotFound)?;
 
     let storage = starknet
         .backend
-        .get_contract_storage_at(&block_id, &contract_address, &key)
+        .get_contract_storage_at(&resolved_block_id, &contract_address, &key)
         .or_internal_server_error("Error getting contract storage at")?
         .unwrap_or(Felt::ZERO);
 
@@ -73,20 +57,20 @@ pub fn get_storage_at(
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
+    use mp_block::BlockTag;
     use rstest::rstest;
-    use starknet_core::types::BlockTag;
 
     #[rstest]
     fn test_get_storage_at(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
         let (SampleChainForStateUpdates { keys, values, contracts, .. }, rpc) = sample_chain_for_state_updates;
 
         // Expected values are in the format `values[contract][key] = value`.
-        let check_contract_key_value = |block_n, contracts_kv: [Option<[Felt; 3]>; 3]| {
+        let check_contract_key_value = |block_n: BlockId, contracts_kv: [Option<[Felt; 3]>; 3]| {
             for (contract_i, contract_values) in contracts_kv.into_iter().enumerate() {
                 if let Some(contract_values) = contract_values {
                     for (key_i, value) in contract_values.into_iter().enumerate() {
                         assert_eq!(
-                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n).unwrap(),
+                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n.clone()).unwrap(),
                             value,
                             "get storage at blockid {block_n:?}, contract #{contract_i}, key #{key_i}"
                         );
@@ -95,7 +79,7 @@ mod tests {
                     // contract not found
                     for (key_i, _) in keys.iter().enumerate() {
                         assert_eq!(
-                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n),
+                            get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n.clone()),
                             Err(StarknetRpcApiError::ContractNotFound),
                             "get storage at blockid {block_n:?}, contract #{contract_i}, key #{key_i} should not found"
                         );
@@ -145,9 +129,15 @@ mod tests {
         let block_n = BlockId::Number(3);
         assert_eq!(get_storage_at(&rpc, contracts[0], keys[0], block_n), Err(StarknetRpcApiError::BlockNotFound));
         let block_n = BlockId::Number(0);
-        assert_eq!(get_storage_at(&rpc, contracts[1], keys[0], block_n), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(
+            get_storage_at(&rpc, contracts[1], keys[0], block_n.clone()),
+            Err(StarknetRpcApiError::ContractNotFound)
+        );
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
-        assert_eq!(get_storage_at(&rpc, does_not_exist, keys[0], block_n), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(
+            get_storage_at(&rpc, does_not_exist, keys[0], block_n.clone()),
+            Err(StarknetRpcApiError::ContractNotFound)
+        );
         assert_eq!(
             get_storage_at(&rpc, contracts[0], keys[1], block_n),
             Ok(Felt::ZERO) // return ZERO when key not found

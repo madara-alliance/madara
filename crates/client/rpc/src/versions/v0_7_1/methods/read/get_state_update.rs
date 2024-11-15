@@ -1,4 +1,6 @@
-use starknet_core::types::{BlockId, BlockTag, Felt, MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use mp_block::{BlockId, BlockTag};
+use starknet_core::types::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;

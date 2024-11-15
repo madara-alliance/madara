@@ -2,7 +2,7 @@ use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
 use rocksdb::WriteOptions;
 use serde::{Deserialize, Serialize};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 pub const DEVNET_KEYS: &[u8] = b"DEVNET_KEYS";
 

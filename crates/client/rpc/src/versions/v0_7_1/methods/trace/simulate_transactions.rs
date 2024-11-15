@@ -3,8 +3,9 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
+use mp_block::BlockId;
 use mp_transactions::broadcasted_to_blockifier;
-use starknet_core::types::{BlockId, BroadcastedTransaction, SimulatedTransaction, SimulationFlag};
+use starknet_core::types::{BroadcastedTransaction, SimulatedTransaction, SimulationFlag};
 use std::sync::Arc;
 
 pub async fn simulate_transactions(

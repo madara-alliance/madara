@@ -46,12 +46,12 @@ pub async fn handle_get_block(
 
         let block_info = backend
             .get_block_info(&block_id)
-            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .or_internal_server_error(format!("Retrieving block {block_id:?}"))?
             .ok_or(StarknetError::block_not_found())?;
 
         match block_info {
             MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
-                "Retrieved pending block info from db for non-pending block {block_id}"
+                "Retrieved pending block info from db for non-pending block {block_id:?}"
             ))),
             MadaraMaybePendingBlockInfo::NotPending(block_info) => {
                 let body = json!({
@@ -64,7 +64,7 @@ pub async fn handle_get_block(
     } else {
         let block = backend
             .get_block(&block_id)
-            .or_internal_server_error(format!("Retrieving block {block_id}"))?
+            .or_internal_server_error(format!("Retrieving block {block_id:?}"))?
             .ok_or(StarknetError::block_not_found())?;
 
         if let Ok(block) = MadaraBlock::try_from(block.clone()) {
@@ -101,12 +101,12 @@ pub async fn handle_get_signature(
 
     let block_info = backend
         .get_block_info(&block_id)
-        .or_internal_server_error(format!("Retrieving block info for block {block_id}"))?
+        .or_internal_server_error(format!("Retrieving block info for block {block_id:?}"))?
         .ok_or(StarknetError::block_not_found())?;
 
     match block_info {
         MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
-            "Retrieved pending block info from db for non-pending block {block_id}"
+            "Retrieved pending block info from db for non-pending block {block_id:?}"
         ))),
         MadaraMaybePendingBlockInfo::NotPending(block_info) => {
             let private_key = &backend.chain_config().private_key;
@@ -238,8 +238,7 @@ pub async fn handle_get_block_traces(
         traces: Vec<TransactionTraceWithHash>,
     }
 
-    let traces =
-        v0_7_1_trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id.into()).await?;
+    let traces = v0_7_1_trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id).await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))
