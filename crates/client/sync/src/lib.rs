@@ -6,6 +6,7 @@ use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
+use mp_block::{BlockId, BlockTag};
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;
@@ -32,7 +33,7 @@ pub async fn sync(
     } else {
         (
             backend
-                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                .get_block_n(&BlockId::Tag(BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
                 .unwrap_or_default() as _, // or genesis

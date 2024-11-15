@@ -7,6 +7,7 @@ use core::time::Duration;
 use futures::FutureExt;
 use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedPendingFullBlock};
 use mc_gateway_client::GatewayProvider;
+use mp_block::{BlockId, BlockTag};
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
 use mp_class::{ContractClass, MISSED_CLASS_HASHES};
 use mp_convert::ToFelt;
@@ -68,19 +69,11 @@ impl fmt::Debug for FetchBlockId {
     }
 }
 
-impl From<FetchBlockId> for mp_block::BlockId {
+impl From<FetchBlockId> for BlockId {
     fn from(value: FetchBlockId) -> Self {
         match value {
-            FetchBlockId::BlockN(block_n) => mp_block::BlockId::Number(block_n),
-            FetchBlockId::Pending => mp_block::BlockId::Tag(mp_block::BlockTag::Pending),
-        }
-    }
-}
-impl From<FetchBlockId> for starknet_core::types::BlockId {
-    fn from(value: FetchBlockId) -> Self {
-        match value {
-            FetchBlockId::BlockN(block_n) => starknet_core::types::BlockId::Number(block_n),
-            FetchBlockId::Pending => starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending),
+            FetchBlockId::BlockN(block_n) => BlockId::Number(block_n),
+            FetchBlockId::Pending => BlockId::Tag(BlockTag::Pending),
         }
     }
 }
