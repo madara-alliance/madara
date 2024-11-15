@@ -77,26 +77,8 @@ pub fn verify_apply_inner(
     validation: BlockValidationContext,
 ) -> Result<BlockImportResult, BlockImportError> {
     // Check block number and block hash against db
-    let (block_number, parent_block_hash) = match check_parent_hash_and_num(
-        backend,
-        block.header.parent_block_hash,
-        block.unverified_block_number,
-        &validation,
-    ) {
-        Ok((block_number, parent_block_hash)) => (block_number, parent_block_hash),
-        Err(BlockImportError::ParentHash { got, expected }) => {
-            let reorg_result = reorg(expected, got)?;
-            tracing::warn!("Reorg from {} to {}", reorg_result.from, reorg_result.to);
-            // attempt check again
-            check_parent_hash_and_num(
-                backend,
-                block.header.parent_block_hash,
-                block.unverified_block_number,
-                &validation,
-            )?
-        }
-        Err(err) => return Err(err),
-    };
+    let (block_number, parent_block_hash) =
+        check_parent_hash_and_num(backend, block.header.parent_block_hash, block.unverified_block_number, &validation)?;
 
     // Update contract and its storage tries
     let global_state_root = update_tries(backend, &block, &validation, block_number)?;
@@ -196,6 +178,7 @@ fn check_parent_hash_and_num(
     };
 
     // TODO: this originally was checked after block number, but we need to check this first to detect a reorg.
+    // TODO: this fn shouldn't be responsible for reorg detection anyway...
     if let Some(parent_block_hash) = parent_block_hash {
         if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
@@ -375,6 +358,8 @@ fn reorg(
 
     backend.revert_to(block_number.checked_sub(1).unwrap())
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
+
+    // TODO: should reorg actually append new blocks? if not, it should be renamed to `revert_to`
 
 	// TODO: proper results
 	Ok(ReorgResult {
@@ -765,42 +750,6 @@ mod verify_apply_tests {
             assert!(matches!(result.unwrap_err(), BlockImportError::LatestBlockN { .. }));
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
         }
-
-        /// TODO: document
-        #[rstest]
-        #[tokio::test]
-        async fn test_verify_apply_reorg(setup_test_backend: Arc<MadaraBackend>) {
-            let backend = setup_test_backend;
-            let validation = create_validation_context(false);
-
-            let mut block_0 = create_dummy_block();
-            // block_0.unverified_block_hash = Some(felt!("0xf0"));
-            block_0.unverified_block_number = Some(0);
-            block_0.header.parent_block_hash = None;
-            block_0.unverified_global_state_root = Some(felt!("0x0"));
-            let block_0_import = verify_apply_inner(&backend, block_0, validation.clone()).expect("verify_apply_inner failed");
-            println!("block_0 hash: {:x}", block_0_import.block_hash);
-
-            // add a block that will be reorged away from
-            let mut block_1a = create_dummy_block();
-            block_1a.unverified_block_number = Some(1);
-            block_1a.unverified_global_state_root = Some(felt!("0x0"));
-            block_1a.header.parent_block_hash = Some(block_0_import.block_hash);
-            let block_1a_import = verify_apply_inner(&backend, block_1a, validation.clone()).expect("verify_apply_inner failed");
-            println!("block_1a hash: {:x}", block_1a_import.block_hash);
-
-            // reorg from 1a to 1b
-            let mut block_1b = create_dummy_block();
-            block_1b.unverified_block_number = Some(1);
-            block_1b.unverified_global_state_root = Some(felt!("0x0"));
-            block_1b.header.parent_block_hash = Some(block_0_import.block_hash);
-            let block_1b_import = verify_apply_inner(&backend, block_1b, validation.clone()).expect("verify_apply_inner failed");
-            println!("block_1b hash: {:x}", block_1b_import.block_hash);
-
-            let mabye_block_1_hash = backend.get_block_hash(&BlockId::Number(1)).unwrap();
-            assert_eq!(mabye_block_1_hash, Some(block_1b_import.block_hash));
-            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
-        }
     }
 
     mod verify_apply_pending_tests {
@@ -905,6 +854,147 @@ mod verify_apply_tests {
                 Some(unexpected_pending_info),
                 "Unexpected pending block should not be stored"
             );
+        }
+    }
+
+    mod reorg_tests {
+        use super::*;
+
+        // other ideas for testing:
+        // * basic tests
+        //   * deeper reorgs
+        //   * reorgs not from block 0
+        //   * multiple reorgs
+        //   * reorg back-and-forth
+        //   * show that we can build blocks (grow) on top of reorg
+        //   * actually change some state in blocks, reorg, show that state changes
+        //   * show that parent height / hash work properly after reorgs
+        //   * verify various storage has been erased
+        // * test MPT
+        //   * can include some of the basic test mentioned above
+        //   * verify proofs after reorg
+        //   * introduce patricia trie shape changes, verify proof
+        //   * verify non-inclusion proofs
+        // * negative tests
+        //   * reject reorgs from finalized blocks
+        //   * reject reorgs with no known parent
+        //   * reject reorgs for wrong height
+        //   * reject long distance reorgs (perhaps when L1 hasn't been processed recently?)
+
+        /// TODO: document
+        #[rstest]
+        #[tokio::test]
+        async fn test_verify_apply_reorg(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            let mut block_0 = create_dummy_block();
+            // block_0.unverified_block_hash = Some(felt!("0xf0"));
+            block_0.unverified_block_number = Some(0);
+            block_0.header.parent_block_hash = None;
+            block_0.unverified_global_state_root = Some(felt!("0x0"));
+            let block_0_import = verify_apply_inner(&backend, block_0, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_0 hash: {:x}", block_0_import.block_hash);
+
+            // add a block that will be reorged away from
+            let mut block_1a = create_dummy_block();
+            block_1a.unverified_block_number = Some(1);
+            block_1a.unverified_global_state_root = Some(felt!("0x0"));
+            block_1a.header.parent_block_hash = Some(block_0_import.block_hash);
+            let block_1a_import = verify_apply_inner(&backend, block_1a, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_1a hash: {:x}", block_1a_import.block_hash);
+
+            // reorg from 1a to 1b
+            let mut block_1b = create_dummy_block();
+            block_1b.unverified_block_number = Some(1);
+            block_1b.unverified_global_state_root = Some(felt!("0x0"));
+            block_1b.header.parent_block_hash = Some(block_0_import.block_hash);
+            let block_1b_import = verify_apply_inner(&backend, block_1b, validation.clone()).expect("verify_apply_inner failed");
+            println!("block_1b hash: {:x}", block_1b_import.block_hash);
+
+            let mabye_block_1_hash = backend.get_block_hash(&BlockId::Number(1)).unwrap();
+            assert_eq!(mabye_block_1_hash, Some(block_1b_import.block_hash));
+            assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
+        }
+
+        struct ReorgTestArgs {
+            /// original chain depth (including block 0)
+            original_chain_depth: u64,
+            /// the parent (in block height) whose child will be reorged away from
+            reorg_parent_height: u64,
+            /// number of blocks of the reorg (0 == no reorg)
+            num_reorg_blocks: u64,
+        }
+
+        /// TODO: document
+        #[rstest]
+        #[case::reorg_from_genesis(
+            ReorgTestArgs{
+                original_chain_depth: 2,
+                reorg_parent_height: 0,
+                num_reorg_blocks: 1,
+            },
+        )]
+        #[case::success(
+            ReorgTestArgs{
+                original_chain_depth: 6,
+                reorg_parent_height: 3,
+                num_reorg_blocks: 2,
+            },
+        )]
+        #[tokio::test]
+        async fn test_reorg(
+            setup_test_backend: Arc<MadaraBackend>,
+            #[case] args: ReorgTestArgs,
+        ) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            // appends an empty block to the given parent block, returning the new block's hash
+            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
+                println!("attempting to add block {}", new_block_height);
+                let mut block = create_dummy_block();
+                block.unverified_block_number = Some(new_block_height);
+                block.unverified_global_state_root = Some(felt!("0x0"));
+                block.header.parent_block_hash = parent_hash;
+                let block_import = verify_apply_inner(&backend, block, validation.clone()).expect("verify_apply_inner failed");
+                println!("added block {} (0x{:x})", new_block_height, block_import.block_hash);
+
+                block_import.block_hash
+            };
+
+            // create the original chain
+            let mut parent_hash = None;
+            let mut reorg_parent_hash = None;
+            for i in 0..args.original_chain_depth {
+                let new_block_hash = append_empty_block(i, parent_hash);
+                if i == args.reorg_parent_height {
+                    reorg_parent_hash = Some(new_block_hash);
+                }
+                parent_hash = Some(new_block_hash);
+            }
+
+            assert!(reorg_parent_hash.is_some());
+            println!("Reorging from parent {} ({:?})", args.reorg_parent_height, reorg_parent_hash);
+
+            let mut reorg_block = create_dummy_block();
+            reorg_block.unverified_block_number = Some(args.reorg_parent_height + 1);
+            reorg_block.unverified_global_state_root = Some(felt!("0x0"));
+            reorg_block.header.parent_block_hash = reorg_parent_hash;
+            let _ = reorg(&backend, &reorg_block).expect("reorg failed");
+            let block_import = verify_apply_inner(&backend, reorg_block, validation.clone()).expect("verify_apply_inner failed on reorg block");
+
+            // reorg after given parent (start with 1 since we already added our reorg block)
+            for i in 1..args.num_reorg_blocks {
+                let block_height = args.reorg_parent_height + i;
+                let new_block_hash = append_empty_block(block_height, parent_hash);
+                parent_hash = Some(new_block_hash);
+            }
+
+            let latest_block_n = backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
+            assert_eq!(args.reorg_parent_height + args.num_reorg_blocks, latest_block_n);
+            let latest_block_hash = backend.get_block_hash(&BlockId::Number(latest_block_n)).expect("get_block_hash failed after reorg");
+            assert_eq!(latest_block_hash, parent_hash);
         }
     }
 }

@@ -358,13 +358,7 @@ impl MadaraBackend {
     pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
-        // TODO: this was grouped with the other columns in `fn block_db_store_block()`, we should
-        // probably clean it up if possible (or be sure some other mechanism will do so)
-        // 
-        // if we have the block struct with the txns from this block, it should be trivial to handle
-        //
-        // let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
-
+        let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
         let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
@@ -385,9 +379,15 @@ impl MadaraBackend {
 
             let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;
             let block_info: MadaraBlockInfo = bincode::deserialize(&res.unwrap())?; // TODO: unwrap
+            
+            // clear all txns from this block
+            for txn_hash in block_info.tx_hashes {
+                let txn_hash_encoded = bincode::serialize(&txn_hash)?;
+                tx.delete_cf(&tx_hash_to_block_n, &txn_hash_encoded);
+            }
 
             let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
-            
+
             println!("  - original block hash: {:x}", block_info.block_hash);
             println!("  - block height/hash: {} => {:x?}", block_n, block_hash_encoded);
 
