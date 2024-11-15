@@ -251,7 +251,7 @@ mod tests {
     #[test]
     #[ignore]
     fn compress() {
-        // file_compress("src/client/mocks/.json").unwrap();
+        // file_compress("src/mocks/.json").unwrap();
     }
 
     /// Converts a crate-relative path to an absolute system path.
@@ -334,7 +334,7 @@ mod tests {
             state_update_0.non_pending_ownded().expect("State update at block number 0 should not be pending");
         let block_0 = block_0.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_0.gz");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_0.gz");
 
         assert_eq!(state_update_0, state_update_0_reference);
         assert_eq!(block_0, block_0_reference);
@@ -348,7 +348,7 @@ mod tests {
             state_update_1.non_pending_ownded().expect("State update at block number 1 should not be pending");
         let block_1 = block_1.non_pending_owned().expect("Block at block number 1 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_1.gz");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_1.gz");
 
         assert_eq!(state_update_1, state_update_1_reference);
         assert_eq!(block_1, block_1_reference);
@@ -362,7 +362,7 @@ mod tests {
             state_update_2.non_pending_ownded().expect("State update at block number 0 should not be pending");
         let block_2 = block_2.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/client/mocks/state_update_and_block_2.gz");
+            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_2.gz");
 
         assert_eq!(state_update_2, state_update_2_reference);
         assert_eq!(block_2, block_2_reference);
@@ -401,9 +401,8 @@ mod tests {
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_BLOCK_0), BlockId::Number(0))
             .await
             .unwrap_or_else(|_| panic!("Getting class {CLASS_BLOCK_0} at block number 0"));
-        let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_0_{CLASS_BLOCK_0}.gz"
-        ));
+        let class_reference =
+            load_from_file_compressed::<LegacyContractClass>(&format!("src/mocks/class_block_0_{CLASS_BLOCK_0}.gz"));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
 
@@ -418,7 +417,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("Getting account class {CLASS_ACCOUNT} at block number {CLASS_ACCOUNT_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.gz"
+            "src/mocks/class_block_{CLASS_ACCOUNT_BLOCK}_account_{CLASS_ACCOUNT}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -434,7 +433,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_PROXY} at block number {CLASS_PROXY_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.gz"
+            "src/mocks/class_block_{CLASS_PROXY_BLOCK}_proxy_{CLASS_PROXY}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -450,7 +449,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC20} at block number {CLASS_ERC20_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.gz"
+            "src/mocks/class_block_{CLASS_ERC20_BLOCK}_erc20_{CLASS_ERC20}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -466,7 +465,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC721} at block number {CLASS_ERC721_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.gz"
+            "src/mocks/class_block_{CLASS_ERC721_BLOCK}_erc721_{CLASS_ERC721}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -482,7 +481,7 @@ mod tests {
             .await
             .unwrap_or_else(|_| panic!("Getting proxy class {CLASS_ERC1155} at block number {CLASS_ERC1155_BLOCK}"));
         let class_reference = load_from_file_compressed::<LegacyContractClass>(&format!(
-            "src/client/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.gz"
+            "src/mocks/class_block_{CLASS_ERC1155_BLOCK}_erc1155_{CLASS_ERC1155}.gz"
         ));
         let class_compressed_reference: CompressedLegacyContractClass =
             class_reference.compress().expect("Compressing legacy contract class").into();
@@ -497,8 +496,7 @@ mod tests {
             .get_signature(BlockId::Number(0))
             .await
             .expect("Failed to get signature for block number 0");
-        let signature_reference =
-            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_0.gz");
+        let signature_reference = load_from_file_compressed::<ProviderBlockSignature>("src/mocks/signature_block_0.gz");
 
         assert_eq!(signature_block_0, signature_reference);
 
@@ -506,8 +504,7 @@ mod tests {
             .get_signature(BlockId::Number(1))
             .await
             .expect("Failed to get signature for block number 1");
-        let signature_reference =
-            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_1.gz");
+        let signature_reference = load_from_file_compressed::<ProviderBlockSignature>("src/mocks/signature_block_1.gz");
 
         assert_eq!(signature_block_1, signature_reference);
 
@@ -515,8 +512,7 @@ mod tests {
             .get_signature(BlockId::Number(2))
             .await
             .expect("Failed to get signature for block number 2");
-        let signature_reference =
-            load_from_file_compressed::<ProviderBlockSignature>("src/client/mocks/signature_block_2.gz");
+        let signature_reference = load_from_file_compressed::<ProviderBlockSignature>("src/mocks/signature_block_2.gz");
 
         assert_eq!(signature_block_2, signature_reference);
     }
