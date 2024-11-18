@@ -177,18 +177,24 @@ mod tests {
 
     #[test]
     fn test_from_request_path_empty() {
-        assert_eq!(RpcVersion::from_request_path("", RpcVersion([0, 0, 0])).unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_root() {
-        assert_eq!(RpcVersion::from_request_path("/", RpcVersion([0, 0, 0])).unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_invalid_format() {
         assert_eq!(
-            RpcVersion::from_request_path("/invalid/path", RpcVersion([0, 0, 0])).unwrap(),
+            RpcVersion::from_request_path("/invalid/path", RpcVersion::RPC_VERSION_LATEST).unwrap(),
             RpcVersion::RPC_VERSION_LATEST
         );
     }
@@ -196,7 +202,7 @@ mod tests {
     #[test]
     fn test_from_request_path_unsupported_version() {
         assert_eq!(
-            RpcVersion::from_request_path("/rpc/v9_9_9", RpcVersion([0, 0, 0])),
+            RpcVersion::from_request_path("/rpc/v9_9_9", RpcVersion::RPC_VERSION_LATEST),
             Err(RpcVersionError::UnsupportedVersion)
         );
     }
@@ -204,7 +210,7 @@ mod tests {
     #[test]
     fn test_from_request_path_invalid_version() {
         assert_eq!(
-            RpcVersion::from_request_path("/rpc/vx_y_z", RpcVersion([0, 0, 0])),
+            RpcVersion::from_request_path("/rpc/vx_y_z", RpcVersion::RPC_VERSION_LATEST),
             Err(RpcVersionError::InvalidVersion)
         );
     }

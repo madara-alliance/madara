@@ -10,11 +10,15 @@ use jsonrpsee::server::BatchRequestConfig;
 #[value(rename_all = "kebab-case")]
 pub enum RpcMethods {
     /// Expose every RPC method only when RPC is listening on `localhost`,
-    /// otherwise serve only safe RPC methods.
+    /// otherwise serve only user RPC methods.
     Auto,
-    /// Allow only a safe subset of RPC methods.
+    /// Allow only user rpc methods. Admin RPC methods will not be exposed,
+    /// whether RPC is listening on `localhost` or not.
     Safe,
-    /// Expose every RPC method (even potentially unsafe ones).
+    /// Allow every RPC method. This includes exposing admin RPC methods on
+    /// 0.0.0.0! Be EXTREMELY careful when using this option: you should at
+    /// all costs set up a firewall to secure access to admin RPC methods,
+    /// otherwise you are compromising your node!
     Unsafe,
 }
 
