@@ -116,7 +116,7 @@ mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-gateway-provider = { path = "crates/client/gateway/client" }
+mc-gateway-client = { path = "crates/client/gateway/client" }
 mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }

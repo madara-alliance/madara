@@ -14,7 +14,7 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
 use mc_db::DatabaseService;
-use mc_gateway_provider::GatewayProvider;
+use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};

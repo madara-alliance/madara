@@ -5397,7 +5397,7 @@ dependencies = [
  "mc-db",
  "mc-devnet",
  "mc-eth",
- "mc-gateway-provider",
+ "mc-gateway-client",
  "mc-gateway-server",
  "mc-mempool",
  "mc-rpc",
@@ -5688,7 +5688,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-gateway-provider"
+name = "mc-gateway-client"
 version = "0.7.0"
 dependencies = [
  "anyhow",
@@ -5794,7 +5794,7 @@ dependencies = [
  "m-proc-macros",
  "mc-db",
  "mc-exec",
- "mc-gateway-provider",
+ "mc-gateway-client",
  "mc-mempool",
  "mp-block",
  "mp-chain-config",
@@ -5828,7 +5828,7 @@ dependencies = [
  "mc-analytics",
  "mc-block-import",
  "mc-db",
- "mc-gateway-provider",
+ "mc-gateway-client",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",

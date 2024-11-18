@@ -6,7 +6,7 @@ use core::fmt;
 use core::time::Duration;
 use futures::FutureExt;
 use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedPendingFullBlock};
-use mc_gateway_provider::GatewayProvider;
+use mc_gateway_client::GatewayProvider;
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
 use mp_class::{ContractClass, MISSED_CLASS_HASHES};
 use mp_convert::ToFelt;
