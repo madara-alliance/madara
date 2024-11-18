@@ -58,7 +58,6 @@ impl RpcService {
                 rpc_api: versioned_rpc_api(&starknet, read, write, trace, internal, ws)?,
                 metrics,
                 cors: config.cors(),
-                rate_limit: config.rpc_rate_limit,
             }),
             server_handle: None,
         })

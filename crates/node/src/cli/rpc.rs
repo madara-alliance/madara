@@ -1,6 +1,5 @@
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use clap::ValueEnum;
@@ -88,15 +87,6 @@ pub struct RpcParams {
 		verbatim_doc_comment
 	)]
     pub rpc_methods: RpcMethods,
-
-    /// RPC rate limiting (calls/minute) for each connection.
-    ///
-    /// This is disabled by default.
-    ///
-    /// For example `--rpc-rate-limit 10` will maximum allow
-    /// 10 calls per minute per connection.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT", long)]
-    pub rpc_rate_limit: Option<NonZeroU32>,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]

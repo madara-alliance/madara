@@ -3,7 +3,6 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::num::NonZeroU32;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -12,7 +11,7 @@ use tower::Service;
 
 use mp_utils::wait_or_graceful_shutdown;
 
-use crate::service::rpc::middleware::{RpcMiddlewareLayerRateLimit, RpcMiddlewareServiceVersion};
+use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
@@ -33,8 +32,6 @@ pub struct ServerConfig {
     pub rpc_api: jsonrpsee::RpcModule<()>,
     /// Batch request config.
     pub batch_config: jsonrpsee::server::BatchRequestConfig,
-    /// Rate limit calls per minute.
-    pub rate_limit: Option<NonZeroU32>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +58,6 @@ pub async fn start_server(
         metrics,
         message_buffer_capacity,
         rpc_api,
-        rate_limit,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -113,7 +109,6 @@ pub async fn start_server(
 
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
                     .layer_fn(move |service| RpcMiddlewareServiceVersion::new(service, path.clone()))
-                    .option_layer(rate_limit.map(RpcMiddlewareLayerRateLimit::new))
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
