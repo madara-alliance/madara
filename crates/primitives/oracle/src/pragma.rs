@@ -65,12 +65,10 @@ impl PragmaOracle {
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 /// Supported Aggregation Methods
+#[serde(rename_all = "snake_case")]
 pub enum AggregationMethod {
-    #[serde(rename = "median")]
     Median,
-    #[serde(rename = "mean")]
     Mean,
-    #[serde(rename = "twap")]
     #[default]
     Twap,
 }
