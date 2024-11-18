@@ -29,8 +29,7 @@ There are **two** main parts to the implementation of RPC methods in Madara.
 
 ### Jsonrpsee implementation
 
-> [!NOTE]
-> `jsonrpsee` is a library developed by Parity which is used to implement JSON
+> [!NOTE] > `jsonrpsee` is a library developed by Parity which is used to implement JSON
 > RPC APIs through simple macro logic.
 
 Each RPC version is defined under the `version` folder using the
