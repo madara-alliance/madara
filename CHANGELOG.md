@@ -2,7 +2,7 @@
 
 ## Next release
 
-- feat: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
+- build: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
 - feat(rpc): added `getCompiledCasm` method
 - fix(error): Added a comment for non archive node L1 keys
 - feat(confg): added chain config template and fgw example
