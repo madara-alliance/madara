@@ -20,6 +20,8 @@ pub enum RpcMethods {
 
 /// The default port.
 pub const RPC_DEFAULT_PORT: u16 = 9944;
+/// Default port for sensitive rpc methods
+pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
 /// The default max request size in MB.
@@ -104,6 +106,10 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_PORT", long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
     pub rpc_port: u16,
 
+    /// The RPC port to listen at for admin rpc calls.
+    #[arg(env = "MADARA_RPC_PORT_ADMIN", long, value_name = "ENGINE PORT", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
+    pub rpc_port_admin: u16,
+
     /// Maximum number of RPC server connections at a given time.
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
@@ -165,7 +171,7 @@ impl RpcParams {
         }
     }
 
-    pub fn addr(&self) -> SocketAddr {
+    pub fn addr_user(&self) -> SocketAddr {
         let listen_addr = if self.rpc_external {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
@@ -173,6 +179,16 @@ impl RpcParams {
         };
 
         SocketAddr::new(listen_addr.into(), self.rpc_port)
+    }
+
+    pub fn addr_admin(&self) -> SocketAddr {
+        let listen_addr = if self.rpc_external {
+            Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
+        } else {
+            Ipv4Addr::LOCALHOST
+        };
+
+        SocketAddr::new(listen_addr.into(), self.rpc_port_admin)
     }
 
     pub fn batch_config(&self) -> BatchRequestConfig {

@@ -21,6 +21,7 @@ const MEGABYTE: u32 = 1024 * 1024;
 /// RPC server configuration.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
+    pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
     pub max_connections: u32,
@@ -29,7 +30,7 @@ pub struct ServerConfig {
     pub max_payload_out_mb: u32,
     pub metrics: RpcMetrics,
     pub message_buffer_capacity: u32,
-    pub rpc_api: jsonrpsee::RpcModule<()>,
+    pub methods: jsonrpsee::Methods,
     /// Batch request config.
     pub batch_config: jsonrpsee::server::BatchRequestConfig,
 }
@@ -48,6 +49,7 @@ pub async fn start_server(
     join_set: &mut JoinSet<anyhow::Result<()>>,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
+        name,
         addr,
         batch_config,
         cors,
@@ -57,7 +59,7 @@ pub async fn start_server(
         max_subs_per_conn,
         metrics,
         message_buffer_capacity,
-        rpc_api,
+        methods,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -87,7 +89,7 @@ pub async fn start_server(
 
     let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
     let cfg = PerConnection {
-        methods: build_rpc_api(rpc_api).into(),
+        methods,
         stop_handle: stop_handle.clone(),
         metrics,
         service_builder: builder.to_service_builder(),
@@ -144,7 +146,7 @@ pub async fn start_server(
 
     join_set.spawn(async move {
         tracing::info!(
-            "📱 Running JSON-RPC server at {} (allowed origins={})",
+            "📱 Running {name} server at {} (allowed origins={})",
             local_addr.to_string(),
             format_cors(cors.as_ref())
         );
@@ -182,7 +184,10 @@ pub(crate) fn host_filtering(
     }
 }
 
-pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::RpcModule<M>) -> jsonrpsee::RpcModule<M> {
+pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
+    service: &str,
+    mut rpc_api: jsonrpsee::RpcModule<M>,
+) -> jsonrpsee::RpcModule<M> {
     let mut available_methods = rpc_api
         .method_names()
         .map(|name| {
@@ -192,7 +197,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
                 // method is version-agnostic
                 let namespace = split[0];
                 let method = split[1];
-                format!("rpc/{namespace}_{method}")
+                format!("{service}/{namespace}_{method}")
             } else {
                 // versioned method
                 let namespace = split[0];
@@ -200,7 +205,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
                 let minor = split[2];
                 let patch = split[3];
                 let method = split[4];
-                format!("rpc/{major}_{minor}_{patch}/{namespace}_{method}")
+                format!("{service}/{major}_{minor}_{patch}/{namespace}_{method}")
             }
         })
         .collect::<Vec<_>>();
