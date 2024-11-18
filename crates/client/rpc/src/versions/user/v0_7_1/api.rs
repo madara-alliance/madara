@@ -10,7 +10,6 @@ use starknet_core::types::{
 use starknet_types_core::felt::Felt;
 
 use m_proc_macros::versioned_rpc;
-use mp_transactions::BroadcastedDeclareTransactionV0;
 // Starknet RPC API trait and types
 //
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
@@ -19,16 +18,6 @@ use mp_transactions::BroadcastedDeclareTransactionV0;
 
 /// Starknet write rpc interface.
 ///
-
-#[versioned_rpc("V0_7_1", "madara")]
-pub trait MadaraWriteRpcApi {
-    /// Submit a new class v0 declaration transaction
-    #[method(name = "addDeclareV0Transaction", and_versions = ["V0_8_0"])]
-    async fn add_declare_v0_transaction(
-        &self,
-        declare_transaction_v0: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult>;
-}
 
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetWriteRpcApi {

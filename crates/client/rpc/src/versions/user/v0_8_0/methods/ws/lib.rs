@@ -1,6 +1,6 @@
 use crate::{
     errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError},
-    versions::v0_8_0::StarknetWsRpcApiV0_8_0Server,
+    versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server,
 };
 
 use super::BLOCK_PAST_LIMIT;

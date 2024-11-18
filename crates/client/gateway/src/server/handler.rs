@@ -6,7 +6,7 @@ use hyper::{body::Incoming, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::{
     providers::AddTransactionProvider,
-    versions::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
+    versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
     Starknet,
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};

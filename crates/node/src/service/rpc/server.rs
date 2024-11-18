@@ -24,6 +24,7 @@ pub struct ServerConfig {
     pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
+    pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
     pub max_payload_in_mb: u32,
@@ -51,15 +52,16 @@ pub async fn start_server(
     let ServerConfig {
         name,
         addr,
-        batch_config,
         cors,
-        max_payload_in_mb,
-        max_payload_out_mb,
+        rpc_version_default,
         max_connections,
         max_subs_per_conn,
+        max_payload_in_mb,
+        max_payload_out_mb,
         metrics,
         message_buffer_capacity,
         methods,
+        batch_config,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -110,7 +112,9 @@ pub async fn start_server(
                 let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
 
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
-                    .layer_fn(move |service| RpcMiddlewareServiceVersion::new(service, path.clone()))
+                    .layer_fn(move |service| {
+                        RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
+                    })
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);

@@ -87,11 +87,12 @@ where
 pub struct RpcMiddlewareServiceVersion<S> {
     inner: S,
     path: String,
+    version_default: RpcVersion,
 }
 
 impl<S> RpcMiddlewareServiceVersion<S> {
-    pub fn new(inner: S, path: String) -> Self {
-        Self { inner, path }
+    pub fn new(inner: S, path: String, version_default: RpcVersion) -> Self {
+        Self { inner, path, version_default }
     }
 }
 
@@ -104,13 +105,14 @@ where
     fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
         let inner = self.inner.clone();
         let path = self.path.clone();
+        let version_default = self.version_default;
 
         async move {
             if req.method == "rpc_methods" {
                 return inner.call(req).await;
             }
 
-            let Ok(version) = RpcVersion::from_request_path(&path).map(|v| v.name()) else {
+            let Ok(version) = RpcVersion::from_request_path(&path, version_default).map(|v| v.name()) else {
                 return jsonrpsee::MethodResponse::error(
                     req.id,
                     jsonrpsee::types::ErrorObject::owned(

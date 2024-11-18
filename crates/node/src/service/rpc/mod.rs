@@ -4,7 +4,7 @@ use jsonrpsee::server::ServerHandle;
 use tokio::task::JoinSet;
 
 use mc_db::DatabaseService;
-use mc_rpc::{providers::AddTransactionProvider, rpc_api_external, rpc_api_internal, Starknet};
+use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
 use mp_utils::service::Service;
 
 use metrics::RpcMetrics;
@@ -55,7 +55,7 @@ impl RpcService {
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;
 
-        let api_rpc_user = rpc_api_external(&starknet, read, write, trace, ws)?;
+        let api_rpc_user = rpc_api_user(&starknet, read, write, trace, ws)?;
         let methods_user = rpc_api_build("rpc", api_rpc_user).into();
 
         let server_config_user = Some(ServerConfig {
@@ -70,10 +70,11 @@ impl RpcService {
             methods: methods_user,
             metrics: metrics.clone(),
             cors: config.cors(),
+            rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
         });
 
         let server_config_admin = if admin {
-            let api_rpc_admin = rpc_api_internal(&starknet)?;
+            let api_rpc_admin = rpc_api_admin(&starknet)?;
             let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
 
             Some(ServerConfig {
@@ -88,6 +89,7 @@ impl RpcService {
                 methods: methods_admin,
                 metrics,
                 cors: config.cors(),
+                rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST_ADMIN,
             })
         } else {
             None

@@ -30,7 +30,7 @@ impl RpcVersion {
         RpcVersion([major, minor, patch])
     }
 
-    pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
+    pub fn from_request_path(path: &str, version_default: RpcVersion) -> Result<Self, RpcVersionError> {
         log::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
 
         let path = path.to_ascii_lowercase();
@@ -41,14 +41,14 @@ impl RpcVersion {
         // If we have an empty path or just "/", fallback to latest rpc version
         if parts.len() == 1 || (parts.len() == 2 && parts[1].is_empty()) {
             log::debug!(target: "rpc_version", "no version, defaulting to latest");
-            return Ok(Self::RPC_VERSION_LATEST);
+            return Ok(version_default);
         }
 
         // Check if the path follows the correct format, i.e. /rpc/v[version].
         // If not, fallback to the latest version
         if parts.len() != 3 || parts[1] != "rpc" || !parts[2].starts_with('v') {
             log::debug!(target: "rpc_version", "invalid version format, defaulting to latest");
-            return Ok(Self::RPC_VERSION_LATEST);
+            return Ok(version_default);
         }
 
         log::debug!(target: "rpc_version", "looking for matching version...");
@@ -81,7 +81,10 @@ impl RpcVersion {
 
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
     pub const RPC_VERSION_0_8_0: RpcVersion = RpcVersion([0, 8, 0]);
+    pub const RPC_VERSION_ADMIN_0_1_0: RpcVersion = RpcVersion([0, 1, 0]);
+
     pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_7_1;
+    pub const RPC_VERSION_LATEST_ADMIN: RpcVersion = Self::RPC_VERSION_ADMIN_0_1_0;
 }
 
 impl std::fmt::Display for RpcVersion {
@@ -166,31 +169,43 @@ mod tests {
 
     #[test]
     fn test_from_request_path_valid() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/v0_7_1").unwrap(), RpcVersion::RPC_VERSION_0_7_1);
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v0_7_1", RpcVersion([0, 0, 0])).unwrap(),
+            RpcVersion::RPC_VERSION_0_7_1
+        );
     }
 
     #[test]
     fn test_from_request_path_empty() {
-        assert_eq!(RpcVersion::from_request_path("").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(RpcVersion::from_request_path("", RpcVersion([0, 0, 0])).unwrap(), RpcVersion::RPC_VERSION_LATEST);
     }
 
     #[test]
     fn test_from_request_path_root() {
-        assert_eq!(RpcVersion::from_request_path("/").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(RpcVersion::from_request_path("/", RpcVersion([0, 0, 0])).unwrap(), RpcVersion::RPC_VERSION_LATEST);
     }
 
     #[test]
     fn test_from_request_path_invalid_format() {
-        assert_eq!(RpcVersion::from_request_path("/invalid/path").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("/invalid/path", RpcVersion([0, 0, 0])).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_unsupported_version() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/v9_9_9"), Err(RpcVersionError::UnsupportedVersion));
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v9_9_9", RpcVersion([0, 0, 0])),
+            Err(RpcVersionError::UnsupportedVersion)
+        );
     }
 
     #[test]
     fn test_from_request_path_invalid_version() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/vx_y_z"), Err(RpcVersionError::InvalidVersion));
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/vx_y_z", RpcVersion([0, 0, 0])),
+            Err(RpcVersionError::InvalidVersion)
+        );
     }
 }
