@@ -143,7 +143,7 @@ mod test {
 
     use crate::{
         test_utils::rpc_test_setup,
-        versions::v0_8_0::{
+        versions::user::v0_8_0::{
             methods::ws::BLOCK_PAST_LIMIT, NewHead, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
         },
         Starknet,
