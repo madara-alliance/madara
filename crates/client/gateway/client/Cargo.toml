@@ -1,6 +1,6 @@
 [package]
-description = "Madara gateway provider"
-name = "mc-gateway-provider"
+description = "Madara gateway client provider"
+name = "mc-gateway-client"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_gateway_provider::GatewayProvider;
+use mc_gateway_client::GatewayProvider;
 use mp_gateway::error::SequencerError;
 use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_core::types::{

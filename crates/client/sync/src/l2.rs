@@ -9,7 +9,7 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
-use mc_gateway_provider::GatewayProvider;
+use mc_gateway_client::GatewayProvider;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;

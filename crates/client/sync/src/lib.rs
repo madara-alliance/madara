@@ -4,7 +4,7 @@ use fetch::fetchers::FetchConfig;
 use hyper::header::{HeaderName, HeaderValue};
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
-use mc_gateway_provider::GatewayProvider;
+use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
 use std::{sync::Arc, time::Duration};
 
