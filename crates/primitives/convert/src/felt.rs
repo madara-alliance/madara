@@ -6,12 +6,13 @@ use starknet_types_core::felt::Felt;
 pub struct FeltToH160Error;
 
 pub fn felt_to_h160(felt: &Felt) -> Result<H160, FeltToH160Error> {
-    let bytes = felt.to_bytes_be();
+    const MAX_H160: Felt = Felt::from_hex_unchecked("0xffffffffffffffffffffffffffffffffffffffff");
 
-    // check if the 12 first bytes are null
-    if !bytes.iter().take(12).all(|&b| b == 0) {
+    if felt > &MAX_H160 {
         return Err(FeltToH160Error);
     }
+
+    let bytes = felt.to_bytes_be();
 
     let mut h160_bytes = [0u8; 20];
     h160_bytes.copy_from_slice(&bytes[12..]);
