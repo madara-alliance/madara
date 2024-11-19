@@ -62,11 +62,18 @@ print_stderr = "warn"
 # unwrap_used = "warn"
 # missing_docs = "warn"
 
+[build]
+rustflags = ["-C", "symbol-mangling-version=v0"]
+
 [profile.dev]
 incremental = true
 
 [profile.release]
 panic = "unwind"
+
+[profile.profiling]
+inherits = "release"
+debug = 1
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
