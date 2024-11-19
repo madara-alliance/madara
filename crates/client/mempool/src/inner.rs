@@ -156,11 +156,11 @@ impl NonceChain {
             match self.transactions.entry(OrderMempoolTransactionByNonce(mempool_tx)) {
                 btree_map::Entry::Occupied(entry) => {
                     // duplicate nonce, either it's because the hash is duplicated or nonce conflict with another tx.
-                    if entry.key().0.tx_hash() == mempool_tx_hash {
-                        return Err(TxInsersionError::DuplicateTxn);
+                    return if entry.key().0.tx_hash() == mempool_tx_hash {
+                        Err(TxInsersionError::DuplicateTxn)
                     } else {
-                        return Err(TxInsersionError::NonceConflict);
-                    }
+                        Err(TxInsersionError::NonceConflict)
+                    };
                 }
                 btree_map::Entry::Vacant(entry) => *entry.insert(()),
             }
@@ -169,7 +169,7 @@ impl NonceChain {
         };
 
         let position = if self.front_nonce >= mempool_tx_nonce {
-            // We insrted at the front here
+            // We inserted at the front here
             let former_head_arrived_at = core::mem::replace(&mut self.front_arrived_at, mempool_tx_arrived_at);
             self.front_nonce = mempool_tx_nonce;
             self.front_tx_hash = mempool_tx_hash;
@@ -307,7 +307,7 @@ impl MempoolInner {
                 None
             };
 
-        let is_replaced = match self.nonce_chains.entry(contract_addr) {
+        let replaced_state = match self.nonce_chains.entry(contract_addr) {
             hash_map::Entry::Occupied(mut entry) => {
                 // Handle nonce collision.
                 let (position, is_replaced) = match entry.get_mut().insert(mempool_tx, force) {
@@ -350,7 +350,7 @@ impl MempoolInner {
             }
         };
 
-        if is_replaced != ReplacedState::Replaced {
+        if replaced_state != ReplacedState::Replaced {
             if let Some(contract_address) = &deployed_contract_address {
                 self.deployed_contracts.increment(*contract_address)
             }

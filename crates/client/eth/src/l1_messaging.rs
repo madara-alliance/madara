@@ -1,10 +1,11 @@
+use crate::client::EthereumClient;
 use crate::client::StarknetCoreContract::LogMessageToL2;
-use crate::client::{EthereumClient, StarknetCoreContract};
 use crate::utils::u256_to_felt;
 use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
+use alloy::rpc::types::Log;
 use alloy::sol_types::SolValue;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
@@ -55,9 +56,10 @@ pub async fn sync(
             return Err(e.into());
         }
     };
-    let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
 
-    let mut event_stream = event_filter
+    let mut event_stream = client
+        .l1_core_contract
+        .event_filter::<LogMessageToL2>()
         .from_block(last_synced_event_block.block_number)
         .to_block(BlockNumberOrTag::Finalized)
         .watch()
@@ -66,114 +68,83 @@ pub async fn sync(
             "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
         )?
         .into_stream();
+
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
-        if let Ok((event, meta)) = event_result {
-            tracing::info!(
-                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
-                meta.block_number,
-                meta.transaction_hash,
-                meta.log_index,
-                event.fromAddress
-            );
-
-            // Check if cancellation was initiated
-            let event_hash = get_l1_to_l2_msg_hash(&event)?;
-            tracing::info!("⟠ Checking for cancelation, event hash : {:?}", event_hash);
-            let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
-            if cancellation_timestamp != Felt::ZERO {
-                tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
-                let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
-                // cancelled message nonce should be inserted to avoid reprocessing
-                match backend.has_l1_messaging_nonce(tx_nonce) {
-                    Ok(false) => {
-                        backend.set_l1_messaging_nonce(tx_nonce)?;
-                    }
-                    Ok(true) => {}
-                    Err(e) => {
-                        tracing::error!("⟠ Unexpected DB error: {:?}", e);
-                        return Err(e.into());
-                    }
+        match event_result {
+            Ok((event, log)) => {
+                if let Err(e) = process_l1_to_l2_msg(backend, client, chain_id, &mempool, event, log).await {
+                    tracing::error!("⟠ Unable to process L1 -> L2 messsage event: {e:?}");
                 };
-                continue;
             }
-
-            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id, mempool.clone())
-                .await
-            {
-                Ok(Some(tx_hash)) => {
-                    tracing::info!(
-                        "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
-                        transaction hash on L2: {:?}",
-                        meta.block_number,
-                        meta.transaction_hash,
-                        meta.log_index,
-                        tx_hash
-                    );
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::error!(
-                        "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
-                    log_index: {:?}, error: {:?}",
-                        meta.block_number,
-                        meta.transaction_hash,
-                        meta.log_index,
-                        e
-                    )
-                }
-            }
+            Err(e) => tracing::error!("⟠ Unable to receive L1 -> L2 message event: {e}"),
         }
     }
 
     Ok(())
 }
 
-async fn process_l1_message(
+async fn process_l1_to_l2_msg(
     backend: &MadaraBackend,
-    event: &LogMessageToL2,
-    l1_block_number: &Option<u64>,
-    event_index: &Option<u64>,
+    client: &EthereumClient,
     chain_id: &ChainId,
-    mempool: Arc<Mempool>,
-) -> anyhow::Result<Option<Felt>> {
-    let transaction = parse_handle_l1_message_transaction(event)?;
-    let tx_nonce = transaction.nonce;
+    mempool: &Arc<Mempool>,
+    event: LogMessageToL2,
+    log: Log,
+) -> anyhow::Result<()> {
+    tracing::debug!("⟠ Processing L1 -> L2 message event {event:#?}, contract address: {}, block number: {:?}, transaction index: {:?}, transaction hash: {:?}, log index: {:?}",
+        log.address(), log.block_number, log.transaction_index, log.transaction_hash, log.log_index
+    );
 
+    let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
     // Ensure that L1 message has not been executed
-    match backend.has_l1_messaging_nonce(tx_nonce) {
-        Ok(false) => {
-            backend.set_l1_messaging_nonce(tx_nonce)?;
-        }
-        Ok(true) => {
-            tracing::debug!("⟠ Event already processed: {:?}", transaction);
-            return Ok(None);
-        }
-        Err(e) => {
-            tracing::error!("⟠ Unexpected DB error: {:?}", e);
-            return Err(e.into());
-        }
-    };
+    if backend.has_l1_messaging_nonce(tx_nonce)? {
+        tracing::debug!("⟠ L1 -> L2 event already processed: {tx_nonce:?}");
+        return Ok(());
+    } else {
+        backend.set_l1_messaging_nonce(tx_nonce)?;
+    }
 
-    let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
+    // Check if cancellation was initiated
+    let event_hash = get_l1_to_l2_msg_hash(&event);
+    let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
+    if cancellation_timestamp != Felt::ZERO {
+        tracing::info!("⟠ L1 message was cancelled at timestamp {:?}", cancellation_timestamp.to_biguint());
+        return Ok(());
+    }
+
+    let l1_handler_transaction = parse_handle_l1_message_transaction(&event)?;
+
+    let tx_hash = get_transaction_hash(
+        &Transaction::L1Handler(l1_handler_transaction.clone()),
+        chain_id,
+        &l1_handler_transaction.version,
+    )?;
     let blockifier_transaction = BlockifierTransation::from_api(
-        Transaction::L1Handler(transaction),
+        Transaction::L1Handler(l1_handler_transaction.clone()),
         tx_hash,
         None,
         Some(Fee(event.fee.try_into()?)),
         None,
         false,
     )?;
-    let res = mempool.accept_l1_handler_tx(blockifier_transaction)?;
+    mempool.accept_l1_handler_tx(blockifier_transaction)?;
 
-    // TODO: remove unwraps
-    // Ques: shall it panic if no block number of event_index?
-    let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
-    backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
+    let l1_tx_hash = log.transaction_hash.ok_or_else(|| anyhow!("Missing transaction hash"))?;
+    let block_number = log.block_number.ok_or_else(|| anyhow!("Event missing block number"))?;
+    let log_index = log.log_index.ok_or_else(|| anyhow!("Event missing log index"))?;
 
-    Ok(Some(res.transaction_hash))
+    // We use the log index for the order to ensure any L1 txs which have multiple messages are
+    // retrieved in the order they occured.
+    backend.add_l1_handler_tx_hash_mapping(l1_tx_hash, tx_hash.0, log_index)?;
+
+    let last_synced_event_block = LastSyncedEventBlock::new(block_number, log_index);
+    backend.messaging_update_last_synced_l1_block_with_event(last_synced_event_block)?;
+
+    tracing::info!("⟠ L1 message processed: {:?}, transaction hash: {:?}", l1_handler_transaction, tx_hash);
+    Ok(())
 }
 
-pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
+fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
     // L1 from address.
     let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
 
@@ -206,7 +177,7 @@ pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Re
 }
 
 /// Computes the message hashed with the given event data
-fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32>> {
+fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> FixedBytes<32> {
     let data = (
         [0u8; 12],
         event.fromAddress.0 .0,
@@ -216,14 +187,11 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
         U256::from(event.payload.len()),
         event.payload.clone(),
     );
-    Ok(keccak256(data.abi_encode_packed()))
+    keccak256(data.abi_encode_packed())
 }
 
 #[cfg(test)]
 mod l1_messaging_tests {
-
-    use std::{sync::Arc, time::Duration};
-
     use crate::l1_messaging::sync;
     use crate::{
         client::{
@@ -233,6 +201,7 @@ mod l1_messaging_tests {
         l1_messaging::get_l1_to_l2_msg_hash,
         utils::felt_to_u256,
     };
+    use alloy::primitives::TxHash;
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -241,12 +210,14 @@ mod l1_messaging_tests {
         sol,
         transports::http::{Client, Http},
     };
+    use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolProvider};
     use mp_chain_config::ChainConfig;
     use rstest::*;
-    use starknet_api::core::Nonce;
+    use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
     use starknet_types_core::felt::Felt;
+    use std::{sync::Arc, time::Duration};
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
@@ -396,7 +367,7 @@ mod l1_messaging_tests {
     /// 4. Waits for event to be processed
     /// 5. Assert that the worker handle the event with correct data
     /// 6. Assert that the hash computed by the worker is correct
-    /// 7. TODO : Assert that the tx is succesfully submited to the mempool
+    /// 7. Assert that the tx is succesfully submited to the mempool
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
     #[rstest]
@@ -409,6 +380,7 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
+            let mempool = mempool.clone();
             tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
         };
 
@@ -417,23 +389,46 @@ mod l1_messaging_tests {
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        // Assert that event was caught by the worker with correct data
-        // TODO: Maybe add some more assert
-        assert!(logs_contain("fromAddress: 0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419"));
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
 
-        // Assert the tx hash computed by the worker is correct
-        assert!(logs_contain(
-            format!("event hash : {:?}", contract.getL1ToL2MsgHash().call().await.expect("failed to get hash")._0)
-                .as_str()
-        ));
+        let (handler_tx, handler_tx_hash) = match mempool.take_tx().unwrap().tx {
+            Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
+            Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
+        };
+        assert_eq!(handler_tx.nonce, nonce);
+        assert_eq!(
+            handler_tx.contract_address,
+            ContractAddress::try_from(
+                Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370")
+                    .unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            handler_tx.entry_point_selector,
+            EntryPointSelector(
+                Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537")
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            handler_tx.calldata.0[0],
+            Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
+        );
 
-        // TODO : Assert that the tx has been included in the mempool
+        // Assert the L1 -> L2 mapping is stored
+        let l1_handler_tx_hashes = db
+            .backend()
+            .get_l1_handler_tx_hashes(
+                TxHash::from_hex("4961b0fef9f7d7c46fb9095b2b97ea3dc8157fca04e4f2562d1461ac3bb03867").unwrap(),
+            )
+            .expect("Unable to get L1 -> L2 tx hashes mapping from DB");
+        assert_eq!(l1_handler_tx_hashes, vec![handler_tx_hash]);
 
         // Assert that the event is well stored in db
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
         // TODO : Assert that the tx was correctly executed
 
@@ -485,7 +480,7 @@ mod l1_messaging_tests {
                 .unwrap()
                 .block_number
         );
-        assert!(logs_contain("Event already processed"));
+        assert!(logs_contain("L1 -> L2 event already processed"));
 
         worker_handle.abort();
     }
@@ -521,7 +516,7 @@ mod l1_messaging_tests {
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
-        assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
+        assert!(logs_contain("L1 message was cancelled at timestamp 1723134213"));
 
         worker_handle.abort();
     }
@@ -547,8 +542,7 @@ mod l1_messaging_tests {
             ],
             nonce: U256::from(775628),
             fee: U256::ZERO,
-        })
-        .expect("Failed to compute l1 to l2 msg hash");
+        });
 
         let expected_hash =
             <[u8; 32]>::from_hex("c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3").unwrap();

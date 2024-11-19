@@ -44,6 +44,7 @@ starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Others
+alloy = { workspace = true }
 anyhow = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",

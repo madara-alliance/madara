@@ -14,7 +14,7 @@ methods exist in isolation from `read` methods for example.
 _different versions_ of the same RPC method. This is mostly present for ease of
 development of new RPC versions, but also serves to assure a level of backwards
 compatibility. To select a specific version of an rpc method, you will need to
-append `/rcp/v{version}` to the rpc url you are connecting to.
+append `/rpc/v{version}` to the rpc url you are connecting to.
 
 **RPC versions are grouped under the `Starknet` struct**. This serves as a
 common point of implementation for all RPC methods across all versions, and is

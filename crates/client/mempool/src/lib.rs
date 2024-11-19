@@ -101,10 +101,7 @@ impl Mempool {
             block
         } else {
             // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
-            let parent_block_hash = self
-                .backend
-                .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
-                .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
+            let parent_block_hash = self.backend.get_block_hash(&BlockId::Tag(BlockTag::Latest))?.unwrap_or(Felt::ZERO); // Genesis block's parent hash
             MadaraPendingBlockInfo::new(
                 make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
                 vec![],

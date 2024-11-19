@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(rpc): added `getMessagesStatus` method
 - fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree
 - refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId

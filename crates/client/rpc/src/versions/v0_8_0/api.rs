@@ -1,3 +1,5 @@
+use crate::versions::v0_8_0::methods::read::get_messages_status::MessageStatus;
+use alloy::primitives::TxHash;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
@@ -18,4 +20,10 @@ pub trait StarknetReadRpcApi {
 
     #[method(name = "getCompiledCasm")]
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
+
+    /// For the given L1 transaction hash, return the associated L1 handler transaction hashes and
+    /// statuses for all L1 -> L2 messsages sent by the L1 transaction, ordered by the L1
+    /// transaction sending order.
+    #[method(name = "getMessagesStatus")]
+    fn get_messages_status(&self, transaction_hash: TxHash) -> RpcResult<Vec<MessageStatus>>;
 }
