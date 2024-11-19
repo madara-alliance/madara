@@ -235,6 +235,7 @@ async fn madara_can_sync_a_few_blocks() {
         "--n-blocks-to-sync",
         "20",
         "--no-l1-sync",
+        "--rpc-enable",
         "--gas-price",
         "0",
     ]);
