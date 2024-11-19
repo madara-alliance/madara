@@ -33,7 +33,7 @@ pub async fn start_server(
     let addr = SocketAddr::new(listen_addr.into(), gateway_port);
     let listener = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
 
-    log::info!("🌐 Gateway endpoint started at {}", addr);
+    tracing::info!("🌐 Gateway endpoint started at {}", addr);
 
     let shutdown_notify = Arc::new(Notify::new());
 
@@ -66,7 +66,7 @@ pub async fn start_server(
                     });
 
                     if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                        log::error!("Error serving connection: {:?}", err);
+                        tracing::error!("Error serving connection: {:?}", err);
                     }
                 });
             },

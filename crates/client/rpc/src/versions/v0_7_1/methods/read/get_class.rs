@@ -1,4 +1,6 @@
-use starknet_core::types::{BlockId, ContractClass, Felt};
+use mp_block::BlockId;
+use starknet_core::types::ContractClass;
+use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;

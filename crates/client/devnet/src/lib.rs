@@ -196,7 +196,6 @@ mod tests {
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
-    use mp_convert::felt_to_u128;
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
@@ -295,7 +294,7 @@ mod tests {
 
     #[fixture]
     fn chain() -> DevnetForTesting {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
@@ -552,8 +551,7 @@ mod tests {
         tracing::info!("receipt: {:?}", block.inner.receipts[0]);
 
         let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
-        // TODO: matching the fees?
-        let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+        let fees_fri = block.inner.receipts[0].actual_fee().amount;
 
         if !expect_reverted {
             assert_eq!(
@@ -562,8 +560,6 @@ mod tests {
                     transaction_hash: result.transaction_hash,
                     messages_sent: vec![],
                     events: vec![
-                        // todo: figure out the OZ event format to match those too.
-                        // one of them should be for the fees.
                         Event {
                             from_address: ERC20_STRK_CONTRACT_ADDRESS,
                             keys: vec![
@@ -589,12 +585,12 @@ mod tests {
                                 sequencer_address,
                             ],
                             // This is the fees transfer to the sequencer.
-                            data: vec![fees_fri.into(), Felt::ZERO],
+                            data: vec![fees_fri, Felt::ZERO],
                         },
                     ],
                     // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
                     execution_resources: receipt.execution_resources.clone(),
-                    actual_fee: FeePayment { amount: fees_fri.into(), unit: PriceUnit::Fri },
+                    actual_fee: FeePayment { amount: fees_fri, unit: PriceUnit::Fri },
                     execution_result: receipt.execution_result.clone(), // matched below
                 }
             );
@@ -604,6 +600,7 @@ mod tests {
             false => {
                 assert_eq!(&receipt.execution_result, &ExecutionResult::Succeeded);
 
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),
@@ -618,6 +615,7 @@ mod tests {
                 let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
                 assert!(reason.contains("ERC20: insufficient balance"));
 
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),

@@ -33,7 +33,7 @@ m-cairo-test-contracts.workspace = true
 mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
-mc-gateway.workspace = true
+mc-gateway-client.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true
@@ -70,7 +70,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 anyhow.workspace = true
 futures = { workspace = true, default-features = true }
 hyper.workspace = true
-log.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = [

@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use hyper::{body::Incoming, header, Request, Response, StatusCode};
 use mp_block::{BlockId, BlockTag};
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
-
-use crate::error::{StarknetError, StarknetErrorCode};
 
 pub(crate) fn service_unavailable_response(service_name: &str) -> Response<String> {
     Response::builder()
@@ -62,7 +61,7 @@ pub(crate) fn create_string_response(status: StatusCode, body: String) -> Respon
     match Response::builder().status(status).body(body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to build response: {}", e);
+            tracing::error!("Failed to build response: {}", e);
             internal_error_response(&e.to_string())
         }
     }
@@ -116,10 +115,4 @@ pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<B
 
 pub(crate) fn include_block_params(params: &HashMap<String, String>) -> bool {
     params.get("includeBlock").map_or(false, |v| v == "true")
-}
-
-impl From<StarknetError> for Response<String> {
-    fn from(error: StarknetError) -> Self {
-        create_json_response(hyper::StatusCode::BAD_REQUEST, &error)
-    }
 }

@@ -1,5 +1,6 @@
-use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilterWithPage, EventsPage, Felt};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use starknet_core::types::{EmittedEvent, EventFilterWithPage, EventsPage};
+use starknet_types_core::felt::Felt;
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -105,21 +106,33 @@ fn event_match_filter(event: &EmittedEvent, address: Option<Felt>, keys: &[Vec<F
 
 fn block_range(
     starknet: &Starknet,
-    from_block: Option<BlockId>,
-    to_block: Option<BlockId>,
+    from_block: Option<starknet_core::types::BlockId>,
+    to_block: Option<starknet_core::types::BlockId>,
 ) -> StarknetRpcResult<(u64, u64, u64)> {
     let latest_block_n = starknet.get_block_n(&BlockId::Tag(BlockTag::Latest))?;
     let from_block_n = match from_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(&block_id)?,
+        Some(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending)) => latest_block_n + 1,
+        Some(block_id) => starknet.get_block_n(&to_block_id(block_id))?,
         None => 0,
     };
     let to_block_n = match to_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(&block_id)?,
+        Some(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending)) => latest_block_n + 1,
+        Some(block_id) => starknet.get_block_n(&to_block_id(block_id))?,
         None => latest_block_n,
     };
     Ok((from_block_n, to_block_n, latest_block_n))
+}
+
+// TODO: this is a temporary solution until we use all types of starknet_types_rpc
+fn to_block_id(block_id: starknet_core::types::BlockId) -> BlockId {
+    match block_id {
+        starknet_core::types::BlockId::Hash(hash) => BlockId::Hash(hash),
+        starknet_core::types::BlockId::Number(number) => BlockId::Number(number),
+        starknet_core::types::BlockId::Tag(tag) => BlockId::Tag(match tag {
+            starknet_core::types::BlockTag::Latest => BlockTag::Latest,
+            starknet_core::types::BlockTag::Pending => BlockTag::Pending,
+        }),
+    }
 }
 
 fn get_block_events(_starknet: &Starknet, block: &MadaraMaybePendingBlock) -> Vec<EmittedEvent> {

@@ -18,14 +18,14 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 # Starknet
 serde = { workspace = true, features = ["derive"] }
-serde_with = { workspace = true }
-starknet-core = { workspace = true }
-starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
+serde_with.workspace = true
+starknet-core.workspace = true
+starknet-types-core.workspace = true
+starknet_api.workspace = true
 
 # Other
-primitive-types = { workspace = true }
-thiserror = { workspace = true }
+primitive-types.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-assert_matches = { workspace = true }
+assert_matches.workspace = true
