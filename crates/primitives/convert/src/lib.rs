@@ -1,6 +1,8 @@
+mod felt;
 pub mod hex_serde;
 mod to_felt;
 
+pub use felt::felt_to_h160;
 pub use to_felt::{DisplayFeltAsHex, FeltHexDisplay, ToFelt};
 
 pub mod test {
