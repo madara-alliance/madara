@@ -4,10 +4,8 @@ use std::time::Duration;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mc_gateway::{
-    client::builder::FeederClient,
-    error::{SequencerError, StarknetError, StarknetErrorCode},
-};
+use mc_gateway_client::GatewayProvider;
+use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
 
@@ -21,7 +19,7 @@ pub async fn l2_fetch_task(
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
-    provider: Arc<FeederClient>,
+    provider: Arc<GatewayProvider>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {

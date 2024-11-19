@@ -26,14 +26,14 @@ mc-block-import = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
 mc-eth = { workspace = true }
-mc-gateway = { workspace = true }
+mc-gateway-client = { workspace = true }
+mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
 mc-rpc = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
-mp-convert = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
@@ -50,6 +50,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 fdlimit.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
+http.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
 rand.workspace = true

@@ -5,7 +5,8 @@ members = [
   "crates/client/sync",
   "crates/client/eth",
   "crates/client/rpc",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
   "crates/client/analytics",
   "crates/client/telemetry",
   "crates/client/devnet",
@@ -32,7 +33,8 @@ default-members = [
   "crates/client/exec",
   "crates/client/sync",
   "crates/client/eth",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/devnet",
@@ -114,7 +116,8 @@ mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-gateway = { path = "crates/client/gateway" }
+mc-gateway-client = { path = "crates/client/gateway/client" }
+mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-mempool = { path = "crates/client/mempool" }

@@ -1,6 +1,6 @@
 [package]
-description = "Madara primitives for gateway"
-name = "mp-gateway"
+description = "Madara gateway client provider"
+name = "mc-gateway-client"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,15 +16,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 
-# Deoxys
-mc-block-import.workspace = true
+# Madara
 mp-block.workspace = true
-mp-chain-config.workspace = true
 mp-class.workspace = true
-mp-convert.workspace = true
-mp-receipt.workspace = true
-mp-state-update.workspace = true
-mp-transactions.workspace = true
+mp-gateway.workspace = true
 
 # Starknet
 starknet-core.workspace = true
@@ -32,10 +27,21 @@ starknet-types-core.workspace = true
 
 # Other
 anyhow.workspace = true
+bytes.workspace = true
+futures.workspace = true
+http-body-util.workspace = true
 http.workspace = true
-hyper.workspace = true
+hyper = { workspace = true, features = ["full"] }
+hyper-tls.workspace = true
+hyper-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-serde_with.workspace = true
-thiserror.workspace = true
+tokio.workspace = true
+tower = { version = "0.4", features = ["timeout", "retry", "util", "limit"] }
+tracing.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+rstest.workspace = true
+flate2.workspace = true

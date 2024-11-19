@@ -6,12 +6,12 @@ use core::fmt;
 use core::time::Duration;
 use futures::FutureExt;
 use mc_block_import::{UnverifiedCommitments, UnverifiedFullBlock, UnverifiedPendingFullBlock};
-use mc_gateway::client::builder::FeederClient;
-use mc_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
+use mc_gateway_client::GatewayProvider;
 use mp_class::class_update::{ClassUpdate, LegacyClassUpdate, SierraClassUpdate};
 use mp_class::{ContractClass, MISSED_CLASS_HASHES};
 use mp_convert::ToFelt;
 use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
+use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
 use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
 use mp_transactions::MAIN_CHAIN_ID;
@@ -88,7 +88,7 @@ impl From<FetchBlockId> for starknet_core::types::BlockId {
 pub async fn fetch_pending_block_and_updates(
     parent_block_hash: Felt,
     chain_id: &ChainId,
-    provider: &FeederClient,
+    provider: &GatewayProvider,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
     let sw = PerfStopwatch::new();
@@ -138,7 +138,7 @@ pub async fn fetch_pending_block_and_updates(
 pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
-    provider: &FeederClient,
+    provider: &GatewayProvider,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = FetchBlockId::BlockN(block_n);
 
@@ -205,7 +205,7 @@ async fn fetch_class_updates(
     chain_id: &ChainId,
     state_diff: &StateDiff,
     block_id: FetchBlockId,
-    provider: &FeederClient,
+    provider: &GatewayProvider,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     let chain_id: Felt = chain_id.to_felt();
 
@@ -268,7 +268,7 @@ async fn fetch_class_updates(
 async fn fetch_class(
     class_hash: Felt,
     block_id: FetchBlockId,
-    provider: &FeederClient,
+    provider: &GatewayProvider,
 ) -> Result<(Felt, ContractClass), SequencerError> {
     let contract_class = provider.get_class_by_hash(class_hash, block_id.into()).await?;
     tracing::debug!("Got the contract class {:?}", class_hash);
