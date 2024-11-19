@@ -27,7 +27,7 @@ impl GatewayProvider {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block")
             .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(block_id);
+            .with_block_id(&block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -41,7 +41,7 @@ impl GatewayProvider {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
             .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(block_id);
+            .with_block_id(&block_id);
 
         match block_id {
             BlockId::Tag(BlockTag::Pending) => {
@@ -58,7 +58,7 @@ impl GatewayProvider {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
             .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(block_id)
+            .with_block_id(&block_id)
             .add_param(Cow::from("includeBlock"), "true");
 
         match block_id {
@@ -79,7 +79,7 @@ impl GatewayProvider {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_signature")
             .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(block_id);
+            .with_block_id(&block_id);
 
         request.send_get::<ProviderBlockSignature>().await
     }
@@ -92,7 +92,7 @@ impl GatewayProvider {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_class_by_hash")
             .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(block_id)
+            .with_block_id(&block_id)
             .with_class_hash(class_hash);
 
         let value = request.send_get::<Value>().await?;
@@ -149,12 +149,11 @@ mod tests {
         bufread::{GzDecoder, GzEncoder},
         Compression,
     };
-    use mp_block::BlockTag;
     use mp_class::CompressedLegacyContractClass;
     use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
     use rstest::*;
     use serde::de::DeserializeOwned;
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
     use std::fs::{remove_file, File};
     use std::io::{BufReader, BufWriter, Read, Write};
     use std::ops::Drop;

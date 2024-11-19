@@ -15,7 +15,7 @@ use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedHeader {

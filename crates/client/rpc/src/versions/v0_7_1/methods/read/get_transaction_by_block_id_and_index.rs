@@ -1,4 +1,5 @@
-use starknet_core::types::{BlockId, Transaction};
+use mp_block::BlockId;
+use starknet_core::types::Transaction;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
@@ -39,8 +40,8 @@ pub fn get_transaction_by_block_id_and_index(
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
+    use mp_block::BlockTag;
     use rstest::rstest;
-    use starknet_core::types::BlockTag;
 
     #[rstest]
     fn test_get_transaction_by_block_id_and_index(

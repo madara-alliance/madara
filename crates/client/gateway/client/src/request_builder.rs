@@ -45,7 +45,7 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    pub fn with_block_id(mut self, block_id: BlockId) -> Self {
+    pub fn with_block_id(mut self, block_id: &BlockId) -> Self {
         match block_id {
             BlockId::Hash(hash) => {
                 self = self.add_param(Cow::from("blockHash"), &format!("0x{hash:x}"));

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use starknet_core::types::{BlockId, FunctionCall};
-use starknet_types_core::felt::Felt;
-
 use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use starknet_core::types::FunctionCall;
+use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;

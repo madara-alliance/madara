@@ -1,7 +1,8 @@
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
+    BlockHashAndNumber, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
     MaybePendingStateUpdate, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
     TransactionReceiptWithBlockInfo, TransactionStatus,

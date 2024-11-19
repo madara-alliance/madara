@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
 use serde::Serialize;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},

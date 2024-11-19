@@ -3,8 +3,8 @@ use blockifier::abi::{abi_utils::get_fee_token_var_address, sierra_types::next_s
 use core::fmt;
 use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag};
-use starknet_core::types::Felt;
 use starknet_signers::SigningKey;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     ContractFeeTokensBalance, ERC20_ETH_CONTRACT_ADDRESS, ERC20_STRK_CONTRACT_ADDRESS, ETH_WEI_DECIMALS,
