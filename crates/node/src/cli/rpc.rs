@@ -2,30 +2,7 @@ use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
-use clap::ValueEnum;
 use jsonrpsee::server::BatchRequestConfig;
-
-/// Available RPC methods.
-#[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum RpcEndpoints {
-    /// Disables all rpc endpoints, including `user` and `admin`
-    Off,
-    /// Rpc endpoints are automatically scoped based on how permissive they are:
-    /// user and admin RPC methods are exposed on `localhost` by default. If RPC
-    /// is set to external, only user methods will be exposed on `0.0.0.0` and
-    /// admin methods will remain exposed on `localhost`.
-    Auto,
-    /// Disables the amin RPC endpoint entirely and only exposes user methods,
-    /// regardless of if RPC is set to external.
-    Safe,
-    /// Allows exposing admin methods on `0.0.0.0` when RPC is set to external.
-    /// Be EXTREMELY careful when using this option as it means anyone can
-    /// operate your node at a distance: you should at all costs set up a
-    /// firewall to secure access to admin RPC methods, otherwise you are
-    /// compromising your node!
-    Unsafe,
-}
 
 /// The default port.
 pub const RPC_DEFAULT_PORT: u16 = 9944;
@@ -77,24 +54,29 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Listen to all network interfaces. This usually means that the RPC server
-    /// will be accessible externally. Please note that by default admin rpc
-    /// methods will still be exposed on `localhost`. To expose them externaly,
-    /// use `--rpc-methods unsafe`.
-    #[arg(env = "MADARA_RPC_EXTERNAL", long)]
+    /// Enables the user rpc endpoint. This includes all methods which are part
+    /// of the official starknet specs. By default, this is exposed to
+    /// `localhost`
+    #[arg(env = "MADARA_RPC_ENABLE", long, default_value_t = false)]
+    pub rpc_enable: bool,
+
+    /// Exposes the user rpc endpoint on port `0.0.0.0`. This generally means
+    /// that rpc methods will be accessible from the outside world.
+    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
     pub rpc_external: bool,
 
-    /// RPC enpoints to expose.
-    #[arg(
-		env = "MADARA_RPC_METHODS",
-		long,
-		value_name = "METHOD",
-		value_enum,
-		ignore_case = true,
-		default_value_t = RpcEndpoints::Off,
-		verbatim_doc_comment
-	)]
-    pub rpc_endpoints: RpcEndpoints,
+    /// Enables the admin rpc endpoint. This includes additional rpc methods
+    /// which are not part of the official specs and can be used by node admins
+    /// to control their node at a distance. By default, this is exposed to
+    /// `localhost`.
+    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
+    pub rpc_admin_enable: bool,
+
+    /// Exposes the admin rpc endpoint on port `0.0.0.0`. This is especially
+    /// useful when running Madara from inside a docker container. Be very
+    /// careful however when exposing this endpoint to the outside world.
+    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
+    pub rpc_admin_external: bool,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
@@ -188,7 +170,7 @@ impl RpcParams {
     }
 
     pub fn addr_admin(&self) -> SocketAddr {
-        let listen_addr = if self.rpc_external && self.rpc_endpoints == RpcEndpoints::Unsafe {
+        let listen_addr = if self.rpc_admin_external {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
             Ipv4Addr::LOCALHOST

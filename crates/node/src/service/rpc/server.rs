@@ -218,7 +218,7 @@ pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
     // The available methods will be prefixed by their version, example:
     // * rpc/v0_7_1/starknet_blockNumber,
     // * rpc/v0_8_0/starknet_blockNumber (...)
-    available_methods.push("rpc/rpc_methods".to_string());
+    available_methods.push(format!("{service}/rpc_methods"));
     available_methods.sort();
 
     rpc_api

@@ -10,7 +10,7 @@ use mp_utils::service::Service;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 
-use crate::cli::{RpcEndpoints, RpcParams};
+use crate::cli::RpcParams;
 
 use self::server::rpc_api_build;
 
@@ -30,16 +30,10 @@ impl RpcService {
         db: &DatabaseService,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
-        let (user, admin) = match config.rpc_endpoints {
-            RpcEndpoints::Off => (false, false),
-            RpcEndpoints::Safe => (true, false),
-            RpcEndpoints::Auto | RpcEndpoints::Unsafe => (true, true),
-        };
-
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;
 
-        let server_config_user = if user {
+        let server_config_user = if config.rpc_enable {
             let api_rpc_user = rpc_api_user(&starknet)?;
             let methods_user = rpc_api_build("rpc", api_rpc_user).into();
 
@@ -61,7 +55,7 @@ impl RpcService {
             None
         };
 
-        let server_config_admin = if admin {
+        let server_config_admin = if config.rpc_admin_enable {
             let api_rpc_admin = rpc_api_admin(&starknet)?;
             let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
 
