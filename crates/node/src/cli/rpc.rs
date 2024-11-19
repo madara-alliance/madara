@@ -8,7 +8,7 @@ use jsonrpsee::server::BatchRequestConfig;
 /// Available RPC methods.
 #[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
-pub enum RpcMethods {
+pub enum RpcEndpoints {
     /// Rpc endpoints are automatically scoped based on how permissive they are:
     /// user and admin RPC methods are exposed on `localhost` by default. If RPC
     /// is set to external, only user methods will be exposed on `0.0.0.0` and
@@ -86,17 +86,17 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_EXTERNAL", long)]
     pub rpc_external: bool,
 
-    /// RPC methods to expose.
+    /// RPC enpoints to expose.
     #[arg(
 		env = "MADARA_RPC_METHODS",
 		long,
 		value_name = "METHOD",
 		value_enum,
 		ignore_case = true,
-		default_value_t = RpcMethods::Auto,
+		default_value_t = RpcEndpoints::Auto,
 		verbatim_doc_comment
 	)]
-    pub rpc_methods: RpcMethods,
+    pub rpc_endpoints: RpcEndpoints,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
@@ -190,7 +190,7 @@ impl RpcParams {
     }
 
     pub fn addr_admin(&self) -> SocketAddr {
-        let listen_addr = if self.rpc_external && self.rpc_methods == RpcMethods::Unsafe {
+        let listen_addr = if self.rpc_external && self.rpc_endpoints == RpcEndpoints::Unsafe {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
             Ipv4Addr::LOCALHOST

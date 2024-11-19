@@ -10,7 +10,7 @@ use mp_utils::service::Service;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 
-use crate::cli::{RpcMethods, RpcParams};
+use crate::cli::{RpcEndpoints, RpcParams};
 
 use self::server::rpc_api_build;
 
@@ -39,9 +39,9 @@ impl RpcService {
             });
         }
 
-        let (rpcs, node_operator) = match config.rpc_methods {
-            RpcMethods::Safe => (true, false),
-            RpcMethods::Auto | RpcMethods::Unsafe => (true, true),
+        let (rpcs, node_operator) = match config.rpc_endpoints {
+            RpcEndpoints::Safe => (true, false),
+            RpcEndpoints::Auto | RpcEndpoints::Unsafe => (true, true),
         };
 
         let (read, write, trace, admin, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
