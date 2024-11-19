@@ -1,5 +1,6 @@
 use mp_block::MadaraMaybePendingBlockInfo;
-use starknet_core::types::{Felt, TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
+use starknet_core::types::{TransactionFinalityStatus, TransactionReceiptWithBlockInfo};
+use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 

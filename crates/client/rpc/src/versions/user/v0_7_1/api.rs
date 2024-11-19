@@ -1,6 +1,8 @@
 use jsonrpsee::core::RpcResult;
+use m_proc_macros::versioned_rpc;
+use mp_block::BlockId;
 use starknet_core::types::{
-    BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
+    BlockHashAndNumber, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
@@ -9,7 +11,6 @@ use starknet_core::types::{
 };
 use starknet_types_core::felt::Felt;
 
-use m_proc_macros::versioned_rpc;
 // Starknet RPC API trait and types
 //
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)

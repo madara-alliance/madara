@@ -4,9 +4,10 @@ use crate::utils::transaction::to_blockifier_transactions;
 use crate::utils::ResultExt;
 use crate::Starknet;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
+use mp_block::BlockId;
 use mp_convert::ToFelt;
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::{BlockId, TransactionTraceWithHash};
+use starknet_core::types::TransactionTraceWithHash;
 use std::sync::Arc;
 
 pub async fn trace_block_transactions(
@@ -27,7 +28,7 @@ pub async fn trace_block_transactions(
         .into_iter()
         .zip(block.info.tx_hashes())
         .map(|(tx, hash)| {
-            to_blockifier_transactions(starknet.clone_backend(), block_id.into(), tx, &TransactionHash(*hash))
+            to_blockifier_transactions(starknet.clone_backend(), block_id.clone(), tx, &TransactionHash(*hash))
         })
         .collect::<Result<_, _>>()?;
 

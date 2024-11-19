@@ -26,12 +26,6 @@ impl DbBlockIdResolvable for BlockId {
     }
 }
 
-impl DbBlockIdResolvable for starknet_core::types::BlockId {
-    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
-        backend.id_to_storage_type(&(*self).into())
-    }
-}
-
 impl DbBlockIdResolvable for DbBlockId {
     fn resolve_db_block_id(&self, _backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
         Ok(Some(*self))

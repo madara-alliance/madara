@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
-use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::{ChainConfig, RpcVersion};
 use mp_convert::ToFelt;
 
@@ -74,7 +74,7 @@ impl Starknet {
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
-        self.get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+        self.get_block_n(&BlockId::Tag(BlockTag::Latest))
     }
 
     pub fn current_spec_version(&self) -> RpcVersion {

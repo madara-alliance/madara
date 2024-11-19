@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
+use starknet_core::types::{BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
 
 use mc_exec::ExecutionContext;
+use mp_block::BlockId;
 use mp_transactions::broadcasted_to_blockifier;
 
 use crate::errors::StarknetRpcApiError;

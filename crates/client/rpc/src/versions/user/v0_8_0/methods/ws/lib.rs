@@ -1,3 +1,5 @@
+use mp_block::{BlockId, BlockTag};
+
 use crate::{
     errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError},
     versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server,
@@ -10,17 +12,17 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
     async fn subscribe_new_heads(
         &self,
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
-        block_id: starknet_core::types::BlockId,
+        block_id: BlockId,
     ) -> jsonrpsee::core::SubscriptionResult {
         let sink =
             subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
 
         let mut block_n = match block_id {
-            starknet_core::types::BlockId::Number(block_n) => {
+            BlockId::Number(block_n) => {
                 let err = || format!("Failed to retrieve block info for block {block_n}");
                 let block_latest = self
                     .backend
-                    .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                    .get_block_n(&BlockId::Tag(BlockTag::Latest))
                     .or_else_internal_server_error(err)?
                     .ok_or(StarknetWsApiError::NoBlocks)?;
 
@@ -30,11 +32,11 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
 
                 block_n
             }
-            starknet_core::types::BlockId::Hash(block_hash) => {
+            BlockId::Hash(block_hash) => {
                 let err = || format!("Failed to retrieve block info at hash {block_hash:#x}");
                 let block_latest = self
                     .backend
-                    .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                    .get_block_n(&BlockId::Tag(BlockTag::Latest))
                     .or_else_internal_server_error(err)?
                     .ok_or(StarknetWsApiError::NoBlocks)?;
 
@@ -50,12 +52,12 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
 
                 block_n
             }
-            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest) => self
+            BlockId::Tag(BlockTag::Latest) => self
                 .backend
                 .get_latest_block_n()
                 .or_internal_server_error("Failed to retrieve block info for latest block")?
                 .ok_or(StarknetWsApiError::NoBlocks)?,
-            starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending) => {
+            BlockId::Tag(BlockTag::Pending) => {
                 return Err(StarknetWsApiError::Pending.into());
             }
         };
@@ -66,7 +68,7 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
                 return Ok(());
             }
 
-            let block_info = match self.backend.get_block_info(&mp_block::BlockId::Number(n)) {
+            let block_info = match self.backend.get_block_info(&BlockId::Number(n)) {
                 Ok(Some(block_info)) => {
                     let err = || format!("Failed to retrieve block info for block {n}");
                     block_info.as_nonpending_owned().ok_or_else_internal_server_error(err)?
@@ -138,14 +140,14 @@ async fn send_block_header<'a>(
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use jsonrpsee::ws_client::WsClientBuilder;
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     use crate::{
         test_utils::rpc_test_setup,
-        versions::user::v0_8_0::{
-            methods::ws::BLOCK_PAST_LIMIT, NewHead, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
-        },
+        versions::user::v0_8_0::{NewHead, StarknetWsRpcApiV0_8_0Client},
         Starknet,
     };
 
@@ -171,7 +173,7 @@ mod test {
                 .expect("Storing block");
 
             let block_info = backend
-                .get_block_info(&mp_block::BlockId::Number(n))
+                .get_block_info(&BlockId::Number(n))
                 .expect("Retrieving block info")
                 .expect("Retrieving block info")
                 .as_nonpending_owned()
@@ -194,10 +196,8 @@ mod test {
         let mut generator = block_generator(&backend);
         let expected = generator.next().expect("Retrieving block from backend");
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub =
+            client.subscribe_new_heads(BlockId::Tag(BlockTag::Latest)).await.expect("starknet_subscribeNewHeads");
 
         let next = sub.next().await;
         let header = next.expect("Waiting for block header").expect("Waiting for block header");
@@ -224,10 +224,7 @@ mod test {
         let generator = block_generator(&backend);
         let expected: Vec<_> = generator.take(BLOCK_PAST_LIMIT as usize).collect();
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Number(0))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub = client.subscribe_new_heads(BlockId::Number(0)).await.expect("starknet_subscribeNewHeads");
 
         for e in expected {
             let next = sub.next().await;
@@ -256,10 +253,7 @@ mod test {
         let mut generator = block_generator(&backend);
         let expected = generator.next().expect("Retrieving block from backend");
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Number(0))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub = client.subscribe_new_heads(BlockId::Number(0)).await.expect("starknet_subscribeNewHeads");
 
         let next = sub.next().await;
         let header = next.expect("Waiting for block header").expect("Waiting for block header");
@@ -289,10 +283,7 @@ mod test {
         let mut generator = block_generator(&backend);
         let _block_0 = generator.next().expect("Retrieving block from backend");
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Number(1))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub = client.subscribe_new_heads(BlockId::Number(1)).await.expect("starknet_subscribeNewHeads");
 
         let block_1 = generator.next().expect("Retrieving block from backend");
 
@@ -327,10 +318,7 @@ mod test {
         let generator = block_generator(&backend);
         let _expected: Vec<_> = generator.take(BLOCK_PAST_LIMIT as usize + 2).collect();
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Number(0))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub = client.subscribe_new_heads(BlockId::Number(0)).await.expect("starknet_subscribeNewHeads");
 
         // Jsonrsee seems to just close the connection and not return the error
         // to the client so this is the best we can do :/
@@ -354,10 +342,8 @@ mod test {
         let generator = block_generator(&backend);
         let _expected: Vec<_> = generator.take(BLOCK_PAST_LIMIT as usize + 2).collect();
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Hash(Felt::from(0)))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub =
+            client.subscribe_new_heads(BlockId::Hash(Felt::from(0))).await.expect("starknet_subscribeNewHeads");
 
         // Jsonrsee seems to just close the connection and not return the error
         // to the client so this is the best we can do :/
@@ -378,10 +364,8 @@ mod test {
         let generator = block_generator(&backend);
         let _expected: Vec<_> = generator.take(BLOCK_PAST_LIMIT as usize + 2).collect();
 
-        let mut sub = client
-            .subscribe_new_heads(starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Pending))
-            .await
-            .expect("starknet_subscribeNewHeads");
+        let mut sub =
+            client.subscribe_new_heads(BlockId::Tag(BlockTag::Pending)).await.expect("starknet_subscribeNewHeads");
 
         // Jsonrsee seems to just close the connection and not return the error
         // to the client so this is the best we can do :/
