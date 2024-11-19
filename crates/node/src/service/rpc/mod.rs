@@ -39,16 +39,10 @@ impl RpcService {
             });
         }
 
-        let (rpcs, node_operator) = match config.rpc_endpoints {
-            RpcEndpoints::Safe => (true, false),
-            RpcEndpoints::Auto | RpcEndpoints::Unsafe => (true, true),
-        };
-
-        let (read, write, trace, admin, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;
 
-        let api_rpc_user = rpc_api_user(&starknet, read, write, trace, ws)?;
+        let api_rpc_user = rpc_api_user(&starknet)?;
         let methods_user = rpc_api_build("rpc", api_rpc_user).into();
 
         let server_config_user = Some(ServerConfig {
@@ -66,7 +60,7 @@ impl RpcService {
             rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
         });
 
-        let server_config_admin = if admin {
+        let server_config_admin = if config.rpc_endpoints != RpcEndpoints::Safe {
             let api_rpc_admin = rpc_api_admin(&starknet)?;
             let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
 
