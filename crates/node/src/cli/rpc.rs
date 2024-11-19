@@ -12,8 +12,8 @@ pub enum RpcMethods {
     /// Expose every RPC method only when RPC is listening on `localhost`,
     /// otherwise serve only user RPC methods.
     Auto,
-    /// Allow only user rpc methods. Admin RPC methods will not be exposed,
-    /// whether RPC is listening on `localhost` or not.
+    /// Allow only user rpc methods. Admin RPC methods will not be exposed:
+    /// this is whether RPC is listening on `localhost` or not.
     Safe,
     /// Allow every RPC method. This includes exposing admin RPC methods on
     /// 0.0.0.0! Be EXTREMELY careful when using this option: you should at

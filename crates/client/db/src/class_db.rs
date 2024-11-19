@@ -87,19 +87,19 @@ impl MadaraBackend {
         Ok(self.db.get_pinned_cf(&col, &key_encoded)?.is_some())
     }
 
-    #[tracing::instrument(skip(self, id, class_hash), fields(module = "ClassDB"))]
+    #[tracing::instrument(skip(self, id, compiled_class_hash), fields(module = "ClassDB"))]
     pub fn get_sierra_compiled(
         &self,
         id: &impl DbBlockIdResolvable,
-        class_hash: &Felt,
+        compiled_class_hash: &Felt,
     ) -> Result<Option<CompiledSierra>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        tracing::debug!("sierra compiled {requested_id:?} {class_hash:#x}");
+        tracing::debug!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
 
         let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
             requested_id.is_pending(),
-            class_hash,
+            compiled_class_hash,
             Column::PendingClassCompiled,
             Column::ClassCompiled,
         )?

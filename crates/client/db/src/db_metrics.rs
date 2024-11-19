@@ -102,7 +102,7 @@ impl DbMetrics {
         match self.try_update(db) {
             Ok(res) => res,
             Err(err) => {
-                log::warn!("Error updating db metrics: {err:#}");
+                tracing::warn!("Error updating db metrics: {err:#}");
                 0
             }
         }

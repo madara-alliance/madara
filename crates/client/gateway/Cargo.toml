@@ -37,7 +37,6 @@ http.workspace = true
 hyper = { workspace = true, features = ["full"] }
 hyper-tls.workspace = true
 hyper-util.workspace = true
-log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

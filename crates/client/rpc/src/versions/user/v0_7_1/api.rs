@@ -46,7 +46,7 @@ pub trait StarknetWriteRpcApi {
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetReadRpcApi {
     /// Get the Version of the StarkNet JSON-RPC Specification Being Used
-    #[method(name = "specVersion", and_versions = ["V0_8_0"])]
+    #[method(name = "specVersion")]
     fn spec_version(&self) -> RpcResult<String>;
 
     /// Get the most recent accepted block number

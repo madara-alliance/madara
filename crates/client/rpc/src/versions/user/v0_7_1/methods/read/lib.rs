@@ -1,4 +1,5 @@
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_chain_config::RpcVersion;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
     FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
@@ -34,7 +35,7 @@ use crate::Starknet;
 #[async_trait]
 impl StarknetReadRpcApiV0_7_1Server for Starknet {
     fn spec_version(&self) -> RpcResult<String> {
-        Ok(self.current_spec_version().to_string())
+        Ok(RpcVersion::RPC_VERSION_0_7_1.to_string())
     }
 
     fn block_number(&self) -> RpcResult<u64> {
