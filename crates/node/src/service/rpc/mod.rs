@@ -39,18 +39,11 @@ impl RpcService {
             });
         }
 
-        let (rpcs, node_operator) = match (config.rpc_methods, config.rpc_external) {
-            (RpcMethods::Safe, _) => (true, false),
-            (RpcMethods::Unsafe, _) => (true, true),
-            (RpcMethods::Auto, false) => (true, true),
-            (RpcMethods::Auto, true) => {
-                tracing::warn!(
-                    "Option `--rpc-external` will hide node operator endpoints. To enable them, please pass \
-                     `--rpc-methods unsafe`."
-                );
-                (true, false)
-            }
+        let (rpcs, node_operator) = match config.rpc_methods {
+            RpcMethods::Safe => (true, false),
+            RpcMethods::Auto | RpcMethods::Unsafe => (true, true),
         };
+
         let (read, write, trace, admin, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;

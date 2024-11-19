@@ -9,16 +9,19 @@ use jsonrpsee::server::BatchRequestConfig;
 #[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum RpcMethods {
-    /// Expose every RPC method only when RPC is listening on `localhost`,
-    /// otherwise serve only user RPC methods.
+    /// Rpc endpoints are automatically scoped based on how permissive they are:
+    /// user and admin RPC methods are exposed on `localhost` by default. If RPC
+    /// is set to external, only user methods will be exposed on `0.0.0.0` and
+    /// admin methods will remain exposed on `localhost`.
     Auto,
-    /// Allow only user rpc methods. Admin RPC methods will not be exposed:
-    /// this is whether RPC is listening on `localhost` or not.
+    /// Disables the amin RPC endpoint entirely and only exposes user methods,
+    /// regardless of if RPC is set to external.
     Safe,
-    /// Allow every RPC method. This includes exposing admin RPC methods on
-    /// 0.0.0.0! Be EXTREMELY careful when using this option: you should at
-    /// all costs set up a firewall to secure access to admin RPC methods,
-    /// otherwise you are compromising your node!
+    /// Allows exposing admin methods on `0.0.0.0` when RPC is set to external.
+    /// Be EXTREMELY careful when using this option as it means anyone can
+    /// operate your node at a distance: you should at all costs set up a
+    /// firewall to secure access to admin RPC methods, otherwise you are
+    /// compromising your node!
     Unsafe,
 }
 
@@ -76,9 +79,10 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
     pub rpc_disabled: bool,
 
-    /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
-    /// Please note that some endpoints should not be exposed to the outside world - by default, enabling remote access
-    /// will disable these endpoints. To re-enable them, use `--rpc-methods unsafe`
+    /// Listen to all network interfaces. This usually means that the RPC server
+    /// will be accessible externally. Please note that by default admin rpc
+    /// methods will still be exposed on `localhost`. To expose them externaly,
+    /// use `--rpc-methods unsafe`.
     #[arg(env = "MADARA_RPC_EXTERNAL", long)]
     pub rpc_external: bool,
 
@@ -186,7 +190,7 @@ impl RpcParams {
     }
 
     pub fn addr_admin(&self) -> SocketAddr {
-        let listen_addr = if self.rpc_external {
+        let listen_addr = if self.rpc_external && self.rpc_methods == RpcMethods::Unsafe {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
             Ipv4Addr::LOCALHOST
