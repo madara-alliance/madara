@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(rpc): added `getCompiledCasm` method
 - fix(error): Added a comment for non archive node L1 keys
 - feat(confg): added chain config template and fgw example
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
