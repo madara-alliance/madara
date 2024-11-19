@@ -4,8 +4,7 @@ mod block_tests {
     use super::super::common::*;
     use crate::db_block_id::DbBlockIdResolvable;
     use crate::{block_db::TxIndex, db_block_id::DbBlockId};
-    use mp_block::BlockId;
-    use mp_block::Header;
+    use mp_block::{BlockId, Header};
     use mp_chain_config::ChainConfig;
     use starknet_api::felt;
 

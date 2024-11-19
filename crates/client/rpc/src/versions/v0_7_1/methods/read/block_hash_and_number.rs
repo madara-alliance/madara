@@ -34,7 +34,7 @@ mod tests {
     };
     use mp_state_update::StateDiff;
     use rstest::rstest;
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     #[rstest]
     fn test_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {

@@ -1,15 +1,13 @@
-use std::sync::Arc;
-
-use mp_transactions::BroadcastedTransactionExt;
-use starknet_core::types::{BlockId, BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
-
-use mc_exec::ExecutionContext;
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::ResultExt;
 use crate::versions::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
+use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use mp_transactions::BroadcastedTransactionExt;
+use starknet_core::types::{BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
+use std::sync::Arc;
 
 /// Estimate the fee associated with transaction
 ///

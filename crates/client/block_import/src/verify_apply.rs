@@ -4,13 +4,14 @@ use crate::{
 };
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mp_block::BlockTag;
 use mp_block::{
-    header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+    header::PendingHeader, BlockId, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
 use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 use std::{borrow::Cow, sync::Arc};
 

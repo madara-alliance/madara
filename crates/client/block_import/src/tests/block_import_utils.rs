@@ -2,7 +2,7 @@ use mp_block::header::{GasPrices, L1DataAvailabilityMode};
 use mp_block::Header;
 use mp_chain_config::StarknetVersion;
 use mp_state_update::StateDiff;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{
     BlockValidationContext, PreValidatedBlock, PreValidatedPendingBlock, UnverifiedCommitments, UnverifiedFullBlock,

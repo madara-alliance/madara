@@ -58,7 +58,7 @@ pub fn state_diff_to_state_map(diff: StateDiff) -> Result<StateMaps, StateDiffTo
     Ok(StateMaps { nonces, class_hashes, storage, declared_contracts, compiled_class_hashes })
 }
 
-fn state_map_to_state_diff(
+pub(crate) fn state_map_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     diff: StateMaps,

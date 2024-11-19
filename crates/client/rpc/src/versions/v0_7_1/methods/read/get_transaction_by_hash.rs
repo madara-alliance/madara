@@ -1,4 +1,5 @@
-use starknet_core::types::{Felt, Transaction};
+use starknet_core::types::Transaction;
+use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};

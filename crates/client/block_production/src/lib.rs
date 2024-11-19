@@ -519,3 +519,146 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.executor.block_context.block_info().block_number.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
+    use mc_db::MadaraBackend;
+    use mp_chain_config::ChainConfig;
+    use mp_convert::ToFelt;
+    use mp_state_update::{
+        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry,
+    };
+    use starknet_api::{
+        class_hash, contract_address,
+        core::{ClassHash, ContractAddress, PatriciaKey},
+        felt, patricia_key,
+    };
+    use starknet_types_core::felt::Felt;
+
+    use crate::finalize_execution_state::state_map_to_state_diff;
+
+    #[test]
+    fn test_state_map_to_state_diff() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let mut nonces = HashMap::new();
+        nonces.insert(contract_address!(1u32), nonce!(1));
+        nonces.insert(contract_address!(2u32), nonce!(2));
+        nonces.insert(contract_address!(3u32), nonce!(3));
+
+        let mut class_hashes = HashMap::new();
+        class_hashes.insert(contract_address!(1u32), class_hash!("0xc1a551"));
+        class_hashes.insert(contract_address!(2u32), class_hash!("0xc1a552"));
+        class_hashes.insert(contract_address!(3u32), class_hash!("0xc1a553"));
+
+        let mut storage = HashMap::new();
+        storage.insert((contract_address!(1u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(1u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(1u32), storage_key!(3u32)), felt!(3u32));
+
+        storage.insert((contract_address!(2u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(2u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(2u32), storage_key!(3u32)), felt!(3u32));
+
+        storage.insert((contract_address!(3u32), storage_key!(1u32)), felt!(1u32));
+        storage.insert((contract_address!(3u32), storage_key!(2u32)), felt!(2u32));
+        storage.insert((contract_address!(3u32), storage_key!(3u32)), felt!(3u32));
+
+        let mut compiled_class_hashes = HashMap::new();
+        // "0xc1a553" is marked as deprecated by not having a compiled
+        // class hashe
+        compiled_class_hashes.insert(class_hash!("0xc1a551"), compiled_class_hash!(0x1));
+        compiled_class_hashes.insert(class_hash!("0xc1a552"), compiled_class_hash!(0x2));
+
+        let mut declared_contracts = HashMap::new();
+        declared_contracts.insert(class_hash!("0xc1a551"), true);
+        declared_contracts.insert(class_hash!("0xc1a552"), true);
+        declared_contracts.insert(class_hash!("0xc1a553"), true);
+
+        let state_map = StateMaps { nonces, class_hashes, storage, compiled_class_hashes, declared_contracts };
+
+        let storage_diffs = vec![
+            ContractStorageDiffItem {
+                address: felt!(1u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+            ContractStorageDiffItem {
+                address: felt!(2u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+            ContractStorageDiffItem {
+                address: felt!(3u32),
+                storage_entries: vec![
+                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
+                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
+                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                ],
+            },
+        ];
+
+        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+
+        let declared_classes = vec![
+            DeclaredClassItem {
+                class_hash: class_hash!("0xc1a551").to_felt(),
+                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
+            },
+            DeclaredClassItem {
+                class_hash: class_hash!("0xc1a552").to_felt(),
+                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
+            },
+        ];
+
+        let nonces = vec![
+            NonceUpdate { contract_address: felt!(1u32), nonce: felt!(1u32) },
+            NonceUpdate { contract_address: felt!(2u32), nonce: felt!(2u32) },
+            NonceUpdate { contract_address: felt!(3u32), nonce: felt!(3u32) },
+        ];
+
+        let deployed_contracts = vec![
+            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
+            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
+            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+        ];
+
+        let replaced_classes = vec![];
+
+        let expected = StateDiff {
+            storage_diffs,
+            deprecated_declared_classes,
+            declared_classes,
+            nonces,
+            deployed_contracts,
+            replaced_classes,
+        };
+
+        let mut actual = state_map_to_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
+
+        actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+        actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));
+        actual.deprecated_declared_classes.sort();
+        actual.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+        actual.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+        actual.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
+        actual.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+
+        assert_eq!(
+            actual,
+            expected,
+            "actual: {}\nexpected: {}",
+            serde_json::to_string_pretty(&actual).unwrap_or_default(),
+            serde_json::to_string_pretty(&expected).unwrap_or_default()
+        );
+    }
+}

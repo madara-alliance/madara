@@ -23,16 +23,14 @@ type HttpsClient = Client<HttpsConnector<HttpConnector>, String>;
 type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
 pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
 #[derive(Debug, Clone)]
-pub struct FeederClient {
+pub struct GatewayProvider {
     pub(crate) client: PausedClient,
-    #[allow(dead_code)]
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
     pub(crate) headers: HeaderMap,
-    pause_until: Arc<RwLock<Option<Instant>>>, // Locker for global pause in rate-limiting
 }
 
-impl FeederClient {
+impl GatewayProvider {
     pub fn new(gateway_url: Url, feeder_gateway_url: Url) -> Self {
         let pause_until = Arc::new(RwLock::new(None));
         let connector = HttpsConnector::new();
@@ -43,7 +41,7 @@ impl FeederClient {
         let retry_layer = Retry::new(retry_policy, timeout_layer);
         let client = PauseLayerMiddleware::new(retry_layer, Arc::clone(&pause_until));
 
-        Self { client, gateway_url, feeder_gateway_url, headers: HeaderMap::new(), pause_until }
+        Self { client, gateway_url, feeder_gateway_url, headers: HeaderMap::new() }
     }
 
     pub fn new_with_headers(gateway_url: Url, feeder_gateway_url: Url, headers: &[(HeaderName, HeaderValue)]) -> Self {
@@ -78,35 +76,14 @@ impl FeederClient {
                 .expect("Failed to parse Starknet Alpha Sepolia feeder gateway url. This should not fail in prod."),
         )
     }
-
-    pub async fn request_with_pause_handling<F, R>(&self, f: F) -> Result<R, Box<dyn Error + Send + Sync>>
-    where
-        F: FnOnce() -> R,
-    {
-        let pause_until = self.pause_until.clone();
-
-        // Check if a pause is active
-        let pause_duration = {
-            let lock = pause_until.read().await;
-            if let Some(pause_instant) = *lock {
-                let now = Instant::now();
-                if pause_instant > now {
-                    Some(pause_instant - now)
-                } else {
-                    *pause_until.write().await = None;
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        // Wait for the pause duration if needed
-        if let Some(duration) = pause_duration {
-            tokio::time::sleep(duration).await;
-        }
-
-        Ok(f())
+    pub fn starknet_integration_sepolia() -> Self {
+        Self::new(
+            Url::parse("https://integration-sepolia.starknet.io/gateway/")
+                .expect("Failed to parse Starknet Integration Sepolia gateway url. This should not fail in prod."),
+            Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").expect(
+                "Failed to parse Starknet Integration Sepolia feeder gateway url. This should not fail in prod.",
+            ),
+        )
     }
 }
 
@@ -126,6 +103,7 @@ impl RetryPolicy {
 impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
+    #[tracing::instrument(skip(self, result), fields(module = "RetryPolicy"))]
     fn retry(
         &self,
         _: &Request<String>,
@@ -141,11 +119,10 @@ impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + S
                     let next_policy = self.clone();
                     let fut = async move {
                         if (*pause_until.read().await).is_none() {
-                            log::info!("The fetching process has been rate limited, retrying");
+                            tracing::info!(retry_after = ?retry_after, "⏳ Rate limited, retrying");
                         }
 
-                        let mut pause_lock = pause_until.write().await;
-                        *pause_lock = Some(Instant::now() + retry_after);
+                        *pause_until.write().await = Some(Instant::now() + retry_after);
 
                         // wait for the retry_after duration
                         tokio::time::sleep(retry_after).await;
@@ -228,12 +205,13 @@ where
         async move {
             // Check if a pause is active
             let pause_duration = {
-                let lock = pause_until.read().await;
-                if let Some(pause_instant) = *lock {
+                let maybe_pause_instant = *pause_until.read().await;
+                if let Some(pause_instant) = maybe_pause_instant {
                     let now = Instant::now();
                     if pause_instant > now {
                         Some(pause_instant - now)
                     } else {
+                        *pause_until.write().await = None;
                         None
                     }
                 } else {

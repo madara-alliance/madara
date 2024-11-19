@@ -60,7 +60,9 @@ pub async fn sync(
         .to_block(BlockNumberOrTag::Finalized)
         .watch()
         .await
-        .context("Failed to watch event filter")?
+        .context(
+            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+        )?
         .into_stream();
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {

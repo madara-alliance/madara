@@ -5,9 +5,9 @@ mod rpc;
 
 use anyhow::bail;
 use rstest::rstest;
-use starknet::accounts::{Account, Call, ExecutionEncoding, SingleOwnerAccount};
+use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::signers::{LocalWallet, SigningKey};
-use starknet_core::types::{BlockId, BlockTag, Felt};
+use starknet_core::types::{BlockId, BlockTag, Call, Felt};
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::Provider;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
@@ -219,7 +219,8 @@ impl MadaraCmdBuilder {
 
 #[rstest]
 fn madara_help_shows() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
     let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -229,9 +230,10 @@ fn madara_help_shows() {
 #[rstest]
 #[tokio::test]
 async fn madara_can_sync_a_few_blocks() {
-    use starknet_core::types::{BlockHashAndNumber, Felt};
+    use starknet_core::types::BlockHashAndNumber;
+    use starknet_types_core::felt::Felt;
 
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--full",
@@ -273,7 +275,7 @@ const ACCOUNT_ADDRESS: Felt =
 #[rstest]
 #[tokio::test]
 async fn madara_devnet_add_transaction() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     let args = &[
         "--devnet",
@@ -321,7 +323,7 @@ async fn madara_devnet_add_transaction() {
 #[rstest]
 #[tokio::test]
 async fn madara_devnet_mempool_saving() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--devnet",
@@ -387,7 +389,7 @@ async fn madara_devnet_mempool_saving() {
 #[rstest]
 #[tokio::test]
 async fn madara_devnet_continue_pending() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--devnet",

@@ -2,19 +2,15 @@ use anyhow::Context;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::DeployAccountTransaction;
-use blockifier::transaction::transactions::InvokeTransaction;
-use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction as BL1HandlerTransaction};
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction as BL1HandlerTransaction,
+};
 use header::make_pending_header;
-use inner::MempoolInner;
 use mc_db::db_block_id::DbBlockId;
-use mc_db::MadaraBackend;
-use mc_db::MadaraStorageError;
+use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::ExecutionContext;
 use metrics::MempoolMetrics;
-use mp_block::BlockId;
-use mp_block::BlockTag;
-use mp_block::MadaraPendingBlockInfo;
+use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_transactions::BroadcastedDeclareTransactionV0;
@@ -24,22 +20,16 @@ use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::BroadcastedDeclareTransaction;
-use starknet_core::types::BroadcastedDeployAccountTransaction;
-use starknet_core::types::BroadcastedInvokeTransaction;
-use starknet_core::types::BroadcastedTransaction;
-use starknet_core::types::DeclareTransactionResult;
-use starknet_core::types::DeployAccountTransactionResult;
-use starknet_core::types::InvokeTransactionResult;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+};
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use tx::blockifier_to_saved_tx;
 use tx::saved_to_blockifier_tx;
 
-pub use inner::TxInsersionError;
-pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
@@ -128,7 +118,7 @@ impl Mempool {
             if let Err(err) = self.accept_tx(tx, converted_class, arrived_at) {
                 match err {
                     Error::InnerMempool(TxInsersionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
-                    err => log::warn!("Could not re-add mempool transaction from db: {err:#}"),
+                    err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
                 }
             }
         }
@@ -406,9 +396,7 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 
 #[cfg(test)]
 mod test {
-    use crate::{inner::MempoolLimits, ArrivedAtTimestamp, Mempool, MockL1DataProvider};
-    use starknet_core::types::Felt;
-    use std::sync::Arc;
+    use super::*;
 
     #[rstest::fixture]
     fn backend() -> Arc<mc_db::MadaraBackend> {

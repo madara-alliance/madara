@@ -32,6 +32,10 @@ starknet-types-core.workspace = true
 
 # Other
 anyhow.workspace = true
+http.workspace = true
+hyper.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_with.workspace = true
+thiserror.workspace = true
+url.workspace = true

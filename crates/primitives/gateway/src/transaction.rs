@@ -1,4 +1,4 @@
-use mp_convert::{felt_to_u64, hex_serde::U64AsHex};
+use mp_convert::hex_serde::U64AsHex;
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -259,7 +259,7 @@ impl From<L1HandlerTransaction> for mp_transactions::L1HandlerTransaction {
     fn from(tx: L1HandlerTransaction) -> Self {
         Self {
             version: tx.version,
-            nonce: felt_to_u64(&tx.nonce).unwrap_or_default(),
+            nonce: tx.nonce.try_into().unwrap_or_default(),
             contract_address: tx.contract_address,
             entry_point_selector: tx.entry_point_selector,
             calldata: tx.calldata,

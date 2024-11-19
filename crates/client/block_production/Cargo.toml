@@ -22,7 +22,6 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
 bitvec.workspace = true
-env_logger.workspace = true
 blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
@@ -57,12 +56,11 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
-log.workspace = true
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 
-#Instrumentation
+# Instrumentation
 once_cell = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }

@@ -11,7 +11,7 @@ use mp_transactions::Transaction;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator};
 use rayon::prelude::*;
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::mem;
 use std::sync::Arc;

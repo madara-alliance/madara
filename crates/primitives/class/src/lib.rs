@@ -68,6 +68,13 @@ impl ClassInfo {
             ClassInfo::Legacy(legacy) => ContractClass::Legacy(Arc::clone(&legacy.contract_class)),
         }
     }
+
+    pub fn compiled_class_hash(&self) -> Option<Felt> {
+        match self {
+            ClassInfo::Sierra(sierra) => Some(sierra.compiled_class_hash),
+            ClassInfo::Legacy(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

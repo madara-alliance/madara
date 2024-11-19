@@ -1,6 +1,6 @@
 use crypto_bigint::{Encoding, NonZero, U256};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 /// A private key store with zeroing safeguards
 #[derive(serde::Serialize, serde::Deserialize)]

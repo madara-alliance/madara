@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context};
 use serde_yaml::Value;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use std::time::Duration;
 

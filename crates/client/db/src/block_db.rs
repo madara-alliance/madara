@@ -305,7 +305,7 @@ impl MadaraBackend {
         // susbcribers
         if self.sender_block_info.receiver_count() > 0 {
             if let Err(e) = self.sender_block_info.send(block.info.clone()) {
-                log::debug!("Failed to send block info to subscribers: {e}");
+                tracing::debug!("Failed to send block info to subscribers: {e}");
             }
         }
 
