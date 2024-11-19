@@ -25,7 +25,6 @@ starknet_api = { workspace = true }
 
 # Other
 primitive-types = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

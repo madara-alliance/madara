@@ -1,5 +1,4 @@
 use mp_block::H160;
-use mp_convert::felt_to_u64;
 use mp_receipt::{Event, L1Gas, MsgToL1};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -79,7 +78,7 @@ impl ConfirmedReceipt {
             to_address: tx.contract_address,
             selector: tx.entry_point_selector,
             payload: payload.to_vec(),
-            nonce: felt_to_u64(&tx.nonce).unwrap_or_default(),
+            nonce: tx.nonce.try_into().unwrap_or_default(),
         };
         let message_hash = message_to_l2.hash();
 
