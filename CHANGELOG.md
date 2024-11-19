@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(block_production): get l2-to-l1 messages recursively from the call tree
 - refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId
 - feat(fgw): added `add_transaction` for gateway client
 - fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
