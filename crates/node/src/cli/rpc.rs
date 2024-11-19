@@ -9,6 +9,8 @@ use jsonrpsee::server::BatchRequestConfig;
 #[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum RpcEndpoints {
+    /// Disables all rpc endpoints, including `user` and `admin`
+    Off,
     /// Rpc endpoints are automatically scoped based on how permissive they are:
     /// user and admin RPC methods are exposed on `localhost` by default. If RPC
     /// is set to external, only user methods will be exposed on `0.0.0.0` and
@@ -75,10 +77,6 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Disable the RPC server.
-    #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
-    pub rpc_disabled: bool,
-
     /// Listen to all network interfaces. This usually means that the RPC server
     /// will be accessible externally. Please note that by default admin rpc
     /// methods will still be exposed on `localhost`. To expose them externaly,
@@ -93,7 +91,7 @@ pub struct RpcParams {
 		value_name = "METHOD",
 		value_enum,
 		ignore_case = true,
-		default_value_t = RpcEndpoints::Auto,
+		default_value_t = RpcEndpoints::Off,
 		verbatim_doc_comment
 	)]
     pub rpc_endpoints: RpcEndpoints,

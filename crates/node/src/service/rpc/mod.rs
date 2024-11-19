@@ -30,37 +30,38 @@ impl RpcService {
         db: &DatabaseService,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
-        if config.rpc_disabled {
-            return Ok(Self {
-                server_config_user: None,
-                server_config_admin: None,
-                server_handle_user: None,
-                server_handle_admin: None,
-            });
-        }
+        let (user, admin) = match config.rpc_endpoints {
+            RpcEndpoints::Off => (false, false),
+            RpcEndpoints::Safe => (true, false),
+            RpcEndpoints::Auto | RpcEndpoints::Unsafe => (true, true),
+        };
 
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;
 
-        let api_rpc_user = rpc_api_user(&starknet)?;
-        let methods_user = rpc_api_build("rpc", api_rpc_user).into();
+        let server_config_user = if user {
+            let api_rpc_user = rpc_api_user(&starknet)?;
+            let methods_user = rpc_api_build("rpc", api_rpc_user).into();
 
-        let server_config_user = Some(ServerConfig {
-            name: "JSON-RPC".to_string(),
-            addr: config.addr_user(),
-            batch_config: config.batch_config(),
-            max_connections: config.rpc_max_connections,
-            max_payload_in_mb: config.rpc_max_request_size,
-            max_payload_out_mb: config.rpc_max_response_size,
-            max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
-            message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-            methods: methods_user,
-            metrics: metrics.clone(),
-            cors: config.cors(),
-            rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
-        });
+            Some(ServerConfig {
+                name: "JSON-RPC".to_string(),
+                addr: config.addr_user(),
+                batch_config: config.batch_config(),
+                max_connections: config.rpc_max_connections,
+                max_payload_in_mb: config.rpc_max_request_size,
+                max_payload_out_mb: config.rpc_max_response_size,
+                max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
+                message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
+                methods: methods_user,
+                metrics: metrics.clone(),
+                cors: config.cors(),
+                rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
+            })
+        } else {
+            None
+        };
 
-        let server_config_admin = if config.rpc_endpoints != RpcEndpoints::Safe {
+        let server_config_admin = if admin {
             let api_rpc_admin = rpc_api_admin(&starknet)?;
             let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
 
