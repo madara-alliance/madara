@@ -28,7 +28,7 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlockInfo, MadaraPendingBlock, VisitedSegments};
 use mp_class::compile::ClassCompilationError;
 use mp_class::{ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 use mp_convert::ToFelt;
@@ -48,8 +48,6 @@ use std::time::Instant;
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
-
-pub type VisitedSegments = Vec<(Felt, Vec<usize>)>;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -105,10 +103,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
-    // #[tracing::instrument(
-    //     skip(backend, importer, mempool, l1_data_provider, metrics),
-    //     fields(module = "BlockProductionTask")
-    // )]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,

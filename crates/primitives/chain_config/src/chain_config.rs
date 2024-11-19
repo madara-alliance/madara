@@ -133,7 +133,7 @@ pub struct ChainConfig {
 
     /// Transaction limit in the mempool.
     pub mempool_tx_limit: usize,
-    /// Transaction limit in the mempool, we have an additionnal limit for declare transactions.
+    /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_declare_tx_limit: usize,
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_duration")]

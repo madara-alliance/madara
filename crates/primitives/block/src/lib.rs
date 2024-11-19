@@ -341,6 +341,15 @@ impl From<MadaraBlock> for MadaraMaybePendingBlock {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegments(pub Vec<VisitedSegmentEntry>);
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegmentEntry {
+    pub class_hash: Felt,
+    pub segments: Vec<usize>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

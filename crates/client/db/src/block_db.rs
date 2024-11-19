@@ -6,7 +6,7 @@ use blockifier::bouncer::BouncerWeights;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
-    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
+    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments,
 };
 use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
@@ -29,8 +29,6 @@ const ROW_PENDING_BOUNCER_WEIGHTS: &[u8] = b"pending_bouncer_weights";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
-
-pub type VisitedSegments = Vec<(Felt, Vec<usize>)>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
@@ -230,7 +228,7 @@ impl MadaraBackend {
         &self,
         block: &MadaraPendingBlock,
         state_update: &StateDiff,
-        visited_segments: Option<Vec<(Felt, Vec<usize>)>>,
+        visited_segments: Option<VisitedSegments>,
         bouncer_weights: Option<BouncerWeights>,
     ) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();

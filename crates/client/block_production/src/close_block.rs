@@ -1,12 +1,10 @@
 use mc_block_import::{
     BlockImportError, BlockImportResult, BlockImporter, BlockValidationContext, UnverifiedFullBlock, UnverifiedHeader,
 };
-use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo};
+use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments};
 use mp_class::ConvertedClass;
 use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
-
-use crate::VisitedSegments;
 
 /// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
 #[tracing::instrument(skip(importer, state_diff, declared_classes), fields(module = "BlockProductionTask"))]

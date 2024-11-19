@@ -72,7 +72,7 @@ sequencer_address: "0x0"
 
 # Transaction limit in the mempool.
 mempool_tx_limit: 10000
-# Transaction limit in the mempool, additionnal limit for declare transactions.
+# Transaction limit in the mempool, additional limit for declare transactions.
 mempool_declare_tx_limit: 20
 # Max age of a transaction in the mempool.
 mempool_tx_max_age: "5h"
