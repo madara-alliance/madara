@@ -196,7 +196,6 @@ mod tests {
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
-    use mp_convert::felt_to_u128;
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
@@ -577,7 +576,7 @@ mod tests {
             false => {
                 assert_eq!(&receipt.execution_result, &ExecutionResult::Succeeded);
 
-                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),
@@ -592,7 +591,7 @@ mod tests {
                 let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
                 assert!(reason.contains("ERC20: insufficient balance"));
 
-                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),

@@ -18,12 +18,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 # Starknet
 starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 
 # Other
 serde = { workspace = true, features = ["derive"] }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }
