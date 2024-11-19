@@ -479,7 +479,7 @@ impl From<starknet_api::transaction::ResourceBounds> for ResourceBounds {
 }
 
 fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError> {
-    let fee = fee.to_owned().try_into().map_err(|_| TransactionApiError::MaxFee)?;
+    let fee = (*fee).try_into().map_err(|_| TransactionApiError::MaxFee)?;
     Ok(starknet_api::transaction::Fee(fee))
 }
 

@@ -133,15 +133,9 @@ fn parse_sierra_version(program: &[Felt]) -> Result<SierraVersion, ClassCompilat
         [first, ..] if first == &VERSION_0_1_0_AS_SHORTSTRING => Ok(SierraVersion(0, 1, 0)),
         [a, b, c, ..] => {
             let (a, b, c) = (
-                a.to_owned()
-                    .try_into()
-                    .map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                b.to_owned()
-                    .try_into()
-                    .map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                c.to_owned()
-                    .try_into()
-                    .map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
+                (*a).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
+                (*b).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
+                (*c).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
             );
             Ok(SierraVersion(a, b, c))
         }
