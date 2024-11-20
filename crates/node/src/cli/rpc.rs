@@ -56,7 +56,7 @@ impl FromStr for Cors {
 pub struct RpcParams {
     /// Disables the user rpc endpoint. This includes all methods which are part
     /// of the official starknet specs.
-    #[arg(env = "MADARA_RPC_ENABLE", long, default_value_t = false)]
+    #[arg(env = "MADARA_RPC_DISABLE", long, default_value_t = false)]
     pub rpc_disable: bool,
 
     /// Exposes the user rpc endpoint on port `0.0.0.0`. This generally means
