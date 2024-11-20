@@ -6,7 +6,7 @@ use jsonrpsee::server::BatchRequestConfig;
 
 /// The default port.
 pub const RPC_DEFAULT_PORT: u16 = 9944;
-/// Default port for sensitive rpc methods
+/// Default port for sensitive RPC methods
 pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -54,27 +54,27 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Disables the user rpc endpoint. This includes all methods which are part
+    /// Disables the user RPC endpoint. This includes all methods which are part
     /// of the official starknet specs.
-    #[arg(env = "MADARA_RPC_ENABLE", long, default_value_t = false)]
+    #[arg(env = "MADARA_RPC_DISABLE", long, default_value_t = false)]
     pub rpc_disable: bool,
 
-    /// Exposes the user rpc endpoint on port `0.0.0.0`. This generally means
-    /// that rpc methods will be accessible from the outside world.
+    /// Exposes the user RPC endpoint on address 0.0.0.0. This generally means
+    /// that RPC methods will be accessible from the outside world.
     #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
     pub rpc_external: bool,
 
-    /// Enables the admin rpc endpoint. This includes additional rpc methods
+    /// Enables the admin RPC endpoint. This includes additional RPC methods
     /// which are not part of the official specs and can be used by node admins
-    /// to control their node at a distance. By default, this is exposed to
-    /// `localhost`.
-    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
+    /// to control their node at a distance. By default, this is exposed on
+    /// localhost.
+    #[arg(env = "MADARA_RPC_ADMIN", long, default_value_t = false)]
     pub rpc_admin: bool,
 
-    /// Exposes the admin rpc endpoint on port `0.0.0.0`. This is especially
+    /// Exposes the admin RPC endpoint on address 0.0.0.0. This is especially
     /// useful when running Madara from inside a docker container. Be very
     /// careful however when exposing this endpoint to the outside world.
-    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
+    #[arg(env = "MADARA_RPC_ADMIN_EXTERNAL", long, default_value_t = false)]
     pub rpc_admin_external: bool,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
@@ -93,8 +93,8 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_PORT", long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
     pub rpc_port: u16,
 
-    /// The RPC port to listen at for admin rpc calls.
-    #[arg(env = "MADARA_RPC_PORT_ADMIN", long, value_name = "ENGINE PORT", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
+    /// The RPC port to listen at for admin RPC calls.
+    #[arg(env = "MADARA_RPC_PORT_ADMIN", long, value_name = "ADMIN PORT", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
     pub rpc_port_admin: u16,
 
     /// Maximum number of RPC server connections at a given time.

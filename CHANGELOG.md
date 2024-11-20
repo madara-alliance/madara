@@ -3,8 +3,8 @@
 ## Next release
 
 - feat(stop): added `stop_node` admin rpc endpoint
-- feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - feat(debug): service cancelling and profiling build
+- feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
 - fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree
