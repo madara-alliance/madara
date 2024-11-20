@@ -1,7 +1,5 @@
 //! Madara database
 
-use alloy::primitives::private::alloy_rlp::MaxEncodedLenAssoc;
-use alloy::primitives::TxHash;
 use anyhow::{Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
