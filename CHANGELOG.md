@@ -3,6 +3,23 @@
 ## Next release
 
 - feat: possibility of starting madara & kakarot-rpc in docker
+- fix(db): fix number of files in db, startup hang, ram issues and flushing issues
+- fix: FeePayment conversion
+- fix(block_production): get l2-to-l1 messages recursively from the call tree
+- refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId
+- feat(fgw): added `add_transaction` for gateway client
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
+- build: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
+- feat(rpc): added `getCompiledCasm` method
+- fix(error): Added a comment for non archive node L1 keys
+- feat(confg): added chain config template and fgw example
+- feat(v0.8.0-rc0): starknet_subscribeNewHeads
+- fix(rocksdb): update max open files opt
+- code: refactor to use otel tracing instead of prometheus (removed mc-metrics, added mc-analytics)
+- fix(version constants): 0.13.2 was mapped to wrong constants
+- fix(compilation): devnet contract artifacts are not compiled by `cargo build` anymore
+- feat: add fgw get_block_traces
+- refactor: use `hyper` & `tower` instead of `reqwest` for feeder client
 - fix(namespace): versioning now works for methods without `starknet` namesapce
 - fix(compile): wrong struct field being used in state map conversion
 - fix: contract 0 state diff fixed

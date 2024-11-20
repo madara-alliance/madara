@@ -1,11 +1,12 @@
 use crate::l2::L2SyncConfig;
 use anyhow::Context;
 use fetch::fetchers::FetchConfig;
+use hyper::header::{HeaderName, HeaderValue};
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
-use mc_gateway::client::builder::FeederClient;
+use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
-use reqwest::header::{HeaderName, HeaderValue};
+use mp_block::{BlockId, BlockTag};
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;
@@ -16,6 +17,7 @@ pub mod tests;
 pub mod utils;
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(backend, block_importer, fetch_config, telemetry))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
     block_importer: Arc<BlockImporter>,
@@ -26,12 +28,12 @@ pub async fn sync(
     pending_block_poll_interval: Duration,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
-        log::warn!("Forcing unordered state. This will most probably break your database.");
+        tracing::warn!("Forcing unordered state. This will most probably break your database.");
         (starting_block, true)
     } else {
         (
             backend
-                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                .get_block_n(&BlockId::Tag(BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
                 .unwrap_or_default() as _, // or genesis
@@ -39,9 +41,9 @@ pub async fn sync(
         )
     };
 
-    log::info!("⛓️  Starting L2 sync from block {}", starting_block);
+    tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-    let mut provider = FeederClient::new(fetch_config.gateway, fetch_config.feeder_gateway);
+    let mut provider = GatewayProvider::new(fetch_config.gateway, fetch_config.feeder_gateway);
     if let Some(api_key) = fetch_config.api_key {
         provider.add_header(
             HeaderName::from_static("x-throttling-bypass"),

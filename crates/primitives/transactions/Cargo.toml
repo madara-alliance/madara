@@ -27,17 +27,17 @@ cairo-lang-starknet-classes = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 starknet-core = { workspace = true }
-starknet-providers = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
 anyhow = { workspace = true }
-log = { workspace = true }
+
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 
 [dev-dependencies]

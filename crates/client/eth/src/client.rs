@@ -8,9 +8,12 @@ use alloy::{
     sol,
     transports::http::{Client, Http},
 };
+use mc_analytics::register_gauge_metric_instrument;
+use opentelemetry::{global, KeyValue};
+use opentelemetry::{global::Error, metrics::Gauge};
+
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
-use mc_metrics::{Gauge, MetricsRegistry, PrometheusError, F64};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -18,22 +21,44 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
     // L1 network metrics
-    pub l1_block_number: Gauge<F64>,
+    pub l1_block_number: Gauge<u64>,
     // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
-    pub l1_gas_price_wei: Gauge<F64>,
-    pub l1_gas_price_strk: Gauge<F64>,
+    pub l1_gas_price_wei: Gauge<u64>,
+    pub l1_gas_price_strk: Gauge<f64>,
 }
 
 impl L1BlockMetrics {
-    pub fn register(registry: &MetricsRegistry) -> Result<Self, PrometheusError> {
-        Ok(Self {
-            l1_block_number: registry
-                .register(Gauge::new("madara_l1_block_number", "Gauge for madara L1 block number")?)?,
+    pub fn register() -> Result<Self, Error> {
+        let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
+        let eth_meter = global::meter_with_version(
+            "crates.l1block.opentelemetry",
+            Some("0.17"),
+            Some("https://opentelemetry.io/schemas/1.2.0"),
+            Some(common_scope_attributes.clone()),
+        );
 
-            l1_gas_price_wei: registry.register(Gauge::new("madara_l1_gas_price", "Gauge for madara L1 gas price")?)?,
-            l1_gas_price_strk: registry
-                .register(Gauge::new("madara_l1_gas_price_strk", "Gauge for madara L1 gas price in strk")?)?,
-        })
+        let l1_block_number = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_block_number".to_string(),
+            "Gauge for madara L1 block number".to_string(),
+            "".to_string(),
+        );
+
+        let l1_gas_price_wei = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_gas_price_wei".to_string(),
+            "Gauge for madara L1 gas price in wei".to_string(),
+            "".to_string(),
+        );
+
+        let l1_gas_price_strk = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_gas_price_strk".to_string(),
+            "Gauge for madara L1 gas price in strk".to_string(),
+            "".to_string(),
+        );
+
+        Ok(Self { l1_block_number, l1_gas_price_wei, l1_gas_price_strk })
     }
 }
 
@@ -141,7 +166,7 @@ pub mod eth_client_getter_test {
         node_bindings::{Anvil, AnvilInstance},
         primitives::U256,
     };
-    use mc_metrics::MetricsService;
+
     use serial_test::serial;
     use std::ops::Range;
     use std::sync::Mutex;
@@ -204,8 +229,7 @@ pub mod eth_client_getter_test {
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
 
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
@@ -220,8 +244,7 @@ pub mod eth_client_getter_test {
         let rpc_url: Url = anvil.endpoint_url();
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");

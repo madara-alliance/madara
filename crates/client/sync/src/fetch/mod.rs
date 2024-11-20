@@ -4,10 +4,8 @@ use std::time::Duration;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mc_gateway::{
-    client::builder::FeederClient,
-    error::{SequencerError, StarknetError, StarknetErrorCode},
-};
+use mc_gateway_client::GatewayProvider;
+use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
 
@@ -21,7 +19,7 @@ pub async fn l2_fetch_task(
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
-    provider: Arc<FeederClient>,
+    provider: Arc<GatewayProvider>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
 ) -> anyhow::Result<()> {
@@ -45,7 +43,7 @@ pub async fn l2_fetch_task(
                     code: StarknetErrorCode::BlockNotFound,
                     ..
                 }))) => {
-                    log::info!("🥳 The sync process has caught up with the tip of the chain");
+                    tracing::info!("🥳 The sync process has caught up with the tip of the chain");
                     break;
                 }
                 val => {
@@ -123,7 +121,7 @@ mod test_l2_fetch_task {
             ctx.mock_block(block_number);
         }
 
-        ctx.mock_class_hash("../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+        ctx.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
         ctx.mock_signature();
 
         let polling_interval = Duration::from_millis(100);

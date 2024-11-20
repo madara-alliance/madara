@@ -5,9 +5,10 @@ members = [
   "crates/client/sync",
   "crates/client/eth",
   "crates/client/rpc",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
+  "crates/client/analytics",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
@@ -23,20 +24,23 @@ members = [
   "crates/primitives/utils",
   "crates/proc-macros",
   "crates/tests",
+  "crates/cairo-test-contracts",
 ]
 resolver = "2"
+# Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
   "crates/client/eth",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
   "crates/client/rpc",
   "crates/client/telemetry",
-  "crates/client/metrics",
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
+  "crates/client/analytics",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -48,7 +52,6 @@ default-members = [
   "crates/primitives/chain_config",
   "crates/primitives/utils",
   "crates/proc-macros",
-  "crates/tests",
 ]
 
 [workspace.lints.rust]
@@ -108,34 +111,39 @@ mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 
 # Madara client
+mc-analytics = { path = "crates/client/analytics" }
 mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-gateway = { path = "crates/client/gateway" }
+mc-gateway-client = { path = "crates/client/gateway/client" }
+mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
-mc-metrics = { path = "crates/client/metrics" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
 
+# Madara misc
+m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
+
 # Starknet dependencies
 cairo-vm = "=1.0.1"
-starknet-core = "0.11"
+starknet-core = "0.12"
 starknet-crypto = "0.7"
-starknet-providers = "0.11"
-starknet-signers = "0.9"
-starknet = "0.11.0"
+starknet-providers = "0.12"
+starknet-signers = "0.10"
+starknet = "0.12.0"
 
-starknet-types-core = { version = "0.1.5", default-features = false, features = [
+starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
+starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.8.0-rc.3"
+blockifier = "=0.8.0"
 starknet_api = "=0.13.0-rc.1"
-cairo-lang-starknet-classes = "=2.7.0"
-cairo-lang-utils = "=2.7.0"
+cairo-lang-starknet-classes = "=2.8.4"
+cairo-lang-utils = "=2.8.4"
 
 alloy = { version = "0.4.0", features = [
   "node-bindings",
@@ -157,19 +165,19 @@ flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
+  "client",
 ] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }
 governor = "0.6"
-hyper = { version = "0.14", features = ["server"] }
+hyper = { version = "1.5.0", features = ["full"] }
+hyper-tls = "0.6"
+hyper-util = "0.1.9"
+http = "1.1.0"
+http-body-util = "0.1.2"
 ip_network = "0.4"
 lazy_static = { version = "1.4", default-features = false }
 once_cell = "1.19"
-log = { version = "0.4", features = [
-  "std",
-  "kv_std",
-  "release_max_level_debug",
-] }
 num-traits = "0.2"
 num-bigint = "0.4"
 primitive-types = "0.12"
@@ -186,14 +194,12 @@ tokio = { version = "1.34", features = ["signal", "rt"] }
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
 bincode = "1.3"
-prometheus = "0.13.4"
 fdlimit = "0.3.0"
 proptest = "1.5.0"
 proptest-derive = "0.5.0"
 dotenv = "0.15.0"
 httpmock = "0.7.0"
 tempfile = "3.10.1"
-env_logger = "0.11.3"
 mockall = "0.13.0"
 serial_test = "3.1.1"
 itertools = "0.13.0"
@@ -201,9 +207,26 @@ regex = "1.10.5"
 bytes = "1.6.0"
 crypto-bigint = "0.5.5"
 
-[patch.crates-io]
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+# Instrumentation
+opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
+opentelemetry-stdout = { version = "0.25.0" }
+opentelemetry-otlp = { version = "0.25.0", features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { version = "0.25.0" }
+opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
+tracing = { version = "0.1.40", default-features = false }
+tracing-core = { version = "0.1.32", default-features = false }
+tracing-subscriber = { version = "0.3.18", features = [
+  "env-filter",
+  "registry",
+  "std",
+] }
+tracing-opentelemetry = "0.26.0"
 
+[patch.crates-io]
 # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
-starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
+starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }

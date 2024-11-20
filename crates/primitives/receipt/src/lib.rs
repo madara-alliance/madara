@@ -1,5 +1,4 @@
 mod from_blockifier;
-mod from_starknet_provider;
 mod into_starknet_core;
 pub use from_blockifier::from_blockifier_execution_info;
 

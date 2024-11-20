@@ -1,13 +1,12 @@
 pub(crate) mod simulate_transactions;
-pub(crate) mod trace_block_transactions;
+pub mod trace_block_transactions;
 pub(crate) mod trace_transaction;
 
 use jsonrpsee::core::{async_trait, RpcResult};
-use starknet_core::types::{
-    BlockId, BroadcastedTransaction, Felt, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash,
-};
-
+use mp_block::BlockId;
 use simulate_transactions::simulate_transactions;
+use starknet_core::types::{BroadcastedTransaction, SimulatedTransaction, SimulationFlag, TransactionTraceWithHash};
+use starknet_types_core::felt::Felt;
 use trace_block_transactions::trace_block_transactions;
 use trace_transaction::trace_transaction;
 

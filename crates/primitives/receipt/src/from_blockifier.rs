@@ -59,6 +59,12 @@ fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Felt, L1Hand
     Ok(Felt::from_bytes_le(message.hash().as_bytes()))
 }
 
+fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
+    res
+        .non_optional_call_infos() // all root callinfos
+        .flat_map(|call_info| call_info.iter()) // flatmap over the roots' recursive inner call infos
+}
+
 pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Transaction) -> TransactionReceipt {
     let price_unit = match blockifier_tx_fee_type(tx) {
         FeeType::Eth => PriceUnit::Wei,
@@ -68,30 +74,40 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
 
-    let mut events: Vec<Event> = Vec::new();
-    get_events_from_call_info(res.execute_call_info.as_ref(), 0, &mut events);
-
     let message_hash = match tx {
         Transaction::L1HandlerTransaction(tx) => match get_l1_handler_message_hash(tx) {
             Ok(hash) => Some(hash),
             Err(err) => {
-                log::error!("Error getting l1 handler message hash: {:?}", err);
+                tracing::error!("Error getting l1 handler message hash: {:?}", err);
                 None
             }
         },
         _ => None,
     };
 
-    let messages_sent = res
-        .non_optional_call_infos()
+    let messages_sent = recursive_call_info_iter(res)
         .flat_map(|call| {
             call.execution.l2_to_l1_messages.iter().map(|message| MsgToL1 {
+                // Note: storage address here to identify the contract. Not caller address nor code address, because of delegate (library) calls.
                 from_address: call.call.storage_address.into(),
                 to_address: message.message.to_address.into(),
                 payload: message.message.payload.0.clone(),
             })
         })
         .collect();
+    let events = recursive_call_info_iter(res)
+        .flat_map(|call| {
+            call.execution.events.iter().map(|event| Event {
+                // See above for why we use storage address.
+                from_address: call.call.storage_address.into(),
+                keys: event.event.keys.iter().map(|k| k.0).collect(),
+                data: event.event.data.0.clone(),
+            })
+        })
+        .collect();
+
+    // Note: these should not be iterated over recursively because they include the inner calls
+    // We only add up the root calls here without recursing into the inner calls.
 
     let get_applications = |resource| {
         res.non_optional_call_infos()
@@ -172,49 +188,9 @@ impl From<GasVector> for L1Gas {
     }
 }
 
-/// To get all the events from the CallInfo including the inner call events.
-fn get_events_from_call_info(call_info: Option<&CallInfo>, next_order: usize, events_vec: &mut Vec<Event>) -> usize {
-    let mut event_idx = 0;
-    let mut inner_call_idx = 0;
-    let mut next_order = next_order;
-
-    let call_info = match call_info {
-        Some(call) => call,
-        None => return 0,
-    };
-
-    loop {
-        if event_idx < call_info.execution.events.len() {
-            let ordered_event = &call_info.execution.events[event_idx];
-            if ordered_event.order == next_order {
-                let event = Event {
-                    from_address: call_info.call.storage_address.into(),
-                    keys: ordered_event.event.keys.iter().map(|k| k.0).collect(),
-                    data: ordered_event.event.data.0.clone(),
-                };
-                events_vec.push(event);
-                next_order += 1;
-                event_idx += 1;
-                continue;
-            }
-        }
-
-        if inner_call_idx < call_info.inner_calls.len() {
-            next_order =
-                get_events_from_call_info(Some(&call_info.inner_calls[inner_call_idx]), next_order, events_vec);
-            inner_call_idx += 1;
-            continue;
-        }
-
-        break;
-    }
-
-    next_order
-}
-
 #[cfg(test)]
 mod events_logic_tests {
-    use crate::from_blockifier::get_events_from_call_info;
+    use super::*;
     use crate::Event;
     use blockifier::execution::call_info::{CallExecution, CallInfo, OrderedEvent};
     use rstest::rstest;
@@ -223,7 +199,6 @@ mod events_logic_tests {
 
     #[rstest]
     fn test_event_ordering() {
-        let mut events = Vec::new();
         let nested_calls = create_call_info(
             0,
             vec![create_call_info(
@@ -231,9 +206,24 @@ mod events_logic_tests {
                 vec![create_call_info(2, vec![create_call_info(3, vec![create_call_info(4, vec![])])])],
             )],
         );
-        get_events_from_call_info(Some(&nested_calls), 0, &mut events);
-
-        let expected_events_ordering = vec![event(0), event(1), event(2), event(3), event(4)];
+        let call_2 = create_call_info(5, vec![]);
+        let events: Vec<_> = recursive_call_info_iter(&TransactionExecutionInfo {
+            validate_call_info: Some(nested_calls),
+            execute_call_info: None,
+            fee_transfer_call_info: Some(call_2),
+            revert_error: None,
+            transaction_receipt: Default::default(),
+        })
+        .flat_map(|call| {
+            call.execution.events.iter().map(|event| Event {
+                // See above for why we use storage address.
+                from_address: call.call.storage_address.into(),
+                keys: event.event.keys.iter().map(|k| k.0).collect(),
+                data: event.event.data.0.clone(),
+            })
+        })
+        .collect();
+        let expected_events_ordering = vec![event(0), event(1), event(2), event(3), event(4), event(5)];
 
         assert_eq!(expected_events_ordering, events);
     }

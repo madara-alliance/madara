@@ -62,7 +62,9 @@ pub async fn sync(
         .to_block(BlockNumberOrTag::Finalized)
         .watch()
         .await
-        .context("Failed to watch event filter")?
+        .context(
+            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+        )?
         .into_stream();
     while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {
@@ -241,7 +243,6 @@ mod l1_messaging_tests {
     };
     use mc_db::DatabaseService;
     use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
-    use mc_metrics::{MetricsRegistry, MetricsService};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use starknet_api::core::Nonce;
@@ -355,7 +356,7 @@ mod l1_messaging_tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), &MetricsRegistry::dummy())
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone())
                 .await
                 .expect("Failed to create database service"),
         );
@@ -366,8 +367,7 @@ mod l1_messaging_tests {
         let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), Arc::clone(&l1_data_provider)));
 
         // Set up metrics service
-        let prometheus_service = MetricsService::new(true, false, 9615).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register(prometheus_service.registry()).unwrap();
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");

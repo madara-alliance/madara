@@ -15,7 +15,7 @@ use starknet_types_core::felt::Felt;
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(deny_unknown_fields)]
 pub enum UserTransaction {
-    DeclareV1(UserDeclareTransaction),
+    Declare(UserDeclareTransaction),
     InvokeFunction(UserInvokeFunctionTransaction),
     DeployAccount(UserDeployAccountTransaction),
 }
@@ -23,9 +23,19 @@ pub enum UserTransaction {
 impl From<UserTransaction> for BroadcastedTransaction {
     fn from(transaction: UserTransaction) -> Self {
         match transaction {
-            UserTransaction::DeclareV1(v1) => BroadcastedTransaction::Declare(v1.into()),
+            UserTransaction::Declare(v1) => BroadcastedTransaction::Declare(v1.into()),
             UserTransaction::InvokeFunction(v1) => BroadcastedTransaction::Invoke(v1.into()),
             UserTransaction::DeployAccount(v1) => BroadcastedTransaction::DeployAccount(v1.into()),
+        }
+    }
+}
+
+impl From<BroadcastedTransaction> for UserTransaction {
+    fn from(transaction: BroadcastedTransaction) -> Self {
+        match transaction {
+            BroadcastedTransaction::Declare(v1) => UserTransaction::Declare(v1.into()),
+            BroadcastedTransaction::Invoke(v1) => UserTransaction::InvokeFunction(v1.into()),
+            BroadcastedTransaction::DeployAccount(v1) => UserTransaction::DeployAccount(v1.into()),
         }
     }
 }
@@ -47,6 +57,16 @@ impl From<UserDeclareTransaction> for BroadcastedDeclareTransaction {
             UserDeclareTransaction::V1(v1) => BroadcastedDeclareTransaction::V1(v1.into()),
             UserDeclareTransaction::V2(v2) => BroadcastedDeclareTransaction::V2(v2.into()),
             UserDeclareTransaction::V3(v3) => BroadcastedDeclareTransaction::V3(v3.into()),
+        }
+    }
+}
+
+impl From<BroadcastedDeclareTransaction> for UserDeclareTransaction {
+    fn from(transaction: BroadcastedDeclareTransaction) -> Self {
+        match transaction {
+            BroadcastedDeclareTransaction::V1(v1) => UserDeclareTransaction::V1(v1.into()),
+            BroadcastedDeclareTransaction::V2(v2) => UserDeclareTransaction::V2(v2.into()),
+            BroadcastedDeclareTransaction::V3(v3) => UserDeclareTransaction::V3(v3.into()),
         }
     }
 }
@@ -74,6 +94,19 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTransactionV1 {
     }
 }
 
+impl From<BroadcastedDeclareTransactionV1> for UserDeclareV1Transaction {
+    fn from(transaction: BroadcastedDeclareTransactionV1) -> Self {
+        Self {
+            sender_address: transaction.sender_address,
+            max_fee: transaction.max_fee,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            contract_class: transaction.contract_class.as_ref().to_owned().into(),
+            is_query: transaction.is_query,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeclareV2Transaction {
     pub contract_class: FlattenedSierraClass,
@@ -94,6 +127,20 @@ impl From<UserDeclareV2Transaction> for BroadcastedDeclareTransactionV2 {
             signature: transaction.signature,
             nonce: transaction.nonce,
             contract_class: Arc::new(transaction.contract_class.into()),
+            is_query: transaction.is_query,
+        }
+    }
+}
+
+impl From<BroadcastedDeclareTransactionV2> for UserDeclareV2Transaction {
+    fn from(transaction: BroadcastedDeclareTransactionV2) -> Self {
+        Self {
+            sender_address: transaction.sender_address,
+            compiled_class_hash: transaction.compiled_class_hash,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            contract_class: transaction.contract_class.as_ref().to_owned().into(),
+            max_fee: transaction.max_fee,
             is_query: transaction.is_query,
         }
     }
@@ -134,6 +181,25 @@ impl From<UserDeclareV3Transaction> for BroadcastedDeclareTransactionV3 {
     }
 }
 
+impl From<BroadcastedDeclareTransactionV3> for UserDeclareV3Transaction {
+    fn from(transaction: BroadcastedDeclareTransactionV3) -> Self {
+        Self {
+            sender_address: transaction.sender_address,
+            compiled_class_hash: transaction.compiled_class_hash,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
+            resource_bounds: transaction.resource_bounds.into(),
+            tip: transaction.tip,
+            contract_class: transaction.contract_class.as_ref().to_owned().into(),
+            paymaster_data: transaction.paymaster_data,
+            account_deployment_data: transaction.account_deployment_data,
+            is_query: transaction.is_query,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub enum UserInvokeFunctionTransaction {
@@ -152,6 +218,15 @@ impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTransaction {
     }
 }
 
+impl From<BroadcastedInvokeTransaction> for UserInvokeFunctionTransaction {
+    fn from(transaction: BroadcastedInvokeTransaction) -> Self {
+        match transaction {
+            BroadcastedInvokeTransaction::V1(v1) => UserInvokeFunctionTransaction::V1(v1.into()),
+            BroadcastedInvokeTransaction::V3(v3) => UserInvokeFunctionTransaction::V3(v3.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserInvokeFunctionV1Transaction {
     pub sender_address: Felt,
@@ -164,6 +239,19 @@ pub struct UserInvokeFunctionV1Transaction {
 
 impl From<UserInvokeFunctionV1Transaction> for BroadcastedInvokeTransactionV1 {
     fn from(transaction: UserInvokeFunctionV1Transaction) -> Self {
+        Self {
+            sender_address: transaction.sender_address,
+            calldata: transaction.calldata,
+            signature: transaction.signature,
+            max_fee: transaction.max_fee,
+            nonce: transaction.nonce,
+            is_query: transaction.is_query,
+        }
+    }
+}
+
+impl From<BroadcastedInvokeTransactionV1> for UserInvokeFunctionV1Transaction {
+    fn from(transaction: BroadcastedInvokeTransactionV1) -> Self {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
@@ -208,6 +296,24 @@ impl From<UserInvokeFunctionV3Transaction> for BroadcastedInvokeTransactionV3 {
     }
 }
 
+impl From<BroadcastedInvokeTransactionV3> for UserInvokeFunctionV3Transaction {
+    fn from(transaction: BroadcastedInvokeTransactionV3) -> Self {
+        Self {
+            sender_address: transaction.sender_address,
+            calldata: transaction.calldata,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
+            resource_bounds: transaction.resource_bounds.into(),
+            tip: transaction.tip,
+            paymaster_data: transaction.paymaster_data,
+            account_deployment_data: transaction.account_deployment_data,
+            is_query: transaction.is_query,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub enum UserDeployAccountTransaction {
@@ -222,6 +328,15 @@ impl From<UserDeployAccountTransaction> for BroadcastedDeployAccountTransaction 
         match transaction {
             UserDeployAccountTransaction::V1(v1) => BroadcastedDeployAccountTransaction::V1(v1.into()),
             UserDeployAccountTransaction::V3(v3) => BroadcastedDeployAccountTransaction::V3(v3.into()),
+        }
+    }
+}
+
+impl From<BroadcastedDeployAccountTransaction> for UserDeployAccountTransaction {
+    fn from(transaction: BroadcastedDeployAccountTransaction) -> Self {
+        match transaction {
+            BroadcastedDeployAccountTransaction::V1(v1) => UserDeployAccountTransaction::V1(v1.into()),
+            BroadcastedDeployAccountTransaction::V3(v3) => UserDeployAccountTransaction::V3(v3.into()),
         }
     }
 }
@@ -251,6 +366,20 @@ impl From<UserDeployAccountV1Transaction> for BroadcastedDeployAccountTransactio
     }
 }
 
+impl From<BroadcastedDeployAccountTransactionV1> for UserDeployAccountV1Transaction {
+    fn from(transaction: BroadcastedDeployAccountTransactionV1) -> Self {
+        Self {
+            class_hash: transaction.class_hash,
+            contract_address_salt: transaction.contract_address_salt,
+            constructor_calldata: transaction.constructor_calldata,
+            max_fee: transaction.max_fee,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            is_query: transaction.is_query,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeployAccountV3Transaction {
     pub class_hash: Felt,
@@ -268,6 +397,24 @@ pub struct UserDeployAccountV3Transaction {
 
 impl From<UserDeployAccountV3Transaction> for BroadcastedDeployAccountTransactionV3 {
     fn from(transaction: UserDeployAccountV3Transaction) -> Self {
+        Self {
+            class_hash: transaction.class_hash,
+            contract_address_salt: transaction.contract_address_salt,
+            constructor_calldata: transaction.constructor_calldata,
+            signature: transaction.signature,
+            nonce: transaction.nonce,
+            nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
+            resource_bounds: transaction.resource_bounds.into(),
+            tip: transaction.tip,
+            paymaster_data: transaction.paymaster_data,
+            is_query: transaction.is_query,
+        }
+    }
+}
+
+impl From<BroadcastedDeployAccountTransactionV3> for UserDeployAccountV3Transaction {
+    fn from(transaction: BroadcastedDeployAccountTransactionV3) -> Self {
         Self {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,

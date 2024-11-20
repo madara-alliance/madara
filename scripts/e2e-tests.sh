@@ -6,6 +6,8 @@ set -e
 
 # will also launch anvil and automatically close it down on error or success
 
+export PROPTEST_CASES=10
+
 anvil --fork-url https://eth.merkle.io --fork-block-number 20395662 &
 
 subshell() {
@@ -20,7 +22,7 @@ subshell() {
         sleep 1
     done
 
-    cargo test --profile dev $@
+    cargo test --profile dev --workspace $@
 }
 
 (subshell $@ && r=$?) || r=$?

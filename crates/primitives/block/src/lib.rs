@@ -2,15 +2,18 @@
 
 pub mod header;
 
-use std::fmt::Display;
-
 pub use header::Header;
-use header::PendingHeader;
+use header::{L1DataAvailabilityMode, PendingHeader};
 use mp_chain_config::StarknetVersion;
 use mp_receipt::TransactionReceipt;
 use mp_transactions::Transaction;
 pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
+
+use crate::header::GasPrices;
+
+pub type BlockId = starknet_types_rpc::BlockId<Felt>;
+pub type BlockTag = starknet_types_rpc::BlockTag;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -26,6 +29,14 @@ impl MadaraMaybePendingBlockInfo {
             MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
         }
     }
+
+    pub fn as_nonpending_owned(self) -> Option<MadaraBlockInfo> {
+        match self {
+            MadaraMaybePendingBlockInfo::Pending(_) => None,
+            MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
+        }
+    }
+
     pub fn as_pending(&self) -> Option<&MadaraPendingBlockInfo> {
         match self {
             MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
@@ -68,75 +79,54 @@ impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
         Self::Pending(value)
     }
 }
+
 impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
         Self::NotPending(value)
     }
 }
 
-/// Block tag.
-///
-/// A tag specifying a dynamic reference to a block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BlockTag {
-    Latest,
-    Pending,
-}
+impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
+    fn from(info: MadaraBlockInfo) -> Self {
+        let MadaraBlockInfo {
+            header:
+                Header {
+                    parent_block_hash: parent_hash,
+                    block_number,
+                    global_state_root: new_root,
+                    sequencer_address,
+                    block_timestamp: timestamp,
+                    protocol_version,
+                    l1_gas_price,
+                    l1_da_mode,
+                    ..
+                },
+            block_hash,
+            ..
+        } = info;
+        let GasPrices { eth_l1_gas_price, strk_l1_gas_price, eth_l1_data_gas_price, strk_l1_data_gas_price } =
+            l1_gas_price;
 
-impl From<starknet_core::types::BlockTag> for BlockTag {
-    fn from(value: starknet_core::types::BlockTag) -> Self {
-        match value {
-            starknet_core::types::BlockTag::Latest => BlockTag::Latest,
-            starknet_core::types::BlockTag::Pending => BlockTag::Pending,
-        }
-    }
-}
-impl From<BlockTag> for starknet_core::types::BlockTag {
-    fn from(value: BlockTag) -> Self {
-        match value {
-            BlockTag::Latest => starknet_core::types::BlockTag::Latest,
-            BlockTag::Pending => starknet_core::types::BlockTag::Pending,
-        }
-    }
-}
-
-/// Block Id
-/// Block hash, number or tag
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockId {
-    Hash(Felt),
-    Number(u64),
-    Tag(BlockTag),
-}
-
-impl From<starknet_core::types::BlockId> for BlockId {
-    fn from(value: starknet_core::types::BlockId) -> Self {
-        match value {
-            starknet_core::types::BlockId::Hash(felt) => BlockId::Hash(Felt::from_bytes_be(&felt.to_bytes_be())),
-            starknet_core::types::BlockId::Number(number) => BlockId::Number(number),
-            starknet_core::types::BlockId::Tag(tag) => BlockId::Tag(tag.into()),
-        }
-    }
-}
-impl From<BlockId> for starknet_core::types::BlockId {
-    fn from(value: BlockId) -> Self {
-        match value {
-            BlockId::Hash(felt) => starknet_core::types::BlockId::Hash(felt),
-            BlockId::Number(number) => starknet_core::types::BlockId::Number(number),
-            BlockId::Tag(tag) => starknet_core::types::BlockId::Tag(tag.into()),
-        }
-    }
-}
-impl Display for BlockId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockId::Hash(hash) => write!(f, "0x{hash:x}"),
-            BlockId::Number(number) => write!(f, "{number}"),
-            BlockId::Tag(blocktag) => match blocktag {
-                BlockTag::Latest => write!(f, "latest"),
-                BlockTag::Pending => write!(f, "pending"),
+        Self {
+            block_hash,
+            block_number,
+            l1_da_mode: match l1_da_mode {
+                L1DataAvailabilityMode::Blob => starknet_types_rpc::L1DaMode::Blob,
+                L1DataAvailabilityMode::Calldata => starknet_types_rpc::L1DaMode::Calldata,
             },
+            l1_data_gas_price: starknet_types_rpc::ResourcePrice {
+                price_in_fri: Felt::from(strk_l1_data_gas_price),
+                price_in_wei: Felt::from(eth_l1_data_gas_price),
+            },
+            l1_gas_price: starknet_types_rpc::ResourcePrice {
+                price_in_fri: Felt::from(strk_l1_gas_price),
+                price_in_wei: Felt::from(eth_l1_gas_price),
+            },
+            new_root,
+            parent_hash,
+            sequencer_address,
+            starknet_version: protocol_version.to_string(),
+            timestamp,
         }
     }
 }
@@ -318,41 +308,5 @@ mod tests {
         let maybe_pending: MadaraMaybePendingBlock = MadaraPendingBlock::new_empty(PendingHeader::default()).into();
         assert!(MadaraBlock::try_from(maybe_pending.clone()).is_err());
         assert!(MadaraPendingBlock::try_from(maybe_pending.clone()).is_ok());
-    }
-
-    #[test]
-    fn test_block_tag() {
-        let tag = BlockTag::Latest;
-        let tag_converted: starknet_core::types::BlockTag = tag.into();
-        assert_eq!(tag_converted, starknet_core::types::BlockTag::Latest);
-        let tag_back: BlockTag = tag_converted.into();
-        assert_eq!(tag_back, tag);
-
-        let tag = BlockTag::Pending;
-        let tag_converted: starknet_core::types::BlockTag = tag.into();
-        assert_eq!(tag_converted, starknet_core::types::BlockTag::Pending);
-        let tag_back: BlockTag = tag_converted.into();
-        assert_eq!(tag_back, tag);
-    }
-
-    #[test]
-    fn test_block_id() {
-        let hash = Felt::from(1);
-        let hash_converted: starknet_core::types::BlockId = BlockId::Hash(hash).into();
-        assert_eq!(hash_converted, starknet_core::types::BlockId::Hash(hash));
-        let hash_back: BlockId = hash_converted.into();
-        assert_eq!(hash_back, BlockId::Hash(hash));
-
-        let number = 1;
-        let number_converted: starknet_core::types::BlockId = BlockId::Number(number).into();
-        assert_eq!(number_converted, starknet_core::types::BlockId::Number(number));
-        let number_back: BlockId = number_converted.into();
-        assert_eq!(number_back, BlockId::Number(number));
-
-        let tag = BlockTag::Latest;
-        let tag_converted: starknet_core::types::BlockId = BlockId::Tag(tag).into();
-        assert_eq!(tag_converted, starknet_core::types::BlockId::Tag(starknet_core::types::BlockTag::Latest));
-        let tag_back: BlockId = tag_converted.into();
-        assert_eq!(tag_back, BlockId::Tag(BlockTag::Latest));
     }
 }

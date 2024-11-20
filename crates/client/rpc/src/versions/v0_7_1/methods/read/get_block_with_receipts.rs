@@ -1,7 +1,7 @@
-use mp_block::MadaraMaybePendingBlockInfo;
+use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
 use starknet_core::types::{
-    BlockId, BlockStatus, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts,
-    TransactionFinalityStatus, TransactionWithReceipt,
+    BlockStatus, BlockWithReceipts, MaybePendingBlockWithReceipts, PendingBlockWithReceipts, TransactionFinalityStatus,
+    TransactionWithReceipt,
 };
 
 use crate::errors::StarknetRpcResult;
@@ -11,7 +11,7 @@ pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithReceipts> {
-    log::debug!("block_id {block_id:?}");
+    tracing::debug!("get_block_with_receipts called with {:?}", block_id);
     let block = starknet.get_block(&block_id)?;
 
     let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
@@ -73,7 +73,7 @@ mod tests {
         test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mc_db::MadaraBackend;
-    use mp_block::{header::GasPrices, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock};
+    use mp_block::{header::GasPrices, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock};
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
@@ -81,7 +81,8 @@ mod tests {
     use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
-    use starknet_core::types::{BlockTag, Felt, L1DataAvailabilityMode, ResourcePrice};
+    use starknet_core::types::{L1DataAvailabilityMode, ResourcePrice};
+    use starknet_types_core::felt::Felt;
     use std::sync::Arc;
 
     #[rstest]

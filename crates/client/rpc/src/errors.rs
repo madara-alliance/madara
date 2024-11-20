@@ -1,7 +1,11 @@
+use std::fmt::Display;
+
 use mc_db::MadaraStorageError;
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use serde_json::json;
 use starknet_api::StarknetApiError;
-use starknet_core::types::StarknetError;
+
+use crate::utils::display_internal_server_error;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -163,36 +167,26 @@ impl From<StarknetRpcApiError> for jsonrpsee::types::ErrorObjectOwned {
 
 impl From<StarknetError> for StarknetRpcApiError {
     fn from(err: StarknetError) -> Self {
-        match err {
-            StarknetError::FailedToReceiveTransaction => StarknetRpcApiError::FailedToReceiveTxn,
-            StarknetError::ContractNotFound => StarknetRpcApiError::ContractNotFound,
-            StarknetError::BlockNotFound => StarknetRpcApiError::BlockNotFound,
-            StarknetError::InvalidTransactionIndex => StarknetRpcApiError::InvalidTxnIndex,
-            StarknetError::ClassHashNotFound => StarknetRpcApiError::ClassHashNotFound,
-            StarknetError::TransactionHashNotFound => StarknetRpcApiError::TxnHashNotFound,
-            StarknetError::PageSizeTooBig => StarknetRpcApiError::PageSizeTooBig,
-            StarknetError::NoBlocks => StarknetRpcApiError::NoBlocks,
-            StarknetError::InvalidContinuationToken => StarknetRpcApiError::InvalidContinuationToken,
-            StarknetError::TooManyKeysInFilter => StarknetRpcApiError::TooManyKeysInFilter,
-            StarknetError::ContractError(_) => StarknetRpcApiError::ContractError,
-            StarknetError::ClassAlreadyDeclared => StarknetRpcApiError::ClassAlreadyDeclared,
-            StarknetError::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
-            StarknetError::InsufficientMaxFee => StarknetRpcApiError::InsufficientMaxFee,
-            StarknetError::InsufficientAccountBalance => StarknetRpcApiError::InsufficientAccountBalance,
-            StarknetError::ValidationFailure(error) => StarknetRpcApiError::ValidationFailure { error },
-            StarknetError::CompilationFailed => StarknetRpcApiError::CompilationFailed,
-            StarknetError::ContractClassSizeIsTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
-            StarknetError::NonAccount => StarknetRpcApiError::NonAccount,
-            StarknetError::DuplicateTx => StarknetRpcApiError::DuplicateTxn,
-            StarknetError::CompiledClassHashMismatch => StarknetRpcApiError::CompiledClassHashMismatch,
-            StarknetError::UnsupportedTxVersion => StarknetRpcApiError::UnsupportedTxnVersion,
-            StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
-            StarknetError::UnexpectedError(data) => StarknetRpcApiError::ErrUnexpectedError { data },
-            StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::TransactionExecutionError(error) => StarknetRpcApiError::TxnExecutionError {
-                tx_index: error.transaction_index as usize,
-                error: error.execution_error.to_string(),
-            },
+        match err.code {
+            StarknetErrorCode::BlockNotFound => StarknetRpcApiError::BlockNotFound,
+            StarknetErrorCode::TransactionFailed | StarknetErrorCode::ValidateFailure => {
+                StarknetRpcApiError::ValidationFailure { error: err.message }
+            }
+            StarknetErrorCode::UninitializedContract => StarknetRpcApiError::ContractNotFound,
+            StarknetErrorCode::UndeclaredClass => StarknetRpcApiError::ClassHashNotFound,
+            StarknetErrorCode::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
+            StarknetErrorCode::ClassAlreadyDeclared => StarknetRpcApiError::ClassAlreadyDeclared,
+            StarknetErrorCode::CompilationFailed => StarknetRpcApiError::CompilationFailed,
+            StarknetErrorCode::InvalidCompiledClassHash => StarknetRpcApiError::CompiledClassHashMismatch,
+            StarknetErrorCode::DuplicatedTransaction => StarknetRpcApiError::DuplicateTxn,
+            StarknetErrorCode::ContractBytecodeSizeTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
+            StarknetErrorCode::InvalidContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
+            StarknetErrorCode::InvalidContractClass => StarknetRpcApiError::InvalidContractClass,
+            StarknetErrorCode::InvalidContractDefinition => StarknetRpcApiError::InvalidContractClass,
+            StarknetErrorCode::OutOfRangeBlockHash => StarknetRpcApiError::InvalidBlockHash,
+            StarknetErrorCode::OutOfRangeTransactionHash => StarknetRpcApiError::InvalidTxnHash,
+            StarknetErrorCode::InvalidTransactionVersion => StarknetRpcApiError::UnsupportedTxnVersion,
+            _ => StarknetRpcApiError::ErrUnexpectedError { data: err.message },
         }
     }
 }
@@ -206,5 +200,121 @@ impl From<MadaraStorageError> for StarknetRpcApiError {
 impl From<StarknetApiError> for StarknetRpcApiError {
     fn from(err: StarknetApiError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: err.to_string() }
+    }
+}
+
+#[cfg_attr(test, derive(PartialEq, Eq))]
+#[derive(Debug)]
+pub enum StarknetWsApiError {
+    TooManyBlocksBack,
+    NoBlocks,
+    BlockNotFound,
+    Pending,
+    Internal,
+}
+
+impl StarknetWsApiError {
+    #[inline]
+    fn code(&self) -> i32 {
+        match self {
+            Self::TooManyBlocksBack => 68,
+            Self::NoBlocks => 32,
+            Self::BlockNotFound => 24,
+            Self::Pending => 69,
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+        }
+    }
+    #[inline]
+    fn message(&self) -> &str {
+        match self {
+            Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::NoBlocks => "There are no blocks",
+            Self::BlockNotFound => "Block not found",
+            // See https://github.com/starkware-libs/starknet-specs/pull/237
+            Self::Pending => "The pending block is not supported on this method call",
+            Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_MSG,
+        }
+    }
+
+    #[inline]
+    pub fn internal_server_error<C: std::fmt::Display>(context: C) -> Self {
+        display_internal_server_error(context);
+        StarknetWsApiError::Internal
+    }
+}
+
+impl Display for StarknetWsApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"code\": {}, \"message\": {}", self.code(), self.message())
+    }
+}
+
+pub trait ErrorExtWs<T> {
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
+
+impl<T, E: std::fmt::Display> ErrorExtWs<T> for Result<T, E> {
+    #[inline]
+    fn or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context, err));
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+
+    #[inline]
+    fn or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                display_internal_server_error(format!("{}: {:#}", context_fn(), err));
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+}
+
+pub trait OptionExtWs<T> {
+    #[allow(dead_code)]
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError>;
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError>;
+}
+
+impl<T> OptionExtWs<T> for Option<T> {
+    fn ok_or_internal_server_error<C: std::fmt::Display>(self, context: C) -> Result<T, StarknetWsApiError> {
+        match self {
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context);
+                Err(StarknetWsApiError::Internal)
+            }
+        }
+    }
+
+    fn ok_or_else_internal_server_error<C: std::fmt::Display, F: FnOnce() -> C>(
+        self,
+        context_fn: F,
+    ) -> Result<T, StarknetWsApiError> {
+        match self {
+            Some(res) => Ok(res),
+            None => {
+                display_internal_server_error(context_fn());
+                Err(StarknetWsApiError::Internal)
+            }
+        }
     }
 }

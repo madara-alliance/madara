@@ -1,18 +1,16 @@
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::DeployAccountTransaction;
-use blockifier::transaction::transactions::InvokeTransaction;
-use blockifier::transaction::transactions::{DeclareTransaction, L1HandlerTransaction};
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction,
+};
 use header::make_pending_header;
 use inner::MempoolInner;
 use mc_db::db_block_id::DbBlockId;
-use mc_db::MadaraBackend;
-use mc_db::MadaraStorageError;
+use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::ExecutionContext;
-use mp_block::BlockId;
-use mp_block::BlockTag;
-use mp_block::MadaraPendingBlockInfo;
+use metrics::MempoolMetrics;
+use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_transactions::{
@@ -21,16 +19,12 @@ use mp_transactions::{
 use mp_transactions::{BroadcastedToBlockifierError, L1HandlerTransactionResult};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::BroadcastedDeclareTransaction;
-use starknet_core::types::BroadcastedDeployAccountTransaction;
-use starknet_core::types::BroadcastedInvokeTransaction;
-use starknet_core::types::BroadcastedTransaction;
-use starknet_core::types::DeclareTransactionResult;
-use starknet_core::types::DeployAccountTransactionResult;
-use starknet_core::types::InvokeTransactionResult;
+use starknet_core::types::{
+    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
+    BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+};
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub use inner::TxInsersionError;
 pub use inner::{ArrivedAtTimestamp, MempoolTransaction};
@@ -39,10 +33,12 @@ pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
 pub mod block_production;
+pub mod block_production_metrics;
 mod close_block;
 pub mod header;
 mod inner;
 mod l1;
+pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -87,13 +83,15 @@ pub struct Mempool {
     backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
+    metrics: MempoolMetrics,
 }
 
 impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>) -> Self {
-        Mempool { backend, l1_data_provider, inner: Default::default() }
+        Mempool { backend, l1_data_provider, inner: Default::default(), metrics: MempoolMetrics::register() }
     }
 
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_tx(&self, tx: Transaction, converted_class: Option<ConvertedClass>) -> Result<(), Error> {
         // The timestamp *does not* take the transaction validation time into account.
         let arrived_at = ArrivedAtTimestamp::now();
@@ -128,7 +126,7 @@ impl Mempool {
             None
         };
 
-        log::debug!("Mempool verify tx_hash={:#x}", tx_hash(&tx).to_felt());
+        tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash(&tx).to_felt());
 
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
@@ -139,7 +137,7 @@ impl Mempool {
         }
 
         if !is_only_query(&tx) {
-            log::debug!("Adding to mempool tx_hash={:#x}", tx_hash(&tx).to_felt());
+            tracing::debug!("Adding to mempool tx_hash={:#x}", tx_hash(&tx).to_felt());
             // Finally, add it to the nonce chain for the account nonce
             let force = false;
             self.inner
@@ -147,6 +145,8 @@ impl Mempool {
                 .expect("Poisoned lock")
                 .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?
         }
+
+        self.metrics.accepted_transaction_counter.add(1, &[]);
 
         Ok(())
     }
@@ -178,6 +178,7 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 }
 
 impl MempoolProvider for Mempool {
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
             BroadcastedTransaction::Invoke(tx),
@@ -190,6 +191,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
         let (tx, classes) = broadcasted_declare_v0_to_blockifier(
             tx,
@@ -212,6 +214,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
             BroadcastedTransaction::Declare(tx),
@@ -227,6 +230,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_deploy_account_tx(
         &self,
         tx: BroadcastedDeployAccountTransaction,
@@ -246,17 +250,20 @@ impl MempoolProvider for Mempool {
     }
 
     /// Warning: A lock is held while a user-supplied function (extend) is run - Callers should be careful
+    #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next_chunk(dest, n)
     }
 
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn take_tx(&self) -> Option<MempoolTransaction> {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.pop_next()
     }
 
     /// Warning: A lock is taken while a user-supplied function (iterator stuff) is run - Callers should be careful
+    #[tracing::instrument(skip(self, txs), fields(module = "Mempool"))]
     fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(&self, txs: I) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.re_add_txs(txs)
@@ -345,7 +352,7 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 mod test {
     use std::sync::Arc;
 
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     use crate::MockL1DataProvider;
 

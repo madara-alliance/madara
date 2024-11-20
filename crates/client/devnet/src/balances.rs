@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use mp_chain_config::ChainConfig;
-use mp_convert::felt_to_u128;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 
@@ -17,9 +16,9 @@ pub struct ContractFeeTokensBalance {
 impl ContractFeeTokensBalance {
     pub fn as_u128_fri_wei(&self) -> anyhow::Result<(u128, u128)> {
         let fri =
-            felt_to_u128(&self.fri).with_context(|| format!("Converting STRK balance felt {:#x} to u128", self.fri))?;
+            self.fri.try_into().with_context(|| format!("Converting STRK balance felt {:#x} to u128", self.fri))?;
         let wei =
-            felt_to_u128(&self.wei).with_context(|| format!("Converting ETH balance felt {:#x} to u128", self.wei))?;
+            self.wei.try_into().with_context(|| format!("Converting ETH balance felt {:#x} to u128", self.wei))?;
         Ok((fri, wei))
     }
 }
@@ -28,15 +27,18 @@ impl ContractFeeTokensBalance {
 pub struct InitialBalances(pub HashMap<ContractAddress, ContractFeeTokensBalance>);
 
 impl InitialBalances {
+    #[tracing::instrument(skip(self, contract_address, bal), fields(module = "InitialBalances"))]
     pub fn with(mut self, contract_address: ContractAddress, bal: ContractFeeTokensBalance) -> Self {
         self.insert(contract_address, bal);
         self
     }
 
+    #[tracing::instrument(skip(self, contract_address, bal), fields(module = "InitialBalances"))]
     pub fn insert(&mut self, contract_address: ContractAddress, bal: ContractFeeTokensBalance) {
         self.0.insert(contract_address, bal);
     }
 
+    #[tracing::instrument(skip(self, chain_config, storage_diffs), fields(module = "InitialBalances"))]
     pub fn to_storage_diffs(&self, chain_config: &ChainConfig, storage_diffs: &mut StorageDiffs) {
         for (contract_address, bal) in &self.0 {
             // Storage key where the balance of that contract is stored. For both STRK and ETH it ends up

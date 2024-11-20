@@ -33,6 +33,6 @@ jobs:
 
       - name: Run unit tests
         run: |
-          cargo test
+          cargo test --workspace
         env:
           PROPTEST_CASES: 2

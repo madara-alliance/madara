@@ -47,7 +47,7 @@ pub fn parse_compressed_legacy_class(
     };
 
     Ok(LegacyContractClass {
-        abi: Some(abi),
+        abi,
         entry_points_by_type: RawLegacyEntryPoints {
             constructor: class
                 .entry_points_by_type

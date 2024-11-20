@@ -68,6 +68,13 @@ impl ClassInfo {
             ClassInfo::Legacy(legacy) => ContractClass::Legacy(Arc::clone(&legacy.contract_class)),
         }
     }
+
+    pub fn compiled_class_hash(&self) -> Option<Felt> {
+        match self {
+            ClassInfo::Sierra(sierra) => Some(sierra.compiled_class_hash),
+            ClassInfo::Legacy(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -251,7 +258,7 @@ pub enum FunctionStateMutability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CompiledSierra(String);
+pub struct CompiledSierra(pub String);
 
 impl AsRef<str> for CompiledSierra {
     fn as_ref(&self) -> &str {

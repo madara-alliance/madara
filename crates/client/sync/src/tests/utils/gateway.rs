@@ -1,18 +1,17 @@
 use httpmock::MockServer;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mc_gateway::client::builder::FeederClient;
+use mc_gateway_client::GatewayProvider;
 use mp_chain_config::ChainConfig;
 use rstest::*;
 use serde_json::{json, Value};
-use std::fs;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
 pub struct TestContext {
     pub mock_server: MockServer,
-    pub provider: Arc<FeederClient>,
+    pub provider: Arc<GatewayProvider>,
     pub backend: Arc<MadaraBackend>,
     pub fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     pub fetch_stream_receiver: mpsc::Receiver<UnverifiedFullBlock>,
@@ -34,7 +33,7 @@ pub fn test_setup() -> Arc<MadaraBackend> {
 impl TestContext {
     pub fn new(backend: Arc<MadaraBackend>) -> Self {
         let mock_server = MockServer::start();
-        let provider = Arc::new(FeederClient::new(
+        let provider = Arc::new(GatewayProvider::new(
             Url::parse(&format!("{}/gateway/", mock_server.base_url())).unwrap(),
             Url::parse(&format!("{}/feeder_gateway/", mock_server.base_url())).unwrap(),
         ));
@@ -214,9 +213,8 @@ impl TestContext {
         });
     }
 
-    pub fn mock_class_hash(&self, path: &str) {
-        let file_content = fs::read_to_string(path).expect("Failed to read file");
-        let json: Value = serde_json::from_str(&file_content).expect("Failed to parse JSON");
+    pub fn mock_class_hash(&self, contract_file: &[u8]) {
+        let json: Value = serde_json::from_slice(contract_file).expect("Failed to parse JSON");
 
         // Convert ABI to string
         let abi_string = serde_json::to_string(&json["abi"]).expect("Failed to serialize ABI");

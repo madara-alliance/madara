@@ -4,13 +4,13 @@ use super::*;
 use rstest::{fixture, rstest};
 
 #[fixture]
-fn client_mainnet_fixture() -> FeederClient {
-    FeederClient::starknet_alpha_mainnet()
+fn client_mainnet_fixture() -> GatewayProvider {
+    GatewayProvider::starknet_alpha_mainnet()
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_can_fetch_pending_block(client_mainnet_fixture: FeederClient) {
+async fn test_can_fetch_pending_block(client_mainnet_fixture: GatewayProvider) {
     let block = fetch_pending_block_and_updates(Felt::ZERO, &ChainId::Mainnet, &client_mainnet_fixture).await.unwrap();
     // ignore as we can't check much here :/
     drop(block);
@@ -21,7 +21,7 @@ async fn test_can_fetch_pending_block(client_mainnet_fixture: FeederClient) {
 #[rstest]
 #[case(0)]
 #[case(724_130)]
-async fn test_can_fetch_and_convert_block(client_mainnet_fixture: FeederClient, #[case] block_n: u64) {
+async fn test_can_fetch_and_convert_block(client_mainnet_fixture: GatewayProvider, #[case] block_n: u64) {
     // Sorting is necessary since we store storage diffs and nonces in a
     // hashmap in the fgw types before converting them to a Vec in the mp
     // types, resulting in unpredictable ordering
