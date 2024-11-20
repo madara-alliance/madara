@@ -26,6 +26,7 @@ pub async fn sync(
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
     pending_block_poll_interval: Duration,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
         tracing::warn!("Forcing unordered state. This will most probably break your database.");
@@ -57,6 +58,7 @@ pub async fn sync(
         L2SyncConfig {
             first_block: starting_block,
             n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+            stop_on_sync: fetch_config.stop_on_sync,
             verify: fetch_config.verify,
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks,
@@ -66,6 +68,7 @@ pub async fn sync(
         backend.chain_config().chain_id.clone(),
         telemetry,
         block_importer,
+        cancellation_token,
     )
     .await?;
 
