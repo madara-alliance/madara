@@ -42,6 +42,9 @@ pub struct FetchConfig {
     pub n_blocks_to_sync: Option<u64>,
     /// Stops the node once all blocks have been synced (for testing purposes)
     pub stop_on_sync: bool,
+    /// Number of blocks to fetch in parallel during the sync process
+    pub sync_parallelism: u8,
+    pub warp_update: bool,
 }
 
 pub async fn fetch_pending_block_and_updates(

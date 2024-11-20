@@ -176,11 +176,6 @@ impl BlockImporter {
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let result = self.verify_apply.verify_apply(block, validation).await?;
-        // Flush step.
-        let force = self.always_force_flush;
-        self.backend
-            .maybe_flush(force)
-            .map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
         self.metrics.update(&result.header, &self.backend);
         Ok(result)
     }

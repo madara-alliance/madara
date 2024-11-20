@@ -80,3 +80,4 @@ tokio = { workspace = true, features = [
 ] }
 tokio-util.workspace = true
 url.workspace = true
+jsonrpsee.workspace = true

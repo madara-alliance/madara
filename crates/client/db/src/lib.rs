@@ -398,6 +398,7 @@ impl MadaraBackend {
             // we have to collect twice here :/
             let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
             let columns = columns.iter().collect::<Vec<_>>();
+
             self.db.flush_cfs_opt(&columns, &opts).context("Flushing database")?;
 
             *inst = Some(Instant::now());

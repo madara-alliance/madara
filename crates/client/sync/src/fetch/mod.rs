@@ -13,20 +13,37 @@ use crate::fetch::fetchers::fetch_block_and_updates;
 
 pub mod fetchers;
 
+pub struct L2FetchConfig {
+    pub first_block: u64,
+    pub fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
+    pub once_caught_up_sender: oneshot::Sender<()>,
+    pub sync_polling_interval: Option<Duration>,
+    pub n_blocks_to_sync: Option<u64>,
+    pub stop_on_sync: bool,
+    pub sync_parallelism: u8,
+    pub warp_update: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
-    first_block: u64,
-    n_blocks_to_sync: Option<u64>,
-    stop_on_sync: bool,
-    fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     provider: Arc<GatewayProvider>,
-    sync_polling_interval: Option<Duration>,
-    once_caught_up_callback: oneshot::Sender<()>,
     cancellation_token: tokio_util::sync::CancellationToken,
+    config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
     let backend = &backend;
+
+    let L2FetchConfig {
+        first_block,
+        fetch_stream_sender,
+        once_caught_up_sender: once_caught_up_callback,
+        sync_polling_interval,
+        n_blocks_to_sync,
+        stop_on_sync,
+        sync_parallelism,
+        warp_update,
+    } = config;
 
     let mut next_block = first_block;
 
@@ -45,7 +62,7 @@ pub async fn l2_fetch_task(
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
-        let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
+        let mut fetch_stream = stream::iter(fetch_stream).buffered(sync_parallelism as usize);
         while let Some((block_n, val)) =
             channel_wait_or_graceful_shutdown(fetch_stream.next(), &cancellation_token).await
         {
@@ -158,14 +175,18 @@ mod test_l2_fetch_task {
                     Duration::from_secs(5),
                     l2_fetch_task(
                         backend,
-                        0,
-                        Some(5),
-                        false,
-                        fetch_stream_sender,
                         provider,
-                        Some(polling_interval),
-                        once_caught_up_sender,
                         tokio_util::sync::CancellationToken::new(),
+                        L2FetchConfig {
+                            first_block: 0,
+                            fetch_stream_sender,
+                            once_caught_up_sender,
+                            sync_polling_interval: Some(polling_interval),
+                            n_blocks_to_sync: Some(5),
+                            stop_on_sync: false,
+                            sync_parallelism: 10,
+                            warp_update: false,
+                        },
                     ),
                 )
                 .await

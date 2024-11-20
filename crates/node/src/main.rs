@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
-    let mut run_cmd: RunCmd = RunCmd::parse();
+    let mut run_cmd: RunCmd = RunCmd::parse().apply_arg_preset();
 
     // Setting up analytics
 
@@ -60,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     tracing::info!("👤 Role: {}", role);
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
+    run_cmd.args_preset.greet();
 
     let sys_info = SysInfo::probe();
     sys_info.show();

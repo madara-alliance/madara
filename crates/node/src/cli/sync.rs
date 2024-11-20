@@ -66,12 +66,23 @@ pub struct SyncParams {
     /// blocks. This can either be once the node has caught up with the head of
     /// the chain or when it has synced as many blocks as specified by
     /// --n-blocks-to-sync.
-    #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
+    #[clap(env = "MADARA_STOP_ON_SYNC", long, value_name = "STOP ON SYNC", default_value_t = false)]
     pub stop_on_sync: bool,
 
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
+
+    #[clap(
+        env = "MADARA_SYNC_PARALLELISM",
+        long, value_name = "SYNC PARALLELISM",
+        default_value_t = 10,
+        value_parser = clap::value_parser!(u8).range(1..)
+    )]
+    pub sync_prallelism: u8,
+
+    #[clap(env = "CLOSE_ON_SYNC", long, value_name = "CLOSE ON SYNC", default_value_t = false)]
+    pub close_on_sync: bool,
 }
 
 impl SyncParams {
@@ -95,6 +106,8 @@ impl SyncParams {
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
             stop_on_sync: self.stop_on_sync,
+            sync_parallelism: self.sync_prallelism,
+            warp_update: self.close_on_sync,
         }
     }
 }

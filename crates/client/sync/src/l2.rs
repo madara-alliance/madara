@@ -1,6 +1,7 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use crate::fetch::fetchers::fetch_pending_block_and_updates;
 use crate::fetch::l2_fetch_task;
+use crate::fetch::L2FetchConfig;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
@@ -56,9 +57,16 @@ async fn l2_verify_and_apply_task(
     stop_on_sync: bool,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
+    let mut last_block_n = 0;
+
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv()), &cancellation_token).await
     {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
+
+        if header.block_number - last_block_n >= 1000 {
+            last_block_n = header.block_number;
+            let _ = backend.maybe_flush(true);
+        }
 
         tracing::info!(
             "✨ Imported #{} ({}) and updated state root ({})",
@@ -195,11 +203,13 @@ pub struct L2SyncConfig {
     pub first_block: u64,
     pub n_blocks_to_sync: Option<u64>,
     pub stop_on_sync: bool,
+    pub sync_parallelism: u8,
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
+    pub warp_update: bool,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -217,7 +227,7 @@ pub async fn sync(
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
     let provider = Arc::new(provider);
-    let (once_caught_up_cb_sender, once_caught_up_cb_receiver) = oneshot::channel();
+    let (once_caught_up_sender, once_caught_up_receiver) = oneshot::channel();
 
     // [Fetch task] ==new blocks and updates=> [Block conversion task] ======> [Verification and apply
     // task]
@@ -239,14 +249,18 @@ pub async fn sync(
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
         Arc::clone(backend),
-        config.first_block,
-        config.n_blocks_to_sync,
-        config.stop_on_sync,
-        fetch_stream_sender,
         Arc::clone(&provider),
-        config.sync_polling_interval,
-        once_caught_up_cb_sender,
         cancellation_token.clone(),
+        L2FetchConfig {
+            first_block: config.first_block,
+            fetch_stream_sender,
+            once_caught_up_sender,
+            sync_polling_interval: config.sync_polling_interval,
+            n_blocks_to_sync: config.n_blocks_to_sync,
+            stop_on_sync: config.stop_on_sync,
+            sync_parallelism: config.sync_parallelism,
+            warp_update: config.warp_update,
+        },
     ));
     join_set.spawn(l2_block_conversion_task(
         fetch_stream_receiver,
@@ -269,7 +283,7 @@ pub async fn sync(
         Arc::clone(backend),
         Arc::clone(&block_importer),
         validation.clone(),
-        once_caught_up_cb_receiver,
+        once_caught_up_receiver,
         provider,
         config.pending_block_poll_interval,
         cancellation_token.clone(),

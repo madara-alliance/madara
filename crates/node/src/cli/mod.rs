@@ -18,11 +18,48 @@ use starknet_api::core::ChainId;
 use std::str::FromStr;
 pub use sync::*;
 pub use telemetry::*;
+use url::Url;
 
 use clap::ArgGroup;
 use mp_chain_config::ChainConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+#[derive(Clone, Debug, clap::Parser)]
+#[clap(
+    group(
+        ArgGroup::new("args-preset")
+            .args(&["warp_update", "gateway", "rpc"])
+            .multiple(false)
+    )
+)]
+pub struct ArgsPresetParams {
+    #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
+    pub warp_update_sender: bool,
+
+    #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
+    pub warp_update_receiver: bool,
+
+    #[clap(env = "MADARA_GATEWAY", long, value_name = "GATEWAY", group = "args-preset")]
+    pub gateway: bool,
+
+    #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
+    pub rpc: bool,
+}
+
+impl ArgsPresetParams {
+    pub fn greet(&self) {
+        if self.warp_update_sender {
+            tracing::info!("💫 Running Warp Update Sender preset")
+        } else if self.warp_update_receiver {
+            tracing::info!("💫 Running Warp Update Receiver preset")
+        } else if self.gateway {
+            tracing::info!("💫 Running Gateway preset")
+        } else if self.rpc {
+            tracing::info!("💫 Running Rpc preset")
+        }
+    }
+}
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
@@ -44,12 +81,15 @@ use std::sync::Arc;
             .requires("full")
     ),
 )]
-
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
     #[arg(env = "MADARA_NAME", long, value_name = "NAME")]
     pub name: Option<String>,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub args_preset: ArgsPresetParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -113,6 +153,34 @@ pub struct RunCmd {
 }
 
 impl RunCmd {
+    pub fn apply_arg_preset(mut self) -> Self {
+        if self.args_preset.warp_update_sender {
+            self.sync_params.sync_disabled = true;
+            self.l1_sync_params.sync_l1_disabled = true;
+            self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.gateway_enable = true;
+            self.gateway_params.gateway_port = 8080;
+            self.rpc_params.rpc_admin = true;
+        } else if self.args_preset.warp_update_receiver {
+            self.db_params.base_path = PathBuf::from("/tmp/madara_new");
+            self.sync_params.disable_root = true;
+            self.sync_params.gateway_url = Some(Url::from_str("http://localhost:8080").expect("valid url"));
+            self.sync_params.stop_on_sync = true;
+            self.sync_params.sync_prallelism = 50;
+            self.rpc_params.rpc_disable = true;
+        } else if self.args_preset.gateway {
+            self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.gateway_enable = true;
+            self.gateway_params.gateway_external = true;
+        } else if self.args_preset.rpc {
+            self.rpc_params.rpc_admin = true;
+            self.rpc_params.rpc_external = true;
+            self.rpc_params.rpc_cors = Some(Cors::All);
+        }
+
+        self
+    }
+
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {

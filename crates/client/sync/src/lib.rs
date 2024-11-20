@@ -64,6 +64,8 @@ pub async fn sync(
             backup_every_n_blocks,
             pending_block_poll_interval,
             ignore_block_order,
+            sync_parallelism: fetch_config.sync_parallelism,
+            warp_update: fetch_config.warp_update,
         },
         backend.chain_config().chain_id.clone(),
         telemetry,
