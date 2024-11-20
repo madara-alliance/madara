@@ -62,7 +62,7 @@ print_stderr = "warn"
 # unwrap_used = "warn"
 # missing_docs = "warn"
 
-[build]
+[workspace.metadata.build]
 rustflags = ["-C", "symbol-mangling-version=v0"]
 
 [profile.dev]
