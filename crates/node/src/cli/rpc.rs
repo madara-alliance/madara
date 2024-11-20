@@ -54,11 +54,10 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Enables the user rpc endpoint. This includes all methods which are part
-    /// of the official starknet specs. By default, this is exposed to
-    /// `localhost`
+    /// Disables the user rpc endpoint. This includes all methods which are part
+    /// of the official starknet specs.
     #[arg(env = "MADARA_RPC_ENABLE", long, default_value_t = false)]
-    pub rpc_enable: bool,
+    pub rpc_disable: bool,
 
     /// Exposes the user rpc endpoint on port `0.0.0.0`. This generally means
     /// that rpc methods will be accessible from the outside world.
@@ -70,7 +69,7 @@ pub struct RpcParams {
     /// to control their node at a distance. By default, this is exposed to
     /// `localhost`.
     #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
-    pub rpc_admin_enable: bool,
+    pub rpc_admin: bool,
 
     /// Exposes the admin rpc endpoint on port `0.0.0.0`. This is especially
     /// useful when running Madara from inside a docker container. Be very

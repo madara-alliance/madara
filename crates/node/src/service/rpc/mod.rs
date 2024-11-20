@@ -33,7 +33,7 @@ impl RpcService {
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;
 
-        let server_config_user = if config.rpc_enable {
+        let server_config_user = if !config.rpc_disable {
             let api_rpc_user = rpc_api_user(&starknet)?;
             let methods_user = rpc_api_build("rpc", api_rpc_user).into();
 
@@ -55,7 +55,7 @@ impl RpcService {
             None
         };
 
-        let server_config_admin = if config.rpc_admin_enable {
+        let server_config_admin = if config.rpc_admin {
             let api_rpc_admin = rpc_api_admin(&starknet)?;
             let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
 
