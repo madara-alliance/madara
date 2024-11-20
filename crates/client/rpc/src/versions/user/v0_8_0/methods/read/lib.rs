@@ -4,7 +4,7 @@ use starknet_types_core::felt::Felt;
 
 use super::get_compiled_casm::*;
 
-use crate::versions::v0_8_0::StarknetReadRpcApiV0_8_0Server;
+use crate::versions::user::v0_8_0::StarknetReadRpcApiV0_8_0Server;
 use crate::Starknet;
 
 #[async_trait]

@@ -10,7 +10,7 @@ use starknet_types_core::felt::Felt;
 use trace_block_transactions::trace_block_transactions;
 use trace_transaction::trace_transaction;
 
-use crate::{versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
+use crate::{versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
 
 #[async_trait]
 impl StarknetTraceRpcApiV0_7_1Server for Starknet {
