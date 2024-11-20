@@ -45,7 +45,8 @@ impl Service for RpcService {
     ) -> anyhow::Result<()> {
         let RpcService { config, backend, add_txs_method_provider, .. } = self;
 
-        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone());
+        let starknet =
+            Starknet::new(backend.clone(), add_txs_method_provider.clone(), Some(cancellation_token.clone()));
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {

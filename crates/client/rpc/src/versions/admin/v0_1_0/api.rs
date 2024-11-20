@@ -14,3 +14,9 @@ pub trait MadaraWriteRpcApi {
         declare_transaction_v0: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<DeclareTransactionResult>;
 }
+
+#[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraStatusRpcApi {
+    #[method(name = "stopNode")]
+    async fn stop_node(&self) -> RpcResult<u64>;
+}

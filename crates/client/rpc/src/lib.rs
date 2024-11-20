@@ -30,15 +30,24 @@ use utils::ResultExt;
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl Starknet {
-    pub fn new(backend: Arc<MadaraBackend>, add_transaction_provider: Arc<dyn AddTransactionProvider>) -> Self {
-        Self { backend, add_transaction_provider }
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        cancellation_token: Option<tokio_util::sync::CancellationToken>,
+    ) -> Self {
+        Self { backend, add_transaction_provider, cancellation_token }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
         Arc::clone(&self.backend)
+    }
+
+    pub fn cancellation_token(&self) -> tokio_util::sync::CancellationToken {
+        self.cancellation_token.to_owned().unwrap_or_default()
     }
 
     pub fn clone_chain_config(&self) -> Arc<ChainConfig> {
@@ -107,6 +116,7 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

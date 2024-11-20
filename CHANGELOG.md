@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(stop): added `stop_node` admin rpc endpoint
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - feat(debug): service cancelling and profiling build
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
