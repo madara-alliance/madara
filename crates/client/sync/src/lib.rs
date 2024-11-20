@@ -57,6 +57,7 @@ pub async fn sync(
         L2SyncConfig {
             first_block: starting_block,
             n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+            stop_on_sync: fetch_config.stop_on_sync,
             verify: fetch_config.verify,
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks,

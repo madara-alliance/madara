@@ -53,6 +53,7 @@ async fn l2_verify_and_apply_task(
     validation: BlockValidationContext,
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
+    stop_on_sync: bool,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv()), &cancellation_token).await
@@ -88,6 +89,10 @@ async fn l2_verify_and_apply_task(
             backend.backup().await.context("backing up database")?;
             tracing::info!("✅ Database backup is done ({:?})", sw.elapsed());
         }
+    }
+
+    if stop_on_sync {
+        cancellation_token.cancel()
     }
 
     Ok(())
@@ -189,6 +194,7 @@ async fn l2_pending_block_task(
 pub struct L2SyncConfig {
     pub first_block: u64,
     pub n_blocks_to_sync: Option<u64>,
+    pub stop_on_sync: bool,
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
@@ -235,6 +241,7 @@ pub async fn sync(
         Arc::clone(backend),
         config.first_block,
         config.n_blocks_to_sync,
+        config.stop_on_sync,
         fetch_stream_sender,
         Arc::clone(&provider),
         config.sync_polling_interval,
@@ -255,6 +262,7 @@ pub async fn sync(
         validation.clone(),
         config.backup_every_n_blocks,
         telemetry,
+        config.stop_on_sync,
         cancellation_token.clone(),
     ));
     join_set.spawn(l2_pending_block_task(
@@ -326,6 +334,7 @@ mod tests {
             validation.clone(),
             Some(1),
             telemetry,
+            false,
             tokio_util::sync::CancellationToken::new(),
         ));
 

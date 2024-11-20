@@ -20,6 +20,7 @@ pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
+    stop_on_sync: bool,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     provider: Arc<FeederClient>,
     sync_polling_interval: Option<Duration>,
@@ -69,6 +70,11 @@ pub async fn l2_fetch_task(
             next_block = block_n + 1;
         }
     };
+
+    // We do not call cancellation here as we still want the block to be stored
+    if stop_on_sync {
+        return anyhow::Ok(());
+    }
 
     let _ = once_caught_up_callback.send(());
 
@@ -156,6 +162,7 @@ mod test_l2_fetch_task {
                         backend,
                         0,
                         Some(5),
+                        true,
                         fetch_stream_sender,
                         provider,
                         Some(polling_interval),
