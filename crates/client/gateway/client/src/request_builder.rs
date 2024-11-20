@@ -7,12 +7,12 @@ use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use mp_block::{BlockId, BlockTag};
+use mp_gateway::error::{SequencerError, StarknetError};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use starknet_types_core::felt::Felt;
 use tower::Service;
 use url::Url;
-
-use crate::error::{SequencerError, StarknetError};
 
 use super::builder::PausedClient;
 
@@ -45,7 +45,7 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    pub fn with_block_id(mut self, block_id: BlockId) -> Self {
+    pub fn with_block_id(mut self, block_id: &BlockId) -> Self {
         match block_id {
             BlockId::Hash(hash) => {
                 self = self.add_param(Cow::from("blockHash"), &format!("0x{hash:x}"));
@@ -90,10 +90,10 @@ impl<'a> RequestBuilder<'a> {
         Ok(response)
     }
 
-    #[allow(dead_code)]
-    pub async fn send_post<T>(self) -> Result<T, SequencerError>
+    pub async fn send_post<T, D>(self, body: D) -> Result<T, SequencerError>
     where
         T: DeserializeOwned,
+        D: Serialize,
     {
         let uri = self.build_uri()?;
 
@@ -101,7 +101,7 @@ impl<'a> RequestBuilder<'a> {
 
         req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let body = serde_json::to_string(&self.params)?;
+        let body = serde_json::to_string(&body).map_err(SequencerError::SerializeRequest)?;
 
         let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
 

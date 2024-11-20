@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
-use super::{receipt::ConfirmedReceipt, transaction::Transaction};
+use super::{
+    receipt::{ConfirmedReceipt, MsgToL2},
+    transaction::Transaction,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -88,7 +91,7 @@ impl ProviderBlock {
     pub fn new(block: mp_block::MadaraBlock, status: BlockStatus) -> Self {
         let starknet_version = starknet_version(block.info.header.protocol_version);
 
-        let transactions = block
+        let transactions: Vec<_> = block
             .inner
             .transactions
             .into_iter()
@@ -99,7 +102,7 @@ impl ProviderBlock {
             })
             .collect();
 
-        let transaction_receipts = receipts(block.inner.receipts);
+        let transaction_receipts = receipts(block.inner.receipts, &transactions);
 
         let sequencer_address = if block.info.header.sequencer_address == Felt::ZERO {
             None
@@ -188,7 +191,7 @@ impl ProviderBlockPending {
     pub fn new(block: mp_block::MadaraPendingBlock) -> Self {
         let starknet_version = starknet_version(block.info.header.protocol_version);
 
-        let transactions = block
+        let transactions: Vec<_> = block
             .inner
             .transactions
             .into_iter()
@@ -199,7 +202,7 @@ impl ProviderBlockPending {
             })
             .collect();
 
-        let transaction_receipts = receipts(block.inner.receipts);
+        let transaction_receipts = receipts(block.inner.receipts, &transactions);
 
         Self {
             parent_block_hash: block.info.header.parent_block_hash,
@@ -283,10 +286,17 @@ fn starknet_version(version: StarknetVersion) -> Option<String> {
     }
 }
 
-fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>) -> Vec<ConfirmedReceipt> {
+fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transaction]) -> Vec<ConfirmedReceipt> {
     receipts
         .into_iter()
+        .zip(transaction.iter())
         .enumerate()
-        .map(|(index, receipt)| ConfirmedReceipt::new(receipt, None, index as u64))
+        .map(|(index, (receipt, tx))| {
+            let l1_to_l2_consumed_message: Option<MsgToL2> = match tx {
+                Transaction::L1Handler(l1_handler) => MsgToL2::try_from(l1_handler).ok(),
+                _ => None,
+            };
+            ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
+        })
         .collect()
 }

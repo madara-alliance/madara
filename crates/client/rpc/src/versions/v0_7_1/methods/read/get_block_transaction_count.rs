@@ -1,5 +1,4 @@
-use mp_block::MadaraMaybePendingBlockInfo;
-use starknet_core::types::BlockId;
+use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
 
 use crate::{errors::StarknetRpcResult, Starknet};
 
@@ -36,8 +35,9 @@ mod tests {
         errors::StarknetRpcApiError,
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
+    use mp_block::BlockTag;
     use rstest::rstest;
-    use starknet_core::types::{BlockTag, Felt};
+    use starknet_types_core::felt::Felt;
 
     #[rstest]
     fn test_get_block_transaction_count(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {

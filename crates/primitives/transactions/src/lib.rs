@@ -6,7 +6,6 @@ mod broadcasted_to_blockifier;
 mod from_blockifier;
 mod from_broadcasted_transaction;
 mod from_starknet_core;
-mod from_starknet_provider;
 mod into_starknet_api;
 mod to_starknet_core;
 
