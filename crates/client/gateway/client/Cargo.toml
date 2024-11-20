@@ -1,6 +1,6 @@
 [package]
-description = "Madara client rpc service"
-name = "mc-gateway"
+description = "Madara gateway client provider"
+name = "mc-gateway-client"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,12 +17,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-db.workspace = true
-mc-rpc.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
-mp-utils.workspace = true
 
 # Starknet
 starknet-core.workspace = true
@@ -39,7 +36,6 @@ hyper-tls.workspace = true
 hyper-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tower = { version = "0.4", features = ["timeout", "retry", "util", "limit"] }

@@ -581,7 +581,7 @@ mod test {
         core::{ClassHash, ContractAddress, PatriciaKey},
         felt, patricia_key,
     };
-    use starknet_core::types::Felt;
+    use starknet_types_core::felt::Felt;
 
     #[test]
     fn state_map_to_state_diff() {

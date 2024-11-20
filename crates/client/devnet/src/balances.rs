@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use mp_chain_config::ChainConfig;
-use mp_convert::felt_to_u128;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 
@@ -17,9 +16,9 @@ pub struct ContractFeeTokensBalance {
 impl ContractFeeTokensBalance {
     pub fn as_u128_fri_wei(&self) -> anyhow::Result<(u128, u128)> {
         let fri =
-            felt_to_u128(&self.fri).with_context(|| format!("Converting STRK balance felt {:#x} to u128", self.fri))?;
+            self.fri.try_into().with_context(|| format!("Converting STRK balance felt {:#x} to u128", self.fri))?;
         let wei =
-            felt_to_u128(&self.wei).with_context(|| format!("Converting ETH balance felt {:#x} to u128", self.wei))?;
+            self.wei.try_into().with_context(|| format!("Converting ETH balance felt {:#x} to u128", self.wei))?;
         Ok((fri, wei))
     }
 }

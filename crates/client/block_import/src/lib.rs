@@ -42,7 +42,7 @@ use anyhow::Context;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use metrics::BlockMetrics;
 use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 mod metrics;

@@ -9,11 +9,11 @@ use mc_block_import::{
 };
 use mc_db::MadaraBackend;
 use mc_db::MadaraStorageError;
-use mc_gateway::client::builder::FeederClient;
-use mc_gateway::error::SequencerError;
+use mc_gateway_client::GatewayProvider;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;
+use mp_gateway::error::SequencerError;
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
@@ -136,7 +136,7 @@ async fn l2_pending_block_task(
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
     sync_finished_cb: oneshot::Receiver<()>,
-    provider: Arc<FeederClient>,
+    provider: Arc<GatewayProvider>,
     pending_block_poll_interval: Duration,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
@@ -207,7 +207,7 @@ pub struct L2SyncConfig {
 #[tracing::instrument(skip(backend, provider, config, chain_id, telemetry, block_importer), fields(module = "Sync"))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
-    provider: FeederClient,
+    provider: GatewayProvider,
     config: L2SyncConfig,
     chain_id: ChainId,
     telemetry: TelemetryHandle,

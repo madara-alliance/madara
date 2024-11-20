@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
-use starknet_core::types::{BlockId, BlockTag, Felt};
+use mp_block::{BlockId, BlockTag};
+use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;

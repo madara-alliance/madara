@@ -196,7 +196,6 @@ mod tests {
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::ClassInfo;
-    use mp_convert::felt_to_u128;
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::broadcasted_to_blockifier;
     use mp_transactions::compute_hash::calculate_contract_address;
@@ -552,6 +551,7 @@ mod tests {
         tracing::info!("receipt: {:?}", block.inner.receipts[0]);
 
         let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
+        let fees_fri = block.inner.receipts[0].actual_fee().amount;
 
         if !expect_reverted {
             assert_eq!(
@@ -559,15 +559,38 @@ mod tests {
                 InvokeTransactionReceipt {
                     transaction_hash: result.transaction_hash,
                     messages_sent: vec![],
-                    events: vec![Event {
-                        from_address: ERC20_STRK_CONTRACT_ADDRESS,
-                        // TODO: do not match keys and data yet (unsure)
-                        keys: receipt.events[0].keys.clone(),
-                        data: receipt.events[0].data.clone(),
-                    }],
+                    events: vec![
+                        Event {
+                            from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                            keys: vec![
+                                // Transfer
+                                Felt::from_hex_unchecked(
+                                    "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"
+                                ),
+                                // From
+                                contract_0.address,
+                                // To
+                                contract_1.address,
+                            ],
+                            // U256 of the amount
+                            data: vec![transfer_amount.into(), Felt::ZERO],
+                        },
+                        Event {
+                            from_address: ERC20_STRK_CONTRACT_ADDRESS,
+                            keys: vec![
+                                Felt::from_hex_unchecked(
+                                    "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"
+                                ),
+                                contract_0.address,
+                                sequencer_address,
+                            ],
+                            // This is the fees transfer to the sequencer.
+                            data: vec![fees_fri, Felt::ZERO],
+                        },
+                    ],
                     // TODO: resources and fees are not tested because they consistent accross runs, we have to figure out why
                     execution_resources: receipt.execution_resources.clone(),
-                    actual_fee: FeePayment { amount: receipt.actual_fee.amount, unit: PriceUnit::Fri },
+                    actual_fee: FeePayment { amount: fees_fri, unit: PriceUnit::Fri },
                     execution_result: receipt.execution_result.clone(), // matched below
                 }
             );
@@ -577,7 +600,7 @@ mod tests {
             false => {
                 assert_eq!(&receipt.execution_result, &ExecutionResult::Succeeded);
 
-                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),
@@ -592,7 +615,7 @@ mod tests {
                 let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
                 assert!(reason.contains("ERC20: insufficient balance"));
 
-                let fees_fri = felt_to_u128(&block.inner.receipts[0].actual_fee().amount).unwrap();
+                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),

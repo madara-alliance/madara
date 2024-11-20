@@ -222,7 +222,8 @@ fn madara_help_shows() {
 #[rstest]
 #[tokio::test]
 async fn madara_can_sync_a_few_blocks() {
-    use starknet_core::types::{BlockHashAndNumber, Felt};
+    use starknet_core::types::BlockHashAndNumber;
+    use starknet_types_core::felt::Felt;
 
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
