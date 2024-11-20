@@ -2,7 +2,7 @@ use mp_block::{BlockId, BlockTag};
 
 use crate::{
     errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError},
-    versions::v0_8_0::StarknetWsRpcApiV0_8_0Server,
+    versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server,
 };
 
 use super::BLOCK_PAST_LIMIT;
@@ -147,7 +147,7 @@ mod test {
 
     use crate::{
         test_utils::rpc_test_setup,
-        versions::v0_8_0::{NewHead, StarknetWsRpcApiV0_8_0Client},
+        versions::user::v0_8_0::{NewHead, StarknetWsRpcApiV0_8_0Client},
         Starknet,
     };
 
