@@ -57,8 +57,8 @@ starknet_api.workspace = true
 anyhow.workspace = true
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true
-tokio.workspace = true
 tokio-util.workspace = true
+tokio.workspace = true
 
 #Instrumentation
 once_cell = { workspace = true }
