@@ -171,8 +171,8 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-    let rpc_service = RpcService::new(&run_cmd.rpc_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
-        .context("Initializing rpc service")?;
+    let rpc_service =
+        RpcService::new(run_cmd.rpc_params, Arc::clone(db_service.backend()), Arc::clone(&rpc_add_txs_method_provider));
 
     let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
         .await
