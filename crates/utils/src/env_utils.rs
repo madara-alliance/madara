@@ -14,6 +14,8 @@ pub fn get_env_var_or_default(key: &str, default: &str) -> String {
 
 pub fn get_env_var_optional(key: &str) -> Result<Option<String>, VarError> {
     match get_env_var(key) {
+        // if value is empty string, return None
+        Ok(s) if s.is_empty() => Ok(None),
         Ok(s) => Ok(Some(s)),
         Err(VarError::NotPresent) => Ok(None),
         Err(e) => Err(e),

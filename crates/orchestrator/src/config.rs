@@ -1,17 +1,14 @@
-#[cfg(feature = "testing")]
-use std::str::FromStr;
 use std::sync::Arc;
 
-#[cfg(feature = "testing")]
-use alloy::primitives::Address;
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::{Region, SdkConfig};
 use aws_credential_types::Credentials;
+use color_eyre::eyre::eyre;
 use da_client_interface::DaClient;
 use dotenvy::dotenv;
-use ethereum_da_client::config::EthereumDaConfig;
+use ethereum_da_client::EthereumDaClient;
 use ethereum_settlement_client::EthereumSettlementClient;
 use prover_client_interface::ProverClient;
 use settlement_client_interface::SettlementClient;
@@ -19,28 +16,32 @@ use sharp_service::SharpProverService;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
 use starknet_settlement_client::StarknetSettlementClient;
-use utils::env_utils::get_env_var_or_panic;
-use utils::settings::env::EnvSettingsProvider;
-use utils::settings::Settings;
 
 use crate::alerts::aws_sns::AWSSNS;
 use crate::alerts::Alerts;
+use crate::cli::alert::AlertValidatedArgs;
+use crate::cli::da::DaValidatedArgs;
+use crate::cli::database::DatabaseValidatedArgs;
+use crate::cli::prover::ProverValidatedArgs;
+use crate::cli::provider::{AWSConfigValidatedArgs, ProviderValidatedArgs};
+use crate::cli::queue::QueueValidatedArgs;
+use crate::cli::settlement::SettlementValidatedArgs;
+use crate::cli::snos::SNOSParams;
+use crate::cli::storage::StorageValidatedArgs;
+use crate::cli::RunCmd;
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::DataStorage;
 use crate::database::mongodb::MongoDb;
 use crate::database::Database;
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
+use crate::routes::ServerParams;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
 pub struct Config {
-    /// The RPC url used by the [starknet_client]
-    starknet_rpc_url: Url,
-    /// The RPC url to be used when running SNOS
-    /// When Madara supports getProof, we can re use
-    /// starknet_rpc_url for SNOS as well
-    snos_url: Url,
+    /// The orchestrator config
+    orchestrator_params: OrchestratorParams,
     /// The starknet client to get data from the node
     starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -57,6 +58,19 @@ pub struct Config {
     storage: Box<dyn DataStorage>,
     /// Alerts client
     alerts: Box<dyn Alerts>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServiceParams {
+    pub max_block_to_process: Option<u64>,
+    pub min_block_to_process: Option<u64>,
+}
+
+pub struct OrchestratorParams {
+    pub madara_rpc_url: Url,
+    pub snos_config: SNOSParams,
+    pub service_config: ServiceParams,
+    pub server_config: ServerParams,
 }
 
 /// `ProviderConfig` is an enum used to represent the global config built
@@ -78,47 +92,68 @@ impl ProviderConfig {
 }
 
 /// To build a `SdkConfig` for AWS provider.
-pub async fn get_aws_config(settings_provider: &impl Settings) -> SdkConfig {
-    let region = settings_provider.get_settings_or_panic("AWS_REGION");
+pub async fn get_aws_config(aws_config: &AWSConfigValidatedArgs) -> SdkConfig {
+    let region = aws_config.aws_region.clone();
     let region_provider = RegionProviderChain::first_try(Region::new(region)).or_default_provider();
-    let credentials = Credentials::from_keys(
-        settings_provider.get_settings_or_panic("AWS_ACCESS_KEY_ID"),
-        settings_provider.get_settings_or_panic("AWS_SECRET_ACCESS_KEY"),
-        None,
-    );
+    let credentials =
+        Credentials::from_keys(aws_config.aws_access_key_id.clone(), aws_config.aws_secret_access_key.clone(), None);
     aws_config::from_env().credentials_provider(credentials).region(region_provider).load().await
 }
 
 /// Initializes the app config
-pub async fn init_config() -> color_eyre::Result<Arc<Config>> {
+pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
     dotenv().ok();
 
-    let settings_provider = EnvSettingsProvider {};
-    let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));
+    let provider_params = run_cmd.validate_provider_params().expect("Failed to validate provider params");
+    let provider_config = build_provider_config(&provider_params).await;
 
-    // init starknet client
-    let rpc_url = Url::parse(&settings_provider.get_settings_or_panic("MADARA_RPC_URL")).expect("Failed to parse URL");
-    let snos_url = Url::parse(&settings_provider.get_settings_or_panic("RPC_FOR_SNOS")).expect("Failed to parse URL");
-    let provider = JsonRpcClient::new(HttpTransport::new(rpc_url.clone()));
+    let orchestrator_params = OrchestratorParams {
+        madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+        snos_config: run_cmd.validate_snos_params().expect("Failed to validate SNOS params"),
+        service_config: run_cmd.validate_service_params().expect("Failed to validate service params"),
+        server_config: run_cmd.validate_server_params().expect("Failed to validate server params"),
+    };
+
+    let rpc_client = JsonRpcClient::new(HttpTransport::new(orchestrator_params.madara_rpc_url.clone()));
 
     // init database
-    let database = build_database_client(&settings_provider).await;
-    let da_client = build_da_client(&settings_provider).await;
-    let settlement_client = build_settlement_client(&settings_provider).await?;
-    let prover_client = build_prover_service(&settings_provider);
-    let storage_client = build_storage_client(&settings_provider, provider_config.clone()).await;
-    let alerts_client = build_alert_client(&settings_provider, provider_config.clone()).await;
+    let database_params =
+        run_cmd.validate_database_params().map_err(|e| eyre!("Failed to validate database params: {e}"))?;
+    let database = build_database_client(&database_params).await;
+
+    // init DA client
+    let da_params = run_cmd.validate_da_params().map_err(|e| eyre!("Failed to validate DA params: {e}"))?;
+    let da_client = build_da_client(&da_params).await;
+
+    // init settlement
+    let settlement_params =
+        run_cmd.validate_settlement_params().map_err(|e| eyre!("Failed to validate settlement params: {e}"))?;
+    let settlement_client = build_settlement_client(&settlement_params).await?;
+
+    // init prover
+    let prover_params = run_cmd.validate_prover_params().map_err(|e| eyre!("Failed to validate prover params: {e}"))?;
+    let prover_client = build_prover_service(&prover_params);
+
+    // init storage
+    let data_storage_params =
+        run_cmd.validate_storage_params().map_err(|e| eyre!("Failed to validate storage params: {e}"))?;
+    let storage_client = build_storage_client(&data_storage_params, provider_config.clone()).await;
+
+    // init alerts
+    let alert_params = run_cmd.validate_alert_params().map_err(|e| eyre!("Failed to validate alert params: {e}"))?;
+    let alerts_client = build_alert_client(&alert_params, provider_config.clone()).await;
 
     // init the queue
     // TODO: we use omniqueue for now which doesn't support loading AWS config
     // from `SdkConfig`. We can later move to using `aws_sdk_sqs`. This would require
     // us stop using the generic omniqueue abstractions for message ack/nack
-    let queue = build_queue_client();
+    // init queue
+    let queue_params = run_cmd.validate_queue_params().map_err(|e| eyre!("Failed to validate queue params: {e}"))?;
+    let queue = build_queue_client(&queue_params, provider_config.clone()).await;
 
     Ok(Arc::new(Config::new(
-        rpc_url,
-        snos_url,
-        Arc::new(provider),
+        orchestrator_params,
+        Arc::new(rpc_client),
         da_client,
         prover_client,
         settlement_client,
@@ -133,8 +168,7 @@ impl Config {
     /// Create a new config
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        starknet_rpc_url: Url,
-        snos_url: Url,
+        orchestrator_params: OrchestratorParams,
         starknet_client: Arc<JsonRpcClient<HttpTransport>>,
         da_client: Box<dyn DaClient>,
         prover_client: Box<dyn ProverClient>,
@@ -145,8 +179,7 @@ impl Config {
         alerts: Box<dyn Alerts>,
     ) -> Self {
         Self {
-            starknet_rpc_url,
-            snos_url,
+            orchestrator_params,
             starknet_client,
             da_client,
             prover_client,
@@ -160,12 +193,22 @@ impl Config {
 
     /// Returns the starknet rpc url
     pub fn starknet_rpc_url(&self) -> &Url {
-        &self.starknet_rpc_url
+        &self.orchestrator_params.madara_rpc_url
+    }
+
+    /// Returns the server config
+    pub fn server_config(&self) -> &ServerParams {
+        &self.orchestrator_params.server_config
     }
 
     /// Returns the snos rpc url
-    pub fn snos_url(&self) -> &Url {
-        &self.snos_url
+    pub fn snos_config(&self) -> &SNOSParams {
+        &self.orchestrator_params.snos_config
+    }
+
+    /// Returns the service config
+    pub fn service_config(&self) -> &ServiceParams {
+        &self.orchestrator_params.service_config
     }
 
     /// Returns the starknet client
@@ -209,81 +252,95 @@ impl Config {
     }
 }
 
-/// Builds the DA client based on the environment variable DA_LAYER
-pub async fn build_da_client(settings_provider: &impl Settings) -> Box<dyn DaClient + Send + Sync> {
-    match get_env_var_or_panic("DA_LAYER").as_str() {
-        "ethereum" => {
-            let config = EthereumDaConfig::new_with_settings(settings_provider)
-                .expect("Not able to build config from the given settings provider.");
-            Box::new(config.build_client().await)
+/// Builds the provider config
+pub async fn build_provider_config(provider_params: &ProviderValidatedArgs) -> Arc<ProviderConfig> {
+    match provider_params {
+        ProviderValidatedArgs::AWS(aws_params) => {
+            Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(aws_params).await)))
         }
-        _ => panic!("Unsupported DA layer"),
+    }
+}
+
+/// Builds the DA client based on the environment variable DA_LAYER
+pub async fn build_da_client(da_params: &DaValidatedArgs) -> Box<dyn DaClient + Send + Sync> {
+    match da_params {
+        DaValidatedArgs::Ethereum(ethereum_da_params) => {
+            Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
+        }
     }
 }
 
 /// Builds the prover service based on the environment variable PROVER_SERVICE
-pub fn build_prover_service(settings_provider: &impl Settings) -> Box<dyn ProverClient> {
-    match get_env_var_or_panic("PROVER_SERVICE").as_str() {
-        "sharp" => Box::new(SharpProverService::new_with_settings(settings_provider)),
-        _ => panic!("Unsupported prover service"),
+pub fn build_prover_service(prover_params: &ProverValidatedArgs) -> Box<dyn ProverClient> {
+    match prover_params {
+        ProverValidatedArgs::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
     }
 }
 
 /// Builds the settlement client depending on the env variable SETTLEMENT_LAYER
 pub async fn build_settlement_client(
-    settings_provider: &impl Settings,
+    settlement_params: &SettlementValidatedArgs,
 ) -> color_eyre::Result<Box<dyn SettlementClient + Send + Sync>> {
-    match get_env_var_or_panic("SETTLEMENT_LAYER").as_str() {
-        "ethereum" => {
+    match settlement_params {
+        SettlementValidatedArgs::Ethereum(ethereum_settlement_params) => {
             #[cfg(not(feature = "testing"))]
             {
-                Ok(Box::new(EthereumSettlementClient::new_with_settings(settings_provider)))
+                Ok(Box::new(EthereumSettlementClient::new_with_args(ethereum_settlement_params)))
             }
             #[cfg(feature = "testing")]
             {
-                Ok(Box::new(EthereumSettlementClient::with_test_settings(
-                    RootProvider::new_http(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str().parse()?),
-                    Address::from_str(&get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS"))?,
-                    Url::from_str(get_env_var_or_panic("SETTLEMENT_RPC_URL").as_str())?,
-                    Some(Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str())?),
+                Ok(Box::new(EthereumSettlementClient::with_test_params(
+                    RootProvider::new_http(ethereum_settlement_params.ethereum_rpc_url.clone()),
+                    ethereum_settlement_params.l1_core_contract_address,
+                    ethereum_settlement_params.ethereum_rpc_url.clone(),
+                    Some(ethereum_settlement_params.starknet_operator_address),
                 )))
             }
         }
-        "starknet" => Ok(Box::new(StarknetSettlementClient::new_with_settings(settings_provider).await)),
-        _ => panic!("Unsupported Settlement layer"),
+        SettlementValidatedArgs::Starknet(starknet_settlement_params) => {
+            Ok(Box::new(StarknetSettlementClient::new_with_args(starknet_settlement_params).await))
+        }
     }
 }
 
 pub async fn build_storage_client(
-    settings_provider: &impl Settings,
+    data_storage_params: &StorageValidatedArgs,
     provider_config: Arc<ProviderConfig>,
 ) -> Box<dyn DataStorage + Send + Sync> {
-    match get_env_var_or_panic("DATA_STORAGE").as_str() {
-        "s3" => Box::new(AWSS3::new_with_settings(settings_provider, provider_config).await),
-        _ => panic!("Unsupported Storage Client"),
+    match data_storage_params {
+        StorageValidatedArgs::AWSS3(aws_s3_params) => {
+            let aws_config = provider_config.get_aws_client_or_panic();
+            Box::new(AWSS3::new_with_args(aws_s3_params, aws_config).await)
+        }
     }
 }
 
 pub async fn build_alert_client(
-    settings_provider: &impl Settings,
+    alert_params: &AlertValidatedArgs,
     provider_config: Arc<ProviderConfig>,
 ) -> Box<dyn Alerts + Send + Sync> {
-    match get_env_var_or_panic("ALERTS").as_str() {
-        "sns" => Box::new(AWSSNS::new_with_settings(settings_provider, provider_config).await),
-        _ => panic!("Unsupported Alert Client"),
+    match alert_params {
+        AlertValidatedArgs::AWSSNS(aws_sns_params) => {
+            let aws_config = provider_config.get_aws_client_or_panic();
+            Box::new(AWSSNS::new_with_args(aws_sns_params, aws_config).await)
+        }
     }
 }
 
-pub fn build_queue_client() -> Box<dyn QueueProvider + Send + Sync> {
-    match get_env_var_or_panic("QUEUE_PROVIDER").as_str() {
-        "sqs" => Box::new(SqsQueue {}),
-        _ => panic!("Unsupported Queue Client"),
+pub async fn build_queue_client(
+    queue_params: &QueueValidatedArgs,
+    provider_config: Arc<ProviderConfig>,
+) -> Box<dyn QueueProvider + Send + Sync> {
+    match queue_params {
+        QueueValidatedArgs::AWSSQS(aws_sqs_params) => {
+            let aws_config = provider_config.get_aws_client_or_panic();
+            Box::new(SqsQueue::new_with_args(aws_sqs_params.clone(), aws_config))
+        }
     }
 }
 
-pub async fn build_database_client(settings_provider: &impl Settings) -> Box<dyn Database + Send + Sync> {
-    match get_env_var_or_panic("DATABASE").as_str() {
-        "mongodb" => Box::new(MongoDb::new_with_settings(settings_provider).await),
-        _ => panic!("Unsupported Database Client"),
+pub async fn build_database_client(database_params: &DatabaseValidatedArgs) -> Box<dyn Database + Send + Sync> {
+    match database_params {
+        DatabaseValidatedArgs::MongoDB(mongodb_params) => Box::new(MongoDb::new_with_args(mongodb_params).await),
     }
 }

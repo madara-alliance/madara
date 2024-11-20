@@ -15,7 +15,6 @@ use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::{Job, MockJob};
-use crate::queue::job_queue::PROVING_JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
@@ -26,6 +25,8 @@ use crate::workers::proving::ProvingWorker;
 #[case(false)]
 #[tokio::test]
 async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dyn Error>> {
+    use crate::queue::QueueType;
+
     let server = MockServer::start();
     let da_client = MockDaClient::new();
     let mut db = MockDatabase::new();
@@ -62,7 +63,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .expect_send_message_to_queue()
             .times(4)
             .returning(|_, _, _| Ok(()))
-            .withf(|queue, _payload, _delay| queue == PROVING_JOB_PROCESSING_QUEUE);
+            .withf(|queue, _payload, _delay| *queue == QueueType::ProvingJobProcessing);
     } else {
         for i in 1..5 + 1 {
             db_checks_proving_worker(i, &mut db, &mut job_handler);
@@ -79,7 +80,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .expect_send_message_to_queue()
             .times(5)
             .returning(|_, _, _| Ok(()))
-            .withf(|queue, _payload, _delay| queue == PROVING_JOB_PROCESSING_QUEUE);
+            .withf(|queue, _payload, _delay| *queue == QueueType::ProvingJobProcessing);
     }
 
     let provider = JsonRpcClient::new(HttpTransport::new(

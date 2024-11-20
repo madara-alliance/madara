@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use color_eyre::Result;
 use mockall::automock;
-use utils::settings::Settings;
+
+use crate::cli::storage::StorageValidatedArgs;
 
 /// Data Storage Trait
 ///
@@ -22,15 +23,9 @@ pub trait DataStorage: Send + Sync {
     async fn get_data(&self, key: &str) -> Result<Bytes>;
     async fn put_data(&self, data: Bytes, key: &str) -> Result<()>;
     async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
-    async fn setup(&self, settings_provider: Box<dyn Settings>) -> Result<()> {
-        let bucket_name = settings_provider.get_settings_or_panic("STORAGE_BUCKET_NAME");
-        self.create_bucket(&bucket_name).await
+    async fn setup(&self, storage_params: &StorageValidatedArgs) -> Result<()> {
+        match storage_params {
+            StorageValidatedArgs::AWSS3(aws_s3_params) => self.create_bucket(&aws_s3_params.bucket_name).await,
+        }
     }
-}
-
-/// **DataStorageConfig** : Trait method to represent the config struct needed for
-/// initialisation of data storage client
-pub trait DataStorageConfig {
-    /// Get a config file from environment vars in system or
-    fn new_with_settings(settings: &impl Settings) -> Self;
 }

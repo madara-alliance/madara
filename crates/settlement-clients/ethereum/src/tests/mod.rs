@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use alloy::node_bindings::{Anvil, AnvilInstance};
+use alloy::primitives::Address;
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::ProviderBuilder;
 use alloy::sol;
-use alloy_primitives::Address;
 use utils::env_utils::get_env_var_or_panic;
-
 // Using the Pipe trait to write chained operations easier
 #[allow(dead_code)]
 trait Pipe: Sized {
@@ -32,13 +31,13 @@ lazy_static! {
         .to_str()
         .expect("Path contains invalid Unicode")
         .to_string();
-    static ref ETH_RPC: String = get_env_var_or_panic("SETTLEMENT_RPC_URL");
-    pub static ref STARKNET_OPERATOR_ADDRESS: Address =
-        Address::from_str(get_env_var_or_panic("STARKNET_OPERATOR_ADDRESS").as_str())
-            .expect("Could not parse STARKNET_OPERATOR_ADDRESS");
+    static ref ETH_RPC: String = get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL");
+    pub static ref MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS: Address =
+        Address::from_str(get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS").as_str())
+            .expect("Could not parse MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS");
     static ref STARKNET_CORE_CONTRACT_ADDRESS: Address =
-        Address::from_str(get_env_var_or_panic("L1_CORE_CONTRACT_ADDRESS").as_str())
-            .expect("Could not parse L1_CORE_CONTRACT_ADDRESS");
+        Address::from_str(get_env_var_or_panic("MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS").as_str())
+            .expect("Could not parse MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS");
     pub static ref TEST_NONCE: u64 = 666068;
 }
 
@@ -127,6 +126,7 @@ mod settlement_client_tests {
     use std::time::Duration;
 
     use alloy::eips::eip4844::BYTES_PER_BLOB;
+    use alloy::primitives::Address;
     use alloy::providers::Provider;
     use alloy::sol_types::private::U256;
     use alloy_primitives::FixedBytes;
@@ -134,15 +134,16 @@ mod settlement_client_tests {
     use rstest::rstest;
     use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
     use tokio::time::sleep;
+    use utils::env_utils::get_env_var_or_panic;
 
     use super::{BLOCK_TIME, ENV_FILE_PATH};
     use crate::conversion::to_padded_hex;
     use crate::tests::{
-        DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, STARKNET_CORE_CONTRACT,
-        STARKNET_CORE_CONTRACT_ADDRESS, STARKNET_OPERATOR_ADDRESS,
+        DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS,
+        STARKNET_CORE_CONTRACT, STARKNET_CORE_CONTRACT_ADDRESS,
     };
     use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
-    use crate::{EthereumSettlementClient, Y_HIGH_POINT_OFFSET, Y_LOW_POINT_OFFSET};
+    use crate::{EthereumSettlementClient, EthereumSettlementValidatedArgs, Y_HIGH_POINT_OFFSET, Y_LOW_POINT_OFFSET};
 
     #[rstest]
     #[tokio::test]
@@ -153,14 +154,29 @@ mod settlement_client_tests {
     /// And hence to test the signature and transaction via a dummy contract that has same function
     /// selector as `updateStateKzgDa`. and anvil is for testing on fork Eth.
     async fn update_state_blob_with_dummy_contract_works() {
+        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+
         let setup = EthereumTestBuilder::new().build().await;
+
+        let ethereum_settlement_params = EthereumSettlementValidatedArgs {
+            ethereum_rpc_url: setup.rpc_url,
+            ethereum_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY"),
+            l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS",
+            ))
+            .expect("Invalid L1 core contract address"),
+            starknet_operator_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
+            ))
+            .expect("Invalid Starknet operator address"),
+        };
 
         // Deploying a dummy contract
         let contract = DummyCoreContract::deploy(&setup.provider).await.expect("Unable to deploy address");
-        let ethereum_settlement_client = EthereumSettlementClient::with_test_settings(
+        let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
             setup.provider.clone(),
             *contract.address(),
-            setup.rpc_url,
+            ethereum_settlement_params.ethereum_rpc_url,
             None,
         );
 
@@ -213,23 +229,38 @@ mod settlement_client_tests {
     /// contract Here signature checks are bypassed and anvil is for testing on fork Eth.
     async fn update_state_blob_with_impersonation_works(#[case] fork_block_no: u64) {
         dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+
         let setup = EthereumTestBuilder::new()
             .with_fork_block(fork_block_no)
-            .with_impersonator(*STARKNET_OPERATOR_ADDRESS)
+            .with_impersonator(*MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS)
             .build()
             .await;
-        let ethereum_settlement_client = EthereumSettlementClient::with_test_settings(
+
+        let ethereum_settlement_params = EthereumSettlementValidatedArgs {
+            ethereum_rpc_url: setup.rpc_url,
+            ethereum_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY"),
+            l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS",
+            ))
+            .expect("Invalid L1 core contract address"),
+            starknet_operator_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
+            ))
+            .expect("Invalid Starknet operator address"),
+        };
+
+        let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
             setup.provider.clone(),
-            *STARKNET_CORE_CONTRACT_ADDRESS,
-            setup.rpc_url,
-            Some(*STARKNET_OPERATOR_ADDRESS),
+            ethereum_settlement_params.l1_core_contract_address,
+            ethereum_settlement_params.ethereum_rpc_url,
+            Some(ethereum_settlement_params.starknet_operator_address),
         );
 
         // let nonce = ethereum_settlement_client.get_nonce().await.expect("Unable to fetch nonce");
 
         let nonce = setup
             .provider
-            .get_transaction_count(*STARKNET_OPERATOR_ADDRESS)
+            .get_transaction_count(*MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS)
             .await
             .unwrap()
             .to_string()
@@ -274,11 +305,26 @@ mod settlement_client_tests {
     #[tokio::test]
     #[case::typical(6806847)]
     async fn get_last_settled_block_typical_works(#[case] fork_block_no: u64) {
+        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
         let setup = EthereumTestBuilder::new().with_fork_block(fork_block_no).build().await;
-        let ethereum_settlement_client = EthereumSettlementClient::with_test_settings(
+
+        let ethereum_settlement_params = EthereumSettlementValidatedArgs {
+            ethereum_rpc_url: setup.rpc_url,
+            ethereum_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY"),
+            l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS",
+            ))
+            .expect("Invalid L1 core contract address"),
+            starknet_operator_address: Address::from_str(&get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
+            ))
+            .expect("Invalid Starknet operator address"),
+        };
+
+        let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
             setup.provider.clone(),
-            *STARKNET_CORE_CONTRACT_ADDRESS,
-            setup.rpc_url,
+            ethereum_settlement_params.l1_core_contract_address,
+            ethereum_settlement_params.ethereum_rpc_url,
             None,
         );
         assert_eq!(

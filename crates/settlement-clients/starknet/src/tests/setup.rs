@@ -153,7 +153,7 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = env::var("MADARA_BINARY_PATH").expect("failed to get binary path");
+        let target_bin = env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH").expect("failed to get binary path");
         let target_bin = PathBuf::from(target_bin);
 
         if !target_bin.exists() {

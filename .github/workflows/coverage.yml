@@ -110,7 +110,7 @@ jobs:
           mv target/debug/madara ../madara-binary
           cd ..
           echo -e "
-          MADARA_BINARY_PATH=\"$(pwd)/madara-binary\"" >> .env.test
+          MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/madara-binary\"" >> .env.test
           cat .env.test
 
       - name: Getting neccesary files for testing
@@ -128,8 +128,8 @@ jobs:
 
       - name: Run llvm-cov tests
         env:
-          SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
-          RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests --no-fail-fast

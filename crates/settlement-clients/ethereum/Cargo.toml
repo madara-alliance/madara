@@ -4,9 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-alloy-primitives = { version = "0.7.7", default-features = false }
-
 alloy = { workspace = true, features = ["full", "node-bindings"] }
+alloy-primitives = { workspace = true, default-features = false }
 async-trait = { workspace = true }
 bytes = "1.7.2"
 c-kzg = { workspace = true }

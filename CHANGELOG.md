@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
-- setup functions added for cloud and db
+- Added cli args support for all the services
+- Setup functions added for cloud and db
 - panic handling in process job
 - upgrade ETH L1 bridge for withdrawals to work
 - added makefile and submodules

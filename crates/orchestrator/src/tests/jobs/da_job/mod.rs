@@ -14,7 +14,6 @@ use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file}
 use crate::jobs::da_job::{DaError, DaJob};
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::jobs::{Job, JobError};
-use crate::tests::common::drop_database;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 /// Tests the DA Job's handling of a blob length exceeding the supported size.
@@ -234,5 +233,4 @@ async fn test_da_job_process_job_success(
     );
 
     state_update_mock.assert();
-    let _ = drop_database().await;
 }

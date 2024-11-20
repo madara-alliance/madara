@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+alloy = { workspace = true, features = ["full", "node-bindings"] }
+alloy-primitives = { workspace = true, default-features = false }
 appchain-core-contract-client = { workspace = true }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }

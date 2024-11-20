@@ -1,97 +1,93 @@
 use std::process::Command;
-use std::sync::Arc;
 
-use aws_config::environment::EnvironmentVariableCredentialsProvider;
-use aws_config::{from_env, Region, SdkConfig};
-use aws_credential_types::provider::ProvideCredentials;
-use utils::env_utils::get_env_var_or_panic;
-use utils::settings::env::EnvSettingsProvider;
+use aws_config::SdkConfig;
 
 use crate::alerts::aws_sns::AWSSNS;
 use crate::alerts::Alerts;
-use crate::config::{get_aws_config, ProviderConfig};
+use crate::cli::alert::AlertValidatedArgs;
+use crate::cli::cron::CronValidatedArgs;
+use crate::cli::queue::QueueValidatedArgs;
+use crate::cli::storage::StorageValidatedArgs;
+use crate::cli::SetupCmd;
+use crate::config::build_provider_config;
+use crate::cron::event_bridge::AWSEventBridge;
 use crate::cron::Cron;
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::DataStorage;
-use crate::queue::QueueProvider;
+use crate::queue::sqs::SqsQueue;
+use crate::queue::QueueProvider as _;
 
 #[derive(Clone)]
 pub enum SetupConfig {
     AWS(SdkConfig),
 }
 
-pub enum ConfigType {
-    AWS,
-}
+// Note: we are using println! instead of tracing::info! because telemetry is not yet initialized
+// and it get initialized during the run_orchestrator function.
+pub async fn setup_cloud(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
+    println!("Setting up cloud. ⏳");
+    // AWS
+    let provider_params = setup_cmd.validate_provider_params().expect("Failed to validate provider params");
+    let provider_config = build_provider_config(&provider_params).await;
 
-async fn setup_config(client_type: ConfigType) -> SetupConfig {
-    match client_type {
-        ConfigType::AWS => {
-            let region_provider = Region::new(get_env_var_or_panic("AWS_REGION"));
-            let creds = EnvironmentVariableCredentialsProvider::new().provide_credentials().await.unwrap();
-            SetupConfig::AWS(from_env().region(region_provider).credentials_provider(creds).load().await)
+    // Data Storage
+    println!("Setting up data storage. ⏳");
+    let data_storage_params = setup_cmd.validate_storage_params().expect("Failed to validate storage params");
+    let aws_config = provider_config.get_aws_client_or_panic();
+
+    match data_storage_params {
+        StorageValidatedArgs::AWSS3(aws_s3_params) => {
+            let s3 = Box::new(AWSS3::new_with_args(&aws_s3_params, aws_config).await);
+            s3.setup(&StorageValidatedArgs::AWSS3(aws_s3_params.clone())).await?
         }
     }
-}
+    println!("Data storage setup completed ✅");
 
-// TODO : move this to main.rs after moving to clap.
-pub async fn setup_cloud() -> color_eyre::Result<()> {
-    log::info!("Setting up cloud.");
-    let settings_provider = EnvSettingsProvider {};
-    let provider_config = Arc::new(ProviderConfig::AWS(Box::new(get_aws_config(&settings_provider).await)));
-
-    log::info!("Setting up data storage.");
-    match get_env_var_or_panic("DATA_STORAGE").as_str() {
-        "s3" => {
-            let s3 = Box::new(AWSS3::new_with_settings(&settings_provider, provider_config.clone()).await);
-            s3.setup(Box::new(settings_provider.clone())).await?
+    // Queues
+    println!("Setting up queues. ⏳");
+    let queue_params = setup_cmd.validate_queue_params().expect("Failed to validate queue params");
+    match queue_params {
+        QueueValidatedArgs::AWSSQS(aws_sqs_params) => {
+            let sqs = Box::new(SqsQueue::new_with_args(aws_sqs_params, aws_config));
+            sqs.setup().await?
         }
-        _ => panic!("Unsupported Storage Client"),
     }
-    log::info!("Data storage setup completed ✅");
+    println!("Queues setup completed ✅");
 
-    log::info!("Setting up queues");
-    match get_env_var_or_panic("QUEUE_PROVIDER").as_str() {
-        "sqs" => {
-            let config = setup_config(ConfigType::AWS).await;
-            let sqs = Box::new(crate::queue::sqs::SqsQueue {});
-            sqs.setup(config).await?
+    // Cron
+    println!("Setting up cron. ⏳");
+    let cron_params = setup_cmd.validate_cron_params().expect("Failed to validate cron params");
+    match cron_params {
+        CronValidatedArgs::AWSEventBridge(aws_event_bridge_params) => {
+            let aws_config = provider_config.get_aws_client_or_panic();
+            let event_bridge = Box::new(AWSEventBridge::new_with_args(&aws_event_bridge_params, aws_config));
+            event_bridge.setup().await?
         }
-        _ => panic!("Unsupported Queue Client"),
     }
-    log::info!("Queues setup completed ✅");
+    println!("Cron setup completed ✅");
 
-    log::info!("Setting up cron");
-    match get_env_var_or_panic("CRON_PROVIDER").as_str() {
-        "event_bridge" => {
-            let config = setup_config(ConfigType::AWS).await;
-            let event_bridge = Box::new(crate::cron::event_bridge::AWSEventBridge {});
-            event_bridge.setup(config).await?
+    // Alerts
+    println!("Setting up alerts. ⏳");
+    let alert_params = setup_cmd.validate_alert_params().expect("Failed to validate alert params");
+    match alert_params {
+        AlertValidatedArgs::AWSSNS(aws_sns_params) => {
+            let aws_config = provider_config.get_aws_client_or_panic();
+            let sns = Box::new(AWSSNS::new_with_args(&aws_sns_params, aws_config).await);
+            sns.setup().await?
         }
-        _ => panic!("Unsupported Event Bridge Client"),
     }
-    log::info!("Cron setup completed ✅");
-
-    log::info!("Setting up alerts.");
-    match get_env_var_or_panic("ALERTS").as_str() {
-        "sns" => {
-            let sns = Box::new(AWSSNS::new_with_settings(&settings_provider, provider_config).await);
-            sns.setup(Box::new(settings_provider)).await?
-        }
-        _ => panic!("Unsupported Alert Client"),
-    }
-    log::info!("Alerts setup completed ✅");
+    println!("Alerts setup completed ✅");
 
     Ok(())
 }
 
 pub async fn setup_db() -> color_eyre::Result<()> {
     // We run the js script in the folder root:
-    log::info!("Setting up database.");
+    println!("Setting up database.");
 
     Command::new("node").arg("migrate-mongo-config.js").output()?;
 
-    log::info!("Database setup completed ✅");
+    println!("Database setup completed ✅");
 
     Ok(())
 }

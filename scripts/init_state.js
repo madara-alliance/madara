@@ -13,10 +13,13 @@ const { MongoClient } = require("mongodb");
 const { v4 } = require("uuid");
 
 // using default anvil key which has funds
-const ETHEREUM_PRIVATE_KEY =
+const MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const eth_provider = new ethers.JsonRpcProvider("http://localhost:8545");
-const wallet = new ethers.Wallet(ETHEREUM_PRIVATE_KEY, eth_provider);
+const wallet = new ethers.Wallet(
+  MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY,
+  eth_provider,
+);
 
 const starknet_provider = new starknet.RpcProvider({
   nodeUrl: "http://localhost:9944",

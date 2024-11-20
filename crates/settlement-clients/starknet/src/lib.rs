@@ -22,9 +22,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet::signers::{LocalWallet, SigningKey};
 use tokio::time::{sleep, Duration};
-use utils::settings::Settings;
 
-use crate::config::StarknetSettlementConfig;
 use crate::conversion::{slice_slice_u8_to_vec_field, slice_u8_to_field, u64_from_felt};
 
 pub type LocalWalletSignerMiddleware = Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>>;
@@ -36,30 +34,39 @@ pub struct StarknetSettlementClient {
     pub tx_finality_retry_delay_in_seconds: u64,
 }
 
-pub const ENV_ACCOUNT_ADDRESS: &str = "STARKNET_ACCOUNT_ADDRESS";
-pub const ENV_PRIVATE_KEY: &str = "STARKNET_PRIVATE_KEY";
+pub const ENV_ACCOUNT_ADDRESS: &str = "MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS";
+pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY";
 
 const MAX_RETRIES_VERIFY_TX_FINALITY: usize = 10;
 
-// Assumed the contract called for settlement l ooks like:
+use url::Url;
+#[derive(Clone, Debug)]
+pub struct StarknetSettlementValidatedArgs {
+    pub starknet_rpc_url: Url,
+    pub starknet_private_key: String,
+    pub starknet_account_address: String,
+    pub starknet_cairo_core_contract_address: String,
+    pub starknet_finality_retry_wait_in_secs: u64,
+}
+
+// Assumed the contract called for settlement looks like:
 // https://github.com/keep-starknet-strange/piltover
 
 impl StarknetSettlementClient {
-    pub async fn new_with_settings(settings: &impl Settings) -> Self {
-        let settlement_cfg = StarknetSettlementConfig::new_with_settings(settings);
+    pub async fn new_with_args(settlement_cfg: &StarknetSettlementValidatedArgs) -> Self {
         let provider: Arc<JsonRpcClient<HttpTransport>> =
-            Arc::new(JsonRpcClient::new(HttpTransport::new(settlement_cfg.rpc_url.clone())));
+            Arc::new(JsonRpcClient::new(HttpTransport::new(settlement_cfg.starknet_rpc_url.clone())));
 
-        let public_key = settings.get_settings_or_panic(ENV_ACCOUNT_ADDRESS);
+        let public_key = settlement_cfg.starknet_account_address.clone().to_string();
         let signer_address = Felt::from_hex(&public_key).expect("invalid signer address");
 
         // TODO: Very insecure way of building the signer. Needs to be adjusted.
-        let private_key = settings.get_settings_or_panic(ENV_PRIVATE_KEY);
+        let private_key = settlement_cfg.starknet_private_key.clone();
         let signer = Felt::from_hex(&private_key).expect("Invalid private key");
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
 
-        let core_contract_address =
-            Felt::from_hex(&settlement_cfg.core_contract_address).expect("Invalid core contract address");
+        let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address.to_string())
+            .expect("Invalid core contract address");
 
         let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> =
             Arc::new(SingleOwnerAccount::new(
@@ -77,7 +84,7 @@ impl StarknetSettlementClient {
             account,
             core_contract_address,
             starknet_core_contract_client,
-            tx_finality_retry_delay_in_seconds: settlement_cfg.tx_finality_retry_delay_in_seconds,
+            tx_finality_retry_delay_in_seconds: settlement_cfg.starknet_finality_retry_wait_in_secs,
         }
     }
 }

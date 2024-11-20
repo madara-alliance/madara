@@ -23,16 +23,14 @@ use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
-#[cfg(feature = "testing")]
 use url::Url;
+#[cfg(feature = "testing")]
 use utils::env_utils::get_env_var_or_panic;
 
 use crate::clients::interfaces::validity_interface::StarknetValidityContractTrait;
 use crate::clients::StarknetValidityContractClient;
-use crate::config::EthereumSettlementConfig;
 use crate::conversion::{slice_u8_to_u256, vec_u8_32_to_vec_u256};
 pub mod clients;
-pub mod config;
 pub mod conversion;
 pub mod tests;
 pub mod types;
@@ -42,11 +40,10 @@ use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
-use utils::settings::Settings;
 
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 
-pub const ENV_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
+pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
 const X_0_POINT_OFFSET: usize = 10;
 const Y_LOW_POINT_OFFSET: usize = 14;
 const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
@@ -64,6 +61,17 @@ lazy_static! {
     .expect("Error loading trusted setup file");
 }
 
+#[derive(Clone, Debug)]
+pub struct EthereumSettlementValidatedArgs {
+    pub ethereum_rpc_url: Url,
+
+    pub ethereum_private_key: String,
+
+    pub l1_core_contract_address: Address,
+
+    pub starknet_operator_address: Address,
+}
+
 #[allow(dead_code)]
 pub struct EthereumSettlementClient {
     core_contract_client: StarknetValidityContractClient,
@@ -74,34 +82,31 @@ pub struct EthereumSettlementClient {
 }
 
 impl EthereumSettlementClient {
-    pub fn new_with_settings(settings: &impl Settings) -> Self {
-        let settlement_cfg = EthereumSettlementConfig::new_with_settings(settings);
-        let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
+    pub fn new_with_args(settlement_cfg: &EthereumSettlementValidatedArgs) -> Self {
+        let private_key = settlement_cfg.ethereum_private_key.clone();
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
         let wallet_address = signer.address();
         let wallet = EthereumWallet::from(signer);
 
         // provider without wallet
-        let provider = Arc::new(ProviderBuilder::new().on_http(settlement_cfg.rpc_url.clone()));
+        let provider = Arc::new(ProviderBuilder::new().on_http(settlement_cfg.ethereum_rpc_url.clone()));
 
         // provider with wallet
         let filler_provider = Arc::new(
-            ProviderBuilder::new().with_recommended_fillers().wallet(wallet.clone()).on_http(settlement_cfg.rpc_url),
+            ProviderBuilder::new()
+                .with_recommended_fillers()
+                .wallet(wallet.clone())
+                .on_http(settlement_cfg.ethereum_rpc_url.clone()),
         );
 
-        let core_contract_client = StarknetValidityContractClient::new(
-            Address::from_str(&settlement_cfg.core_contract_address)
-                .expect("Failed to convert the validity contract address.")
-                .0
-                .into(),
-            filler_provider,
-        );
+        let core_contract_client =
+            StarknetValidityContractClient::new(settlement_cfg.l1_core_contract_address, filler_provider);
 
         EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address, impersonate_account: None }
     }
 
     #[cfg(feature = "testing")]
-    pub fn with_test_settings(
+    pub fn with_test_params(
         provider: RootProvider<Http<Client>>,
         core_contract_address: Address,
         rpc_url: Url,

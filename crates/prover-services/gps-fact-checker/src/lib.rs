@@ -1,3 +1,5 @@
+use std::str::FromStr as _;
+
 use alloy::primitives::{Address, B256};
 use alloy::providers::{ProviderBuilder, RootProvider};
 use alloy::sol;
@@ -25,9 +27,12 @@ type TransportT = Http<Client>;
 type ProviderT = RootProvider<TransportT>;
 
 impl FactChecker {
-    pub fn new(rpc_node_url: Url, verifier_address: Address) -> Self {
-        let provider = ProviderBuilder::new().on_http(rpc_node_url);
-        let fact_registry = FactRegistry::new(verifier_address, provider);
+    pub fn new(sharp_rpc_node_url: Url, gps_verifier_contract_address: String) -> Self {
+        let provider = ProviderBuilder::new().on_http(sharp_rpc_node_url);
+        let fact_registry = FactRegistry::new(
+            Address::from_str(gps_verifier_contract_address.as_str()).expect("Invalid GPS verifier contract address"),
+            provider,
+        );
         Self { fact_registry }
     }
 

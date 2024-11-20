@@ -7,12 +7,17 @@ use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use job_routes::job_router;
 use serde::Serialize;
-use utils::env_utils::get_env_var_or_default;
 
 use crate::config::Config;
 
 pub mod app_routes;
 pub mod job_routes;
+
+#[derive(Debug, Clone)]
+pub struct ServerParams {
+    pub host: String,
+    pub port: u16,
+}
 
 #[derive(Debug, Serialize)]
 struct ApiResponse<T>
@@ -50,7 +55,7 @@ where
 }
 
 pub async fn setup_server(config: Arc<Config>) -> SocketAddr {
-    let (api_server_url, listener) = get_server_url().await;
+    let (api_server_url, listener) = get_server_url(config.server_config()).await;
 
     let job_routes = job_router(config.clone());
     let app_routes = app_router();
@@ -63,10 +68,8 @@ pub async fn setup_server(config: Arc<Config>) -> SocketAddr {
     api_server_url
 }
 
-pub async fn get_server_url() -> (SocketAddr, tokio::net::TcpListener) {
-    let host = get_env_var_or_default("HOST", "127.0.0.1");
-    let port = get_env_var_or_default("PORT", "3000").parse::<u16>().expect("PORT must be a u16");
-    let address = format!("{}:{}", host, port);
+pub async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {
+    let address = format!("{}:{}", server_params.host, server_params.port);
     let listener = tokio::net::TcpListener::bind(address.clone()).await.expect("Failed to get listener");
     let api_server_url = listener.local_addr().expect("Unable to bind address to listener.");
 

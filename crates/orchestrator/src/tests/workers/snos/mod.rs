@@ -15,7 +15,6 @@ use crate::database::MockDatabase;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::types::JobType;
 use crate::jobs::{Job, MockJob};
-use crate::queue::job_queue::SNOS_JOB_PROCESSING_QUEUE;
 use crate::queue::MockQueueProvider;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
@@ -27,6 +26,8 @@ use crate::workers::Worker;
 #[case(true)]
 #[tokio::test]
 async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
+    use crate::queue::QueueType;
+
     let server = MockServer::start();
     let da_client = MockDaClient::new();
     let mut db = MockDatabase::new();
@@ -92,7 +93,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     queue
         .expect_send_message_to_queue()
         .returning(|_, _, _| Ok(()))
-        .withf(|queue, _payload, _delay| queue == SNOS_JOB_PROCESSING_QUEUE);
+        .withf(|queue, _payload, _delay| *queue == QueueType::SnosJobProcessing);
 
     // mock block number (madara) : 5
     let rpc_response_block_number = block;

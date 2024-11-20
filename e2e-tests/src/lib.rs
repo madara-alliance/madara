@@ -1,5 +1,4 @@
 pub mod anvil;
-pub mod localstack;
 pub mod mock_server;
 pub mod mongodb;
 pub mod node;

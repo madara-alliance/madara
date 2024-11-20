@@ -9,77 +9,97 @@ use color_eyre::Result as EyreResult;
 use lazy_static::lazy_static;
 use mockall::automock;
 use omniqueue::{Delivery, QueueError};
+use strum_macros::{Display, EnumIter};
 
 use crate::config::Config;
 use crate::jobs::JobError;
-use crate::setup::SetupConfig;
+
+#[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter)]
+pub enum QueueType {
+    #[strum(serialize = "snos_job_processing")]
+    SnosJobProcessing,
+    #[strum(serialize = "snos_job_verification")]
+    SnosJobVerification,
+    #[strum(serialize = "proving_job_processing")]
+    ProvingJobProcessing,
+    #[strum(serialize = "proving_job_verification")]
+    ProvingJobVerification,
+    #[strum(serialize = "proof_registration_job_processing")]
+    ProofRegistrationJobProcessing,
+    #[strum(serialize = "proof_registration_job_verification")]
+    ProofRegistrationJobVerification,
+    #[strum(serialize = "data_submission_job_processing")]
+    DataSubmissionJobProcessing,
+    #[strum(serialize = "data_submission_job_verification")]
+    DataSubmissionJobVerification,
+    #[strum(serialize = "update_state_job_processing")]
+    UpdateStateJobProcessing,
+    #[strum(serialize = "update_state_job_verification")]
+    UpdateStateJobVerification,
+    #[strum(serialize = "job_handle_failure")]
+    JobHandleFailure,
+    #[strum(serialize = "worker_trigger")]
+    WorkerTrigger,
+}
 
 #[derive(Clone)]
-pub struct DlqConfig<'a> {
+pub struct DlqConfig {
     pub max_receive_count: i32,
-    pub dlq_name: &'a str,
+    pub dlq_name: QueueType,
 }
 
 #[derive(Clone)]
-pub struct QueueConfig<'a> {
-    pub name: String,
+pub struct QueueConfig {
+    pub name: QueueType,
     pub visibility_timeout: i32,
-    pub dlq_config: Option<DlqConfig<'a>>,
+    pub dlq_config: Option<DlqConfig>,
 }
 
+// TODO: use QueueType::iter() or format!
 lazy_static! {
-    pub static ref JOB_HANDLE_FAILURE_QUEUE: String = String::from("madara_orchestrator_job_handle_failure_queue");
-    pub static ref QUEUES: Vec<QueueConfig<'static>> = vec![
+    pub static ref QUEUES: Vec<QueueConfig> = vec![
+        QueueConfig { name: QueueType::JobHandleFailure, visibility_timeout: 300, dlq_config: None },
         QueueConfig {
-            name: String::from("madara_orchestrator_snos_job_processing_queue"),
+            name: QueueType::SnosJobProcessing,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_snos_job_verification_queue"),
+            name: QueueType::SnosJobVerification,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_proving_job_processing_queue"),
+            name: QueueType::ProvingJobProcessing,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_proving_job_verification_queue"),
+            name: QueueType::ProvingJobVerification,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_data_submission_job_processing_queue"),
+            name: QueueType::DataSubmissionJobProcessing,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_data_submission_job_verification_queue"),
+            name: QueueType::DataSubmissionJobVerification,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_update_state_job_processing_queue"),
+            name: QueueType::UpdateStateJobProcessing,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {
-            name: String::from("madara_orchestrator_update_state_job_verification_queue"),
+            name: QueueType::UpdateStateJobVerification,
             visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: &JOB_HANDLE_FAILURE_QUEUE })
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
-        QueueConfig {
-            name: String::from("madara_orchestrator_job_handle_failure_queue"),
-            visibility_timeout: 300,
-            dlq_config: None
-        },
-        QueueConfig {
-            name: String::from("madara_orchestrator_worker_trigger_queue"),
-            visibility_timeout: 300,
-            dlq_config: None
-        },
+        QueueConfig { name: QueueType::WorkerTrigger, visibility_timeout: 300, dlq_config: None },
     ];
 }
 
@@ -91,13 +111,14 @@ lazy_static! {
 #[automock]
 #[async_trait]
 pub trait QueueProvider: Send + Sync {
-    async fn send_message_to_queue(&self, queue: String, payload: String, delay: Option<Duration>) -> EyreResult<()>;
-    async fn consume_message_from_queue(&self, queue: String) -> Result<Delivery, QueueError>;
-    async fn create_queue<'a>(&self, queue_config: &QueueConfig<'a>, config: &SetupConfig) -> EyreResult<()>;
-    async fn setup(&self, config: SetupConfig) -> EyreResult<()> {
+    async fn send_message_to_queue(&self, queue: QueueType, payload: String, delay: Option<Duration>)
+    -> EyreResult<()>;
+    async fn consume_message_from_queue(&self, queue: QueueType) -> std::result::Result<Delivery, QueueError>;
+    async fn create_queue(&self, queue_config: &QueueConfig) -> EyreResult<()>;
+    async fn setup(&self) -> EyreResult<()> {
         // Creating the queues :
         for queue in QUEUES.iter() {
-            self.create_queue(queue, &config).await?;
+            self.create_queue(queue).await?;
         }
         Ok(())
     }

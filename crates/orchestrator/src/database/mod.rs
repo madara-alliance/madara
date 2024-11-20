@@ -2,7 +2,6 @@ use ::mongodb::bson::doc;
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
-use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::jobs::types::{JobItem, JobStatus, JobType};
@@ -50,8 +49,4 @@ pub trait Database: Send + Sync {
 
     // TODO: can be extendible to support multiple status.
     async fn get_jobs_by_statuses(&self, status: Vec<JobStatus>, limit: Option<i64>) -> Result<Vec<JobItem>>;
-}
-
-pub trait DatabaseConfig {
-    fn new_with_settings(settings: &impl Settings) -> Self;
 }

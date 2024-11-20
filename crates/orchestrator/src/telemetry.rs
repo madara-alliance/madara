@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::time::Duration;
 
 use opentelemetry::trace::TracerProvider;
@@ -15,18 +14,23 @@ use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::EnvFilter;
-use utils::env_utils::{get_env_var_optional, get_env_var_or_default};
+use url::Url;
 
 pub struct OTELConfig {
-    endpoint: String,
+    endpoint: Url,
     service_name: String,
 }
 
-pub fn setup_analytics() -> Option<SdkMeterProvider> {
-    let otel_config = get_otel_config();
+#[derive(Debug, Clone)]
+pub struct InstrumentationParams {
+    pub otel_service_name: String,
+    pub otel_collector_endpoint: Option<Url>,
+    pub log_level: Level,
+}
 
-    let log_level = get_env_var_or_default("RUST_LOG", "INFO");
-    let level = Level::from_str(&log_level).unwrap_or(Level::INFO);
+pub fn setup_analytics(instrumentation: &InstrumentationParams) -> Option<SdkMeterProvider> {
+    let otel_config = get_otel_config(instrumentation);
+    let level = instrumentation.log_level;
 
     let tracing_subscriber = tracing_subscriber::registry()
         .with(tracing_subscriber::filter::LevelFilter::from_level(level))
@@ -53,21 +57,21 @@ pub fn setup_analytics() -> Option<SdkMeterProvider> {
     }
 }
 
-fn get_otel_config() -> Option<OTELConfig> {
-    let otel_endpoint = get_env_var_optional("OTEL_COLLECTOR_ENDPOINT").expect("Failed to get OTEL_COLLECTOR_ENDPOINT");
-    let otel_service_name = get_env_var_optional("OTEL_SERVICE_NAME").expect("Failed to get OTEL_SERVICE_NAME");
+fn get_otel_config(instrumentation: &InstrumentationParams) -> Option<OTELConfig> {
+    let otel_endpoint = instrumentation.otel_collector_endpoint.clone();
+    let otel_service_name = instrumentation.otel_service_name.clone();
 
-    match (otel_endpoint, otel_service_name) {
-        (Some(endpoint), Some(service_name)) => Some(OTELConfig { endpoint, service_name }),
+    match otel_endpoint {
+        Some(endpoint) => Some(OTELConfig { endpoint, service_name: otel_service_name }),
         _ => {
-            tracing::warn!("OTEL_COLLECTOR_ENDPOINT or OTEL_SERVICE_NAME is not set");
+            tracing::warn!("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT is not set");
             None
         }
     }
 }
 
-pub fn shutdown_analytics(meter_provider: Option<SdkMeterProvider>) {
-    let otel_config = get_otel_config();
+pub fn shutdown_analytics(meter_provider: Option<SdkMeterProvider>, instrumentation: &InstrumentationParams) {
+    let otel_config = get_otel_config(instrumentation);
 
     // guard clause if otel is disabled
     if otel_config.is_none() {
@@ -142,9 +146,8 @@ fn init_logs(otel_config: &OTELConfig) -> Result<LoggerProvider, opentelemetry::
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use once_cell::sync::Lazy;
+    use tracing::Level;
     use utils::metrics::lib::Metrics;
     use utils::register_metric;
 
@@ -155,10 +158,13 @@ mod tests {
     #[allow(clippy::needless_return)]
     async fn test_init_metric_provider() {
         // Set up necessary environment variables
-        env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("OTEL_SERVICE_NAME", "test_service");
+        let instrumentation_params = InstrumentationParams {
+            otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
+            otel_service_name: "test_service".to_string(),
+            log_level: Level::INFO,
+        };
 
-        let otel_config = get_otel_config().unwrap();
+        let otel_config = get_otel_config(&instrumentation_params).unwrap();
 
         // Call the function and check if it doesn't panic
         let result = std::panic::catch_unwind(|| {
@@ -174,9 +180,13 @@ mod tests {
     #[allow(clippy::needless_return)]
     async fn test_init_tracer_provider() {
         // Set up necessary environment variables
-        env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("OTEL_SERVICE_NAME", "test_service");
-        let otel_config = get_otel_config().unwrap();
+        let instrumentation_params = InstrumentationParams {
+            otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
+            otel_service_name: "test_service".to_string(),
+            log_level: Level::INFO,
+        };
+
+        let otel_config = get_otel_config(&instrumentation_params).unwrap();
 
         // Call the function and check if it doesn't panic
         let result = std::panic::catch_unwind(|| {
@@ -190,11 +200,13 @@ mod tests {
     #[allow(clippy::needless_return)]
     async fn test_init_analytics() {
         // This test just ensures that the function doesn't panic
+        let instrumentation_params = InstrumentationParams {
+            otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
+            otel_service_name: "test_service".to_string(),
+            log_level: Level::INFO,
+        };
 
-        env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("OTEL_SERVICE_NAME", "test_service");
-
-        let analytics = setup_analytics();
+        let analytics = setup_analytics(&instrumentation_params);
 
         assert!(analytics.is_some(), " Unable to set analytics")
     }
@@ -204,10 +216,13 @@ mod tests {
     async fn test_gauge_setter() {
         // This test just ensures that the function doesn't panic
 
-        env::set_var("OTEL_COLLECTOR_ENDPOINT", "http://localhost:4317");
-        env::set_var("OTEL_SERVICE_NAME", "test_service");
+        let instrumentation_params = InstrumentationParams {
+            otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
+            otel_service_name: "test_service".to_string(),
+            log_level: Level::INFO,
+        };
 
-        setup_analytics();
+        setup_analytics(&instrumentation_params);
 
         register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
     }

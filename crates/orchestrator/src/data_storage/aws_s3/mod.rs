@@ -1,20 +1,18 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
+use aws_config::SdkConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytes::Bytes;
 use color_eyre::Result;
-use utils::settings::Settings;
 
-use crate::config::ProviderConfig;
-use crate::data_storage::aws_s3::config::AWSS3Config;
-use crate::data_storage::{DataStorage, DataStorageConfig};
+use crate::data_storage::DataStorage;
 
 pub const S3_SETTINGS_NAME: &str = "s3";
 
-/// Module for AWS S3 config structs and implementations
-pub mod config;
+#[derive(Debug, Clone)]
+pub struct AWSS3ValidatedArgs {
+    pub bucket_name: String,
+}
 
 /// AWSS3 represents AWS S3 client object containing the client and the config itself.
 pub struct AWSS3 {
@@ -27,15 +25,13 @@ pub struct AWSS3 {
 /// - initializing a new AWS S3 client
 impl AWSS3 {
     /// To init the struct with main settings
-    pub async fn new_with_settings(settings: &impl Settings, provider_config: Arc<ProviderConfig>) -> Self {
-        let s3_config = AWSS3Config::new_with_settings(settings);
-        let aws_config = provider_config.get_aws_client_or_panic();
+    pub async fn new_with_args(s3_config: &AWSS3ValidatedArgs, aws_config: &SdkConfig) -> Self {
         // Building AWS S3 config
         let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
         // this is necessary for it to work with localstack in test cases
         s3_config_builder.set_force_path_style(Some(true));
         let client = Client::from_conf(s3_config_builder.build());
-        Self { client, bucket: s3_config.bucket_name }
+        Self { client, bucket: s3_config.bucket_name.clone() }
     }
 }
 

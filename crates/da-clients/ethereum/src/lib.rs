@@ -13,17 +13,28 @@ use da_client_interface::{DaClient, DaVerificationStatus};
 use mockall::automock;
 use mockall::predicate::*;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use url::Url;
-use utils::settings::Settings;
 
-use crate::config::EthereumDaConfig;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EthereumDaValidatedArgs {
+    pub ethereum_da_rpc_url: Url,
+}
 
-pub const DA_SETTINGS_NAME: &str = "ethereum";
-
-pub mod config;
 pub struct EthereumDaClient {
     #[allow(dead_code)]
     provider: RootProvider<Ethereum, Http<Client>>,
+}
+
+impl EthereumDaClient {
+    pub async fn new_with_args(ethereum_da_params: &EthereumDaValidatedArgs) -> Self {
+        let client = RpcClient::new_http(
+            Url::from_str(ethereum_da_params.ethereum_da_rpc_url.as_str())
+                .expect("Failed to parse ethereum_da_rpc_url"),
+        );
+        let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
+        Self { provider }
+    }
 }
 
 #[automock]
@@ -45,16 +56,5 @@ impl DaClient for EthereumDaClient {
 
     async fn max_bytes_per_blob(&self) -> u64 {
         131072
-    }
-}
-
-impl EthereumDaClient {
-    pub fn new_with_settings(settings: &impl Settings) -> Self {
-        let config = EthereumDaConfig::new_with_settings(settings)
-            .expect("Not able to create EthereumDaClient from given settings.");
-        let client =
-            RpcClient::new_http(Url::from_str(config.rpc_url.as_str()).expect("Failed to parse SETTLEMENT_RPC_URL"));
-        let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
-        EthereumDaClient { provider }
     }
 }

@@ -1,4 +1,3 @@
-use ::utils::settings::Settings;
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -11,16 +10,21 @@ use mongodb::options::{
     UpdateOptions,
 };
 use mongodb::{bson, Client, Collection};
+use url::Url;
 use utils::ToDocument;
 use uuid::Uuid;
 
-use crate::database::mongodb::config::MongoDbConfig;
-use crate::database::{Database, DatabaseConfig};
+use crate::database::Database;
 use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 use crate::jobs::JobError;
 
-pub mod config;
 mod utils;
+
+#[derive(Debug, Clone)]
+pub struct MongoDBValidatedArgs {
+    pub connection_url: Url,
+    pub database_name: String,
+}
 
 pub struct MongoDb {
     client: Client,
@@ -28,10 +32,9 @@ pub struct MongoDb {
 }
 
 impl MongoDb {
-    pub async fn new_with_settings(settings: &impl Settings) -> Self {
-        let mongo_db_settings = MongoDbConfig::new_with_settings(settings);
+    pub async fn new_with_args(mongodb_params: &MongoDBValidatedArgs) -> Self {
         let mut client_options =
-            ClientOptions::parse(mongo_db_settings.url).await.expect("Failed to parse MongoDB Url");
+            ClientOptions::parse(mongodb_params.connection_url.clone()).await.expect("Failed to parse MongoDB Url");
         // Set the server_api field of the client_options object to set the version of the Stable API on the
         // client
         let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
@@ -46,7 +49,7 @@ impl MongoDb {
             .expect("Failed to ping MongoDB deployment");
         tracing::debug!("Pinged your deployment. You successfully connected to MongoDB!");
 
-        Self { client, database_name: mongo_db_settings.database_name }
+        Self { client, database_name: mongodb_params.database_name.clone() }
     }
 
     /// Mongodb client uses Arc internally, reducing the cost of clone.

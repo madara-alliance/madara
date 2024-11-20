@@ -48,7 +48,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 /// We have a private pathfinder node used to run the Snos [prove_block] function.
 /// It must be set or the test below will be ignored, since the Snos cannot run
 /// without a Pathinder node for the moment.
-const SNOS_PATHFINDER_RPC_URL_ENV: &str = "RPC_FOR_SNOS";
+const SNOS_PATHFINDER_RPC_URL_ENV: &str = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]

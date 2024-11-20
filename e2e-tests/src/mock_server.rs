@@ -81,7 +81,7 @@ impl MockServerGlobal {
                 then.json_body(return_val);
             });
 
-            let snos_url = get_env_var_or_panic("RPC_FOR_SNOS");
+            let snos_url = get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS");
             let snos_host = snos_url.split("://").last().unwrap().split(":").next().unwrap();
             let snos_port = snos_url.split("://").last().unwrap().split(":").last().unwrap();
             proxy_server.proxy(|rule| {

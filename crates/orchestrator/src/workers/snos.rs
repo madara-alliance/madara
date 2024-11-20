@@ -1,9 +1,9 @@
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use starknet::providers::Provider;
-use utils::env_utils::get_env_var_or_default;
 
 use crate::config::Config;
 use crate::jobs::create_job;
@@ -21,21 +21,29 @@ impl Worker for SnosWorker {
         tracing::trace!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
 
         let provider = config.starknet_client();
-        let block_number_provider = &provider.block_number().await?;
+        let block_number_provider = provider.block_number().await?;
 
-        let latest_block_number =
-            get_env_var_or_default_block_number("MAX_BLOCK_TO_PROCESS", &block_number_provider.to_string())?;
+        let latest_block_number = if let Some(max_block_to_process) = config.service_config().max_block_to_process {
+            min(max_block_to_process, block_number_provider)
+        } else {
+            block_number_provider
+        };
+
         tracing::debug!(latest_block_number = %latest_block_number, "Fetched latest block number from starknet");
 
         let latest_job_in_db = config.database().get_latest_job_by_type(JobType::SnosRun).await?;
 
         let latest_job_id = match latest_job_in_db {
-            Some(job) => job.internal_id,
-            None => "0".to_string(),
+            Some(job) => job.internal_id.parse::<u64>().expect("Failed to parse job internal ID to u64"),
+            None => "0".to_string().parse::<u64>().expect("Failed to parse '0' to u64"),
         };
 
         // To be used when testing in specific block range
-        let block_start = get_env_var_or_default_block_number("MIN_BLOCK_TO_PROCESS", &latest_job_id)?;
+        let block_start = if let Some(min_block_to_process) = config.service_config().min_block_to_process {
+            max(min_block_to_process, latest_job_id)
+        } else {
+            latest_job_id
+        };
 
         for block_num in block_start..latest_block_number + 1 {
             match create_job(JobType::SnosRun, block_num.to_string(), HashMap::new(), config.clone()).await {
@@ -47,13 +55,5 @@ impl Worker for SnosWorker {
         }
         tracing::trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
-    }
-}
-
-fn get_env_var_or_default_block_number(env_var_name: &str, default_block_number: &str) -> color_eyre::Result<u64> {
-    if get_env_var_or_default(env_var_name, default_block_number) == *"" {
-        Ok(default_block_number.to_string().parse::<u64>()?)
-    } else {
-        Ok(get_env_var_or_default(env_var_name, default_block_number).parse::<u64>()?)
     }
 }

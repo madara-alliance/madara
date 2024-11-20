@@ -13,8 +13,6 @@ use crate::tests::config::{ConfigType, TestConfigBuilder};
 async fn test_put_and_get_data_s3() -> color_eyre::Result<()> {
     let services = TestConfigBuilder::new().configure_storage_client(ConfigType::Actual).build().await;
 
-    dotenvy::from_filename("../.env.test")?;
-
     let s3_client = services.config.storage();
 
     let mock_data = json!(

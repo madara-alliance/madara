@@ -17,11 +17,10 @@ use starknet::macros::{felt, selector};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
 use starknet::signers::{LocalWallet, SigningKey};
-use utils::settings::env::EnvSettingsProvider;
-use utils::settings::Settings;
+use utils::env_utils::get_env_var_or_panic;
 
 use super::setup::{wait_for_cond, MadaraCmd, MadaraCmdBuilder};
-use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient};
+use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient, StarknetSettlementValidatedArgs};
 
 #[fixture]
 pub async fn spin_up_madara() -> MadaraCmd {
@@ -79,16 +78,28 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
 #[fixture]
 async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddleware, MadaraCmd) {
     let madara_process = spin_up_madara.await;
-    env::set_var("STARKNET_RPC_URL", madara_process.rpc_url.to_string());
 
-    let env_settings = EnvSettingsProvider::default();
-    let rpc_url = Url::parse(&env_settings.get_settings_or_panic("STARKNET_RPC_URL")).unwrap();
+    let starknet_settlement_params: StarknetSettlementValidatedArgs = StarknetSettlementValidatedArgs {
+        starknet_rpc_url: Url::parse(madara_process.rpc_url.as_ref()).unwrap(),
+        starknet_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY"),
+        starknet_account_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS"),
+        starknet_cairo_core_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS",
+        ),
+        starknet_finality_retry_wait_in_secs: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_STARKNET_FINALITY_RETRY_WAIT_IN_SECS",
+        )
+        .parse::<u64>()
+        .unwrap(),
+    };
+
+    let rpc_url = Url::parse(starknet_settlement_params.starknet_rpc_url.as_ref()).unwrap();
 
     let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(rpc_url)));
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-        Felt::from_hex(&env_settings.get_settings_or_panic("STARKNET_PRIVATE_KEY")).expect("Invalid private key"),
+        Felt::from_hex(&starknet_settlement_params.starknet_private_key).expect("Invalid private key"),
     ));
-    let address = Felt::from_hex(&env_settings.get_settings_or_panic("STARKNET_ACCOUNT_ADDRESS")).unwrap();
+    let address = Felt::from_hex(&starknet_settlement_params.starknet_account_address.to_string()).unwrap();
 
     let chain_id = provider.chain_id().await.unwrap();
     let mut account = SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
@@ -102,7 +113,23 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
 #[rstest]
 #[tokio::test]
 async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
-    let (account, _madara_process) = setup.await;
+    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
+
+    let (account, madara_process) = setup.await;
+
+    let mut starknet_settlement_params: StarknetSettlementValidatedArgs = StarknetSettlementValidatedArgs {
+        starknet_rpc_url: madara_process.rpc_url.clone(),
+        starknet_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY"),
+        starknet_account_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS"),
+        starknet_cairo_core_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS",
+        ),
+        starknet_finality_retry_wait_in_secs: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_STARKNET_FINALITY_RETRY_WAIT_IN_SECS",
+        )
+        .parse::<u64>()
+        .unwrap(),
+    };
 
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
     let contract_path = project_root.join("crates/settlement-clients/starknet/src/tests/mock_contracts/target/dev");
@@ -126,21 +153,22 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     tracing::debug!("declare tx hash {:?}", declare_tx_hash);
 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
-    assert!(is_success, "Declare trasactiion failed");
+    assert!(is_success, "Declare transaction failed");
 
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
     let deploy_v1 = contract_factory.deploy_v1(vec![], felt!("1122"), false);
     let deployed_address = deploy_v1.deployed_address();
 
-    env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
+    // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
+    starknet_settlement_params.starknet_cairo_core_contract_address = deployed_address.to_hex_string();
+
     let InvokeTransactionResult { transaction_hash: deploy_tx_hash } =
         deploy_v1.send().await.expect("Unable to deploy contract");
 
     let is_success = wait_for_tx(&account, deploy_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Deploy trasaction failed");
 
-    let env_settings = EnvSettingsProvider {};
-    let settlement_client = StarknetSettlementClient::new_with_settings(&env_settings).await;
+    let settlement_client = StarknetSettlementClient::new_with_args(&starknet_settlement_params).await;
     let onchain_data_hash = [1; 32];
     let mut program_output = Vec::with_capacity(32);
     program_output.fill(onchain_data_hash);

@@ -1,54 +1,60 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use aws_config::SdkConfig;
 use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target};
+use aws_sdk_eventbridge::Client as EventBridgeClient;
 use aws_sdk_sqs::types::QueueAttributeName;
+use aws_sdk_sqs::Client as SqsClient;
 
 use crate::cron::Cron;
-use crate::setup::SetupConfig;
 
-pub struct AWSEventBridge {}
+#[derive(Clone, Debug)]
+pub struct AWSEventBridgeValidatedArgs {
+    pub target_queue_name: String,
+    pub cron_time: Duration,
+    pub trigger_rule_name: String,
+}
+
+pub struct AWSEventBridge {
+    target_queue_name: String,
+    cron_time: Duration,
+    trigger_rule_name: String,
+    client: EventBridgeClient,
+    queue_client: SqsClient,
+}
+
+impl AWSEventBridge {
+    pub fn new_with_args(params: &AWSEventBridgeValidatedArgs, aws_config: &SdkConfig) -> Self {
+        Self {
+            target_queue_name: params.target_queue_name.clone(),
+            cron_time: params.cron_time,
+            trigger_rule_name: params.trigger_rule_name.clone(),
+            client: aws_sdk_eventbridge::Client::new(aws_config),
+            queue_client: aws_sdk_sqs::Client::new(aws_config),
+        }
+    }
+}
 
 #[async_trait]
 #[allow(unreachable_patterns)]
 impl Cron for AWSEventBridge {
-    async fn create_cron(
-        &self,
-        config: &SetupConfig,
-        cron_time: Duration,
-        trigger_rule_name: String,
-    ) -> color_eyre::Result<()> {
-        let config = match config {
-            SetupConfig::AWS(config) => config,
-            _ => panic!("Unsupported Event Bridge configuration"),
-        };
-        let event_bridge_client = aws_sdk_eventbridge::Client::new(config);
-        event_bridge_client
+    async fn create_cron(&self) -> color_eyre::Result<()> {
+        self.client
             .put_rule()
-            .name(&trigger_rule_name)
-            .schedule_expression(duration_to_rate_string(cron_time))
+            .name(&self.trigger_rule_name)
+            .schedule_expression(duration_to_rate_string(self.cron_time))
             .state(RuleState::Enabled)
             .send()
             .await?;
 
         Ok(())
     }
-    async fn add_cron_target_queue(
-        &self,
-        config: &SetupConfig,
-        target_queue_name: String,
-        message: String,
-        trigger_rule_name: String,
-    ) -> color_eyre::Result<()> {
-        let config = match config {
-            SetupConfig::AWS(config) => config,
-            _ => panic!("Unsupported Event Bridge configuration"),
-        };
-        let event_bridge_client = aws_sdk_eventbridge::Client::new(config);
-        let sqs_client = aws_sdk_sqs::Client::new(config);
-        let queue_url = sqs_client.get_queue_url().queue_name(target_queue_name).send().await?;
+    async fn add_cron_target_queue(&self, message: String) -> color_eyre::Result<()> {
+        let queue_url = self.queue_client.get_queue_url().queue_name(&self.target_queue_name).send().await?;
 
-        let queue_attributes = sqs_client
+        let queue_attributes = self
+            .queue_client
             .get_queue_attributes()
             .queue_url(queue_url.queue_url.unwrap())
             .attribute_names(QueueAttributeName::QueueArn)
@@ -60,9 +66,9 @@ impl Cron for AWSEventBridge {
         let input_transformer =
             InputTransformer::builder().input_paths_map("$.time", "time").input_template(message).build()?;
 
-        event_bridge_client
+        self.client
             .put_targets()
-            .rule(trigger_rule_name)
+            .rule(&self.trigger_rule_name)
             .targets(
                 Target::builder()
                     .id(uuid::Uuid::new_v4().to_string())

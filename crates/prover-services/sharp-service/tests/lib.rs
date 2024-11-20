@@ -1,14 +1,17 @@
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
-use prover_client_interface::{ProverClient, Task, TaskStatus};
+// ProverClient
+use prover_client_interface::ProverClient;
+use prover_client_interface::{Task, TaskStatus};
 use rstest::rstest;
 use serde_json::json;
-use sharp_service::SharpProverService;
+use sharp_service::{SharpProverService, SharpValidatedArgs};
 use starknet_os::sharp::CairoJobStatus;
+use url::Url;
 use utils::env_utils::get_env_var_or_panic;
-use utils::settings::env::EnvSettingsProvider;
 
-use crate::constants::{CAIRO_PIE_PATH, TEST_FACT};
+use crate::constants::TEST_FACT;
 
 mod constants;
 
@@ -17,8 +20,19 @@ mod constants;
 async fn prover_client_submit_task_works() {
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
+    let sharp_params = SharpValidatedArgs {
+        sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
+        sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL")).unwrap(),
+        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL")).unwrap(),
+        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
+        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+    };
+
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_settings(&EnvSettingsProvider {}, server.port());
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).unwrap();
 
@@ -27,7 +41,7 @@ async fn prover_client_submit_task_works() {
                 "code" : "JOB_RECEIVED_SUCCESSFULLY"
             }
     );
-    let customer_id = get_env_var_or_panic("SHARP_CUSTOMER_ID");
+    let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
     let sharp_add_job_call = server.mock(|when, then| {
         when.path_contains("/add_job").query_param("customer_id", customer_id.as_str());
         then.status(200).body(serde_json::to_vec(&sharp_response).unwrap());
@@ -51,9 +65,20 @@ async fn prover_client_submit_task_works() {
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
+    let sharp_params = SharpValidatedArgs {
+        sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
+        sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL")).unwrap(),
+        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL")).unwrap(),
+        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
+        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+    };
+
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_settings(&EnvSettingsProvider {}, server.port());
-    let customer_id = get_env_var_or_panic("SHARP_CUSTOMER_ID");
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
+    let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
 
     let sharp_add_job_call = server.mock(|when, then| {
         when.path_contains("/get_status").query_param("customer_id", customer_id.as_str());

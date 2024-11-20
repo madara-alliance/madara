@@ -50,8 +50,9 @@ impl AnvilSetup {
     }
 
     pub async fn deploy_contracts(&self) -> (Address, Address) {
-        let wallet =
-            EthereumWallet::from(PrivateKeySigner::from_str(&get_env_var_or_panic("ETHEREUM_PRIVATE_KEY")).unwrap());
+        let wallet = EthereumWallet::from(
+            PrivateKeySigner::from_str(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")).unwrap(),
+        );
         let provider = ProviderBuilder::new().with_recommended_fillers().wallet(wallet).on_http(self.rpc_url.clone());
 
         let starknet_core_contract_client = StarknetCoreContract::deploy(&provider).await.unwrap();

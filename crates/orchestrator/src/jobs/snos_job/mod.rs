@@ -103,7 +103,7 @@ impl Job for SnosJob {
         let block_number = self.get_block_number_from_metadata(job)?;
         tracing::debug!(job_id = %job.internal_id, block_number = %block_number, "Retrieved block number from metadata");
 
-        let snos_url = config.snos_url().to_string();
+        let snos_url = config.snos_config().rpc_for_snos.to_string();
         let snos_url = snos_url.trim_end_matches('/');
         tracing::debug!(job_id = %job.internal_id, "Calling prove_block function");
         let (cairo_pie, snos_output) =

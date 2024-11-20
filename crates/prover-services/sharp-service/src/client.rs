@@ -5,11 +5,11 @@ use base64::Engine;
 use reqwest::{Certificate, ClientBuilder, Identity};
 use url::Url;
 use utils::env_utils::get_env_var_or_panic;
-use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::error::SharpError;
 use crate::types::{SharpAddJobResponse, SharpGetStatusResponse};
+use crate::SharpValidatedArgs;
 
 /// SHARP API async wrapper
 pub struct SharpClient {
@@ -20,31 +20,31 @@ pub struct SharpClient {
 impl SharpClient {
     /// We need to set up the client with the provided certificates.
     /// We need to have three secrets :
-    /// - base64(SHARP_USER_CRT)
-    /// - base64(SHARP_USER_KEY)
-    /// - base64(SHARP_SERVER_CRT)
+    /// - base64(MADARA_ORCHESTRATOR_SHARP_USER_CRT)
+    /// - base64(MADARA_ORCHESTRATOR_SHARP_USER_KEY)
+    /// - base64(MADARA_ORCHESTRATOR_SHARP_SERVER_CRT)
     ///
     /// You can run this command in terminal to convert a file output into base64
     /// and then copy it and paste it into .env file :
     ///
     /// `cat <file_name> | base64`
-    pub fn new_with_settings(url: Url, settings: &impl Settings) -> Self {
+    pub fn new_with_args(url: Url, sharp_params: &SharpValidatedArgs) -> Self {
         // Getting the cert files from the .env and then decoding it from base64
 
         let cert = general_purpose::STANDARD
-            .decode(settings.get_settings_or_panic("SHARP_USER_CRT"))
+            .decode(sharp_params.sharp_user_crt.clone())
             .expect("Failed to decode certificate");
         let key = general_purpose::STANDARD
-            .decode(settings.get_settings_or_panic("SHARP_USER_KEY"))
+            .decode(sharp_params.sharp_user_key.clone())
             .expect("Failed to decode sharp user key");
         let server_cert = general_purpose::STANDARD
-            .decode(settings.get_settings_or_panic("SHARP_SERVER_CRT"))
+            .decode(sharp_params.sharp_server_crt.clone())
             .expect("Failed to decode sharp server certificate");
 
         // Adding Customer ID to the url
 
         let mut url_mut = url.clone();
-        let customer_id = settings.get_settings_or_panic("SHARP_CUSTOMER_ID");
+        let customer_id = sharp_params.sharp_customer_id.clone();
         url_mut.query_pairs_mut().append_pair("customer_id", customer_id.as_str());
 
         Self {
@@ -69,7 +69,7 @@ impl SharpClient {
 
         let cairo_key = Uuid::new_v4();
         let cairo_key_string = cairo_key.to_string();
-        let proof_layout = get_env_var_or_panic("SHARP_PROOF_LAYOUT");
+        let proof_layout = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT");
 
         // Params for sending the PIE file to the prover
         // for temporary reference you can check this doc :

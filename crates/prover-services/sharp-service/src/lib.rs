@@ -1,5 +1,4 @@
 pub mod client;
-pub mod config;
 pub mod error;
 mod types;
 
@@ -10,13 +9,25 @@ use async_trait::async_trait;
 use gps_fact_checker::FactChecker;
 use prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
 use starknet_os::sharp::CairoJobStatus;
-use utils::settings::Settings;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
-use crate::config::SharpConfig;
 
 pub const SHARP_SETTINGS_NAME: &str = "sharp";
+
+use url::Url;
+
+#[derive(Debug, Clone)]
+pub struct SharpValidatedArgs {
+    pub sharp_customer_id: String,
+    pub sharp_url: Url,
+    pub sharp_user_crt: String,
+    pub sharp_user_key: String,
+    pub sharp_rpc_node_url: Url,
+    pub sharp_server_crt: String,
+    pub sharp_proof_layout: String,
+    pub gps_verifier_contract_address: String,
+}
 
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
 pub struct SharpProverService {
@@ -134,22 +145,24 @@ impl SharpProverService {
         Self { sharp_client, fact_checker }
     }
 
-    pub fn new_with_settings(settings: &impl Settings) -> Self {
-        let sharp_config = SharpConfig::new_with_settings(settings)
-            .expect("Not able to create SharpProverService from given settings.");
-        let sharp_client = SharpClient::new_with_settings(sharp_config.service_url, settings);
-        let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
+    pub fn new_with_args(sharp_params: &SharpValidatedArgs) -> Self {
+        let sharp_client = SharpClient::new_with_args(sharp_params.sharp_url.clone(), sharp_params);
+        let fact_checker = FactChecker::new(
+            sharp_params.sharp_rpc_node_url.clone(),
+            sharp_params.gps_verifier_contract_address.clone(),
+        );
         Self::new(sharp_client, fact_checker)
     }
 
-    pub fn with_test_settings(settings: &impl Settings, port: u16) -> Self {
-        let sharp_config = SharpConfig::new_with_settings(settings)
-            .expect("Not able to create SharpProverService from given settings.");
-        let sharp_client = SharpClient::new_with_settings(
+    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs) -> Self {
+        let sharp_client = SharpClient::new_with_args(
             format!("http://127.0.0.1:{}", port).parse().expect("Failed to create sharp client with the given params"),
-            settings,
+            sharp_params,
         );
-        let fact_checker = FactChecker::new(sharp_config.rpc_node_url, sharp_config.verifier_address);
+        let fact_checker = FactChecker::new(
+            sharp_params.sharp_rpc_node_url.clone(),
+            sharp_params.gps_verifier_contract_address.clone(),
+        );
         Self::new(sharp_client, fact_checker)
     }
 }

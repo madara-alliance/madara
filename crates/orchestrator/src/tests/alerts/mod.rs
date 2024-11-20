@@ -29,7 +29,7 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
     // subscribing the queue with the alerts
     sns_client
         .subscribe()
-        .topic_arn(get_env_var_or_panic("AWS_SNS_ARN").as_str())
+        .topic_arn(get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN").as_str())
         .protocol("sqs")
         .endpoint(queue_arn)
         .send()

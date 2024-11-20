@@ -3,10 +3,13 @@
 const config = {
   mongodb: {
     // TODO Change (or review) the url to your MongoDB:
-    url: process.env.MONGODB_CONNECTION_STRING || "mongodb://localhost:27017",
+    url:
+      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URLDB_CONNECTION_URL ||
+      "mongodb://localhost:27017",
 
     // TODO Change this to your database name:
-    databaseName: process.env.DATABASE_NAME || "orchestrator",
+    databaseName:
+      process.env.MADARA_ORCHESTRATOR_DATABASE_NAME || "orchestrator",
 
     options: {
       useNewUrlParser: true, // removes a deprecation warning when connecting
