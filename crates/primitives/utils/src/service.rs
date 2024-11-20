@@ -11,7 +11,11 @@ use tokio::task::JoinSet;
 #[async_trait::async_trait]
 pub trait Service: 'static + Send + Sync {
     /// Default impl does not start any task.
-    async fn start(&mut self, _join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        _join_set: &mut JoinSet<anyhow::Result<()>>,
+        _cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -20,7 +24,8 @@ pub trait Service: 'static + Send + Sync {
         Self: Sized,
     {
         let mut join_set = JoinSet::new();
-        self.start(&mut join_set).await.context("Starting service")?;
+        let cancellation_token = tokio_util::sync::CancellationToken::new();
+        self.start(&mut join_set, cancellation_token).await.context("Starting service")?;
         drive_joinset(join_set).await
     }
 }
@@ -57,11 +62,15 @@ impl ServiceGroup {
 
 #[async_trait::async_trait]
 impl Service for ServiceGroup {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         // drive the join set as a nested task
         let mut own_join_set = self.join_set.take().expect("Service has already been started.");
         for svc in self.services.iter_mut() {
-            svc.start(&mut own_join_set).await.context("Starting service")?;
+            svc.start(&mut own_join_set, cancellation_token.clone()).await.context("Starting service")?;
         }
 
         join_set.spawn(drive_joinset(own_join_set));

@@ -43,6 +43,7 @@ pub async fn sync(
     client: &EthereumClient,
     chain_id: &ChainId,
     mempool: Arc<Mempool>,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
@@ -69,7 +70,7 @@ pub async fn sync(
         )?
         .into_stream();
 
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &cancellation_token).await {
         match event_result {
             Ok((event, log)) => {
                 if let Err(e) = process_l1_to_l2_msg(backend, client, chain_id, &mempool, event, log).await {
@@ -381,7 +382,16 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             let mempool = mempool.clone();
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(
+                    db.backend(),
+                    &eth_client,
+                    &chain_config.chain_id,
+                    mempool,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+            })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -456,7 +466,16 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(
+                    db.backend(),
+                    &eth_client,
+                    &chain_config.chain_id,
+                    mempool,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+            })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -503,7 +522,16 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(
+                    db.backend(),
+                    &eth_client,
+                    &chain_config.chain_id,
+                    mempool,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+            })
         };
 
         // Mock cancelled message

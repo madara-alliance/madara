@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
-use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_core::types::{
     BlockHashAndNumber, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
@@ -20,16 +19,6 @@ use starknet_types_core::felt::Felt;
 
 /// Starknet write rpc interface.
 ///
-
-#[versioned_rpc("V0_7_1", "madara")]
-pub trait MadaraWriteRpcApi {
-    /// Submit a new class v0 declaration transaction
-    #[method(name = "addDeclareV0Transaction", and_versions = ["V0_8_0"])]
-    async fn add_declare_v0_transaction(
-        &self,
-        declare_transaction_v0: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult>;
-}
 
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetWriteRpcApi {

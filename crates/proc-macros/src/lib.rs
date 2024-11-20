@@ -56,7 +56,7 @@
 //! The macro will generate the following code:
 //!
 //! ```rust,ignore
-//! #[rpc(server, namespace = "starknet")]
+//! #[jsonrpsee::proc_macros::rpc(server, client, namespace = "starknet")]
 //! pub trait JsonRpcV0_7_1 {
 //!     #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_0blockNumber"])]
 //!     fn block_number(&self) -> anyhow::Result<u64>;

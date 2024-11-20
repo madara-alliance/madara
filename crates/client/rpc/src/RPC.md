@@ -41,20 +41,20 @@ multiple `RpcModule`s from different versions together.
 #### Renaming
 
 ```rust
-#[versioned_starknet_rpc("V0_7_1)")]
-trait yourTrait {
-  #[method(name = "foo")]
-  async fn foo();
+#[versioned_rpc("V0_7_1", "starknet")]
+pub trait JsonRpc {
+    #[method(name = "blockNumber", and_versions = ["V0_8_0"])]
+    fn block_number(&self) -> anyhow::Result<u64>;
 }
 ```
 
 Will become
 
 ```rust
-#[jsonrpsee::proc_macros::rpc(server, namespace = "starknet")]
-trait yourTraitV0_7_1 {
-  #[method(name = "V0_7_1_foo")]
-  async fn foo();
+#[jsonrpsee::proc_macros::rpc(server, client, namespace = "starknet")]
+pub trait JsonRpcV0_7_1 {
+    #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_0blockNumber"])]
+    fn block_number(&self) -> anyhow::Result<u64>;
 }
 ```
 
@@ -91,4 +91,4 @@ server. This is done with tower in the following steps:
 > The `starknet` prefix comes from the secondary macro expansion of
 > `#[rpc(server, namespace = "starknet)]`
 
-- Finally, the RPC service is added to tower as `RpcServiceBuilder`. Note that
+- Finally, the RPC service is added to tower as `RpcServiceBuilder`.

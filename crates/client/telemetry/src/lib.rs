@@ -93,7 +93,11 @@ impl TelemetryService {
 
 #[async_trait::async_trait]
 impl Service for TelemetryService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         if !self.telemetry {
             return Ok(());
         }
@@ -124,7 +128,7 @@ impl Service for TelemetryService {
 
             let rx = &mut rx;
 
-            while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv()).await {
+            while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv(), &cancellation_token).await {
                 tracing::debug!(
                     "Sending telemetry event '{}'.",
                     event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")

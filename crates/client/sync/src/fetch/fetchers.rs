@@ -40,12 +40,15 @@ pub struct FetchConfig {
     pub sync_polling_interval: Option<Duration>,
     /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
+    /// Stops the node once all blocks have been synced (for testing purposes)
+    pub stop_on_sync: bool,
 }
 
 pub async fn fetch_pending_block_and_updates(
     parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &GatewayProvider,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = BlockId::Tag(BlockTag::Pending);
     let sw = PerfStopwatch::new();
@@ -64,6 +67,7 @@ pub async fn fetch_pending_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
+        cancellation_token,
     )
     .await?;
 
@@ -82,7 +86,8 @@ pub async fn fetch_pending_block_and_updates(
         );
         return Ok(None);
     }
-    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider).await?;
+    let class_update =
+        fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider, cancellation_token).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
@@ -96,6 +101,7 @@ pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
     provider: &GatewayProvider,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = BlockId::Number(block_n);
 
@@ -109,9 +115,11 @@ pub async fn fetch_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
+        cancellation_token,
     )
     .await?;
-    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
+    let class_update =
+        fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, cancellation_token).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_n);
 
@@ -124,7 +132,12 @@ pub async fn fetch_block_and_updates(
     Ok(converted)
 }
 
-async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, SequencerError>
+async fn retry<F, Fut, T>(
+    mut f: F,
+    max_retries: u32,
+    base_delay: Duration,
+    cancellation_token: &tokio_util::sync::CancellationToken,
+) -> Result<T, SequencerError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, SequencerError>>,
@@ -149,7 +162,7 @@ where
                     tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
-                if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
+                if wait_or_graceful_shutdown(tokio::time::sleep(delay), cancellation_token).await.is_none() {
                     return Err(SequencerError::StarknetError(StarknetError::block_not_found()));
                 }
             }
@@ -163,6 +176,7 @@ async fn fetch_class_updates(
     state_diff: &StateDiff,
     block_id: BlockId,
     provider: &GatewayProvider,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     // for blocks before 2597 on mainnet new classes are not declared in the state update
     // https://github.com/madara-alliance/madara/issues/233
@@ -182,8 +196,13 @@ async fn fetch_class_updates(
     let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
         let block_id = block_id.clone();
         async move {
-            let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY).await?;
+            let (class_hash, contract_class) = retry(
+                || fetch_class(class_hash, block_id.clone(), provider),
+                MAX_RETRY,
+                BASE_DELAY,
+                cancellation_token,
+            )
+            .await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -199,8 +218,13 @@ async fn fetch_class_updates(
     let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
         let block_id = block_id.clone();
         async move {
-            let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY).await?;
+            let (class_hash, contract_class) = retry(
+                || fetch_class(class_hash, block_id.clone(), provider),
+                MAX_RETRY,
+                BASE_DELAY,
+                cancellation_token,
+            )
+            .await?;
 
             let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -324,6 +348,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await;
 
@@ -409,6 +434,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await;
 
@@ -616,10 +642,15 @@ mod test_l2_fetchers {
             .state_update();
         let state_diff = state_update.state_diff();
 
-        let class_updates =
-            fetch_class_updates(&ctx.backend.chain_config().chain_id, state_diff, BlockId::Number(5), &ctx.provider)
-                .await
-                .expect("Failed to fetch class updates");
+        let class_updates = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            state_diff,
+            BlockId::Number(5),
+            &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("Failed to fetch class updates");
 
         assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
 
@@ -648,9 +679,14 @@ mod test_l2_fetchers {
         let state_diff = state_update.state_diff();
 
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
-        let result =
-            fetch_class_updates(&ctx.backend.chain_config().chain_id, state_diff, BlockId::Number(5), &ctx.provider)
-                .await;
+        let result = fetch_class_updates(
+            &ctx.backend.chain_config().chain_id,
+            state_diff,
+            BlockId::Number(5),
+            &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
 
         assert!(matches!(
         result,
