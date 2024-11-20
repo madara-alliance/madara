@@ -4,7 +4,10 @@ use mp_receipt::{Event, L1Gas, MsgToL1};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
-use crate::transaction::{DeployAccountTransaction, DeployTransaction, L1HandlerTransaction, Transaction};
+use crate::transaction::{
+    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
+    Transaction,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -49,9 +52,9 @@ impl ConfirmedReceipt {
 
     pub fn into_mp(self, tx: &Transaction) -> mp_receipt::TransactionReceipt {
         match tx {
-            Transaction::Invoke(_) => mp_receipt::TransactionReceipt::Invoke(self.into_mp_invoke()),
+            Transaction::Invoke(tx) => mp_receipt::TransactionReceipt::Invoke(self.into_mp_invoke(tx)),
             Transaction::L1Handler(tx) => mp_receipt::TransactionReceipt::L1Handler(self.into_mp_l1_handler(tx)),
-            Transaction::Declare(_) => mp_receipt::TransactionReceipt::Declare(self.into_mp_declare()),
+            Transaction::Declare(tx) => mp_receipt::TransactionReceipt::Declare(self.into_mp_declare(tx)),
             Transaction::Deploy(tx) => mp_receipt::TransactionReceipt::Deploy(self.into_mp_deploy(tx)),
             Transaction::DeployAccount(tx) => {
                 mp_receipt::TransactionReceipt::DeployAccount(self.into_mp_deploy_account(tx))
@@ -59,10 +62,10 @@ impl ConfirmedReceipt {
         }
     }
 
-    fn into_mp_invoke(self) -> mp_receipt::InvokeTransactionReceipt {
+    fn into_mp_invoke(self, tx: &InvokeTransaction) -> mp_receipt::InvokeTransactionReceipt {
         mp_receipt::InvokeTransactionReceipt {
             transaction_hash: self.transaction_hash,
-            actual_fee: self.actual_fee.into(),
+            actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
             events: self.events,
             execution_resources: self.execution_resources.into(),
@@ -86,7 +89,7 @@ impl ConfirmedReceipt {
         mp_receipt::L1HandlerTransactionReceipt {
             message_hash: message_hash.try_into().unwrap_or_default(),
             transaction_hash: self.transaction_hash,
-            actual_fee: self.actual_fee.into(),
+            actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
             events: self.events,
             execution_resources: self.execution_resources.into(),
@@ -94,10 +97,10 @@ impl ConfirmedReceipt {
         }
     }
 
-    fn into_mp_declare(self) -> mp_receipt::DeclareTransactionReceipt {
+    fn into_mp_declare(self, tx: &DeclareTransaction) -> mp_receipt::DeclareTransactionReceipt {
         mp_receipt::DeclareTransactionReceipt {
             transaction_hash: self.transaction_hash,
-            actual_fee: self.actual_fee.into(),
+            actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
             events: self.events,
             execution_resources: self.execution_resources.into(),
@@ -108,7 +111,7 @@ impl ConfirmedReceipt {
     fn into_mp_deploy(self, tx: &DeployTransaction) -> mp_receipt::DeployTransactionReceipt {
         mp_receipt::DeployTransactionReceipt {
             transaction_hash: self.transaction_hash,
-            actual_fee: self.actual_fee.into(),
+            actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
             events: self.events,
             execution_resources: self.execution_resources.into(),
@@ -120,7 +123,7 @@ impl ConfirmedReceipt {
     fn into_mp_deploy_account(self, tx: &DeployAccountTransaction) -> mp_receipt::DeployAccountTransactionReceipt {
         mp_receipt::DeployAccountTransactionReceipt {
             transaction_hash: self.transaction_hash,
-            actual_fee: self.actual_fee.into(),
+            actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
             events: self.events,
             execution_resources: self.execution_resources.into(),
@@ -289,4 +292,11 @@ pub enum ExecutionStatus {
     #[default]
     Succeeded,
     Reverted,
+}
+
+fn fee_payment(fee: Felt, tx_version: u8) -> mp_receipt::FeePayment {
+    mp_receipt::FeePayment {
+        amount: fee,
+        unit: if tx_version < 3 { mp_receipt::PriceUnit::Wei } else { mp_receipt::PriceUnit::Fri },
+    }
 }

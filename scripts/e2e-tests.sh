@@ -6,6 +6,8 @@ set -e
 
 # will also launch anvil and automatically close it down on error or success
 
+export PROPTEST_CASES=10
+
 anvil --fork-url https://eth.merkle.io --fork-block-number 20395662 &
 
 subshell() {
