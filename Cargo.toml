@@ -64,11 +64,18 @@ print_stderr = "warn"
 # unwrap_used = "warn"
 # missing_docs = "warn"
 
+[workspace.metadata.build]
+rustflags = ["-C", "symbol-mangling-version=v0"]
+
 [profile.dev]
 incremental = true
 
 [profile.release]
 panic = "unwind"
+
+[profile.profiling]
+inherits = "release"
+debug = 1
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
@@ -191,6 +198,7 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "1.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
+tokio-util = "0.7.12"
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
 bincode = "1.3"

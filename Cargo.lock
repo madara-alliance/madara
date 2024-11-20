@@ -2123,7 +2123,7 @@ dependencies = [
  "cairo-lang-diagnostics 2.8.4",
  "cairo-lang-filesystem 2.8.4",
  "cairo-lang-syntax 2.8.4",
- "cairo-lang-syntax-codegen 2.8.4",
+ "cairo-lang-syntax-codegen 2.8.5",
  "cairo-lang-utils 2.8.4",
  "colored",
  "itertools 0.12.1",
@@ -3096,9 +3096,9 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-syntax-codegen"
-version = "2.8.4"
+version = "2.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31cef5b4347626e61bad8f070495cd35d637a5cb6744c34d20dd382c7431aff8"
+checksum = "ee042237f471e278e984c77a12a93db976d48c68b554f554c7b294154b93cdb2"
 dependencies = [
  "genco",
  "xshell",
@@ -5422,6 +5422,7 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tower 0.4.13",
  "tower-http",
  "tracing",
@@ -5651,6 +5652,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
@@ -5710,6 +5712,7 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "tokio",
+ "tokio-util",
  "tower 0.4.13",
  "tracing",
  "url",
@@ -5738,6 +5741,7 @@ dependencies = [
  "starknet-types-core",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -5779,6 +5783,7 @@ dependencies = [
  "starknet_api",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
@@ -5853,6 +5858,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
@@ -5874,6 +5880,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -6136,6 +6143,7 @@ dependencies = [
  "starknet-crypto 0.7.2",
  "starknet-types-core",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",

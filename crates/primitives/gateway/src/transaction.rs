@@ -80,6 +80,16 @@ impl Transaction {
             }
         }
     }
+
+    pub fn version(&self) -> u8 {
+        match self {
+            Transaction::Invoke(tx) => tx.version(),
+            Transaction::L1Handler(tx) => tx.version(),
+            Transaction::Declare(tx) => tx.version(),
+            Transaction::Deploy(tx) => tx.version(),
+            Transaction::DeployAccount(tx) => tx.version(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -92,6 +102,16 @@ pub enum InvokeTransaction {
     V1(InvokeTransactionV1),
     #[serde(rename = "0x3")]
     V3(InvokeTransactionV3),
+}
+
+impl InvokeTransaction {
+    pub fn version(&self) -> u8 {
+        match self {
+            InvokeTransaction::V0(_) => 0,
+            InvokeTransaction::V1(_) => 1,
+            InvokeTransaction::V3(_) => 3,
+        }
+    }
 }
 
 impl From<InvokeTransaction> for mp_transactions::InvokeTransaction {
@@ -243,6 +263,12 @@ pub struct L1HandlerTransaction {
 }
 
 impl L1HandlerTransaction {
+    pub fn version(&self) -> u8 {
+        0
+    }
+}
+
+impl L1HandlerTransaction {
     pub fn new(transaction: mp_transactions::L1HandlerTransaction, hash: Felt) -> Self {
         Self {
             contract_address: transaction.contract_address,
@@ -279,6 +305,17 @@ pub enum DeclareTransaction {
     V2(DeclareTransactionV2),
     #[serde(rename = "0x3")]
     V3(DeclareTransactionV3),
+}
+
+impl DeclareTransaction {
+    pub fn version(&self) -> u8 {
+        match self {
+            DeclareTransaction::V0(_) => 0,
+            DeclareTransaction::V1(_) => 1,
+            DeclareTransaction::V2(_) => 2,
+            DeclareTransaction::V3(_) => 3,
+        }
+    }
 }
 
 impl From<DeclareTransaction> for mp_transactions::DeclareTransaction {
@@ -475,6 +512,12 @@ pub struct DeployTransaction {
 }
 
 impl DeployTransaction {
+    pub fn version(&self) -> u8 {
+        0
+    }
+}
+
+impl DeployTransaction {
     pub fn new(transaction: mp_transactions::DeployTransaction, hash: Felt, contract_address: Felt) -> Self {
         Self {
             constructor_calldata: transaction.constructor_calldata,
@@ -504,6 +547,15 @@ impl From<DeployTransaction> for mp_transactions::DeployTransaction {
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),
+}
+
+impl DeployAccountTransaction {
+    pub fn version(&self) -> u8 {
+        match self {
+            DeployAccountTransaction::V1(_) => 1,
+            DeployAccountTransaction::V3(_) => 3,
+        }
+    }
 }
 
 impl From<DeployAccountTransaction> for mp_transactions::DeployAccountTransaction {

@@ -20,6 +20,7 @@ pub async fn start_server(
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     if !feeder_gateway_enable && !gateway_enable {
         return Ok(());
@@ -40,7 +41,7 @@ pub async fn start_server(
     {
         let shutdown_notify = Arc::clone(&shutdown_notify);
         tokio::spawn(async move {
-            graceful_shutdown().await;
+            graceful_shutdown(&cancellation_token).await;
             shutdown_notify.notify_waiters();
         });
     }
