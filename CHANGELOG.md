@@ -3,6 +3,7 @@
 ## Next release
 
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
+- fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree
 - refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId
 - feat(fgw): added `add_transaction` for gateway client
