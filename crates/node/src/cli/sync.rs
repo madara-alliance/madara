@@ -62,11 +62,11 @@ pub struct SyncParams {
     #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "NUMBER OF BLOCKS")]
     pub n_blocks_to_sync: Option<u64>,
 
-    /// Gracefully shutdown Madara once it has finished to synchronize all
+    /// Gracefully shutdown Madara once it has finished synchronizing all
     /// blocks. This can either be once the node has caught up with the head of
     /// the chain or when it has synced as many blocks as specified by
-    /// `n-blocks-to-sync`.
-    #[clap(env = "MADARA_STOP_ON_SYNC", long, value_name = "STOP ON SYNC", default_value_t = false)]
+    /// --n-blocks-to-sync.
+    #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
     pub stop_on_sync: bool,
 
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.

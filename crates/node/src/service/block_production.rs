@@ -108,7 +108,7 @@ impl Service for BlockProductionService {
             };
 
             // display devnet welcome message :)
-            // we display itto stdout instead of stderr
+            // we display it to stdout instead of stderr
 
             let msg = format!("{}", keys);
 
