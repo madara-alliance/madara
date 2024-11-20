@@ -59,7 +59,7 @@ async fn test_process_job() {
     let server = MockServer::start();
     let mut prover_client = MockProverClient::new();
 
-    prover_client.expect_submit_task().times(1).returning(|_| Ok("task_id".to_string()));
+    prover_client.expect_submit_task().times(1).returning(|_, _| Ok("task_id".to_string()));
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));

@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 use alloy::primitives::B256;
 use async_trait::async_trait;
+use cairo_vm::types::layout_name::LayoutName;
 use gps_fact_checker::FactChecker;
 use prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
 use starknet_os::sharp::CairoJobStatus;
@@ -38,7 +39,7 @@ pub struct SharpProverService {
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task, proof_layout: LayoutName) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -48,8 +49,8 @@ impl ProverClient for SharpProverService {
         match task {
             Task::CairoPie(cairo_pie) => {
                 let encoded_pie =
-                    starknet_os::sharp::pie::encode_pie_mem(cairo_pie).map_err(ProverClientError::PieEncoding)?;
-                let (_, job_key) = self.sharp_client.add_job(&encoded_pie).await?;
+                    starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
+                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",

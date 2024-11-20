@@ -113,7 +113,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
     // mocking block call
     let rpc_block_call_mock = server.mock(|when, then| {
-        when.path("/").body_contains("starknet_blockNumber");
+        when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 

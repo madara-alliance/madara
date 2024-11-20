@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- tests: http_client tests added
+- Added Atlantic proving service integration
+- setup functions added for cloud and db
 - Added cli args support for all the services
 - Setup functions added for cloud and db
 - panic handling in process job
@@ -45,6 +48,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- refactor: http_mock version updated
+- refactor: prover-services renamed to prover-clients
 - refactor: update json made generic to update any json file
 - refactor: makefile updated as per bootstraper changes
 - removed error return in case of JobAlreadyExists in `create_job` function
@@ -68,12 +73,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Removed
 
+- docker-compose removed
 - revert CI changes from settlement client PR.
 - `init_config` from all the tests.
 - `fetch_from_test` argument
 
 ## Fixed
 
+- refactor: cargo.toml files cleaned
 - blob data formation process from state update
 - OTEL config refactor
 - indexing for get_jobs_without_successor

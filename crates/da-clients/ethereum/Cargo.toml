@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# TODO: update this to the workspace
 alloy = { git = "https://github.com/alloy-rs/alloy", rev = "68952c0", features = [
   "consensus",
   "providers",
@@ -40,7 +41,7 @@ opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
-tracing-opentelemetry = "0.26.0"
+tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 

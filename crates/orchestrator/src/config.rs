@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
+use atlantic_service::AtlanticProverService;
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::{Region, SdkConfig};
 use aws_credential_types::Credentials;
+use cairo_vm::types::layout_name::LayoutName;
 use color_eyre::eyre::eyre;
 use da_client_interface::DaClient;
 use dotenvy::dotenv;
@@ -71,6 +73,10 @@ pub struct OrchestratorParams {
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
+    /// Layout to use for running SNOS
+    pub snos_layout_name: LayoutName,
+    /// Layout to use for proving
+    pub prover_layout_name: LayoutName,
 }
 
 /// `ProviderConfig` is an enum used to represent the global config built
@@ -107,11 +113,16 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
     let provider_params = run_cmd.validate_provider_params().expect("Failed to validate provider params");
     let provider_config = build_provider_config(&provider_params).await;
 
+    let (snos_layout_name, prover_layout_name) =
+        run_cmd.validate_proving_layout_name().expect("Failed to validate prover layout name");
+
     let orchestrator_params = OrchestratorParams {
         madara_rpc_url: run_cmd.madara_rpc_url.clone(),
         snos_config: run_cmd.validate_snos_params().expect("Failed to validate SNOS params"),
         service_config: run_cmd.validate_service_params().expect("Failed to validate service params"),
         server_config: run_cmd.validate_server_params().expect("Failed to validate server params"),
+        snos_layout_name,
+        prover_layout_name,
     };
 
     let rpc_client = JsonRpcClient::new(HttpTransport::new(orchestrator_params.madara_rpc_url.clone()));
@@ -250,6 +261,16 @@ impl Config {
     pub fn alerts(&self) -> &dyn Alerts {
         self.alerts.as_ref()
     }
+
+    /// Returns the snos proof layout
+    pub fn snos_layout_name(&self) -> &LayoutName {
+        &self.orchestrator_params.snos_layout_name
+    }
+
+    /// Returns the snos proof layout
+    pub fn prover_layout_name(&self) -> &LayoutName {
+        &self.orchestrator_params.prover_layout_name
+    }
 }
 
 /// Builds the provider config
@@ -274,6 +295,9 @@ pub async fn build_da_client(da_params: &DaValidatedArgs) -> Box<dyn DaClient + 
 pub fn build_prover_service(prover_params: &ProverValidatedArgs) -> Box<dyn ProverClient> {
     match prover_params {
         ProverValidatedArgs::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+        ProverValidatedArgs::Atlantic(atlantic_params) => {
+            Box::new(AtlanticProverService::new_with_args(atlantic_params))
+        }
     }
 }
 

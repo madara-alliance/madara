@@ -1,4 +1,5 @@
 use alert::AlertValidatedArgs;
+use cairo_vm::types::layout_name::LayoutName;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
 use cron::CronValidatedArgs;
@@ -22,6 +23,7 @@ pub mod da;
 pub mod database;
 pub mod instrumentation;
 pub mod prover;
+pub mod prover_layout;
 pub mod provider;
 pub mod queue;
 pub mod server;
@@ -29,7 +31,6 @@ pub mod service;
 pub mod settlement;
 pub mod snos;
 pub mod storage;
-
 #[derive(Parser, Debug)]
 pub struct Cli {
     #[command(subcommand)]
@@ -139,6 +140,12 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub sharp_args: prover::sharp::SharpCliArgs,
 
+    #[clap(flatten)]
+    pub atlantic_args: prover::atlantic::AtlanticCliArgs,
+
+    #[clap(flatten)]
+    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
+
     // SNOS
     #[clap(flatten)]
     pub snos_args: snos::SNOSCliArgs,
@@ -183,7 +190,7 @@ impl RunCmd {
     }
 
     pub fn validate_prover_params(&self) -> Result<ProverValidatedArgs, String> {
-        validate_params::validate_prover_params(&self.sharp_args)
+        validate_params::validate_prover_params(&self.sharp_args, &self.atlantic_args)
     }
 
     pub fn validate_instrumentation_params(&self) -> Result<InstrumentationParams, String> {
@@ -196,6 +203,10 @@ impl RunCmd {
 
     pub fn validate_service_params(&self) -> Result<ServiceParams, String> {
         validate_params::validate_service_params(&self.service_args)
+    }
+
+    pub fn validate_proving_layout_name(&self) -> Result<(LayoutName, LayoutName), String> {
+        validate_params::validate_proving_layout_name(&self.proving_layout_args)
     }
 
     pub fn validate_snos_params(&self) -> Result<SNOSParams, String> {
@@ -290,6 +301,8 @@ pub mod validate_params {
     use std::time::Duration;
 
     use alloy::primitives::Address;
+    use atlantic_service::AtlanticValidatedArgs;
+    use cairo_vm::types::layout_name::LayoutName;
     use ethereum_da_client::EthereumDaValidatedArgs;
     use ethereum_settlement_client::EthereumSettlementValidatedArgs;
     use sharp_service::SharpValidatedArgs;
@@ -305,6 +318,7 @@ pub mod validate_params {
     use super::database::mongodb::MongoDBCliArgs;
     use super::database::DatabaseValidatedArgs;
     use super::instrumentation::InstrumentationCliArgs;
+    use super::prover::atlantic::AtlanticCliArgs;
     use super::prover::sharp::SharpCliArgs;
     use super::prover::ProverValidatedArgs;
     use super::provider::aws::AWSConfigCliArgs;
@@ -320,6 +334,7 @@ pub mod validate_params {
     use super::storage::aws_s3::AWSS3CliArgs;
     use super::storage::StorageValidatedArgs;
     use crate::alerts::aws_sns::AWSSNSValidatedArgs;
+    use crate::cli::prover_layout::ProverLayoutCliArgs;
     use crate::config::ServiceParams;
     use crate::cron::event_bridge::AWSEventBridgeValidatedArgs;
     use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
@@ -491,9 +506,13 @@ pub mod validate_params {
         }
     }
 
-    pub(crate) fn validate_prover_params(sharp_args: &SharpCliArgs) -> Result<ProverValidatedArgs, String> {
-        if sharp_args.sharp {
-            Ok(ProverValidatedArgs::Sharp(SharpValidatedArgs {
+    pub(crate) fn validate_prover_params(
+        sharp_args: &SharpCliArgs,
+        atlantic_args: &AtlanticCliArgs,
+    ) -> Result<ProverValidatedArgs, String> {
+        match (sharp_args.sharp, atlantic_args.atlantic) {
+            (true, true) => Err("Cannot use both Sharp and Atlantic provers".to_string()),
+            (true, false) => Ok(ProverValidatedArgs::Sharp(SharpValidatedArgs {
                 sharp_customer_id: sharp_args.sharp_customer_id.clone().expect("Sharp customer ID is required"),
                 sharp_url: sharp_args.sharp_url.clone().expect("Sharp URL is required"),
                 sharp_user_crt: sharp_args.sharp_user_crt.clone().expect("Sharp user certificate is required"),
@@ -505,9 +524,32 @@ pub mod validate_params {
                     .clone()
                     .expect("GPS verifier contract address is required"),
                 sharp_server_crt: sharp_args.sharp_server_crt.clone().expect("Sharp server certificate is required"),
-            }))
-        } else {
-            Err("Only Sharp is supported as of now".to_string())
+            })),
+            (false, true) => Ok(ProverValidatedArgs::Atlantic(AtlanticValidatedArgs {
+                atlantic_api_key: atlantic_args.atlantic_api_key.clone().expect("Atlantic API key required"),
+                atlantic_service_url: atlantic_args.atlantic_service_url.clone().expect("Atlantic URL is required"),
+                atlantic_rpc_node_url: atlantic_args
+                    .atlantic_rpc_node_url
+                    .clone()
+                    .expect("Atlantic API key is required"),
+                atlantic_verifier_contract_address: atlantic_args
+                    .atlantic_verifier_contract_address
+                    .clone()
+                    .expect("Atlantic verifier contract address is required"),
+                atlantic_settlement_layer: atlantic_args
+                    .atlantic_settlement_layer
+                    .clone()
+                    .expect("Atlantic settlement layer is required"),
+                atlantic_mock_fact_hash: atlantic_args
+                    .atlantic_mock_fact_hash
+                    .clone()
+                    .expect("Atlantic mock fact hash is required"),
+                atlantic_prover_type: atlantic_args
+                    .atlantic_prover_type
+                    .clone()
+                    .expect("Atlantic prover type is required"),
+            })),
+            (false, false) => Err("Prover is required".to_string()),
         }
     }
 
@@ -523,6 +565,32 @@ pub mod validate_params {
 
     pub(crate) fn validate_server_params(server_args: &ServerCliArgs) -> Result<ServerParams, String> {
         Ok(ServerParams { host: server_args.host.clone(), port: server_args.port })
+    }
+
+    pub(crate) fn validate_proving_layout_name(args: &ProverLayoutCliArgs) -> Result<(LayoutName, LayoutName), String> {
+        let layout_from_name = |layout_name: &str| -> Result<LayoutName, String> {
+            Ok(match layout_name {
+                "plain" => LayoutName::plain,
+                "small" => LayoutName::small,
+                "dex" => LayoutName::dex,
+                "recursive" => LayoutName::recursive,
+                "starknet" => LayoutName::starknet,
+                "starknet_with_keccak" => LayoutName::starknet_with_keccak,
+                "recursive_large_output" => LayoutName::recursive_large_output,
+                "recursive_with_poseidon" => LayoutName::recursive_with_poseidon,
+                "all_solidity" => LayoutName::all_solidity,
+                "all_cairo" => LayoutName::all_cairo,
+                "dynamic" => LayoutName::dynamic,
+                _ => return Err(format!("Invalid layout name: {}", layout_name)),
+            })
+        };
+
+        let prover_layout = layout_from_name(args.prover_layout_name.as_str())
+            .map_err(|e| format!("Error validating prover layout: {}", e))?;
+        let snos_layout = layout_from_name(args.snos_layout_name.as_str())
+            .map_err(|e| format!("Error validating SNOS layout: {}", e))?;
+
+        Ok((snos_layout, prover_layout))
     }
 
     pub(crate) fn validate_service_params(service_args: &ServiceCliArgs) -> Result<ServiceParams, String> {
@@ -553,6 +621,7 @@ pub mod validate_params {
         use crate::cli::da::ethereum::EthereumDaCliArgs;
         use crate::cli::database::mongodb::MongoDBCliArgs;
         use crate::cli::instrumentation::InstrumentationCliArgs;
+        use crate::cli::prover::atlantic::AtlanticCliArgs;
         use crate::cli::prover::sharp::SharpCliArgs;
         use crate::cli::provider::aws::AWSConfigCliArgs;
         use crate::cli::queue::aws_sqs::AWSSQSCliArgs;
@@ -720,9 +789,11 @@ pub mod validate_params {
         }
 
         #[rstest]
-        #[case(true)]
-        #[case(false)]
-        fn test_validate_prover_params(#[case] is_sharp: bool) {
+        #[case(true, false)]
+        #[case(false, true)]
+        #[case(false, false)]
+        #[case(true, true)]
+        fn test_validate_prover_params(#[case] is_sharp: bool, #[case] is_atlantic: bool) {
             let sharp_args: SharpCliArgs = SharpCliArgs {
                 sharp: is_sharp,
                 sharp_customer_id: Some("".to_string()),
@@ -734,8 +805,19 @@ pub mod validate_params {
                 gps_verifier_contract_address: Some("".to_string()),
                 sharp_server_crt: Some("".to_string()),
             };
-            let prover_params = validate_prover_params(&sharp_args);
-            if is_sharp {
+
+            let atlantic_args: AtlanticCliArgs = AtlanticCliArgs {
+                atlantic: is_atlantic,
+                atlantic_api_key: Some("".to_string()),
+                atlantic_service_url: Some(Url::parse("http://localhost:8545").unwrap()),
+                atlantic_rpc_node_url: Some(Url::parse("http://localhost:8545").unwrap()),
+                atlantic_verifier_contract_address: Some("".to_string()),
+                atlantic_settlement_layer: Some("".to_string()),
+                atlantic_mock_fact_hash: Some("".to_string()),
+                atlantic_prover_type: Some("".to_string()),
+            };
+            let prover_params = validate_prover_params(&sharp_args, &atlantic_args);
+            if is_sharp ^ is_atlantic {
                 assert!(prover_params.is_ok());
             } else {
                 assert!(prover_params.is_err());

@@ -656,7 +656,7 @@ pub mod test {
             let hex_field_element = vec_u8_to_hex_string(&field_element);
 
             server.mock(|when, then| {
-                when.path("/").body_contains("starknet_getNonce").body_contains(hex_field_element);
+                when.path("/").body_includes("starknet_getNonce").body_includes(hex_field_element);
                 then.status(200).body(serde_json::to_vec(&response).unwrap());
             });
         }

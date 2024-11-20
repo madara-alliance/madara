@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use gps_fact_checker::FactCheckerError;
 use mockall::automock;
@@ -14,12 +15,12 @@ use mockall::automock;
 #[automock]
 #[async_trait]
 pub trait ProverClient: Send + Sync {
-    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError>;
+    async fn submit_task(&self, task: Task, proof_layout: LayoutName) -> Result<String, ProverClientError>;
     async fn get_task_status(&self, task_id: &str, fact: &str) -> Result<TaskStatus, ProverClientError>;
 }
 
 pub enum Task {
-    CairoPie(CairoPie),
+    CairoPie(Box<CairoPie>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,4 +44,8 @@ pub enum ProverClientError {
     InvalidJobKey(String),
     #[error("Failed to convert fact to B256: {0}")]
     FailedToConvertFact(String),
+    #[error("Failed to write file: {0}")]
+    FailedToCreateTempFile(String),
+    #[error("Failed to write file: {0}")]
+    FailedToWriteFile(String),
 }

@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 alloy.workspace = true
 async-trait.workspace = true
-base64 = "0.22.1"
+base64.workspace = true
 cairo-vm.workspace = true
 color-eyre.workspace = true
 dotenvy.workspace = true
@@ -39,7 +39,7 @@ opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
-tracing-opentelemetry = "0.26.0"
+tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 

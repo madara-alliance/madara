@@ -56,7 +56,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     get_nonce_attached(&server, nonces_file.as_str());
 
     let state_update_mock = server.mock(|when, then| {
-        when.path("/").body_contains("starknet_getStateUpdate");
+        when.path("/").body_includes("starknet_getStateUpdate");
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
@@ -122,7 +122,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     let response = json!({ "id": 1,"jsonrpc":"2.0","result": pending_state_update });
 
     let state_update_mock = server.mock(|when, then| {
-        when.path("/").body_contains("starknet_getStateUpdate");
+        when.path("/").body_includes("starknet_getStateUpdate");
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
@@ -205,7 +205,7 @@ async fn test_da_job_process_job_success(
     get_nonce_attached(&server, nonces_file.as_str());
 
     let state_update_mock = server.mock(|when, then| {
-        when.path("/").body_contains("starknet_getStateUpdate");
+        when.path("/").body_includes("starknet_getStateUpdate");
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 

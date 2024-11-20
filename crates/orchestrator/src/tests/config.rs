@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use alloy::primitives::Address;
 use axum::Router;
+use cairo_vm::types::layout_name::LayoutName;
 use da_client_interface::{DaClient, MockDaClient};
 use ethereum_da_client::EthereumDaValidatedArgs;
 use ethereum_settlement_client::EthereumSettlementValidatedArgs;
@@ -555,6 +556,8 @@ fn get_env_params() -> EnvParams {
         snos_config,
         service_config,
         server_config,
+        snos_layout_name: LayoutName::all_cairo,
+        prover_layout_name: LayoutName::dynamic,
     };
 
     let instrumentation_params = InstrumentationParams {
