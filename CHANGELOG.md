@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
 - fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree
