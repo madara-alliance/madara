@@ -64,7 +64,6 @@ mod test_rpc_read_calls {
                     "--n-blocks-to-sync",
                     "20",
                     "--no-l1-sync",
-                    "--rpc-enable",
                 ])
                 .run();
 
