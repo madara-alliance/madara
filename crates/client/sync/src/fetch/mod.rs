@@ -160,7 +160,7 @@ mod test_l2_fetch_task {
                         backend,
                         0,
                         Some(5),
-                        true,
+                        false,
                         fetch_stream_sender,
                         provider,
                         Some(polling_interval),
