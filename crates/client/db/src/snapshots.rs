@@ -6,9 +6,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+pub type SnapshotRef = Arc<SnapshotWithDBArc<DB>>;
+
 pub struct Snapshots {
     db: Arc<DB>,
-    snapshots: RwLock<BTreeMap<BasicId, Arc<SnapshotWithDBArc<DB>>>>,
+    snapshots: RwLock<BTreeMap<BasicId, SnapshotRef>>,
     max_saved_snapshots: Option<usize>,
 }
 impl fmt::Debug for Snapshots {
@@ -43,7 +45,7 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    pub fn get_closest(&self, id: BasicId) -> Option<(BasicId, Arc<SnapshotWithDBArc<DB>>)> {
+    pub fn get_closest(&self, id: BasicId) -> Option<(BasicId, SnapshotRef)> {
         tracing::debug!("get closest {id:?} {self:?}");
         let snapshots = self.snapshots.read().expect("Poisoned lock");
         snapshots.range(..&id).next().map(|(id, snapshot)| (*id, Arc::clone(snapshot)))

@@ -47,17 +47,18 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
         .map_err(|err| anyhow::anyhow!("{err:#}"))
         .or_internal_server_error("Error while making storage multiproof")?;
 
+    // convert the bonsai-trie type to the rpc DTO
     let converted_proof = proof
         .0
         .into_iter()
-        .map(|(node_hash, n)| NodeHashToNodeMappingItem {
-            node_hash,
-            node: match n {
+        .map(|(node_hash, n)| {
+            let node = match n {
                 mc_db::ProofNode::Binary { left, right } => MerkleNode::Binary { left, right },
                 mc_db::ProofNode::Edge { child, path } => {
                     MerkleNode::Edge { child, path: path_to_felt(&path), length: path.len() }
                 }
-            },
+            };
+            NodeHashToNodeMappingItem { node_hash, node }
         })
         .collect();
 

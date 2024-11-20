@@ -1,6 +1,5 @@
 use crate::error::DbError;
-use crate::rocksdb_snapshot::SnapshotWithDBArc;
-use crate::snapshots::Snapshots;
+use crate::snapshots::{SnapshotRef, Snapshots};
 use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, ByteVec, DatabaseKey};
@@ -46,7 +45,7 @@ impl BonsaiDb {
 
 impl fmt::Debug for BonsaiDb {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<database>")
+        write!(f, "BonsaiDb {{}}")
     }
 }
 
@@ -172,15 +171,14 @@ fn to_changed_key(k: &DatabaseKey) -> (usize, ByteVec) {
 }
 
 pub struct BonsaiTransaction {
-    snapshot: Arc<SnapshotWithDBArc<DB>>,
+    snapshot: SnapshotRef,
     changed: BTreeMap<(usize, ByteVec), Option<ByteVec>>,
-    db: Arc<DB>,
     column_mapping: DatabaseKeyMapping,
 }
 
 impl fmt::Debug for BonsaiTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<tx>")
+        write!(f, "BonsaiTransaction {{}}")
     }
 }
 
@@ -198,8 +196,8 @@ impl BonsaiDatabase for BonsaiTransaction {
         if let Some(val) = self.changed.get(&to_changed_key(key)) {
             return Ok(val.clone());
         }
-        let handle = self.db.get_column(self.column_mapping.map(key));
-        Ok(self.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        let handle = self.snapshot.db.get_column(self.column_mapping.map(key));
+        Ok(self.snapshot.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -209,7 +207,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key), fields(module = "BonsaiDB"))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
-        let handle = self.db.get_column(self.column_mapping.map(key));
+        let handle = self.snapshot.db.get_column(self.column_mapping.map(key));
         Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
     }
 
@@ -260,7 +258,6 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
             (
                 id,
                 BonsaiTransaction {
-                    db: Arc::clone(&self.db),
                     snapshot,
                     column_mapping: self.column_mapping.clone(),
                     changed: Default::default(),
