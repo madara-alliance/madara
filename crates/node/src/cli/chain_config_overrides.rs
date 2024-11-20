@@ -15,6 +15,7 @@ use mp_chain_config::{
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{deserialize_duration, deserialize_private_key, serialize_duration};
+use url::Url;
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
@@ -28,6 +29,8 @@ pub struct ChainConfigOverrideParams {
 pub struct ChainConfigOverridesInner {
     pub chain_name: String,
     pub chain_id: ChainId,
+    pub feeder_gateway_url: Url,
+    pub gateway_url: Url,
     pub native_fee_token_address: ContractAddress,
     pub parent_fee_token_address: ContractAddress,
     #[serde(deserialize_with = "deserialize_starknet_version", serialize_with = "serialize_starknet_version")]
@@ -66,6 +69,8 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
             private_key: chain_config.private_key,
+            feeder_gateway_url: chain_config.feeder_gateway_url,
+            gateway_url: chain_config.gateway_url,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -101,8 +106,8 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
-            feeder_gateway_url: chain_config.feeder_gateway_url,
-            gateway_url: chain_config.gateway_url,
+            feeder_gateway_url: chain_config_overrides.feeder_gateway_url,
+            gateway_url: chain_config_overrides.gateway_url,
             native_fee_token_address: chain_config_overrides.native_fee_token_address,
             parent_fee_token_address: chain_config_overrides.parent_fee_token_address,
             latest_protocol_version: chain_config_overrides.latest_protocol_version,

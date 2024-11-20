@@ -3,6 +3,7 @@
 ## Next release
 
 - feat(debug): service cancelling and profiling build #390
+- fix(db): fix number of files in db, startup hang, ram issues and flushing issues
 - fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree
 - refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId
