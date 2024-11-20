@@ -226,13 +226,6 @@ pub struct FeePayment {
     pub unit: PriceUnit,
 }
 
-// FIXME: this conversion is outdated with transaction V3, see https://github.com/madara-alliance/madara/issues/385
-impl From<Felt> for FeePayment {
-    fn from(fee: Felt) -> Self {
-        Self { amount: fee, unit: PriceUnit::Wei }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriceUnit {
     #[default]
