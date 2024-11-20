@@ -24,7 +24,11 @@ impl GatewayService {
 
 #[async_trait::async_trait]
 impl Service for GatewayService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         if self.config.feeder_gateway_enable || self.config.gateway_enable {
             let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
 
@@ -36,6 +40,7 @@ impl Service for GatewayService {
                     config.gateway_enable,
                     config.gateway_external,
                     config.gateway_port,
+                    cancellation_token,
                 )
                 .await
             });

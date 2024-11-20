@@ -63,7 +63,11 @@ impl BlockProductionService {
 impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
     #[tracing::instrument(skip(self, join_set), fields(module = "BlockProductionService"))]
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
         }
@@ -104,7 +108,7 @@ impl Service for BlockProductionService {
             };
 
             // display devnet welcome message :)
-            // we display it to stdout instead of stderr
+            // we display itto stdout instead of stderr
 
             let msg = format!("{}", keys);
 
@@ -113,7 +117,7 @@ impl Service for BlockProductionService {
 
         join_set.spawn(async move {
             BlockProductionTask::new(backend, block_import, mempool, metrics, l1_data_provider)?
-                .block_production_task()
+                .block_production_task(cancellation_token)
                 .await?;
             Ok(())
         });

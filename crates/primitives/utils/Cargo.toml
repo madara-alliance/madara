@@ -30,6 +30,7 @@ rayon.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 url.workspace = true
 
 #Instrumentation

@@ -89,6 +89,7 @@ pub async fn fetch_pending_block_and_updates(
     parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &FeederClient,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = FetchBlockId::Pending;
     let sw = PerfStopwatch::new();
@@ -107,6 +108,7 @@ pub async fn fetch_pending_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
+        cancellation_token,
     )
     .await?;
 
@@ -125,7 +127,8 @@ pub async fn fetch_pending_block_and_updates(
         );
         return Ok(None);
     }
-    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id, provider).await?;
+    let class_update =
+        fetch_class_updates(chain_id, &state_update.state_diff, block_id, provider, cancellation_token).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
@@ -139,6 +142,7 @@ pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
     provider: &FeederClient,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = FetchBlockId::BlockN(block_n);
 
@@ -152,9 +156,11 @@ pub async fn fetch_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
+        cancellation_token,
     )
     .await?;
-    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
+    let class_update =
+        fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, cancellation_token).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_n);
 
@@ -167,7 +173,12 @@ pub async fn fetch_block_and_updates(
     Ok(converted)
 }
 
-async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, SequencerError>
+async fn retry<F, Fut, T>(
+    mut f: F,
+    max_retries: u32,
+    base_delay: Duration,
+    cancellation_token: &tokio_util::sync::CancellationToken,
+) -> Result<T, SequencerError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, SequencerError>>,
@@ -192,7 +203,7 @@ where
                     tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
-                if wait_or_graceful_shutdown(tokio::time::sleep(delay)).await.is_none() {
+                if wait_or_graceful_shutdown(tokio::time::sleep(delay), cancellation_token).await.is_none() {
                     return Err(SequencerError::StarknetError(StarknetError::block_not_found()));
                 }
             }
@@ -206,6 +217,7 @@ async fn fetch_class_updates(
     state_diff: &StateDiff,
     block_id: FetchBlockId,
     provider: &FeederClient,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     let chain_id: Felt = chain_id.to_felt();
 
@@ -227,7 +239,8 @@ async fn fetch_class_updates(
     let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY, cancellation_token)
+                    .await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -243,7 +256,8 @@ async fn fetch_class_updates(
     let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY).await?;
+                retry(|| fetch_class(class_hash, block_id, provider), MAX_RETRY, BASE_DELAY, cancellation_token)
+                    .await?;
 
             let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -367,6 +381,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await;
 
@@ -452,6 +467,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await;
 
@@ -664,6 +680,7 @@ mod test_l2_fetchers {
             state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await
         .expect("Failed to fetch class updates");
@@ -700,6 +717,7 @@ mod test_l2_fetchers {
             state_diff,
             FetchBlockId::BlockN(5),
             &ctx.provider,
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await;
 

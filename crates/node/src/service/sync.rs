@@ -49,7 +49,11 @@ impl SyncService {
 
 #[async_trait::async_trait]
 impl Service for SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
@@ -74,6 +78,7 @@ impl Service for SyncService {
                 backup_every_n_blocks,
                 telemetry,
                 pending_block_poll_interval,
+                cancellation_token,
             )
             .await
         });

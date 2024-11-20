@@ -49,6 +49,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 pub async fn start_server(
     config: ServerConfig,
     join_set: &mut JoinSet<anyhow::Result<()>>,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
         addr,
@@ -155,7 +156,7 @@ pub async fn start_server(
         );
         server
             .with_graceful_shutdown(async {
-                wait_or_graceful_shutdown(stop_handle.shutdown()).await;
+                wait_or_graceful_shutdown(stop_handle.shutdown(), &cancellation_token).await;
             })
             .await
             .context("Running rpc server")

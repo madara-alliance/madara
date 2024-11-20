@@ -195,6 +195,7 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "1.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
+tokio-util = "0.7.12"
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
 bincode = "1.3"

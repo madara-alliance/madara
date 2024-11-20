@@ -78,4 +78,5 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
+tokio-util.workspace = true
 url.workspace = true

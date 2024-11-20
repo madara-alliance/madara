@@ -24,6 +24,7 @@ pub async fn l2_fetch_task(
     provider: Arc<FeederClient>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
     let backend = &backend;
@@ -34,12 +35,21 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider).await) }
+            let cancellation_token = cancellation_token.clone();
+            async move {
+                (
+                    block_n,
+                    fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &cancellation_token)
+                        .await,
+                )
+            }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
-        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
+        while let Some((block_n, val)) =
+            channel_wait_or_graceful_shutdown(fetch_stream.next(), &cancellation_token).await
+        {
             match val {
                 Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                     code: StarknetErrorCode::BlockNotFound,
@@ -67,9 +77,16 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
+        while wait_or_graceful_shutdown(interval.tick(), &cancellation_token).await.is_some() {
             loop {
-                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
+                match fetch_block_and_updates(
+                    &backend.chain_config().chain_id,
+                    next_block,
+                    &provider,
+                    &cancellation_token,
+                )
+                .await
+                {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..
@@ -143,6 +160,7 @@ mod test_l2_fetch_task {
                         provider,
                         Some(polling_interval),
                         once_caught_up_sender,
+                        tokio_util::sync::CancellationToken::new(),
                     ),
                 )
                 .await
