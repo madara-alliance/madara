@@ -154,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
                     &db_service,
                     importer,
                     telemetry_service.new_handle(),
+                    run_cmd.args_preset.warp_update_receiver,
                 )
                 .await
                 .context("Initializing sync service")?;

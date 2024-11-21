@@ -17,6 +17,9 @@ pub trait MadaraWriteRpcApi {
 
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraStatusRpcApi {
+    #[method(name = "ping")]
+    async fn ping(&self) -> RpcResult<u64>;
+
     #[method(name = "stopNode")]
     async fn stop_node(&self) -> RpcResult<u64>;
 }

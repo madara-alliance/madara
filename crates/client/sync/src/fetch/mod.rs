@@ -5,6 +5,7 @@ use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
+use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
@@ -45,6 +46,19 @@ pub async fn l2_fetch_task(
         warp_update,
     } = config;
 
+    if warp_update {
+        let ping = jsonrpsee::http_client::HttpClientBuilder::default()
+            .build("http://localhost:9943")
+            .expect("Building client")
+            .ping()
+            .await;
+
+        if ping.is_err() {
+            tracing::error!("❗ Failed to connect to warp update sender on http://localhost:9943");
+            cancellation_token.cancel();
+        }
+    }
+
     let mut next_block = first_block;
 
     {
@@ -72,6 +86,19 @@ pub async fn l2_fetch_task(
                     ..
                 }))) => {
                     tracing::info!("🥳 The sync process has caught up with the tip of the chain");
+
+                    if warp_update {
+                        let shutdown = jsonrpsee::http_client::HttpClientBuilder::default()
+                            .build("http://localhost:9943")
+                            .expect("Building client")
+                            .stop_node()
+                            .await;
+
+                        if shutdown.is_err() {
+                            tracing::error!("❗ Failed to shutdown warp update sender");
+                        }
+                    }
+
                     break;
                 }
                 val => {

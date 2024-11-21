@@ -80,13 +80,15 @@ pub struct SyncParams {
         value_parser = clap::value_parser!(u8).range(1..)
     )]
     pub sync_prallelism: u8,
-
-    #[clap(env = "CLOSE_ON_SYNC", long, value_name = "CLOSE ON SYNC", default_value_t = false)]
-    pub close_on_sync: bool,
 }
 
 impl SyncParams {
-    pub fn block_fetch_config(&self, chain_id: ChainId, chain_config: Arc<ChainConfig>) -> FetchConfig {
+    pub fn block_fetch_config(
+        &self,
+        chain_id: ChainId,
+        chain_config: Arc<ChainConfig>,
+        warp_update: bool,
+    ) -> FetchConfig {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
                 url.join("/gateway/").expect("Error parsing url"),
@@ -107,7 +109,7 @@ impl SyncParams {
             n_blocks_to_sync: self.n_blocks_to_sync,
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_prallelism,
-            warp_update: self.close_on_sync,
+            warp_update,
         }
     }
 }

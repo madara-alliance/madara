@@ -134,6 +134,7 @@ where
                 );
             };
 
+            let method = method.replacen(&format!("{version}_"), "", 1);
             let method_new = format!("{namespace}_{version}_{method}");
             req.method = jsonrpsee::core::Cow::from(method_new);
 

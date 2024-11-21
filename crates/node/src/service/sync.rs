@@ -29,8 +29,9 @@ impl SyncService {
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
         telemetry: TelemetryHandle,
+        warp_update: bool,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone());
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
 
         tracing::info!("🛰️  Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
 

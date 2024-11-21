@@ -35,6 +35,7 @@ mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway-client.workspace = true
 mc-telemetry.workspace = true
+mc-rpc.workspace = true
 
 mp-block.workspace = true
 mp-chain-config.workspace = true
