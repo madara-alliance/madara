@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(warp): added warp update to madara
 - feat(stop): added `stop_node` admin rpc endpoint
 - feat(debug): service cancelling and profiling build
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls

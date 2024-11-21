@@ -33,7 +33,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
 - 🔄 Migration
-- ℹ️  Supported Features
+- ℹ️ Supported Features
 - 👍 Contribute
 
 ## ⬇️ Installation
@@ -525,8 +525,7 @@ This will start generating a new up-to-date database under `/tmp/madara_new`.
 Once this process is over, both nodes will automatically shutdown and you will
 be able to load the new database from `/tmp/madara_new`.
 
-
-## ℹ️  Supported Features
+## ℹ️ Supported Features
 
 Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
 
