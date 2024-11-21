@@ -83,7 +83,11 @@ impl L1SyncService {
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
             self.clone();
 
@@ -100,6 +104,7 @@ impl Service for L1SyncService {
                     gas_price_sync_disabled,
                     gas_price_poll,
                     mempool,
+                    cancellation_token,
                 )
                 .await
             });

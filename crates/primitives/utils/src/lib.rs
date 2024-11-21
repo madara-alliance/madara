@@ -5,11 +5,11 @@ pub mod parsers;
 pub mod serde;
 pub mod service;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::Future;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 /// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
 /// we don't really need that
@@ -27,9 +27,7 @@ where
     rx.await.expect("tokio channel closed")
 }
 
-static CTRL_C: AtomicBool = AtomicBool::new(false);
-
-async fn graceful_shutdown_inner() {
+async fn graceful_shutdown_inner(cancellation_token: &CancellationToken) {
     let sigterm = async {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(mut signal) => signal.recv().await,
@@ -37,33 +35,36 @@ async fn graceful_shutdown_inner() {
             Err(_) => core::future::pending().await,
         }
     };
+
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
         _ = sigterm => {},
+        _ = cancellation_token.cancelled() => {},
     };
-    CTRL_C.store(true, Ordering::SeqCst);
+
+    cancellation_token.cancel()
 }
-pub async fn graceful_shutdown() {
-    if CTRL_C.load(Ordering::SeqCst) {
-        return;
-    }
-    graceful_shutdown_inner().await
+pub async fn graceful_shutdown(cancellation_token: &CancellationToken) {
+    graceful_shutdown_inner(cancellation_token).await
 }
 
 /// Should be used with streams/channels `next`/`recv` function.
-pub async fn wait_or_graceful_shutdown<T>(future: impl Future<Output = T>) -> Option<T> {
-    if CTRL_C.load(Ordering::SeqCst) {
-        return None;
-    }
+pub async fn wait_or_graceful_shutdown<T>(
+    future: impl Future<Output = T>,
+    cancellation_token: &CancellationToken,
+) -> Option<T> {
     tokio::select! {
-        _ = graceful_shutdown_inner() => { None },
+        _ = graceful_shutdown_inner(cancellation_token) => { None },
         res = future => { Some(res) },
     }
 }
 
 /// Should be used with streams/channels `next`/`recv` function.
-pub async fn channel_wait_or_graceful_shutdown<T>(future: impl Future<Output = Option<T>>) -> Option<T> {
-    wait_or_graceful_shutdown(future).await?
+pub async fn channel_wait_or_graceful_shutdown<T>(
+    future: impl Future<Output = Option<T>>,
+    cancellation_token: &CancellationToken,
+) -> Option<T> {
+    wait_or_graceful_shutdown(future, cancellation_token).await?
 }
 
 #[derive(Debug, Default)]
