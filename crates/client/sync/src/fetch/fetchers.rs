@@ -40,11 +40,13 @@ pub struct FetchConfig {
     pub sync_polling_interval: Option<Duration>,
     /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
+    /// Number of blocks between db flushes
     pub flush_every_n_blocks: u16,
     /// Stops the node once all blocks have been synced (for testing purposes)
     pub stop_on_sync: bool,
     /// Number of blocks to fetch in parallel during the sync process
     pub sync_parallelism: u8,
+    /// True if the node is called with `--warp-update-receiver`
     pub warp_update: bool,
 }
 

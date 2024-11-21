@@ -73,9 +73,16 @@ pub struct SyncParams {
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 
+    /// Periodically flushes the database from ram to disk. You can set this
+    /// based on how fast your machine is at synchronizing blocks and how much
+    /// ram it has available.
     #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "FLUSH EVERY N BLOCKS", default_value_t = 1_000)]
     pub flush_every_n_blocks: u16,
 
+    /// Number of blocks to fetch in parallel. This only affects sync time, and
+    /// does not affect the node once it has reached the tip of the chain.
+    /// Increasing this can lead to lower sync times at the cost of higher cpu
+    /// and ram utilization.
     #[clap(
         env = "MADARA_SYNC_PARALLELISM",
         long, value_name = "SYNC PARALLELISM",

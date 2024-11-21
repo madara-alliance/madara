@@ -32,7 +32,8 @@ Madara is a powerful Starknet client written in Rust.
 - 🌐 Interactions
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
-- Supported Features
+- 🔄 Migration
+- ℹ️  Supported Features
 - 👍 Contribute
 
 ## ⬇️ Installation
@@ -487,7 +488,45 @@ Madara comes packed with OTEL integration, supporting export of traces, metrics 
 - Signoz Docker Standalone can be setup following this [guide](https://signoz.io/docs/install/docker/).
 - Ensure to configure the correct service_name after importing the json to the dashboard.
 
-## ✔ Supported Features
+## 🔄 Migration
+
+When migration to a newer version of Madara which introduces breaking changes,
+you might need to update your database. Instead of re-synchronizing the entirety
+of your chain's state from genesis, you can use Madara's **warp update**
+feature.
+
+> [!NOTE]
+> Warp update requires you to already have an existing node with a working
+> database as this will serve as the source for your database migration.
+
+Starting the migration:
+
+```bash
+cargo run --releasae -- \
+  --name Sender         \
+  --full                \ # This also works with other types of nodes
+  --network mainnet     \
+  --warp-sync-sender
+```
+
+Then run:
+
+```bash
+cargo run --releasae --       \
+  --name Receiver             \
+  --base-path /tmp/madara_new \ # Where you want the new database to be stored
+  --full                      \
+  --network mainnet           \
+  --l1-endpoint https://***   \
+  --warp-sync-receiver
+```
+
+This will start generating a new up-to-date database under `/tmp/madara_new`.
+Once this process is over, both nodes will automatically shutdown and you will
+be able to load the new database from `/tmp/madara_new`.
+
+
+## ℹ️  Supported Features
 
 Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
 

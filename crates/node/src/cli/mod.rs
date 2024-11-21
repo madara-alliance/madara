@@ -34,15 +34,33 @@ use std::sync::Arc;
     )
 )]
 pub struct ArgsPresetParams {
+    /// Sets up the node as a local feeder gateway, stopping any further sync.
+    /// This is used to rapidly synchronize local state onto another node with
+    /// --warp-update-receiver. You can use this to rapidly migrate to a new
+    /// version of madara without having to re-synchronize from genesis.
     #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
     pub warp_update_sender: bool,
 
+    /// Sets up the node to rapidly synchronize state from a local feeder
+    /// gateway. The node and the feeder gateway will shutdown once this process
+    /// is complete. We assume the state of the feeder gateway is valid, and
+    /// therefore we do not re-compute the state root. You can use this to
+    /// rapidly migrate to a new version of madara without having to
+    /// re-synchronize from genesis. You can launch the local feeder gateway
+    /// using --warp-update-sender.
     #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
     pub warp_update_receiver: bool,
 
+    /// Sets up the node as an externally facing feeder gateway exposed on
+    /// 0.0.0.0. Generally speaking, this means the node will be accessible
+    /// from the outside world.
     #[clap(env = "MADARA_GATEWAY", long, value_name = "GATEWAY", group = "args-preset")]
     pub gateway: bool,
 
+    /// Sets up the node as an externally facing rpc provider exposed on
+    /// 0.0.0.0. Generally speaking, this means the node will be accessible
+    /// from the outside world. Admin rpc methods are also enabled, but are only
+    /// exposed on localhost.
     #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
     pub rpc: bool,
 }
@@ -153,6 +171,10 @@ pub struct RunCmd {
 }
 
 impl RunCmd {
+    // NOTE: (trantorian) I am not entirely satisfied with how this works. The
+    // main issue is that users cannot override presets as this resolves _after_
+    // all arguments have been assigned. It might be worth forking clap for a
+    // better UX.
     pub fn apply_arg_preset(mut self) -> Self {
         if self.args_preset.warp_update_sender {
             self.sync_params.sync_disabled = true;
@@ -165,7 +187,6 @@ impl RunCmd {
             self.rpc_params.rpc_admin_port = RPC_DEFAULT_PORT_ADMIN;
             self.rpc_params.rpc_admin_external = false;
         } else if self.args_preset.warp_update_receiver {
-            self.db_params.base_path = PathBuf::from("/tmp/madara_new");
             self.sync_params.disable_root = true;
             self.sync_params.gateway_url = Some(Url::from_str("http://localhost:8080").expect("valid url"));
             self.sync_params.stop_on_sync = true;
