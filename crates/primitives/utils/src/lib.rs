@@ -5,7 +5,6 @@ pub mod parsers;
 pub mod serde;
 pub mod service;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::Future;
@@ -28,8 +27,6 @@ where
     rx.await.expect("tokio channel closed")
 }
 
-static CTRL_C: AtomicBool = AtomicBool::new(false);
-
 async fn graceful_shutdown_inner(cancellation_token: &CancellationToken) {
     let sigterm = async {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
@@ -45,12 +42,9 @@ async fn graceful_shutdown_inner(cancellation_token: &CancellationToken) {
         _ = cancellation_token.cancelled() => {},
     };
 
-    CTRL_C.store(true, Ordering::SeqCst);
+    cancellation_token.cancel()
 }
 pub async fn graceful_shutdown(cancellation_token: &CancellationToken) {
-    if CTRL_C.load(Ordering::SeqCst) {
-        return;
-    }
     graceful_shutdown_inner(cancellation_token).await
 }
 
@@ -59,9 +53,6 @@ pub async fn wait_or_graceful_shutdown<T>(
     future: impl Future<Output = T>,
     cancellation_token: &CancellationToken,
 ) -> Option<T> {
-    if CTRL_C.load(Ordering::SeqCst) {
-        return None;
-    }
     tokio::select! {
         _ = graceful_shutdown_inner(cancellation_token) => { None },
         res = future => { Some(res) },
