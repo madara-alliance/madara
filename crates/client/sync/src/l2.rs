@@ -80,7 +80,7 @@ async fn l2_verify_and_apply_task(
 
         if header.block_number - last_block_n >= flush_every_n_blocks as u64 {
             last_block_n = header.block_number;
-            let _ = backend.maybe_flush(true);
+            backend.flush().context("Flushing database")?;
         }
 
         tracing::info!(
@@ -362,7 +362,7 @@ mod tests {
     async fn test_l2_verify_and_apply_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
-        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
         let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
 
@@ -426,7 +426,7 @@ mod tests {
         let backend = test_setup;
         let (updates_sender, updates_receiver) = mpsc::channel(100);
         let (output_sender, mut output_receiver) = mpsc::channel(100);
-        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let mock_block = create_dummy_unverified_full_block();
@@ -480,7 +480,7 @@ mod tests {
     async fn test_l2_pending_block_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let ctx = TestContext::new(backend.clone());
-        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
 
         let task_handle = tokio::spawn(l2_pending_block_task(

@@ -119,16 +119,11 @@ pub struct BlockImporter {
     backend: Arc<MadaraBackend>,
     verify_apply: VerifyApply,
     metrics: BlockMetrics,
-    always_force_flush: bool,
 }
 
 impl BlockImporter {
     /// The starting block is used for metrics. Setting it to None means it will look at the database latest block number.
-    pub fn new(
-        backend: Arc<MadaraBackend>,
-        starting_block: Option<u64>,
-        always_force_flush: bool,
-    ) -> anyhow::Result<Self> {
+    pub fn new(backend: Arc<MadaraBackend>, starting_block: Option<u64>) -> anyhow::Result<Self> {
         let pool = Arc::new(RayonPool::new());
         let starting_block = if let Some(n) = starting_block {
             n
@@ -145,7 +140,6 @@ impl BlockImporter {
             pool,
             metrics: BlockMetrics::register(starting_block).context("Registering metrics for block import")?,
             backend,
-            always_force_flush,
         })
     }
 

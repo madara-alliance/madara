@@ -81,14 +81,8 @@ async fn main() -> anyhow::Result<()> {
     .context("Initializing db service")?;
 
     let importer = Arc::new(
-        BlockImporter::new(
-            Arc::clone(db_service.backend()),
-            run_cmd.sync_params.unsafe_starting_block,
-            // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
-            /* always_force_flush */
-            run_cmd.is_sequencer(),
-        )
-        .context("Initializing importer service")?,
+        BlockImporter::new(Arc::clone(db_service.backend()), run_cmd.sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
     );
 
     let l1_gas_setter = GasPriceProvider::new();

@@ -418,9 +418,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // todo, prefer using the block import pipeline?
         self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
         // do not forget to flush :)
-        self.backend
-            .maybe_flush(true)
-            .map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
 
         Ok(())
     }
