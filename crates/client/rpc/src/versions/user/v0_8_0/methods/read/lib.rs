@@ -1,5 +1,5 @@
-use crate::versions::v0_8_0::methods::read::get_messages_status::{get_messages_status, MessageStatus};
-use crate::versions::v0_8_0::StarknetReadRpcApiV0_8_0Server;
+use crate::versions::user::v0_8_0::methods::read::get_messages_status::{get_messages_status, MessageStatus};
+use crate::versions::user::v0_8_0::StarknetReadRpcApiV0_8_0Server;
 use crate::Starknet;
 use alloy::primitives::TxHash;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -7,9 +7,6 @@ use mp_chain_config::RpcVersion;
 use starknet_types_core::felt::Felt;
 
 use super::get_compiled_casm::*;
-
-use crate::versions::user::v0_8_0::StarknetReadRpcApiV0_8_0Server;
-use crate::Starknet;
 
 #[async_trait]
 impl StarknetReadRpcApiV0_8_0Server for Starknet {

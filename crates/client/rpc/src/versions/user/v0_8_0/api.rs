@@ -1,4 +1,4 @@
-use crate::versions::v0_8_0::methods::read::get_messages_status::MessageStatus;
+use crate::versions::user::v0_8_0::methods::read::get_messages_status::MessageStatus;
 use alloy::primitives::TxHash;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;

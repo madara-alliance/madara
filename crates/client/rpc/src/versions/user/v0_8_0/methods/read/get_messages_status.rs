@@ -1,5 +1,5 @@
 use crate::utils::ResultExt;
-use crate::versions::v0_7_1::methods::read::get_transaction_status::get_transaction_status;
+use crate::versions::user::v0_7_1::methods::read::get_transaction_status::get_transaction_status;
 use crate::{Starknet, StarknetRpcApiError, StarknetRpcResult};
 use alloy::primitives::TxHash;
 use jsonrpsee::core::Serialize;
