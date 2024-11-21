@@ -25,7 +25,6 @@ pub struct L2FetchConfig {
     pub warp_update: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,

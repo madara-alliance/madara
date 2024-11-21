@@ -45,25 +45,40 @@ pub struct L2StateUpdate {
     pub block_hash: Felt,
 }
 
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(backend, updates_receiver, block_import, validation), fields(module = "Sync"))]
+pub struct L2VerifyApplyConfig {
+    block_import: Arc<BlockImporter>,
+    backup_every_n_blocks: Option<u64>,
+    flush_every_n_blocks: u16,
+    stop_on_sync: bool,
+    telemetry: TelemetryHandle,
+    validation: BlockValidationContext,
+    block_conv_receiver: mpsc::Receiver<PreValidatedBlock>,
+}
+
+#[tracing::instrument(skip(backend, cancellation_token, config), fields(module = "Sync"))]
 async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
-    mut updates_receiver: mpsc::Receiver<PreValidatedBlock>,
-    block_import: Arc<BlockImporter>,
-    validation: BlockValidationContext,
-    backup_every_n_blocks: Option<u64>,
-    telemetry: TelemetryHandle,
-    stop_on_sync: bool,
     cancellation_token: tokio_util::sync::CancellationToken,
+    config: L2VerifyApplyConfig,
 ) -> anyhow::Result<()> {
     let mut last_block_n = 0;
 
-    while let Some(block) = channel_wait_or_graceful_shutdown(pin!(updates_receiver.recv()), &cancellation_token).await
+    let L2VerifyApplyConfig {
+        block_import,
+        backup_every_n_blocks,
+        flush_every_n_blocks,
+        stop_on_sync,
+        telemetry,
+        validation,
+        mut block_conv_receiver,
+    } = config;
+
+    while let Some(block) =
+        channel_wait_or_graceful_shutdown(pin!(block_conv_receiver.recv()), &cancellation_token).await
     {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
-        if header.block_number - last_block_n >= 1000 {
+        if header.block_number - last_block_n >= flush_every_n_blocks as u64 {
             last_block_n = header.block_number;
             let _ = backend.maybe_flush(true);
         }
@@ -139,15 +154,22 @@ async fn l2_block_conversion_task(
     Ok(())
 }
 
+struct L2PendingBlockConfig {
+    block_import: Arc<BlockImporter>,
+    once_caught_up_receiver: oneshot::Receiver<()>,
+    pending_block_poll_interval: Duration,
+    validation: BlockValidationContext,
+}
+
 async fn l2_pending_block_task(
     backend: Arc<MadaraBackend>,
-    block_import: Arc<BlockImporter>,
-    validation: BlockValidationContext,
-    sync_finished_cb: oneshot::Receiver<()>,
     provider: Arc<GatewayProvider>,
-    pending_block_poll_interval: Duration,
     cancellation_token: tokio_util::sync::CancellationToken,
+    config: L2PendingBlockConfig,
 ) -> anyhow::Result<()> {
+    let L2PendingBlockConfig { block_import, once_caught_up_receiver, pending_block_poll_interval, validation } =
+        config;
+
     // clear pending status
     {
         backend.clear_pending_block().context("Clearing pending block")?;
@@ -155,7 +177,7 @@ async fn l2_pending_block_task(
     }
 
     // we start the pending block task only once the node has been fully sync
-    if sync_finished_cb.await.is_err() {
+    if once_caught_up_receiver.await.is_err() {
         // channel closed
         return Ok(());
     }
@@ -207,22 +229,22 @@ pub struct L2SyncConfig {
     pub verify: bool,
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
+    pub flush_every_n_blocks: u16,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
     pub warp_update: bool,
+    pub chain_id: ChainId,
+    pub telemetry: TelemetryHandle,
+    pub block_importer: Arc<BlockImporter>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(backend, provider, config, chain_id, telemetry, block_importer), fields(module = "Sync"))]
+#[tracing::instrument(skip(backend, provider, cancellation_token, config), fields(module = "Sync"))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
     provider: GatewayProvider,
-    config: L2SyncConfig,
-    chain_id: ChainId,
-    telemetry: TelemetryHandle,
-    block_importer: Arc<BlockImporter>,
     cancellation_token: tokio_util::sync::CancellationToken,
+    config: L2SyncConfig,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
@@ -241,7 +263,7 @@ pub async fn sync(
     let validation = BlockValidationContext {
         trust_transaction_hashes: false,
         trust_global_tries: !config.verify,
-        chain_id,
+        chain_id: config.chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,
     };
@@ -265,28 +287,33 @@ pub async fn sync(
     join_set.spawn(l2_block_conversion_task(
         fetch_stream_receiver,
         block_conv_sender,
-        Arc::clone(&block_importer),
+        Arc::clone(&config.block_importer),
         validation.clone(),
         cancellation_token.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
         Arc::clone(backend),
-        block_conv_receiver,
-        Arc::clone(&block_importer),
-        validation.clone(),
-        config.backup_every_n_blocks,
-        telemetry,
-        config.stop_on_sync,
         cancellation_token.clone(),
+        L2VerifyApplyConfig {
+            block_import: Arc::clone(&config.block_importer),
+            backup_every_n_blocks: config.backup_every_n_blocks,
+            flush_every_n_blocks: config.flush_every_n_blocks,
+            stop_on_sync: config.stop_on_sync,
+            telemetry: config.telemetry,
+            validation: validation.clone(),
+            block_conv_receiver,
+        },
     ));
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),
-        Arc::clone(&block_importer),
-        validation.clone(),
-        once_caught_up_receiver,
         provider,
-        config.pending_block_poll_interval,
         cancellation_token.clone(),
+        L2PendingBlockConfig {
+            block_import: Arc::clone(&config.block_importer),
+            once_caught_up_receiver,
+            pending_block_poll_interval: config.pending_block_poll_interval,
+            validation: validation.clone(),
+        },
     ));
 
     while let Some(res) = join_set.join_next().await {
@@ -335,7 +362,7 @@ mod tests {
     async fn test_l2_verify_and_apply_task(test_setup: Arc<MadaraBackend>) {
         let backend = test_setup;
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
-        let block_importer = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
+        let block_import = Arc::new(BlockImporter::new(backend.clone(), None, true).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
         let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
 
@@ -343,16 +370,19 @@ mod tests {
 
         let task_handle = tokio::spawn(l2_verify_and_apply_task(
             backend.clone(),
-            block_conv_receiver,
-            block_importer.clone(),
-            validation.clone(),
-            Some(1),
-            telemetry,
-            false,
             tokio_util::sync::CancellationToken::new(),
+            L2VerifyApplyConfig {
+                block_import: block_import.clone(),
+                backup_every_n_blocks: Some(1),
+                flush_every_n_blocks: 1,
+                stop_on_sync: false,
+                telemetry,
+                validation: validation.clone(),
+                block_conv_receiver,
+            },
         ));
 
-        let mock_pre_validated_block = block_importer.pre_validate(mock_block, validation.clone()).await.unwrap();
+        let mock_pre_validated_block = block_import.pre_validate(mock_block, validation.clone()).await.unwrap();
         block_conv_sender.send(mock_pre_validated_block).await.unwrap();
 
         drop(block_conv_sender);
@@ -455,12 +485,14 @@ mod tests {
 
         let task_handle = tokio::spawn(l2_pending_block_task(
             backend.clone(),
-            block_import.clone(),
-            validation.clone(),
-            ctx.once_caught_up_receiver,
             ctx.provider.clone(),
-            std::time::Duration::from_secs(5),
             tokio_util::sync::CancellationToken::new(),
+            L2PendingBlockConfig {
+                block_import: block_import.clone(),
+                once_caught_up_receiver: ctx.once_caught_up_receiver,
+                pending_block_poll_interval: std::time::Duration::from_secs(5),
+                validation: validation.clone(),
+            },
         ));
 
         // Simulate the "once_caught_up" signal

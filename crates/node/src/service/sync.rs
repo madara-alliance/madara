@@ -3,6 +3,7 @@ use anyhow::Context;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
@@ -73,13 +74,15 @@ impl Service for SyncService {
         join_set.spawn(async move {
             mc_sync::sync(
                 &db_backend,
-                block_importer,
-                fetch_config,
-                starting_block,
-                backup_every_n_blocks,
-                telemetry,
-                pending_block_poll_interval,
                 cancellation_token,
+                fetch_config,
+                SyncConfig {
+                    block_importer,
+                    starting_block,
+                    backup_every_n_blocks,
+                    telemetry,
+                    pending_block_poll_interval,
+                },
             )
             .await
         });

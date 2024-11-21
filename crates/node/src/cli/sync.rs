@@ -73,6 +73,9 @@ pub struct SyncParams {
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 
+    #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "FLUSH EVERY N BLOCKS", default_value_t = 1_000)]
+    pub flush_every_n_blocks: u16,
+
     #[clap(
         env = "MADARA_SYNC_PARALLELISM",
         long, value_name = "SYNC PARALLELISM",
@@ -107,6 +110,7 @@ impl SyncParams {
             api_key: self.gateway_key.clone(),
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
+            flush_every_n_blocks: self.flush_every_n_blocks,
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_prallelism,
             warp_update,
