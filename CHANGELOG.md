@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: possibility of starting madara & kakarot-rpc in docker
 - feat(debug): service cancelling and profiling build
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
