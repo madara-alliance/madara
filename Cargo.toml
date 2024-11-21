@@ -89,7 +89,7 @@ rocksdb = { version = "0.22", git = "https://github.com/madara-alliance/rust-roc
 librocksdb-sys = { version = "0.17.0", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "trie-log", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
   "std",
 ] }
 
@@ -131,7 +131,7 @@ starknet-providers = "0.11"
 starknet-signers = "0.9"
 starknet = "0.11.0"
 
-starknet-types-core = { version = "0.1.5", default-features = false, features = [
+starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
 starknet-types-rpc = { version = "0.7.1", git = "https://github.com/starknet-io/types-rs" }
@@ -194,7 +194,7 @@ serde_with = { version = "2.3.2", default-features = false, features = [
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
-thiserror = "1.0"
+thiserror = "2.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
@@ -237,5 +237,5 @@ tracing-opentelemetry = "0.26.0"
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
-# wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
-starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
+# # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
+# starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
