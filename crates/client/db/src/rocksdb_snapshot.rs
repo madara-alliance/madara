@@ -9,6 +9,7 @@ use std::sync::Arc;
 /// See [rust-rocksdb/rust-rocksdb#937](https://github.com/rust-rocksdb/rust-rocksdb/issues/937) and
 /// [rust-rocksdb/rust-rocksdb#936](https://github.com/rust-rocksdb/rust-rocksdb/issues/936).
 pub struct SnapshotWithDBArc<D: DBAccess> {
+    // We hold an Arc to the database to ensure the snapshot cannot outlive it.
     pub db: Arc<D>,
     // The Database needs to outlive the snapshot, and be created by the supplied `db`.
     inner: *const ffi::rocksdb_snapshot_t,
@@ -26,6 +27,7 @@ impl<D: DBAccess> SnapshotWithDBArc<D> {
 
         f(&readopts)
     }
+
     /// Creates a new `SnapshotWithDBArc` of the database `db`.
     pub fn new(db: Arc<D>) -> Self {
         let snapshot = unsafe { db.create_snapshot() };

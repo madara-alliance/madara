@@ -8,6 +8,8 @@ use std::{
 
 pub type SnapshotRef = Arc<SnapshotWithDBArc<DB>>;
 
+/// This struct holds the snapshots. To avoid holding the lock the entire time the snapshot is used, it's behind
+/// an Arc. Getting a snapshot only holds the lock for the time of cloning the Arc.
 pub struct Snapshots {
     db: Arc<DB>,
     snapshots: RwLock<BTreeMap<BasicId, SnapshotRef>>,
