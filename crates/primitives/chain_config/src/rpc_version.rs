@@ -1,12 +1,7 @@
 use std::hash::Hash;
 use std::str::FromStr;
 
-lazy_static::lazy_static! {
-    pub static ref SUPPORTED_RPC_VERSIONS: Vec<RpcVersion> = vec![
-        RpcVersion::RPC_VERSION_0_7_1,
-        RpcVersion::RPC_VERSION_0_8_0,
-    ];
-}
+const SUPPORTED_RPC_VERSIONS: [RpcVersion; 2] = [RpcVersion::RPC_VERSION_0_7_1, RpcVersion::RPC_VERSION_0_8_0];
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
 pub struct RpcVersion([u8; 3]);
@@ -30,40 +25,44 @@ impl RpcVersion {
         RpcVersion([major, minor, patch])
     }
 
-    pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
-        log::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
+    #[tracing::instrument(skip(path), fields(module = "RpcVersion"))]
+    pub fn from_request_path(path: &str, version_default: RpcVersion) -> Result<Self, RpcVersionError> {
+        tracing::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
 
         let path = path.to_ascii_lowercase();
-        let parts: Vec<&str> = path.split('/').collect();
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
 
-        log::debug!(target: "rpc_version", "version parts are: {parts:?}");
+        tracing::debug!(target: "rpc_version", "version parts are: {parts:?}");
 
-        // If we have an empty path or just "/", fallback to latest rpc version
-        if parts.len() == 1 || (parts.len() == 2 && parts[1].is_empty()) {
-            log::debug!(target: "rpc_version", "no version, defaulting to latest");
-            return Ok(Self::RPC_VERSION_LATEST);
-        }
-
-        // Check if the path follows the correct format, i.e. /rpc/v[version].
-        // If not, fallback to the latest version
-        if parts.len() != 3 || parts[1] != "rpc" || !parts[2].starts_with('v') {
-            log::debug!(target: "rpc_version", "invalid version format, defaulting to latest");
-            return Ok(Self::RPC_VERSION_LATEST);
-        }
-
-        log::debug!(target: "rpc_version", "looking for matching version...");
-        let version_str = &parts[2][1..]; // without the 'v' prefix
-        if let Ok(version) = RpcVersion::from_str(version_str) {
-            if SUPPORTED_RPC_VERSIONS.contains(&version) {
-                log::debug!(target: "rpc_version", "found matching version: {version}");
-                Ok(version)
-            } else {
-                log::debug!(target: "rpc_version", "no matching version");
-                Err(RpcVersionError::UnsupportedVersion)
+        match parts.as_slice() {
+            // Match empty path
+            [] => {
+                tracing::debug!(target: "rpc_version", "No version specified, defaulting to latest.");
+                Ok(version_default)
             }
-        } else {
-            log::debug!(target: "rpc_version", "invalid version format: {version_str}");
-            Err(RpcVersionError::InvalidVersion)
+            // Match valid path format "/rpc/vX_Y_Z"
+            ["rpc", version_str] if version_str.starts_with('v') => {
+                let version_str = &version_str[1..]; // strip "v"
+                match RpcVersion::from_str(version_str) {
+                    Ok(version) if SUPPORTED_RPC_VERSIONS.contains(&version) => {
+                        tracing::debug!(target: "rpc_version", "Found supported version: {version}");
+                        Ok(version)
+                    }
+                    Ok(_) => {
+                        tracing::debug!(target: "rpc_version", "Version unsupported");
+                        Err(RpcVersionError::UnsupportedVersion)
+                    }
+                    Err(_) => {
+                        tracing::debug!(target: "rpc_version", "Invalid version format: {version_str}");
+                        Err(RpcVersionError::InvalidVersion)
+                    }
+                }
+            }
+            // Fallback for invalid format
+            _ => {
+                tracing::debug!(target: "rpc_version", "Invalid path format, defaulting to latest.");
+                Ok(version_default)
+            }
         }
     }
 
@@ -82,6 +81,9 @@ impl RpcVersion {
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
     pub const RPC_VERSION_0_8_0: RpcVersion = RpcVersion([0, 8, 0]);
     pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_8_0;
+
+    pub const RPC_VERSION_ADMIN_0_1_0: RpcVersion = RpcVersion([0, 1, 0]);
+    pub const RPC_VERSION_LATEST_ADMIN: RpcVersion = Self::RPC_VERSION_ADMIN_0_1_0;
 }
 
 impl std::fmt::Display for RpcVersion {
@@ -166,31 +168,61 @@ mod tests {
 
     #[test]
     fn test_from_request_path_valid() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/v0_7_1").unwrap(), RpcVersion::RPC_VERSION_0_7_1);
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v0_7_1/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_7_1
+        );
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v0_7_1", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_7_1
+        );
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v0_8_0/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_8_0
+        );
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v0_8_0", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_8_0
+        );
     }
 
     #[test]
     fn test_from_request_path_empty() {
-        assert_eq!(RpcVersion::from_request_path("").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_root() {
-        assert_eq!(RpcVersion::from_request_path("/").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_invalid_format() {
-        assert_eq!(RpcVersion::from_request_path("/invalid/path").unwrap(), RpcVersion::RPC_VERSION_LATEST);
+        assert_eq!(
+            RpcVersion::from_request_path("/invalid/path", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_LATEST
+        );
     }
 
     #[test]
     fn test_from_request_path_unsupported_version() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/v9_9_9"), Err(RpcVersionError::UnsupportedVersion));
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/v9_9_9", RpcVersion::RPC_VERSION_LATEST),
+            Err(RpcVersionError::UnsupportedVersion)
+        );
     }
 
     #[test]
     fn test_from_request_path_invalid_version() {
-        assert_eq!(RpcVersion::from_request_path("/rpc/vx_y_z"), Err(RpcVersionError::InvalidVersion));
+        assert_eq!(
+            RpcVersion::from_request_path("/rpc/vx_y_z", RpcVersion::RPC_VERSION_LATEST),
+            Err(RpcVersionError::InvalidVersion)
+        );
     }
 }

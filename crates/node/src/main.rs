@@ -10,16 +10,16 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
+use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, TrieLogConfig};
+use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
-use starknet_providers::SequencerGatewayProvider;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -162,14 +162,17 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .context("Initializing sync service")?;
 
-                (
-                    ServiceGroup::default().with(sync_service),
-                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                        chain_config.gateway_url.clone(),
-                        chain_config.feeder_gateway_url.clone(),
-                        chain_config.chain_id.to_felt(),
-                    ))),
-                )
+                let mut provider =
+                    GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
+                // gateway api key is needed for declare transactions on mainnet
+                if let Some(api_key) = run_cmd.sync_params.gateway_key {
+                    provider.add_header(
+                        HeaderName::from_static("x-throttling-bypass"),
+                        HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+                    )
+                }
+
+                (ServiceGroup::default().with(sync_service), Arc::new(ForwardToProvider::new(provider)))
             }
         };
 

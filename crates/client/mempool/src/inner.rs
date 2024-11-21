@@ -667,8 +667,11 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(5))] // comment this when developing, this is mostly for faster ci & whole workspace `cargo test`
         #[test]
         fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
-            let _ = env_logger::builder().is_test(true).try_init();
-            tracing::log::set_max_level(tracing::log::LevelFilter::Trace);
+            let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
+
             pb.check();
         }
     }

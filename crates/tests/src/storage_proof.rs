@@ -15,7 +15,7 @@ fn normalize(json: &mut serde_json::Value) {
 #[rstest]
 #[tokio::test]
 async fn test_storage_proof() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--full",

@@ -26,14 +26,14 @@ mc-block-import = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
 mc-eth = { workspace = true }
-mc-gateway = { workspace = true }
+mc-gateway-client = { workspace = true }
+mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
 mc-rpc = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
-mp-convert = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
@@ -47,13 +47,12 @@ anyhow.workspace = true
 async-trait.workspace = true
 chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
-env_logger.workspace = true
 fdlimit.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
+http.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
-log.workspace = true
 rand.workspace = true
 rayon.workspace = true
 reqwest.workspace = true
@@ -61,6 +60,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+tokio-util.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tower.workspace = true

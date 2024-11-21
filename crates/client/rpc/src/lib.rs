@@ -12,18 +12,17 @@ pub mod utils;
 pub mod versions;
 
 use jsonrpsee::RpcModule;
-use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
-use mp_block::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
+use providers::AddTransactionProvider;
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
+use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
-use providers::AddTransactionProvider;
-use utils::ResultExt;
 
 // TODO: make it actually configurable.
 #[derive(Clone, Debug)]
@@ -94,7 +93,7 @@ impl Starknet {
     }
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
-        self.get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+        self.get_block_n(&BlockId::Tag(BlockTag::Latest))
     }
 
     pub fn get_l1_last_confirmed_block(&self) -> StarknetRpcResult<u64> {
@@ -107,32 +106,22 @@ impl Starknet {
 }
 
 /// Returns the RpcModule merged with all the supported RPC versions.
-pub fn versioned_rpc_api(
-    starknet: &Starknet,
-    read: bool,
-    write: bool,
-    trace: bool,
-    internal: bool,
-    ws: bool,
-) -> anyhow::Result<RpcModule<()>> {
+pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
-    if read {
-        rpc_api.merge(versions::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-        rpc_api.merge(versions::v0_8_0::StarknetReadRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
-    }
-    if write {
-        rpc_api.merge(versions::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-    }
-    if trace {
-        rpc_api.merge(versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-    }
-    if internal {
-        rpc_api.merge(versions::v0_7_1::MadaraWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-    }
-    if ws {
-        rpc_api.merge(versions::v0_8_0::StarknetWsRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
-    }
+    rpc_api.merge(versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_8_0::StarknetReadRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server::into_rpc(starknet.clone()))?;
+
+    Ok(rpc_api)
+}
+
+pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
+    let mut rpc_api = RpcModule::new(());
+
+    rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

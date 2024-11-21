@@ -1,4 +1,3 @@
-mod from_provider;
 mod into_starknet_core;
 
 use starknet_types_core::{

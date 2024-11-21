@@ -21,10 +21,10 @@ anyhow.workspace = true
 async-trait.workspace = true
 chrono = "0.4.35"
 futures = { workspace = true }
-log = { workspace = true, default-features = true }
 reqwest = { workspace = true }
 reqwest-websocket = "0.3.0"
 serde_json = { workspace = true }
 sysinfo = "0.30.12"
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }

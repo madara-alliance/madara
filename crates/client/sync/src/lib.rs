@@ -4,8 +4,9 @@ use fetch::fetchers::FetchConfig;
 use hyper::header::{HeaderName, HeaderValue};
 use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
-use mc_gateway::client::builder::FeederClient;
+use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
+use mp_block::{BlockId, BlockTag};
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;
@@ -25,6 +26,7 @@ pub async fn sync(
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
     pending_block_poll_interval: Duration,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
         tracing::warn!("Forcing unordered state. This will most probably break your database.");
@@ -32,7 +34,7 @@ pub async fn sync(
     } else {
         (
             backend
-                .get_block_n(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+                .get_block_n(&BlockId::Tag(BlockTag::Latest))
                 .context("getting sync tip")?
                 .map(|block_id| block_id + 1) // next block after the tip
                 .unwrap_or_default() as _, // or genesis
@@ -42,7 +44,7 @@ pub async fn sync(
 
     tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
-    let mut provider = FeederClient::new(fetch_config.gateway, fetch_config.feeder_gateway);
+    let mut provider = GatewayProvider::new(fetch_config.gateway, fetch_config.feeder_gateway);
     if let Some(api_key) = fetch_config.api_key {
         provider.add_header(
             HeaderName::from_static("x-throttling-bypass"),
@@ -56,6 +58,7 @@ pub async fn sync(
         L2SyncConfig {
             first_block: starting_block,
             n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+            stop_on_sync: fetch_config.stop_on_sync,
             verify: fetch_config.verify,
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks,
@@ -65,6 +68,7 @@ pub async fn sync(
         backend.chain_config().chain_id.clone(),
         telemetry,
         block_importer,
+        cancellation_token,
     )
     .await?;
 

@@ -36,12 +36,19 @@ pub async fn listen_and_update_state(
     backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
     chain_id: ChainId,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-    let mut event_stream = event_filter.watch().await.context("Failed to watch event filter")?.into_stream();
+    let mut event_stream = event_filter
+        .watch()
+        .await
+        .context(
+            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+        )?
+        .into_stream();
 
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &cancellation_token).await {
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
@@ -83,6 +90,7 @@ pub async fn state_update_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
     chain_id: ChainId,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -95,7 +103,7 @@ pub async fn state_update_worker(
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id)
+    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id, cancellation_token)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
 
@@ -190,6 +198,7 @@ mod eth_client_event_subscription_test {
                     db.backend(),
                     &eth_client.l1_block_metrics,
                     chain_info.chain_id.clone(),
+                    tokio_util::sync::CancellationToken::new(),
                 )
                 .await
             })

@@ -4,7 +4,7 @@ use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mp_class::ClassInfo;
-use mp_convert::{felt_to_u64, ToFelt};
+use mp_convert::ToFelt;
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
@@ -30,7 +30,7 @@ impl StateReader for BlockifierStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
         // The `0x1` address is reserved for block hashes: https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1
         if *contract_address.key() == Felt::ONE {
-            let requested_block_number = felt_to_u64(key.0.key()).map_err(|_| StateError::OldBlockHashNotProvided)?;
+            let requested_block_number = (*key.0.key()).try_into().map_err(|_| StateError::OldBlockHashNotProvided)?;
 
             // Not found if in the last 10 blocks.
             if !block_hash_storage_check_range(

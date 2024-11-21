@@ -4,10 +4,8 @@ use std::time::Duration;
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
-use mc_gateway::{
-    client::builder::FeederClient,
-    error::{SequencerError, StarknetError, StarknetErrorCode},
-};
+use mc_gateway_client::GatewayProvider;
+use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
 
@@ -20,10 +18,12 @@ pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     first_block: u64,
     n_blocks_to_sync: Option<u64>,
+    stop_on_sync: bool,
     fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
-    provider: Arc<FeederClient>,
+    provider: Arc<GatewayProvider>,
     sync_polling_interval: Option<Duration>,
     once_caught_up_callback: oneshot::Sender<()>,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
     let backend = &backend;
@@ -34,12 +34,21 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider).await) }
+            let cancellation_token = cancellation_token.clone();
+            async move {
+                (
+                    block_n,
+                    fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &cancellation_token)
+                        .await,
+                )
+            }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
-        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
+        while let Some((block_n, val)) =
+            channel_wait_or_graceful_shutdown(fetch_stream.next(), &cancellation_token).await
+        {
             match val {
                 Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                     code: StarknetErrorCode::BlockNotFound,
@@ -60,6 +69,11 @@ pub async fn l2_fetch_task(
         }
     };
 
+    // We do not call cancellation here as we still want the block to be stored
+    if stop_on_sync {
+        return anyhow::Ok(());
+    }
+
     let _ = once_caught_up_callback.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
@@ -67,9 +81,16 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
+        while wait_or_graceful_shutdown(interval.tick(), &cancellation_token).await.is_some() {
             loop {
-                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
+                match fetch_block_and_updates(
+                    &backend.chain_config().chain_id,
+                    next_block,
+                    &provider,
+                    &cancellation_token,
+                )
+                .await
+                {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..
@@ -139,10 +160,12 @@ mod test_l2_fetch_task {
                         backend,
                         0,
                         Some(5),
+                        false,
                         fetch_stream_sender,
                         provider,
                         Some(polling_interval),
                         once_caught_up_sender,
+                        tokio_util::sync::CancellationToken::new(),
                     ),
                 )
                 .await

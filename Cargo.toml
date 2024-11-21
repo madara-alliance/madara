@@ -5,7 +5,8 @@ members = [
   "crates/client/sync",
   "crates/client/eth",
   "crates/client/rpc",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
   "crates/client/analytics",
   "crates/client/telemetry",
   "crates/client/devnet",
@@ -32,7 +33,8 @@ default-members = [
   "crates/client/exec",
   "crates/client/sync",
   "crates/client/eth",
-  "crates/client/gateway",
+  "crates/client/gateway/client",
+  "crates/client/gateway/server",
   "crates/client/rpc",
   "crates/client/telemetry",
   "crates/client/devnet",
@@ -62,11 +64,18 @@ print_stderr = "warn"
 # unwrap_used = "warn"
 # missing_docs = "warn"
 
+[workspace.metadata.build]
+rustflags = ["-C", "symbol-mangling-version=v0"]
+
 [profile.dev]
 incremental = true
 
 [profile.release]
 panic = "unwind"
+
+[profile.profiling]
+inherits = "release"
+debug = 1
 
 [profile.production]
 codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
@@ -113,7 +122,8 @@ mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
-mc-gateway = { path = "crates/client/gateway" }
+mc-gateway-client = { path = "crates/client/gateway/client" }
+mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-mempool = { path = "crates/client/mempool" }
@@ -125,21 +135,21 @@ m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
-starknet-core = "0.11"
+starknet-core = "0.12"
 starknet-crypto = "0.7"
-starknet-providers = "0.11"
-starknet-signers = "0.9"
-starknet = "0.11.0"
+starknet-providers = "0.12"
+starknet-signers = "0.10"
+starknet = "0.12.0"
 
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
-starknet-types-rpc = { version = "0.7.1", git = "https://github.com/starknet-io/types-rs" }
+starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.8.0-rc.3"
+blockifier = "=0.8.0"
 starknet_api = "=0.13.0-rc.1"
-cairo-lang-starknet-classes = "=2.7.0"
-cairo-lang-utils = "=2.7.0"
+cairo-lang-starknet-classes = "=2.8.4"
+cairo-lang-utils = "=2.8.4"
 
 alloy = { version = "0.4.0", features = [
   "node-bindings",
@@ -174,12 +184,6 @@ http-body-util = "0.1.2"
 ip_network = "0.4"
 lazy_static = { version = "1.4", default-features = false }
 once_cell = "1.19"
-log = { version = "0.4", features = [
-  "std",
-  "kv_std",
-  # Statically disable trace logs in release builds.
-  "release_max_level_debug",
-] }
 num-traits = "0.2"
 num-bigint = "0.4"
 primitive-types = "0.12"
@@ -188,7 +192,7 @@ indoc = "2"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
-serde_with = { version = "2.3.2", default-features = false, features = [
+serde_with = { version = "3.11", default-features = false, features = [
   "alloc",
   "macros",
 ] }
@@ -196,6 +200,7 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 thiserror = "2.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
+tokio-util = "0.7.12"
 url = { version = "2.4", features = ["serde"] }
 rayon = "1.10"
 bincode = "1.3"
@@ -205,7 +210,6 @@ proptest-derive = "0.5.0"
 dotenv = "0.15.0"
 httpmock = "0.7.0"
 tempfile = "3.10.1"
-env_logger = "0.11.3"
 mockall = "0.13.0"
 serial_test = "3.1.1"
 itertools = "0.13.0"
@@ -232,10 +236,3 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-opentelemetry = "0.26.0"
-
-[patch.crates-io]
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-starknet-providers = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-
-# # wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
-# starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.5" }
