@@ -4,8 +4,8 @@ use starknet_types_core::{
 };
 
 use crate::{
-    convert::{parse_compressed_legacy_class, ParseCompressedLegacyClassError},
-    CompressedLegacyContractClass, ContractClass, FlattenedSierraClass, SierraEntryPoint,
+    convert::ParseCompressedLegacyClassError, CompressedLegacyContractClass, ContractClass, FlattenedSierraClass,
+    SierraEntryPoint,
 };
 use starknet_core::types::contract::ComputeClassHashError as StarknetComputeClassHashError;
 
@@ -63,8 +63,9 @@ fn compute_hash_entries_point(entry_points: &[SierraEntryPoint]) -> Felt {
 
 impl CompressedLegacyContractClass {
     pub fn compute_class_hash(&self) -> Result<Felt, ComputeClassHashError> {
-        let legacy_contract_class = parse_compressed_legacy_class(self.clone().into())?;
-        legacy_contract_class.class_hash().map_err(ComputeClassHashError::from)
+        unimplemented!()
+        // let legacy_contract_class = parse_compressed_legacy_class(self.clone().into())?;
+        // legacy_contract_class.class_hash().map_err(ComputeClassHashError::from)
     }
 }
 

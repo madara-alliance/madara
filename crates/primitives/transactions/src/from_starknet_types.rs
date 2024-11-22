@@ -1,3 +1,5 @@
+use starknet_types_core::felt::Felt;
+
 use crate::{
     DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3,
     DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
@@ -5,30 +7,30 @@ use crate::{
     Transaction,
 };
 
-impl From<starknet_core::types::Transaction> for Transaction {
-    fn from(tx: starknet_core::types::Transaction) -> Self {
+impl From<starknet_types_rpc::Txn<Felt>> for Transaction {
+    fn from(tx: starknet_types_rpc::Txn<Felt>) -> Self {
         match tx {
-            starknet_core::types::Transaction::Invoke(tx) => Self::Invoke(tx.into()),
-            starknet_core::types::Transaction::L1Handler(tx) => Self::L1Handler(tx.into()),
-            starknet_core::types::Transaction::Declare(tx) => Self::Declare(tx.into()),
-            starknet_core::types::Transaction::Deploy(tx) => Self::Deploy(tx.into()),
-            starknet_core::types::Transaction::DeployAccount(tx) => Self::DeployAccount(tx.into()),
+            starknet_types_rpc::Txn::Invoke(tx) => Self::Invoke(tx.into()),
+            starknet_types_rpc::Txn::L1Handler(tx) => Self::L1Handler(tx.into()),
+            starknet_types_rpc::Txn::Declare(tx) => Self::Declare(tx.into()),
+            starknet_types_rpc::Txn::Deploy(tx) => Self::Deploy(tx.into()),
+            starknet_types_rpc::Txn::DeployAccount(tx) => Self::DeployAccount(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::InvokeTransaction> for InvokeTransaction {
-    fn from(tx: starknet_core::types::InvokeTransaction) -> Self {
+impl From<starknet_types_rpc::InvokeTxn<Felt>> for InvokeTransaction {
+    fn from(tx: starknet_types_rpc::InvokeTxn<Felt>) -> Self {
         match tx {
-            starknet_core::types::InvokeTransaction::V0(tx) => Self::V0(tx.into()),
-            starknet_core::types::InvokeTransaction::V1(tx) => Self::V1(tx.into()),
-            starknet_core::types::InvokeTransaction::V3(tx) => Self::V3(tx.into()),
+            starknet_types_rpc::InvokeTxn::V0(tx) => Self::V0(tx.into()),
+            starknet_types_rpc::InvokeTxn::V1(tx) => Self::V1(tx.into()),
+            starknet_types_rpc::InvokeTxn::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::InvokeTransactionV0> for InvokeTransactionV0 {
-    fn from(tx: starknet_core::types::InvokeTransactionV0) -> Self {
+impl From<starknet_types_rpc::InvokeTxnV0<Felt>> for InvokeTransactionV0 {
+    fn from(tx: starknet_types_rpc::InvokeTxnV0<Felt>) -> Self {
         Self {
             max_fee: tx.max_fee,
             signature: tx.signature,
@@ -39,8 +41,8 @@ impl From<starknet_core::types::InvokeTransactionV0> for InvokeTransactionV0 {
     }
 }
 
-impl From<starknet_core::types::InvokeTransactionV1> for InvokeTransactionV1 {
-    fn from(tx: starknet_core::types::InvokeTransactionV1) -> Self {
+impl From<starknet_types_rpc::InvokeTxnV1<Felt>> for InvokeTransactionV1 {
+    fn from(tx: starknet_types_rpc::InvokeTxnV1<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             calldata: tx.calldata,
@@ -51,8 +53,8 @@ impl From<starknet_core::types::InvokeTransactionV1> for InvokeTransactionV1 {
     }
 }
 
-impl From<starknet_core::types::InvokeTransactionV3> for InvokeTransactionV3 {
-    fn from(tx: starknet_core::types::InvokeTransactionV3) -> Self {
+impl From<starknet_types_rpc::InvokeTxnV3<Felt>> for InvokeTransactionV3 {
+    fn from(tx: starknet_types_rpc::InvokeTxnV3<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             calldata: tx.calldata,
@@ -68,31 +70,31 @@ impl From<starknet_core::types::InvokeTransactionV3> for InvokeTransactionV3 {
     }
 }
 
-impl From<starknet_core::types::L1HandlerTransaction> for L1HandlerTransaction {
-    fn from(tx: starknet_core::types::L1HandlerTransaction) -> Self {
+impl From<starknet_types_rpc::L1HandlerTxn<Felt>> for L1HandlerTransaction {
+    fn from(tx: starknet_types_rpc::L1HandlerTxn<Felt>) -> Self {
         Self {
-            version: tx.version,
+            version: Felt::from_hex(&tx.version).unwrap_or(Felt::ZERO),
             nonce: tx.nonce,
-            contract_address: tx.contract_address,
-            entry_point_selector: tx.entry_point_selector,
-            calldata: tx.calldata,
+            contract_address: tx.function_call.contract_address,
+            entry_point_selector: tx.function_call.entry_point_selector,
+            calldata: tx.function_call.calldata,
         }
     }
 }
 
-impl From<starknet_core::types::DeclareTransaction> for DeclareTransaction {
-    fn from(tx: starknet_core::types::DeclareTransaction) -> Self {
+impl From<starknet_types_rpc::DeclareTxn<Felt>> for DeclareTransaction {
+    fn from(tx: starknet_types_rpc::DeclareTxn<Felt>) -> Self {
         match tx {
-            starknet_core::types::DeclareTransaction::V0(tx) => Self::V0(tx.into()),
-            starknet_core::types::DeclareTransaction::V1(tx) => Self::V1(tx.into()),
-            starknet_core::types::DeclareTransaction::V2(tx) => Self::V2(tx.into()),
-            starknet_core::types::DeclareTransaction::V3(tx) => Self::V3(tx.into()),
+            starknet_types_rpc::DeclareTxn::V0(tx) => Self::V0(tx.into()),
+            starknet_types_rpc::DeclareTxn::V1(tx) => Self::V1(tx.into()),
+            starknet_types_rpc::DeclareTxn::V2(tx) => Self::V2(tx.into()),
+            starknet_types_rpc::DeclareTxn::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::DeclareTransactionV0> for DeclareTransactionV0 {
-    fn from(tx: starknet_core::types::DeclareTransactionV0) -> Self {
+impl From<starknet_types_rpc::DeclareTxnV0<Felt>> for DeclareTransactionV0 {
+    fn from(tx: starknet_types_rpc::DeclareTxnV0<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             max_fee: tx.max_fee,
@@ -102,8 +104,8 @@ impl From<starknet_core::types::DeclareTransactionV0> for DeclareTransactionV0 {
     }
 }
 
-impl From<starknet_core::types::DeclareTransactionV1> for DeclareTransactionV1 {
-    fn from(tx: starknet_core::types::DeclareTransactionV1) -> Self {
+impl From<starknet_types_rpc::DeclareTxnV1<Felt>> for DeclareTransactionV1 {
+    fn from(tx: starknet_types_rpc::DeclareTxnV1<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             max_fee: tx.max_fee,
@@ -114,8 +116,8 @@ impl From<starknet_core::types::DeclareTransactionV1> for DeclareTransactionV1 {
     }
 }
 
-impl From<starknet_core::types::DeclareTransactionV2> for DeclareTransactionV2 {
-    fn from(tx: starknet_core::types::DeclareTransactionV2) -> Self {
+impl From<starknet_types_rpc::DeclareTxnV2<Felt>> for DeclareTransactionV2 {
+    fn from(tx: starknet_types_rpc::DeclareTxnV2<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -127,8 +129,8 @@ impl From<starknet_core::types::DeclareTransactionV2> for DeclareTransactionV2 {
     }
 }
 
-impl From<starknet_core::types::DeclareTransactionV3> for DeclareTransactionV3 {
-    fn from(tx: starknet_core::types::DeclareTransactionV3) -> Self {
+impl From<starknet_types_rpc::DeclareTxnV3<Felt>> for DeclareTransactionV3 {
+    fn from(tx: starknet_types_rpc::DeclareTxnV3<Felt>) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -145,8 +147,8 @@ impl From<starknet_core::types::DeclareTransactionV3> for DeclareTransactionV3 {
     }
 }
 
-impl From<starknet_core::types::DeployTransaction> for DeployTransaction {
-    fn from(tx: starknet_core::types::DeployTransaction) -> Self {
+impl From<starknet_types_rpc::DeployTxn<Felt>> for DeployTransaction {
+    fn from(tx: starknet_types_rpc::DeployTxn<Felt>) -> Self {
         Self {
             version: tx.version,
             contract_address_salt: tx.contract_address_salt,
@@ -156,17 +158,17 @@ impl From<starknet_core::types::DeployTransaction> for DeployTransaction {
     }
 }
 
-impl From<starknet_core::types::DeployAccountTransaction> for DeployAccountTransaction {
-    fn from(tx: starknet_core::types::DeployAccountTransaction) -> Self {
+impl From<starknet_types_rpc::DeployAccountTxn<Felt>> for DeployAccountTransaction {
+    fn from(tx: starknet_types_rpc::DeployAccountTxn<Felt>) -> Self {
         match tx {
-            starknet_core::types::DeployAccountTransaction::V1(tx) => Self::V1(tx.into()),
-            starknet_core::types::DeployAccountTransaction::V3(tx) => Self::V3(tx.into()),
+            starknet_types_rpc::DeployAccountTxn::V1(tx) => Self::V1(tx.into()),
+            starknet_types_rpc::DeployAccountTxn::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
 
-impl From<starknet_core::types::DeployAccountTransactionV1> for DeployAccountTransactionV1 {
-    fn from(tx: starknet_core::types::DeployAccountTransactionV1) -> Self {
+impl From<starknet_types_rpc::DeployAccountTxnV1<Felt>> for DeployAccountTransactionV1 {
+    fn from(tx: starknet_types_rpc::DeployAccountTxnV1<Felt>) -> Self {
         Self {
             max_fee: tx.max_fee,
             signature: tx.signature,
@@ -177,8 +179,8 @@ impl From<starknet_core::types::DeployAccountTransactionV1> for DeployAccountTra
         }
     }
 }
-impl From<starknet_core::types::DeployAccountTransactionV3> for DeployAccountTransactionV3 {
-    fn from(tx: starknet_core::types::DeployAccountTransactionV3) -> Self {
+impl From<starknet_types_rpc::DeployAccountTxnV3<Felt>> for DeployAccountTransactionV3 {
+    fn from(tx: starknet_types_rpc::DeployAccountTxnV3<Felt>) -> Self {
         Self {
             signature: tx.signature,
             nonce: tx.nonce,

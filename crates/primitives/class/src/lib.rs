@@ -7,6 +7,7 @@ pub mod class_update;
 pub mod compile;
 pub mod convert;
 mod into_starknet_core;
+mod into_starknet_types;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConvertedClass {
@@ -164,7 +165,7 @@ pub struct SierraEntryPoint {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompressedLegacyContractClass {
-    pub program: Vec<u8>,
+    pub program: String,
     pub entry_points_by_type: LegacyEntryPointsByType,
     pub abi: Option<Vec<LegacyContractAbiEntry>>,
 }

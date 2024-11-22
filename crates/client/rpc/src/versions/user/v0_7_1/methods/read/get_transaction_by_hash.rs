@@ -1,5 +1,5 @@
-use starknet_core::types::Transaction;
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TxnWithHash;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
@@ -32,7 +32,7 @@ use crate::Starknet;
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<Transaction> {
+pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash<Felt>> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
@@ -41,9 +41,11 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> S
     let transaction = block
         .inner
         .transactions
-        .get(tx_index.0 as usize)
+        .into_iter()
+        .nth(tx_index.0 as usize)
         .ok_or_internal_server_error("Storage block transaction mismatch")?;
-    Ok(transaction.clone().to_core(transaction_hash))
+
+    Ok(TxnWithHash { transaction: transaction.into(), transaction_hash })
 }
 
 #[cfg(test)]

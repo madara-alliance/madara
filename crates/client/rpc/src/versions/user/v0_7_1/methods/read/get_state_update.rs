@@ -1,6 +1,6 @@
 use mp_block::{BlockId, BlockTag};
-use starknet_core::types::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;
@@ -26,7 +26,7 @@ use mc_db::db_block_id::DbBlockId;
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
+pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate<Felt>> {
     let resolved_block_id = starknet
         .backend
         .resolve_block_id(&block_id)
@@ -55,7 +55,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 // The pending block is actually genesis, so old root is zero (huh?)
                 Felt::ZERO
             };
-            Ok(MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate { old_root, state_diff: state_diff.into() }))
+            Ok(MaybePendingStateUpdate::Pending(PendingStateUpdate { old_root, state_diff: state_diff.into() }))
         }
         false => {
             let block_info = &starknet.get_block_info(&resolved_block_id)?;
@@ -73,7 +73,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 Felt::ZERO
             };
 
-            Ok(MaybePendingStateUpdate::Update(StateUpdate {
+            Ok(MaybePendingStateUpdate::Block(StateUpdate {
                 block_hash: block_info.block_hash,
                 old_root,
                 new_root: block_info.header.global_state_root,
@@ -95,7 +95,7 @@ mod tests {
             sample_chain_for_state_updates;
 
         // Block 0
-        let res = MaybePendingStateUpdate::Update(StateUpdate {
+        let res = MaybePendingStateUpdate::Block(StateUpdate {
             block_hash: block_hashes[0],
             old_root: Felt::ZERO,
             new_root: state_roots[0],
@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
 
         // Block 1
-        let res = MaybePendingStateUpdate::Update(StateUpdate {
+        let res = MaybePendingStateUpdate::Block(StateUpdate {
             block_hash: block_hashes[1],
             old_root: state_roots[0],
             new_root: state_roots[1],
@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(get_state_update(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
 
         // Block 2
-        let res = MaybePendingStateUpdate::Update(StateUpdate {
+        let res = MaybePendingStateUpdate::Block(StateUpdate {
             block_hash: block_hashes[2],
             old_root: state_roots[1],
             new_root: state_roots[2],
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(get_state_update(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
 
         // Pending
-        let res = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
+        let res = MaybePendingStateUpdate::Pending(PendingStateUpdate {
             old_root: state_roots[2],
             state_diff: state_diffs[3].clone().into(),
         });

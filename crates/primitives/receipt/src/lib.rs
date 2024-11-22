@@ -1,5 +1,5 @@
 mod from_blockifier;
-mod into_starknet_core;
+mod into_starknet_types;
 pub use from_blockifier::from_blockifier_execution_info;
 
 use serde::{Deserialize, Serialize};
