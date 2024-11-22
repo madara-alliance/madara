@@ -20,6 +20,9 @@ pub trait MadaraStatusRpcApi {
     #[method(name = "ping")]
     async fn ping(&self) -> RpcResult<u64>;
 
-    #[method(name = "stopNode")]
-    async fn stop_node(&self) -> RpcResult<u64>;
+    #[method(name = "shutdown")]
+    async fn shutdown(&self) -> RpcResult<u64>;
+
+    #[subscription(name = "pulse", unsubscribe = "unsubscribe", item = u64)]
+    async fn pulse(&self) -> jsonrpsee::core::SubscriptionResult;
 }

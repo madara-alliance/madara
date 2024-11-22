@@ -90,7 +90,7 @@ pub async fn l2_fetch_task(
                         let shutdown = jsonrpsee::http_client::HttpClientBuilder::default()
                             .build("http://localhost:9943")
                             .expect("Building client")
-                            .stop_node()
+                            .shutdown()
                             .await;
 
                         if shutdown.is_err() {
