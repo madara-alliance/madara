@@ -29,7 +29,7 @@ use std::sync::Arc;
 #[clap(
     group(
         ArgGroup::new("args-preset")
-            .args(&["warp_update", "gateway", "rpc"])
+            .args(&["warp_update_sender", "warp_update_receiver", "gateway", "rpc"])
             .multiple(false)
     )
 )]
