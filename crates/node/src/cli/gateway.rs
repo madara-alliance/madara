@@ -4,11 +4,11 @@ use clap::Args;
 #[derive(Debug, Clone, Args)]
 pub struct GatewayParams {
     /// Enable the feeder gateway server.
-    #[arg(env = "MADARA_FEEDER_GATEWAY_ENABLE", long, alias = "feeder-gateway")]
+    #[arg(env = "MADARA_FEEDER_GATEWAY_ENABLE", long)]
     pub feeder_gateway_enable: bool,
 
     /// Enable the gateway server.
-    #[arg(env = "MADARA_GATEWAY_ENABLE", long, alias = "gateway")]
+    #[arg(env = "MADARA_GATEWAY_ENABLE", long)]
     pub gateway_enable: bool,
 
     /// Listen on all network interfaces. This usually means the gateway server will be accessible externally.
