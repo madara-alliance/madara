@@ -23,6 +23,7 @@ use mp_state_update::{
 };
 use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
+use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
@@ -502,11 +503,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub async fn block_production_task(
-        &mut self,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> Result<(), anyhow::Error> {
+    #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
+    pub async fn block_production_task(&mut self, ctx: ServiceContext) -> Result<(), anyhow::Error> {
         let start = tokio::time::Instant::now();
 
         let mut interval_block_time = tokio::time::interval_at(start, self.backend.chain_config().block_time);
@@ -551,7 +549,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     }
                     self.current_pending_tick += 1;
                 },
-                _ = graceful_shutdown(&cancellation_token) => break,
+                _ = graceful_shutdown(&ctx) => break,
             }
         }
 

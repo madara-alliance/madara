@@ -89,7 +89,7 @@ pub struct SyncParams {
         default_value_t = 10,
         value_parser = clap::value_parser!(u8).range(1..)
     )]
-    pub sync_prallelism: u8,
+    pub sync_parallelism: u8,
 }
 
 impl SyncParams {
@@ -119,7 +119,7 @@ impl SyncParams {
             n_blocks_to_sync: self.n_blocks_to_sync,
             flush_every_n_blocks: self.flush_every_n_blocks,
             stop_on_sync: self.stop_on_sync,
-            sync_parallelism: self.sync_prallelism,
+            sync_parallelism: self.sync_parallelism,
             warp_update,
         }
     }

@@ -6,7 +6,7 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{Service, ServiceContext};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -51,11 +51,7 @@ impl SyncService {
 
 #[async_trait::async_trait]
 impl Service for SyncService {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
@@ -74,7 +70,7 @@ impl Service for SyncService {
         join_set.spawn(async move {
             mc_sync::sync(
                 &db_backend,
-                cancellation_token,
+                ctx,
                 fetch_config,
                 SyncConfig {
                     block_importer,

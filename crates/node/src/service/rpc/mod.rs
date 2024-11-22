@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 
 use mc_db::MadaraBackend;
 use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::Service;
+use mp_utils::service::{Service, ServiceContext};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -38,15 +38,10 @@ impl RpcService {
 
 #[async_trait::async_trait]
 impl Service for RpcService {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         let RpcService { config, backend, add_txs_method_provider, .. } = self;
 
-        let starknet =
-            Starknet::new(backend.clone(), add_txs_method_provider.clone(), Some(cancellation_token.clone()));
+        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone(), ctx.branch());
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {
@@ -95,14 +90,12 @@ impl Service for RpcService {
 
         if let Some(server_config) = &server_config_user {
             // rpc enabled
-            self.server_handle_user =
-                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
+            self.server_handle_user = Some(start_server(server_config.clone(), join_set, ctx.branch()).await?);
         }
 
         if let Some(server_config) = &server_config_admin {
             // rpc enabled (admin)
-            self.server_handle_admin =
-                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
+            self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx.branch()).await?);
         }
 
         Ok(())

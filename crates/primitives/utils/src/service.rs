@@ -77,6 +77,7 @@ impl From<u8> for MadaraState {
 ///
 /// > A parent services can always cancel all of its child services, but a child
 /// > service cannot cancel its parent service.
+#[derive(Default)]
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
@@ -85,9 +86,9 @@ pub struct ServiceContext {
 }
 
 impl ServiceContext {
-    pub fn new(ct: tokio_util::sync::CancellationToken) -> Self {
+    pub fn new() -> Self {
         Self {
-            token_global: ct,
+            token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
             capabilities: Arc::new(MadaraCapabilitiesMask::default()),
             state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
@@ -95,7 +96,7 @@ impl ServiceContext {
     }
 
     /// Stops all services under the same global context scope.
-    pub fn cancel(&self) {
+    pub fn cancel_global(&self) {
         self.token_global.cancel();
     }
 
@@ -104,18 +105,25 @@ impl ServiceContext {
     /// A local context is created by calling `branch_local` and allows you to
     /// reduce the scope of cancellation only to those services which will use
     /// the new context.
-    ///
-    /// # Returns
-    ///
-    /// - True if the service using this context was a child service (calling
-    /// this function on a context with no parents will do nothing).
-    pub fn cancel_local(&self) -> bool {
+    pub fn cancel_local(&self) {
+        self.token_local.as_ref().unwrap_or(&self.token_global).cancel();
+    }
+
+    pub async fn cancelled(&self) {
         if let Some(token_local) = &self.token_local {
-            token_local.cancel();
-            true
+            tokio::select! {
+                _ = self.token_global.cancelled() => {},
+                _ = token_local.cancelled() => {}
+            }
         } else {
-            false
+            tokio::select! {
+                _ = self.token_global.cancelled() => {},
+            }
         }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.token_global.is_cancelled() || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
     }
 
     /// Copies the context, maintaining its scope.
@@ -133,7 +141,7 @@ impl ServiceContext {
     /// Any service which uses this new context will be able to cancel the
     /// services in the same local scope as itself, and any further child
     /// services, without affecting the rest of the global scope.
-    pub fn branch_local(&self) -> Self {
+    pub fn child(&self) -> Self {
         let token_local = self.token_local.as_ref().unwrap_or(&self.token_global).child_token();
 
         Self {
@@ -183,11 +191,7 @@ impl ServiceContext {
 #[async_trait::async_trait]
 pub trait Service: 'static + Send + Sync {
     /// Default impl does not start any task.
-    async fn start(
-        &mut self,
-        _join_set: &mut JoinSet<anyhow::Result<()>>,
-        _cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, _join_set: &mut JoinSet<anyhow::Result<()>>, _ctx: ServiceContext) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -196,8 +200,7 @@ pub trait Service: 'static + Send + Sync {
         Self: Sized,
     {
         let mut join_set = JoinSet::new();
-        let cancellation_token = tokio_util::sync::CancellationToken::new();
-        self.start(&mut join_set, cancellation_token).await.context("Starting service")?;
+        self.start(&mut join_set, ServiceContext::new()).await.context("Starting service")?;
         drive_joinset(join_set).await
     }
 }
@@ -234,15 +237,11 @@ impl ServiceGroup {
 
 #[async_trait::async_trait]
 impl Service for ServiceGroup {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         // drive the join set as a nested task
         let mut own_join_set = self.join_set.take().expect("Service has already been started.");
         for svc in self.services.iter_mut() {
-            svc.start(&mut own_join_set, cancellation_token.clone()).await.context("Starting service")?;
+            svc.start(&mut own_join_set, ctx.child()).await.context("Starting service")?;
         }
 
         join_set.spawn(drive_joinset(own_join_set));

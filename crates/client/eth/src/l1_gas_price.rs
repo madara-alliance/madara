@@ -5,7 +5,7 @@ use anyhow::Context;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::time::{Duration, UNIX_EPOCH};
 
-use mp_utils::wait_or_graceful_shutdown;
+use mp_utils::{service::ServiceContext, wait_or_graceful_shutdown};
 use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(
@@ -36,12 +36,12 @@ pub async fn gas_price_worker(
     eth_client: &EthereumClient,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while wait_or_graceful_shutdown(interval.tick(), &cancellation_token).await.is_some() {
+    while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
         gas_price_worker_once(eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
     }
     Ok(())
@@ -131,13 +131,8 @@ mod eth_client_gas_price_worker_test {
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker(
-                    &eth_client,
-                    l1_gas_provider,
-                    Duration::from_millis(200),
-                    tokio_util::sync::CancellationToken::new(),
-                )
-                .await
+                gas_price_worker(&eth_client, l1_gas_provider, Duration::from_millis(200), ServiceContext::default())
+                    .await
             }
         });
 
@@ -280,7 +275,7 @@ mod eth_client_gas_price_worker_test {
                 &eth_client,
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
-                tokio_util::sync::CancellationToken::new(),
+                ServiceContext::default(),
             ),
         )
         .await;

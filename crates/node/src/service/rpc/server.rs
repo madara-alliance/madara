@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
+use mp_utils::service::ServiceContext;
 use tokio::task::JoinSet;
 use tower::Service;
 
@@ -48,7 +49,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 pub async fn start_server(
     config: ServerConfig,
     join_set: &mut JoinSet<anyhow::Result<()>>,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
         name,
@@ -157,7 +158,7 @@ pub async fn start_server(
         );
         server
             .with_graceful_shutdown(async {
-                wait_or_graceful_shutdown(stop_handle.shutdown(), &cancellation_token).await;
+                wait_or_graceful_shutdown(stop_handle.shutdown(), &ctx).await;
             })
             .await
             .context("Running rpc server")

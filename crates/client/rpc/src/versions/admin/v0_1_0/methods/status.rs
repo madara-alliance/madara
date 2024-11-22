@@ -21,7 +21,7 @@ impl MadaraStatusRpcApiV0_1_0Server for Starknet {
     ///
     /// * Time of shutdown in unix time.
     async fn shutdown(&self) -> jsonrpsee::core::RpcResult<u64> {
-        self.cancellation_token().cancel();
+        self.ctx.cancel_global();
         tracing::info!("🔌 Shutting down node...");
         Ok(unix_now())
     }
@@ -38,7 +38,7 @@ impl MadaraStatusRpcApiV0_1_0Server for Starknet {
         let sink =
             subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
 
-        while !self.cancellation_token().is_cancelled() {
+        while !self.ctx.is_cancelled() {
             let now = unix_now();
             let msg = jsonrpsee::SubscriptionMessage::from_json(&now)
                 .or_else_internal_server_error(|| format!("Failed to create response message at unix time {now}"))?;

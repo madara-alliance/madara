@@ -12,6 +12,7 @@ pub mod utils;
 pub mod versions;
 
 use jsonrpsee::RpcModule;
+use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -26,28 +27,33 @@ use providers::AddTransactionProvider;
 use utils::ResultExt;
 
 /// A Starknet RPC server for Madara
-#[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
-    cancellation_token: Option<tokio_util::sync::CancellationToken>,
+    pub ctx: ServiceContext,
+}
+
+impl Clone for Starknet {
+    fn clone(&self) -> Self {
+        Self {
+            backend: Arc::clone(&self.backend),
+            add_transaction_provider: Arc::clone(&self.add_transaction_provider),
+            ctx: self.ctx.branch(),
+        }
+    }
 }
 
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
-        cancellation_token: Option<tokio_util::sync::CancellationToken>,
+        ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, cancellation_token }
+        Self { backend, add_transaction_provider, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
         Arc::clone(&self.backend)
-    }
-
-    pub fn cancellation_token(&self) -> tokio_util::sync::CancellationToken {
-        self.cancellation_token.to_owned().unwrap_or_default()
     }
 
     pub fn clone_chain_config(&self) -> Arc<ChainConfig> {

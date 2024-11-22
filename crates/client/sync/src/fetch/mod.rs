@@ -7,7 +7,7 @@ use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
-use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
+use mp_utils::{channel_wait_or_graceful_shutdown, service::ServiceContext, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fetch::fetchers::fetch_block_and_updates;
@@ -28,7 +28,7 @@ pub struct L2FetchConfig {
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
     config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
@@ -54,7 +54,7 @@ pub async fn l2_fetch_task(
 
         if ping.is_err() {
             tracing::error!("❗ Failed to connect to warp update sender on http://localhost:9943");
-            cancellation_token.cancel();
+            ctx.cancel_global();
         }
     }
 
@@ -64,21 +64,15 @@ pub async fn l2_fetch_task(
         // Fetch blocks and updates in parallel one time before looping
         let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(&provider);
-            let cancellation_token = cancellation_token.clone();
+            let ctx = ctx.branch();
             async move {
-                (
-                    block_n,
-                    fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &cancellation_token)
-                        .await,
-                )
+                (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
             }
         });
 
         // Have 10 fetches in parallel at once, using futures Buffered
         let mut fetch_stream = stream::iter(fetch_stream).buffered(sync_parallelism as usize);
-        while let Some((block_n, val)) =
-            channel_wait_or_graceful_shutdown(fetch_stream.next(), &cancellation_token).await
-        {
+        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), &ctx).await {
             match val {
                 Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                     code: StarknetErrorCode::BlockNotFound,
@@ -124,16 +118,9 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while wait_or_graceful_shutdown(interval.tick(), &cancellation_token).await.is_some() {
+        while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
             loop {
-                match fetch_block_and_updates(
-                    &backend.chain_config().chain_id,
-                    next_block,
-                    &provider,
-                    &cancellation_token,
-                )
-                .await
-                {
+                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider, &ctx).await {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..

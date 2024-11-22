@@ -13,6 +13,7 @@ use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
 use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
+use mp_utils::service::ServiceContext;
 use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
@@ -54,7 +55,7 @@ pub async fn fetch_pending_block_and_updates(
     parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &GatewayProvider,
-    cancellation_token: &tokio_util::sync::CancellationToken,
+    ctx: &ServiceContext,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = BlockId::Tag(BlockTag::Pending);
     let sw = PerfStopwatch::new();
@@ -73,7 +74,7 @@ pub async fn fetch_pending_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
-        cancellation_token,
+        ctx,
     )
     .await?;
 
@@ -92,8 +93,7 @@ pub async fn fetch_pending_block_and_updates(
         );
         return Ok(None);
     }
-    let class_update =
-        fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider, cancellation_token).await?;
+    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider, ctx).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
@@ -107,7 +107,7 @@ pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
     provider: &GatewayProvider,
-    cancellation_token: &tokio_util::sync::CancellationToken,
+    ctx: &ServiceContext,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = BlockId::Number(block_n);
 
@@ -121,11 +121,10 @@ pub async fn fetch_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
-        cancellation_token,
+        &ctx,
     )
     .await?;
-    let class_update =
-        fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, cancellation_token).await?;
+    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, ctx).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_n);
 
@@ -142,7 +141,7 @@ async fn retry<F, Fut, T>(
     mut f: F,
     max_retries: u32,
     base_delay: Duration,
-    cancellation_token: &tokio_util::sync::CancellationToken,
+    ctx: &ServiceContext,
 ) -> Result<T, SequencerError>
 where
     F: FnMut() -> Fut,
@@ -168,7 +167,7 @@ where
                     tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
-                if wait_or_graceful_shutdown(tokio::time::sleep(delay), cancellation_token).await.is_none() {
+                if wait_or_graceful_shutdown(tokio::time::sleep(delay), ctx).await.is_none() {
                     return Err(SequencerError::StarknetError(StarknetError::block_not_found()));
                 }
             }
@@ -182,7 +181,7 @@ async fn fetch_class_updates(
     state_diff: &StateDiff,
     block_id: BlockId,
     provider: &GatewayProvider,
-    cancellation_token: &tokio_util::sync::CancellationToken,
+    ctx: &ServiceContext,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     // for blocks before 2597 on mainnet new classes are not declared in the state update
     // https://github.com/madara-alliance/madara/issues/233
@@ -202,13 +201,8 @@ async fn fetch_class_updates(
     let legacy_class_futures = legacy_classes.into_iter().map(|class_hash| {
         let block_id = block_id.clone();
         async move {
-            let (class_hash, contract_class) = retry(
-                || fetch_class(class_hash, block_id.clone(), provider),
-                MAX_RETRY,
-                BASE_DELAY,
-                cancellation_token,
-            )
-            .await?;
+            let (class_hash, contract_class) =
+                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY, ctx).await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -224,13 +218,8 @@ async fn fetch_class_updates(
     let sierra_class_futures = sierra_classes.into_iter().map(|(class_hash, &compiled_class_hash)| {
         let block_id = block_id.clone();
         async move {
-            let (class_hash, contract_class) = retry(
-                || fetch_class(class_hash, block_id.clone(), provider),
-                MAX_RETRY,
-                BASE_DELAY,
-                cancellation_token,
-            )
-            .await?;
+            let (class_hash, contract_class) =
+                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY, ctx).await?;
 
             let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });

@@ -5957,6 +5957,7 @@ dependencies = [
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "rstest 0.18.2",
  "serde",
  "serde_json",

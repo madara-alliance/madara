@@ -7,6 +7,7 @@ use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
 use mp_block::{BlockId, BlockTag};
+use mp_utils::service::ServiceContext;
 use std::{sync::Arc, time::Duration};
 
 pub mod fetch;
@@ -24,10 +25,10 @@ pub struct SyncConfig {
     pub pending_block_poll_interval: Duration,
 }
 
-#[tracing::instrument(skip(backend, cancellation_token, fetch_config, sync_config))]
+#[tracing::instrument(skip(backend, ctx, fetch_config, sync_config))]
 pub async fn sync(
     backend: &Arc<MadaraBackend>,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
     fetch_config: FetchConfig,
     sync_config: SyncConfig,
 ) -> anyhow::Result<()> {
@@ -58,7 +59,7 @@ pub async fn sync(
     l2::sync(
         backend,
         provider,
-        cancellation_token,
+        ctx,
         L2SyncConfig {
             first_block: starting_block,
             n_blocks_to_sync: fetch_config.n_blocks_to_sync,
