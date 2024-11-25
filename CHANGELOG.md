@@ -3,6 +3,7 @@
 ## Next release
 
 - dev docs: add documentation to the rocksdb configuration
+- fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
 - feat(debug): service cancelling and profiling build
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
