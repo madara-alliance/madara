@@ -189,7 +189,7 @@ mod test_l2_fetch_task {
                     l2_fetch_task(
                         backend,
                         provider,
-                        tokio_util::sync::CancellationToken::new(),
+                        ServiceContext::default(),
                         L2FetchConfig {
                             first_block: 0,
                             fetch_stream_sender,
