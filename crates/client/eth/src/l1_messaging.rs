@@ -5,7 +5,7 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolValue;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
@@ -130,9 +130,9 @@ async fn process_l1_to_l2_msg(
     )?;
     mempool.accept_l1_handler_tx(blockifier_transaction)?;
 
-    let l1_tx_hash = log.transaction_hash.ok_or_else(|| anyhow!("Missing transaction hash"))?;
-    let block_number = log.block_number.ok_or_else(|| anyhow!("Event missing block number"))?;
-    let log_index = log.log_index.ok_or_else(|| anyhow!("Event missing log index"))?;
+    let l1_tx_hash = log.transaction_hash.context("Missing transaction hash")?;
+    let block_number = log.block_number.context("Event missing block number")?;
+    let log_index = log.log_index.context("Event missing log index")?;
 
     // We use the log index for the order to ensure any L1 txs which have multiple messages are
     // retrieved in the order they occured.

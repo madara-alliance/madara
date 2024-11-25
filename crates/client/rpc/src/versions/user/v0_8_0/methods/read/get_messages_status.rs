@@ -15,24 +15,26 @@ pub fn get_messages_status(starknet: &Starknet, transaction_hash: TxHash) -> Sta
     if l1_handler_tx_hashes.is_empty() {
         return Err(StarknetRpcApiError::TxnHashNotFound);
     }
-    let mut message_statuses = vec![];
-    for l1_handler_tx_hash in l1_handler_tx_hashes {
-        let finality_status = match get_transaction_status(starknet, l1_handler_tx_hash) {
-            Ok(tx_status) => tx_status.finality_status(),
-            Err(StarknetRpcApiError::TxnHashNotFound) => {
-                tracing::error!("L1 handler tx {l1_handler_tx_hash:?} for L1 tx {transaction_hash:?} not found");
-                return Err(StarknetRpcApiError::InternalServerError);
-            }
-            Err(e) => return Err(e),
-        };
-        message_statuses.push(MessageStatus {
-            transaction_hash: l1_handler_tx_hash,
-            finality_status,
-            // TODO Update this once get_transaction_status supports rejections
-            failure_reason: None,
-        })
-    }
-    Ok(message_statuses)
+    l1_handler_tx_hashes.iter().try_fold(
+        Vec::with_capacity(l1_handler_tx_hashes.len()),
+        |mut acc, l1_handler_tx_hash| {
+            let finality_status = match get_transaction_status(starknet, *l1_handler_tx_hash) {
+                Ok(tx_status) => tx_status.finality_status(),
+                Err(StarknetRpcApiError::TxnHashNotFound) => {
+                    tracing::error!("L1 handler tx {l1_handler_tx_hash:?} for L1 tx {transaction_hash:?} not found");
+                    return Err(StarknetRpcApiError::InternalServerError);
+                }
+                Err(e) => return Err(e),
+            };
+            acc.push(MessageStatus {
+                transaction_hash: *l1_handler_tx_hash,
+                finality_status,
+                // TODO Update this once get_transaction_status supports rejections
+                failure_reason: None,
+            });
+            Ok(acc)
+        },
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

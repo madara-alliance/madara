@@ -132,11 +132,11 @@ impl MadaraBackend {
 
     pub fn get_l1_handler_tx_hashes(&self, l1_tx_hash: TxHash) -> Result<Vec<Felt>, DbError> {
         let l1_l2_mappings_column = self.db.get_column(Column::L1MessagingHandlerTxHashes);
-        let mut l1_handler_tx_hashes = vec![];
-        for kv_bytes in self.db.prefix_iterator_cf(&l1_l2_mappings_column, l1_tx_hash.as_slice()) {
-            let l1_handler_tx_hash = Felt::from_bytes_be_slice(&kv_bytes?.1);
-            l1_handler_tx_hashes.push(l1_handler_tx_hash);
-        }
+        let l1_handler_tx_hashes = self
+            .db
+            .prefix_iterator_cf(&l1_l2_mappings_column, l1_tx_hash.as_slice())
+            .map(|kv_bytes| Ok(Felt::from_bytes_be_slice(&kv_bytes?.1)))
+            .collect::<Result<_, rocksdb::Error>>()?;
         Ok(l1_handler_tx_hashes)
     }
 
