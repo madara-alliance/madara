@@ -3,6 +3,7 @@
 ## Next release
 
 - feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
+- fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
 - feat(debug): service cancelling and profiling build
 - feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
