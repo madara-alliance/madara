@@ -83,15 +83,21 @@ impl RpcService {
 
 #[async_trait::async_trait]
 impl Service for RpcService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         if let Some(server_config) = &self.server_config_user {
             // rpc enabled
-            self.server_handle_user = Some(start_server(server_config.clone(), join_set).await?);
+            self.server_handle_user =
+                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
         }
 
         if let Some(server_config) = &self.server_config_admin {
             // rpc enabled (admin)
-            self.server_handle_admin = Some(start_server(server_config.clone(), join_set).await?);
+            self.server_handle_admin =
+                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
         }
 
         Ok(())

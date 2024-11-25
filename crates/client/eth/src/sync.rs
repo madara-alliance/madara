@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use mc_db::MadaraBackend;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn l1_sync_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
@@ -17,16 +18,17 @@ pub async fn l1_sync_worker(
     gas_price_sync_disabled: bool,
     gas_price_poll_ms: Duration,
     mempool: Arc<Mempool>,
+    cancellation_token: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     tokio::try_join!(
-        state_update_worker(backend, eth_client, chain_id.clone()),
+        state_update_worker(backend, eth_client, chain_id.clone(), cancellation_token.clone()),
         async {
             if !gas_price_sync_disabled {
-                gas_price_worker(eth_client, l1_gas_provider, gas_price_poll_ms).await?;
+                gas_price_worker(eth_client, l1_gas_provider, gas_price_poll_ms, cancellation_token.clone()).await?;
             }
             Ok(())
         },
-        sync(backend, eth_client, &chain_id, mempool)
+        sync(backend, eth_client, &chain_id, mempool, cancellation_token.clone())
     )?;
 
     Ok(())
