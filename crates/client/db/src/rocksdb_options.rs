@@ -2,6 +2,8 @@
 #![allow(non_upper_case_globals)] // allow KiB/MiB/GiB names
 
 use crate::{contract_db, Column};
+use alloy::primitives::private::alloy_rlp::MaxEncodedLenAssoc;
+use alloy::primitives::TxHash;
 use anyhow::{Context, Result};
 use rocksdb::{DBCompressionType, Env, Options, SliceTransform};
 
@@ -55,6 +57,9 @@ impl Column {
                 options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
                     contract_db::CONTRACT_NONCES_PREFIX_EXTRACTOR,
                 ));
+            }
+            Column::L1MessagingHandlerTxHashes => {
+                options.set_prefix_extractor(SliceTransform::create_fixed_prefix(TxHash::LEN));
             }
             _ => {}
         }

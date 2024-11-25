@@ -5669,6 +5669,7 @@ dependencies = [
 name = "mc-db"
 version = "0.7.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bincode 1.3.3",
  "bonsai-trie",
@@ -5941,6 +5942,7 @@ dependencies = [
 name = "mc-rpc"
 version = "0.7.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "blockifier",
  "jsonrpsee",
