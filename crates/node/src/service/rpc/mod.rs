@@ -30,7 +30,7 @@ impl RpcService {
         db: &DatabaseService,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
-        let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
+        let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider, config.storage_proof_config());
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {

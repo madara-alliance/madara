@@ -94,8 +94,8 @@ version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-rocksdb = { version = "0.22", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { version = "0.17.0", git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = "0.22"
+librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
 bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
@@ -236,3 +236,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-opentelemetry = "0.26.0"
+
+[patch.crates-io]
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

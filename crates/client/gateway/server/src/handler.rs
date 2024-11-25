@@ -238,7 +238,11 @@ pub async fn handle_get_block_traces(
         traces: Vec<TransactionTraceWithHash>,
     }
 
-    let traces = v0_7_1_trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id).await?;
+    let traces = v0_7_1_trace_block_transactions(
+        &Starknet::new(backend, add_transaction_provider, Default::default()),
+        block_id,
+    )
+    .await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))

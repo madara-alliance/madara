@@ -1,3 +1,4 @@
+use crate::db_block_id::DbBlockId;
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
@@ -78,7 +79,10 @@ impl MadaraBackend {
 
         let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
 
-        r1.and(r2).and(r3)
+        r1.and(r2).and(r3)?;
+
+        self.snapshots.set_new_head(DbBlockId::from_block_n(block_n));
+        Ok(())
     }
 
     pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {

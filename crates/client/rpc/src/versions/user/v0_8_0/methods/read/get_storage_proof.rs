@@ -13,6 +13,11 @@ use mc_db::{bonsai_identifier, db_block_id::DbBlockId, BasicId, GlobalTrie};
 use mp_block::{BlockId, BlockTag};
 use starknet_core::types::Felt;
 use starknet_types_core::hash::StarkHash;
+use std::iter;
+
+fn saturating_sum(iter: impl IntoIterator<Item = usize>) -> usize {
+    iter.into_iter().fold(0, |acc, cur| acc.saturating_add(cur))
+}
 
 fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
     let mut arr = [0u8; 32];
@@ -25,12 +30,14 @@ fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
 fn make_trie_proof<H: StarkHash + Send + Sync>(
     block_n: u64,
     trie: &mut GlobalTrie<H>,
-    _trie_name: StorageProofTrie,
+    trie_name: StorageProofTrie,
     identifier: &[u8],
     keys: Vec<Felt>,
 ) -> RpcResult<(Felt, Vec<NodeHashToNodeMappingItem>)> {
     let mut keys: Vec<_> = keys.into_iter().map(|f| BitArray::new(f.to_bytes_be())).collect();
     keys.sort();
+
+    tracing::debug!("Getting trie proof for {trie_name:?} on block {block_n} for n={} keys", keys.len());
 
     let mut storage = trie
         .get_transactional_state(BasicId::new(block_n), trie.get_config())
@@ -85,10 +92,15 @@ pub fn get_storage_proof(
         .or_internal_server_error("Resolving block number")?
         .ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let latest = starknet.backend.get_latest_block_n().or_internal_server_error("Getting latest block in db")?;
-    if latest.is_none() || latest.is_some_and(|latest| block_n > latest) {
+    let Some(latest) = starknet.backend.get_latest_block_n().or_internal_server_error("Getting latest block in db")?
+    else {
         return Err(StarknetRpcApiError::BlockNotFound.into());
+    };
+
+    if latest.saturating_sub(block_n) > starknet.storage_proof_config.max_distance {
+        return Err(StarknetRpcApiError::CannotMakeProofOnOldBlock.into());
     }
+
     let block_hash = starknet
         .backend
         .get_block_hash(&block_id)
@@ -101,9 +113,11 @@ pub fn get_storage_proof(
 
     // Check limits.
 
-    let proof_keys = class_hashes.len()
-        + contract_addresses.len()
-        + contracts_storage_keys.iter().map(|v| v.storage_keys.len()).sum::<usize>();
+    let proof_keys = saturating_sum(
+        iter::once(class_hashes.len())
+            .chain(iter::once(contract_addresses.len()))
+            .chain(contracts_storage_keys.iter().map(|v| v.storage_keys.len())),
+    );
     if proof_keys > starknet.storage_proof_config.max_keys {
         return Err(StarknetRpcApiError::ProofLimitExceeded {
             kind: StorageProofLimit::MaxKeys,
@@ -113,9 +127,11 @@ pub fn get_storage_proof(
         .into());
     }
 
-    let n_tries = (!class_hashes.is_empty() as usize)
-        + (!contract_addresses.is_empty() as usize)
-        + contracts_storage_keys.iter().map(|keys| (!keys.storage_keys.is_empty() as usize)).sum::<usize>();
+    let n_tries = saturating_sum(
+        iter::once(!class_hashes.is_empty() as usize)
+            .chain(iter::once(!contract_addresses.is_empty() as usize))
+            .chain(contracts_storage_keys.iter().map(|keys| (!keys.storage_keys.is_empty() as usize))),
+    );
     if n_tries > starknet.storage_proof_config.max_tries {
         return Err(StarknetRpcApiError::ProofLimitExceeded {
             kind: StorageProofLimit::MaxUsedTries,

@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&chain_config),
         TrieLogConfig {
             max_saved_trie_logs: run_cmd.db_params.db_max_saved_trie_logs,
-            max_saved_snapshots: run_cmd.db_params.db_max_saved_snapshots,
+            max_kept_snapshots: run_cmd.db_params.db_max_kept_snapshots,
             snapshot_interval: run_cmd.db_params.db_snapshot_interval,
         },
     )
@@ -196,12 +196,12 @@ async fn main() -> anyhow::Result<()> {
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            tracing::error!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
             panic!();
         } else {
             // This log is immediately flooded with devnet accounts and so this can be missed.
             // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+            tracing::warn!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
         }
     }
 

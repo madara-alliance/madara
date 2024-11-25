@@ -3,6 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
 use jsonrpsee::server::BatchRequestConfig;
+use mc_rpc::StorageProofConfig;
 
 /// The default port.
 pub const RPC_DEFAULT_PORT: u16 = 9944;
@@ -135,6 +136,26 @@ pub struct RpcParams {
     /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
+
+    /// Limit how far back in the past we serve storage proofs.
+    /// When getting a storage proof, the database will revert the global merkle trie in-memory up until the
+    /// block_n specified in the request. If that block_n is too far back in the past, this could make
+    /// the node vulnerable to DoS attacks.
+    /// By default, this is set to 0: we do not serve storage proofs except for the current latest block.
+    /// For best performance, you should also set `--db-max-saved-trie-logs`, `--db-max-saved-snapshots` and
+    /// `--db-snapshot-interval` to make reverting much faster.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", long, default_value_t = 0)]
+    pub rpc_storage_proof_max_distance: u64,
+
+    /// Limit how many keys can be queried in a storage proof rpc request. Default: 1024.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_KEYS", long, default_value_t = 1024)]
+    pub rpc_storage_proof_max_keys: usize,
+
+    /// Limit how many tries can be used within a single storage proof rpc request. Default: 5.
+    /// The global class trie and global contract tries count each as one, and every contract whose
+    /// storage is queried count as one each.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_TRIES", long, default_value_t = 5)]
+    pub rpc_storage_proof_max_tries: usize,
 }
 
 impl RpcParams {
@@ -185,6 +206,14 @@ impl RpcParams {
             BatchRequestConfig::Limit(l)
         } else {
             BatchRequestConfig::Unlimited
+        }
+    }
+
+    pub fn storage_proof_config(&self) -> StorageProofConfig {
+        StorageProofConfig {
+            max_keys: self.rpc_storage_proof_max_keys,
+            max_tries: self.rpc_storage_proof_max_tries,
+            max_distance: self.rpc_storage_proof_max_distance,
         }
     }
 }

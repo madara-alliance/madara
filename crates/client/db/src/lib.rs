@@ -1,6 +1,7 @@
 //! Madara database
 
 use anyhow::{Context, Result};
+use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
@@ -248,13 +249,13 @@ impl DatabaseExt for DB {
 #[derive(Debug)]
 pub struct TrieLogConfig {
     pub max_saved_trie_logs: usize,
-    pub max_saved_snapshots: usize,
+    pub max_kept_snapshots: usize,
     pub snapshot_interval: u64,
 }
 
 impl Default for TrieLogConfig {
     fn default() -> Self {
-        Self { max_saved_trie_logs: 0, max_saved_snapshots: 0, snapshot_interval: 5 }
+        Self { max_saved_trie_logs: 0, max_kept_snapshots: 0, snapshot_interval: 5 }
     }
 }
 
@@ -345,7 +346,7 @@ impl MadaraBackend {
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref()).unwrap();
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(0)));
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), None, Some(0), 5));
         Arc::new(Self {
             backup_handle: None,
             db,
@@ -391,7 +392,13 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path)?;
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), Some(trie_log_config.max_saved_snapshots)));
+        let current_block_n = get_latest_block_n(&db).context("Getting latest block_n from database")?;
+        let snapshots = Arc::new(Snapshots::new(
+            Arc::clone(&db),
+            current_block_n,
+            Some(trie_log_config.max_kept_snapshots),
+            trie_log_config.snapshot_interval,
+        ));
 
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -452,7 +459,7 @@ impl MadaraBackend {
     ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
         let config = BonsaiStorageConfig {
             max_saved_trie_logs: Some(self.trie_log_config.max_saved_trie_logs),
-            max_saved_snapshots: Some(self.trie_log_config.max_saved_snapshots),
+            max_saved_snapshots: Some(self.trie_log_config.max_kept_snapshots),
             snapshot_interval: self.trie_log_config.snapshot_interval,
         };
 

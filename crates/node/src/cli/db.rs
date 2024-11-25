@@ -14,20 +14,24 @@ pub struct DbParams {
     #[clap(env = "MADARA_RESTORE_FROM_LATEST_BACKUP", long)]
     pub restore_from_latest_backup: bool,
 
-    /// Maximal number of trie logs saved.
-    /// Blocks older than this limit will not be stored for retrieving historical merkle trie state.
-    /// By default, the value 0 means that no historical merkle trie state access is allowed.
+    /// This is the number of blocks for which you can get storage proofs using the storage proof endpoints.
+    /// Blocks older than this limit will not be stored for retrieving historical merkle trie state. By default,
+    /// the value 0 means that no historical merkle trie state access is allowed.
     #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value_t = 0)]
     pub db_max_saved_trie_logs: usize,
 
-    /// How many of the latest snapshots are saved, older ones are discarded.
-    /// Higher values cause more database space usage, while lower values prevent the efficient reverting and histoical access for
-    /// the global state trie at older older blocks.
+    /// This affects the performance of the storage proof endpoint.
+    /// How many databse snapshots are kept at a given time, older ones will be discarded.
+    /// Snapshots are used to keep a view of the database in the past. They speed up reverting the global tries
+    /// when getting a storage proof.
+    /// Higher values cause more database space usage, while lower values prevent the efficient reverting and historical access for
+    /// the global state trie at older blocks.
     #[clap(env = "MADARA_DB_MAX_SNAPSHOTS", long, default_value_t = 0)]
-    pub db_max_saved_snapshots: usize,
+    pub db_max_kept_snapshots: usize,
 
-    /// A database snapshot is created every `db_snapshot_interval` commits.
-    /// See `db_max_saved_snapshots` to understand what snapshots are used for.
+    /// This affects the performance of the storage proof endpoint.
+    /// A database snapshot is created every `db_snapshot_interval` blocks.
+    /// See `--db-max-saved-snapshots` to understand what snapshots are used for.
     #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 5)]
     pub db_snapshot_interval: u64,
 }

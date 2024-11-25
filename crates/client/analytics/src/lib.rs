@@ -42,7 +42,7 @@ impl Analytics {
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
-            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter));
+            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter).with_writer(std::io::stderr));
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();

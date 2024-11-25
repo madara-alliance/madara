@@ -1,55 +1,86 @@
-use crate::{rocksdb_snapshot::SnapshotWithDBArc, DB};
-use bonsai_trie::id::BasicId;
+use crate::{db_block_id::DbBlockId, rocksdb_snapshot::SnapshotWithDBArc, DB};
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::BTreeMap,
     fmt,
     sync::{Arc, RwLock},
 };
 
 pub type SnapshotRef = Arc<SnapshotWithDBArc<DB>>;
 
+struct SnapshotsInner {
+    historical: BTreeMap<u64, SnapshotRef>,
+    /// Current snapshot for the latest block.
+    head: SnapshotRef,
+    head_block_n: Option<u64>,
+}
+
 /// This struct holds the snapshots. To avoid holding the lock the entire time the snapshot is used, it's behind
 /// an Arc. Getting a snapshot only holds the lock for the time of cloning the Arc.
 pub struct Snapshots {
+    inner: RwLock<SnapshotsInner>,
     db: Arc<DB>,
-    snapshots: RwLock<BTreeMap<BasicId, SnapshotRef>>,
-    max_saved_snapshots: Option<usize>,
+    max_kept_snapshots: Option<usize>,
+    snapshot_interval: u64,
 }
 impl fmt::Debug for Snapshots {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<{} snapshots>", self.snapshots.read().expect("Poisoned lock").len())
+        write!(f, "<{} snapshots>", self.inner.read().expect("Poisoned lock").historical.len())
     }
 }
 
 impl Snapshots {
-    pub fn new(db: Arc<DB>, max_saved_snapshots: Option<usize>) -> Self {
-        Self { db, snapshots: Default::default(), max_saved_snapshots }
+    pub fn new(
+        db: Arc<DB>,
+        current_block_n: Option<u64>,
+        max_saved_snapshots: Option<usize>,
+        snapshot_interval: u64,
+    ) -> Self {
+        let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
+        Self {
+            db,
+            inner: SnapshotsInner { historical: Default::default(), head, head_block_n: current_block_n }.into(),
+            max_kept_snapshots: max_saved_snapshots,
+            snapshot_interval,
+        }
     }
 
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    pub fn create_new(&self, id: BasicId) {
-        if self.max_saved_snapshots == Some(0) {
-            return;
-        }
+    pub fn set_new_head(&self, id: DbBlockId) {
+        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
 
-        let mut snapshots = self.snapshots.write().expect("Poisoned lock");
+        let mut inner = self.inner.write().expect("Poisoned lock");
 
-        if let btree_map::Entry::Vacant(entry) = snapshots.entry(id) {
-            tracing::debug!("Making snap at {id:?}");
-            entry.insert(Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db))));
+        if let DbBlockId::Number(n) = id {
+            if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && n % self.snapshot_interval == 0 {
+                tracing::debug!("Saving snapshot at {id:?}");
+                inner.historical.insert(n, Arc::clone(&snapshot));
 
-            if let Some(max_saved_snapshots) = self.max_saved_snapshots {
-                if snapshots.len() > max_saved_snapshots {
-                    snapshots.pop_first();
+                // remove the oldest snapshot
+                if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
+                    inner.historical.pop_first();
                 }
             }
         }
+
+        // Update head snapshot
+        inner.head = snapshot;
+        if let DbBlockId::Number(n) = id {
+            inner.head_block_n = Some(n);
+        }
     }
 
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    pub fn get_closest(&self, id: BasicId) -> Option<(BasicId, SnapshotRef)> {
-        tracing::debug!("get closest {id:?} {self:?}");
-        let snapshots = self.snapshots.read().expect("Poisoned lock");
-        snapshots.range(..&id).next().map(|(id, snapshot)| (*id, Arc::clone(snapshot)))
+    pub fn get_closest(&self, block_n: u64) -> (Option<u64>, SnapshotRef) {
+        tracing::debug!("get closest {block_n:?} {self:?}");
+        let inner = self.inner.read().expect("Poisoned lock");
+        // We want the closest snapshot that is younger than this block_n.
+        inner
+            .historical
+            .range(&block_n..)
+            .next()
+            .map(|(block_n, snapshot)| (Some(*block_n), Arc::clone(snapshot)))
+            // If none was found, this means that we are asking for a block that's between the last snapshot and the current latest block, or
+            // snapshots are disabled. In these cases we want to return the snapshot for the current latest block.
+            .unwrap_or_else(|| (inner.head_block_n, Arc::clone(&inner.head)))
     }
 }

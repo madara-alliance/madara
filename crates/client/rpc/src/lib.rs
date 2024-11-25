@@ -24,22 +24,16 @@ use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
-// TODO: make it actually configurable.
 #[derive(Clone, Debug)]
 pub struct StorageProofConfig {
     pub max_keys: usize,
     pub max_tries: usize,
+    pub max_distance: u64,
 }
 
 impl Default for StorageProofConfig {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl StorageProofConfig {
-    pub fn new() -> Self {
-        Self { max_keys: 1024, max_tries: 5 }
+        Self { max_keys: 1024, max_tries: 5, max_distance: 0 }
     }
 }
 
@@ -52,8 +46,12 @@ pub struct Starknet {
 }
 
 impl Starknet {
-    pub fn new(backend: Arc<MadaraBackend>, add_transaction_provider: Arc<dyn AddTransactionProvider>) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config: StorageProofConfig::new() }
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        storage_proof_config: StorageProofConfig,
+    ) -> Self {
+        Self { backend, add_transaction_provider, storage_proof_config }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {

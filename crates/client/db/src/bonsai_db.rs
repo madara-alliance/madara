@@ -1,7 +1,7 @@
 use crate::error::DbError;
 use crate::snapshots::{SnapshotRef, Snapshots};
 use crate::{Column, DatabaseExt, WriteBatchWithTransaction, DB};
-use bonsai_trie::id::BasicId;
+use bonsai_trie::id::{BasicId, Id};
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, ByteVec, DatabaseKey};
 use rocksdb::{Direction, IteratorMode, WriteOptions};
 use std::collections::BTreeMap;
@@ -102,9 +102,6 @@ impl BonsaiDatabase for BonsaiDb {
         tracing::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
         let handle = self.db.get_column(self.column_mapping.map(key));
 
-        // NB: we don't need old value as the trie log is not used :)
-        // this actually speeds up things quite a lot
-
         let old_value = self.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
@@ -159,7 +156,7 @@ impl BonsaiDatabase for BonsaiDb {
     }
 }
 
-fn to_changed_key(k: &DatabaseKey) -> (usize, ByteVec) {
+fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
     (
         match k {
             DatabaseKey::Trie(_) => 0,
@@ -172,7 +169,7 @@ fn to_changed_key(k: &DatabaseKey) -> (usize, ByteVec) {
 
 pub struct BonsaiTransaction {
     snapshot: SnapshotRef,
-    changed: BTreeMap<(usize, ByteVec), Option<ByteVec>>,
+    changed: BTreeMap<(u8, ByteVec), Option<ByteVec>>,
     column_mapping: DatabaseKeyMapping,
 }
 
@@ -182,6 +179,8 @@ impl fmt::Debug for BonsaiTransaction {
     }
 }
 
+// TODO: a lot of this is not really used yet, this whole abstraction does not really make sense anyway, this needs to be modified
+// upstream in bonsai-trie
 impl BonsaiDatabase for BonsaiTransaction {
     type Batch = WriteBatchWithTransaction;
     type DatabaseError = DbError;
@@ -235,9 +234,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     }
 
     fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        // TODO: this is not really used yet, this whole abstraction does not really make sense anyway, this needs to be modified
-        // upstream in bonsai-trie
-        Ok(())
+        unreachable!("unused for now")
     }
 }
 
@@ -245,18 +242,20 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
     type Transaction<'a> = BonsaiTransaction where Self: 'a;
     type DatabaseError = DbError;
 
+    /// this is called upstream, but we ignore it for now because we create the snapshot in [`crate::MadaraBackend::store_block`]
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    fn snapshot(&mut self, id: BasicId) {
-        tracing::debug!("Generating RocksDB snapshot");
-        self.snapshots.create_new(id);
-    }
+    fn snapshot(&mut self, id: BasicId) {}
 
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    fn transaction(&self, id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
+    fn transaction(&self, requested_id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
         tracing::trace!("Generating RocksDB transaction");
-        self.snapshots.get_closest(id).map(|(id, snapshot)| {
+        let (id, snapshot) = self.snapshots.get_closest(requested_id.as_u64());
+
+        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={id:?}");
+
+        id.map(|id| {
             (
-                id,
+                BasicId::new(id),
                 BonsaiTransaction {
                     snapshot,
                     column_mapping: self.column_mapping.clone(),
