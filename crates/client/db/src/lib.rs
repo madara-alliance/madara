@@ -6,7 +6,7 @@ use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraCapability, Service};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
 use rocksdb_options::rocksdb_global_options;
@@ -303,7 +303,11 @@ impl DatabaseService {
     }
 }
 
-impl Service for DatabaseService {}
+impl Service for DatabaseService {
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::Database
+    }
+}
 
 struct BackupRequest {
     callback: oneshot::Sender<()>,

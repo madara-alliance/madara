@@ -1,7 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::service::{Service, ServiceContext};
+use mp_utils::service::{MadaraCapability, Service, ServiceContext};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -42,5 +42,9 @@ impl Service for GatewayService {
             });
         }
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::Gateway
     }
 }

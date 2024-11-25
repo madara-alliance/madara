@@ -1,12 +1,15 @@
 //! Service trait and combinators.
 
 use anyhow::Context;
+use futures::Future;
 use std::{panic, sync::Arc};
 use tokio::task::JoinSet;
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum MadaraCapability {
+    #[default]
+    None = 0,
     Database = 1,
     L1Sync = 2,
     L2Sync = 4,
@@ -21,18 +24,27 @@ pub enum MadaraCapability {
 pub struct MadaraCapabilitiesMask(std::sync::atomic::AtomicU8);
 
 impl MadaraCapabilitiesMask {
+    #[inline(always)]
     pub fn is_active(&self, cap: u8) -> bool {
-        self.0.load(std::sync::atomic::Ordering::SeqCst) | cap as u8 > 0
+        self.0.load(std::sync::atomic::Ordering::SeqCst) & cap > 0
     }
 
+    #[inline(always)]
     pub fn activate(&self, cap: MadaraCapability) -> bool {
         let prev = self.0.fetch_or(cap as u8, std::sync::atomic::Ordering::Acquire);
+        prev | cap as u8 > 0
+    }
+
+    #[inline(always)]
+    pub fn deactivate(&self, cap: MadaraCapability) -> bool {
+        let cap = cap as u8;
+        let prev = self.0.fetch_and(!cap, std::sync::atomic::Ordering::Acquire);
         prev | cap as u8 > 0
     }
 }
 
 #[repr(u8)]
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum MadaraState {
     #[default]
     Starting,
@@ -70,10 +82,10 @@ impl From<u8> for MadaraState {
 /// # Services
 ///
 /// - A services is said to be a _child service_ if it uses a context created
-/// with `ServiceContext::branch_local`
+///   with `ServiceContext::branch_local`
 ///
 /// - A service is said to be a _parent service_ if it uses a context which was
-/// used to create child services.
+///   used to create child services.
 ///
 /// > A parent services can always cancel all of its child services, but a child
 /// > service cannot cancel its parent service.
@@ -82,7 +94,9 @@ pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
     capabilities: Arc<MadaraCapabilitiesMask>,
+    capabilities_notify: Arc<tokio::sync::Notify>,
     state: Arc<std::sync::atomic::AtomicU8>,
+    id: MadaraCapability,
 }
 
 impl ServiceContext {
@@ -91,7 +105,9 @@ impl ServiceContext {
             token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
             capabilities: Arc::new(MadaraCapabilitiesMask::default()),
+            capabilities_notify: Arc::new(tokio::sync::Notify::new()),
             state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
+            id: MadaraCapability::default(),
         }
     }
 
@@ -110,20 +126,29 @@ impl ServiceContext {
     }
 
     pub async fn cancelled(&self) {
-        if let Some(token_local) = &self.token_local {
-            tokio::select! {
-                _ = self.token_global.cancelled() => {},
-                _ = token_local.cancelled() => {}
-            }
-        } else {
-            tokio::select! {
-                _ = self.token_global.cancelled() => {},
+        if self.state() != MadaraState::Shutdown {
+            match &self.token_local {
+                Some(token_local) => tokio::select! {
+                    _ = self.token_global.cancelled() => {},
+                    _ = token_local.cancelled() => {}
+                },
+                None => tokio::select! {
+                    _ = self.token_global.cancelled() => {},
+                },
             }
         }
     }
 
+    #[inline(always)]
     pub fn is_cancelled(&self) -> bool {
-        self.token_global.is_cancelled() || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
+        self.token_global.is_cancelled()
+            || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
+            || !self.capabilities.is_active(self.id as u8)
+            || self.state() == MadaraState::Shutdown
+    }
+
+    pub fn id(&self) -> MadaraCapability {
+        self.id
     }
 
     /// Copies the context, maintaining its scope.
@@ -132,7 +157,9 @@ impl ServiceContext {
             token_global: self.token_global.clone(),
             token_local: self.token_local.clone(),
             capabilities: Arc::clone(&self.capabilities),
+            capabilities_notify: Arc::clone(&self.capabilities_notify),
             state: Arc::clone(&self.state),
+            id: self.id,
         }
     }
 
@@ -141,14 +168,16 @@ impl ServiceContext {
     /// Any service which uses this new context will be able to cancel the
     /// services in the same local scope as itself, and any further child
     /// services, without affecting the rest of the global scope.
-    pub fn child(&self) -> Self {
+    pub fn child(&self, id: MadaraCapability) -> Self {
         let token_local = self.token_local.as_ref().unwrap_or(&self.token_global).child_token();
 
         Self {
             token_global: self.token_global.clone(),
             token_local: Some(token_local),
             capabilities: Arc::clone(&self.capabilities),
+            capabilities_notify: Arc::clone(&self.capabilities_notify),
             state: Arc::clone(&self.state),
+            id,
         }
     }
 
@@ -156,6 +185,7 @@ impl ServiceContext {
     ///
     /// You can combine multiple [MadaraCapability] into a single bitmask to
     /// check the state of multiple services at once.
+    #[inline(always)]
     pub fn capability_check(&self, cap: u8) -> bool {
         self.capabilities.is_active(cap)
     }
@@ -164,11 +194,30 @@ impl ServiceContext {
     ///
     /// This will immediately be visible to all services in the same global
     /// scope. This is true across threads.
+    #[inline(always)]
     pub fn capability_add(&mut self, cap: MadaraCapability) -> bool {
-        self.capabilities.activate(cap)
+        let res = self.capabilities.activate(cap);
+        self.capabilities_notify.notify_waiters();
+
+        res
+    }
+
+    #[inline(always)]
+    pub fn capabitilies_remove(&mut self, cap: MadaraCapability) -> bool {
+        self.capabilities.deactivate(cap)
+    }
+
+    #[inline(always)]
+    pub async fn run_when_online<T>(&self, future: impl Future<Output = T>) -> T {
+        while !self.capabilities.is_active(self.id as u8) {
+            self.capabilities_notify.notified().await;
+        }
+
+        future.await
     }
 
     /// Atomically checks the state of the node
+    #[inline(always)]
     pub fn state(&self) -> MadaraState {
         self.state.load(std::sync::atomic::Ordering::SeqCst).into()
     }
@@ -203,6 +252,8 @@ pub trait Service: 'static + Send + Sync {
         self.start(&mut join_set, ServiceContext::new()).await.context("Starting service")?;
         drive_joinset(join_set).await
     }
+
+    fn id(&self) -> MadaraCapability;
 }
 
 pub struct ServiceGroup {
@@ -237,15 +288,24 @@ impl ServiceGroup {
 
 #[async_trait::async_trait]
 impl Service for ServiceGroup {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
+    async fn start(
+        &mut self,
+        join_set: &mut JoinSet<anyhow::Result<()>>,
+        mut ctx: ServiceContext,
+    ) -> anyhow::Result<()> {
         // drive the join set as a nested task
         let mut own_join_set = self.join_set.take().expect("Service has already been started.");
         for svc in self.services.iter_mut() {
-            svc.start(&mut own_join_set, ctx.child()).await.context("Starting service")?;
+            ctx.capability_add(svc.id());
+            svc.start(&mut own_join_set, ctx.child(svc.id())).await.context("Starting service")?;
         }
 
         join_set.spawn(drive_joinset(own_join_set));
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::None
     }
 }
 

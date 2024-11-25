@@ -121,7 +121,7 @@ pub async fn fetch_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
-        &ctx,
+        ctx,
     )
     .await?;
     let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, ctx).await?;

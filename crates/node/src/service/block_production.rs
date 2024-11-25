@@ -8,7 +8,7 @@ use mc_mempool::{
     block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
 };
 use mc_telemetry::TelemetryHandle;
-use mp_utils::service::{Service, ServiceContext};
+use mp_utils::service::{MadaraCapability, Service, ServiceContext};
 use tokio::task::JoinSet;
 
 use crate::cli::block_production::BlockProductionParams;
@@ -119,5 +119,9 @@ impl Service for BlockProductionService {
         });
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::BlockProduction
     }
 }

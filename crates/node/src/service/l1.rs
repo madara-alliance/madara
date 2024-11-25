@@ -5,7 +5,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_utils::service::{Service, ServiceContext};
+use mp_utils::service::{MadaraCapability, Service, ServiceContext};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -107,5 +107,9 @@ impl Service for L1SyncService {
         }
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::L1Sync
     }
 }

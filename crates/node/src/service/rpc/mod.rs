@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 
 use mc_db::MadaraBackend;
 use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::{Service, ServiceContext};
+use mp_utils::service::{MadaraCapability, Service, ServiceContext};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -99,5 +99,9 @@ impl Service for RpcService {
         }
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::Rpc
     }
 }

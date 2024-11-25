@@ -52,7 +52,7 @@ pub async fn graceful_shutdown(ctx: &ServiceContext) {
 pub async fn wait_or_graceful_shutdown<T>(future: impl Future<Output = T>, ctx: &ServiceContext) -> Option<T> {
     tokio::select! {
         _ = graceful_shutdown_inner(ctx) => { None },
-        res = future => { Some(res) },
+        res = ctx.run_when_online(future) => { Some(res) },
     }
 }
 

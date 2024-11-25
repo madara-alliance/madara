@@ -6,13 +6,13 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{Service, ServiceContext};
+use mp_utils::service::{MadaraCapability, Service, ServiceContext};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
-pub struct SyncService {
+pub struct L2SyncService {
     db_backend: Arc<MadaraBackend>,
     block_importer: Arc<BlockImporter>,
     fetch_config: FetchConfig,
@@ -23,7 +23,7 @@ pub struct SyncService {
     pending_block_poll_interval: Duration,
 }
 
-impl SyncService {
+impl L2SyncService {
     pub async fn new(
         config: &SyncParams,
         chain_config: Arc<ChainConfig>,
@@ -50,12 +50,12 @@ impl SyncService {
 }
 
 #[async_trait::async_trait]
-impl Service for SyncService {
+impl Service for L2SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
-        let SyncService {
+        let L2SyncService {
             fetch_config,
             backup_every_n_blocks,
             starting_block,
@@ -84,5 +84,9 @@ impl Service for SyncService {
         });
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraCapability {
+        MadaraCapability::L2Sync
     }
 }

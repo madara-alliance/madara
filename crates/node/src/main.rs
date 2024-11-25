@@ -19,7 +19,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -142,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
             // Block sync service. (full node)
             false => {
                 // Feeder gateway sync service.
-                let sync_service = SyncService::new(
+                let sync_service = L2SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
                     &db_service,
