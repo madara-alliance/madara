@@ -98,9 +98,11 @@ pub async fn start_server(
         metrics,
         service_builder: builder.to_service_builder(),
     };
+    let ctx1 = ctx.branch();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let ctx1 = ctx1.branch();
 
         async move {
             let cfg = cfg.clone();
@@ -120,9 +122,14 @@ pub async fn start_server(
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
+                let ctx1 = ctx1.branch();
 
                 async move {
-                    if req.uri().path() == "/health" {
+                    if !ctx1.is_active() {
+                        Ok(hyper::Response::builder()
+                            .status(hyper::StatusCode::GONE)
+                            .body(hyper::Body::from("GONE"))?)
+                    } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else {
                         if is_websocket {

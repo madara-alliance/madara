@@ -68,7 +68,7 @@ impl Service for L2SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            mc_sync::sync(
+            mc_sync::l2_sync_worker(
                 &db_backend,
                 ctx,
                 fetch_config,

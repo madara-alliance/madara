@@ -95,7 +95,9 @@ impl Service for RpcService {
 
         if let Some(server_config) = &server_config_admin {
             // rpc enabled (admin)
-            self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx.branch()).await?);
+            let ctx = ctx.branch_id(MadaraCapability::RpcAdmin);
+            ctx.capabilities_add(MadaraCapability::RpcAdmin);
+            self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx).await?);
         }
 
         Ok(())

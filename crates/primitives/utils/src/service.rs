@@ -2,11 +2,11 @@
 
 use anyhow::Context;
 use futures::Future;
-use std::{panic, sync::Arc};
+use std::{fmt::Display, panic, sync::Arc};
 use tokio::task::JoinSet;
 
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum MadaraCapability {
     #[default]
     None = 0,
@@ -15,8 +15,29 @@ pub enum MadaraCapability {
     L2Sync = 4,
     BlockProduction = 8,
     Rpc = 16,
-    Gateway = 32,
-    Telemetry = 64,
+    RpcAdmin = 32,
+    Gateway = 64,
+    Telemetry = 128,
+}
+
+impl Display for MadaraCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MadaraCapability::None => "none",
+                MadaraCapability::Database => "database",
+                MadaraCapability::L1Sync => "l1 sync",
+                MadaraCapability::L2Sync => "l2 sync",
+                MadaraCapability::BlockProduction => "block production",
+                MadaraCapability::Rpc => "rpc",
+                MadaraCapability::RpcAdmin => "rpc admin",
+                MadaraCapability::Gateway => "gateway",
+                MadaraCapability::Telemetry => "telemetry",
+            }
+        )
+    }
 }
 
 #[repr(transparent)]
@@ -31,15 +52,15 @@ impl MadaraCapabilitiesMask {
 
     #[inline(always)]
     pub fn activate(&self, cap: MadaraCapability) -> bool {
-        let prev = self.0.fetch_or(cap as u8, std::sync::atomic::Ordering::Acquire);
-        prev | cap as u8 > 0
+        let prev = self.0.fetch_or(cap as u8, std::sync::atomic::Ordering::SeqCst);
+        prev & cap as u8 > 0
     }
 
     #[inline(always)]
     pub fn deactivate(&self, cap: MadaraCapability) -> bool {
         let cap = cap as u8;
-        let prev = self.0.fetch_and(!cap, std::sync::atomic::Ordering::Acquire);
-        prev | cap as u8 > 0
+        let prev = self.0.fetch_and(!cap, std::sync::atomic::Ordering::SeqCst);
+        prev & cap > 0
     }
 }
 
@@ -163,6 +184,18 @@ impl ServiceContext {
         }
     }
 
+    /// Copies the context, maintaining its scope but with a new id.
+    pub fn branch_id(&self, id: MadaraCapability) -> Self {
+        Self {
+            token_global: self.token_global.clone(),
+            token_local: self.token_local.clone(),
+            capabilities: Arc::clone(&self.capabilities),
+            capabilities_notify: Arc::clone(&self.capabilities_notify),
+            state: Arc::clone(&self.state),
+            id,
+        }
+    }
+
     /// Copies the context into a new local scope.
     ///
     /// Any service which uses this new context will be able to cancel the
@@ -186,7 +219,7 @@ impl ServiceContext {
     /// You can combine multiple [MadaraCapability] into a single bitmask to
     /// check the state of multiple services at once.
     #[inline(always)]
-    pub fn capability_check(&self, cap: u8) -> bool {
+    pub fn capabilities_check(&self, cap: u8) -> bool {
         self.capabilities.is_active(cap)
     }
 
@@ -195,7 +228,7 @@ impl ServiceContext {
     /// This will immediately be visible to all services in the same global
     /// scope. This is true across threads.
     #[inline(always)]
-    pub fn capability_add(&mut self, cap: MadaraCapability) -> bool {
+    pub fn capabilities_add(&self, cap: MadaraCapability) -> bool {
         let res = self.capabilities.activate(cap);
         self.capabilities_notify.notify_waiters();
 
@@ -203,8 +236,13 @@ impl ServiceContext {
     }
 
     #[inline(always)]
-    pub fn capabitilies_remove(&mut self, cap: MadaraCapability) -> bool {
+    pub fn capabilities_remove(&self, cap: MadaraCapability) -> bool {
         self.capabilities.deactivate(cap)
+    }
+
+    #[inline(always)]
+    pub fn is_active(&self) -> bool {
+        self.capabilities.is_active(self.id as u8)
     }
 
     #[inline(always)]
@@ -288,15 +326,11 @@ impl ServiceGroup {
 
 #[async_trait::async_trait]
 impl Service for ServiceGroup {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        mut ctx: ServiceContext,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         // drive the join set as a nested task
         let mut own_join_set = self.join_set.take().expect("Service has already been started.");
         for svc in self.services.iter_mut() {
-            ctx.capability_add(svc.id());
+            ctx.capabilities_add(svc.id());
             svc.start(&mut own_join_set, ctx.child(svc.id())).await.context("Starting service")?;
         }
 

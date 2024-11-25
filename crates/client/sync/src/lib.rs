@@ -26,7 +26,7 @@ pub struct SyncConfig {
 }
 
 #[tracing::instrument(skip(backend, ctx, fetch_config, sync_config))]
-pub async fn sync(
+pub async fn l2_sync_worker(
     backend: &Arc<MadaraBackend>,
     ctx: ServiceContext,
     fetch_config: FetchConfig,
