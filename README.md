@@ -23,19 +23,27 @@ Madara is a powerful Starknet client written in Rust.
 
 ## Table of Contents
 
-- ⬇️ [Installation](#%EF%B8%8F-installation)
+- ⬇️  [Installation](#%EF%B8%8F-installation)
   - [Run from Source](#run-from-source)
   - [Run with Docker](#run-with-docker)
-- ⚙️ [Configuration](#%EF%B8%8F-configuration)
+- ⚙️  [Configuration](#%EF%B8%8F-configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Environment variables](#environment-variables)
 - 🌐 [Interactions](#-interactions)
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
+  - [Madara-specific JSON-RPC Methods](#madara-specific-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
 - ✅ [Supported Features](#-supported-features)
-- 👍 Contribute
+  - [Starknet Compliant](#starknet-compliant)
+  - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
+  - [State Commitment Computation](#state-commitment-computation)
+- 💬 [Get in touch](#-get-in-touch)
+  - [Contributing](#contributing)
+  - [Partnerships](#partnerships)
 
 ## ⬇️ Installation
+
+[⬅️  back to top](#-madara-starknet-client)
 
 ### Run from Source
 
@@ -363,8 +371,6 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
----
-
 ### Madara-specific JSON-RPC Methods
 
 Beside this, Madara supports its own set of custom extensions to the starknet
@@ -458,6 +464,8 @@ if not provided then OTLP will be disabled by default.
 
 ## ✅ Supported Features
 
+[⬅️  back to top](#-madara-starknet-client)
+
 ### Starknet compliant
 
 Madara is compliant with the latest `v0.13.2` version of Starknet and `v0.7.1`
@@ -483,16 +491,18 @@ Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-allianc
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
-## 👍 Contribute
+## 💬 Get in touch
+
+### Contributing
 
 For guidelines on how to contribute to Madara, please see the [Contribution Guidelines](https://github.com/madara-alliance/madara/blob/main/CONTRIBUTING.md).
 
-## 🤝 Partnerships
+###  Partnerships
 
 To establish a partnership with the Madara team, or if you have any suggestions or
 special requests, feel free to reach us on [Telegram](https://t.me/madara-alliance).
 
-## ⚠️ License
+### License
 
 Madara is open-source software licensed under the
 [Apache-2.0 License](https://github.com/madara-alliance/madara/blob/main/LICENSE).
