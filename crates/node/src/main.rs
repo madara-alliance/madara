@@ -35,7 +35,6 @@ async fn main() -> anyhow::Result<()> {
 
     let mut analytics = Analytics::new(
         run_cmd.analytics_params.analytics_service_name.clone(),
-        run_cmd.analytics_params.analytics_log_level,
         run_cmd.analytics_params.analytics_collection_endpoint.clone(),
     )
     .context("Initializing analytics service")?;

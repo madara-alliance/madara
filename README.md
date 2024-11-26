@@ -478,7 +478,6 @@ Madara comes packed with OTEL integration, supporting export of traces, metrics 
 ### Basic Command-Line Option
 
 - **`--analytics-collection-endpoint <URL>`**: Endpoint for OTLP collector, if not provided then OTLP is not enabled.
-- **`--analytics-log-level <Log Level>`**: Picked up from `RUST_LOG` automatically, can be provided using this flag as well.
 - **`--analytics-service-name <Name>`**: Allows to customize the collection service name.
 
 #### Setting up Signoz
