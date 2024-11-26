@@ -32,7 +32,7 @@ Madara is a powerful Starknet client written in Rust.
 - 🌐 [Interactions](#-interactions)
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
-- Supported Features
+- ✅ [Supported Features](#-supported-features)
 - 👍 Contribute
 
 ## ⬇️ Installation
@@ -219,13 +219,13 @@ Madara is a powerful Starknet client written in Rust.
    #!/bin/sh
    export RPC_API_KEY=$(cat $RPC_API_KEY_FILE)
 
-   ./madara                  \
-   	--name madara            \
-   	--network mainnet        \
-   	--rpc-external           \
-   	--rpc-cors all           \
-   	--full                   \
-   	--l1-endpoint $RPC_API_KEY
+   ./madara                   \
+     --name madara            \
+     --network mainnet        \
+     --rpc-external           \
+     --rpc-cors all           \
+     --full                   \
+     --l1-endpoint $RPC_API_KEY
    ```
 
    For more information, run:
@@ -256,6 +256,7 @@ Or if you are using docker, simply:
 docker run madara:latest --help
 ```
 
+---
 
 ### Basic Command-Line Options
 
@@ -407,7 +408,8 @@ port **9943** unless specified otherwise with `--rpc-admin-port`.
 
 ### Example of Calling a JSON-RPC Method
 
-Here is an example of how to call a JSON-RPC method using Madara:
+Here is an example of how to call a JSON-RPC method using Madara. Before running
+the bellow code, make sure you have a node running with rpc enabled on port 9944.
 
 ```bash
 curl --location 'localhost:9944'            \
@@ -454,18 +456,32 @@ if not provided then OTLP will be disabled by default.
 - Signoz Docker Standalone can be setup following this [guide](https://signoz.io/docs/install/docker/).
 - Ensure to configure the correct service_name after importing the json to the dashboard.
 
-## ✔ Supported Features
+## ✅ Supported Features
 
-Madara offers numerous features and is constantly improving to stay at the cutting edge of Starknet technology.
+### Starknet compliant
 
-- **Starknet Version**: `v0.13.2`
-- **JSON-RPC Version**: `v0.7.1`
-- **Feeder-Gateway State Synchronization**
-- **State Commitment Computation**
-- **L1 State Verification**
-- **Handling L1 and L2 Reorgs**
+Madara is compliant with the latest `v0.13.2` version of Starknet and `v0.7.1`
+JSON-RPC specs. You can find out more about this in the [interactions](#-interactions)
+section or at the official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
-Each feature is designed to ensure optimal performance and seamless integration with the Starknet ecosystem.
+### Feeder-Gateway State Synchronization
+
+Madara supports its own implementation of the Starknet feeder gateway, which
+allows nodes to synchronize state from each other at much faster speeds than
+a regular sync.
+
+> [!NOTE]
+> Starknet does not currently have a specification for its feeder-gateway
+> protocol, so despite our best efforts at output parity, you might still notice
+> some discrepancies between official feeder gateway endpoints and our own
+> implementation.
+
+### State Commitment Computation
+
+Madara supports merkelized state verification through its own implementation of
+Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
+You can read more about Starknet Block structure and how it affects state
+commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
 ## 👍 Contribute
 
