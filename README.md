@@ -240,6 +240,8 @@ Madara is a powerful Starknet client written in Rust.
 
 ## ⚙️ Configuration
 
+[⬅️  back to top](#-madara-starknet-client)
+
 ### Command-Line Options
 
 For a comprehensive list of all command-line options, check out:
@@ -300,6 +302,8 @@ command-line arguments, which can be useful in CI pipelines or with docker.
 > environment variables, such as `MADARA_L1_ENDPOINT` or `MADARA_GATEWAY_KEY`
 
 ## 🌐 Interactions
+
+[⬅️  back to top](#-madara-starknet-client)
 
 Madara fully supports all the JSON-RPC methods as of the latest version of the
 Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
