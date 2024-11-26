@@ -28,7 +28,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Run with Docker](#run-with-docker)
 - ⚙️ Configuration
   - [Basic Command-Line Options](#basic-command-line-options)
-  - [Advanced Command-Line Options](#advanced-command-line-options)
+  - [Environment variables](#environment-variables)
 - 🌐 Interactions
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
@@ -47,7 +47,6 @@ Madara is a powerful Starknet client written in Rust.
    | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
    | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                        |
    | Clang      | Latest     | `sudo apt-get install clang`                                                             |
-   | Scarb      | v2.8.2     | `curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh \| sh` |
 
    Clone the Madara repository:
 
@@ -56,23 +55,23 @@ Madara is a powerful Starknet client written in Rust.
    git clone https://github.com/madara-alliance/madara .
    ```
 
-2. **Build Program**
+2. **Build Madara**
 
-   Choose between different build modes:
+   You can choose between different build modes:
 
-   - **Debug** (fastest build mode, but lower performance, for testing purposes only):
+   - **Debug** (low performance, faster builds, _for testing purposes only_):
 
      ```bash
      cargo build
      ```
 
-   - **Release** (recommended build mode):
+   - **Release** (fast performance, slower build times):
 
      ```bash
      cargo build --release
      ```
 
-   - **Production** (recommended for production performance):
+   - **Production** (fastest performance, _very slow build times_):
 
      ```bash
      cargo build --profile=production
@@ -84,307 +83,233 @@ Madara is a powerful Starknet client written in Rust.
 
    **Full Node**
 
+   A full node, synchronizing the state of the chain from genesis.
+
    ```bash
-   cargo run --release -- \
-     --name Madara \
-     --full \
+   cargo run --release --        \
+     --name Madara               \
+     --full                      \
      --base-path /var/lib/madara \
-     --network mainnet \
+     --network mainnet           \
      --l1-endpoint ${ETHEREUM_API_URL}
    ```
 
    **Sequencer**
 
+   Produces new blocks for other nodes to synchronize.
+
    ```bash
-   cargo run --release -- \
-     --name Madara \
-     --sequencer \
+   cargo run --release --        \
+     --name Madara               \
+     --sequencer                 \
      --base-path /var/lib/madara \
-     --preset test \
+     --preset test               \
      --l1-endpoint ${ETHEREUM_API_URL}
    ```
 
    **Devnet**
 
+   A node in a private local network.
+
    ```bash
-   cargo run --release -- \
-     --name Madara \
-     --devnet \
+   cargo run --release --        \
+     --name Madara               \
+     --devnet                    \
      --base-path /var/lib/madara \
      --preset test
    ```
 
-   > ℹ️ **Info:** We recommend you to head to the [Configuration](https://docs.madara.build/fundamentals/configuration)
-   > section to customize your node parameters.
-   > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant
-   > section to obtain one.
+   > [!NOTE]
+   > Head to the [Configuration](#configuration) section to learn how to
+   > customize your node parameters.
+
+4. **Presets**
+
+   You can use cli presets for certain common node configurations, for example
+   enabling rpc endpoints:
+
+   ```
+   cargo run --release -- \
+      --name Madara       \
+      --full              \
+      --preset mainnet    \
+      --rpc
+   ```
+
+   ...or the madara feeder gateway:
+
+   ```
+   cargo run --release -- \
+      --name Madara       \
+      --full              \
+      --preset mainnet    \
+      --fgw
+   ```
 
 ### Run with Docker
 
-1. **Install Docker**
+1. **Manual Setup**
 
-   Ensure you have Docker installed on your machine. Once you have Docker installed, you can run Madara using the available Docker images.
+   Ensure you have [Docker](https://docs.docker.com/engine/install/) installed
+   on your machine. Once you have Docker installed, you will need to pull the
+   madara image from the github container registry (ghr):
 
    ```bash
-   docker run -d \
-     --name Madara \
-     --full
-     -p 9944:9944 \
-     -v /var/lib/madara:/var/lib/madara \
-     madara:latest \
-     --base-path /var/lib/madara \
-     --network mainnet \
+   docker pull ghcr.io/madara-alliance/madara:latest
+   docker tag ghcr.io/madara-alliance/madara:latest madara:latest
+   docker rmi ghcr.io/madara-alliance/madara:latest
+   ```
+
+   You can then launch madara as follows:
+
+   ```bash
+   docker run -d                    \
+     -p 9944:9944                   \
+     -v /var/lib/madara:/tmp/madara \
+     --name Madara                  \
+     madara:latest                  \
+     --name Madara                  \
+     --full                         \
+     --network mainnet              \
      --l1-endpoint ${ETHEREUM_API_URL}
    ```
 
-   > ℹ️ **Info:** This is a default configuration for a Full Node on Starknet mainnet.
-   > For more information on possible configurations, please visit the
-   > [Configuration](https://docs.madara.build/fundamentals/configuration) section.
-   > ⚠️ **Warning:** Make sure to change the volume `-v` of your container if you change the `--base-path`.
-   > ℹ️ **Info:** If you don't have an L1 endpoint URL, we recommend you refer to the relevant section to obtain one.
-
-2. **Check Logs**
+   To display the node's logs, you can use:
 
    ```bash
-   docker logs -f Madara
+   docker logs -f -n 100 Madara
    ```
 
-   > ℹ️ **Info:** Now you can head to the [Metrics](https://docs.madara.build/monitoring/grafana)
-   > section to deploy a Grafana and Prometheus dashboard.
+   > [!WARNING]
+   > Make sure to change the volume `-v` of your container if ever you update
+   > `--base-path`.
+
+
+2. **Using the project Makefile**
+
+   Alternatively, you can use the provided Makefile and `compose.yaml` to
+   simplify this process.
+
+   > [!IMPORTANT]
+   > This requires you to have [Docker Compose](https://docs.docker.com/compose/install/)
+   > installed
+
+   Start by saving your rpc key to a `.secrets` forlder:
+
+   ```bash
+   mkdir .secrets
+   echo *** .secrets/rpc_api.secret
+   ```
+
+   Then, run madara with the following commands:
+
+   ```bash
+   make start    # This will automatically pull the madara image if not available
+   make logs     # Displays the last 100 lines of logs
+   make stop     # Stop the madara node
+   make clean-db # Removes the madara db, including files on the host
+   make restart  # Restarts the madara node
+   ```
+
+   To change runtime arguments, you can update the script in `madara-runner.sh`:
+
+   ```bash
+   #!/bin/sh
+   export RPC_API_KEY=$(cat $RPC_API_KEY_FILE)
+
+   ./madara                  \
+   	--name madara            \
+   	--network mainnet        \
+   	--rpc-external           \
+   	--rpc-cors all           \
+   	--full                   \
+   	--l1-endpoint $RPC_API_KEY
+   ```
+
+   For more information, run:
+
+   ```bash
+   make help
+   ```
+
+   > [!TIP]
+   > When running Madara from a docker container, make sure to set options such
+   > as `--rpc-external`, `--gateway-external` and `--rpc-admin-external` so as
+   > to be able to access these services from outside the container.
+
 
 ## ⚙️ Configuration
 
 ### Command-Line Options
 
-For a comprehensive list of command-line options:
+For a comprehensive list of all command-line options, check out:
 
 ```bash
 cargo run -- --help
 ```
 
-Below are some essential command-line options and a categorized list of advanced configurations:
+Or if you are using docker, simply:
+
+```bash
+docker run madara:latest --help
+```
 
 #### Basic Command-Line Options
 
-Here are the recommended options for a quick and simple configuration of your Madara client:
+Here are the recommended options for a quick and simple configuration of your
+Madara client:
 
-- **`--name <NAME>`**: The human-readable name for this node. It's used as the network node name.
+- **`--name <NAME>`**: The human-readable name for this node. It's used as the
+network node name.
 
-- **`--base-path <PATH>`**: Set the directory for Starknet data (default is `/tmp/madara`).
+- **`--base-path <PATH>`**: Set the directory for Starknet data (default is
+`/tmp/madara`).
 
-- **`--full`**: The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`).
+- **`--full`**: The mode of your Madara client (either `--sequencer`, `--full`,
+or `devnet`).
 
-- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify its state from.
+- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify
+its state from.
 
 - **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
 
-- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WS RPC servers.
+- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the
+HTTP & WS RPC servers.
 
-- **`--rpc-external`**: Listen to all RPC interfaces. Default is local.
+- **`--rpc-external`**: Exposes the rpc service on `0.0.0.0`. This can be
+especially useful when running Madara from a Docker container.
 
-> ℹ️ **Info:** For more information regarding synchronization configuration, please refer to the
-> [Configuration](https://docs.madara.build/fundamentals/configuration) section.
+#### Environment Variables
 
-### Advanced Command-Line Options
-
-Toggle details for each namespace to view additional settings:
-
-<details>
-<summary><strong>Network</strong></summary>
-
-- **`-n, --network <NETWORK>`**: The network type to connect to.
-
-  - [default: mainnet]
-
-  Possible values:
-
-  - `mainnet`: The main network (mainnet). Alias: main
-  - `testnet`: The test network (testnet). Alias: sepolia
-  - `integration`: The integration network
-  - `devnet`: A devnet for local testing
-
-- **`--l1-endpoint <ETHEREUM RPC URL>`**: Specify the Layer 1 RPC endpoint for state verification.
-
-- **`--gateway-key <API KEY>`**: Gateway API key to avoid rate limiting (optional).
-
-- **`--sync-polling-interval <SECONDS>`**: Polling interval in seconds.
-
-  - [default: 4]
-
-- **`--pending-block-poll-interval <SECONDS>`**: Pending block polling interval in seconds.
-
-  - [default: 2]
-
-- **`--no-sync-polling`**: Disable sync polling.
-
-- **`--n-blocks-to-sync <NUMBER OF BLOCKS>`**: Number of blocks to sync, useful for benchmarking.
-
-- **`--unsafe-starting-block <BLOCK NUMBER>`**: Start syncing from a specific block. May cause database inconsistency.
-
-- **`--sync-disabled`**: Disable the sync service.
-
-- **`--sync-l1-disabled`**: Disable L1 sync service.
-
-- **`--gas-price-sync-disabled`**: Disable the gas price sync service.
-
-- **`--gas-price-poll-ms <MILLISECONDS>`**: Interval in milliseconds for the gas price sync service to fetch the gas price.
-  - [default: 10000]
-
-</details>
-
-<details>
-<summary><strong>RPC</strong></summary>
-
-- **`--rpc-disabled`**: Disable the RPC server.
-
-- **`--rpc-external`**: Listen to all network interfaces.
-
-- **`--rpc-methods <METHOD>`**: RPC methods to expose.
-
-  - [default: auto]
-
-  Possible values:
-
-  - `auto`: Expose all methods if RPC is on localhost, otherwise serve only safe methods.
-  - `safe`: Allow only a safe subset of RPC methods.
-  - `unsafe`: Expose all RPC methods (even potentially unsafe ones).
-
-- **`--rpc-rate-limit <CALLS/MIN>`**: RPC rate limiting per connection.
-
-- **`--rpc-rate-limit-whitelisted-ips <IP ADDRESSES>`**: Disable RPC rate limiting for specific IP addresses or ranges.
-
-- **`--rpc-rate-limit-trust-proxy-headers`**: Trust proxy headers for disabling rate limiting in reverse proxy setups.
-
-- **`--rpc-max-request-size <MEGABYTES>`**: Maximum RPC request payload size for both HTTP and WebSockets.
-
-  - [default: 15]
-
-- **`--rpc-max-response-size <MEGABYTES>`**: Maximum RPC response payload size for both HTTP and WebSockets.
-
-  - [default: 15]
-
-- **`--rpc-max-subscriptions-per-connection <COUNT>`**: Maximum concurrent subscriptions per connection.
-
-  - [default: 1024]
-
-- **`--rpc-port <PORT>`**: The RPC port to listen on.
-
-  - [default: 9944]
-
-- **`--rpc-max-connections <COUNT>`**: Maximum number of RPC server connections at a given time.
-
-  - [default: 100]
-
-- **`--rpc-disable-batch-requests`**: Disable RPC batch requests.
-
-- **`--rpc-max-batch-request-len <LEN>`**: Limit the max length for an RPC batch request.
-
-- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the HTTP & WebSocket RPC servers.
-
-- **`--rpc-message-buffer-capacity-per-connection <CAPACITY>`**: Maximum number of messages in memory per connection.
-  - [default: 64]
-
-</details>
-
-<details>
-<summary><strong>Database</strong></summary>
-
-- **`--base-path <PATH>`**: The path where Madara will store the database.
-
-  - [default: /tmp/madara]
-
-- **`--backup-dir <PATH>`**: Directory for backups.
-
-- **`--backup-every-n-blocks <NUMBER OF BLOCKS>`**: Periodically create a backup.
-
-- **`--restore-from-latest-backup`**: Restore the database from the latest backup version.
-
-</details>
-
-<details>
-<summary><strong>Block Production</strong></summary>
-
-- **`--block-production-disabled`**: Disable the block production service.
-
-- **`--devnet`**: Launch in block production mode, with devnet contracts.
-
-- **`--devnet-contracts <DEVNET_CONTRACTS>`**: Create this number of contracts in the genesis block for the devnet configuration.
-
-  - [default: 10]
-
-- **`--override-devnet-chain-id`**: Launch a devnet with a production chain ID.
-
-- **`--authority`**: Enable authority mode; the node will run as a sequencer and try to produce its own blocks.
-
-</details>
-
-<details>
-<summary><strong>Metrics</strong></summary>
-
-- **`--telemetry`**: Enable connection to the Madara telemetry server.
-
-- **`--telemetry-url <URL VERBOSITY>`**: The URL of the telemetry server with verbosity level.
-
-  - [default: "wss://starknodes.com/submit 0"]
-
-- **`--prometheus-port <PORT>`**: The port used by the Prometheus RPC service.
-
-  - [default: 9615]
-
-- **`--prometheus-external`**: Listen on all network interfaces for Prometheus.
-
-- **`--prometheus-disabled`**: Disable the Prometheus service.
-
-</details>
-
-> ℹ️ **Info:** Note that not all parameters may be referenced here.
-> Please refer to the `cargo run -- --help` command for the full list of parameters.
-
-### Environment Variables
-
-Set up your node's environment variables using the `MADARA_` prefix. For example:
+Each cli argument has its own corresponding environment variable you can set to
+change its value. For example:
 
 - `MADARA_BASE_PATH=/path/to/data`
 - `MADARA_RPC_PORT=1111`
 
-These variables allow you to adjust the node's configuration without using command-line arguments. If the command-line
-argument is specified then it takes precedent over the environment variable.
+These variables allow you to adjust the node's configuration without using
+command-line arguments, which can be useful in CI pipelines or with docker.
+
+> [!IMPORTANT]
+> If the command-line argument is specified then it takes precedent over the
+> environment variable.
 
 > [!CAUTION]
 > Environment variables can be visible beyond the current process and are not
 > encrypted. You should take special care when setting _secrets_ through
 > environment variables, such as `MADARA_L1_ENDPOINT` or `MADARA_GATEWAY_KEY`
 
-### Configuration File
-
-You can use a JSON, TOML, or YAML file to structure your configuration settings.
-Specify your configuration file on startup with the `-c` option. Here's a basic example in JSON format:
-
-```json
-{
-  "name": "Deoxys",
-  "base_path": "../deoxys-db",
-  "network": "mainnet",
-  "l1_endpoint": "l1_key_url",
-  "rpc_port": 9944,
-  "rpc_cors": "*",
-  "rpc_external": true,
-  "prometheus_external": true
-}
-```
-
-> 💡 **Tip:** Review settings carefully for optimal performance and refer to Starknet's
-> official documentation for detailed configuration guidelines.
-
-Always test your configuration in a non-production environment before rolling it out to a live node to prevent downtime
-and other potential issues.
-
-> ℹ️ **Info:** For a custom chain configuration, you can refer to the configuration section of chain operator deployments.
-
 ## 🌐 Interactions
 
-Madara fully supports all the JSON-RPC methods as specified in the Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
-These methods can be categorized into three main types: Read-Only Access Methods, Trace Generation Methods, and Write Methods.
+Madara fully supports all the JSON-RPC methods as of the latest version of the
+Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+These methods can be categorized into three main types: Read-Only Access Methods,
+Trace Generation Methods, and Write Methods. They are accessible through port
+**9944** unless specified otherwise with `--rpc-port`.
+
+> [!TIP]
+> You can use the special `rpc_methods` call to receive a list of all the
+> methods which are available on an endpoint.
 
 ### Supported JSON-RPC Methods
 
@@ -397,8 +322,8 @@ Here is a list of all the supported methods with their current status:
 | ------ | ------------------------------------------ |
 | ✅     | `starknet_specVersion`                     |
 | ✅     | `starknet_getBlockWithTxHashes`            |
-| ✅     | `starknet_getBlockWithReceipts`            |
 | ✅     | `starknet_getBlockWithTxs`                 |
+| ✅     | `starknet_getBlockWithReceipts`            |
 | ✅     | `starknet_getStateUpdate`                  |
 | ✅     | `starknet_getStorageAt`                    |
 | ✅     | `starknet_getTransactionStatus`            |
@@ -443,29 +368,71 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
-> ℹ️ **Info:** Madara currently supports the latest [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs) up to version v0.7.1.
+### Madara-specific JSON-RPC Methods
+
+Beside this, Madara supports its own set of custom extensions to the starknet
+specs. These are referred to as `admin` methods. They are exposed on a separate
+port **9943** unless specified otherwise with `--rpc-admin-port`.
+
+<details>
+  <summary>Write Methods</summary>
+
+| Method                          | About                                             |
+| ------------------------------- | ------------------------------------------------- |
+|`madara_addDeclareV0Transaction` | Adds a legacy Declare V0 Transaction to the state |
+
+</details>
+
+<details>
+  <summary>Status Methods</summary>
+
+| Method              | About                                                |
+| --------------------| ---------------------------------------------------- |
+| `madara_ping`       | Return the unix time at which this method was called |
+| `madara_stopNode`   | Gracefully stops the running node                    |
+| `madara_rpcDisable` | Disables user-facing rpc services                    |
+| `madara_rpcEnable`  | Enables user-facing rpc services                     |
+| `madara_rpcRestart` | Restarts user-facing rpc services                    |
+| `madara_syncDisable`| Disables l1 and l2 sync services                     |
+| `madara_syncEnable` | Enables l1 and l2 sync services                      |
+| `madara_syncRestart`| Restarts l1 and l2 sync services                     |
+
+</details>
+
+> [!CAUTION]
+> These methods are exposed on `locahost` by default for obvious security
+> reasons. You can always exposes them externally using `--rpc-admin-external`,
+> but be _very careful_ when doing so as you might be compromising your node!
+> Madara does not do **any** authorization checks on the caller of these
+> methods and instead leaves it up to the user to set up their own proxy to
+> handle these situations.
 
 ### Example of Calling a JSON-RPC Method
 
 Here is an example of how to call a JSON-RPC method using Madara:
 
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "starknet_getBlockWithTxHashes",
-  "params": {
-    "block_id": "latest"
-  },
-  "id": 1
-}
+```bash
+curl --location 'localhost:9944'            \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "jsonrpc": "2.0",
+    "method": "rpc_methods",
+    "params": [],
+    "id": 1
+  }' | jq --sort-keys
 ```
 
-You can use any JSON-RPC client to interact with the Madara node, such as `curl`, `httpie`,
-or a custom client in your preferred programming language.
-For more detailed information and examples on each method, please refer to the [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+You can use any JSON-RPC client to interact with Madara, such as `curl`,
+`httpie`, or a custom client in your preferred programming language. For more
+detailed information on each method, please refer to the
+[Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
-> ⚠️ **Warning:** Write methods are forwarded to the Sequencer for execution.
-> Ensure you handle errors appropriately as per the JSON-RPC schema.
+> [!NOTE]
+> Write methods are forwarded to the Sequencer and are not executed by Madara.
+> These might fail if you provide the wrong arguments or in case of a
+> conflicting state. Make sure to refer to the
+> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
+> for a list of potential errors.
 
 ## 📊 Analytics
 
@@ -477,9 +444,11 @@ Madara comes packed with OTEL integration, supporting export of traces, metrics 
 
 ### Basic Command-Line Option
 
-- **`--analytics-collection-endpoint <URL>`**: Endpoint for OTLP collector, if not provided then OTLP is not enabled.
-- **`--analytics-log-level <Log Level>`**: Picked up from `RUST_LOG` automatically, can be provided using this flag as well.
-- **`--analytics-service-name <Name>`**: Allows to customize the collection service name.
+- **`--analytics-collection-endpoint <URL>`**: Endpoint for OTLP collector,
+if not provided then OTLP will be disabled by default.
+- **`--analytics-log-level <Log Level>`**: Defaults to the same value as
+`RUST_LOG`, can be provided using this flag as well.
+- **`--analytics-service-name <Name>`**: Sets the collection service name.
 
 #### Setting up Signoz
 
