@@ -48,7 +48,7 @@ Madara is a powerful Starknet client written in Rust.
    | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                        |
    | Clang      | Latest     | `sudo apt-get install clang`                                                             |
 
-   Clone the Madara repository:
+   Once all dependencies are satisfied, you can clone the Madara repository:
 
    ```bash
    cd <your-destination-path>
@@ -59,7 +59,7 @@ Madara is a powerful Starknet client written in Rust.
 
    You can choose between different build modes:
 
-   - **Debug** (low performance, faster builds, _for testing purposes only_):
+   - **Debug** (low performance, fastest builds, _for testing purposes only_):
 
      ```bash
      cargo build
@@ -145,6 +145,8 @@ Madara is a powerful Starknet client written in Rust.
       --preset mainnet    \
       --fgw
    ```
+
+---
 
 ### Run with Docker
 
@@ -242,8 +244,6 @@ Madara is a powerful Starknet client written in Rust.
 
 [⬅️  back to top](#-madara-starknet-client)
 
-### Command-Line Options
-
 For a comprehensive list of all command-line options, check out:
 
 ```bash
@@ -256,32 +256,24 @@ Or if you are using docker, simply:
 docker run madara:latest --help
 ```
 
-#### Basic Command-Line Options
 
-Here are the recommended options for a quick and simple configuration of your
-Madara client:
+### Basic Command-Line Options
 
-- **`--name <NAME>`**: The human-readable name for this node. It's used as the
-network node name.
+Here are some recommended options to get up and started with your Madara client:
 
-- **`--base-path <PATH>`**: Set the directory for Starknet data (default is
-`/tmp/madara`).
+| Option | About |
+| ------ | ----- |
+| **`--name <NAME>`** | The human-readable name for this node. It's used as the network node name. |
+| **`--base-path <PATH>`** | Sets the database location for Madara (default is`/tmp/madara`) |
+| **`--full`** | The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`) |
+| **`--l1-endpoint <URL>`** | The Layer 1 endpoint the node will verify its state from |
+| **`--rpc-port <PORT>`** | The JSON-RPC server TCP port, used to receive requests |
+| **`--rpc-cors <ORIGINS>`** | Browser origins allowed to make calls to the RPC servers |
+| **`--rpc-external`** | Exposes the rpc service on `0.0.0.0` |
 
-- **`--full`**: The mode of your Madara client (either `--sequencer`, `--full`,
-or `devnet`).
+---
 
-- **`--l1-endpoint <URL>`**: Specify the Layer 1 endpoint the node will verify
-its state from.
-
-- **`--rpc-port <PORT>`**: Specify the JSON-RPC server TCP port.
-
-- **`--rpc-cors <ORIGINS>`**: Specify browser origins allowed to access the
-HTTP & WS RPC servers.
-
-- **`--rpc-external`**: Exposes the rpc service on `0.0.0.0`. This can be
-especially useful when running Madara from a Docker container.
-
-#### Environment Variables
+### Environment Variables
 
 Each cli argument has its own corresponding environment variable you can set to
 change its value. For example:
@@ -292,14 +284,10 @@ change its value. For example:
 These variables allow you to adjust the node's configuration without using
 command-line arguments, which can be useful in CI pipelines or with docker.
 
-> [!IMPORTANT]
+
+> [!NOTE]
 > If the command-line argument is specified then it takes precedent over the
 > environment variable.
-
-> [!CAUTION]
-> Environment variables can be visible beyond the current process and are not
-> encrypted. You should take special care when setting _secrets_ through
-> environment variables, such as `MADARA_L1_ENDPOINT` or `MADARA_GATEWAY_KEY`
 
 ## 🌐 Interactions
 
@@ -314,6 +302,8 @@ Trace Generation Methods, and Write Methods. They are accessible through port
 > [!TIP]
 > You can use the special `rpc_methods` call to receive a list of all the
 > methods which are available on an endpoint.
+
+---
 
 ### Supported JSON-RPC Methods
 
@@ -372,6 +362,8 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
+---
+
 ### Madara-specific JSON-RPC Methods
 
 Beside this, Madara supports its own set of custom extensions to the starknet
@@ -410,6 +402,8 @@ port **9943** unless specified otherwise with `--rpc-admin-port`.
 > Madara does not do **any** authorization checks on the caller of these
 > methods and instead leaves it up to the user to set up their own proxy to
 > handle these situations.
+
+---
 
 ### Example of Calling a JSON-RPC Method
 
