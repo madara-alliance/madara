@@ -5412,7 +5412,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -8406,8 +8406,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2538240cbe6663c673fe77465f294da707080f39678dd7066761554899e46100"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
 dependencies = [
  "base64 0.21.7",
  "crypto-bigint",
@@ -8418,7 +8417,7 @@ dependencies = [
  "serde_json_pythonic",
  "serde_with",
  "sha3",
- "starknet-crypto 0.7.3",
+ "starknet-crypto 0.7.2",
  "starknet-types-core",
 ]
 
@@ -8464,6 +8463,24 @@ dependencies = [
 
 [[package]]
 name = "starknet-crypto"
+version = "0.7.2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
+dependencies = [
+ "crypto-bigint",
+ "hex",
+ "hmac",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rfc6979",
+ "sha2",
+ "starknet-curve 0.5.1 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
+ "starknet-types-core",
+ "zeroize",
+]
+
+[[package]]
+name = "starknet-crypto"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ded22ccf4cb9e572ce3f77de6066af53560cd2520d508876c83bb1e6b29d5cbc"
@@ -8476,7 +8493,7 @@ dependencies = [
  "num-traits",
  "rfc6979",
  "sha2",
- "starknet-curve 0.5.1",
+ "starknet-curve 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-types-core",
  "zeroize",
 ]
@@ -8515,6 +8532,14 @@ name = "starknet-curve"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcde6bd74269b8161948190ace6cf069ef20ac6e79cd2ba09b320efa7500b6de"
+dependencies = [
+ "starknet-types-core",
+]
+
+[[package]]
+name = "starknet-curve"
+version = "0.5.1"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
 dependencies = [
  "starknet-types-core",
 ]
