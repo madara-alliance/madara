@@ -23,13 +23,13 @@ Madara is a powerful Starknet client written in Rust.
 
 ## Table of Contents
 
-- ⬇️ Installation
+- ⬇️ [Installation](#%EF%B8%8F-installation)
   - [Run from Source](#run-from-source)
   - [Run with Docker](#run-with-docker)
-- ⚙️ Configuration
+- ⚙️ [Configuration](#%EF%B8%8F-configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Environment variables](#environment-variables)
-- 🌐 Interactions
+- 🌐 [Interactions](#-interactions)
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
 - Supported Features
