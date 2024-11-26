@@ -28,10 +28,7 @@ pub struct Analytics {
 }
 
 impl Analytics {
-    pub fn new(
-        service_name: String,
-        collection_endpoint: Option<Url>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(service_name: String, collection_endpoint: Option<Url>) -> anyhow::Result<Self> {
         Ok(Self { meter_provider: None, service_name, collection_endpoint })
     }
 
