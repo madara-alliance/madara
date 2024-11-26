@@ -39,7 +39,7 @@ Madara is a powerful Starknet client written in Rust.
 
 ### Run from Source
 
-#### **1. Install dependencies**
+#### 1. Install dependencies
 
    Ensure you have the necessary dependencies:
 
@@ -55,7 +55,7 @@ Madara is a powerful Starknet client written in Rust.
    git clone https://github.com/madara-alliance/madara .
    ```
 
-#### **2. Build Madara**
+#### 2. Build Madara
 
    You can choose between different build modes:
 
@@ -77,7 +77,7 @@ Madara is a powerful Starknet client written in Rust.
      cargo build --profile=production
      ```
 
-#### **3. Run Madara**
+#### 3. Run Madara
 
    Start the Madara client with a basic set of arguments depending on your chosen mode:
 
@@ -123,7 +123,7 @@ Madara is a powerful Starknet client written in Rust.
 > Head to the [Configuration](#configuration) section to learn how to
 > customize your node parameters.
 
-#### **4. Presets**
+#### 4. Presets
 
    You can use cli presets for certain common node configurations, for example
    enabling rpc endpoints:
@@ -148,7 +148,7 @@ Madara is a powerful Starknet client written in Rust.
 
 ### Run with Docker
 
-#### **1. Manual Setup**
+#### 1. Manual Setup
 
    Ensure you have [Docker](https://docs.docker.com/engine/install/) installed
    on your machine. Once you have Docker installed, you will need to pull the
@@ -185,7 +185,7 @@ Madara is a powerful Starknet client written in Rust.
 > `--base-path`.
 
 
-#### **2. Using the project Makefile**
+#### 2. Using the project Makefile
 
    Alternatively, you can use the provided Makefile and `compose.yaml` to
    simplify this process.
