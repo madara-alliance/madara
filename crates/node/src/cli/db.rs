@@ -31,7 +31,7 @@ pub struct DbParams {
 
     /// This affects the performance of the storage proof endpoint.
     /// A database snapshot is created every `db_snapshot_interval` blocks.
-    /// See `--db-max-saved-snapshots` to understand what snapshots are used for.
+    /// See `--db-max-kept-snapshots` to understand what snapshots are used for.
     #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 5)]
     pub db_snapshot_interval: u64,
 }

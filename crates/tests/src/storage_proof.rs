@@ -29,7 +29,7 @@ async fn test_storage_proof_snapshots() {
         // trie log config
         "--db-max-saved-trie-logs",
         "20",
-        "--db-max-saved-snapshots",
+        "--db-max-kept-snapshots",
         "10000",
         "--db-snapshot-interval",
         "1",
@@ -60,7 +60,7 @@ async fn test_storage_proof_trie_log() {
         // trie log config
         "--db-max-saved-trie-logs",
         "20",
-        "--db-max-saved-snapshots",
+        "--db-max-kept-snapshots",
         "5",
         "--db-snapshot-interval",
         "4",

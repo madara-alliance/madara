@@ -142,7 +142,7 @@ pub struct RpcParams {
     /// block_n specified in the request. If that block_n is too far back in the past, this could make
     /// the node vulnerable to DoS attacks.
     /// By default, this is set to 0: we do not serve storage proofs except for the current latest block.
-    /// For best performance, you should also set `--db-max-saved-trie-logs`, `--db-max-saved-snapshots` and
+    /// For best performance, you should also set `--db-max-saved-trie-logs`, `--db-max-kept-snapshots` and
     /// `--db-snapshot-interval` to make reverting much faster.
     #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", long, default_value_t = 0)]
     pub rpc_storage_proof_max_distance: u64,

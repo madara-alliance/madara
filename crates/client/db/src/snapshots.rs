@@ -32,14 +32,14 @@ impl Snapshots {
     pub fn new(
         db: Arc<DB>,
         current_block_n: Option<u64>,
-        max_saved_snapshots: Option<usize>,
+        max_kept_snapshots: Option<usize>,
         snapshot_interval: u64,
     ) -> Self {
         let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
         Self {
             db,
             inner: SnapshotsInner { historical: Default::default(), head, head_block_n: current_block_n }.into(),
-            max_kept_snapshots: max_saved_snapshots,
+            max_kept_snapshots,
             snapshot_interval,
         }
     }
