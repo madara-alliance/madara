@@ -9,6 +9,7 @@ use mc_rpc::versions::admin::v1_0_0::MadaraStatusRpcApiV1_0_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, service::ServiceContext, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
+use url::Url;
 
 use crate::fetch::fetchers::fetch_block_and_updates;
 
@@ -23,95 +24,77 @@ pub struct L2FetchConfig {
     pub stop_on_sync: bool,
     pub sync_parallelism: u8,
     pub warp_update: bool,
+    pub warp_update_port_rpc: u16,
+    pub warp_update_port_fgw: u16,
 }
 
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,
     ctx: ServiceContext,
-    config: L2FetchConfig,
+    mut config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
-    let backend = &backend;
+    // let backend = &backend;
 
-    let L2FetchConfig {
-        first_block,
-        fetch_stream_sender,
-        once_caught_up_sender: once_caught_up_callback,
-        sync_polling_interval,
-        n_blocks_to_sync,
-        stop_on_sync,
-        sync_parallelism,
-        warp_update,
-    } = config;
+    let L2FetchConfig { first_block, warp_update, warp_update_port_rpc, warp_update_port_fgw, .. } = config;
 
     if warp_update {
-        let ping = jsonrpsee::http_client::HttpClientBuilder::default()
-            .build("http://localhost:9943")
-            .expect("Building client")
-            .ping()
-            .await;
+        let client = jsonrpsee::http_client::HttpClientBuilder::default()
+            .build(format!("http://localhost:{warp_update_port_rpc}"))
+            .expect("Building client");
 
-        if ping.is_err() {
-            tracing::error!("❗ Failed to connect to warp update sender on http://localhost:9943");
+        if client.ping().await.is_err() {
+            tracing::error!("❗ Failed to connect to warp update sender on http://localhost:{warp_update_port_rpc}");
             ctx.cancel_global();
+            return Ok(());
         }
+
+        let provider = Arc::new(GatewayProvider::new(
+            Url::parse(&format!("http://localhost:{warp_update_port_fgw}/gateway/"))
+                .expect("Failed to parse warp update sender gateway url. This should not fail in prod"),
+            Url::parse(&format!("http://localhost:{warp_update_port_fgw}/feeder_gateway/"))
+                .expect("Failed to parse warp update sender feeder gateway url. This should not fail in prod"),
+        ));
+
+        let save = config.sync_parallelism;
+        config.sync_parallelism = 50;
+
+        let next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+            SyncStatus::Full(next_block) => next_block,
+            SyncStatus::UpTo(next_block) => next_block,
+        };
+
+        if client.shutdown().await.is_err() {
+            tracing::error!("❗ Failed to shutdown warp update sender");
+        }
+
+        config.n_blocks_to_sync = config.n_blocks_to_sync.map(|n| n - (next_block - first_block));
+        config.first_block = next_block;
+        config.sync_parallelism = save;
     }
 
-    let mut next_block = first_block;
-
-    {
-        // Fetch blocks and updates in parallel one time before looping
-        let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
-            let provider = Arc::clone(&provider);
-            let ctx = ctx.branch();
-            async move {
-                (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
-            }
-        });
-
-        // Have 10 fetches in parallel at once, using futures Buffered
-        let mut fetch_stream = stream::iter(fetch_stream).buffered(sync_parallelism as usize);
-        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), &ctx).await {
-            match val {
-                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
-                    code: StarknetErrorCode::BlockNotFound,
-                    ..
-                }))) => {
-                    tracing::info!("🥳 The sync process has caught up with the tip of the chain");
-
-                    if warp_update {
-                        let shutdown = jsonrpsee::http_client::HttpClientBuilder::default()
-                            .build("http://localhost:9943")
-                            .expect("Building client")
-                            .shutdown()
-                            .await;
-
-                        if shutdown.is_err() {
-                            tracing::error!("❗ Failed to shutdown warp update sender");
-                        }
-                    }
-
-                    break;
-                }
-                val => {
-                    if fetch_stream_sender.send(val?).await.is_err() {
-                        // join error
-                        break;
-                    }
-                }
-            }
-
-            next_block = block_n + 1;
+    let mut next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+        SyncStatus::Full(next_block) => {
+            tracing::info!("🥳 The sync process has caught up with the tip of the chain");
+            next_block
         }
+        SyncStatus::UpTo(next_block) => next_block,
     };
 
-    // We do not call cancellation here as we still want the block to be stored
+    if config.stop_on_sync {
+        return anyhow::Ok(());
+    }
+
+    let L2FetchConfig { fetch_stream_sender, once_caught_up_sender, sync_polling_interval, stop_on_sync, .. } = config;
+
+    // We do not call cancellation here as we still want the blocks to be stored
     if stop_on_sync {
         return anyhow::Ok(());
     }
 
-    let _ = once_caught_up_callback.send(());
+    // TODO: replace this with a tokio::sync::Notify
+    let _ = once_caught_up_sender.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
         // Polling
@@ -140,6 +123,52 @@ pub async fn l2_fetch_task(
         }
     }
     Ok(())
+}
+
+enum SyncStatus {
+    Full(u64),
+    UpTo(u64),
+}
+
+async fn sync_blocks(
+    backend: &MadaraBackend,
+    provider: &Arc<GatewayProvider>,
+    ctx: &ServiceContext,
+    config: &L2FetchConfig,
+) -> anyhow::Result<SyncStatus> {
+    let L2FetchConfig { first_block, fetch_stream_sender, n_blocks_to_sync, sync_parallelism, .. } = config;
+
+    // Fetch blocks and updates in parallel one time before looping
+    let fetch_stream =
+        (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
+            let provider = Arc::clone(provider);
+            let ctx = ctx.branch();
+            async move {
+                (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
+            }
+        });
+
+    // Have `sync_parallelism` fetches in parallel at once, using futures Buffered
+    let mut next_block = *first_block;
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism as usize);
+
+    loop {
+        let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), ctx).await else {
+            return anyhow::Ok(SyncStatus::UpTo(next_block));
+        };
+
+        match val {
+            Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                code: StarknetErrorCode::BlockNotFound,
+                ..
+            }))) => {
+                return anyhow::Ok(SyncStatus::Full(next_block));
+            }
+            val => fetch_stream_sender.send(val?).await?,
+        }
+
+        next_block = block_n + 1;
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -199,6 +228,8 @@ mod test_l2_fetch_task {
                             stop_on_sync: false,
                             sync_parallelism: 10,
                             warp_update: false,
+                            warp_update_port_rpc: 9943,
+                            warp_update_port_fgw: 8080,
                         },
                     ),
                 )

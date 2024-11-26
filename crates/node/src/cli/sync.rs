@@ -7,6 +7,9 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mp_utils::parsers::{parse_duration, parse_url};
 use url::Url;
 
+use super::FGW_DEFAULT_PORT;
+use super::RPC_DEFAULT_PORT_ADMIN;
+
 #[derive(Clone, Debug, clap::Args)]
 pub struct SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
@@ -30,6 +33,14 @@ pub struct SyncParams {
     /// Feeder gateway url used to sync blocks, state updates and classes
     #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
     pub gateway_url: Option<Url>,
+
+    /// The port used for nodes to make rpc calls during a warp update.
+    #[arg(env = "MADARA_WARP_UPDATE_PORT_RPC", long, value_name = "WARP UPDATE PORT RPC", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
+    pub warp_update_port_rpc: u16,
+
+    /// The port used for nodes to send blocks during a warp update.
+    #[arg(env = "MADARA_WARP_UPDATE_PORT_FGW", long, value_name = "WARP UPDATE FGW", default_value_t = FGW_DEFAULT_PORT)]
+    pub warp_update_port_fgw: u16,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
@@ -121,6 +132,8 @@ impl SyncParams {
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_parallelism,
             warp_update,
+            warp_update_port_rpc: self.warp_update_port_rpc,
+            warp_update_port_fgw: self.warp_update_port_fgw,
         }
     }
 }

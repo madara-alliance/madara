@@ -228,6 +228,8 @@ pub struct L2SyncConfig {
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
     pub warp_update: bool,
+    pub warp_update_port_rpc: u16,
+    pub warp_update_port_fgw: u16,
     pub chain_id: ChainId,
     pub telemetry: TelemetryHandle,
     pub block_importer: Arc<BlockImporter>,
@@ -277,6 +279,8 @@ pub async fn sync(
             stop_on_sync: config.stop_on_sync,
             sync_parallelism: config.sync_parallelism,
             warp_update: config.warp_update,
+            warp_update_port_rpc: config.warp_update_port_rpc,
+            warp_update_port_fgw: config.warp_update_port_fgw,
         },
     ));
     join_set.spawn(l2_block_conversion_task(

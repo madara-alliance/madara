@@ -1,5 +1,8 @@
 use clap::Args;
 
+/// The default port.
+pub const FGW_DEFAULT_PORT: u16 = 8080;
+
 /// Parameters used to config gateway.
 #[derive(Debug, Clone, Args)]
 pub struct GatewayParams {
@@ -16,6 +19,6 @@ pub struct GatewayParams {
     pub gateway_external: bool,
 
     /// The gateway port to listen at.
-    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value = "8080")]
+    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value_t = FGW_DEFAULT_PORT)]
     pub gateway_port: u16,
 }

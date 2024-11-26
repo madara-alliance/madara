@@ -18,7 +18,6 @@ use starknet_api::core::ChainId;
 use std::str::FromStr;
 pub use sync::*;
 pub use telemetry::*;
-use url::Url;
 
 use clap::ArgGroup;
 use mp_chain_config::ChainConfig;
@@ -178,12 +177,10 @@ impl RunCmd {
     pub fn apply_arg_preset(mut self) -> Self {
         if self.args_preset.warp_update_sender {
             self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.gateway_port = self.sync_params.warp_update_port_fgw;
             self.rpc_params.rpc_admin = true;
-            self.rpc_params.rpc_admin_port = RPC_DEFAULT_PORT_ADMIN;
+            self.rpc_params.rpc_admin_port = self.sync_params.warp_update_port_rpc;
         } else if self.args_preset.warp_update_receiver {
-            // self.sync_params.disable_root = true;
-            self.sync_params.gateway_url = Some(Url::from_str("http://localhost:8080").expect("valid url"));
-            self.sync_params.sync_parallelism = 50;
             self.rpc_params.rpc_disable = true;
         } else if self.args_preset.gateway {
             self.gateway_params.feeder_gateway_enable = true;

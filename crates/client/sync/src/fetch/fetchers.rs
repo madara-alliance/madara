@@ -49,6 +49,10 @@ pub struct FetchConfig {
     pub sync_parallelism: u8,
     /// True if the node is called with `--warp-update-receiver`
     pub warp_update: bool,
+    /// The port used for nodes to make rpc calls during a warp update.
+    pub warp_update_port_rpc: u16,
+    /// The port used for nodes to send blocks during a warp update.
+    pub warp_update_port_fgw: u16,
 }
 
 pub async fn fetch_pending_block_and_updates(
