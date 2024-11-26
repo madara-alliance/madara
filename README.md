@@ -522,8 +522,14 @@ cargo run --releasae --       \
 ```
 
 This will start generating a new up-to-date database under `/tmp/madara_new`.
-Once this process is over, both nodes will automatically shutdown and you will
-be able to load the new database from `/tmp/madara_new`.
+Once this process is over, the warp update sender node will automatically
+shutdown while the warp update receiver will take its place.
+
+> [!WARNING]
+> As of now, the warp update receiver has its rpc disabled, even after the
+> migration process has completed. This will be fixed in the future, so that
+> services that would otherwise conflict with the sender node will automatically
+> start after the migration has finished.
 
 ## ℹ️ Supported Features
 
