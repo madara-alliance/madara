@@ -37,6 +37,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
+  - [Analytics](#analytics)
 - 💬 [Get in touch](#-get-in-touch)
   - [Contributing](#contributing)
   - [Partnerships](#partnerships)
@@ -440,28 +441,6 @@ detailed information on each method, please refer to the
 > [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
 > for a list of potential errors.
 
-## 📊 Analytics
-
-Madara comes packed with OTEL integration, supporting export of traces, metrics and logs.
-
-- OTEL version `v0.25.0`
-- `Trace` and `Logs` are implemented using [tokio tracing](https://github.com/tokio-rs/tracing).
-- `Metric` uses OTEL provided metrics.
-
-### Basic Command-Line Option
-
-- **`--analytics-collection-endpoint <URL>`**: Endpoint for OTLP collector,
-if not provided then OTLP will be disabled by default.
-- **`--analytics-log-level <Log Level>`**: Defaults to the same value as
-`RUST_LOG`, can be provided using this flag as well.
-- **`--analytics-service-name <Name>`**: Sets the collection service name.
-
-#### Setting up Signoz
-
-- Signoz Dashboard JSONs are provided at `infra/Signoz/dashboards`.
-- Signoz Docker Standalone can be setup following this [guide](https://signoz.io/docs/install/docker/).
-- Ensure to configure the correct service_name after importing the json to the dashboard.
-
 ## ✅ Supported Features
 
 [⬅️  back to top](#-madara-starknet-client)
@@ -491,7 +470,58 @@ Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-allianc
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
+### Analytics
+
+Madara comes ready out of the box with Open Telemetry version `v0.25.0`
+integration, supporting export of traces, metrics and logs.
+
+#### Running Madara with Signoz as a dashboard
+
+First, [install Signoz]((https://signoz.io/docs/install/docker/#install-signoz-using-docker-compose)):
+
+```bash
+git clone -b main https://github.com/SigNoz/signoz.git && cd signoz/deploy/
+docker compose -f docker/clickhouse-setup/docker-compose.yaml up -d
+docker ps
+```
+
+Wait for the above command to complete: you should see an output similar to the
+following:
+
+```bash
+CONTAINER ID   IMAGE                                          COMMAND                  CREATED          STATUS                    PORTS                                                                            NAMES
+01f044c4686a   signoz/frontend:0.38.2                       "nginx -g 'daemon of…"   2 minutes ago   Up 9 seconds                  80/tcp, 0.0.0.0:3301->3301/tcp                                                     signoz-frontend
+86aa5b875f9f   gliderlabs/logspout:v3.2.14                  "/bin/logspout syslo…"   2 minutes ago   Up 1 second                   80/tcp                                                                             signoz-logspout
+58746f684630   signoz/alertmanager:0.23.4                   "/bin/alertmanager -…"   2 minutes ago   Up 9 seconds                  9093/tcp                                                                           signoz-alertmanager
+2cf1ec96bdb3   signoz/query-service:0.38.2                  "./query-service -co…"   2 minutes ago   Up About a minute (healthy)   8080/tcp                                                                           signoz-query-service
+e9f0aa66d884   signoz/signoz-otel-collector:0.88.11          "/signoz-collector -…"   2 minutes ago   Up 10 seconds                 0.0.0.0:4317-4318->4317-4318/tcp                                                   signoz-otel-collector
+d3d89d7d4581   clickhouse/clickhouse-server:23.11.1-alpine   "/entrypoint.sh"         2 minutes ago   Up 2 minutes (healthy)        0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 0.0.0.0:9181->9181/tcp, 9009/tcp   signoz-clickhouse
+9db88aefb6ed   signoz/locust:1.2.3                          "/docker-entrypoint.…"   2 minutes ago   Up 2 minutes                  5557-5558/tcp, 8089/tcp                                                            load-hotrod
+60bb3b77b4f7   bitnami/zookeeper:3.7.1                      "/opt/bitnami/script…"   2 minutes ago   Up 2 minutes                  0.0.0.0:2181->2181/tcp, 0.0.0.0:2888->2888/tcp, 0.0.0.0:3888->3888/tcp, 8080/tcp   signoz-zookeeper-1
+98c7178b4004   jaegertracing/example-hotrod:1.30            "/go/bin/hotrod-linu…"   9 days ago      Up 2 minutes                  8080-8083/tcp                                                                      hotrod
+```
+
+Next, navigate to your [signoz dashboard](http://localhost:3301). If you are
+running Madara on a remote server this will be `http://your-server-ip:3301`.
+Create an admin login, then go to `Dashboards` in the left drawer and click on
+`New dashboard`->`Import JSON` and copy over the contents of
+[infra/Signoz/dashboards/overview.json](https://github.com/madara-alliance/madara/blob/docs/readme/infra/Signoz/dashboards/overview.json).
+
+Finally, run Madara with analytics enabled and refresh your Signoz dashboard.
+
+```bash
+cargo run --release --                                  \
+  --name madara                                         \
+  --network mainnet                                     \
+  --full                                                \
+  --l1-endpoint ***                                     \
+  --analytics-collection-endpoint http://localhost:4317 \
+  --analytics-service-name Madara
+```
+
 ## 💬 Get in touch
+
+[⬅️  back to top](#-madara-starknet-client)
 
 ### Contributing
 
