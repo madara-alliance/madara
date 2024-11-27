@@ -67,9 +67,10 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Disable the RPC server.
-    #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
-    pub rpc_disabled: bool,
+    /// Disables the user RPC endpoint. This includes all methods which are part
+    /// of the official starknet specs.
+    #[arg(env = "MADARA_RPC_DISABLE", long, default_value_t = false, alias = "no-rpc")]
+    pub rpc_disable: bool,
 
     /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
     /// Please note that some endpoints should not be exposed to the outside world - by default, enabling remote access
@@ -77,17 +78,12 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_EXTERNAL", long)]
     pub rpc_external: bool,
 
-    /// RPC methods to expose.
-    #[arg(
-		env = "MADARA_RPC_METHODS",
-		long,
-		value_name = "METHOD",
-		value_enum,
-		ignore_case = true,
-		default_value_t = RpcMethods::Auto,
-		verbatim_doc_comment
-	)]
-    pub rpc_methods: RpcMethods,
+    /// Enables the admin RPC endpoint. This includes additional RPC methods
+    /// which are not part of the official specs and can be used by node admins
+    /// to control their node at a distance. By default, this is exposed o
+    /// localhost.
+    #[arg(env = "MADARA_RPC_ADMIN", long, default_value_t = false)]
+    pub rpc_admin: bool,
 
     /// RPC rate limiting (calls/minute) for each connection.
     ///

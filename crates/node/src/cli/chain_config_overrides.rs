@@ -49,6 +49,7 @@ pub struct ChainConfigOverridesInner {
     #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_private_key")]
     pub private_key: ZeroingPrivateKey,
+    pub p2p_bootstrap_nodes: Vec<multiaddr::Multiaddr>,
 }
 
 impl ChainConfigOverrideParams {
@@ -71,6 +72,7 @@ impl ChainConfigOverrideParams {
             private_key: chain_config.private_key,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
+            p2p_bootstrap_nodes: chain_config.p2p_bootstrap_nodes,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -120,6 +122,7 @@ impl ChainConfigOverrideParams {
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
             private_key: chain_config_overrides.private_key,
+            p2p_bootstrap_nodes: chain_config_overrides.p2p_bootstrap_nodes,
         })
     }
 }

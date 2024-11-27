@@ -116,7 +116,7 @@ pub struct ChainConfig {
     /// The Starknet core contract address for the L1 watcher.
     pub eth_core_contract_address: H160,
 
-    /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
+    /// The Starknet SHARP verifier L1 address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
     pub eth_gps_statement_verifier: H160,
 
@@ -130,6 +130,9 @@ pub struct ChainConfig {
     #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_private_key")]
     pub private_key: ZeroingPrivateKey,
+
+    #[serde(default)]
+    pub p2p_bootstrap_nodes: Vec<multiaddr::Multiaddr>,
 }
 
 impl ChainConfig {
@@ -236,6 +239,7 @@ impl ChainConfig {
             ),
 
             private_key: ZeroingPrivateKey::default(),
+            p2p_bootstrap_nodes: vec![],
         }
     }
 

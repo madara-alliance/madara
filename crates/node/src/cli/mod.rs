@@ -1,28 +1,31 @@
+use clap::ArgGroup;
+use mp_chain_config::ChainConfig;
+use starknet_api::core::ChainId;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
+
 pub mod analytics;
 pub mod block_production;
 pub mod chain_config_overrides;
 pub mod db;
 pub mod gateway;
 pub mod l1;
+pub mod p2p;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
-use crate::cli::l1::L1SyncParams;
-use analytics::AnalyticsParams;
+
+pub use analytics::*;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
+pub use l1::*;
+pub use p2p::*;
 pub use rpc::*;
-use starknet_api::core::ChainId;
-use std::str::FromStr;
 pub use sync::*;
 pub use telemetry::*;
-
-use clap::ArgGroup;
-use mp_chain_config::ChainConfig;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
@@ -78,6 +81,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub rpc_params: RpcParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub p2p_params: P2pParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

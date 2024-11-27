@@ -5,8 +5,6 @@ mod cli;
 mod service;
 mod util;
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
@@ -18,8 +16,9 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
+use std::sync::Arc;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -171,9 +170,14 @@ async fn main() -> anyhow::Result<()> {
     let rpc_service = RpcService::new(&run_cmd.rpc_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
         .context("Initializing rpc service")?;
 
-    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+    let gateway_service =
+        GatewayService::new(run_cmd.gateway_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
+            .await
+            .context("Initializing gateway service")?;
+
+    let p2p_service = P2pService::new(run_cmd.p2p_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
         .await
-        .context("Initializing gateway service")?;
+        .context("Initializing p2p service")?;
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
@@ -183,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
         .with(block_provider_service)
         .with(rpc_service)
         .with(gateway_service)
+        .with(p2p_service)
         .with(telemetry_service);
 
     // Check if the devnet is running with the correct chain id.
@@ -199,7 +204,6 @@ async fn main() -> anyhow::Result<()> {
 
     app.start_and_drive_to_end().await?;
 
-    tracing::info!("Shutting down analytics");
     let _ = analytics.shutdown();
 
     Ok(())

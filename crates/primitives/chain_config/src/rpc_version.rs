@@ -31,38 +31,38 @@ impl RpcVersion {
     }
 
     pub fn from_request_path(path: &str) -> Result<Self, RpcVersionError> {
-        log::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
+        tracing::debug!(target: "rpc_version", "extracting rpc version from request: {path}");
 
         let path = path.to_ascii_lowercase();
         let parts: Vec<&str> = path.split('/').collect();
 
-        log::debug!(target: "rpc_version", "version parts are: {parts:?}");
+        tracing::debug!(target: "rpc_version", "version parts are: {parts:?}");
 
         // If we have an empty path or just "/", fallback to latest rpc version
         if parts.len() == 1 || (parts.len() == 2 && parts[1].is_empty()) {
-            log::debug!(target: "rpc_version", "no version, defaulting to latest");
+            tracing::debug!(target: "rpc_version", "no version, defaulting to latest");
             return Ok(Self::RPC_VERSION_LATEST);
         }
 
         // Check if the path follows the correct format, i.e. /rpc/v[version].
         // If not, fallback to the latest version
         if parts.len() != 3 || parts[1] != "rpc" || !parts[2].starts_with('v') {
-            log::debug!(target: "rpc_version", "invalid version format, defaulting to latest");
+            tracing::debug!(target: "rpc_version", "invalid version format, defaulting to latest");
             return Ok(Self::RPC_VERSION_LATEST);
         }
 
-        log::debug!(target: "rpc_version", "looking for matching version...");
+        tracing::debug!(target: "rpc_version", "looking for matching version...");
         let version_str = &parts[2][1..]; // without the 'v' prefix
         if let Ok(version) = RpcVersion::from_str(version_str) {
             if SUPPORTED_RPC_VERSIONS.contains(&version) {
-                log::debug!(target: "rpc_version", "found matching version: {version}");
+                tracing::debug!(target: "rpc_version", "found matching version: {version}");
                 Ok(version)
             } else {
-                log::debug!(target: "rpc_version", "no matching version");
+                tracing::debug!(target: "rpc_version", "no matching version");
                 Err(RpcVersionError::UnsupportedVersion)
             }
         } else {
-            log::debug!(target: "rpc_version", "invalid version format: {version_str}");
+            tracing::debug!(target: "rpc_version", "invalid version format: {version_str}");
             Err(RpcVersionError::InvalidVersion)
         }
     }

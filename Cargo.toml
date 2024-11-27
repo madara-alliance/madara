@@ -11,6 +11,8 @@ members = [
   "crates/client/devnet",
   "crates/client/mempool",
   "crates/client/block_import",
+  "crates/client/p2p",
+  "crates/client/p2p_stream",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -39,6 +41,8 @@ default-members = [
   "crates/client/mempool",
   "crates/client/block_import",
   "crates/client/analytics",
+  "crates/client/p2p",
+  "crates/client/p2p_stream",
   "crates/node",
   "crates/primitives/block",
   "crates/primitives/convert",
@@ -117,12 +121,14 @@ mc-rpc = { path = "crates/client/rpc" }
 mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
+mc-p2p = { path = "crates/client/p2p" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
+p2p_stream = { path = "crates/client/p2p_stream" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
@@ -209,6 +215,28 @@ itertools = "0.13.0"
 regex = "1.10.5"
 bytes = "1.6.0"
 crypto-bigint = "0.5.5"
+libp2p-plaintext = "0.42.0"
+libp2p-swarm-test = "0.4.0"
+libp2p = { version = "0.54.1", features = [
+  "tokio",
+  # "quic",
+  "tcp",
+  "tls",
+  "noise",
+  "yamux",
+  "ping",
+  "kad",
+  "gossipsub",
+  "autonat",
+  "dcutr",
+  "relay",
+  "kad",
+  "identify",
+  "macros",
+] }
+multiaddr = "0.18"
+tokio-util = "0.7.12"
+futures-bounded = "0.2.1"
 
 # Instrumentation
 opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
@@ -229,6 +257,10 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-opentelemetry = "0.26.0"
+prost = "0.13.3"
+prost-build = "0.13.3"
+unsigned-varint = { version = "0.8.0", features = ["futures"] }
+tokio-stream = "0.1"
 
 [patch.crates-io]
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

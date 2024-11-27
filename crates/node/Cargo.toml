@@ -28,6 +28,7 @@ mc-devnet = { workspace = true }
 mc-eth = { workspace = true }
 mc-gateway = { workspace = true }
 mc-mempool = { workspace = true }
+mc-p2p = { workspace = true }
 mc-rpc = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
@@ -53,7 +54,7 @@ futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
-log.workspace = true
+multiaddr.workspace = true
 rand.workspace = true
 rayon.workspace = true
 reqwest.workspace = true

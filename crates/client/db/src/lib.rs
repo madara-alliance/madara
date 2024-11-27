@@ -28,6 +28,7 @@ mod error;
 pub mod l1_db;
 mod rocksdb_options;
 pub mod storage_updates;
+pub mod stream;
 pub mod tests;
 
 pub use error::{MadaraStorageError, TrieType};
@@ -258,7 +259,7 @@ pub struct MadaraBackend {
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 }
 
@@ -324,7 +325,7 @@ impl MadaraBackend {
         &self.chain_config
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         Arc::new(Self {
@@ -377,7 +378,7 @@ impl MadaraBackend {
             last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
-            #[cfg(feature = "testing")]
+            #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         });
         backend.check_configuration()?;

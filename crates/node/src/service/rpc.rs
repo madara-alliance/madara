@@ -10,7 +10,7 @@ use mp_utils::service::Service;
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
 
-use crate::cli::{RpcMethods, RpcParams};
+use crate::cli::RpcParams;
 
 mod metrics;
 mod middleware;
@@ -26,22 +26,11 @@ impl RpcService {
         db: &DatabaseService,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
-        if config.rpc_disabled {
+        if config.rpc_disable {
             return Ok(Self { server_config: None, server_handle: None });
         }
 
-        let (rpcs, node_operator) = match (config.rpc_methods, config.rpc_external) {
-            (RpcMethods::Safe, _) => (true, false),
-            (RpcMethods::Unsafe, _) => (true, true),
-            (RpcMethods::Auto, false) => (true, true),
-            (RpcMethods::Auto, true) => {
-                tracing::warn!(
-                    "Option `--rpc-external` will hide node operator endpoints. To enable them, please pass \
-                     `--rpc-methods unsafe`."
-                );
-                (true, false)
-            }
-        };
+        let (rpcs, node_operator) = (true, true);
         let (read, write, trace, internal, ws) = (rpcs, rpcs, rpcs, node_operator, rpcs);
         let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
         let metrics = RpcMetrics::register()?;

@@ -35,6 +35,7 @@ starknet_api = { workspace = true }
 # Other
 anyhow.workspace = true
 bincode = { workspace = true }
+futures = { workspace = true }
 log = { workspace = true, default-features = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
@@ -69,7 +70,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tempfile = "3.10"
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
-
+rstest = { workspace = true }
 
 [features]
 default = []
