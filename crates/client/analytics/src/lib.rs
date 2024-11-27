@@ -18,22 +18,18 @@ use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::EnvFilter;
 use url::Url;
 
 pub struct Analytics {
     meter_provider: Option<SdkMeterProvider>,
     service_name: String,
-    log_level: Level,
     collection_endpoint: Option<Url>,
 }
 
 impl Analytics {
-    pub fn new(
-        service_name: String,
-        log_level: tracing::Level,
-        collection_endpoint: Option<Url>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self { meter_provider: None, service_name, log_level, collection_endpoint })
+    pub fn new(service_name: String, collection_endpoint: Option<Url>) -> anyhow::Result<Self> {
+        Ok(Self { meter_provider: None, service_name, collection_endpoint })
     }
 
     pub fn setup(&mut self) -> anyhow::Result<()> {
@@ -41,8 +37,8 @@ impl Analytics {
         let custom_formatter = CustomFormatter { local_offset };
 
         let tracing_subscriber = tracing_subscriber::registry()
-            .with(tracing_subscriber::filter::LevelFilter::from_level(self.log_level))
-            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter));
+            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter))
+            .with(EnvFilter::from_default_env());
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
