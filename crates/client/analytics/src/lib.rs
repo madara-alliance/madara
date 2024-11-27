@@ -15,6 +15,7 @@ use std::time::{Duration, SystemTime};
 use time::{format_description, OffsetDateTime};
 use tracing::field::{Field, Visit};
 use tracing::Level;
+use tracing_core::LevelFilter;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -38,7 +39,7 @@ impl Analytics {
 
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().event_format(custom_formatter))
-            .with(EnvFilter::from_default_env());
+            .with(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?);
 
         if self.collection_endpoint.is_none() {
             tracing_subscriber.init();
