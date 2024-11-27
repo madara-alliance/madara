@@ -45,6 +45,11 @@ impl Display for MadaraCapability {
 pub struct MadaraCapabilitiesMask(std::sync::atomic::AtomicU8);
 
 impl MadaraCapabilitiesMask {
+    #[cfg(feature = "testing")]
+    pub fn new_for_testing() -> Self {
+        Self(std::sync::atomic::AtomicU8::new(u8::MAX))
+    }
+
     #[inline(always)]
     pub fn is_active(&self, cap: u8) -> bool {
         self.0.load(std::sync::atomic::Ordering::SeqCst) & cap > 0
@@ -110,7 +115,7 @@ impl From<u8> for MadaraState {
 ///
 /// > A parent services can always cancel all of its child services, but a child
 /// > service cannot cancel its parent service.
-#[derive(Default)]
+#[cfg_attr(not(feature = "testing"), derive(Default))]
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
@@ -126,6 +131,18 @@ impl ServiceContext {
             token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
             capabilities: Arc::new(MadaraCapabilitiesMask::default()),
+            capabilities_notify: Arc::new(tokio::sync::Notify::new()),
+            state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
+            id: MadaraCapability::default(),
+        }
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_for_testing() -> Self {
+        Self {
+            token_global: tokio_util::sync::CancellationToken::new(),
+            token_local: None,
+            capabilities: Arc::new(MadaraCapabilitiesMask::new_for_testing()),
             capabilities_notify: Arc::new(tokio::sync::Notify::new()),
             state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
             id: MadaraCapability::default(),
@@ -246,12 +263,8 @@ impl ServiceContext {
     }
 
     #[inline(always)]
-    pub async fn run_when_online<T>(&self, future: impl Future<Output = T>) -> T {
-        while !self.capabilities.is_active(self.id as u8) {
-            self.capabilities_notify.notified().await;
-        }
-
-        future.await
+    pub async fn run_until_cancelled<T>(&self, future: impl Future<Output = T>) -> Option<T> {
+        self.token_local.as_ref().unwrap_or(&self.token_global).run_until_cancelled(future).await
     }
 
     /// Atomically checks the state of the node

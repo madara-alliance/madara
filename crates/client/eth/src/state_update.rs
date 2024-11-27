@@ -199,7 +199,7 @@ mod eth_client_event_subscription_test {
                     db.backend(),
                     &eth_client.l1_block_metrics,
                     chain_info.chain_id.clone(),
-                    ServiceContext::default(),
+                    ServiceContext::new_for_testing(),
                 )
                 .await
             })

@@ -347,7 +347,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
-            &ServiceContext::default(),
+            &ServiceContext::new_for_testing(),
         )
         .await;
 
@@ -433,7 +433,7 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
-            &ServiceContext::default(),
+            &ServiceContext::new_for_testing(),
         )
         .await;
 
@@ -646,7 +646,7 @@ mod test_l2_fetchers {
             state_diff,
             BlockId::Number(5),
             &ctx.provider,
-            &ServiceContext::default(),
+            &ServiceContext::new_for_testing(),
         )
         .await
         .expect("Failed to fetch class updates");
@@ -683,7 +683,7 @@ mod test_l2_fetchers {
             state_diff,
             BlockId::Number(5),
             &ctx.provider,
-            &ServiceContext::default(),
+            &ServiceContext::new_for_testing(),
         )
         .await;
 

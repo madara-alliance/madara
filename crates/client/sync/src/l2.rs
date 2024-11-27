@@ -369,7 +369,7 @@ mod tests {
 
         let task_handle = tokio::spawn(l2_verify_and_apply_task(
             backend.clone(),
-            ServiceContext::default(),
+            ServiceContext::new_for_testing(),
             L2VerifyApplyConfig {
                 block_import: block_import.clone(),
                 backup_every_n_blocks: Some(1),
@@ -437,7 +437,7 @@ mod tests {
             output_sender,
             block_import,
             validation,
-            ServiceContext::default(),
+            ServiceContext::new_for_testing(),
         ));
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), output_receiver.recv()).await;
@@ -485,7 +485,7 @@ mod tests {
         let task_handle = tokio::spawn(l2_pending_block_task(
             backend.clone(),
             ctx.provider.clone(),
-            ServiceContext::default(),
+            ServiceContext::new_for_testing(),
             L2PendingBlockConfig {
                 block_import: block_import.clone(),
                 once_caught_up_receiver: ctx.once_caught_up_receiver,

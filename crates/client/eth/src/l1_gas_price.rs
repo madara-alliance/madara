@@ -131,8 +131,13 @@ mod eth_client_gas_price_worker_test {
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker(&eth_client, l1_gas_provider, Duration::from_millis(200), ServiceContext::default())
-                    .await
+                gas_price_worker(
+                    &eth_client,
+                    l1_gas_provider,
+                    Duration::from_millis(200),
+                    ServiceContext::new_for_testing(),
+                )
+                .await
             }
         });
 
@@ -275,7 +280,7 @@ mod eth_client_gas_price_worker_test {
                 &eth_client,
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
-                ServiceContext::default(),
+                ServiceContext::new_for_testing(),
             ),
         )
         .await;

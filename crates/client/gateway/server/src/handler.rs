@@ -242,7 +242,7 @@ pub async fn handle_get_block_traces(
     // TODO: we should probably use the actual service context here instead of
     // creating a new one!
     let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, ServiceContext::default()),
+        &Starknet::new(backend, add_transaction_provider, ServiceContext::new()),
         block_id,
     )
     .await?;

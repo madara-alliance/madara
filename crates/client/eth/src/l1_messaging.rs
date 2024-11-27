@@ -246,7 +246,7 @@ mod l1_messaging_tests {
     use mc_db::DatabaseService;
     use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
     use mp_chain_config::ChainConfig;
-    use mp_utils::service::ServiceContext;
+    use mp_utils::service::{MadaraCapability, ServiceContext};
     use rstest::*;
     use starknet_api::core::Nonce;
     use starknet_types_core::felt::Felt;
@@ -413,7 +413,8 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::default()).await
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
             })
         };
 
@@ -467,7 +468,8 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::default()).await
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
             })
         };
 
@@ -516,7 +518,8 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::default()).await
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
             })
         };
 

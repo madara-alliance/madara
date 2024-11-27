@@ -19,7 +19,11 @@ use std::{
 };
 use tempfile::TempDir;
 
-async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(mut cond: impl FnMut() -> F, duration: Duration) {
+async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(
+    mut cond: impl FnMut() -> F,
+    duration: Duration,
+    max_attempts: u32,
+) {
     let mut attempt = 0;
     loop {
         let Err(err) = cond().await else {
@@ -27,7 +31,7 @@ async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(mut cond: 
         };
 
         attempt += 1;
-        if attempt >= 10 {
+        if attempt >= max_attempts {
             panic!("No answer from the node after {attempt} attempts: {:#}", err)
         }
 
@@ -65,19 +69,23 @@ impl MadaraCmd {
                 res.error_for_status()?;
                 anyhow::Ok(())
             },
-            Duration::from_millis(2000),
+            Duration::from_secs(2),
+            10,
         )
         .await;
         self.ready = true;
         self
     }
 
+    // TODO: replace this with `subscribeNewHeads`
     pub async fn wait_for_sync_to(&mut self, block_n: u64) -> &mut Self {
         let rpc = self.json_rpc();
         wait_for_cond(
             || async {
                 match rpc.block_hash_and_number().await {
                     Ok(got) => {
+                        tracing::info!("Received block number {} out of {block_n}", got.block_number);
+
                         if got.block_number < block_n {
                             bail!("got block_n {}, expected {block_n}", got.block_number);
                         }
@@ -86,7 +94,8 @@ impl MadaraCmd {
                     Err(err) => bail!(err),
                 }
             },
-            Duration::from_millis(20000),
+            Duration::from_secs(2),
+            100,
         )
         .await;
         self
