@@ -4,12 +4,12 @@ use jsonrpsee::core::async_trait;
 
 use crate::{
     errors::ErrorExtWs,
-    versions::admin::v1_0_0::{unix_now, MadaraStatusRpcApiV1_0_0Server},
+    versions::admin::v0_1_0::{unix_now, MadaraStatusRpcApiV0_1_0Server},
     Starknet,
 };
 
 #[async_trait]
-impl MadaraStatusRpcApiV1_0_0Server for Starknet {
+impl MadaraStatusRpcApiV0_1_0Server for Starknet {
     /// Can be used to check node availability and network latency
     ///
     /// # Returns

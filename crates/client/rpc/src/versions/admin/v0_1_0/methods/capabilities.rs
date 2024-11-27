@@ -3,10 +3,10 @@ use std::time::Duration;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_utils::service::MadaraCapability;
 
-use crate::{versions::admin::v1_0_0::MadaraCapabilitiesRpcApiV1_0_0Server, Starknet};
+use crate::{versions::admin::v0_1_0::MadaraCapabilitiesRpcApiV0_1_0Server, Starknet};
 
 #[async_trait]
-impl MadaraCapabilitiesRpcApiV1_0_0Server for Starknet {
+impl MadaraCapabilitiesRpcApiV0_1_0Server for Starknet {
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
     async fn service_rpc_disable(&self) -> RpcResult<bool> {
         tracing::info!("🔌 Stopping RPC service...");

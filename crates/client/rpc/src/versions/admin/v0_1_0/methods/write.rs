@@ -2,10 +2,10 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_core::types::DeclareTransactionResult;
 
-use crate::{versions::admin::v1_0_0::MadaraWriteRpcApiV1_0_0Server, Starknet};
+use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet};
 
 #[async_trait]
-impl MadaraWriteRpcApiV1_0_0Server for Starknet {
+impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new declare transaction to be added to the chain
     ///
     /// # Arguments

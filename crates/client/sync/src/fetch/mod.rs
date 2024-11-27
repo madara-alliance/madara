@@ -5,7 +5,7 @@ use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
-use mc_rpc::versions::admin::v1_0_0::MadaraStatusRpcApiV1_0_0Client;
+use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_utils::{channel_wait_or_graceful_shutdown, service::ServiceContext, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
