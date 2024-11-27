@@ -164,7 +164,12 @@ async fn sync_blocks(
             }))) => {
                 return anyhow::Ok(SyncStatus::Full(next_block));
             }
-            val => fetch_stream_sender.send(val?).await?,
+            val => {
+                if fetch_stream_sender.send(val?).await.is_err() {
+                    // join error
+                    return anyhow::Ok(SyncStatus::UpTo(next_block));
+                }
+            }
         }
 
         next_block = block_n + 1;
