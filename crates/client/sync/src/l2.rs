@@ -277,7 +277,7 @@ pub async fn sync(
             sync_polling_interval: config.sync_polling_interval,
             n_blocks_to_sync: config.n_blocks_to_sync,
             stop_on_sync: config.stop_on_sync,
-            sync_parallelism: config.sync_parallelism,
+            sync_parallelism: config.sync_parallelism as usize,
             warp_update: config.warp_update,
             warp_update_port_rpc: config.warp_update_port_rpc,
             warp_update_port_fgw: config.warp_update_port_fgw,

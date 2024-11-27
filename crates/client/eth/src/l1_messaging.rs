@@ -246,7 +246,7 @@ mod l1_messaging_tests {
     use mc_db::DatabaseService;
     use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
     use mp_chain_config::ChainConfig;
-    use mp_utils::service::{MadaraCapability, ServiceContext};
+    use mp_utils::service::ServiceContext;
     use rstest::*;
     use starknet_api::core::Nonce;
     use starknet_types_core::felt::Felt;

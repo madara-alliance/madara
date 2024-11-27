@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::time::Duration;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
@@ -22,7 +22,7 @@ pub struct L2FetchConfig {
     pub sync_polling_interval: Option<Duration>,
     pub n_blocks_to_sync: Option<u64>,
     pub stop_on_sync: bool,
-    pub sync_parallelism: u8,
+    pub sync_parallelism: usize,
     pub warp_update: bool,
     pub warp_update_port_rpc: u16,
     pub warp_update_port_fgw: u16,
@@ -58,7 +58,9 @@ pub async fn l2_fetch_task(
         ));
 
         let save = config.sync_parallelism;
-        config.sync_parallelism = 50;
+        let available_parallelism = std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(1usize).expect("1 should always be in usize bound"));
+        config.sync_parallelism = Into::<usize>::into(available_parallelism) * 2;
 
         let next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
             SyncStatus::Full(next_block) => next_block,
@@ -150,7 +152,7 @@ async fn sync_blocks(
 
     // Have `sync_parallelism` fetches in parallel at once, using futures Buffered
     let mut next_block = *first_block;
-    let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism as usize);
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism);
 
     loop {
         let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), ctx).await else {
