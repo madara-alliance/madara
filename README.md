@@ -91,7 +91,7 @@ Start the Madara client with a basic set of arguments depending on your chosen m
 
 **Full Node**
 
-A full node, synchronizing the state of the chain from genesis.
+Synchronizes the state of the chain from genesis.
 
 ```bash
 cargo run --release --        \
@@ -273,15 +273,15 @@ docker run madara:latest --help
 
 Here are some recommended options to get up and started with your Madara client:
 
-| Option                     | About                                                                        |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| **`--name <NAME>`**        | The human-readable name for this node. It's used as the network node name.   |
-| **`--base-path <PATH>`**   | Sets the database location for Madara (default is`/tmp/madara`)              |
-| **`--full`**               | The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`) |
-| **`--l1-endpoint <URL>`**  | The Layer 1 endpoint the node will verify its state from                     |
-| **`--rpc-port <PORT>`**    | The JSON-RPC server TCP port, used to receive requests                       |
-| **`--rpc-cors <ORIGINS>`** | Browser origins allowed to make calls to the RPC servers                     |
-| **`--rpc-external`**       | Exposes the rpc service on `0.0.0.0`                                         |
+| Option                     | About                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| **`--name <NAME>`**        | The human-readable name for this node. It's used as the network node name.     |
+| **`--base-path <PATH>`**   | Sets the database location for Madara (default is`/tmp/madara`)                |
+| **`--full`**               | The mode of your Madara client (either `--sequencer`, `--full`, or `--devnet`) |
+| **`--l1-endpoint <URL>`**  | The Layer 1 endpoint the node will verify its state from                       |
+| **`--rpc-port <PORT>`**    | The JSON-RPC server TCP port, used to receive requests                         |
+| **`--rpc-cors <ORIGINS>`** | Browser origins allowed to make calls to the RPC servers                       |
+| **`--rpc-external`**       | Exposes the rpc service on `0.0.0.0`                                           |
 
 ---
 
@@ -290,7 +290,7 @@ Here are some recommended options to get up and started with your Madara client:
 Each cli argument has its own corresponding environment variable you can set to
 change its value. For example:
 
-- `MADARA_BASE_PATH=/path/to/data`
+- `MADARA_BASE_PATH=/path/to/db`
 - `MADARA_RPC_PORT=1111`
 
 These variables allow you to adjust the node's configuration without using
@@ -311,8 +311,8 @@ Trace Generation Methods, and Write Methods. They are accessible through port
 **9944** unless specified otherwise with `--rpc-port`.
 
 > [!TIP]
-> You can use the special `rpc_methods` call to receive a list of all the
-> methods which are available on an endpoint.
+> You can use the special `rpc_methods` call to view a list of all the methods
+> which are available on an endpoint.
 
 ---
 
@@ -375,13 +375,6 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_addDeclareTransaction`       |
 | ✅     | `starknet_addDeployAccountTransaction` |
 
-> [!NOTE]
-> Write methods are forwarded to the Sequencer and are not executed by Madara.
-> These might fail if you provide the wrong arguments or in case of a
-> conflicting state. Make sure to refer to the
-> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
-> for a list of potential errors.
-
 </details>
 
 <details>
@@ -398,11 +391,20 @@ Here is a list of all the supported methods with their current status:
 
 </details>
 
+> [!IMPORTANT]
+> Write methods are forwarded to the Sequencer and are not executed by Madara.
+> These might fail if you provide the wrong arguments or in case of a
+> conflicting state. Make sure to refer to the
+> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
+> for a list of potential errors.
+
+
 ### Madara-specific JSON-RPC Methods
 
-Beside this, Madara supports its own set of custom extensions to the starknet
-specs. These are referred to as `admin` methods. They are exposed on a separate
-port **9943** unless specified otherwise with `--rpc-admin-port`.
+As well as the official RPC methods, Madara also supports its own set of custom
+extensions to the starknet specs. These are referred to as `admin` methods and
+are exposed on a separate port **9943** unless specified otherwise with
+`--rpc-admin-port`.
 
 <details>
   <summary>Write Methods</summary>
@@ -524,8 +526,8 @@ websocat -v ws://localhost:9944/rpc/v0_8_0
 
 This will display header information on each new block synchronized. Use
 `Ctrl-C` to stop the subscription. Alternatively, you can achieve the same
-result more gracefully by calling the `starknet_unsubscribe` websocket method.
-Paste the following into the subscription stream:
+result more gracefully by calling `starknet_unsubscribe`. Paste the following
+into the subscription stream:
 
 ```bash
 { "jsonrpc": "2.0", "method": "starknet_unsubscribe", "params": ["your-subscription-id"], "id": 1 }
@@ -554,7 +556,8 @@ a regular sync.
 > Starknet does not currently have a specification for its feeder-gateway
 > protocol, so despite our best efforts at output parity, you might still notice
 > some discrepancies between official feeder gateway endpoints and our own
-> implementation.
+> implementation. Please let us know about if you encounter this by
+> [raising an issue](https://github.com/madara-alliance/madara/issues/new/choose)
 
 ### State Commitment Computation
 

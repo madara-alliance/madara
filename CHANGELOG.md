@@ -2,6 +2,7 @@
 
 ## Next release
 
+- docs(readme): updated README.md docs and added Docker Compose support
 - fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
