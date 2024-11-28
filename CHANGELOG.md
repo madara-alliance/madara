@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(log): 
 - fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
