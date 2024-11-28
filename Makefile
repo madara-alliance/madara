@@ -1,5 +1,5 @@
 # ============================================================================ #
-#                         STARKNET NODE BENCHMAR RUNNER                        #
+#                              STARKNET NODE RUNNER                            #
 # ============================================================================ #
 
 define HELP
@@ -66,21 +66,27 @@ Targets:
 endef
 export HELP
 
-SECRETS  := .secrets/rpc_api.secret
+SECRETS        := .secrets/rpc_api.secret
+DB_PATH        := /var/lib/madara
+
+DOCKER_COMPOSE := docker compose -f compose.yaml
+DOCKER_TAG     := madara:latest
+DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
+DOCKER_GZ      := image.tar.gz
 
 # dim white italic
-DIM      := \033[2;3;37m
+DIM            := \033[2;3;37m
 
 # bold cyan
-INFO     := \033[1;36m
+INFO           := \033[1;36m
 
 # bold green
-PASS     := \033[1;32m
+PASS           := \033[1;32m
 
 # bold red
-WARN     := \033[1;31m
+WARN           := \033[1;31m
 
-RESET    := \033[0m
+RESET          := \033[0m
 
 .PHONY: all
 all: help
@@ -92,27 +98,27 @@ help:
 .PHONY: start
 start: images $(SECRETS)
 	@echo -e "$(DIM)running$(RESET) $(PASS)madara$(RESET)"
-	@docker compose -f compose.yaml up -d
+	@$(DOCKER_COMPOSE) up -d
 
 .PHONY: stop
 stop:
 	@echo -e "$(DIM)stopping$(RESET) $(WARN)madara$(RESET)"
-	@docker compose -f compose.yaml stop
+	@$(DOCKER_COMPOSE) stop
 
 .PHONY: logs
 logs:
 	@echo -e "$(DIM)logs for$(RESET) $(INFO)madara$(RESET)";
-	@docker compose -f compose.yaml logs -f -n 100;
+	@$(DOCKER_COMPOSE) logs -f -n 100 madara;
 
 .PHONY: images
-images: image.tar.gz
+images: $(DOCKER_GZ)
 
-image.tar.gz:
+$(DOCKER_GZ):
 	@echo -e "$(DIM)downloading$(RESET) $(PASS)madara$(RESET)"
-	@docker pull ghcr.io/madara-alliance/madara:latest
-	@docker tag ghcr.io/madara-alliance/madara:latest madara:latest
-	@docker rmi ghcr.io/madara-alliance/madara:latest
-	@docker image save -o image.tar.gz madara:latest
+	@docker pull $(DOCKER_IMAGE)
+	@docker tag $(DOCKER_IMAGE) $(DOCKER_TAG)
+	@docker rmi $(DOCKER_IMAGE)
+	@docker image save -o $(DOCKER_GZ) $(DOCKER_TAG)
 
 .PHONY: clean
 clean: stop
@@ -133,12 +139,12 @@ clean-db:
 	esac
 	@make --silent clean
 	@echo -e "$(DIM)removing madara database on host$(RESET)"
-	@sudo rm -rf /var/lib/madara;
+	@sudo rm -rf $(DB_PATH);
 
 .PHONY: fclean
 fclean: clean-db
 	@echo -e "$(DIM)removing local images tar.gz$(RESET)"
-	@rm -rf image.tar.gz
+	@rm -rf $(DOCKER_GZ)
 	@echo -e "$(WARN)artefacts cleaned$(RESET)"
 
 .PHONY: restart

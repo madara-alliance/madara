@@ -55,6 +55,7 @@ Ensure you have all the necessary dependencies available on your host system.
 | ---------- | ---------- | ----------------------------------------------------------------- |
 | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Clang      | Latest     | `sudo apt-get install clang`                                      |
+| Openssl    | 0.10       | `sudo apt install openssl`                                        |
 
 Once all dependencies are satisfied, you can clone the Madara repository:
 
@@ -128,7 +129,7 @@ cargo run --release --        \
 ```
 
 > [!NOTE]
-> Head to the [Configuration](#configuration) section to learn more about
+> Head to the [Configuration](#%EF%B8%8F-configuration) section to learn more about
 > customizing your node.
 
 #### 4. Presets
@@ -224,6 +225,14 @@ make stop     # Stop the madara node
 make clean-db # Removes the madara db, including files on the host
 make restart  # Restarts the madara node
 ```
+
+> [!IMPORTANT]
+> By default, `make start` will try and restart Madara indefinitely if it is
+> found to be unhealthy using [docker autoheal](https://github.com/willfarrell/docker-autoheal).
+> This is done by checking the availability of `http://localhost:9944/health`,
+> which means your container will be marked as `unhealthy` and restart if you
+> have disabled the RPC service! You can run `watch docker ps` to monitor the
+> health of your containers.
 
 To change runtime arguments, you can update the script in `madara-runner.sh`:
 
@@ -349,9 +358,8 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_getEvents`                       |
 | ✅     | `starknet_getNonce`                        |
 | ✅     | `starknet_getCompiledCasm` (v0.8.0)        |
-| 🚧     | `getMessageStatus` (v0.8.0)                |
-| 🚧     | `getStorageProof` (v0.8.0)                 |
-| ❌     | `getTransactionStatus` (v0.8.0)            |
+| 🚧     | `starknet_getMessageStatus` (v0.8.0)       |
+| 🚧     | `starknet_getStorageProof` (v0.8.0)        |
 
 </details>
 
