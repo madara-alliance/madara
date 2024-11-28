@@ -8480,7 +8480,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.7"
-source = "git+https://github.com/jbcaron/types-rs.git?branch=fork#234b5f03f91d7f791003e61ae1cfcfc1f096a539"
+source = "git+https://github.com/jbcaron/types-rs.git?branch=fork#2ac53c696d91ff1caae3d8594622e0cfa1074ba9"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",
@@ -8493,7 +8493,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-rpc"
 version = "0.7.1"
-source = "git+https://github.com/jbcaron/types-rs.git?branch=fork#234b5f03f91d7f791003e61ae1cfcfc1f096a539"
+source = "git+https://github.com/jbcaron/types-rs.git?branch=fork#2ac53c696d91ff1caae3d8594622e0cfa1074ba9"
 dependencies = [
  "serde",
  "starknet-types-core 0.1.7 (git+https://github.com/jbcaron/types-rs.git?branch=fork)",

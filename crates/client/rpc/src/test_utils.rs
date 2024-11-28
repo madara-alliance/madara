@@ -142,8 +142,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
     };
     let expected_receipts = {
         use starknet_types_rpc::{
-            Anonymous, CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit,
-            RevertedCommonReceiptProperties, SuccessfulCommonReceiptProperties, TxnFinalityStatus, TxnReceipt,
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
         };
         vec![
             TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
@@ -154,9 +153,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L1,
-                    anon: Anonymous::Successful(SuccessfulCommonReceiptProperties {
-                        execution_status: "SUCCEDED".into(),
-                    }),
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
@@ -167,9 +164,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    anon: Anonymous::Successful(SuccessfulCommonReceiptProperties {
-                        execution_status: "SUCCEDED".into(),
-                    }),
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
@@ -180,10 +175,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    anon: Anonymous::Reverted(RevertedCommonReceiptProperties {
-                        execution_status: "REVERTED".into(),
-                        revert_reason: "too bad".into(),
-                    }),
+                    execution_status: starknet_types_rpc::ExecutionStatus::Reverted("too bad".into()),
                 },
             }),
             TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
@@ -194,9 +186,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    anon: Anonymous::Successful(SuccessfulCommonReceiptProperties {
-                        execution_status: "SUCCEDED".into(),
-                    }),
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
                 },
             }),
         ]
