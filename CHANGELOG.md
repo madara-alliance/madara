@@ -3,6 +3,7 @@
 ## Next release
 
 - feat(warp): added warp update to madara
+- fix(log): define RUST_LOG=info by default
 - fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
