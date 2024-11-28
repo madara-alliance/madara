@@ -398,7 +398,6 @@ Here is a list of all the supported methods with their current status:
 > [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
 > for a list of potential errors.
 
-
 ### Madara-specific JSON-RPC Methods
 
 As well as the official RPC methods, Madara also supports its own set of custom
