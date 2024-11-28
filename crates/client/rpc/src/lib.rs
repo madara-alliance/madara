@@ -24,10 +24,14 @@ use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
+/// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
 pub struct StorageProofConfig {
+    /// Max keys that cna be used in a storage proof.
     pub max_keys: usize,
+    /// Max tries that can be used in a storage proof.
     pub max_tries: usize,
+    /// How many blocks in the past can we get a storage proof for.
     pub max_distance: u64,
 }
 

@@ -351,6 +351,10 @@ fn state_diff_commitment(
 }
 
 /// Compute the root hash of a list of values.
+/// This implements transactions, events, receipts and state-diff [commitments specs] using memory
+/// backed bonsai storage.
+///
+/// [commitments specs]: https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/#transactions_events_receipts_commitments
 // The `HashMapDb` can't fail, so we can safely unwrap the results.
 //
 // perf: Note that committing changes still has the greatest performance hit

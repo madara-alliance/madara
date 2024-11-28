@@ -44,6 +44,9 @@ impl Snapshots {
         }
     }
 
+    /// Called when a new block has been added in the database. This will make a snapshot
+    /// on top of the new block, and it will store that snapshot in the snapshot history every
+    /// `snapshot_interval` blocks.
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     pub fn set_new_head(&self, id: DbBlockId) {
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
@@ -69,6 +72,8 @@ impl Snapshots {
         }
     }
 
+    /// Get the closest snapshot that had been made at or after the provided `block_n`.
+    /// Also returns the block_n, which can be null if no block is in database in that snapshot.
     #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
     pub fn get_closest(&self, block_n: u64) -> (Option<u64>, SnapshotRef) {
         tracing::debug!("get closest {block_n:?} {self:?}");

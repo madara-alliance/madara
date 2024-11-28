@@ -167,8 +167,19 @@ fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
     )
 }
 
+/// The backing database for a bonsai storage view. This is used
+/// to implement historical access (for storage proofs), by applying
+/// changes from the trie-log without modifying the real database.
+/// This is kind of a hack for now. This abstraction shouldn't look like
+/// this at all ideally, and it should probably be an implementation
+/// detail of bonsai-trie.
 pub struct BonsaiTransaction {
+    /// Backing snapshot. If the value has not been changed, it'll be queried from
+    /// here.
     snapshot: SnapshotRef,
+    /// The changes on top of the snapshot.
+    /// Key is (column id, key) and value is Some(value) if the change is an insert, and None
+    /// if the change is a deletion of the key.
     changed: BTreeMap<(u8, ByteVec), Option<ByteVec>>,
     column_mapping: DatabaseKeyMapping,
 }
@@ -234,7 +245,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     }
 
     fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        unreachable!("unused for now")
+        Ok(())
     }
 }
 

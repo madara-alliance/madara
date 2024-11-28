@@ -80,7 +80,7 @@ pub fn get_storage_proof(
     contract_addresses: Option<Vec<Felt>>,
     contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
 ) -> RpcResult<GetStorageProofResult> {
-    // Pending block does not have a state root, so always fallbacck to latest.
+    // Pending block does not have a state root, so always fallback to latest.
     let block_id = match block_id {
         BlockId::Tag(BlockTag::Pending) => BlockId::Tag(BlockTag::Latest),
         block_id => block_id,

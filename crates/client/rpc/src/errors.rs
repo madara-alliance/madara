@@ -29,6 +29,7 @@ pub enum StorageProofLimit {
 pub enum StorageProofTrie {
     Classes,
     Contracts,
+    /// Associated Felt is the contract address.
     ContractStorage(Felt),
 }
 
