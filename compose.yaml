@@ -23,7 +23,6 @@ services:
     entrypoint:
       - /usr/local/bin/runner.sh
 
-
 secrets:
   rpc_api_key:
     file: .secrets/rpc_api.secret

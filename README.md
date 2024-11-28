@@ -23,10 +23,10 @@ Madara is a powerful Starknet client written in Rust.
 
 ## Table of Contents
 
-- ⬇️  [Installation](#%EF%B8%8F-installation)
+- ⬇️ [Installation](#%EF%B8%8F-installation)
   - [Run from Source](#run-from-source)
   - [Run with Docker](#run-with-docker)
-- ⚙️  [Configuration](#%EF%B8%8F-configuration)
+- ⚙️ [Configuration](#%EF%B8%8F-configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Environment variables](#environment-variables)
 - 🌐 [Interactions](#-interactions)
@@ -43,89 +43,89 @@ Madara is a powerful Starknet client written in Rust.
 
 ## ⬇️ Installation
 
-[⬅️  back to top](#-madara-starknet-client)
+[⬅️ back to top](#-madara-starknet-client)
 
 ### Run from Source
 
 #### 1. Install dependencies
 
-   Ensure you have all the necessary dependencies available on your host system.
+Ensure you have all the necessary dependencies available on your host system.
 
-   | Dependency | Version    | Installation                                                      |
-   | ---------- | ---------- | ----------------------------------------------------------------- |
-   | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-   | Clang      | Latest     | `sudo apt-get install clang`                                      |
+| Dependency | Version    | Installation                                                      |
+| ---------- | ---------- | ----------------------------------------------------------------- |
+| Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Clang      | Latest     | `sudo apt-get install clang`                                      |
 
-   Once all dependencies are satisfied, you can clone the Madara repository:
+Once all dependencies are satisfied, you can clone the Madara repository:
 
-   ```bash
-   cd <your-destination-path>
-   git clone https://github.com/madara-alliance/madara .
-   ```
+```bash
+cd <your-destination-path>
+git clone https://github.com/madara-alliance/madara .
+```
 
 #### 2. Build Madara
 
-   You can choose between different build modes:
+You can choose between different build modes:
 
-   - **Debug** (low performance, fastest builds, _for testing purposes only_):
+- **Debug** (low performance, fastest builds, _for testing purposes only_):
 
-     ```bash
-     cargo build
-     ```
+  ```bash
+  cargo build
+  ```
 
-   - **Release** (fast performance, slower build times):
+- **Release** (fast performance, slower build times):
 
-     ```bash
-     cargo build --release
-     ```
+  ```bash
+  cargo build --release
+  ```
 
-   - **Production** (fastest performance, _very slow build times_):
+- **Production** (fastest performance, _very slow build times_):
 
-     ```bash
-     cargo build --profile=production
-     ```
+  ```bash
+  cargo build --profile=production
+  ```
 
 #### 3. Run Madara
 
-   Start the Madara client with a basic set of arguments depending on your chosen mode:
+Start the Madara client with a basic set of arguments depending on your chosen mode:
 
-   **Full Node**
+**Full Node**
 
-   A full node, synchronizing the state of the chain from genesis.
+A full node, synchronizing the state of the chain from genesis.
 
-   ```bash
-   cargo run --release --        \
-     --name Madara               \
-     --full                      \
-     --base-path /var/lib/madara \
-     --network mainnet           \
-     --l1-endpoint ${ETHEREUM_API_URL}
-   ```
+```bash
+cargo run --release --        \
+  --name Madara               \
+  --full                      \
+  --base-path /var/lib/madara \
+  --network mainnet           \
+  --l1-endpoint ${ETHEREUM_API_URL}
+```
 
-   **Sequencer**
+**Sequencer**
 
-   Produces new blocks for other nodes to synchronize.
+Produces new blocks for other nodes to synchronize.
 
-   ```bash
-   cargo run --release --        \
-     --name Madara               \
-     --sequencer                 \
-     --base-path /var/lib/madara \
-     --preset test               \
-     --l1-endpoint ${ETHEREUM_API_URL}
-   ```
+```bash
+cargo run --release --        \
+  --name Madara               \
+  --sequencer                 \
+  --base-path /var/lib/madara \
+  --preset test               \
+  --l1-endpoint ${ETHEREUM_API_URL}
+```
 
-   **Devnet**
+**Devnet**
 
-   A node in a private local network.
+A node in a private local network.
 
-   ```bash
-   cargo run --release --        \
-     --name Madara               \
-     --devnet                    \
-     --base-path /var/lib/madara \
-     --preset test
-   ```
+```bash
+cargo run --release --        \
+  --name Madara               \
+  --devnet                    \
+  --base-path /var/lib/madara \
+  --preset test
+```
 
 > [!NOTE]
 > Head to the [Configuration](#configuration) section to learn more about
@@ -133,26 +133,26 @@ Madara is a powerful Starknet client written in Rust.
 
 #### 4. Presets
 
-   You can use cli presets for certain common node configurations, for example
-   enabling rpc endpoints:
+You can use cli presets for certain common node configurations, for example
+enabling rpc endpoints:
 
-   ```
-   cargo run --release -- \
-      --name Madara       \
-      --full              \
-      --preset mainnet    \
-      --rpc
-   ```
+```
+cargo run --release -- \
+   --name Madara       \
+   --full              \
+   --preset mainnet    \
+   --rpc
+```
 
-   ...or the madara [feeder gateway](#feeder-gateway-state-synchronization):
+...or the madara [feeder gateway](#feeder-gateway-state-synchronization):
 
-   ```
-   cargo run --release -- \
-      --name Madara       \
-      --full              \
-      --preset mainnet    \
-      --fgw
-   ```
+```
+cargo run --release -- \
+   --name Madara       \
+   --full              \
+   --preset mainnet    \
+   --fgw
+```
 
 ---
 
@@ -160,103 +160,100 @@ Madara is a powerful Starknet client written in Rust.
 
 #### 1. Manual Setup
 
+| Dependency | Version | Installation                                                     |
+| ---------- | ------- | ---------------------------------------------------------------- |
+| Docker     | Latest  | [Official instructions](https://docs.docker.com/engine/install/) |
 
-   | Dependency | Version    | Installation                                                     |
-   | ---------- | ---------- | ---------------------------------------------------------------- |
-   | Docker     | Latest     | [Official instructions](https://docs.docker.com/engine/install/) |
+Once you have Docker installed, you will need to pull the madara image from
+the github container registry (ghr):
 
-   Once you have Docker installed, you will need to pull the madara image from
-   the github container registry (ghr):
+```bash
+docker pull ghcr.io/madara-alliance/madara:latest
+docker tag ghcr.io/madara-alliance/madara:latest madara:latest
+docker rmi ghcr.io/madara-alliance/madara:latest
+```
 
-   ```bash
-   docker pull ghcr.io/madara-alliance/madara:latest
-   docker tag ghcr.io/madara-alliance/madara:latest madara:latest
-   docker rmi ghcr.io/madara-alliance/madara:latest
-   ```
+You can then launch madara as follows:
 
-   You can then launch madara as follows:
+```bash
+docker run -d                    \
+  -p 9944:9944                   \
+  -v /var/lib/madara:/tmp/madara \
+  --name Madara                  \
+  madara:latest                  \
+  --name Madara                  \
+  --full                         \
+  --network mainnet              \
+  --l1-endpoint ${ETHEREUM_API_URL}
+```
 
-   ```bash
-   docker run -d                    \
-     -p 9944:9944                   \
-     -v /var/lib/madara:/tmp/madara \
-     --name Madara                  \
-     madara:latest                  \
-     --name Madara                  \
-     --full                         \
-     --network mainnet              \
-     --l1-endpoint ${ETHEREUM_API_URL}
-   ```
+To display the node's logs, you can use:
 
-   To display the node's logs, you can use:
-
-   ```bash
-   docker logs -f -n 100 Madara
-   ```
+```bash
+docker logs -f -n 100 Madara
+```
 
 > [!WARNING]
 > Make sure to change the volume `-v` of your container if ever you update
 > `--base-path`.
 
-
 #### 2. Using the project Makefile
 
-   Alternatively, you can use the provided Makefile and `compose.yaml` to
-   simplify this process.
+Alternatively, you can use the provided Makefile and `compose.yaml` to
+simplify this process.
 
-   | Dependency     | Version    | Installation                                                      |
-   | -------------- | ---------- | ----------------------------------------------------------------- |
-   | Docker Compose | Latest     | [Official instructions](https://docs.docker.com/compose/install/) |
-   | Gnu Make       | Latest     | `sudo apt install make`                                           |
+| Dependency     | Version | Installation                                                      |
+| -------------- | ------- | ----------------------------------------------------------------- |
+| Docker Compose | Latest  | [Official instructions](https://docs.docker.com/compose/install/) |
+| Gnu Make       | Latest  | `sudo apt install make`                                           |
 
-   Once you have all the dependencies installed, start by saving your rpc key
-   to a `.secrets` forlder:
+Once you have all the dependencies installed, start by saving your rpc key
+to a `.secrets` forlder:
 
-   ```bash
-   mkdir .secrets
-   echo *** .secrets/rpc_api.secret
-   ```
+```bash
+mkdir .secrets
+echo *** .secrets/rpc_api.secret
+```
 
-   Then, run madara with the following commands:
+Then, run madara with the following commands:
 
-   ```bash
-   make start    # This will automatically pull the madara image if not available
-   make logs     # Displays the last 100 lines of logs
-   make stop     # Stop the madara node
-   make clean-db # Removes the madara db, including files on the host
-   make restart  # Restarts the madara node
-   ```
+```bash
+make start    # This will automatically pull the madara image if not available
+make logs     # Displays the last 100 lines of logs
+make stop     # Stop the madara node
+make clean-db # Removes the madara db, including files on the host
+make restart  # Restarts the madara node
+```
 
-   To change runtime arguments, you can update the script in `madara-runner.sh`:
+To change runtime arguments, you can update the script in `madara-runner.sh`:
 
-   ```bash
-   #!/bin/sh
-   export RPC_API_KEY=$(cat $RPC_API_KEY_FILE)
+```bash
+#!/bin/sh
+export RPC_API_KEY=$(cat $RPC_API_KEY_FILE)
 
-   ./madara                   \
-     --name madara            \
-     --network mainnet        \
-     --rpc-external           \
-     --rpc-cors all           \
-     --full                   \
-     --l1-endpoint $RPC_API_KEY
-   ```
+./madara                   \
+  --name madara            \
+  --network mainnet        \
+  --rpc-external           \
+  --rpc-cors all           \
+  --full                   \
+  --l1-endpoint $RPC_API_KEY
+```
 
-   For more information, run:
+For more information, run:
 
-   ```bash
-   make help
-   ```
+```bash
+make help
+```
 
 > [!TIP]
 > When running Madara from a docker container, make sure to set options such
 > as `--rpc-external`, `--gateway-external` and `--rpc-admin-external` so as
 > to be able to access these services from outside the container.
 
-
 ## ⚙️ Configuration
 
-[⬅️  back to top](#-madara-starknet-client)
+[⬅️ back to top](#-madara-starknet-client)
 
 For a comprehensive list of all command-line options, check out:
 
@@ -299,14 +296,13 @@ change its value. For example:
 These variables allow you to adjust the node's configuration without using
 command-line arguments, which can be useful in CI pipelines or with docker.
 
-
 > [!NOTE]
 > If the command-line argument is specified then it takes precedent over the
 > environment variable.
 
 ## 🌐 Interactions
 
-[⬅️  back to top](#-madara-starknet-client)
+[⬅️ back to top](#-madara-starknet-client)
 
 Madara fully supports all the JSON-RPC methods as of the latest version of the
 Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
@@ -393,7 +389,7 @@ Here is a list of all the supported methods with their current status:
 
 | Status | Method                                           |
 | ------ | ------------------------------------------------ |
-| ✅     | `starknet_unsubscribe` (v0.8.0)            |
+| ✅     | `starknet_unsubscribe` (v0.8.0)                  |
 | ✅     | `starknet_subscribeNewHeads` (v0.8.0)            |
 | ❌     | `starknet_subscribeEvents` (v0.8.0)              |
 | ❌     | `starknet_subscribeTransactionStatus` (v0.8.0)   |
@@ -411,34 +407,34 @@ port **9943** unless specified otherwise with `--rpc-admin-port`.
 <details>
   <summary>Write Methods</summary>
 
-| Method                          | About                                             |
-| ------------------------------- | ------------------------------------------------- |
-|`madara_addDeclareV0Transaction` | Adds a legacy Declare V0 Transaction to the state |
+| Method                           | About                                             |
+| -------------------------------- | ------------------------------------------------- |
+| `madara_addDeclareV0Transaction` | Adds a legacy Declare V0 Transaction to the state |
 
 </details>
 
 <details>
   <summary>Status Methods</summary>
 
-| Method              | About                                                |
-| --------------------| ---------------------------------------------------- |
-| `madara_ping`       | Return the unix time at which this method was called |
-| `madara_shutdown`   | Gracefully stops the running node                    |
-| `madara_rpcDisable` | Disables user-facing rpc services                    |
-| `madara_rpcEnable`  | Enables user-facing rpc services                     |
-| `madara_rpcRestart` | Restarts user-facing rpc services                    |
-| `madara_syncDisable`| Disables l1 and l2 sync services                     |
-| `madara_syncEnable` | Enables l1 and l2 sync services                      |
-| `madara_syncRestart`| Restarts l1 and l2 sync services                     |
+| Method               | About                                                |
+| -------------------- | ---------------------------------------------------- |
+| `madara_ping`        | Return the unix time at which this method was called |
+| `madara_shutdown`    | Gracefully stops the running node                    |
+| `madara_rpcDisable`  | Disables user-facing rpc services                    |
+| `madara_rpcEnable`   | Enables user-facing rpc services                     |
+| `madara_rpcRestart`  | Restarts user-facing rpc services                    |
+| `madara_syncDisable` | Disables l1 and l2 sync services                     |
+| `madara_syncEnable`  | Enables l1 and l2 sync services                      |
+| `madara_syncRestart` | Restarts l1 and l2 sync services                     |
 
 </details>
 
 <details>
   <summary>Websocket Methods</summary>
 
-| Method              | About                                                |
-| --------------------| ---------------------------------------------------- |
-| `madara_pulse`      | Periodically sends a signal that the node is alive   |
+| Method         | About                                              |
+| -------------- | -------------------------------------------------- |
+| `madara_pulse` | Periodically sends a signal that the node is alive |
 
 </details>
 
@@ -508,8 +504,8 @@ You should receive something like the following:
 
 #### Websocket RPC
 
-| Dependency | Version | Installation            |
-| ---------- | ------- | ----------------------- |
+| Dependency | Version | Installation                                                                            |
+| ---------- | ------- | --------------------------------------------------------------------------------------- |
 | Websocat   | Latest  | [Official instructions](https://github.com/vi/websocat?tab=readme-ov-file#installation) |
 
 Websockets methods are enabled by default and are accessible through the same
@@ -540,7 +536,7 @@ which is returned with each websocket response.
 
 ## ✅ Supported Features
 
-[⬅️  back to top](#-madara-starknet-client)
+[⬅️ back to top](#-madara-starknet-client)
 
 ### Starknet compliant
 
@@ -569,13 +565,13 @@ commitment [here](https://docs.starknet.io/architecture-and-concepts/network-arc
 
 ## 💬 Get in touch
 
-[⬅️  back to top](#-madara-starknet-client)
+[⬅️ back to top](#-madara-starknet-client)
 
 ### Contributing
 
 For guidelines on how to contribute to Madara, please see the [Contribution Guidelines](https://github.com/madara-alliance/madara/blob/main/CONTRIBUTING.md).
 
-###  Partnerships
+### Partnerships
 
 To establish a partnership with the Madara team, or if you have any suggestions or
 special requests, feel free to reach us on [Telegram](https://t.me/madara-alliance).
