@@ -37,7 +37,6 @@ Madara is a powerful Starknet client written in Rust.
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
-  - [Analytics](#analytics)
 - 💬 [Get in touch](#-get-in-touch)
   - [Contributing](#contributing)
   - [Partnerships](#partnerships)
@@ -50,12 +49,12 @@ Madara is a powerful Starknet client written in Rust.
 
 #### 1. Install dependencies
 
-   Ensure you have the necessary dependencies:
+   Ensure you have all the necessary dependencies available on your host system.
 
-   | Dependency | Version    | Installation                                                                             |
-   | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
-   | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                        |
-   | Clang      | Latest     | `sudo apt-get install clang`                                                             |
+   | Dependency | Version    | Installation                                                      |
+   | ---------- | ---------- | ----------------------------------------------------------------- |
+   | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+   | Clang      | Latest     | `sudo apt-get install clang`                                      |
 
    Once all dependencies are satisfied, you can clone the Madara repository:
 
@@ -129,8 +128,8 @@ Madara is a powerful Starknet client written in Rust.
    ```
 
 > [!NOTE]
-> Head to the [Configuration](#configuration) section to learn how to
-> customize your node parameters.
+> Head to the [Configuration](#configuration) section to learn more about
+> customizing your node.
 
 #### 4. Presets
 
@@ -145,7 +144,7 @@ Madara is a powerful Starknet client written in Rust.
       --rpc
    ```
 
-   ...or the madara feeder gateway:
+   ...or the madara [feeder gateway](#feeder-gateway-state-synchronization):
 
    ```
    cargo run --release -- \
@@ -161,9 +160,13 @@ Madara is a powerful Starknet client written in Rust.
 
 #### 1. Manual Setup
 
-   Ensure you have [Docker](https://docs.docker.com/engine/install/) installed
-   on your machine. Once you have Docker installed, you will need to pull the
-   madara image from the github container registry (ghr):
+
+   | Dependency | Version    | Installation                                                     |
+   | ---------- | ---------- | ---------------------------------------------------------------- |
+   | Docker     | Latest     | [Official instructions](https://docs.docker.com/engine/install/) |
+
+   Once you have Docker installed, you will need to pull the madara image from
+   the github container registry (ghr):
 
    ```bash
    docker pull ghcr.io/madara-alliance/madara:latest
@@ -201,11 +204,13 @@ Madara is a powerful Starknet client written in Rust.
    Alternatively, you can use the provided Makefile and `compose.yaml` to
    simplify this process.
 
-> [!IMPORTANT]
-> This requires you to have [Docker Compose](https://docs.docker.com/compose/install/)
-> installed
+   | Dependency     | Version    | Installation                                                      |
+   | -------------- | ---------- | ----------------------------------------------------------------- |
+   | Docker Compose | Latest     | [Official instructions](https://docs.docker.com/compose/install/) |
+   | Gnu Make       | Latest     | `sudo apt install make`                                           |
 
-   Start by saving your rpc key to a `.secrets` forlder:
+   Once you have all the dependencies installed, start by saving your rpc key
+   to a `.secrets` forlder:
 
    ```bash
    mkdir .secrets
@@ -271,15 +276,15 @@ docker run madara:latest --help
 
 Here are some recommended options to get up and started with your Madara client:
 
-| Option | About |
-| ------ | ----- |
-| **`--name <NAME>`** | The human-readable name for this node. It's used as the network node name. |
-| **`--base-path <PATH>`** | Sets the database location for Madara (default is`/tmp/madara`) |
-| **`--full`** | The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`) |
-| **`--l1-endpoint <URL>`** | The Layer 1 endpoint the node will verify its state from |
-| **`--rpc-port <PORT>`** | The JSON-RPC server TCP port, used to receive requests |
-| **`--rpc-cors <ORIGINS>`** | Browser origins allowed to make calls to the RPC servers |
-| **`--rpc-external`** | Exposes the rpc service on `0.0.0.0` |
+| Option                     | About                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| **`--name <NAME>`**        | The human-readable name for this node. It's used as the network node name.   |
+| **`--base-path <PATH>`**   | Sets the database location for Madara (default is`/tmp/madara`)              |
+| **`--full`**               | The mode of your Madara client (either `--sequencer`, `--full`, or `devnet`) |
+| **`--l1-endpoint <URL>`**  | The Layer 1 endpoint the node will verify its state from                     |
+| **`--rpc-port <PORT>`**    | The JSON-RPC server TCP port, used to receive requests                       |
+| **`--rpc-cors <ORIGINS>`** | Browser origins allowed to make calls to the RPC servers                     |
+| **`--rpc-external`**       | Exposes the rpc service on `0.0.0.0`                                         |
 
 ---
 
@@ -347,6 +352,10 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_syncing`                         |
 | ✅     | `starknet_getEvents`                       |
 | ✅     | `starknet_getNonce`                        |
+| ✅     | `starknet_getCompiledCasm` (v0.8.0)        |
+| 🚧     | `getMessageStatus` (v0.8.0)                |
+| 🚧     | `getStorageProof` (v0.8.0)                 |
+| ❌     | `getTransactionStatus` (v0.8.0)            |
 
 </details>
 
@@ -369,6 +378,27 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_addInvokeTransaction`        |
 | ✅     | `starknet_addDeclareTransaction`       |
 | ✅     | `starknet_addDeployAccountTransaction` |
+
+> [!NOTE]
+> Write methods are forwarded to the Sequencer and are not executed by Madara.
+> These might fail if you provide the wrong arguments or in case of a
+> conflicting state. Make sure to refer to the
+> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
+> for a list of potential errors.
+
+</details>
+
+<details>
+  <summary>Websocket Methods</summary>
+
+| Status | Method                                           |
+| ------ | ------------------------------------------------ |
+| ✅     | `starknet_unsubscribe` (v0.8.0)            |
+| ✅     | `starknet_subscribeNewHeads` (v0.8.0)            |
+| ❌     | `starknet_subscribeEvents` (v0.8.0)              |
+| ❌     | `starknet_subscribeTransactionStatus` (v0.8.0)   |
+| ❌     | `starknet_subscribePendingTransactions` (v0.8.0) |
+| ❌     | `starknet_subscriptionReorg` (v0.8.0)            |
 
 </details>
 
@@ -393,13 +423,22 @@ port **9943** unless specified otherwise with `--rpc-admin-port`.
 | Method              | About                                                |
 | --------------------| ---------------------------------------------------- |
 | `madara_ping`       | Return the unix time at which this method was called |
-| `madara_stopNode`   | Gracefully stops the running node                    |
+| `madara_shutdown`   | Gracefully stops the running node                    |
 | `madara_rpcDisable` | Disables user-facing rpc services                    |
 | `madara_rpcEnable`  | Enables user-facing rpc services                     |
 | `madara_rpcRestart` | Restarts user-facing rpc services                    |
 | `madara_syncDisable`| Disables l1 and l2 sync services                     |
 | `madara_syncEnable` | Enables l1 and l2 sync services                      |
 | `madara_syncRestart`| Restarts l1 and l2 sync services                     |
+
+</details>
+
+<details>
+  <summary>Websocket Methods</summary>
+
+| Method              | About                                                |
+| --------------------| ---------------------------------------------------- |
+| `madara_pulse`      | Periodically sends a signal that the node is alive   |
 
 </details>
 
@@ -415,11 +454,28 @@ port **9943** unless specified otherwise with `--rpc-admin-port`.
 
 ### Example of Calling a JSON-RPC Method
 
+You can use any JSON-RPC client to interact with Madara, such as `curl`,
+`httpie`, `websocat` or any client sdk in your preferred programming language.
+For more detailed information on how to call each method, please refer to the
+[Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+
+#### Http RPC
+
+| Dependency | Version | Installation            |
+| ---------- | ------- | ----------------------- |
+| Curl       | Latest  | `sudo apt install curl` |
+
 Here is an example of how to call a JSON-RPC method using Madara. Before running
-the bellow code, make sure you have a node running with rpc enabled on port 9944.
+the bellow code, make sure you have a node running with rpc enabled on port 9944
+(this is the default configuration).
+
+> [!IMPORTANT]
+> Madara currently defaults to `v0.7.1` for its rpc calls. To access methods
+> in other or more recent versions, add `rpc/v*_*_*/` to your rpc url. This
+> Also works for websocket methods.
 
 ```bash
-curl --location 'localhost:9944'            \
+curl --location 'localhost:9944'/v0_7_1/    \
   --header 'Content-Type: application/json' \
   --data '{
     "jsonrpc": "2.0",
@@ -429,17 +485,58 @@ curl --location 'localhost:9944'            \
   }' | jq --sort-keys
 ```
 
-You can use any JSON-RPC client to interact with Madara, such as `curl`,
-`httpie`, or a custom client in your preferred programming language. For more
-detailed information on each method, please refer to the
-[Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+You should receive something like the following:
 
-> [!NOTE]
-> Write methods are forwarded to the Sequencer and are not executed by Madara.
-> These might fail if you provide the wrong arguments or in case of a
-> conflicting state. Make sure to refer to the
-> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
-> for a list of potential errors.
+```bash
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "methods": [
+      "rpc/V0_7_1/starknet_addDeclareTransaction",
+      "rpc/V0_7_1/starknet_addDeployAccountTransaction",
+      "rpc/V0_7_1/starknet_addInvokeTransaction",
+      ...
+      "rpc/V0_8_0/starknet_traceBlockTransactions",
+      "rpc/V0_8_0/starknet_traceTransaction",
+      "rpc/V0_8_0/starknet_unsubscribe",
+      "rpc/rpc_methods"
+    ]
+  }
+}
+```
+
+#### Websocket RPC
+
+| Dependency | Version | Installation            |
+| ---------- | ------- | ----------------------- |
+| Websocat   | Latest  | [Official instructions](https://github.com/vi/websocat?tab=readme-ov-file#installation) |
+
+Websockets methods are enabled by default and are accessible through the same
+port as http RPC methods. Here is an example of how to call a JSON-RPC method
+using `websocat`.
+
+```bash
+(echo '{"jsonrpc":"2.0","method":"starknet_subscribeNewHeads","params":{"block_id":"latest"},"id":1}'; cat -) | \
+websocat -v ws://localhost:9944/rpc/v0_8_0
+```
+
+> [!TIP]
+> This command and the strange use of `echo` in combination with `cat` is just a
+> way to start a websocket stream with `websocat` while staying in interactive
+> mode, meaning you can still enter other websocket requests.
+
+This will display header information on each new block synchronized. Use
+`Ctrl-C` to stop the subscription. Alternatively, you can achieve the same
+result more gracefully by calling the `starknet_unsubscribe` websocket method.
+Paste the following into the subscription stream:
+
+```bash
+{ "jsonrpc": "2.0", "method": "starknet_unsubscribe", "params": ["your-subscription-id"], "id": 1 }
+```
+
+Where `you-subscription-id` corresponds to the value of the `subscription` field
+which is returned with each websocket response.
 
 ## ✅ Supported Features
 
@@ -469,55 +566,6 @@ Madara supports merkelized state verification through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
-
-### Analytics
-
-Madara comes ready out of the box with Open Telemetry version `v0.25.0`
-integration, supporting export of traces, metrics and logs.
-
-#### Running Madara with Signoz as a dashboard
-
-First, [install Signoz]((https://signoz.io/docs/install/docker/#install-signoz-using-docker-compose)):
-
-```bash
-git clone -b main https://github.com/SigNoz/signoz.git && cd signoz/deploy/
-docker compose -f docker/clickhouse-setup/docker-compose.yaml up -d
-docker ps
-```
-
-Wait for the above command to complete: you should see an output similar to the
-following:
-
-```bash
-CONTAINER ID   IMAGE                                          COMMAND                  CREATED          STATUS                    PORTS                                                                            NAMES
-01f044c4686a   signoz/frontend:0.38.2                       "nginx -g 'daemon of…"   2 minutes ago   Up 9 seconds                  80/tcp, 0.0.0.0:3301->3301/tcp                                                     signoz-frontend
-86aa5b875f9f   gliderlabs/logspout:v3.2.14                  "/bin/logspout syslo…"   2 minutes ago   Up 1 second                   80/tcp                                                                             signoz-logspout
-58746f684630   signoz/alertmanager:0.23.4                   "/bin/alertmanager -…"   2 minutes ago   Up 9 seconds                  9093/tcp                                                                           signoz-alertmanager
-2cf1ec96bdb3   signoz/query-service:0.38.2                  "./query-service -co…"   2 minutes ago   Up About a minute (healthy)   8080/tcp                                                                           signoz-query-service
-e9f0aa66d884   signoz/signoz-otel-collector:0.88.11          "/signoz-collector -…"   2 minutes ago   Up 10 seconds                 0.0.0.0:4317-4318->4317-4318/tcp                                                   signoz-otel-collector
-d3d89d7d4581   clickhouse/clickhouse-server:23.11.1-alpine   "/entrypoint.sh"         2 minutes ago   Up 2 minutes (healthy)        0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 0.0.0.0:9181->9181/tcp, 9009/tcp   signoz-clickhouse
-9db88aefb6ed   signoz/locust:1.2.3                          "/docker-entrypoint.…"   2 minutes ago   Up 2 minutes                  5557-5558/tcp, 8089/tcp                                                            load-hotrod
-60bb3b77b4f7   bitnami/zookeeper:3.7.1                      "/opt/bitnami/script…"   2 minutes ago   Up 2 minutes                  0.0.0.0:2181->2181/tcp, 0.0.0.0:2888->2888/tcp, 0.0.0.0:3888->3888/tcp, 8080/tcp   signoz-zookeeper-1
-98c7178b4004   jaegertracing/example-hotrod:1.30            "/go/bin/hotrod-linu…"   9 days ago      Up 2 minutes                  8080-8083/tcp                                                                      hotrod
-```
-
-Next, navigate to your [signoz dashboard](http://localhost:3301). If you are
-running Madara on a remote server this will be `http://your-server-ip:3301`.
-Create an admin login, then go to `Dashboards` in the left drawer and click on
-`New dashboard`->`Import JSON` and copy over the contents of
-[infra/Signoz/dashboards/overview.json](https://github.com/madara-alliance/madara/blob/docs/readme/infra/Signoz/dashboards/overview.json).
-
-Finally, run Madara with analytics enabled and refresh your Signoz dashboard.
-
-```bash
-cargo run --release --                                  \
-  --name madara                                         \
-  --network mainnet                                     \
-  --full                                                \
-  --l1-endpoint ***                                     \
-  --analytics-collection-endpoint http://localhost:4317 \
-  --analytics-service-name Madara
-```
 
 ## 💬 Get in touch
 
