@@ -9,7 +9,6 @@ use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemp
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
 use opentelemetry_sdk::{runtime, Resource};
-use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -25,17 +24,13 @@ pub struct OTELConfig {
 pub struct InstrumentationParams {
     pub otel_service_name: String,
     pub otel_collector_endpoint: Option<Url>,
-    pub log_level: Level,
 }
 
 pub fn setup_analytics(instrumentation: &InstrumentationParams) -> Option<SdkMeterProvider> {
     let otel_config = get_otel_config(instrumentation);
-    let level = instrumentation.log_level;
 
-    let tracing_subscriber = tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::LevelFilter::from_level(level))
-        .with(tracing_subscriber::fmt::layer())
-        .with(EnvFilter::from_default_env());
+    let tracing_subscriber =
+        tracing_subscriber::registry().with(tracing_subscriber::fmt::layer()).with(EnvFilter::from_default_env());
 
     if let Some(otel_config) = otel_config {
         let meter_provider = init_metric_provider(&otel_config);
@@ -147,7 +142,6 @@ fn init_logs(otel_config: &OTELConfig) -> Result<LoggerProvider, opentelemetry::
 #[cfg(test)]
 mod tests {
     use once_cell::sync::Lazy;
-    use tracing::Level;
     use utils::metrics::lib::Metrics;
     use utils::register_metric;
 
@@ -161,7 +155,6 @@ mod tests {
         let instrumentation_params = InstrumentationParams {
             otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
             otel_service_name: "test_service".to_string(),
-            log_level: Level::INFO,
         };
 
         let otel_config = get_otel_config(&instrumentation_params).unwrap();
@@ -183,7 +176,6 @@ mod tests {
         let instrumentation_params = InstrumentationParams {
             otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
             otel_service_name: "test_service".to_string(),
-            log_level: Level::INFO,
         };
 
         let otel_config = get_otel_config(&instrumentation_params).unwrap();
@@ -203,7 +195,6 @@ mod tests {
         let instrumentation_params = InstrumentationParams {
             otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
             otel_service_name: "test_service".to_string(),
-            log_level: Level::INFO,
         };
 
         let analytics = setup_analytics(&instrumentation_params);
@@ -219,7 +210,6 @@ mod tests {
         let instrumentation_params = InstrumentationParams {
             otel_collector_endpoint: Some(Url::parse("http://localhost:4317").unwrap()),
             otel_service_name: "test_service".to_string(),
-            log_level: Level::INFO,
         };
 
         setup_analytics(&instrumentation_params);

@@ -14,9 +14,8 @@ use settlement_client_interface::{MockSettlementClient, SettlementClient};
 use sharp_service::SharpValidatedArgs;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
-use tracing::Level;
 use url::Url;
-use utils::env_utils::{get_env_var_optional, get_env_var_or_default, get_env_var_or_panic};
+use utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
 
 use crate::alerts::aws_sns::AWSSNSValidatedArgs;
 use crate::alerts::Alerts;
@@ -565,7 +564,6 @@ fn get_env_params() -> EnvParams {
         otel_collector_endpoint: get_env_var_optional("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")
             .expect("Couldn't get otel collector endpoint")
             .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")),
-        log_level: Level::from_str(&get_env_var_or_default("RUST_LOG", "info")).expect("Failed to parse RUST_LOG"),
     };
 
     let prover_params = ProverValidatedArgs::Sharp(SharpValidatedArgs {

@@ -1,5 +1,4 @@
 use clap::Args;
-use tracing::Level;
 use url::Url;
 
 /// Parameters used to config instrumentation.
@@ -13,8 +12,4 @@ pub struct InstrumentationCliArgs {
     /// The endpoint of the collector.
     #[arg(env = "MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT", long)]
     pub otel_collector_endpoint: Option<Url>,
-
-    /// The log level.
-    #[arg(env = "RUST_LOG", long, default_value = "INFO")]
-    pub log_level: Level,
 }

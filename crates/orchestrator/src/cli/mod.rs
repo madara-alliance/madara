@@ -559,7 +559,6 @@ pub mod validate_params {
         Ok(InstrumentationParams {
             otel_service_name: instrumentation_args.otel_service_name.clone().expect("Otel service name is required"),
             otel_collector_endpoint: instrumentation_args.otel_collector_endpoint.clone(),
-            log_level: instrumentation_args.log_level,
         })
     }
 
@@ -613,7 +612,6 @@ pub mod validate_params {
     pub mod test {
 
         use rstest::rstest;
-        use tracing::Level;
         use url::Url;
 
         use crate::cli::alert::aws_sns::AWSSNSCliArgs;
@@ -850,11 +848,8 @@ pub mod validate_params {
 
         #[rstest]
         fn test_validate_instrumentation_params() {
-            let instrumentation_args: InstrumentationCliArgs = InstrumentationCliArgs {
-                otel_service_name: Some("".to_string()),
-                otel_collector_endpoint: None,
-                log_level: Level::INFO,
-            };
+            let instrumentation_args: InstrumentationCliArgs =
+                InstrumentationCliArgs { otel_service_name: Some("".to_string()), otel_collector_endpoint: None };
             let instrumentation_params = validate_instrumentation_params(&instrumentation_args);
             assert!(instrumentation_params.is_ok());
         }

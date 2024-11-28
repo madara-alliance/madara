@@ -80,6 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- refactor: RUST_LOG filtering support
 - refactor: cargo.toml files cleaned
 - blob data formation process from state update
 - OTEL config refactor
