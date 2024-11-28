@@ -89,7 +89,7 @@ You can choose between different build modes:
 
 Start the Madara client with a basic set of arguments depending on your chosen mode:
 
-**Full Node**
+#### Full Node
 
 Synchronizes the state of the chain from genesis.
 
@@ -102,7 +102,7 @@ cargo run --release --        \
   --l1-endpoint ${ETHEREUM_API_URL}
 ```
 
-**Sequencer**
+#### Sequencer
 
 Produces new blocks for other nodes to synchronize.
 
@@ -115,7 +115,7 @@ cargo run --release --        \
   --l1-endpoint ${ETHEREUM_API_URL}
 ```
 
-**Devnet**
+#### Devnet
 
 A node in a private local network.
 
@@ -136,7 +136,7 @@ cargo run --release --        \
 You can use cli presets for certain common node configurations, for example
 enabling rpc endpoints:
 
-```
+```bash
 cargo run --release -- \
    --name Madara       \
    --full              \
@@ -146,7 +146,7 @@ cargo run --release -- \
 
 ...or the madara [feeder gateway](#feeder-gateway-state-synchronization):
 
-```
+```bash
 cargo run --release -- \
    --name Madara       \
    --full              \
