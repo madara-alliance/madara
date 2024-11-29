@@ -24,6 +24,41 @@ use mp_chain_config::ChainConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Combines multiple cli args into a single easy to use preset
+///
+/// Some args configurations are getting pretty lengthy and easy to get wrong.
+/// [ArgsPresetParams] tries to fix this:
+///
+/// 1. Argument presets are evaluated _after_ user inputs are parsed. This means
+///    it is not possible for users to override cli args set by a preset. This
+///    is a limitation in the way in which [clap] currently works.
+///
+/// 2. Argument presets are evaluated with [RunCmd::apply_arg_preset]. This has
+///    to be called manually, or presets will not be applied! All this does is
+///    set various cli flags to some predefined sensible value, tailoring
+///    towards a general use case.
+///
+/// # TODO
+///
+/// ## User input precedence
+///
+/// This is still very basic. Some nice improvements would be to allow arg
+/// presets to be evaluated _before_ the rest of the user input, so for example
+/// if an arg preset overrides `--some-arg`, then the user is still able to set
+/// its value by specifying`--some-arg` themselves. This would allow for arg
+/// presets to be used as the base for more complex user setups.
+///
+/// ## Configuration file
+///
+/// Another nice improvement would be the addition of _configuration files_ for
+/// a reproducible, declarative setup. This is still a work in progress as of
+/// [#285] and is a bit complicated due to this not being a core feature of
+/// [clap]. The main issue in this case is that we want the user to be able to
+/// pass a configuration file and ignore the rest of the cli arguments _if they
+/// are set in the file_. This is non-trivial with the way in which [clap]
+/// works (we still want good auto-generated docs and derive api support!).
+///
+/// [#285]: https://github.com/madara-alliance/madara/issues/285
 #[derive(Clone, Debug, clap::Parser)]
 #[clap(
     group(
