@@ -69,6 +69,8 @@ pub async fn l2_fetch_task(
 
         if client.shutdown().await.is_err() {
             tracing::error!("❗ Failed to shutdown warp update sender");
+            ctx.cancel_global();
+            return Ok(());
         }
 
         config.n_blocks_to_sync = config.n_blocks_to_sync.map(|n| n - (next_block - first_block));
