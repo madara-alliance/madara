@@ -26,7 +26,7 @@ RUN cargo build --release
 FROM debian:bookworm
 # Install runtime dependencies
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates tini &&\
+    apt-get install -y openssl ca-certificates tini curl &&\
     apt-get autoremove -y; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
