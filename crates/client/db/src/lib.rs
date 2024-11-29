@@ -1,19 +1,18 @@
 //! Madara database
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
 use rocksdb_options::rocksdb_global_options;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
 
@@ -37,7 +36,7 @@ pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
-pub fn open_rocksdb(path: &Path) -> Result<Arc<DB>> {
+pub fn open_rocksdb(path: &Path) -> anyhow::Result<Arc<DB>> {
     let opts = rocksdb_global_options()?;
     tracing::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
@@ -49,14 +48,14 @@ pub fn open_rocksdb(path: &Path) -> Result<Arc<DB>> {
     Ok(Arc::new(db))
 }
 
-/// This runs in anothr thread as the backup engine is not thread safe
+/// This runs in another thread as the backup engine is not thread safe
 fn spawn_backup_db_task(
     backup_dir: &Path,
     restore_from_latest_backup: bool,
     db_path: &Path,
     db_restored_cb: oneshot::Sender<()>,
     mut recv: mpsc::Receiver<BackupRequest>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let mut backup_opts = BackupEngineOptions::new(backup_dir).context("Creating backup options")?;
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     backup_opts.set_max_background_operations(cores);
@@ -254,7 +253,6 @@ impl DatabaseExt for DB {
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
-    last_flush_time: Mutex<Option<Instant>>,
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
@@ -305,7 +303,11 @@ impl DatabaseService {
     }
 }
 
-impl Service for DatabaseService {}
+impl Service for DatabaseService {
+    fn id(&self) -> MadaraService {
+        MadaraService::Database
+    }
+}
 
 struct BackupRequest {
     callback: oneshot::Sender<()>,
@@ -315,7 +317,7 @@ struct BackupRequest {
 impl Drop for MadaraBackend {
     fn drop(&mut self) {
         tracing::info!("⏳ Gracefully closing the database...");
-        self.maybe_flush(true).expect("Error when flushing the database"); // flush :)
+        self.flush().expect("Error when flushing the database"); // flush :)
     }
 }
 
@@ -330,7 +332,6 @@ impl MadaraBackend {
         Arc::new(Self {
             backup_handle: None,
             db: open_rocksdb(temp_dir.as_ref()).unwrap(),
-            last_flush_time: Default::default(),
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
@@ -344,7 +345,7 @@ impl MadaraBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-    ) -> Result<Arc<MadaraBackend>> {
+    ) -> anyhow::Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
         // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
@@ -374,7 +375,6 @@ impl MadaraBackend {
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
             db,
-            last_flush_time: Default::default(),
             chain_config: Arc::clone(&chain_config),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             #[cfg(feature = "testing")]
@@ -384,30 +384,21 @@ impl MadaraBackend {
         Ok(backend)
     }
 
-    pub fn maybe_flush(&self, force: bool) -> Result<bool> {
-        let mut inst = self.last_flush_time.lock().expect("poisoned mutex");
-        let will_flush = force
-            || match *inst {
-                Some(inst) => inst.elapsed() >= Duration::from_secs(5),
-                None => true,
-            };
-        if will_flush {
-            tracing::debug!("doing a db flush");
-            let mut opts = FlushOptions::default();
-            opts.set_wait(true);
-            // we have to collect twice here :/
-            let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
-            let columns = columns.iter().collect::<Vec<_>>();
-            self.db.flush_cfs_opt(&columns, &opts).context("Flushing database")?;
+    pub fn flush(&self) -> anyhow::Result<()> {
+        tracing::debug!("doing a db flush");
+        let mut opts = FlushOptions::default();
+        opts.set_wait(true);
+        // we have to collect twice here :/
+        let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
+        let columns = columns.iter().collect::<Vec<_>>();
 
-            *inst = Some(Instant::now());
-        }
+        self.db.flush_cfs_opt(&columns, &opts).context("Flushing database")?;
 
-        Ok(will_flush)
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn backup(&self) -> Result<()> {
+    pub async fn backup(&self) -> anyhow::Result<()> {
         let (callback_sender, callback_recv) = oneshot::channel();
         let _res = self
             .backup_handle

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use jsonrpsee::server::ServerHandle;
 use tokio::task::JoinSet;
 
-use mc_db::DatabaseService;
+use mc_db::MadaraBackend;
 use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -19,18 +19,29 @@ mod middleware;
 mod server;
 
 pub struct RpcService {
-    server_config_user: Option<ServerConfig>,
-    server_config_admin: Option<ServerConfig>,
+    config: RpcParams,
+    backend: Arc<MadaraBackend>,
+    add_txs_method_provider: Arc<dyn AddTransactionProvider>,
     server_handle_user: Option<ServerHandle>,
     server_handle_admin: Option<ServerHandle>,
 }
+
 impl RpcService {
     pub fn new(
-        config: &RpcParams,
-        db: &DatabaseService,
+        config: RpcParams,
+        backend: Arc<MadaraBackend>,
         add_txs_method_provider: Arc<dyn AddTransactionProvider>,
-    ) -> anyhow::Result<Self> {
-        let starknet = Starknet::new(Arc::clone(db.backend()), add_txs_method_provider);
+    ) -> Self {
+        Self { config, backend, add_txs_method_provider, server_handle_user: None, server_handle_admin: None }
+    }
+}
+
+#[async_trait::async_trait]
+impl Service for RpcService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
+        let RpcService { config, backend, add_txs_method_provider, .. } = self;
+
+        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone(), ctx.clone());
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {
@@ -77,29 +88,22 @@ impl RpcService {
             None
         };
 
-        Ok(Self { server_config_user, server_config_admin, server_handle_user: None, server_handle_admin: None })
-    }
-}
-
-#[async_trait::async_trait]
-impl Service for RpcService {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
-        if let Some(server_config) = &self.server_config_user {
+        if let Some(server_config) = &server_config_user {
             // rpc enabled
-            self.server_handle_user =
-                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
+            self.server_handle_user = Some(start_server(server_config.clone(), join_set, ctx.clone()).await?);
         }
 
-        if let Some(server_config) = &self.server_config_admin {
+        if let Some(server_config) = &server_config_admin {
             // rpc enabled (admin)
-            self.server_handle_admin =
-                Some(start_server(server_config.clone(), join_set, cancellation_token.clone()).await?);
+            let ctx = ctx.child().with_id(MadaraService::RpcAdmin);
+            ctx.service_add(MadaraService::RpcAdmin);
+            self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx).await?);
         }
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::Rpc
     }
 }

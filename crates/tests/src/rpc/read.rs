@@ -570,6 +570,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    // TODO: replace this with jsonrpsee client
     async fn test_get_txn_receipt_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));

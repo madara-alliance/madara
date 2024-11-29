@@ -12,6 +12,7 @@ pub mod utils;
 pub mod versions;
 
 use jsonrpsee::RpcModule;
+use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -26,15 +27,29 @@ use providers::AddTransactionProvider;
 use utils::ResultExt;
 
 /// A Starknet RPC server for Madara
-#[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    pub ctx: ServiceContext,
+}
+
+impl Clone for Starknet {
+    fn clone(&self) -> Self {
+        Self {
+            backend: Arc::clone(&self.backend),
+            add_transaction_provider: Arc::clone(&self.add_transaction_provider),
+            ctx: self.ctx.clone(),
+        }
+    }
 }
 
 impl Starknet {
-    pub fn new(backend: Arc<MadaraBackend>, add_transaction_provider: Arc<dyn AddTransactionProvider>) -> Self {
-        Self { backend, add_transaction_provider }
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        ctx: ServiceContext,
+    ) -> Self {
+        Self { backend, add_transaction_provider, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -107,6 +122,8 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

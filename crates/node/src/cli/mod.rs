@@ -24,6 +24,95 @@ use mp_chain_config::ChainConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Combines multiple cli args into a single easy to use preset
+///
+/// Some args configurations are getting pretty lengthy and easy to get wrong.
+/// [ArgsPresetParams] tries to fix this:
+///
+/// 1. Argument presets are evaluated _after_ user inputs are parsed. This means
+///    it is not possible for users to override cli args set by a preset. This
+///    is a limitation in the way in which [clap] currently works.
+///
+/// 2. Argument presets are evaluated with [RunCmd::apply_arg_preset]. This has
+///    to be called manually, or presets will not be applied! All this does is
+///    set various cli flags to some predefined sensible value, tailoring
+///    towards a general use case.
+///
+/// # TODO
+///
+/// ## User input precedence
+///
+/// This is still very basic. Some nice improvements would be to allow arg
+/// presets to be evaluated _before_ the rest of the user input, so for example
+/// if an arg preset overrides `--some-arg`, then the user is still able to set
+/// its value by specifying`--some-arg` themselves. This would allow for arg
+/// presets to be used as the base for more complex user setups.
+///
+/// ## Configuration file
+///
+/// Another nice improvement would be the addition of _configuration files_ for
+/// a reproducible, declarative setup. This is still a work in progress as of
+/// [#285] and is a bit complicated due to this not being a core feature of
+/// [clap]. The main issue in this case is that we want the user to be able to
+/// pass a configuration file and ignore the rest of the cli arguments _if they
+/// are set in the file_. This is non-trivial with the way in which [clap]
+/// works (we still want good auto-generated docs and derive api support!).
+///
+/// [#285]: https://github.com/madara-alliance/madara/issues/285
+#[derive(Clone, Debug, clap::Parser)]
+#[clap(
+    group(
+        ArgGroup::new("args-preset")
+            .args(&["warp_update_sender", "warp_update_receiver", "gateway", "rpc"])
+            .multiple(false)
+    )
+)]
+pub struct ArgsPresetParams {
+    /// Sets up the node as a local feeder gateway, stopping any further sync.
+    /// This is used to rapidly synchronize local state onto another node with
+    /// --warp-update-receiver. You can use this to rapidly migrate to a new
+    /// version of madara without having to re-synchronize from genesis.
+    #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
+    pub warp_update_sender: bool,
+
+    /// Sets up the node to rapidly synchronize state from a local feeder
+    /// gateway. The node and the feeder gateway will shutdown once this process
+    /// is complete. We assume the state of the feeder gateway is valid, and
+    /// therefore we do not re-compute the state root. You can use this to
+    /// rapidly migrate to a new version of madara without having to
+    /// re-synchronize from genesis. You can launch the local feeder gateway
+    /// using --warp-update-sender.
+    #[clap(env = "MADARA_WARP_UPDATE", long, value_name = "WARP UPDATE", group = "args-preset")]
+    pub warp_update_receiver: bool,
+
+    /// Sets up the node as an externally facing feeder gateway exposed on
+    /// 0.0.0.0. Generally speaking, this means the node will be accessible
+    /// from the outside world.
+    #[clap(env = "MADARA_GATEWAY", long, value_name = "GATEWAY", group = "args-preset")]
+    pub gateway: bool,
+
+    /// Sets up the node as an externally facing rpc provider exposed on
+    /// 0.0.0.0. Generally speaking, this means the node will be accessible
+    /// from the outside world. Admin rpc methods are also enabled, but are only
+    /// exposed on localhost.
+    #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
+    pub rpc: bool,
+}
+
+impl ArgsPresetParams {
+    pub fn greet(&self) {
+        if self.warp_update_sender {
+            tracing::info!("💫 Running Warp Update Sender preset")
+        } else if self.warp_update_receiver {
+            tracing::info!("💫 Running Warp Update Receiver preset")
+        } else if self.gateway {
+            tracing::info!("💫 Running Gateway preset")
+        } else if self.rpc {
+            tracing::info!("💫 Running Rpc preset")
+        }
+    }
+}
+
 /// Madara: High performance Starknet sequencer/full-node.
 #[derive(Clone, Debug, clap::Parser)]
 #[clap(
@@ -44,12 +133,15 @@ use std::sync::Arc;
             .requires("full")
     ),
 )]
-
 pub struct RunCmd {
     /// The human-readable name for this node.
     /// It is used as the network node name.
     #[arg(env = "MADARA_NAME", long, value_name = "NAME")]
     pub name: Option<String>,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub args_preset: ArgsPresetParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -113,6 +205,31 @@ pub struct RunCmd {
 }
 
 impl RunCmd {
+    // NOTE: (trantorian) I am not entirely satisfied with how this works. The
+    // main issue is that users cannot override presets as this resolves _after_
+    // all arguments have been assigned. It might be worth forking clap for a
+    // better UX.
+    pub fn apply_arg_preset(mut self) -> Self {
+        if self.args_preset.warp_update_sender {
+            self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.gateway_port = self.sync_params.warp_update_port_fgw;
+            self.rpc_params.rpc_admin = true;
+            self.rpc_params.rpc_admin_port = self.sync_params.warp_update_port_rpc;
+        } else if self.args_preset.warp_update_receiver {
+            self.rpc_params.rpc_disable = true;
+        } else if self.args_preset.gateway {
+            self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.gateway_enable = true;
+            self.gateway_params.gateway_external = true;
+        } else if self.args_preset.rpc {
+            self.rpc_params.rpc_admin = true;
+            self.rpc_params.rpc_external = true;
+            self.rpc_params.rpc_cors = Some(Cors::All);
+        }
+
+        self
+    }
+
     pub async fn node_name_or_provide(&mut self) -> &str {
         if self.name.is_none() {
             let name = crate::util::get_random_pokemon_name().await.unwrap_or_else(|e| {
