@@ -4,7 +4,7 @@ services:
   madara:
     image: madara:latest
     container_name: "madara_runner"
-    cpu_count: 4
+    cpus: "4.0"
     mem_limit: "16gb"
     ports:
       - 9944:9944
