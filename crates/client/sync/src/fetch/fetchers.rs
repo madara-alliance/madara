@@ -42,7 +42,7 @@ pub struct FetchConfig {
     /// Number of blocks to sync (for testing purposes).
     pub n_blocks_to_sync: Option<u64>,
     /// Number of blocks between db flushes
-    pub flush_every_n_blocks: u16,
+    pub flush_every_n_blocks: u64,
     /// Stops the node once all blocks have been synced (for testing purposes)
     pub stop_on_sync: bool,
     /// Number of blocks to fetch in parallel during the sync process

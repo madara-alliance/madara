@@ -87,8 +87,14 @@ pub struct SyncParams {
     /// Periodically flushes the database from ram to disk. You can set this
     /// based on how fast your machine is at synchronizing blocks and how much
     /// ram it has available.
-    #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "FLUSH EVERY N BLOCKS", default_value_t = 1_000)]
-    pub flush_every_n_blocks: u16,
+    #[clap(
+        env = "MADARA_FLUSH_EVERY_N_BLOCKS",
+        value_name = "FLUSH EVERY N BLOCKS",
+        long,
+        value_parser = clap::value_parser!(u64).range(..10_000),
+        default_value_t = 1_000
+    )]
+    pub flush_every_n_blocks: u64,
 
     /// Number of blocks to fetch in parallel. This only affects sync time, and
     /// does not affect the node once it has reached the tip of the chain.
