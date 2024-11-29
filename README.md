@@ -489,10 +489,9 @@ Madara comes packed with OTEL integration, supporting export of traces, metrics 
 
 ## 🔄 Migration
 
-When migration to a newer version of Madara which introduces breaking changes,
-you might need to update your database. Instead of re-synchronizing the entirety
-of your chain's state from genesis, you can use Madara's **warp update**
-feature.
+When migration to a newer version of Madara you might need to update your
+database. Instead of re-synchronizing the entirety of your chain's state from
+genesis, you can use Madara's **warp update** feature.
 
 > [!NOTE]
 > Warp update requires you to already have an existing node with a working
