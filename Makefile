@@ -139,7 +139,7 @@ clean-db:
 	esac
 	@make --silent clean
 	@echo -e "$(DIM)removing madara database on host$(RESET)"
-	@sudo rm -rf $(DB_PATH);
+	@rm -rf $(DB_PATH);
 
 .PHONY: fclean
 fclean: clean-db
