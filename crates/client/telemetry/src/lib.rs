@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use anyhow::Context;
 use futures::SinkExt;
 use mp_utils::channel_wait_or_graceful_shutdown;
-use mp_utils::service::{MadaraCapability, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -157,7 +157,7 @@ impl Service for TelemetryService {
         Ok(())
     }
 
-    fn id(&self) -> MadaraCapability {
-        MadaraCapability::Telemetry
+    fn id(&self) -> MadaraService {
+        MadaraService::Telemetry
     }
 }

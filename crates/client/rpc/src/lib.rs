@@ -123,7 +123,7 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::admin::v0_1_0::MadaraCapabilitiesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

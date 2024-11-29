@@ -6,7 +6,7 @@ use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraCapability, Service};
+use mp_utils::service::{MadaraService, Service};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
 use rocksdb_options::rocksdb_global_options;
@@ -48,7 +48,7 @@ pub fn open_rocksdb(path: &Path) -> anyhow::Result<Arc<DB>> {
     Ok(Arc::new(db))
 }
 
-/// This runs in anothr thread as the backup engine is not thread safe
+/// This runs in another thread as the backup engine is not thread safe
 fn spawn_backup_db_task(
     backup_dir: &Path,
     restore_from_latest_backup: bool,
@@ -304,8 +304,8 @@ impl DatabaseService {
 }
 
 impl Service for DatabaseService {
-    fn id(&self) -> MadaraCapability {
-        MadaraCapability::Database
+    fn id(&self) -> MadaraService {
+        MadaraService::Database
     }
 }
 

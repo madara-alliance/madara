@@ -43,7 +43,7 @@ pub trait MadaraStatusRpcApi {
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
-pub trait MadaraCapabilitiesRpcApi {
+pub trait MadaraServicesRpcApi {
     /// Disables user-facing rpc services.
     ///
     /// This only works if user rpc has been enabled on startup, otherwise this

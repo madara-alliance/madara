@@ -6,7 +6,7 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraCapability, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -86,7 +86,7 @@ impl Service for L2SyncService {
         Ok(())
     }
 
-    fn id(&self) -> MadaraCapability {
-        MadaraCapability::L2Sync
+    fn id(&self) -> MadaraService {
+        MadaraService::L2Sync
     }
 }

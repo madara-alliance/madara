@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 
 use mc_db::MadaraBackend;
 use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::{MadaraCapability, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -95,15 +95,15 @@ impl Service for RpcService {
 
         if let Some(server_config) = &server_config_admin {
             // rpc enabled (admin)
-            let ctx = ctx.child().with_id(MadaraCapability::RpcAdmin);
-            ctx.capabilities_add(MadaraCapability::RpcAdmin);
+            let ctx = ctx.child().with_id(MadaraService::RpcAdmin);
+            ctx.service_add(MadaraService::RpcAdmin);
             self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx).await?);
         }
 
         Ok(())
     }
 
-    fn id(&self) -> MadaraCapability {
-        MadaraCapability::Rpc
+    fn id(&self) -> MadaraService {
+        MadaraService::Rpc
     }
 }
