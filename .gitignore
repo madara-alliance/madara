@@ -64,3 +64,7 @@ tmp/
 
 *.info
 *.profraw
+
+# Running madara with make and docker compose
+.secrets
+image.tar.gz
