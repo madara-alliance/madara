@@ -481,7 +481,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             declared_classes,
         )
         .await?;
-        self.block.info.header.parent_block_hash = import_result.block_hash; // fix temp parent block hash for new pending :)
+        // do not forget to flush :)
+        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+
+        // fix temp parent block hash for new pending :)
+        self.block.info.header.parent_block_hash = import_result.block_hash;
 
         // Prepare for next block.
         self.executor =
