@@ -27,12 +27,14 @@ impl From<UserTransaction> for BroadcastedTxn<Felt> {
     }
 }
 
-impl From<BroadcastedTxn<Felt>> for UserTransaction {
-    fn from(transaction: BroadcastedTxn<Felt>) -> Self {
+impl TryFrom<BroadcastedTxn<Felt>> for UserTransaction {
+    type Error = base64::DecodeError;
+
+    fn try_from(transaction: BroadcastedTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
-            BroadcastedTxn::Declare(tx) => UserTransaction::Declare(tx.into()),
-            BroadcastedTxn::Invoke(tx) => UserTransaction::InvokeFunction(tx.into()),
-            BroadcastedTxn::DeployAccount(tx) => UserTransaction::DeployAccount(tx.into()),
+            BroadcastedTxn::Declare(tx) => Ok(UserTransaction::Declare(tx.try_into()?)),
+            BroadcastedTxn::Invoke(tx) => Ok(UserTransaction::InvokeFunction(tx.into())),
+            BroadcastedTxn::DeployAccount(tx) => Ok(UserTransaction::DeployAccount(tx.into())),
         }
     }
 }
@@ -61,26 +63,28 @@ impl From<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
     }
 }
 
-impl From<BroadcastedDeclareTxn<Felt>> for UserDeclareTransaction {
-    fn from(transaction: BroadcastedDeclareTxn<Felt>) -> Self {
+impl TryFrom<BroadcastedDeclareTxn<Felt>> for UserDeclareTransaction {
+    type Error = base64::DecodeError;
+
+    fn try_from(transaction: BroadcastedDeclareTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedDeclareTxn::V1(tx) => {
-                UserDeclareTransaction::V1(UserDeclareV1Transaction::from_broadcasted(tx, false))
+                Ok(UserDeclareTransaction::V1(UserDeclareV1Transaction::try_from_broadcasted(tx, false)?))
             }
             BroadcastedDeclareTxn::QueryV1(tx) => {
-                UserDeclareTransaction::V1(UserDeclareV1Transaction::from_broadcasted(tx, true))
+                Ok(UserDeclareTransaction::V1(UserDeclareV1Transaction::try_from_broadcasted(tx, true)?))
             }
             BroadcastedDeclareTxn::V2(tx) => {
-                UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, false))
+                Ok(UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, false)))
             }
             BroadcastedDeclareTxn::QueryV2(tx) => {
-                UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, true))
+                Ok(UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, true)))
             }
             BroadcastedDeclareTxn::V3(tx) => {
-                UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, false))
+                Ok(UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, false)))
             }
             BroadcastedDeclareTxn::QueryV3(tx) => {
-                UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, true))
+                Ok(UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, true)))
             }
         }
     }
@@ -109,15 +113,18 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
 }
 
 impl UserDeclareV1Transaction {
-    fn from_broadcasted(transaction: BroadcastedDeclareTxnV1<Felt>, is_query: bool) -> Self {
-        Self {
+    fn try_from_broadcasted(
+        transaction: BroadcastedDeclareTxnV1<Felt>,
+        is_query: bool,
+    ) -> Result<Self, base64::DecodeError> {
+        Ok(Self {
             sender_address: transaction.sender_address,
             max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
-            contract_class: transaction.contract_class.into(),
+            contract_class: transaction.contract_class.try_into()?,
             is_query,
-        }
+        })
     }
 }
 

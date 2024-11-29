@@ -59,7 +59,7 @@ impl L1HandlerTransactionReceipt {
         finality_status: starknet_types_rpc::TxnFinalityStatus,
     ) -> starknet_types_rpc::L1HandlerTxnReceipt<Felt> {
         starknet_types_rpc::L1HandlerTxnReceipt::<Felt> {
-            message_hash: 0, // Placeholder until the field is updated in the schema
+            message_hash: self.message_hash.to_string(),
             common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
                 events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
@@ -165,18 +165,25 @@ impl From<Event> for starknet_types_rpc::Event<Felt> {
 impl From<ExecutionResources> for starknet_types_rpc::ExecutionResources {
     fn from(resources: ExecutionResources) -> Self {
         Self {
-            bitwise_builtin_applications: resources.bitwise_builtin_applications,
-            ec_op_builtin_applications: resources.ec_op_builtin_applications,
-            ecdsa_builtin_applications: resources.ecdsa_builtin_applications,
-            keccak_builtin_applications: resources.keccak_builtin_applications,
-            memory_holes: resources.memory_holes,
-            pedersen_builtin_applications: resources.pedersen_builtin_applications,
-            poseidon_builtin_applications: resources.poseidon_builtin_applications,
-            range_check_builtin_applications: resources.range_check_builtin_applications,
-            segment_arena_builtin: resources.segment_arena_builtin,
+            bitwise_builtin_applications: nullify_zero(resources.bitwise_builtin_applications),
+            ec_op_builtin_applications: nullify_zero(resources.ec_op_builtin_applications),
+            ecdsa_builtin_applications: nullify_zero(resources.ecdsa_builtin_applications),
+            keccak_builtin_applications: nullify_zero(resources.keccak_builtin_applications),
+            memory_holes: nullify_zero(resources.memory_holes),
+            pedersen_builtin_applications: nullify_zero(resources.pedersen_builtin_applications),
+            poseidon_builtin_applications: nullify_zero(resources.poseidon_builtin_applications),
+            range_check_builtin_applications: nullify_zero(resources.range_check_builtin_applications),
+            segment_arena_builtin: nullify_zero(resources.segment_arena_builtin),
             steps: resources.steps,
             data_availability: resources.data_availability.into(),
         }
+    }
+}
+
+fn nullify_zero(u: u64) -> Option<u64> {
+    match u {
+        0 => None,
+        _ => Some(u),
     }
 }
 

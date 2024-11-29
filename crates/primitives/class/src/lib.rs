@@ -165,7 +165,7 @@ pub struct SierraEntryPoint {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompressedLegacyContractClass {
-    pub program: String,
+    pub program: Vec<u8>,
     pub entry_points_by_type: LegacyEntryPointsByType,
     pub abi: Option<Vec<LegacyContractAbiEntry>>,
 }

@@ -3,11 +3,12 @@ use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
-    BlockHashAndNumber, EstimateFeeParams, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall,
-    GetTransactionByBlockIdAndIndexParams, MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes,
-    MaybePendingBlockWithTxs, MaybePendingStateUpdate, MsgFromL1, StarknetGetBlockWithTxsAndReceiptsResult,
-    SyncingStatus, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    BlockHashAndNumber, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall,
+    MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
+    MsgFromL1, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
+    TxnReceiptWithBlockInfo, TxnWithHash,
 };
+use starknet_types_rpc::{BroadcastedTxn, SimulationFlagForEstimateFee};
 
 use super::block_hash_and_number::*;
 use super::call::*;
@@ -59,8 +60,13 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(get_block_transaction_count(self, block_id)?)
     }
 
-    async fn estimate_fee(&self, params: EstimateFeeParams<Felt>) -> RpcResult<Vec<FeeEstimate<Felt>>> {
-        Ok(estimate_fee(self, params.request, params.simulation_flags, params.block_id).await?)
+    async fn estimate_fee(
+        &self,
+        request: Vec<BroadcastedTxn<Felt>>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
+        block_id: BlockId,
+    ) -> RpcResult<Vec<FeeEstimate<Felt>>> {
+        Ok(estimate_fee(self, request, simulation_flags, block_id).await?)
     }
 
     async fn estimate_message_fee(&self, message: MsgFromL1<Felt>, block_id: BlockId) -> RpcResult<FeeEstimate<Felt>> {
@@ -106,11 +112,8 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(get_storage_at(self, contract_address, key, block_id)?)
     }
 
-    fn get_transaction_by_block_id_and_index(
-        &self,
-        req: GetTransactionByBlockIdAndIndexParams<Felt>,
-    ) -> RpcResult<TxnWithHash<Felt>> {
-        Ok(get_transaction_by_block_id_and_index(self, req.block_id, req.index)?)
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash<Felt>> {
+        Ok(get_transaction_by_block_id_and_index(self, block_id, index)?)
     }
 
     fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<TxnWithHash<Felt>> {

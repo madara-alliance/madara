@@ -33,7 +33,13 @@ impl AddTransactionProvider for ForwardToProvider {
         &self,
         declare_transaction: BroadcastedDeclareTxn<Felt>,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        let sequencer_response = match self.provider.add_declare_transaction(declare_transaction.into()).await {
+        let sequencer_response = match self
+            .provider
+            .add_declare_transaction(
+                declare_transaction.try_into().map_err(|_| StarknetRpcApiError::InvalidContractClass)?,
+            )
+            .await
+        {
             Ok(response) => response,
             Err(SequencerError::StarknetError(e)) => {
                 return Err(StarknetRpcApiError::from(e).into());

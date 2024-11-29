@@ -136,15 +136,6 @@ impl From<L1DataAvailabilityMode> for starknet_types_rpc::L1DaMode {
     }
 }
 
-// impl From<starknet_core::types::L1DataAvailabilityMode> for L1DataAvailabilityMode {
-//     fn from(value: starknet_core::types::L1DataAvailabilityMode) -> Self {
-//         match value {
-//             starknet_core::types::L1DataAvailabilityMode::Calldata => Self::Calldata,
-//             starknet_core::types::L1DataAvailabilityMode::Blob => Self::Blob,
-//         }
-//     }
-// }
-
 #[derive(thiserror::Error, Debug)]
 pub enum BlockFormatError {
     #[error("The block is a pending block")]

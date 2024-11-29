@@ -35,6 +35,7 @@ starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
 
 # Other
+base64 = { workspace = true }
 flate2 = { workspace = true }
 lazy_static = { workspace = true }
 num-bigint = { workspace = true }

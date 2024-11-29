@@ -44,7 +44,7 @@ pub async fn estimate_fee(
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let validate = !simulation_flags.contains(&"SKIP_VALIDATE".to_string());
+    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
     let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
 

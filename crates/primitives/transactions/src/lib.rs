@@ -993,7 +993,7 @@ mod tests {
     #[test]
     fn test_broadcasted_declare_transaction_v0_serialization() {
         let contract_class = CompressedLegacyContractClass {
-            program: "".to_string(),
+            program: "".as_bytes().to_vec(),
             entry_points_by_type: LegacyEntryPointsByType {
                 constructor: Vec::new(),
                 external: Vec::new(),

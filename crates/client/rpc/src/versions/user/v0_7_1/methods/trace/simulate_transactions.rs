@@ -24,8 +24,8 @@ pub async fn simulate_transactions(
     }
     let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
 
-    let charge_fee = simulation_flags.contains(&SimulationFlag::FeeCharge);
-    let validate = simulation_flags.contains(&SimulationFlag::Validate);
+    let charge_fee = !simulation_flags.contains(&SimulationFlag::SkipFeeCharge);
+    let validate = !simulation_flags.contains(&SimulationFlag::SkipValidate);
 
     let user_transactions = transactions
         .into_iter()

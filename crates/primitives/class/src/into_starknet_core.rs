@@ -117,7 +117,7 @@ impl From<SierraEntryPoint> for starknet_core::types::SierraEntryPoint {
 impl From<starknet_core::types::CompressedLegacyContractClass> for CompressedLegacyContractClass {
     fn from(compressed_legacy_contract_class: starknet_core::types::CompressedLegacyContractClass) -> Self {
         CompressedLegacyContractClass {
-            program: String::from_utf8(compressed_legacy_contract_class.program).expect("Invalid utf8"),
+            program: compressed_legacy_contract_class.program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
@@ -129,7 +129,7 @@ impl From<starknet_core::types::CompressedLegacyContractClass> for CompressedLeg
 impl From<CompressedLegacyContractClass> for starknet_core::types::CompressedLegacyContractClass {
     fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
         starknet_core::types::CompressedLegacyContractClass {
-            program: compressed_legacy_contract_class.program.as_bytes().to_vec(),
+            program: compressed_legacy_contract_class.program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn test_legacy_contract_class_conversion() {
         let legacy_contract_class = CompressedLegacyContractClass {
-            program: "program".to_string(),
+            program: "program".as_bytes().to_vec(),
             entry_points_by_type: LegacyEntryPointsByType {
                 constructor: vec![LegacyContractEntryPoint { offset: 0, selector: Felt::from(1) }],
                 external: vec![LegacyContractEntryPoint { offset: 1, selector: Felt::from(2) }],

@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 tracing.workspace = true
 
 # Other
+primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

@@ -11,7 +11,7 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "addDeclareV0Transaction")]
     async fn add_declare_v0_transaction(
         &self,
-        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        declare_v0_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<ClassAndTxnHash<Felt>>;
 }
 

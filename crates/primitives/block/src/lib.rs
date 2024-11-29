@@ -125,7 +125,11 @@ impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
             new_root,
             parent_hash,
             sequencer_address,
-            starknet_version: protocol_version.to_string(),
+            starknet_version: if protocol_version < StarknetVersion::V0_9_1 {
+                "".to_string()
+            } else {
+                protocol_version.to_string()
+            },
             timestamp,
         }
     }

@@ -1,15 +1,14 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
-use mp_transactions::BroadcastedDeclareTransactionV0;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
     AddInvokeTransactionResult, BlockHashAndNumber, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, EstimateFeeParams,
-    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetTransactionByBlockIdAndIndexParams,
-    MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MsgFromL1, SimulateTransactionsResult, SimulationFlag, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TraceBlockTransactionsResult, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, EventFilterWithPageRequest, EventsChunk,
+    FeeEstimate, FunctionCall, MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+    MaybePendingStateUpdate, MsgFromL1, SimulateTransactionsResult, SimulationFlag, SimulationFlagForEstimateFee,
+    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResult,
+    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
 };
 
 // Starknet RPC API trait and types
@@ -17,19 +16,6 @@ use starknet_types_rpc::{
 // Starkware maintains [a description of the Starknet API](https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json)
 // using the openRPC specification.
 // This crate uses `jsonrpsee` to define such an API in Rust terms.
-
-/// Starknet write rpc interface.
-///
-
-#[versioned_rpc("V0_7_1", "madara")]
-pub trait MadaraWriteRpcApi {
-    /// Submit a new class v0 declaration transaction
-    #[method(name = "addDeclareV0Transaction", and_versions = ["V0_8_0"])]
-    async fn add_declare_v0_transaction(
-        &self,
-        declare_transaction_v0: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>>;
-}
 
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetWriteRpcApi {
@@ -83,7 +69,12 @@ pub trait StarknetReadRpcApi {
 
     /// Estimate the fee associated with transaction
     #[method(name = "estimateFee", and_versions = ["V0_8_0"])]
-    async fn estimate_fee(&self, params: EstimateFeeParams<Felt>) -> RpcResult<Vec<FeeEstimate<Felt>>>;
+    async fn estimate_fee(
+        &self,
+        request: Vec<BroadcastedTxn<Felt>>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
+        block_id: BlockId,
+    ) -> RpcResult<Vec<FeeEstimate<Felt>>>;
 
     /// Estimate the L2 fee of a message sent on L1
     #[method(name = "estimateMessageFee", and_versions = ["V0_8_0"])]
@@ -131,10 +122,7 @@ pub trait StarknetReadRpcApi {
 
     /// Get the details of a transaction by a given block id and index
     #[method(name = "getTransactionByBlockIdAndIndex", and_versions = ["V0_8_0"])]
-    fn get_transaction_by_block_id_and_index(
-        &self,
-        req: GetTransactionByBlockIdAndIndexParams<Felt>,
-    ) -> RpcResult<TxnWithHash<Felt>>;
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash<Felt>>;
 
     /// Returns the information about a transaction by transaction hash.
     #[method(name = "getTransactionByHash", and_versions = ["V0_8_0"])]

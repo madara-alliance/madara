@@ -9,14 +9,16 @@ use crate::{
     LegacyTypedParameter, SierraEntryPoint,
 };
 
-impl From<starknet_types_rpc::MaybeDeprecatedContractClass<Felt>> for ContractClass {
-    fn from(contract_class: starknet_types_rpc::MaybeDeprecatedContractClass<Felt>) -> Self {
+impl TryFrom<starknet_types_rpc::MaybeDeprecatedContractClass<Felt>> for ContractClass {
+    type Error = base64::DecodeError;
+
+    fn try_from(contract_class: starknet_types_rpc::MaybeDeprecatedContractClass<Felt>) -> Result<Self, Self::Error> {
         match contract_class {
             starknet_types_rpc::MaybeDeprecatedContractClass::ContractClass(flattened_sierra_class) => {
-                ContractClass::Sierra(Arc::new(flattened_sierra_class.into()))
+                Ok(ContractClass::Sierra(Arc::new(flattened_sierra_class.into())))
             }
             starknet_types_rpc::MaybeDeprecatedContractClass::Deprecated(compressed_legacy_contract_class) => {
-                ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.into()))
+                Ok(ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.try_into()?)))
             }
         }
     }
@@ -120,22 +122,36 @@ impl From<SierraEntryPoint> for starknet_types_rpc::SierraEntryPoint<Felt> {
     }
 }
 
-impl From<starknet_types_rpc::DeprecatedContractClass<Felt>> for CompressedLegacyContractClass {
-    fn from(compressed_legacy_contract_class: starknet_types_rpc::DeprecatedContractClass<Felt>) -> Self {
-        CompressedLegacyContractClass {
-            program: compressed_legacy_contract_class.program,
+impl TryFrom<starknet_types_rpc::DeprecatedContractClass<Felt>> for CompressedLegacyContractClass {
+    type Error = base64::DecodeError;
+
+    fn try_from(
+        compressed_legacy_contract_class: starknet_types_rpc::DeprecatedContractClass<Felt>,
+    ) -> Result<Self, Self::Error> {
+        use base64::Engine;
+
+        let decoded_program =
+            base64::engine::general_purpose::STANDARD.decode(&compressed_legacy_contract_class.program)?;
+
+        Ok(CompressedLegacyContractClass {
+            program: decoded_program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
                 .map(|abi| abi.into_iter().map(|legacy_contract_abi_entry| legacy_contract_abi_entry.into()).collect()),
-        }
+        })
     }
 }
 
 impl From<CompressedLegacyContractClass> for starknet_types_rpc::DeprecatedContractClass<Felt> {
     fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
+        use base64::Engine;
+
+        let encoded_program =
+            base64::engine::general_purpose::STANDARD.encode(&compressed_legacy_contract_class.program);
+
         starknet_types_rpc::DeprecatedContractClass {
-            program: compressed_legacy_contract_class.program,
+            program: encoded_program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
@@ -421,7 +437,7 @@ mod tests {
     #[test]
     fn test_legacy_contract_class_conversion() {
         let legacy_contract_class = CompressedLegacyContractClass {
-            program: "program".to_string(),
+            program: "program".as_bytes().to_vec(),
             entry_points_by_type: LegacyEntryPointsByType {
                 constructor: vec![LegacyContractEntryPoint { offset: 0, selector: Felt::from(1) }],
                 external: vec![LegacyContractEntryPoint { offset: 1, selector: Felt::from(2) }],

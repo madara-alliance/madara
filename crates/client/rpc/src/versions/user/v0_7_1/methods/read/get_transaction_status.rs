@@ -45,7 +45,7 @@ pub fn get_transaction_status(
     };
 
     let finality_status = match block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => TxnStatus::Received,
+        MadaraMaybePendingBlockInfo::Pending(_) => TxnStatus::AcceptedOnL2,
         MadaraMaybePendingBlockInfo::NotPending(block) => {
             if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 TxnStatus::AcceptedOnL1
