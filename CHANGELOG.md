@@ -2,6 +2,7 @@
 
 ## Next release
 
+- docs(readme): updated README.md docs and added Docker Compose support
 - fix(log): define RUST_LOG=info by default
 - fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
