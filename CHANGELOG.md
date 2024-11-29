@@ -3,6 +3,8 @@
 ## Next release
 
 - feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
+- fix(log): define RUST_LOG=info by default
+- fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
 - feat(debug): service cancelling and profiling build
