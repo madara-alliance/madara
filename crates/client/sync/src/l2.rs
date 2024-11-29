@@ -130,7 +130,7 @@ async fn l2_block_conversion_task(
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(
-        (updates_receiver, block_import, validation.clone(), ctx.branch()),
+        (updates_receiver, block_import, validation.clone(), ctx.clone()),
         |(mut updates_recv, block_import, validation, ctx)| async move {
             channel_wait_or_graceful_shutdown(updates_recv.recv(), &ctx).await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
@@ -269,7 +269,7 @@ pub async fn sync(
     join_set.spawn(l2_fetch_task(
         Arc::clone(backend),
         Arc::clone(&provider),
-        ctx.branch(),
+        ctx.clone(),
         L2FetchConfig {
             first_block: config.first_block,
             fetch_stream_sender,
@@ -288,11 +288,11 @@ pub async fn sync(
         block_conv_sender,
         Arc::clone(&config.block_importer),
         validation.clone(),
-        ctx.branch(),
+        ctx.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
         Arc::clone(backend),
-        ctx.branch(),
+        ctx.clone(),
         L2VerifyApplyConfig {
             block_import: Arc::clone(&config.block_importer),
             backup_every_n_blocks: config.backup_every_n_blocks,
@@ -306,7 +306,7 @@ pub async fn sync(
     join_set.spawn(l2_pending_block_task(
         Arc::clone(backend),
         provider,
-        ctx.branch(),
+        ctx.clone(),
         L2PendingBlockConfig {
             block_import: Arc::clone(&config.block_importer),
             once_caught_up_receiver,

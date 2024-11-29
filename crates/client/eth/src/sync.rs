@@ -22,14 +22,14 @@ pub async fn l1_sync_worker(
     ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     tokio::try_join!(
-        state_update_worker(backend, eth_client, chain_id.clone(), ctx.branch()),
+        state_update_worker(backend, eth_client, chain_id.clone(), ctx.clone()),
         async {
             if !gas_price_sync_disabled {
-                gas_price_worker(eth_client, l1_gas_provider, gas_price_poll_ms, ctx.branch()).await?;
+                gas_price_worker(eth_client, l1_gas_provider, gas_price_poll_ms, ctx.clone()).await?;
             }
             Ok(())
         },
-        sync(backend, eth_client, &chain_id, mempool, ctx.branch())
+        sync(backend, eth_client, &chain_id, mempool, ctx.clone())
     )?;
 
     Ok(())

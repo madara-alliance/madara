@@ -41,7 +41,7 @@ impl Service for RpcService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         let RpcService { config, backend, add_txs_method_provider, .. } = self;
 
-        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone(), ctx.branch());
+        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone(), ctx.clone());
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {
@@ -90,12 +90,12 @@ impl Service for RpcService {
 
         if let Some(server_config) = &server_config_user {
             // rpc enabled
-            self.server_handle_user = Some(start_server(server_config.clone(), join_set, ctx.branch()).await?);
+            self.server_handle_user = Some(start_server(server_config.clone(), join_set, ctx.clone()).await?);
         }
 
         if let Some(server_config) = &server_config_admin {
             // rpc enabled (admin)
-            let ctx = ctx.branch_id(MadaraCapability::RpcAdmin);
+            let ctx = ctx.child().with_id(MadaraCapability::RpcAdmin);
             ctx.capabilities_add(MadaraCapability::RpcAdmin);
             self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx).await?);
         }

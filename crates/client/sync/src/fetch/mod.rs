@@ -144,7 +144,7 @@ async fn sync_blocks(
     let fetch_stream =
         (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
             let provider = Arc::clone(provider);
-            let ctx = ctx.branch();
+            let ctx = ctx.clone();
             async move {
                 (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
             }

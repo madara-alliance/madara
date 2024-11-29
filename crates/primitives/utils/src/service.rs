@@ -125,6 +125,19 @@ pub struct ServiceContext {
     id: MadaraCapability,
 }
 
+impl Clone for ServiceContext {
+    fn clone(&self) -> Self {
+        Self {
+            token_global: self.token_global.clone(),
+            token_local: self.token_local.clone(),
+            capabilities: Arc::clone(&self.capabilities),
+            capabilities_notify: Arc::clone(&self.capabilities_notify),
+            state: Arc::clone(&self.state),
+            id: self.id,
+        }
+    }
+}
+
 impl ServiceContext {
     pub fn new() -> Self {
         Self {
@@ -189,28 +202,10 @@ impl ServiceContext {
         self.id
     }
 
-    /// Copies the context, maintaining its scope.
-    pub fn branch(&self) -> Self {
-        Self {
-            token_global: self.token_global.clone(),
-            token_local: self.token_local.clone(),
-            capabilities: Arc::clone(&self.capabilities),
-            capabilities_notify: Arc::clone(&self.capabilities_notify),
-            state: Arc::clone(&self.state),
-            id: self.id,
-        }
-    }
-
     /// Copies the context, maintaining its scope but with a new id.
-    pub fn branch_id(&self, id: MadaraCapability) -> Self {
-        Self {
-            token_global: self.token_global.clone(),
-            token_local: self.token_local.clone(),
-            capabilities: Arc::clone(&self.capabilities),
-            capabilities_notify: Arc::clone(&self.capabilities_notify),
-            state: Arc::clone(&self.state),
-            id,
-        }
+    pub fn with_id(mut self, id: MadaraCapability) -> Self {
+        self.id = id;
+        self
     }
 
     /// Copies the context into a new local scope.
@@ -218,7 +213,7 @@ impl ServiceContext {
     /// Any service which uses this new context will be able to cancel the
     /// services in the same local scope as itself, and any further child
     /// services, without affecting the rest of the global scope.
-    pub fn child(&self, id: MadaraCapability) -> Self {
+    pub fn child(&self) -> Self {
         let token_local = self.token_local.as_ref().unwrap_or(&self.token_global).child_token();
 
         Self {
@@ -227,7 +222,7 @@ impl ServiceContext {
             capabilities: Arc::clone(&self.capabilities),
             capabilities_notify: Arc::clone(&self.capabilities_notify),
             state: Arc::clone(&self.state),
-            id,
+            id: self.id,
         }
     }
 
@@ -344,7 +339,7 @@ impl Service for ServiceGroup {
         let mut own_join_set = self.join_set.take().expect("Service has already been started.");
         for svc in self.services.iter_mut() {
             ctx.capabilities_add(svc.id());
-            svc.start(&mut own_join_set, ctx.child(svc.id())).await.context("Starting service")?;
+            svc.start(&mut own_join_set, ctx.child().with_id(svc.id())).await.context("Starting service")?;
         }
 
         join_set.spawn(drive_joinset(own_join_set));

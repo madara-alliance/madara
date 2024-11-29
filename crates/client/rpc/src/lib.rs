@@ -38,7 +38,7 @@ impl Clone for Starknet {
         Self {
             backend: Arc::clone(&self.backend),
             add_transaction_provider: Arc::clone(&self.add_transaction_provider),
-            ctx: self.ctx.branch(),
+            ctx: self.ctx.clone(),
         }
     }
 }
