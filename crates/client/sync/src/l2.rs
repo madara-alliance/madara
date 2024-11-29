@@ -50,6 +50,7 @@ pub struct L2VerifyApplyConfig {
     block_import: Arc<BlockImporter>,
     backup_every_n_blocks: Option<u64>,
     flush_every_n_blocks: u64,
+    flush_every_n_seconds: u64,
     stop_on_sync: bool,
     telemetry: TelemetryHandle,
     validation: BlockValidationContext,
@@ -62,23 +63,27 @@ async fn l2_verify_and_apply_task(
     ctx: ServiceContext,
     config: L2VerifyApplyConfig,
 ) -> anyhow::Result<()> {
-    let mut last_block_n = 0;
-
     let L2VerifyApplyConfig {
         block_import,
         backup_every_n_blocks,
         flush_every_n_blocks,
+        flush_every_n_seconds,
         stop_on_sync,
         telemetry,
         validation,
         mut block_conv_receiver,
     } = config;
 
+    let mut last_block_n = 0;
+    let mut instant = std::time::Instant::now();
+    let target_duration = std::time::Duration::from_secs(flush_every_n_seconds);
+
     while let Some(block) = channel_wait_or_graceful_shutdown(pin!(block_conv_receiver.recv()), &ctx).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
-        if header.block_number - last_block_n >= flush_every_n_blocks {
+        if header.block_number - last_block_n >= flush_every_n_blocks || instant.elapsed() >= target_duration {
             last_block_n = header.block_number;
+            instant = std::time::Instant::now();
             backend.flush().context("Flushing database")?;
         }
 
@@ -225,6 +230,7 @@ pub struct L2SyncConfig {
     pub sync_polling_interval: Option<Duration>,
     pub backup_every_n_blocks: Option<u64>,
     pub flush_every_n_blocks: u64,
+    pub flush_every_n_seconds: u64,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
     pub warp_update: bool,
@@ -297,6 +303,7 @@ pub async fn sync(
             block_import: Arc::clone(&config.block_importer),
             backup_every_n_blocks: config.backup_every_n_blocks,
             flush_every_n_blocks: config.flush_every_n_blocks,
+            flush_every_n_seconds: config.flush_every_n_seconds,
             stop_on_sync: config.stop_on_sync,
             telemetry: config.telemetry,
             validation: validation.clone(),
@@ -374,6 +381,7 @@ mod tests {
                 block_import: block_import.clone(),
                 backup_every_n_blocks: Some(1),
                 flush_every_n_blocks: 1,
+                flush_every_n_seconds: 10,
                 stop_on_sync: false,
                 telemetry,
                 validation: validation.clone(),

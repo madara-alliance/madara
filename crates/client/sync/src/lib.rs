@@ -68,6 +68,7 @@ pub async fn l2_sync_worker(
             sync_polling_interval: fetch_config.sync_polling_interval,
             backup_every_n_blocks: sync_config.backup_every_n_blocks,
             flush_every_n_blocks: fetch_config.flush_every_n_blocks,
+            flush_every_n_seconds: fetch_config.flush_every_n_seconds,
             pending_block_poll_interval: sync_config.pending_block_poll_interval,
             ignore_block_order,
             sync_parallelism: fetch_config.sync_parallelism,

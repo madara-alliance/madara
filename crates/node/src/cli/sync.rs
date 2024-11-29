@@ -84,17 +84,45 @@ pub struct SyncParams {
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 
-    /// Periodically flushes the database from ram to disk. You can set this
-    /// based on how fast your machine is at synchronizing blocks and how much
-    /// ram it has available.
+    /// Periodically flushes the database from ram to disk based on the number
+    /// of blocks synchronized since the last flush. You can set this to a
+    /// higher number depending on how fast your machine is at synchronizing
+    /// blocks and how much ram it has available.
+    ///
+    /// Be aware that blocks might still be flushed to db earlier based on the
+    /// value of --flush-every-n-seconds.
+    ///
+    /// Note that keeping this value high could lead to blocks being stored in
+    /// ram for longer periods of time before they are written to disk. This
+    /// might be an issue for chains which synchronize slowly.
     #[clap(
         env = "MADARA_FLUSH_EVERY_N_BLOCKS",
         value_name = "FLUSH EVERY N BLOCKS",
         long,
-        value_parser = clap::value_parser!(u64).range(..10_000),
+        value_parser = clap::value_parser!(u64).range(..=10_000),
         default_value_t = 1_000
     )]
     pub flush_every_n_blocks: u64,
+
+    /// Periodically flushes the database from ram to disk based on the elapsed
+    /// time since the last flush. You can set this to a higher number
+    /// depending on how fast your machine is at synchronizing blocks and how
+    /// much ram it has available.
+    ///
+    /// Be aware that blocks might still be flushed to db earlier based on the
+    /// value of --flush-every-n-blocks.
+    ///
+    /// Note that keeping this value high could lead to blocks being stored in
+    /// ram for longer periods of time before they are written to disk. This
+    /// might be an issue for chains which synchronize slowly.
+    #[clap(
+        env = "MADARA_FLUSH_EVERY_N_BLOCKS",
+        value_name = "FLUSH EVERY N BLOCKS",
+        long,
+        value_parser = clap::value_parser!(u64).range(..=3_600),
+        default_value_t = 5
+    )]
+    pub flush_every_n_seconds: u64,
 
     /// Number of blocks to fetch in parallel. This only affects sync time, and
     /// does not affect the node once it has reached the tip of the chain.
@@ -135,6 +163,7 @@ impl SyncParams {
             sync_polling_interval: polling,
             n_blocks_to_sync: self.n_blocks_to_sync,
             flush_every_n_blocks: self.flush_every_n_blocks,
+            flush_every_n_seconds: self.flush_every_n_seconds,
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_parallelism,
             warp_update,
