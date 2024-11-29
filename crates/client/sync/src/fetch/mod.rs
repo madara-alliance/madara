@@ -129,11 +129,28 @@ pub async fn l2_fetch_task(
     Ok(())
 }
 
+/// Whether a chain has been caught up to the tip or only a certain block number
+///
+/// This is mostly relevant in the context of the `--n-blocks-to-sync` cli
+/// argument which states that a node might stop synchronizing before it has
+/// caught up with the tip of the chain.
 enum SyncStatus {
     Full(u64),
     UpTo(u64),
 }
 
+/// Sync blocks in parallel from a [GatewayProvider]
+///
+/// This function is called during warp update as well as l2 catch up to sync
+/// to the tip of a chain. In the case of warp update, this is the tip of the
+/// chain provided by the warp update sender. In the case of l2 sync, this is
+/// the tip of the entire chain (mainnet, sepolia, devnet).
+///
+/// This function _is not_ called after the chain has been synced as this has
+/// a different fetch logic which does not fetch block in parallel.
+///
+/// Fetch config, including number of blocks to fetch and fetch parallelism,
+/// is defined in [L2FetchConfig].
 async fn sync_blocks(
     backend: &MadaraBackend,
     provider: &Arc<GatewayProvider>,
