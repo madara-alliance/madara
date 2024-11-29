@@ -6144,7 +6144,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "starknet-core",
- "starknet-crypto 0.7.2",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-types-core",
  "tokio",
  "tokio-util",
@@ -8225,7 +8225,7 @@ dependencies = [
  "starknet-accounts",
  "starknet-contract",
  "starknet-core",
- "starknet-crypto 0.7.2",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-macros",
  "starknet-providers",
  "starknet-signers",
@@ -8240,7 +8240,7 @@ dependencies = [
  "async-trait",
  "auto_impl",
  "starknet-core",
- "starknet-crypto 0.7.2",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-providers",
  "starknet-signers",
  "thiserror 1.0.65",
@@ -8264,8 +8264,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2538240cbe6663c673fe77465f294da707080f39678dd7066761554899e46100"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
 dependencies = [
  "base64 0.21.7",
  "crypto-bigint",
@@ -8276,7 +8275,7 @@ dependencies = [
  "serde_json_pythonic",
  "serde_with",
  "sha3",
- "starknet-crypto 0.7.2",
+ "starknet-crypto 0.7.2 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet-types-core",
 ]
 
@@ -8334,7 +8333,25 @@ dependencies = [
  "num-traits 0.2.19",
  "rfc6979",
  "sha2",
- "starknet-curve 0.5.1",
+ "starknet-curve 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-types-core",
+ "zeroize",
+]
+
+[[package]]
+name = "starknet-crypto"
+version = "0.7.2"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
+dependencies = [
+ "crypto-bigint",
+ "hex",
+ "hmac",
+ "num-bigint",
+ "num-integer",
+ "num-traits 0.2.19",
+ "rfc6979",
+ "sha2",
+ "starknet-curve 0.5.1 (git+https://github.com/kasarlabs/starknet-rs.git?branch=fork)",
  "starknet-types-core",
  "zeroize",
 ]
@@ -8373,6 +8390,14 @@ name = "starknet-curve"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcde6bd74269b8161948190ace6cf069ef20ac6e79cd2ba09b320efa7500b6de"
+dependencies = [
+ "starknet-types-core",
+]
+
+[[package]]
+name = "starknet-curve"
+version = "0.5.1"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
 dependencies = [
  "starknet-types-core",
 ]
@@ -8433,15 +8458,14 @@ dependencies = [
  "getrandom",
  "rand",
  "starknet-core",
- "starknet-crypto 0.7.2",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.65",
 ]
 
 [[package]]
 name = "starknet-types-core"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa1b9e01ccb217ab6d475c5cda05dbb22c30029f7bb52b192a010a00d77a3d74"
+source = "git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7#e5f3769150684d3c726951dd3f075815cdcdba5d"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",
