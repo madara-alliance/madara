@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use anyhow::Context;
 use futures::SinkExt;
 use mp_utils::channel_wait_or_graceful_shutdown;
-use mp_utils::service::{MadaraService, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext, ServiceRunner};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -93,7 +93,7 @@ impl TelemetryService {
 
 #[async_trait::async_trait]
 impl Service for TelemetryService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if !self.telemetry {
             return Ok(());
         }
@@ -101,7 +101,8 @@ impl Service for TelemetryService {
         let telemetry_endpoints = self.telemetry_endpoints.clone();
         let mut rx = self.start_state.take().context("the service has already been started")?;
 
-        join_set.spawn(async move {
+        // TODO: (Trantorian) refactor this mess
+        runner.start_service(|ctx| async move {
             let client = &reqwest::Client::default();
             let mut clients = futures::future::join_all(telemetry_endpoints.iter().map(|(endpoint, pr)| async move {
                 let websocket = match client.get(endpoint).upgrade().send().await {
@@ -151,7 +152,7 @@ impl Service for TelemetryService {
                 .await;
             }
 
-            Ok(())
+            anyhow::Ok(())
         });
 
         Ok(())

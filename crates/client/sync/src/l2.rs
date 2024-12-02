@@ -244,7 +244,7 @@ pub struct L2SyncConfig {
 /// Spawns workers to fetch blocks and state updates from the feeder.
 #[tracing::instrument(skip(backend, provider, ctx, config), fields(module = "Sync"))]
 pub async fn sync(
-    backend: &Arc<MadaraBackend>,
+    backend: Arc<MadaraBackend>,
     provider: GatewayProvider,
     ctx: ServiceContext,
     config: L2SyncConfig,
@@ -273,7 +273,7 @@ pub async fn sync(
 
     let mut join_set = JoinSet::new();
     join_set.spawn(l2_fetch_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         Arc::clone(&provider),
         ctx.clone(),
         L2FetchConfig {
@@ -297,7 +297,7 @@ pub async fn sync(
         ctx.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         ctx.clone(),
         L2VerifyApplyConfig {
             block_import: Arc::clone(&config.block_importer),
@@ -311,7 +311,7 @@ pub async fn sync(
         },
     ));
     join_set.spawn(l2_pending_block_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         provider,
         ctx.clone(),
         L2PendingBlockConfig {

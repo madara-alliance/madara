@@ -5,7 +5,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_utils::service::{MadaraService, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext, ServiceRunner};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,18 +83,24 @@ impl L1SyncService {
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
-        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
-            self.clone();
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        let L1SyncService {
+            db_backend,
+            l1_gas_provider,
+            chain_id,
+            gas_price_sync_disabled,
+            gas_price_poll,
+            mempool,
+            ..
+        } = self.clone();
 
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
 
-            let db_backend = Arc::clone(&self.db_backend);
-            join_set.spawn(async move {
+            runner.start_service(move |ctx| {
                 mc_eth::sync::l1_sync_worker(
-                    &db_backend,
-                    &eth_client,
+                    db_backend,
+                    eth_client,
                     chain_id,
                     l1_gas_provider,
                     gas_price_sync_disabled,
@@ -102,7 +108,6 @@ impl Service for L1SyncService {
                     mempool,
                     ctx,
                 )
-                .await
             });
         }
 

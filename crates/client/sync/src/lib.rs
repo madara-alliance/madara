@@ -27,7 +27,7 @@ pub struct SyncConfig {
 
 #[tracing::instrument(skip(backend, ctx, fetch_config, sync_config))]
 pub async fn l2_sync_worker(
-    backend: &Arc<MadaraBackend>,
+    backend: Arc<MadaraBackend>,
     ctx: ServiceContext,
     fetch_config: FetchConfig,
     sync_config: SyncConfig,
@@ -56,31 +56,27 @@ pub async fn l2_sync_worker(
         )
     }
 
-    l2::sync(
-        backend,
-        provider,
-        ctx,
-        L2SyncConfig {
-            first_block: starting_block,
-            n_blocks_to_sync: fetch_config.n_blocks_to_sync,
-            stop_on_sync: fetch_config.stop_on_sync,
-            verify: fetch_config.verify,
-            sync_polling_interval: fetch_config.sync_polling_interval,
-            backup_every_n_blocks: sync_config.backup_every_n_blocks,
-            flush_every_n_blocks: fetch_config.flush_every_n_blocks,
-            flush_every_n_seconds: fetch_config.flush_every_n_seconds,
-            pending_block_poll_interval: sync_config.pending_block_poll_interval,
-            ignore_block_order,
-            sync_parallelism: fetch_config.sync_parallelism,
-            warp_update: fetch_config.warp_update,
-            warp_update_port_rpc: fetch_config.warp_update_port_rpc,
-            warp_update_port_fgw: fetch_config.warp_update_port_fgw,
-            chain_id: backend.chain_config().chain_id.clone(),
-            telemetry: sync_config.telemetry,
-            block_importer: sync_config.block_importer,
-        },
-    )
-    .await?;
+    let l2_config = L2SyncConfig {
+        first_block: starting_block,
+        n_blocks_to_sync: fetch_config.n_blocks_to_sync,
+        stop_on_sync: fetch_config.stop_on_sync,
+        verify: fetch_config.verify,
+        sync_polling_interval: fetch_config.sync_polling_interval,
+        backup_every_n_blocks: sync_config.backup_every_n_blocks,
+        flush_every_n_blocks: fetch_config.flush_every_n_blocks,
+        flush_every_n_seconds: fetch_config.flush_every_n_seconds,
+        pending_block_poll_interval: sync_config.pending_block_poll_interval,
+        ignore_block_order,
+        sync_parallelism: fetch_config.sync_parallelism,
+        warp_update: fetch_config.warp_update,
+        warp_update_port_rpc: fetch_config.warp_update_port_rpc,
+        warp_update_port_fgw: fetch_config.warp_update_port_fgw,
+        chain_id: backend.chain_config().chain_id.clone(),
+        telemetry: sync_config.telemetry,
+        block_importer: sync_config.block_importer,
+    };
+
+    l2::sync(backend, provider, ctx, l2_config).await?;
 
     Ok(())
 }

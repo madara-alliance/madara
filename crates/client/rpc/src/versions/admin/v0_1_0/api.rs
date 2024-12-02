@@ -2,6 +2,7 @@ use m_proc_macros::versioned_rpc;
 use mp_transactions::BroadcastedDeclareTransactionV0;
 
 use jsonrpsee::core::RpcResult;
+use mp_utils::service::MadaraServiceStatus;
 use starknet_core::types::DeclareTransactionResult;
 
 /// This is an admin method, so semver is different!
@@ -53,7 +54,7 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if user rpc was previously enabled.
     #[method(name = "rpcDisable")]
-    async fn service_rpc_disable(&self) -> RpcResult<bool>;
+    async fn service_rpc_disable(&self) -> RpcResult<MadaraServiceStatus>;
 
     /// Enables user-facing rpc services.
     ///
@@ -64,7 +65,7 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if user rpc was previously enabled.
     #[method(name = "rpcEnable")]
-    async fn service_rpc_enable(&self) -> RpcResult<bool>;
+    async fn service_rpc_enable(&self) -> RpcResult<MadaraServiceStatus>;
 
     /// Restarts user-facing rpc services, with a 5s grace period in between.
     ///
@@ -75,7 +76,7 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if user rpc was previously enabled.
     #[method(name = "rpcRestart")]
-    async fn service_rpc_restart(&self) -> RpcResult<bool>;
+    async fn service_rpc_restart(&self) -> RpcResult<MadaraServiceStatus>;
 
     /// Disables l1 and l2 sync services.
     ///
@@ -86,7 +87,7 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if any of l1 or l2 sync was previously enabled.
     #[method(name = "syncDisable")]
-    async fn service_sync_disable(&self) -> RpcResult<bool>;
+    async fn service_sync_disable(&self) -> RpcResult<MadaraServiceStatus>;
 
     /// Enables l1 and l2 sync services.
     ///
@@ -97,7 +98,7 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if any of l1 or l2 sync was previously enabled.
     #[method(name = "syncEnable")]
-    async fn service_sync_enable(&self) -> RpcResult<bool>;
+    async fn service_sync_enable(&self) -> RpcResult<MadaraServiceStatus>;
 
     /// Disables l1 and l2 sync services, with a 5s grace period in between.
     ///
@@ -108,5 +109,5 @@ pub trait MadaraServicesRpcApi {
     ///
     /// True if l1 or l2 sync was previously enabled.
     #[method(name = "syncRestart")]
-    async fn service_sync_restart(&self) -> RpcResult<bool>;
+    async fn service_sync_restart(&self) -> RpcResult<MadaraServiceStatus>;
 }

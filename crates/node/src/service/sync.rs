@@ -6,7 +6,7 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraService, Service, ServiceContext};
+use mp_utils::service::{MadaraService, Service, ServiceContext, ServiceRunner};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -51,11 +51,12 @@ impl L2SyncService {
 
 #[async_trait::async_trait]
 impl Service for L2SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
         let L2SyncService {
+            db_backend,
             fetch_config,
             backup_every_n_blocks,
             starting_block,
@@ -65,11 +66,9 @@ impl Service for L2SyncService {
         } = self.clone();
         let telemetry = self.start_params.take().context("Service already started")?;
 
-        let db_backend = Arc::clone(&self.db_backend);
-
-        join_set.spawn(async move {
+        runner.start_service(move |ctx| {
             mc_sync::l2_sync_worker(
-                &db_backend,
+                db_backend,
                 ctx,
                 fetch_config,
                 SyncConfig {
@@ -80,7 +79,6 @@ impl Service for L2SyncService {
                     pending_block_poll_interval,
                 },
             )
-            .await
         });
 
         Ok(())

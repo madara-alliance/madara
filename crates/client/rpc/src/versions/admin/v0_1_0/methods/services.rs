@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use jsonrpsee::core::{async_trait, RpcResult};
-use mp_utils::service::MadaraService;
+use mp_utils::service::{MadaraService, MadaraServiceStatus};
 
 use crate::{versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server, Starknet};
 
@@ -10,19 +10,19 @@ const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 #[async_trait]
 impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_rpc_disable(&self) -> RpcResult<bool> {
+    async fn service_rpc_disable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Stopping RPC service...");
         Ok(self.ctx.service_remove(MadaraService::Rpc))
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_rpc_enable(&self) -> RpcResult<bool> {
+    async fn service_rpc_enable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Starting RPC service...");
         Ok(self.ctx.service_add(MadaraService::Rpc))
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_rpc_restart(&self) -> RpcResult<bool> {
+    async fn service_rpc_restart(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Restarting RPC service...");
 
         let res = self.ctx.service_remove(MadaraService::Rpc);
@@ -35,7 +35,7 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_sync_disable(&self) -> RpcResult<bool> {
+    async fn service_sync_disable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Stopping Sync service...");
 
         let res = self.ctx.service_remove(MadaraService::L1Sync) | self.ctx.service_remove(MadaraService::L2Sync);
@@ -44,7 +44,7 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_sync_enable(&self) -> RpcResult<bool> {
+    async fn service_sync_enable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Starting Sync service...");
 
         let res = self.ctx.service_add(MadaraService::L1Sync) | self.ctx.service_add(MadaraService::L2Sync);
@@ -53,7 +53,7 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
-    async fn service_sync_restart(&self) -> RpcResult<bool> {
+    async fn service_sync_restart(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Stopping Sync service...");
 
         let res = self.ctx.service_remove(MadaraService::L1Sync) | self.ctx.service_remove(MadaraService::L2Sync);

@@ -18,7 +18,7 @@ use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_utils::service::{Service, ServiceGroup};
+use mp_utils::service::{MadaraService, Service, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 
 const GREET_IMPL_NAME: &str = "Madara";
@@ -122,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
+    let (block_provider_service, rpc_add_txs_method_provider): (Box<dyn Service>, Arc<dyn AddTransactionProvider>) =
         match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
@@ -136,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
                     telemetry_service.new_handle(),
                 )?;
 
-                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
+                (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
             }
             // Block sync service. (full node)
             false => {
@@ -162,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
                     )
                 }
 
-                (ServiceGroup::default().with(sync_service), Arc::new(ForwardToProvider::new(provider)))
+                (Box::new(sync_service), Arc::new(ForwardToProvider::new(provider)))
             }
         };
 
@@ -175,13 +175,19 @@ async fn main() -> anyhow::Result<()> {
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
-    let app = ServiceGroup::default()
-        .with(db_service)
-        .with(l1_service)
-        .with(block_provider_service)
-        .with(rpc_service)
-        .with(gateway_service)
-        .with(telemetry_service);
+    let app = ServiceMonitor::default()
+        .with(db_service)?
+        .with(l1_service)?
+        .with(block_provider_service)?
+        .with(rpc_service)?
+        .with(gateway_service)?
+        .with(telemetry_service)?
+        .activate(MadaraService::Database)
+        .activate(MadaraService::L1Sync)
+        .activate(MadaraService::BlockProduction)
+        .activate(MadaraService::Rpc)
+        .activate(MadaraService::Gateway)
+        .activate(MadaraService::Telemetry);
 
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
@@ -195,7 +201,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    app.start_and_drive_to_end().await?;
+    app.start().await?;
 
     let _ = analytics.shutdown();
 
