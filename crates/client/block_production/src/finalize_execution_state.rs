@@ -6,7 +6,6 @@ use blockifier::{
     transaction::errors::TransactionExecutionError,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_mempool::MempoolTransaction;
 use mp_block::{VisitedSegmentEntry, VisitedSegments};
 use mp_convert::ToFelt;
 use mp_state_update::{
@@ -162,7 +161,6 @@ fn get_visited_segments<S: StateReader>(tx_executor: &mut TransactionExecutor<S>
 }
 
 pub(crate) fn finalize_execution_state<S: StateReader>(
-    _executed_txs: &[MempoolTransaction],
     tx_executor: &mut TransactionExecutor<S>,
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,

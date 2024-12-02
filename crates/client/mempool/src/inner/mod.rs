@@ -24,18 +24,12 @@ mod tx;
 pub use limits::*;
 pub use tx::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct AccountOrderedByTimestamp {
     contract_addr: Felt,
     timestamp: ArrivedAtTimestamp,
 }
 
-impl PartialEq for AccountOrderedByTimestamp {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
-    }
-}
-impl Eq for AccountOrderedByTimestamp {}
 impl Ord for AccountOrderedByTimestamp {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         // Important: Fallback on contract addr here.

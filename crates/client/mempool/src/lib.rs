@@ -109,9 +109,8 @@ impl Mempool {
     }
 
     pub fn load_txs_from_db(&mut self) -> Result<(), anyhow::Error> {
-        for (tx_hash, saved_tx, converted_class) in
-            self.backend.get_mempool_transactions().context("Getting mempool transactions")?
-        {
+        for res in self.backend.get_mempool_transactions() {
+            let (tx_hash, saved_tx, converted_class) = res.context("Getting mempool transactions")?;
             let (tx, arrived_at) = saved_to_blockifier_tx(saved_tx, tx_hash, &converted_class)
                 .context("Converting saved tx to blockifier")?;
 

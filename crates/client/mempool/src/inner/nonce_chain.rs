@@ -30,6 +30,8 @@ impl PartialOrd for OrderMempoolTransactionByNonce {
 #[derive(Debug)]
 pub struct NonceChain {
     /// Use a BTreeMap to so that we can use the entry api.
+    // TODO(perf): to avoid some double lookups here, we should remove the `OrderMempoolTransactionByNonce` struct
+    // and make this a BTreeMap<Nonce, MempoolTransaction>
     pub(crate) transactions: BTreeMap<OrderMempoolTransactionByNonce, ()>,
     pub(crate) front_arrived_at: ArrivedAtTimestamp,
     pub(crate) front_nonce: Nonce,

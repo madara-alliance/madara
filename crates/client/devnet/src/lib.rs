@@ -309,7 +309,7 @@ mod tests {
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None, true).unwrap());
 
-        println!("{:?}", block.state_diff);
+        tracing::debug!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(
@@ -349,7 +349,7 @@ mod tests {
     #[rstest]
     #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
     fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
-        println!("{}", chain.contracts);
+        tracing::info!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
 
@@ -509,7 +509,7 @@ mod tests {
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
     fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
-        println!("{}", chain.contracts);
+        tracing::info!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
         let contract_0 = &chain.contracts.0[0];
@@ -645,7 +645,7 @@ mod tests {
             max_declare_transactions: 2,
             max_transactions: 5,
         });
-        println!("{}", chain.contracts);
+        tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];
         let contract_1 = &chain.contracts.0[1];
@@ -721,7 +721,7 @@ mod tests {
         let max_age = Duration::from_millis(1000);
         let mut chain =
             chain_with_mempool_limits(MempoolLimits { max_age, max_declare_transactions: 2, max_transactions: 5 });
-        println!("{}", chain.contracts);
+        tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];
         let contract_1 = &chain.contracts.0[1];

@@ -29,21 +29,17 @@ struct TransactionWithConvertedClass {
 
 impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]
-    pub fn get_mempool_transactions(&self) -> Result<Vec<(Felt, SavedTransaction, Option<ConvertedClass>)>> {
+    pub fn get_mempool_transactions(
+        &self,
+    ) -> impl Iterator<Item = Result<(Felt, SavedTransaction, Option<ConvertedClass>)>> + '_ {
         let col = self.db.get_column(Column::MempoolTransactions);
-        let txs = self
-            .db
-            .iterator_cf(&col, IteratorMode::Start)
-            .map(|kv| {
-                let (k, v) = kv?;
-                let hash: Felt = bincode::deserialize(&k)?;
-                let tx: TransactionWithConvertedClass = bincode::deserialize(&v)?;
+        self.db.iterator_cf(&col, IteratorMode::Start).map(|kv| {
+            let (k, v) = kv?;
+            let hash: Felt = bincode::deserialize(&k)?;
+            let tx: TransactionWithConvertedClass = bincode::deserialize(&v)?;
 
-                Result::<_>::Ok((hash, tx.tx, tx.converted_class))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        tracing::debug!("get_mempool_txs {:?}", txs.iter().map(|(hash, _, _)| hash).collect::<Vec<_>>());
-        Ok(txs)
+            Result::<_>::Ok((hash, tx.tx, tx.converted_class))
+        })
     }
 
     #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]

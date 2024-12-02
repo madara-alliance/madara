@@ -289,13 +289,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
 
-        // TODO: save visited segments for SNOS.
-        let (state_diff, visited_segments, bouncer_weights) = finalize_execution_state::finalize_execution_state(
-            &executed_txs,
-            &mut self.executor,
-            &self.backend,
-            &on_top_of,
-        )?;
+        let (state_diff, visited_segments, bouncer_weights) =
+            finalize_execution_state::finalize_execution_state(&mut self.executor, &self.backend, &on_top_of)?;
 
         // Add back the unexecuted transactions to the mempool.
         stats.n_re_added_to_mempool = txs_to_process.len();

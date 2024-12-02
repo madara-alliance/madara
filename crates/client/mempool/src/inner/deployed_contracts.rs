@@ -12,6 +12,7 @@ impl DeployedContracts {
             hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() -= 1;
                 if entry.get() == &0 {
+                    // Count is now 0, we can delete the entry.
                     entry.remove();
                 }
             }

@@ -144,8 +144,6 @@ pub enum BroadcastedToBlockifierError {
     ConvertTxBlockifierError(#[from] TransactionExecutionError),
     #[error("Failed to convert contract class: {0}")]
     ConvertContractClassError(#[from] ContractClassError),
-    // #[error("Declare legacy contract classes are not supported")]
-    // LegacyContractClassesNotSupported,
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
 }

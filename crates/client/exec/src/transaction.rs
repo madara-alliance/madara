@@ -20,7 +20,6 @@ pub enum Error {
     ContractClassError(#[from] ContractClassError),
     #[error("{0}")]
     Internal(Cow<'static, str>),
-    TransactionExecutionError(#[from] )
 }
 
 /// Convert an starknet-api Transaction to a blockifier Transaction
@@ -33,8 +32,9 @@ pub fn to_blockifier_transactions(
     transaction: mp_transactions::Transaction,
     tx_hash: &TransactionHash,
 ) -> Result<btx::Transaction, Error> {
-    let transaction: Transaction =
-        transaction.try_into().map_err(|_| Error("Converting to starknet api transaction".into()))?;
+    let transaction: Transaction = transaction
+        .try_into()
+        .map_err(|err| Error::Internal(format!("Converting to starknet api transaction {:#}", err).into()))?;
 
     let paid_fee_on_l1 = match transaction {
         Transaction::L1Handler(_) => Some(starknet_api::transaction::Fee(1_000_000_000_000)),
@@ -72,8 +72,7 @@ pub fn to_blockifier_transactions(
         _ => None,
     };
 
-    btx::Transaction::from_api(transaction.clone(), *tx_hash, class_info, paid_fee_on_l1, None, false).map_err(|_| {
-        tracing::error!("Failed to convert transaction to blockifier transaction");
-        StarknetRpcApiError::InternalServerError
+    btx::Transaction::from_api(transaction.clone(), *tx_hash, class_info, paid_fee_on_l1, None, false).map_err(|err| {
+        Error::Internal(format!("Failed to convert transaction to blockifier transaction {:#}", err).into())
     })
 }

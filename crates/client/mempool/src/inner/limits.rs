@@ -60,7 +60,7 @@ pub(crate) struct TransactionCheckedLimits {
 
 impl TransactionCheckedLimits {
     // Returns which limits apply for this transaction.
-    // This struct is also used to update the limits after insretion, without having to keep a clone of the transaction around.
+    // This struct is also used to update the limits after insertion, without having to keep a clone of the transaction around.
     // We can add more limits here as needed :)
     pub fn limits_for(tx: &MempoolTransaction) -> Self {
         match tx.tx.tx_type() {
@@ -82,8 +82,10 @@ impl TransactionCheckedLimits {
                 check_age: true,
                 tx_arrived_at: tx.arrived_at,
             },
+            // L1 handler transactions are transactions added into the L1 core contract. We don't want to miss
+            // any of those if possible.
             TransactionType::L1Handler => TransactionCheckedLimits {
-                check_tx_limit: true,
+                check_tx_limit: false,
                 check_declare_limit: false,
                 check_age: false,
                 tx_arrived_at: tx.arrived_at,
@@ -128,9 +130,8 @@ impl MempoolLimiter {
     }
 
     pub fn update_tx_limits(&mut self, limits: &TransactionCheckedLimits) {
-        if limits.check_tx_limit {
-            self.current_transactions += 1;
-        }
+        // We want all transactions to count toward the limit, not just those where the limit is checked.
+        self.current_transactions += 1;
         if limits.check_declare_limit {
             self.current_declare_transactions += 1;
         }
@@ -138,9 +139,7 @@ impl MempoolLimiter {
 
     pub fn mark_removed(&mut self, to_update: &TransactionCheckedLimits) {
         // These should not overflow unless block prod marks transactions as consumed even though they have not been popped.
-        if to_update.check_tx_limit {
-            self.current_transactions -= 1;
-        }
+        self.current_transactions -= 1;
         if to_update.check_declare_limit {
             self.current_declare_transactions -= 1;
         }
