@@ -523,6 +523,7 @@ impl ServiceMonitor {
                         }
                     }
                 },
+                else => continue
             };
         }
 

@@ -175,20 +175,6 @@ async fn main() -> anyhow::Result<()> {
 
     telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
-    let app = ServiceMonitor::default()
-        .with(db_service)?
-        .with(l1_service)?
-        .with(block_provider_service)?
-        .with(rpc_service)?
-        .with(gateway_service)?
-        .with(telemetry_service)?
-        .activate(MadaraService::Database)
-        .activate(MadaraService::L1Sync)
-        .activate(MadaraService::BlockProduction)
-        .activate(MadaraService::Rpc)
-        .activate(MadaraService::Gateway)
-        .activate(MadaraService::Telemetry);
-
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
@@ -201,7 +187,23 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    app.start().await?;
+    ServiceMonitor::default()
+        .with(db_service)?
+        .with(l1_service)?
+        .with(block_provider_service)?
+        .with(rpc_service)?
+        .with(gateway_service)?
+        .with(telemetry_service)?
+        .activate(MadaraService::Database)
+        .activate(MadaraService::L1Sync)
+        .activate(MadaraService::L2Sync)
+        .activate(MadaraService::BlockProduction)
+        .activate(MadaraService::Rpc)
+        .activate(MadaraService::RpcAdmin)
+        .activate(MadaraService::Gateway)
+        .activate(MadaraService::Telemetry)
+        .start()
+        .await?;
 
     let _ = analytics.shutdown();
 
