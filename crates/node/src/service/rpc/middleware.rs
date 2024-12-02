@@ -1,12 +1,10 @@
 //! JSON-RPC specific middleware.
 
-use std::time::Instant;
-
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
-
 use mc_rpc::utils::ResultExt;
 use mp_chain_config::RpcVersion;
+use std::time::Instant;
 
 pub use super::metrics::Metrics;
 

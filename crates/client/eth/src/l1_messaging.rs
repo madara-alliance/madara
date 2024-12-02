@@ -359,7 +359,7 @@ mod l1_messaging_tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
                 .await
                 .expect("Failed to create database service"),
         );

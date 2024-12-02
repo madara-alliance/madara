@@ -94,12 +94,11 @@ version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-rocksdb = { version = "0.22", features = [
-  # "multi-threaded-cf",
-] }
+rocksdb = "0.22"
+librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
   "std",
 ] }
 
@@ -193,10 +192,13 @@ indoc = "2"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
-serde_with = "3.9"
+serde_with = { version = "3.11", default-features = false, features = [
+  "alloc",
+  "macros",
+] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
-thiserror = "1.0"
+thiserror = "2.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
 tokio-util = "0.7.12"
 url = { version = "2.4", features = ["serde"] }
@@ -236,7 +238,8 @@ tracing-subscriber = { version = "0.3.18", features = [
 tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]
-# wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
-starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
+starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

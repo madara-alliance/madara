@@ -351,6 +351,10 @@ fn state_diff_commitment(
 }
 
 /// Compute the root hash of a list of values.
+/// This implements transactions, events, receipts and state-diff [commitments specs] using memory
+/// backed bonsai storage.
+///
+/// [commitments specs]: https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/#transactions_events_receipts_commitments
 // The `HashMapDb` can't fail, so we can safely unwrap the results.
 //
 // perf: Note that committing changes still has the greatest performance hit
@@ -365,7 +369,7 @@ fn compute_merkle_root<H: StarkHash + Send + Sync>(values: &[Felt]) -> Felt {
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();
     let mut bonsai_storage =
-        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
+        bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config, /* max tree height */ 64);
 
     values.iter().enumerate().for_each(|(id, value)| {
         let key = BitVec::from_vec(id.to_be_bytes().to_vec());

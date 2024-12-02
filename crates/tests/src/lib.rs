@@ -1,6 +1,8 @@
 //! End to end tests for madara.
+#![cfg(test)]
 
 mod rpc;
+mod storage_proof;
 
 use anyhow::bail;
 use rstest::rstest;

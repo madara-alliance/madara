@@ -12,44 +12,53 @@ pub mod utils;
 pub mod versions;
 
 use jsonrpsee::RpcModule;
-use mp_utils::service::ServiceContext;
-use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-use mp_chain_config::{ChainConfig, RpcVersion};
+use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
-
-pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+use mp_utils::service::ServiceContext;
 use providers::AddTransactionProvider;
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 use utils::ResultExt;
 
+pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+
+/// Limits to the storage proof endpoint.
+#[derive(Clone, Debug)]
+pub struct StorageProofConfig {
+    /// Max keys that cna be used in a storage proof.
+    pub max_keys: usize,
+    /// Max tries that can be used in a storage proof.
+    pub max_tries: usize,
+    /// How many blocks in the past can we get a storage proof for.
+    pub max_distance: u64,
+}
+
+impl Default for StorageProofConfig {
+    fn default() -> Self {
+        Self { max_keys: 1024, max_tries: 5, max_distance: 0 }
+    }
+}
+
 /// A Starknet RPC server for Madara
+#[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
-}
-
-impl Clone for Starknet {
-    fn clone(&self) -> Self {
-        Self {
-            backend: Arc::clone(&self.backend),
-            add_transaction_provider: Arc::clone(&self.add_transaction_provider),
-            ctx: self.ctx.clone(),
-        }
-    }
 }
 
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, ctx }
+        Self { backend, add_transaction_provider, storage_proof_config, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -90,10 +99,6 @@ impl Starknet {
 
     pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
         self.get_block_n(&BlockId::Tag(BlockTag::Latest))
-    }
-
-    pub fn current_spec_version(&self) -> RpcVersion {
-        RpcVersion::RPC_VERSION_LATEST
     }
 
     pub fn get_l1_last_confirmed_block(&self) -> StarknetRpcResult<u64> {

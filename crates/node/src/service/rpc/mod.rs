@@ -41,7 +41,8 @@ impl Service for RpcService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         let RpcService { config, backend, add_txs_method_provider, .. } = self;
 
-        let starknet = Starknet::new(backend.clone(), add_txs_method_provider.clone(), ctx.clone());
+        let starknet =
+            Starknet::new(backend.clone(), add_txs_method_provider.clone(), config.storage_proof_config(), ctx.clone());
         let metrics = RpcMetrics::register()?;
 
         let server_config_user = if !config.rpc_disable {
