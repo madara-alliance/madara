@@ -480,9 +480,8 @@ impl ServiceMonitor {
         anyhow::Ok(self)
     }
 
-    pub fn activate(self, id: MadaraService) -> Self {
+    pub fn activate(&self, id: MadaraService) {
         self.service_started.activate(id);
-        self
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {

@@ -370,7 +370,7 @@ mod tests {
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
         let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
-        let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
+        let telemetry = TelemetryService::new(vec![]).unwrap().new_handle();
 
         let mock_block = create_dummy_unverified_full_block();
 

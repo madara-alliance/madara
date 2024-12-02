@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     // Services.
 
     let telemetry_service: TelemetryService =
-        TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
+        TelemetryService::new(run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
 
     let db_service = DatabaseService::new(
@@ -187,23 +187,27 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    ServiceMonitor::default()
+    let app = ServiceMonitor::default()
         .with(db_service)?
         .with(l1_service)?
         .with(block_provider_service)?
         .with(rpc_service)?
         .with(gateway_service)?
-        .with(telemetry_service)?
-        .activate(MadaraService::Database)
-        .activate(MadaraService::L1Sync)
-        .activate(MadaraService::L2Sync)
-        .activate(MadaraService::BlockProduction)
-        .activate(MadaraService::Rpc)
-        .activate(MadaraService::RpcAdmin)
-        .activate(MadaraService::Gateway)
-        .activate(MadaraService::Telemetry)
-        .start()
-        .await?;
+        .with(telemetry_service)?;
+
+    app.activate(MadaraService::Database);
+    app.activate(MadaraService::L1Sync);
+    app.activate(MadaraService::L2Sync);
+    app.activate(MadaraService::BlockProduction);
+    app.activate(MadaraService::Rpc);
+    app.activate(MadaraService::RpcAdmin);
+    app.activate(MadaraService::Gateway);
+
+    if run_cmd.telemetry_params.telemetry {
+        app.activate(MadaraService::Telemetry);
+    }
+
+    app.start().await?;
 
     let _ = analytics.shutdown();
 
