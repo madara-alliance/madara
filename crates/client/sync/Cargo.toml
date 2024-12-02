@@ -24,6 +24,7 @@ regex.workspace = true
 
 mc-db = { workspace = true, features = ["testing"] }
 mc-block-import = { workspace = true, features = ["testing"] }
+mp-utils = { workspace = true, features = ["testing"] }
 # Compile the test contracts in test cfg.
 m-cairo-test-contracts.workspace = true
 
@@ -34,6 +35,7 @@ mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway-client.workspace = true
+mc-rpc.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true
@@ -70,6 +72,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 anyhow.workspace = true
 futures = { workspace = true, default-features = true }
 hyper.workspace = true
+jsonrpsee.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = [
@@ -78,4 +81,5 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
+tokio-util.workspace = true
 url.workspace = true

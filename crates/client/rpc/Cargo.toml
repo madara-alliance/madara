@@ -18,6 +18,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
+mp-utils = { workspace = true, features = ["testing"] }
 
 [dependencies]
 
@@ -35,6 +36,7 @@ mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
@@ -45,12 +47,15 @@ starknet_api = { workspace = true, default-features = true }
 
 # Others
 anyhow = { workspace = true }
+bitvec = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
 ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }

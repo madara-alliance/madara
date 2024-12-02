@@ -1,6 +1,6 @@
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
+use crate::{MadaraStorageError, DB};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::header::{GasPrices, PendingHeader};
@@ -29,6 +29,14 @@ const ROW_PENDING_BOUNCER_WEIGHTS: &[u8] = b"pending_bouncer_weights";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
+
+#[tracing::instrument(skip(db), fields(module = "BlockDB"))]
+pub fn get_latest_block_n(db: &DB) -> Result<Option<u64>> {
+    let col = db.get_column(Column::BlockStorageMeta);
+    let Some(res) = db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
+    let res = bincode::deserialize(&res)?;
+    Ok(Some(res))
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
@@ -114,10 +122,7 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
-        let res = bincode::deserialize(&res)?;
-        Ok(Some(res))
+        get_latest_block_n(&self.db)
     }
 
     // Pending block quirk: We should act as if there is always a pending block in db, to match

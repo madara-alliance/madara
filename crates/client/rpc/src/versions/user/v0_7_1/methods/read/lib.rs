@@ -30,7 +30,7 @@ use super::get_transaction_receipt::*;
 use super::get_transaction_status::*;
 use super::syncing::*;
 
-use crate::versions::v0_7_1::StarknetReadRpcApiV0_7_1Server;
+use crate::versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server;
 use crate::Starknet;
 
 #[async_trait]

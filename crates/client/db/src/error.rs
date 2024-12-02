@@ -23,6 +23,8 @@ pub enum MadaraStorageError {
     PendingCreationNoGenesis,
 }
 
+pub type BonsaiStorageError = bonsai_trie::BonsaiStorageError<DbError>;
+
 impl From<bonsai_trie::BonsaiStorageError<DbError>> for MadaraStorageError {
     fn from(e: bonsai_trie::BonsaiStorageError<DbError>) -> Self {
         MadaraStorageError::BonsaiStorageError(e)

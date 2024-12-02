@@ -11,13 +11,13 @@ use cli::{NetworkType, RunCmd};
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
-use mc_db::DatabaseService;
+use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use std::sync::Arc;
 
 const GREET_IMPL_NAME: &str = "Madara";
@@ -28,13 +28,12 @@ async fn main() -> anyhow::Result<()> {
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
-    let mut run_cmd: RunCmd = RunCmd::parse();
+    let mut run_cmd: RunCmd = RunCmd::parse().apply_arg_preset();
 
     // Setting up analytics
 
     let mut analytics = Analytics::new(
         run_cmd.analytics_params.analytics_service_name.clone(),
-        run_cmd.analytics_params.analytics_log_level,
         run_cmd.analytics_params.analytics_collection_endpoint.clone(),
     )
     .context("Initializing analytics service")?;
@@ -59,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     tracing::info!("👤 Role: {}", role);
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
+    run_cmd.args_preset.greet();
 
     let sys_info = SysInfo::probe();
     sys_info.show();
@@ -74,19 +74,18 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
         Arc::clone(&chain_config),
+        TrieLogConfig {
+            max_saved_trie_logs: run_cmd.db_params.db_max_saved_trie_logs,
+            max_kept_snapshots: run_cmd.db_params.db_max_kept_snapshots,
+            snapshot_interval: run_cmd.db_params.db_snapshot_interval,
+        },
     )
     .await
     .context("Initializing db service")?;
 
     let importer = Arc::new(
-        BlockImporter::new(
-            Arc::clone(db_service.backend()),
-            run_cmd.sync_params.unsafe_starting_block,
-            // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
-            /* always_force_flush */
-            run_cmd.is_sequencer(),
-        )
-        .context("Initializing importer service")?,
+        BlockImporter::new(Arc::clone(db_service.backend()), run_cmd.sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
     );
 
     let l1_gas_setter = GasPriceProvider::new();
@@ -152,12 +151,13 @@ async fn main() -> anyhow::Result<()> {
             // Block sync service. (full node)
             false => {
                 // Feeder gateway sync service.
-                let sync_service = SyncService::new(
+                let sync_service = L2SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
                     &db_service,
                     importer,
                     telemetry_service.new_handle(),
+                    run_cmd.args_preset.warp_update_receiver,
                 )
                 .await
                 .context("Initializing sync service")?;
@@ -176,8 +176,8 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-    let rpc_service = RpcService::new(&run_cmd.rpc_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
-        .context("Initializing rpc service")?;
+    let rpc_service =
+        RpcService::new(run_cmd.rpc_params, Arc::clone(db_service.backend()), Arc::clone(&rpc_add_txs_method_provider));
 
     let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
         .await
@@ -196,18 +196,17 @@ async fn main() -> anyhow::Result<()> {
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            tracing::error!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
             panic!();
         } else {
             // This log is immediately flooded with devnet accounts and so this can be missed.
             // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+            tracing::warn!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
         }
     }
 
     app.start_and_drive_to_end().await?;
 
-    tracing::info!("Shutting down analytics");
     let _ = analytics.shutdown();
 
     Ok(())

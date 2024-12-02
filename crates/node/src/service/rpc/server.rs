@@ -3,16 +3,16 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::num::NonZeroU32;
 use std::time::Duration;
 
 use anyhow::Context;
+use mp_utils::service::ServiceContext;
 use tokio::task::JoinSet;
 use tower::Service;
 
 use mp_utils::wait_or_graceful_shutdown;
 
-use crate::service::rpc::middleware::{RpcMiddlewareLayerRateLimit, RpcMiddlewareServiceVersion};
+use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
@@ -22,19 +22,19 @@ const MEGABYTE: u32 = 1024 * 1024;
 /// RPC server configuration.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
+    pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
+    pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
     pub max_payload_in_mb: u32,
     pub max_payload_out_mb: u32,
     pub metrics: RpcMetrics,
     pub message_buffer_capacity: u32,
-    pub rpc_api: jsonrpsee::RpcModule<()>,
+    pub methods: jsonrpsee::Methods,
     /// Batch request config.
     pub batch_config: jsonrpsee::server::BatchRequestConfig,
-    /// Rate limit calls per minute.
-    pub rate_limit: Option<NonZeroU32>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,19 +49,21 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 pub async fn start_server(
     config: ServerConfig,
     join_set: &mut JoinSet<anyhow::Result<()>>,
+    ctx: ServiceContext,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
+        name,
         addr,
-        batch_config,
         cors,
-        max_payload_in_mb,
-        max_payload_out_mb,
+        rpc_version_default,
         max_connections,
         max_subs_per_conn,
+        max_payload_in_mb,
+        max_payload_out_mb,
         metrics,
         message_buffer_capacity,
-        rpc_api,
-        rate_limit,
+        methods,
+        batch_config,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -91,14 +93,16 @@ pub async fn start_server(
 
     let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
     let cfg = PerConnection {
-        methods: build_rpc_api(rpc_api).into(),
+        methods,
         stop_handle: stop_handle.clone(),
         metrics,
         service_builder: builder.to_service_builder(),
     };
+    let ctx1 = ctx.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let ctx1 = ctx1.clone();
 
         async move {
             let cfg = cfg.clone();
@@ -112,14 +116,20 @@ pub async fn start_server(
                 let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
 
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
-                    .layer_fn(move |service| RpcMiddlewareServiceVersion::new(service, path.clone()))
-                    .option_layer(rate_limit.map(RpcMiddlewareLayerRateLimit::new))
+                    .layer_fn(move |service| {
+                        RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
+                    })
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
+                let ctx1 = ctx1.clone();
 
                 async move {
-                    if req.uri().path() == "/health" {
+                    if !ctx1.is_active() {
+                        Ok(hyper::Response::builder()
+                            .status(hyper::StatusCode::GONE)
+                            .body(hyper::Body::from("GONE"))?)
+                    } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else {
                         if is_websocket {
@@ -149,13 +159,13 @@ pub async fn start_server(
 
     join_set.spawn(async move {
         tracing::info!(
-            "📱 Running JSON-RPC server at {} (allowed origins={})",
+            "📱 Running {name} server at {} (allowed origins={})",
             local_addr.to_string(),
             format_cors(cors.as_ref())
         );
         server
             .with_graceful_shutdown(async {
-                wait_or_graceful_shutdown(stop_handle.shutdown()).await;
+                wait_or_graceful_shutdown(stop_handle.shutdown(), &ctx).await;
             })
             .await
             .context("Running rpc server")
@@ -187,7 +197,10 @@ pub(crate) fn host_filtering(
     }
 }
 
-pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::RpcModule<M>) -> jsonrpsee::RpcModule<M> {
+pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
+    service: &str,
+    mut rpc_api: jsonrpsee::RpcModule<M>,
+) -> jsonrpsee::RpcModule<M> {
     let mut available_methods = rpc_api
         .method_names()
         .map(|name| {
@@ -197,7 +210,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
                 // method is version-agnostic
                 let namespace = split[0];
                 let method = split[1];
-                format!("rpc/{namespace}_{method}")
+                format!("{service}/{namespace}_{method}")
             } else {
                 // versioned method
                 let namespace = split[0];
@@ -205,7 +218,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
                 let minor = split[2];
                 let patch = split[3];
                 let method = split[4];
-                format!("rpc/{major}_{minor}_{patch}/{namespace}_{method}")
+                format!("{service}/{major}_{minor}_{patch}/{namespace}_{method}")
             }
         })
         .collect::<Vec<_>>();
@@ -214,7 +227,7 @@ pub(crate) fn build_rpc_api<M: Send + Sync + 'static>(mut rpc_api: jsonrpsee::Rp
     // The available methods will be prefixed by their version, example:
     // * rpc/v0_7_1/starknet_blockNumber,
     // * rpc/v0_8_0/starknet_blockNumber (...)
-    available_methods.push("rpc/rpc_methods".to_string());
+    available_methods.push(format!("{service}/rpc_methods"));
     available_methods.sort();
 
     rpc_api

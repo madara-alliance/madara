@@ -6,7 +6,7 @@ use hyper::{body::Incoming, Request, Response};
 use mc_db::MadaraBackend;
 use mc_rpc::{
     providers::AddTransactionProvider,
-    versions::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
+    versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
     Starknet,
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
@@ -16,6 +16,7 @@ use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
+use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_core::types::{
@@ -238,7 +239,13 @@ pub async fn handle_get_block_traces(
         traces: Vec<TransactionTraceWithHash>,
     }
 
-    let traces = v0_7_1_trace_block_transactions(&Starknet::new(backend, add_transaction_provider), block_id).await?;
+    // TODO: we should probably use the actual service context here instead of
+    // creating a new one!
+    let traces = v0_7_1_trace_block_transactions(
+        &Starknet::new(backend, add_transaction_provider, Default::default(), ServiceContext::new()),
+        block_id,
+    )
+    .await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))

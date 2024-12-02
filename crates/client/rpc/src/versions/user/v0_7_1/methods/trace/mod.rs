@@ -1,8 +1,4 @@
-pub(crate) mod simulate_transactions;
-pub mod trace_block_transactions;
-pub(crate) mod trace_transaction;
-
-use crate::{versions::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
+use crate::{versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use simulate_transactions::simulate_transactions;
@@ -10,6 +6,10 @@ use starknet_core::types::{BroadcastedTransaction, SimulatedTransaction, Simulat
 use starknet_types_core::felt::Felt;
 use trace_block_transactions::trace_block_transactions;
 use trace_transaction::trace_transaction;
+
+pub(crate) mod simulate_transactions;
+pub mod trace_block_transactions;
+pub(crate) mod trace_transaction;
 
 #[async_trait]
 impl StarknetTraceRpcApiV0_7_1Server for Starknet {

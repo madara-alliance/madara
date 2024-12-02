@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use anyhow::Context;
 use futures::SinkExt;
 use mp_utils::channel_wait_or_graceful_shutdown;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -93,7 +93,7 @@ impl TelemetryService {
 
 #[async_trait::async_trait]
 impl Service for TelemetryService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if !self.telemetry {
             return Ok(());
         }
@@ -124,7 +124,7 @@ impl Service for TelemetryService {
 
             let rx = &mut rx;
 
-            while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv()).await {
+            while let Some(event) = channel_wait_or_graceful_shutdown(rx.recv(), &ctx).await {
                 tracing::debug!(
                     "Sending telemetry event '{}'.",
                     event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")
@@ -155,5 +155,9 @@ impl Service for TelemetryService {
         });
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::Telemetry
     }
 }
