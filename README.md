@@ -37,6 +37,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
+  - [Database Migration](#database-migration)
 - 💬 [Get in touch](#-get-in-touch)
   - [Contributing](#contributing)
   - [Partnerships](#partnerships)
@@ -572,6 +573,54 @@ Madara supports merkelized state verification through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
+
+### Database Migration
+
+When migration to a newer version of Madara you might need to update your
+database. Instead of re-synchronizing the entirety of your chain's state from
+genesis, you can use Madara's **warp update** feature.
+
+> [!NOTE]
+> Warp update requires an already synchronized _local_ node with a working
+> database.
+
+To begin the database migration, you will need to start an existing node with
+[admin methods](#madara-specific-json-rpc-methods) and
+[feeder gateway](#feeder-gateway-state-synchronization) enabled. This will be
+the _source_ of the migration. You can do this with the `--warp-update-sender`
+[preset](#4.-presets):
+
+```bash
+cargo run --releasae -- \
+  --name Sender         \
+  --full                \ # This also works with other types of nodes
+  --network mainnet     \
+  --warp-update-sender
+```
+
+You will then need to start a second node to synchronize the state of your
+database:
+
+```bash
+cargo run --releasae --       \
+  --name Receiver             \
+  --base-path /tmp/madara_new \ # Where you want the new database to be stored
+  --full                      \
+  --network mainnet           \
+  --l1-endpoint https://***   \
+  --warp-update-receiver
+```
+
+This will start generating a new up-to-date database under `/tmp/madara_new`.
+Once this process is over, the warp update sender node will automatically
+shutdown while the warp update receiver will take its place.
+
+> [!WARNING]
+> As of now, the warp update receiver has its rpc disabled, even after the
+> migration process has completed. This will be fixed in the future, so that
+> services that would otherwise conflict with the sender node will automatically
+> start after the migration has finished, allowing for migrations with 0
+> downtime.
 
 ## 💬 Get in touch
 

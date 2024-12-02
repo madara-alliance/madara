@@ -17,6 +17,7 @@ use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
+use mp_utils::service::ServiceContext;
 use providers::AddTransactionProvider;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -47,6 +48,7 @@ pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
     storage_proof_config: StorageProofConfig,
+    pub ctx: ServiceContext,
 }
 
 impl Starknet {
@@ -54,8 +56,9 @@ impl Starknet {
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
         storage_proof_config: StorageProofConfig,
+        ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config }
+        Self { backend, add_transaction_provider, storage_proof_config, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -124,6 +127,8 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

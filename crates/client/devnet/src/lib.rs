@@ -302,7 +302,7 @@ mod tests {
         let chain_config = Arc::new(ChainConfig::madara_devnet());
         let block = g.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
-        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None, true).unwrap());
+        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None).unwrap());
 
         println!("{:?}", block.state_diff);
         tokio::runtime::Runtime::new()

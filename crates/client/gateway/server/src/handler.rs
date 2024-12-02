@@ -16,6 +16,7 @@ use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
+use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_core::types::{
@@ -238,8 +239,10 @@ pub async fn handle_get_block_traces(
         traces: Vec<TransactionTraceWithHash>,
     }
 
+    // TODO: we should probably use the actual service context here instead of
+    // creating a new one!
     let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, Default::default()),
+        &Starknet::new(backend, add_transaction_provider, Default::default(), ServiceContext::new()),
         block_id,
     )
     .await?;

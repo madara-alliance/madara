@@ -96,7 +96,7 @@ pub struct RpcParams {
 
     /// The RPC port to listen at for admin RPC calls.
     #[arg(env = "MADARA_RPC_PORT_ADMIN", long, value_name = "ADMIN PORT", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
-    pub rpc_port_admin: u16,
+    pub rpc_admin_port: u16,
 
     /// Maximum number of RPC server connections at a given time.
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
@@ -196,7 +196,7 @@ impl RpcParams {
             Ipv4Addr::LOCALHOST
         };
 
-        SocketAddr::new(listen_addr.into(), self.rpc_port_admin)
+        SocketAddr::new(listen_addr.into(), self.rpc_admin_port)
     }
 
     pub fn batch_config(&self) -> BatchRequestConfig {

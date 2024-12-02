@@ -8,7 +8,7 @@ use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::graceful_shutdown;
+use mp_utils::{graceful_shutdown, service::ServiceContext};
 use tokio::{net::TcpListener, sync::Notify};
 
 use super::router::main_router;
@@ -20,7 +20,7 @@ pub async fn start_server(
     gateway_enable: bool,
     gateway_external: bool,
     gateway_port: u16,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     if !feeder_gateway_enable && !gateway_enable {
         return Ok(());
@@ -41,7 +41,7 @@ pub async fn start_server(
     {
         let shutdown_notify = Arc::clone(&shutdown_notify);
         tokio::spawn(async move {
-            graceful_shutdown(&cancellation_token).await;
+            graceful_shutdown(&ctx).await;
             shutdown_notify.notify_waiters();
         });
     }
