@@ -70,6 +70,7 @@ pub enum AggregationMethod {
     Median,
     Mean,
     #[default]
+    // Time weighted average price
     Twap,
 }
 
