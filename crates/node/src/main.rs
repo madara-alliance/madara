@@ -49,6 +49,18 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
+    // Check if the devnet is running with the correct chain id.
+    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
+        if !run_cmd.block_production_params.override_devnet_chain_id {
+            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            panic!();
+        } else {
+            // This log is immediately flooded with devnet accounts and so this can be missed.
+            // Should we add a delay here to make this clearly visisble?
+            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        }
+    }
+
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("MADARA_BUILD_VERSION");
 
@@ -64,11 +76,17 @@ async fn main() -> anyhow::Result<()> {
     let sys_info = SysInfo::probe();
     sys_info.show();
 
-    // Services.
+    // ===================================================================== //
+    //                             SERVICES (SETUP)                          //
+    // ===================================================================== //
+
+    // Telemetry
 
     let service_telemetry: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
+
+    // Database
 
     let service_db = DatabaseService::new(
         &run_cmd.db_params.base_path,
@@ -79,10 +97,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
-    let importer = Arc::new(
-        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.sync_params.unsafe_starting_block)
-            .context("Initializing importer service")?,
-    );
+    // L1 Sync
 
     let l1_gas_setter = GasPriceProvider::new();
 
@@ -120,49 +135,57 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing the l1 sync service")?;
 
-    // Block provider startup.
-    // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (service_block_provider, rpc_add_txs_method_provider): (Box<dyn Service>, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.is_sequencer() {
-            // Block production service. (authority)
-            true => {
-                let block_production_service = BlockProductionService::new(
-                    &run_cmd.block_production_params,
-                    &service_db,
-                    Arc::clone(&mempool),
-                    importer,
-                    Arc::clone(&l1_data_provider),
-                )?;
+    // Block production & L2 sync
 
-                (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-            }
-            // Block sync service. (full node)
-            false => {
-                // Feeder gateway sync service.
-                let sync_service = L2SyncService::new(
-                    &run_cmd.sync_params,
-                    Arc::clone(&chain_config),
-                    &service_db,
-                    importer,
-                    service_telemetry.new_handle(),
-                    run_cmd.args_preset.warp_update_receiver,
-                )
-                .await
-                .context("Initializing sync service")?;
+    let importer = Arc::new(
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
+    );
 
-                let mut provider =
-                    GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
-                // gateway api key is needed for declare transactions on mainnet
-                if let Some(api_key) = run_cmd.sync_params.gateway_key {
-                    provider.add_header(
-                        HeaderName::from_static("x-throttling-bypass"),
-                        HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
-                    )
-                }
+    // `rpc_add_txs_method_provider` is a trait object that tells the RPC task
+    // where to put the transactions when using the write endpoints.
+    let (service_block_prod_or_l2_sync, rpc_add_txs_method_provider): (
+        Box<dyn Service>,
+        Arc<dyn AddTransactionProvider>,
+    ) = if run_cmd.is_sequencer() {
+        // Block production service. (authority)
+        let block_production_service = BlockProductionService::new(
+            &run_cmd.block_production_params,
+            &service_db,
+            Arc::clone(&mempool),
+            importer,
+            Arc::clone(&l1_data_provider),
+        )?;
 
-                (Box::new(sync_service), Arc::new(ForwardToProvider::new(provider)))
-            }
-        };
+        (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
+    } else {
+        // Block sync service. (full node)
+        let l2_sync_service = L2SyncService::new(
+            &run_cmd.sync_params,
+            Arc::clone(&chain_config),
+            &service_db,
+            importer,
+            service_telemetry.new_handle(),
+            run_cmd.args_preset.warp_update_receiver,
+        )
+        .await
+        .context("Initializing sync service")?;
+
+        let mut provider =
+            GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
+
+        // gateway api key is needed for declare transactions on mainnet
+        if let Some(api_key) = run_cmd.sync_params.gateway_key {
+            provider.add_header(
+                HeaderName::from_static("x-throttling-bypass"),
+                HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+            )
+        }
+
+        (Box::new(l2_sync_service), Arc::new(ForwardToProvider::new(provider)))
+    };
+
+    // User-facing RPC
 
     let service_rpc_user = RpcService::user(
         run_cmd.rpc_params.clone(),
@@ -170,11 +193,15 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&rpc_add_txs_method_provider),
     );
 
+    // Admin-facing RPC (for node operators)
+
     let service_rpc_admin = RpcService::admin(
         run_cmd.rpc_params.clone(),
         Arc::clone(service_db.backend()),
         Arc::clone(&rpc_add_txs_method_provider),
     );
+
+    // Feeder gateway
 
     let service_gateway = GatewayService::new(run_cmd.gateway_params, &service_db, rpc_add_txs_method_provider)
         .await
@@ -182,35 +209,32 @@ async fn main() -> anyhow::Result<()> {
 
     service_telemetry.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
-    // Check if the devnet is running with the correct chain id.
-    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
-        if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
-            panic!();
-        } else {
-            // This log is immediately flooded with devnet accounts and so this can be missed.
-            // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
-        }
-    }
+    // ===================================================================== //
+    //                             SERVICES (START)                          //
+    // ===================================================================== //
 
     let app = ServiceMonitor::default()
         .with(service_db)?
         .with(service_l1)?
-        .with(service_block_provider)?
+        .with(service_block_prod_or_l2_sync)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
         .with(service_gateway)?
         .with(service_telemetry)?;
 
     app.activate(MadaraService::Database);
-    app.activate(MadaraService::L1Sync);
     app.activate(MadaraService::L2Sync);
     app.activate(MadaraService::BlockProduction);
     app.activate(MadaraService::Gateway);
 
     if run_cmd.telemetry_params.telemetry {
         app.activate(MadaraService::Telemetry);
+    }
+
+    let l1_sync_enabled = !run_cmd.l1_sync_params.sync_l1_disabled;
+    let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
+    if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
+        app.activate(MadaraService::L1Sync);
     }
 
     if !run_cmd.rpc_params.rpc_disable {
@@ -225,5 +249,5 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = analytics.shutdown();
 
-    Ok(())
+    anyhow::Ok(())
 }

@@ -13,7 +13,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct L1SyncService {
     db_backend: Arc<MadaraBackend>,
-    eth_client: Option<EthereumClient>,
+    eth_client: Option<Arc<EthereumClient>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -37,11 +37,11 @@ impl L1SyncService {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
                 let l1_block_metrics = L1BlockMetrics::register().expect("Registering metrics");
-                Some(
-                    EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
-                        .await
-                        .context("Creating ethereum client")?,
-                )
+                let client = EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
+                    .await
+                    .context("Creating ethereum client")?;
+
+                Some(Arc::new(client))
             } else {
                 anyhow::bail!(
                     "No Ethereum endpoint provided. You need to provide one using --l1-endpoint <RPC URL> in order to verify the synced state or disable the l1 watcher using --no-l1-sync."
@@ -93,9 +93,10 @@ impl Service for L1SyncService {
             ..
         } = self.clone();
 
-        if let Some(eth_client) = self.eth_client.take() {
+        if let Some(eth_client) = &self.eth_client {
             // enabled
 
+            let eth_client = Arc::clone(eth_client);
             runner.start_service(move |ctx| {
                 mc_eth::sync::l1_sync_worker(
                     db_backend,
@@ -108,6 +109,8 @@ impl Service for L1SyncService {
                     ctx,
                 )
             });
+        } else {
+            tracing::error!("❗ Tried to start L1 Sync but no l1 endpoint was provided to the node on startup");
         }
 
         Ok(())

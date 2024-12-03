@@ -6,10 +6,9 @@ use mc_sync::fetch::fetchers::FetchConfig;
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraService, Service, ServiceContext, ServiceRunner};
+use mp_utils::service::{MadaraService, Service, ServiceRunner};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct L2SyncService {

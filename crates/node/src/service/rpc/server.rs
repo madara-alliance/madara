@@ -6,12 +6,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
-use futures::Future;
-use mp_utils::service::{MadaraService, ServiceContext, ServiceRunner};
-use tokio::task::JoinSet;
+use mp_utils::service::ServiceContext;
 use tower::Service;
-
-use mp_utils::wait_or_graceful_shutdown;
 
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 

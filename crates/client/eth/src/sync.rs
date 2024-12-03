@@ -13,7 +13,7 @@ use mc_db::MadaraBackend;
 #[allow(clippy::too_many_arguments)]
 pub async fn l1_sync_worker(
     backend: Arc<MadaraBackend>,
-    eth_client: EthereumClient,
+    eth_client: Arc<EthereumClient>,
     chain_id: ChainId,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,
