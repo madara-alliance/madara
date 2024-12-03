@@ -1,5 +1,4 @@
 use crate::cli::SyncParams;
-use anyhow::Context;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_sync::fetch::fetchers::FetchConfig;
@@ -17,7 +16,7 @@ pub struct L2SyncService {
     fetch_config: FetchConfig,
     backup_every_n_blocks: Option<u64>,
     starting_block: Option<u64>,
-    start_params: Option<TelemetryHandle>,
+    telemetry: Arc<TelemetryHandle>,
     disabled: bool,
     pending_block_poll_interval: Duration,
 }
@@ -41,7 +40,7 @@ impl L2SyncService {
             starting_block: config.unsafe_starting_block,
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_importer,
-            start_params: Some(telemetry),
+            telemetry: Arc::new(telemetry),
             disabled: config.sync_disabled,
             pending_block_poll_interval: config.pending_block_poll_interval,
         })
@@ -63,7 +62,7 @@ impl Service for L2SyncService {
             block_importer,
             ..
         } = self.clone();
-        let telemetry = self.start_params.take().context("Service already started")?;
+        let telemetry = Arc::clone(&self.telemetry);
 
         runner.start_service(move |ctx| {
             mc_sync::l2_sync_worker(

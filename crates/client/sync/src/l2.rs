@@ -52,7 +52,7 @@ pub struct L2VerifyApplyConfig {
     flush_every_n_blocks: u64,
     flush_every_n_seconds: u64,
     stop_on_sync: bool,
-    telemetry: TelemetryHandle,
+    telemetry: Arc<TelemetryHandle>,
     validation: BlockValidationContext,
     block_conv_receiver: mpsc::Receiver<PreValidatedBlock>,
 }
@@ -237,7 +237,7 @@ pub struct L2SyncConfig {
     pub warp_update_port_rpc: u16,
     pub warp_update_port_fgw: u16,
     pub chain_id: ChainId,
-    pub telemetry: TelemetryHandle,
+    pub telemetry: Arc<TelemetryHandle>,
     pub block_importer: Arc<BlockImporter>,
 }
 
@@ -370,7 +370,7 @@ mod tests {
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
         let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
-        let telemetry = TelemetryService::new(vec![]).unwrap().new_handle();
+        let telemetry = Arc::new(TelemetryService::new(vec![]).unwrap().new_handle());
 
         let mock_block = create_dummy_unverified_full_block();
 

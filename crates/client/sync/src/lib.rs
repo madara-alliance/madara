@@ -21,7 +21,7 @@ pub struct SyncConfig {
     pub block_importer: Arc<BlockImporter>,
     pub starting_block: Option<u64>,
     pub backup_every_n_blocks: Option<u64>,
-    pub telemetry: TelemetryHandle,
+    pub telemetry: Arc<TelemetryHandle>,
     pub pending_block_poll_interval: Duration,
 }
 
