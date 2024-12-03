@@ -16,7 +16,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_gateway::error::SequencerError;
 use mp_utils::service::ServiceContext;
-use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
+use mp_utils::PerfStopwatch;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
@@ -60,7 +60,7 @@ pub struct L2VerifyApplyConfig {
 #[tracing::instrument(skip(backend, ctx, config), fields(module = "Sync"))]
 async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     config: L2VerifyApplyConfig,
 ) -> anyhow::Result<()> {
     let L2VerifyApplyConfig {
@@ -78,7 +78,10 @@ async fn l2_verify_and_apply_task(
     let mut instant = std::time::Instant::now();
     let target_duration = std::time::Duration::from_secs(flush_every_n_seconds);
 
-    while let Some(block) = channel_wait_or_graceful_shutdown(pin!(block_conv_receiver.recv()), &ctx).await {
+    while let Some(block) = tokio::select! {
+        res = pin!(block_conv_receiver.recv()) => res,
+        _ = ctx.cancelled() => None
+    } {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
         if header.block_number - last_block_n >= flush_every_n_blocks || instant.elapsed() >= target_duration {
@@ -130,14 +133,14 @@ async fn l2_block_conversion_task(
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(
         (updates_receiver, block_import, validation.clone(), ctx.clone()),
         |(mut updates_recv, block_import, validation, ctx)| async move {
-            channel_wait_or_graceful_shutdown(updates_recv.recv(), &ctx).await.map(|block| {
+            updates_recv.recv().await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
                 let validation_ = validation.clone();
                 (
@@ -149,7 +152,10 @@ async fn l2_block_conversion_task(
     );
 
     let mut stream = pin!(conversion_stream.buffered(10));
-    while let Some(block) = channel_wait_or_graceful_shutdown(stream.next(), &ctx).await {
+    while let Some(block) = tokio::select! {
+        res = stream.next() => res,
+        _ = ctx.cancelled() => None,
+    } {
         if output.send(block?).await.is_err() {
             // channel closed
             break;
@@ -190,17 +196,20 @@ async fn l2_pending_block_task(
 
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
+    while !ctx.is_cancelled() {
+        interval.tick().await;
+
         tracing::debug!("Getting pending block...");
 
         let current_block_hash = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))
             .context("Getting latest block hash")?
             .unwrap_or(/* genesis parent block hash */ Felt::ZERO);
-        let Some(block) =
-            fetch_pending_block_and_updates(current_block_hash, &backend.chain_config().chain_id, &provider, &ctx)
-                .await
-                .context("Getting pending block from FGW")?
+
+        let chain_id = &backend.chain_config().chain_id;
+        let Some(block) = fetch_pending_block_and_updates(current_block_hash, chain_id, &provider)
+            .await
+            .context("Getting pending block from FGW")?
         else {
             continue;
         };
@@ -214,7 +223,7 @@ async fn l2_pending_block_task(
         };
 
         if let Err(err) = import_block().await {
-            tracing::debug!("Error while importing pending block: {err:#}");
+            tracing::debug!("Failed to import pending block: {err:#}");
         }
     }
 

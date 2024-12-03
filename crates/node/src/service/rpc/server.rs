@@ -45,7 +45,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 /// Start RPC server listening on given address.
 pub async fn start_server<'a>(
     config: ServerConfig,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
 ) -> anyhow::Result<()> {
     let ServerConfig {

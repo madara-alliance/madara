@@ -7,7 +7,7 @@ use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
-use mp_utils::{channel_wait_or_graceful_shutdown, service::ServiceContext, wait_or_graceful_shutdown};
+use mp_utils::service::ServiceContext;
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
@@ -31,7 +31,7 @@ pub struct L2FetchConfig {
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     mut config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
@@ -62,7 +62,7 @@ pub async fn l2_fetch_task(
             .unwrap_or(NonZeroUsize::new(1usize).expect("1 should always be in usize bound"));
         config.sync_parallelism = Into::<usize>::into(available_parallelism) * 2;
 
-        let next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+        let next_block = match sync_blocks(backend.as_ref(), &provider, &mut ctx, &config).await? {
             SyncStatus::Full(next_block) => next_block,
             SyncStatus::UpTo(next_block) => next_block,
         };
@@ -78,7 +78,7 @@ pub async fn l2_fetch_task(
         config.sync_parallelism = save;
     }
 
-    let mut next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+    let mut next_block = match sync_blocks(backend.as_ref(), &provider, &mut ctx, &config).await? {
         SyncStatus::Full(next_block) => {
             tracing::info!("🥳 The sync process has caught up with the tip of the chain");
             next_block
@@ -105,17 +105,27 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
+        while !ctx.is_cancelled() {
+            interval.tick().await;
+
+            // It is possible the chain produces multiple blocks in the span of
+            // a single loop iteration, so we keep fetching until we reach the
+            // tip again.
             loop {
-                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider, &ctx).await {
+                let chain_id = &backend.chain_config().chain_id;
+                match fetch_block_and_updates(chain_id, next_block, &provider).await {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..
                     }))) => {
                         break;
                     }
-                    val => {
-                        if fetch_stream_sender.send(val?).await.is_err() {
+                    Err(e) => {
+                        tracing::debug!("Failed to poll latest block: {e}");
+                        return Err(e.into());
+                    }
+                    Ok(unverified_block) => {
+                        if fetch_stream_sender.send(unverified_block).await.is_err() {
                             // stream closed
                             break;
                         }
@@ -126,7 +136,8 @@ pub async fn l2_fetch_task(
             }
         }
     }
-    Ok(())
+
+    anyhow::Ok(())
 }
 
 /// Whether a chain has been caught up to the tip or only a certain block number
@@ -154,27 +165,29 @@ enum SyncStatus {
 async fn sync_blocks(
     backend: &MadaraBackend,
     provider: &Arc<GatewayProvider>,
-    ctx: &ServiceContext,
+    ctx: &mut ServiceContext,
     config: &L2FetchConfig,
 ) -> anyhow::Result<SyncStatus> {
     let L2FetchConfig { first_block, fetch_stream_sender, n_blocks_to_sync, sync_parallelism, .. } = config;
 
     // Fetch blocks and updates in parallel one time before looping
-    let fetch_stream =
-        (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
-            let provider = Arc::clone(provider);
-            let ctx = ctx.clone();
-            async move {
-                (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
-            }
-        });
+    let fetch_stream = (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
+        let provider = Arc::clone(provider);
+        let chain_id = &backend.chain_config().chain_id;
+        async move { (block_n, fetch_block_and_updates(chain_id, block_n, &provider).await) }
+    });
 
     // Have `sync_parallelism` fetches in parallel at once, using futures Buffered
     let mut next_block = *first_block;
     let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism);
 
     loop {
-        let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), ctx).await else {
+        let next = tokio::select! {
+            res = fetch_stream.next() => res,
+            _ = ctx.cancelled() => None,
+        };
+
+        let Some((block_n, val)) = next else {
             return anyhow::Ok(SyncStatus::UpTo(next_block));
         };
 

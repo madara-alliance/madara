@@ -1,4 +1,4 @@
-use crate::cli::SyncParams;
+use crate::cli::L2SyncParams;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_sync::fetch::fetchers::FetchConfig;
@@ -17,13 +17,12 @@ pub struct L2SyncService {
     backup_every_n_blocks: Option<u64>,
     starting_block: Option<u64>,
     telemetry: Arc<TelemetryHandle>,
-    disabled: bool,
     pending_block_poll_interval: Duration,
 }
 
 impl L2SyncService {
     pub async fn new(
-        config: &SyncParams,
+        config: &L2SyncParams,
         chain_config: Arc<ChainConfig>,
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
@@ -41,7 +40,6 @@ impl L2SyncService {
             backup_every_n_blocks: config.backup_every_n_blocks,
             block_importer,
             telemetry: Arc::new(telemetry),
-            disabled: config.sync_disabled,
             pending_block_poll_interval: config.pending_block_poll_interval,
         })
     }
@@ -50,9 +48,6 @@ impl L2SyncService {
 #[async_trait::async_trait]
 impl Service for L2SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        if self.disabled {
-            return Ok(());
-        }
         let L2SyncService {
             db_backend,
             fetch_config,

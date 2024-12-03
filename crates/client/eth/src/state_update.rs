@@ -8,7 +8,6 @@ use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_convert::ToFelt;
 use mp_transactions::MAIN_CHAIN_ID;
-use mp_utils::channel_wait_or_graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use serde::Deserialize;
 use starknet_api::core::ChainId;
@@ -28,35 +27,6 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
     let global_root = client.get_last_state_root().await?;
 
     Ok(L1StateUpdate { global_root, block_number, block_hash })
-}
-
-/// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
-/// verified state
-pub async fn listen_and_update_state(
-    eth_client: &EthereumClient,
-    backend: &MadaraBackend,
-    block_metrics: &L1BlockMetrics,
-    chain_id: ChainId,
-    ctx: ServiceContext,
-) -> anyhow::Result<()> {
-    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
-
-    let mut event_stream = event_filter
-        .watch()
-        .await
-        .context(
-            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
-        )?
-        .into_stream();
-
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &ctx).await {
-        let log = event_result.context("listening for events")?;
-        let format_event: L1StateUpdate =
-            convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(backend, format_event, block_metrics, chain_id.clone())?;
-    }
-
-    Ok(())
 }
 
 pub fn update_l1(
@@ -91,7 +61,7 @@ pub async fn state_update_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
     chain_id: ChainId,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -104,11 +74,27 @@ pub async fn state_update_worker(
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id, ctx)
-        .await
-        .context("Subscribing to the LogStateUpdate event")?;
+    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-    Ok(())
+    let mut event_stream = event_filter
+        .watch()
+        .await
+        .context(
+            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+        )?
+        .into_stream();
+
+    while let Some(event_result) = tokio::select! {
+        res = event_stream.next() => res,
+        _ = ctx.cancelled() => None
+    } {
+        let log = event_result.context("listening for events")?;
+        let format_event: L1StateUpdate =
+            convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
+        update_l1(backend, format_event, &eth_client.l1_block_metrics, chain_id.clone())?;
+    }
+
+    anyhow::Ok(())
 }
 
 #[cfg(test)]

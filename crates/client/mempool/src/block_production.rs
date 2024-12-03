@@ -22,7 +22,6 @@ use mp_state_update::{
     StorageEntry,
 };
 use mp_transactions::TransactionWithHash;
-use mp_utils::graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
 use starknet_api::core::ContractAddress;
@@ -508,7 +507,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
-    pub async fn block_production_task(mut self, ctx: ServiceContext) -> Result<(), anyhow::Error> {
+    pub async fn block_production_task(mut self, mut ctx: ServiceContext) -> Result<(), anyhow::Error> {
         let start = tokio::time::Instant::now();
 
         let mut interval_block_time = tokio::time::interval_at(start, self.backend.chain_config().block_time);
@@ -527,10 +526,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 instant = interval_block_time.tick() => {
                     if let Err(err) = self.on_block_time().await {
                         tracing::error!("Block production task has errored: {err:#}");
-                        // Clear pending block. The reason we do this is because if the error happened because the closed
-                        // block is invalid or has not been saved properly, we want to avoid redoing the same error in the next
-                        // block. So we drop all the transactions in the pending block just in case.
-                        // If the problem happened after the block was closed and saved to the db, this will do nothing.
+                        // Clear pending block. The reason we do this is because
+                        // if the error happened because the closed block is
+                        // invalid or has not been saved properly, we want to
+                        // avoid redoing the same error in the next block. So we
+                        // drop all the transactions in the pending block just
+                        // in case. If the problem happened after the block was
+                        // closed and saved to the db, this will do nothing.
                         if let Err(err) = self.backend.clear_pending_block() {
                             tracing::error!("Error while clearing the pending block in recovery of block production error: {err:#}");
                         }
@@ -542,8 +544,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
                     if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
-                        // first tick is ignored.
-                        // out of range ticks are also ignored.
+                        // First tick is ignored. Out of range ticks are also
+                        // ignored.
                         self.current_pending_tick += 1;
                         continue
                     }
@@ -553,7 +555,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     }
                     self.current_pending_tick += 1;
                 },
-                _ = graceful_shutdown(&ctx) => break,
+                _ = ctx.cancelled() => break,
             }
         }
 

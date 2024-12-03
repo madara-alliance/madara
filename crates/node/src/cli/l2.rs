@@ -11,10 +11,10 @@ use super::FGW_DEFAULT_PORT;
 use super::RPC_DEFAULT_PORT_ADMIN;
 
 #[derive(Clone, Debug, clap::Args)]
-pub struct SyncParams {
+pub struct L2SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
-    pub sync_disabled: bool,
+    pub l2_sync_disabled: bool,
 
     /// The block you want to start syncing from. This will most probably break your database.
     #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
@@ -137,7 +137,7 @@ pub struct SyncParams {
     pub sync_parallelism: u8,
 }
 
-impl SyncParams {
+impl L2SyncParams {
     pub fn block_fetch_config(
         &self,
         chain_id: ChainId,

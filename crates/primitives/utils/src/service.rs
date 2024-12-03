@@ -16,7 +16,7 @@ const SERVICE_COUNT: usize = 8;
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum MadaraService {
     #[default]
-    None = 0,
+    Monitor = 0,
     Database = 1,
     L1Sync = 2,
     L2Sync = 4,
@@ -33,7 +33,7 @@ impl Display for MadaraService {
             f,
             "{}",
             match self {
-                Self::None => "none",
+                Self::Monitor => "none",
                 Self::Database => "database",
                 Self::L1Sync => "l1 sync",
                 Self::L2Sync => "l2 sync",
@@ -47,9 +47,26 @@ impl Display for MadaraService {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+impl From<u8> for MadaraService {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Monitor,
+            1 => Self::Database,
+            2 => Self::L1Sync,
+            4 => Self::L2Sync,
+            8 => Self::BlockProduction,
+            16 => Self::RpcUser,
+            32 => Self::RpcAdmin,
+            64 => Self::Gateway,
+            _ => Self::Telemetry,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum MadaraServiceStatus {
     On,
+    #[default]
     Off,
 }
 
@@ -126,7 +143,7 @@ impl MadaraServiceMask {
 
     #[inline(always)]
     pub fn is_active_some(&self) -> bool {
-        self.0.load(std::sync::atomic::Ordering::SeqCst) != 0
+        self.0.load(std::sync::atomic::Ordering::SeqCst) > 0
     }
 
     #[inline(always)]
@@ -140,6 +157,24 @@ impl MadaraServiceMask {
         let svc = svc as u8;
         let prev = self.0.fetch_and(!svc, std::sync::atomic::Ordering::SeqCst);
         (prev & svc > 0).into()
+    }
+
+    fn active_set(&self) -> Vec<MadaraService> {
+        let mut i = MadaraService::Telemetry as u8;
+        let state = self.0.load(std::sync::atomic::Ordering::SeqCst);
+        let mut set = Vec::with_capacity(SERVICE_COUNT);
+
+        while i > 0 {
+            let mask = i & state;
+
+            if mask > 0 {
+                set.push(MadaraService::from(mask));
+            }
+
+            i >>= 1;
+        }
+
+        set
     }
 }
 
@@ -228,7 +263,7 @@ impl Default for ServiceContext {
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(SERVICE_COUNT).0),
             service_update_receiver: None,
             state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
-            id: MadaraService::default(),
+            id: MadaraService::Monitor,
         }
     }
 }
@@ -249,6 +284,8 @@ impl ServiceContext {
 
     /// Stops all services under the same global context scope.
     pub fn cancel_global(&self) {
+        tracing::info!("🔌 Gracefully shutting down node");
+
         self.token_global.cancel();
     }
 
@@ -264,29 +301,79 @@ impl ServiceContext {
     /// A future which completes when the service associated to this
     /// [ServiceContext] is canceled.
     ///
-    /// This happens after calling [ServiceContext::cancel_local] or
-    /// [ServiceContext::cancel_global].
+    /// A service is canceled after calling [ServiceContext::cancel_local],
+    /// [ServiceContext::cancel_global] or if it is marked as disabled with
+    /// [ServiceContext::service_remove].
     ///
     /// Use this to race against other futures in a [tokio::select] for example.
     #[inline(always)]
-    pub async fn cancelled(&self) {
+    pub async fn cancelled(&mut self) {
         if self.state() != MadaraState::Shutdown {
-            match &self.token_local {
-                Some(token_local) => tokio::select! {
-                    _ = self.token_global.cancelled() => {},
-                    _ = token_local.cancelled() => {}
-                },
-                None => tokio::select! {
-                    _ = self.token_global.cancelled() => {},
-                },
+            if self.service_update_receiver.is_none() {
+                self.service_update_receiver = Some(self.service_update_sender.subscribe());
+            }
+
+            let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
+            let token_global = &self.token_global;
+            let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
+
+            loop {
+                // We keep checking for service status updates until a token has
+                // been canceled or this service was deactivated
+                let res = tokio::select! {
+                    svc = rx.recv() => svc.ok(),
+                    _ = token_global.cancelled() => break,
+                    _ = token_local.cancelled() => break
+                };
+
+                if let Some(ServiceTransport { svc, status }) = res {
+                    if svc == self.id && status == MadaraServiceStatus::Off {
+                        return;
+                    }
+                }
             }
         }
     }
 
-    /// Check if the service associated to this [ServiceContext] was canceled.
+    /// Checks if the service associated to this [ServiceContext] was canceled.
     ///
-    /// This happens after calling [ServiceContext::cancel_local] or
-    /// [ServiceContext::cancel_global].
+    /// This happens after calling [ServiceContext::cancel_local],
+    /// [ServiceContext::cancel_global].or [ServiceContext::service_remove].
+    ///
+    /// # Limitations
+    ///
+    /// This function should _not_ be used when waiting on potentially
+    /// blocking futures which can be canceled without entering an invalid
+    /// state. The latter is important, so let's break this down.
+    ///
+    /// - _blocking future_: this is blocking at a service level, not at the
+    ///   node level. A blocking task in this sense in a task which prevents a
+    ///   service from making progress in its execution, but not necessarily the
+    ///   rest of the node. A prime example of this is when you are waiting on
+    ///   a channel, and updates to that channel are sparse, or even unique.
+    ///
+    /// - _entering an invalid state_: the entire point of [ServiceContext] is
+    ///   to allow services to gracefully shutdown. We do not want to be, for
+    ///   example, racing each service against a global cancellation future, as
+    ///   not every service might be cancellation safe. Put differently, we do
+    ///   not want to stop in the middle of a critical computation before it has
+    ///   been saved to disk.
+    ///
+    /// Putting this together, [ServiceContext::is_cancelled] is only suitable
+    /// for checking cancellation alongside tasks which will not block the
+    /// running service, or in very specific circumstances where waiting on a
+    /// blocking future has higher precedence than shutting down the node.
+    ///
+    /// Examples of when to use [ServiceContext::is_cancelled]:
+    ///
+    /// - All your computation does is sleep or tick away a short period of
+    ///   time.
+    /// - You are checking for cancellation inside of synchronous code.
+    ///
+    /// If this does not describe your usage, and you are waiting on a blocking
+    /// future, which is cancel-safe and which does not risk putting the node
+    /// in an invalid state if cancelled, then you should be using
+    /// [ServiceContext::cancelled] instead.
     #[inline(always)]
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
@@ -361,9 +448,13 @@ impl ServiceContext {
         }
 
         let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
+        let token_global = &self.token_global;
+        let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
+
         let res = tokio::select! {
-            svc = rx.recv() => { svc.ok() },
-            _ = self.cancelled() => { None }
+            svc = rx.recv() => svc.ok(),
+            _ = token_global.cancelled() => None,
+            _ = token_local.cancelled() => None
         };
 
         self.service_update_receiver = Some(rx);
@@ -444,7 +535,16 @@ impl<'a> ServiceRunner<'a> {
         let Self { ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id();
+            if id != MadaraService::Monitor {
+                tracing::debug!("Starting {id}");
+            }
+
             runner(ctx).await.map_err(Into::into)?;
+
+            if id != MadaraService::Monitor {
+                tracing::debug!("Shutting down {id}");
+            }
+
             Ok(id)
         });
     }
@@ -453,8 +553,8 @@ impl<'a> ServiceRunner<'a> {
 pub struct ServiceMonitor {
     services: [Option<Box<dyn Service>>; SERVICE_COUNT],
     join_set: JoinSet<anyhow::Result<MadaraService>>,
-    service_started: Arc<MadaraServiceMask>,
-    service_stopped: Arc<MadaraServiceMask>,
+    status_request: Arc<MadaraServiceMask>,
+    status_actual: Arc<MadaraServiceMask>,
 }
 
 impl Default for ServiceMonitor {
@@ -462,8 +562,8 @@ impl Default for ServiceMonitor {
         Self {
             services: Default::default(),
             join_set: Default::default(),
-            service_started: Default::default(),
-            service_stopped: Arc::new(MadaraServiceMask(std::sync::atomic::AtomicU8::new(u8::MAX))),
+            status_request: Default::default(),
+            status_actual: Arc::new(MadaraServiceMask(std::sync::atomic::AtomicU8::new(u8::MAX))),
         }
     }
 }
@@ -480,29 +580,44 @@ impl ServiceMonitor {
     }
 
     pub fn activate(&self, id: MadaraService) {
-        self.service_started.activate(id);
+        self.status_request.activate(id);
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {
-        let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.service_started));
+        let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request));
 
         for svc in self.services.iter_mut() {
             match svc {
-                Some(svc) if self.service_started.status(svc.id() as u8) == MadaraServiceStatus::On => {
-                    let runner = ServiceRunner::new(ctx.child().with_id(svc.id()), &mut self.join_set);
+                Some(svc) if self.status_request.status(svc.id() as u8) == MadaraServiceStatus::On => {
+                    let id = svc.id();
+                    self.status_actual.activate(id);
+                    self.status_request.activate(id);
+
+                    let ctx = ctx.child().with_id(id);
+                    let runner = ServiceRunner::new(ctx, &mut self.join_set);
                     svc.start(runner).await.context("Starting service")?;
                 }
                 _ => continue,
             }
         }
 
-        while self.service_started.is_active_some() {
+        let runner = ServiceRunner::new(ctx.clone(), &mut self.join_set);
+        runner.start_service(|ctx| async move {
+            tokio::signal::ctrl_c().await.expect("Failed to listen for event");
+            ctx.cancel_global();
+
+            anyhow::Ok(())
+        });
+
+        while self.status_request.is_active_some() {
             tokio::select! {
                 Some(result) = self.join_set.join_next() => {
                     match result {
                         Ok(result) => {
                             let id = result?;
-                            self.service_stopped.deactivate(id);
+                            tracing::debug!("service {id} has shut down");
+                            self.status_actual.deactivate(id);
+                            self.status_request.deactivate(id);
                         }
                         Err(panic_error) if panic_error.is_panic() => {
                             // bubble up panics too
@@ -514,15 +629,24 @@ impl ServiceMonitor {
                 Some(ServiceTransport { svc, status }) = ctx.service_subscribe() => {
                     if status == MadaraServiceStatus::On {
                         if let Some(svc) = self.services[svc as usize].as_mut() {
-                            let runner = ServiceRunner::new(ctx.child().with_id(svc.id()), &mut self.join_set);
-                            svc.start(runner)
-                                .await
-                                .context("Starting service")?;
+                            let id = svc.id();
+                            if self.status_actual.status(id as u8) == MadaraServiceStatus::Off {
+                                self.status_actual.activate(id);
+                                self.status_request.activate(id);
+
+                                let ctx = ctx.child().with_id(id);
+                                let runner = ServiceRunner::new(ctx, &mut self.join_set);
+                                svc.start(runner)
+                                    .await
+                                    .context("Starting service")?;
+                            }
                         }
                     }
                 },
                 else => continue
             };
+
+            tracing::debug!("Services still active: {:?}", self.status_request.active_set());
         }
 
         Ok(())

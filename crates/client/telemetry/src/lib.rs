@@ -118,14 +118,13 @@ async fn start_clients(telemetry_endpoints: &Vec<(String, u8)>) -> Vec<Option<(W
 
 async fn start_telemetry(
     mut rx: tokio::sync::broadcast::Receiver<TelemetryEvent>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     mut clients: Vec<Option<(WebSocket, u8, String)>>,
 ) -> anyhow::Result<()> {
-    while let Ok(event) = rx.recv().await {
-        if ctx.is_cancelled() {
-            break;
-        }
-
+    while let Ok(event) = tokio::select! {
+        res = rx.recv() => res,
+        _ = ctx.cancelled() => return anyhow::Ok(())
+    } {
         tracing::debug!(
             "Sending telemetry event '{}'.",
             event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")

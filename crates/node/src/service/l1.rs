@@ -33,7 +33,7 @@ impl L1SyncService {
         devnet: bool,
         mempool: Arc<Mempool>,
     ) -> anyhow::Result<Self> {
-        let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
+        let eth_client = if !config.l1_sync_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
                 let l1_block_metrics = L1BlockMetrics::register().expect("Registering metrics");
@@ -63,7 +63,7 @@ impl L1SyncService {
                 .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             tracing::info!("⏳ Getting initial L1 gas prices");
-            mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)
+            mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, &l1_gas_provider, gas_price_poll)
                 .await
                 .context("Getting initial ethereum gas prices")?;
         }

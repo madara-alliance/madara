@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
     // Block production & L2 sync
 
     let importer = Arc::new(
-        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.sync_params.unsafe_starting_block)
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
             .context("Initializing importer service")?,
     );
 
@@ -161,7 +161,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         // Block sync service. (full node)
         let l2_sync_service = L2SyncService::new(
-            &run_cmd.sync_params,
+            &run_cmd.l2_sync_params,
             Arc::clone(&chain_config),
             &service_db,
             importer,
@@ -175,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
             GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
         // gateway api key is needed for declare transactions on mainnet
-        if let Some(api_key) = run_cmd.sync_params.gateway_key {
+        if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
             provider.add_header(
                 HeaderName::from_static("x-throttling-bypass"),
                 HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
@@ -203,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Feeder gateway
 
-    let service_gateway = GatewayService::new(run_cmd.gateway_params, &service_db, rpc_add_txs_method_provider)
+    let service_gateway = GatewayService::new(run_cmd.gateway_params.clone(), &service_db, rpc_add_txs_method_provider)
         .await
         .context("Initializing gateway service")?;
 
@@ -222,19 +222,25 @@ async fn main() -> anyhow::Result<()> {
         .with(service_gateway)?
         .with(service_telemetry)?;
 
-    app.activate(MadaraService::Database);
-    app.activate(MadaraService::L2Sync);
-    app.activate(MadaraService::BlockProduction);
-    app.activate(MadaraService::Gateway);
+    // Since the database is not implemented as a proper service, we do not
+    // active it, as it would never be marked as stopped by the existing logic
+    //
+    // app.activate(MadaraService::Database);
 
     if run_cmd.telemetry_params.telemetry {
         app.activate(MadaraService::Telemetry);
     }
 
-    let l1_sync_enabled = !run_cmd.l1_sync_params.sync_l1_disabled;
+    let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraService::L1Sync);
+    }
+
+    if run_cmd.is_sequencer() {
+        app.activate(MadaraService::BlockProduction);
+    } else if !run_cmd.l2_sync_params.l2_sync_disabled {
+        app.activate(MadaraService::L2Sync);
     }
 
     if !run_cmd.rpc_params.rpc_disable {
@@ -243,6 +249,10 @@ async fn main() -> anyhow::Result<()> {
 
     if !run_cmd.rpc_params.rpc_disable && !run_cmd.rpc_params.rpc_admin {
         app.activate(MadaraService::RpcAdmin);
+    }
+
+    if run_cmd.gateway_params.feeder_gateway_enable || run_cmd.gateway_params.gateway_enable {
+        app.activate(MadaraService::Gateway);
     }
 
     app.start().await?;

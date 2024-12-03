@@ -327,7 +327,7 @@ mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider)));
-        let metrics = BlockProductionMetrics::register();
+        let metrics = Arc::new(BlockProductionMetrics::register());
 
         let block_production = BlockProductionTask::new(
             Arc::clone(&backend),

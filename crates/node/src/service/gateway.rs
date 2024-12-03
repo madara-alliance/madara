@@ -24,21 +24,19 @@ impl GatewayService {
 #[async_trait::async_trait]
 impl Service for GatewayService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        if self.config.feeder_gateway_enable || self.config.gateway_enable {
-            let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
+        let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
 
-            runner.start_service(move |ctx| {
-                mc_gateway_server::service::start_server(
-                    db_backend,
-                    add_transaction_provider,
-                    config.feeder_gateway_enable,
-                    config.gateway_enable,
-                    config.gateway_external,
-                    config.gateway_port,
-                    ctx,
-                )
-            });
-        }
+        runner.start_service(move |ctx| {
+            mc_gateway_server::service::start_server(
+                db_backend,
+                add_transaction_provider,
+                config.feeder_gateway_enable,
+                config.gateway_enable,
+                config.gateway_external,
+                config.gateway_port,
+                ctx,
+            )
+        });
         Ok(())
     }
 

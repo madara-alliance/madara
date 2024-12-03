@@ -61,7 +61,7 @@ impl Service for RpcService {
 
         self.server_handle = Some(server_handle);
 
-        runner.start_service(move |ctx| async move {
+        runner.start_service(move |mut ctx| async move {
             let starknet = Starknet::new(backend, add_txs_method_provider, ctx.clone());
             let metrics = RpcMetrics::register()?;
 
@@ -98,7 +98,13 @@ impl Service for RpcService {
                 }
             };
 
-            start_server(server_config, ctx, stop_handle).await
+            // Services need to be running until they are stopped or else the
+            // monitor will enter an invalid state. Maybe there is a better way
+            // to represent this contract but for now this works.
+            start_server(server_config, ctx.clone(), stop_handle).await?;
+            ctx.cancelled().await;
+
+            anyhow::Ok(())
         });
 
         anyhow::Ok(())
