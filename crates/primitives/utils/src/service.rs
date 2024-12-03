@@ -4,12 +4,11 @@ use anyhow::Context;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::{
-    error::Error,
     fmt::{Debug, Display},
     panic,
     sync::Arc,
 };
-use tokio::task::{JoinError, JoinSet};
+use tokio::task::JoinSet;
 
 const SERVICE_COUNT: usize = 8;
 
@@ -22,7 +21,7 @@ pub enum MadaraService {
     L1Sync = 2,
     L2Sync = 4,
     BlockProduction = 8,
-    Rpc = 16,
+    RpcUser = 16,
     RpcAdmin = 32,
     Gateway = 64,
     Telemetry = 128,
@@ -39,7 +38,7 @@ impl Display for MadaraService {
                 Self::L1Sync => "l1 sync",
                 Self::L2Sync => "l2 sync",
                 Self::BlockProduction => "block production",
-                Self::Rpc => "rpc",
+                Self::RpcUser => "rpc user",
                 Self::RpcAdmin => "rpc admin",
                 Self::Gateway => "gateway",
                 Self::Telemetry => "telemetry",

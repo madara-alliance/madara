@@ -66,11 +66,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Services.
 
-    let telemetry_service: TelemetryService =
+    let service_telemetry: TelemetryService =
         TelemetryService::new(run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
 
-    let db_service = DatabaseService::new(
+    let service_db = DatabaseService::new(
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     .context("Initializing db service")?;
 
     let importer = Arc::new(
-        BlockImporter::new(Arc::clone(db_service.backend()), run_cmd.sync_params.unsafe_starting_block)
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.sync_params.unsafe_starting_block)
             .context("Initializing importer service")?,
     );
 
@@ -105,11 +105,11 @@ async fn main() -> anyhow::Result<()> {
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
+    let mempool = Arc::new(Mempool::new(Arc::clone(service_db.backend()), Arc::clone(&l1_data_provider)));
 
-    let l1_service = L1SyncService::new(
+    let service_l1 = L1SyncService::new(
         &run_cmd.l1_sync_params,
-        &db_service,
+        &service_db,
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
@@ -122,18 +122,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (Box<dyn Service>, Arc<dyn AddTransactionProvider>) =
+    let (service_block_provider, rpc_add_txs_method_provider): (Box<dyn Service>, Arc<dyn AddTransactionProvider>) =
         match run_cmd.is_sequencer() {
             // Block production service. (authority)
             true => {
                 let block_production_service = BlockProductionService::new(
                     &run_cmd.block_production_params,
-                    &db_service,
+                    &service_db,
                     Arc::clone(&mempool),
                     importer,
                     Arc::clone(&l1_data_provider),
-                    run_cmd.devnet,
-                    telemetry_service.new_handle(),
                 )?;
 
                 (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
@@ -144,9 +142,9 @@ async fn main() -> anyhow::Result<()> {
                 let sync_service = L2SyncService::new(
                     &run_cmd.sync_params,
                     Arc::clone(&chain_config),
-                    &db_service,
+                    &service_db,
                     importer,
-                    telemetry_service.new_handle(),
+                    service_telemetry.new_handle(),
                     run_cmd.args_preset.warp_update_receiver,
                 )
                 .await
@@ -166,14 +164,23 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-    let rpc_service =
-        RpcService::new(run_cmd.rpc_params, Arc::clone(db_service.backend()), Arc::clone(&rpc_add_txs_method_provider));
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&rpc_add_txs_method_provider),
+    );
 
-    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
+    let service_rpc_admin = RpcService::admin(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&rpc_add_txs_method_provider),
+    );
+
+    let service_gateway = GatewayService::new(run_cmd.gateway_params, &service_db, rpc_add_txs_method_provider)
         .await
         .context("Initializing gateway service")?;
 
-    telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
+    service_telemetry.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
@@ -188,23 +195,30 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = ServiceMonitor::default()
-        .with(db_service)?
-        .with(l1_service)?
-        .with(block_provider_service)?
-        .with(rpc_service)?
-        .with(gateway_service)?
-        .with(telemetry_service)?;
+        .with(service_db)?
+        .with(service_l1)?
+        .with(service_block_provider)?
+        .with(service_rpc_user)?
+        .with(service_rpc_admin)?
+        .with(service_gateway)?
+        .with(service_telemetry)?;
 
     app.activate(MadaraService::Database);
     app.activate(MadaraService::L1Sync);
     app.activate(MadaraService::L2Sync);
     app.activate(MadaraService::BlockProduction);
-    app.activate(MadaraService::Rpc);
-    app.activate(MadaraService::RpcAdmin);
     app.activate(MadaraService::Gateway);
 
     if run_cmd.telemetry_params.telemetry {
         app.activate(MadaraService::Telemetry);
+    }
+
+    if !run_cmd.rpc_params.rpc_disable {
+        app.activate(MadaraService::RpcUser);
+    }
+
+    if !run_cmd.rpc_params.rpc_disable && !run_cmd.rpc_params.rpc_admin {
+        app.activate(MadaraService::RpcAdmin);
     }
 
     app.start().await?;

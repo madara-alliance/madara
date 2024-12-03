@@ -1,9 +1,8 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::service::{MadaraService, Service, ServiceContext, ServiceRunner};
+use mp_utils::service::{MadaraService, Service, ServiceRunner};
 use std::sync::Arc;
-use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct GatewayService {

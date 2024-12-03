@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
+use futures::Future;
 use mp_utils::service::{MadaraService, ServiceContext, ServiceRunner};
 use tokio::task::JoinSet;
 use tower::Service;
@@ -48,8 +49,9 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 /// Start RPC server listening on given address.
 pub async fn start_server<'a>(
     config: ServerConfig,
-    runner: ServiceRunner<'a>,
-) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
+    ctx: ServiceContext,
+    stop_handle: jsonrpsee::server::StopHandle,
+) -> anyhow::Result<()> {
     let ServerConfig {
         name,
         addr,
@@ -90,22 +92,24 @@ pub async fn start_server<'a>(
         .set_http_middleware(http_middleware)
         .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
 
-    let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
     let cfg = PerConnection {
         methods,
         stop_handle: stop_handle.clone(),
         metrics,
         service_builder: builder.to_service_builder(),
     };
+    let ctx1 = ctx.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let ctx1 = ctx1.clone();
 
         async move {
             let cfg = cfg.clone();
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
+                let ctx1 = ctx1.clone();
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -121,7 +125,11 @@ pub async fn start_server<'a>(
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
                 async move {
-                    if req.uri().path() == "/health" {
+                    if ctx1.is_cancelled() {
+                        Ok(hyper::Response::builder()
+                            .status(hyper::StatusCode::GONE)
+                            .body(hyper::Body::from("GONE"))?)
+                    } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else {
                         if is_websocket {
@@ -149,19 +157,20 @@ pub async fn start_server<'a>(
         .with_context(|| format!("Creating hyper server at: {addr}"))?
         .serve(make_service);
 
-    runner.start_service(move |ctx| {
-        tracing::info!(
-            "📱 Running {name} server at {} (allowed origins={})",
-            local_addr.to_string(),
-            format_cors(cors.as_ref())
-        );
+    tracing::info!(
+        "📱 Running {name} server at {} (allowed origins={})",
+        local_addr.to_string(),
+        format_cors(cors.as_ref())
+    );
 
-        server.with_graceful_shutdown(async move {
-            wait_or_graceful_shutdown(stop_handle.shutdown(), &ctx).await;
-        })
+    server.with_graceful_shutdown(async move {
+        tokio::select! {
+            _ = stop_handle.shutdown() => {},
+            _ = ctx.cancelled() => {},
+        }
     });
 
-    Ok(server_handle)
+    anyhow::Ok(())
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192

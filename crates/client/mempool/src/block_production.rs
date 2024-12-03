@@ -200,7 +200,7 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
-    metrics: BlockProductionMetrics,
+    metrics: Arc<BlockProductionMetrics>,
 }
 
 impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
@@ -218,7 +218,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
-        metrics: BlockProductionMetrics,
+        metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
         let parent_block_hash = backend
@@ -508,7 +508,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
-    pub async fn block_production_task(&mut self, ctx: ServiceContext) -> Result<(), anyhow::Error> {
+    pub async fn block_production_task(mut self, ctx: ServiceContext) -> Result<(), anyhow::Error> {
         let start = tokio::time::Instant::now();
 
         let mut interval_block_time = tokio::time::interval_at(start, self.backend.chain_config().block_time);

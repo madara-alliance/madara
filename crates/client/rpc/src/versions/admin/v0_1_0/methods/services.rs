@@ -12,22 +12,22 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
     async fn service_rpc_disable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Stopping RPC service...");
-        Ok(self.ctx.service_remove(MadaraService::Rpc))
+        Ok(self.ctx.service_remove(MadaraService::RpcUser))
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
     async fn service_rpc_enable(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Starting RPC service...");
-        Ok(self.ctx.service_add(MadaraService::Rpc))
+        Ok(self.ctx.service_add(MadaraService::RpcUser))
     }
 
     #[tracing::instrument(skip(self), fields(module = "Admin"))]
     async fn service_rpc_restart(&self) -> RpcResult<MadaraServiceStatus> {
         tracing::info!("🔌 Restarting RPC service...");
 
-        let res = self.ctx.service_remove(MadaraService::Rpc);
+        let res = self.ctx.service_remove(MadaraService::RpcUser);
         tokio::time::sleep(RESTART_INTERVAL).await;
-        self.ctx.service_add(MadaraService::Rpc);
+        self.ctx.service_add(MadaraService::RpcUser);
 
         tracing::info!("🔌 Restart complete (Rpc)");
 
