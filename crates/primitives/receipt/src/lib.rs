@@ -1,7 +1,8 @@
 mod from_blockifier;
-mod into_starknet_core;
+mod to_starknet_types;
 pub use from_blockifier::from_blockifier_execution_info;
 
+use primitive_types::H256;
 use serde::{Deserialize, Serialize};
 use starknet_core::utils::starknet_keccak;
 use starknet_types_core::{
@@ -179,7 +180,7 @@ pub struct InvokeTransactionReceipt {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
     // normally this would be a Hash256, but the serde implementation doesn't work with bincode.
-    pub message_hash: Felt,
+    pub message_hash: H256,
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
     pub messages_sent: Vec<MsgToL1>,
@@ -274,15 +275,15 @@ impl Event {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ExecutionResources {
     pub steps: u64,
-    pub memory_holes: Option<u64>,
-    pub range_check_builtin_applications: Option<u64>,
-    pub pedersen_builtin_applications: Option<u64>,
-    pub poseidon_builtin_applications: Option<u64>,
-    pub ec_op_builtin_applications: Option<u64>,
-    pub ecdsa_builtin_applications: Option<u64>,
-    pub bitwise_builtin_applications: Option<u64>,
-    pub keccak_builtin_applications: Option<u64>,
-    pub segment_arena_builtin: Option<u64>,
+    pub memory_holes: u64,
+    pub range_check_builtin_applications: u64,
+    pub pedersen_builtin_applications: u64,
+    pub poseidon_builtin_applications: u64,
+    pub ec_op_builtin_applications: u64,
+    pub ecdsa_builtin_applications: u64,
+    pub bitwise_builtin_applications: u64,
+    pub keccak_builtin_applications: u64,
+    pub segment_arena_builtin: u64,
     pub data_availability: L1Gas,
     pub total_gas_consumed: L1Gas,
 }
@@ -314,6 +315,8 @@ impl ExecutionResult {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -329,15 +332,15 @@ mod tests {
             events: vec![Event { from_address: Felt::from(6), keys: vec![Felt::from(7)], data: vec![Felt::from(8)] }],
             execution_resources: ExecutionResources {
                 steps: 9,
-                memory_holes: Some(10),
-                range_check_builtin_applications: Some(11),
-                pedersen_builtin_applications: Some(12),
-                poseidon_builtin_applications: Some(13),
-                ec_op_builtin_applications: Some(14),
-                ecdsa_builtin_applications: Some(15),
-                bitwise_builtin_applications: Some(16),
-                keccak_builtin_applications: Some(17),
-                segment_arena_builtin: Some(18),
+                memory_holes: 10,
+                range_check_builtin_applications: 11,
+                pedersen_builtin_applications: 12,
+                poseidon_builtin_applications: 13,
+                ec_op_builtin_applications: 14,
+                ecdsa_builtin_applications: 15,
+                bitwise_builtin_applications: 16,
+                keccak_builtin_applications: 17,
+                segment_arena_builtin: 18,
                 data_availability: L1Gas { l1_gas: 19, l1_data_gas: 20 },
                 total_gas_consumed: L1Gas { l1_gas: 21, l1_data_gas: 22 },
             },
@@ -464,15 +467,15 @@ mod tests {
     fn dummy_execution_ressources() -> ExecutionResources {
         ExecutionResources {
             steps: 1,
-            memory_holes: Some(2),
-            range_check_builtin_applications: Some(3),
-            pedersen_builtin_applications: Some(4),
-            poseidon_builtin_applications: Some(5),
-            ec_op_builtin_applications: Some(6),
-            ecdsa_builtin_applications: Some(7),
-            bitwise_builtin_applications: Some(8),
-            keccak_builtin_applications: Some(9),
-            segment_arena_builtin: Some(10),
+            memory_holes: 2,
+            range_check_builtin_applications: 3,
+            pedersen_builtin_applications: 4,
+            poseidon_builtin_applications: 5,
+            ec_op_builtin_applications: 6,
+            ecdsa_builtin_applications: 7,
+            bitwise_builtin_applications: 8,
+            keccak_builtin_applications: 9,
+            segment_arena_builtin: 10,
             data_availability: L1Gas { l1_gas: 11, l1_data_gas: 12 },
             // TODO: Change with non-default values when starknet-rs supports it.
             total_gas_consumed: Default::default(),
@@ -492,7 +495,7 @@ mod tests {
 
     pub(crate) fn dummy_l1_handler_receipt() -> L1HandlerTransactionReceipt {
         L1HandlerTransactionReceipt {
-            message_hash: Felt::from(1),
+            message_hash: H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000001").unwrap(),
             transaction_hash: Felt::from(2),
             actual_fee: FeePayment { amount: Felt::from(3), unit: PriceUnit::Wei },
             messages_sent: dummy_messages(),

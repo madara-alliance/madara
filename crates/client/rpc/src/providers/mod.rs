@@ -6,9 +6,10 @@ pub use mempool::*;
 
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_transactions::BroadcastedDeclareTransactionV0;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 
 #[async_trait]
@@ -16,19 +17,19 @@ pub trait AddTransactionProvider: Send + Sync {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult>;
+    ) -> RpcResult<ClassAndTxnHash<Felt>>;
     async fn add_declare_transaction(
         &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult>;
+        declare_transaction: BroadcastedDeclareTxn<Felt>,
+    ) -> RpcResult<ClassAndTxnHash<Felt>>;
 
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult>;
+        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
+    ) -> RpcResult<ContractAndTxnHash<Felt>>;
 
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult>;
+        invoke_transaction: BroadcastedInvokeTxn<Felt>,
+    ) -> RpcResult<AddInvokeTransactionResult<Felt>>;
 }

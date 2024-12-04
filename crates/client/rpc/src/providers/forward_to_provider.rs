@@ -3,9 +3,10 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mc_gateway_client::GatewayProvider;
 use mp_gateway::error::SequencerError;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 
 use super::AddTransactionProvider;
@@ -25,14 +26,20 @@ impl AddTransactionProvider for ForwardToProvider {
     async fn add_declare_v0_transaction(
         &self,
         _declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult> {
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
     async fn add_declare_transaction(
         &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
-        let sequencer_response = match self.provider.add_declare_transaction(declare_transaction.into()).await {
+        declare_transaction: BroadcastedDeclareTxn<Felt>,
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+        let sequencer_response = match self
+            .provider
+            .add_declare_transaction(
+                declare_transaction.try_into().map_err(|_| StarknetRpcApiError::InvalidContractClass)?,
+            )
+            .await
+        {
             Ok(response) => response,
             Err(SequencerError::StarknetError(e)) => {
                 return Err(StarknetRpcApiError::from(e).into());
@@ -44,8 +51,8 @@ impl AddTransactionProvider for ForwardToProvider {
     }
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
+        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
+    ) -> RpcResult<ContractAndTxnHash<Felt>> {
         let sequencer_response =
             match self.provider.add_deploy_account_transaction(deploy_account_transaction.into()).await {
                 Ok(response) => response,
@@ -60,8 +67,8 @@ impl AddTransactionProvider for ForwardToProvider {
 
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
+        invoke_transaction: BroadcastedInvokeTxn<Felt>,
+    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
         let sequencer_response = match self.provider.add_invoke_transaction(invoke_transaction.into()).await {
             Ok(response) => response,
             Err(SequencerError::StarknetError(e)) => {

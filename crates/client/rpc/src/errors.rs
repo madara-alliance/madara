@@ -4,7 +4,7 @@ use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;

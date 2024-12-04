@@ -40,14 +40,12 @@ mp-utils = { workspace = true }
 
 # Starknet
 blockifier.workspace = true
-starknet-providers.workspace = true
 starknet_api.workspace = true
 
 # Other
 alloy.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 fdlimit.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }

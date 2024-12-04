@@ -1,8 +1,8 @@
+use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-
-use jsonrpsee::core::RpcResult;
-use starknet_core::types::DeclareTransactionResult;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::ClassAndTxnHash;
 
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
@@ -11,8 +11,8 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "addDeclareV0Transaction")]
     async fn add_declare_v0_transaction(
         &self,
-        declare_transaction_v0: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult>;
+        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+    ) -> RpcResult<ClassAndTxnHash<Felt>>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
