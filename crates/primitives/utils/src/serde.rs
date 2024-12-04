@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 use crate::{crypto::ZeroingPrivateKey, parsers::parse_duration};
 

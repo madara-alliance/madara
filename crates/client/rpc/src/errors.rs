@@ -1,11 +1,11 @@
-use std::fmt::Display;
-
+use crate::utils::display_internal_server_error;
 use mc_db::MadaraStorageError;
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
+use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
-use starknet_core::types::StarknetError;
-
-use crate::utils::display_internal_server_error;
+use starknet_core::types::Felt;
+use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -15,6 +15,22 @@ pub enum StarknetTransactionExecutionError {
     ClassHashNotFound,
     InvalidContractClass,
     ContractError,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageProofLimit {
+    MaxUsedTries,
+    MaxKeys,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "trie", content = "contract_address", rename_all = "snake_case")]
+pub enum StorageProofTrie {
+    Classes,
+    Contracts,
+    /// Associated Felt is the contract address.
+    ContractStorage(Felt),
 }
 
 // Comes from the RPC Spec:
@@ -84,8 +100,10 @@ pub enum StarknetRpcApiError {
     InternalServerError,
     #[error("Unimplemented method")]
     UnimplementedMethod,
-    #[error("Too many storage keys requested")]
-    ProofLimitExceeded,
+    #[error("Proof limit exceeded")]
+    ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
+    #[error("Cannot create a storage proof for a block that old")]
+    CannotMakeProofOnOldBlock,
 }
 
 impl From<&StarknetRpcApiError> for i32 {
@@ -122,7 +140,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
-            StarknetRpcApiError::ProofLimitExceeded => 10000,
+            StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
+            StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }
     }
 }
@@ -136,6 +155,9 @@ impl StarknetRpcApiError {
                 "transaction_index": tx_index,
                 "execution_error": error,
             })),
+            StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
+                Some(json!({ "kind": kind, "limit": limit, "got": got }))
+            }
             _ => None,
         }
     }
@@ -167,36 +189,26 @@ impl From<StarknetRpcApiError> for jsonrpsee::types::ErrorObjectOwned {
 
 impl From<StarknetError> for StarknetRpcApiError {
     fn from(err: StarknetError) -> Self {
-        match err {
-            StarknetError::FailedToReceiveTransaction => StarknetRpcApiError::FailedToReceiveTxn,
-            StarknetError::ContractNotFound => StarknetRpcApiError::ContractNotFound,
-            StarknetError::BlockNotFound => StarknetRpcApiError::BlockNotFound,
-            StarknetError::InvalidTransactionIndex => StarknetRpcApiError::InvalidTxnIndex,
-            StarknetError::ClassHashNotFound => StarknetRpcApiError::ClassHashNotFound,
-            StarknetError::TransactionHashNotFound => StarknetRpcApiError::TxnHashNotFound,
-            StarknetError::PageSizeTooBig => StarknetRpcApiError::PageSizeTooBig,
-            StarknetError::NoBlocks => StarknetRpcApiError::NoBlocks,
-            StarknetError::InvalidContinuationToken => StarknetRpcApiError::InvalidContinuationToken,
-            StarknetError::TooManyKeysInFilter => StarknetRpcApiError::TooManyKeysInFilter,
-            StarknetError::ContractError(_) => StarknetRpcApiError::ContractError,
-            StarknetError::ClassAlreadyDeclared => StarknetRpcApiError::ClassAlreadyDeclared,
-            StarknetError::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
-            StarknetError::InsufficientMaxFee => StarknetRpcApiError::InsufficientMaxFee,
-            StarknetError::InsufficientAccountBalance => StarknetRpcApiError::InsufficientAccountBalance,
-            StarknetError::ValidationFailure(error) => StarknetRpcApiError::ValidationFailure { error },
-            StarknetError::CompilationFailed => StarknetRpcApiError::CompilationFailed,
-            StarknetError::ContractClassSizeIsTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
-            StarknetError::NonAccount => StarknetRpcApiError::NonAccount,
-            StarknetError::DuplicateTx => StarknetRpcApiError::DuplicateTxn,
-            StarknetError::CompiledClassHashMismatch => StarknetRpcApiError::CompiledClassHashMismatch,
-            StarknetError::UnsupportedTxVersion => StarknetRpcApiError::UnsupportedTxnVersion,
-            StarknetError::UnsupportedContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
-            StarknetError::UnexpectedError(data) => StarknetRpcApiError::ErrUnexpectedError { data },
-            StarknetError::NoTraceAvailable(_) => StarknetRpcApiError::InternalServerError,
-            StarknetError::TransactionExecutionError(error) => StarknetRpcApiError::TxnExecutionError {
-                tx_index: error.transaction_index as usize,
-                error: error.execution_error.to_string(),
-            },
+        match err.code {
+            StarknetErrorCode::BlockNotFound => StarknetRpcApiError::BlockNotFound,
+            StarknetErrorCode::TransactionFailed | StarknetErrorCode::ValidateFailure => {
+                StarknetRpcApiError::ValidationFailure { error: err.message }
+            }
+            StarknetErrorCode::UninitializedContract => StarknetRpcApiError::ContractNotFound,
+            StarknetErrorCode::UndeclaredClass => StarknetRpcApiError::ClassHashNotFound,
+            StarknetErrorCode::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,
+            StarknetErrorCode::ClassAlreadyDeclared => StarknetRpcApiError::ClassAlreadyDeclared,
+            StarknetErrorCode::CompilationFailed => StarknetRpcApiError::CompilationFailed,
+            StarknetErrorCode::InvalidCompiledClassHash => StarknetRpcApiError::CompiledClassHashMismatch,
+            StarknetErrorCode::DuplicatedTransaction => StarknetRpcApiError::DuplicateTxn,
+            StarknetErrorCode::ContractBytecodeSizeTooLarge => StarknetRpcApiError::ContractClassSizeTooLarge,
+            StarknetErrorCode::InvalidContractClassVersion => StarknetRpcApiError::UnsupportedContractClassVersion,
+            StarknetErrorCode::InvalidContractClass => StarknetRpcApiError::InvalidContractClass,
+            StarknetErrorCode::InvalidContractDefinition => StarknetRpcApiError::InvalidContractClass,
+            StarknetErrorCode::OutOfRangeBlockHash => StarknetRpcApiError::InvalidBlockHash,
+            StarknetErrorCode::OutOfRangeTransactionHash => StarknetRpcApiError::InvalidTxnHash,
+            StarknetErrorCode::InvalidTransactionVersion => StarknetRpcApiError::UnsupportedTxnVersion,
+            _ => StarknetRpcApiError::ErrUnexpectedError { data: err.message },
         }
     }
 }

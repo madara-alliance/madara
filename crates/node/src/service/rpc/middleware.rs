@@ -1,107 +1,12 @@
 //! JSON-RPC specific middleware.
 
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
 use futures::future::{BoxFuture, FutureExt};
-use governor::clock::{Clock, DefaultClock, QuantaClock};
-use governor::middleware::NoOpMiddleware;
-use governor::state::{InMemoryState, NotKeyed};
-use governor::{Jitter, Quota, RateLimiter};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
-
+use mc_rpc::utils::ResultExt;
 use mp_chain_config::RpcVersion;
+use std::time::Instant;
 
 pub use super::metrics::Metrics;
-
-/// Rate limit middleware
-#[derive(Debug, Clone)]
-pub struct RateLimit {
-    pub(crate) limiter: Arc<governor::RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
-    pub(crate) clock: QuantaClock,
-}
-
-impl RateLimit {
-    pub fn new(max_burst: NonZeroU32) -> Self {
-        let clock = QuantaClock::default();
-        Self { limiter: Arc::new(RateLimiter::direct_with_clock(Quota::per_minute(max_burst), &clock)), clock }
-    }
-}
-
-const MAX_JITTER: Duration = Duration::from_millis(50);
-const MAX_RETRIES: usize = 10;
-
-#[derive(Debug, Clone)]
-pub struct RpcMiddlewareLayerRateLimit {
-    rate_limit: RateLimit,
-}
-
-impl RpcMiddlewareLayerRateLimit {
-    pub fn new(n: NonZeroU32) -> Self {
-        Self { rate_limit: RateLimit::new(n) }
-    }
-}
-
-impl<S> tower::Layer<S> for RpcMiddlewareLayerRateLimit {
-    type Service = RpcMiddlewareServiceRateLimit<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        RpcMiddlewareServiceRateLimit { inner, rate_limit: self.rate_limit.clone() }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RpcMiddlewareServiceRateLimit<S> {
-    inner: S,
-    rate_limit: RateLimit,
-}
-
-impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceRateLimit<S>
-where
-    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
-{
-    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
-
-    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
-        let inner = self.inner.clone();
-        let rate_limit = self.rate_limit.clone();
-
-        async move {
-            let mut attempts = 0;
-            let jitter = Jitter::up_to(MAX_JITTER);
-            let mut rate_limited = false;
-
-            loop {
-                if attempts >= MAX_RETRIES {
-                    return jsonrpsee::MethodResponse::error(
-                        req.id,
-                        jsonrpsee::types::ErrorObject::owned(-32099, "RPC rate limit exceeded", None::<()>),
-                    );
-                }
-
-                if let Err(rejected) = rate_limit.limiter.check() {
-                    tokio::time::sleep(jitter + rejected.wait_time_from(rate_limit.clock.now())).await;
-                    rate_limited = true;
-                } else {
-                    break;
-                }
-
-                attempts += 1;
-            }
-
-            // This should be ok as a way to flag rate limited requests as the
-            // JSON RPC spec discourages the use of NULL as an id in a _request_
-            // since it is used for _responses_ with an unknown id.
-            if rate_limited {
-                req.id = jsonrpsee::types::Id::Null;
-            }
-
-            inner.call(req).await
-        }
-        .boxed()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct RpcMiddlewareLayerMetrics {
@@ -145,18 +50,11 @@ where
 {
     type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
 
-    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
+    fn call(&self, req: jsonrpsee::types::Request<'a>) -> Self::Future {
         let inner = self.inner.clone();
         let metrics = self.metrics.clone();
 
         async move {
-            let is_rate_limited = if matches!(req.id, jsonrpsee::types::params::Id::Null) {
-                req.id = jsonrpsee::types::params::Id::Number(1);
-                true
-            } else {
-                false
-            };
-
             let now = std::time::Instant::now();
 
             metrics.on_call(&req);
@@ -176,7 +74,7 @@ where
                 "{method} {status} {res_len} - {response_time:?}",
             );
 
-            metrics.on_response(&req, &rp, is_rate_limited, now);
+            metrics.on_response(&req, &rp, now);
 
             rp
         }
@@ -188,11 +86,12 @@ where
 pub struct RpcMiddlewareServiceVersion<S> {
     inner: S,
     path: String,
+    version_default: RpcVersion,
 }
 
 impl<S> RpcMiddlewareServiceVersion<S> {
-    pub fn new(inner: S, path: String) -> Self {
-        Self { inner, path }
+    pub fn new(inner: S, path: String, version_default: RpcVersion) -> Self {
+        Self { inner, path, version_default }
     }
 }
 
@@ -205,21 +104,28 @@ where
     fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
         let inner = self.inner.clone();
         let path = self.path.clone();
+        let version_default = self.version_default;
 
         async move {
             if req.method == "rpc_methods" {
                 return inner.call(req).await;
             }
 
-            let Ok(version) = RpcVersion::from_request_path(&path).map(|v| v.name()) else {
-                return jsonrpsee::MethodResponse::error(
-                    req.id,
-                    jsonrpsee::types::ErrorObject::owned(
-                        jsonrpsee::types::error::PARSE_ERROR_CODE,
-                        jsonrpsee::types::error::PARSE_ERROR_MSG,
-                        None::<()>,
-                    ),
-                );
+            let version = match RpcVersion::from_request_path(&path, version_default)
+                .map(|v| v.name())
+                .or_internal_server_error("Failed to get request path")
+            {
+                Ok(version) => version,
+                Err(_) => {
+                    return jsonrpsee::MethodResponse::error(
+                        req.id,
+                        jsonrpsee::types::ErrorObject::owned(
+                            jsonrpsee::types::error::PARSE_ERROR_CODE,
+                            jsonrpsee::types::error::PARSE_ERROR_MSG,
+                            None::<()>,
+                        ),
+                    )
+                }
             };
 
             let Some((namespace, method)) = req.method.split_once('_') else {
@@ -233,6 +139,7 @@ where
                 );
             };
 
+            let method = method.replacen(&format!("{version}_"), "", 1);
             let method_new = format!("{namespace}_{version}_{method}");
             req.method = jsonrpsee::core::Cow::from(method_new);
 

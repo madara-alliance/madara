@@ -1,26 +1,14 @@
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::num::NonZeroU32;
 use std::str::FromStr;
 
-use clap::ValueEnum;
 use jsonrpsee::server::BatchRequestConfig;
-
-/// Available RPC methods.
-#[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum RpcMethods {
-    /// Expose every RPC method only when RPC is listening on `localhost`,
-    /// otherwise serve only safe RPC methods.
-    Auto,
-    /// Allow only a safe subset of RPC methods.
-    Safe,
-    /// Expose every RPC method (even potentially unsafe ones).
-    Unsafe,
-}
+use mc_rpc::StorageProofConfig;
 
 /// The default port.
 pub const RPC_DEFAULT_PORT: u16 = 9944;
+/// Default port for sensitive RPC methods
+pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
 /// The default max request size in MB.
@@ -67,36 +55,28 @@ impl FromStr for Cors {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
-    /// Disable the RPC server.
-    #[arg(env = "MADARA_RPC_DISABLED", long, alias = "no-rpc")]
-    pub rpc_disabled: bool,
+    /// Disables the user RPC endpoint. This includes all methods which are part
+    /// of the official starknet specs.
+    #[arg(env = "MADARA_RPC_DISABLE", long, default_value_t = false)]
+    pub rpc_disable: bool,
 
-    /// Listen to all network interfaces. This usually means that the RPC server will be accessible externally.
-    /// Please note that some endpoints should not be exposed to the outside world - by default, enabling remote access
-    /// will disable these endpoints. To re-enable them, use `--rpc-methods unsafe`
-    #[arg(env = "MADARA_RPC_EXTERNAL", long)]
+    /// Exposes the user RPC endpoint on address 0.0.0.0. This generally means
+    /// that RPC methods will be accessible from the outside world.
+    #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
     pub rpc_external: bool,
 
-    /// RPC methods to expose.
-    #[arg(
-		env = "MADARA_RPC_METHODS",
-		long,
-		value_name = "METHOD",
-		value_enum,
-		ignore_case = true,
-		default_value_t = RpcMethods::Auto,
-		verbatim_doc_comment
-	)]
-    pub rpc_methods: RpcMethods,
+    /// Enables the admin RPC endpoint. This includes additional RPC methods
+    /// which are not part of the official specs and can be used by node admins
+    /// to control their node at a distance. By default, this is exposed on
+    /// localhost.
+    #[arg(env = "MADARA_RPC_ADMIN", long, default_value_t = false)]
+    pub rpc_admin: bool,
 
-    /// RPC rate limiting (calls/minute) for each connection.
-    ///
-    /// This is disabled by default.
-    ///
-    /// For example `--rpc-rate-limit 10` will maximum allow
-    /// 10 calls per minute per connection.
-    #[arg(env = "MADARA_RPC_RATE_LIMIT", long)]
-    pub rpc_rate_limit: Option<NonZeroU32>,
+    /// Exposes the admin RPC endpoint on address 0.0.0.0. This is especially
+    /// useful when running Madara from inside a docker container. Be very
+    /// careful however when exposing this endpoint to the outside world.
+    #[arg(env = "MADARA_RPC_ADMIN_EXTERNAL", long, default_value_t = false)]
+    pub rpc_admin_external: bool,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
@@ -113,6 +93,10 @@ pub struct RpcParams {
     /// The RPC port to listen at.
     #[arg(env = "MADARA_RPC_PORT", long, value_name = "PORT", default_value_t = RPC_DEFAULT_PORT)]
     pub rpc_port: u16,
+
+    /// The RPC port to listen at for admin RPC calls.
+    #[arg(env = "MADARA_RPC_PORT_ADMIN", long, value_name = "ADMIN PORT", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
+    pub rpc_admin_port: u16,
 
     /// Maximum number of RPC server connections at a given time.
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
@@ -152,6 +136,26 @@ pub struct RpcParams {
     /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS>.
     #[arg(env = "MADARA_RPC_CORS", long, value_name = "ORIGINS")]
     pub rpc_cors: Option<Cors>,
+
+    /// Limit how far back in the past we serve storage proofs.
+    /// When getting a storage proof, the database will revert the global merkle trie in-memory up until the
+    /// block_n specified in the request. If that block_n is too far back in the past, this could make
+    /// the node vulnerable to DoS attacks.
+    /// By default, this is set to 0: we do not serve storage proofs except for the current latest block.
+    /// For best performance, you should also set `--db-max-saved-trie-logs`, `--db-max-kept-snapshots` and
+    /// `--db-snapshot-interval` to make reverting much faster.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", long, default_value_t = 0)]
+    pub rpc_storage_proof_max_distance: u64,
+
+    /// Limit how many keys can be queried in a storage proof rpc request. Default: 1024.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_KEYS", long, default_value_t = 1024)]
+    pub rpc_storage_proof_max_keys: usize,
+
+    /// Limit how many tries can be used within a single storage proof rpc request. Default: 5.
+    /// The global class trie and global contract tries count each as one, and every contract whose
+    /// storage is queried count as one each.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_TRIES", long, default_value_t = 5)]
+    pub rpc_storage_proof_max_tries: usize,
 }
 
 impl RpcParams {
@@ -175,7 +179,7 @@ impl RpcParams {
         }
     }
 
-    pub fn addr(&self) -> SocketAddr {
+    pub fn addr_user(&self) -> SocketAddr {
         let listen_addr = if self.rpc_external {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
         } else {
@@ -185,6 +189,16 @@ impl RpcParams {
         SocketAddr::new(listen_addr.into(), self.rpc_port)
     }
 
+    pub fn addr_admin(&self) -> SocketAddr {
+        let listen_addr = if self.rpc_admin_external {
+            Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
+        } else {
+            Ipv4Addr::LOCALHOST
+        };
+
+        SocketAddr::new(listen_addr.into(), self.rpc_admin_port)
+    }
+
     pub fn batch_config(&self) -> BatchRequestConfig {
         if self.rpc_disable_batch_requests {
             BatchRequestConfig::Disabled
@@ -192,6 +206,14 @@ impl RpcParams {
             BatchRequestConfig::Limit(l)
         } else {
             BatchRequestConfig::Unlimited
+        }
+    }
+
+    pub fn storage_proof_config(&self) -> StorageProofConfig {
+        StorageProofConfig {
+            max_keys: self.rpc_storage_proof_max_keys,
+            max_tries: self.rpc_storage_proof_max_tries,
+            max_distance: self.rpc_storage_proof_max_distance,
         }
     }
 }

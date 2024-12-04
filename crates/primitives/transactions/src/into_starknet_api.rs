@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use mp_convert::{felt_to_u128, felt_to_u64};
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -401,7 +400,7 @@ impl From<starknet_api::transaction::L1HandlerTransaction> for L1HandlerTransact
     fn from(value: starknet_api::transaction::L1HandlerTransaction) -> Self {
         Self {
             version: value.version.0,
-            nonce: felt_to_u64(&value.nonce).unwrap(),
+            nonce: value.nonce.0.try_into().unwrap_or_default(),
             contract_address: **value.contract_address,
             entry_point_selector: value.entry_point_selector.0,
             calldata: value.calldata.0.to_vec(),
@@ -480,7 +479,7 @@ impl From<starknet_api::transaction::ResourceBounds> for ResourceBounds {
 }
 
 fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError> {
-    let fee = felt_to_u128(fee).map_err(|_| TransactionApiError::MaxFee)?;
+    let fee = (*fee).try_into().map_err(|_| TransactionApiError::MaxFee)?;
     Ok(starknet_api::transaction::Fee(fee))
 }
 

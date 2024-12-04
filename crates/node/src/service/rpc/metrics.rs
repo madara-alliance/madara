@@ -109,14 +109,7 @@ impl RpcMetrics {
         self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
     }
 
-    pub(crate) fn on_response(
-        &self,
-        req: &Request,
-        rp: &MethodResponse,
-        is_rate_limited: bool,
-        transport_label: &'static str,
-        now: Instant,
-    ) {
+    pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
         tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
         tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
 
@@ -128,20 +121,13 @@ impl RpcMetrics {
             micros,
         );
 
-        self.calls_time.record(
-            micros as f64,
-            &[
-                KeyValue::new("method", req.method_name().to_string()),
-                KeyValue::new("rate_limited", is_rate_limited.to_string()),
-            ],
-        );
+        self.calls_time.record(micros as f64, &[KeyValue::new("method", req.method_name().to_string())]);
 
         self.calls_finished.add(
             1,
             &[
                 KeyValue::new("method", req.method_name().to_string()),
                 KeyValue::new("success", rp.is_success().to_string()),
-                KeyValue::new("rate_limited", is_rate_limited.to_string()),
             ],
         );
     }
@@ -172,7 +158,7 @@ impl Metrics {
         self.inner.on_call(req, self.transport_label)
     }
 
-    pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, is_rate_limited: bool, now: Instant) {
-        self.inner.on_response(req, rp, is_rate_limited, self.transport_label, now)
+    pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, now: Instant) {
+        self.inner.on_response(req, rp, self.transport_label, now)
     }
 }

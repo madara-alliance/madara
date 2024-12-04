@@ -41,12 +41,12 @@ mod test_rpc_read_calls {
     }
     impl Drop for SharedMadaraInstance {
         fn drop(&mut self) {
-            let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
-            *guard -= 1;
-            if *guard == 0 {
-                // :/
-                tokio::task::spawn_blocking(|| *MADARA.blocking_lock() = None);
-            }
+            // let mut guard = MADARA_HANDLE_COUNT.lock().expect("poisoned lock");
+            // *guard -= 1;
+            // if *guard == 0 {
+            //     // :/
+            //     tokio::task::spawn_blocking(|| *MADARA.blocking_lock() = None);
+            // }
         }
     }
     #[allow(clippy::await_holding_lock)]
@@ -570,6 +570,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    // TODO: replace this with jsonrpsee client
     async fn test_get_txn_receipt_works() {
         let madara = get_shared_state().await;
         let json_client = JsonRpcClient::new(HttpTransport::new(madara.rpc_url.clone()));
@@ -649,6 +650,10 @@ mod test_rpc_read_calls {
                 .unwrap()
         };
         let expected_txn_status = TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Succeeded);
+
+        // TODO: The shared madara state needs a rework as we only run these
+        // tests with `--test-threads=1`. These tests
+        tokio::task::spawn_blocking(|| *MADARA.blocking_lock() = None);
 
         assert_eq!(txn_status, expected_txn_status);
     }
@@ -1060,6 +1065,63 @@ mod test_rpc_read_calls {
         };
 
         compare_contract_class(contract_class);
+    }
+
+    /// Retrieves the compiled contract class for a given class hash.
+    /// The class must be a Sierra contract class.
+    ///
+    /// Example curl command:
+    ///
+    /// ```bash
+    /// curl --location 'https://free-rpc.nethermind.io/sepolia-juno/' \
+    /// --header 'Content-Type: application/json' \
+    /// --data '{
+    ///     "jsonrpc": "2.0",
+    ///     "method": "starknet_getCompiledCasm",
+    ///     "params": {
+    ///         "class_hash": "0x903752516de5c04fe91600ca6891e325278b2dfc54880ae11a809abb364844"
+    ///     },
+    ///     "id": 1
+    /// }'
+    /// ```
+    ///
+    /// Note: The `compiler_version` field is ignored in the comparison because,
+    /// for Sierra class versions > v1.1.0, we always use the latest version of the compiler.
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_compiled_casm_works() {
+        let madara = get_shared_state().await;
+
+        // use a reqwest client because starknet-providers does not support the rpc call yet
+        let client = reqwest::Client::new();
+
+        // use the v0.8.0 rpc endpoint
+        let url = madara.rpc_url.clone().join("rpc/v0_8_0/").unwrap();
+
+        let res = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "starknet_getCompiledCasm",
+                "params": {
+                    "class_hash": "0x903752516de5c04fe91600ca6891e325278b2dfc54880ae11a809abb364844",
+                },
+                "id": 0
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let mut response = res.json::<serde_json::Value>().await.unwrap();
+        let result = response.get_mut("result").unwrap();
+        result.as_object_mut().unwrap().remove("compiler_version");
+
+        let mut expected_compiled_class: serde_json::Value =
+            serde_json::from_slice(include_bytes!("test_utils/compiled_class.json")).unwrap();
+        expected_compiled_class.as_object_mut().unwrap().remove("compiler_version");
+
+        assert_eq!(result, &expected_compiled_class);
     }
 
     /// Retrieves the contract class at a specific address.

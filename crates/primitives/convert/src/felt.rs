@@ -1,27 +1,22 @@
+use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, thiserror::Error)]
-#[error("Felt is too big to convert to u64.")]
-pub struct FeltToU64Error;
+#[error("Felt is too big to convert to H160.")]
+pub struct FeltToH160Error;
 
-pub fn felt_to_u64(felt: &Felt) -> Result<u64, FeltToU64Error> {
-    let digits = felt.to_be_digits();
-    match (digits[0], digits[1], digits[2], digits[3]) {
-        (0, 0, 0, d) => Ok(d),
-        _ => Err(FeltToU64Error),
+pub fn felt_to_h160(felt: &Felt) -> Result<H160, FeltToH160Error> {
+    const MAX_H160: Felt = Felt::from_hex_unchecked("0xffffffffffffffffffffffffffffffffffffffff");
+
+    if felt > &MAX_H160 {
+        return Err(FeltToH160Error);
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-#[error("Felt is too big to convert to u128.")]
-pub struct FeltToU128Error;
+    let bytes = felt.to_bytes_be();
 
-pub fn felt_to_u128(felt: &Felt) -> Result<u128, FeltToU128Error> {
-    let digits = felt.to_be_digits();
-    match (digits[0], digits[1], digits[2], digits[3]) {
-        (0, 0, d1, d2) => Ok((d1 as u128) << 64 | d2 as u128),
-        _ => Err(FeltToU128Error),
-    }
+    let mut h160_bytes = [0u8; 20];
+    h160_bytes.copy_from_slice(&bytes[12..]);
+    Ok(H160::from(h160_bytes))
 }
 
 #[cfg(test)]
@@ -30,26 +25,15 @@ mod tests {
     use assert_matches::assert_matches;
 
     #[test]
-    fn test_felt_to_u64() {
-        assert_eq!(felt_to_u64(&Felt::ZERO).unwrap(), 0);
-        assert_eq!(felt_to_u64(&Felt::ONE).unwrap(), 1);
-        assert_eq!(felt_to_u64(&Felt::TWO).unwrap(), 2);
-        assert_eq!(felt_to_u64(&Felt::THREE).unwrap(), 3);
-        assert_eq!(felt_to_u64(&Felt::from(u32::MAX)).unwrap(), u32::MAX as u64);
-        assert_eq!(felt_to_u64(&Felt::from(u64::MAX)).unwrap(), u64::MAX);
-        assert_matches!(felt_to_u64(&(Felt::from(u64::MAX) + Felt::ONE)), Err(FeltToU64Error));
-        assert_matches!(felt_to_u64(&Felt::MAX), Err(FeltToU64Error));
-    }
-
-    #[test]
-    fn test_felt_to_u128() {
-        assert_eq!(felt_to_u128(&Felt::ZERO).unwrap(), 0);
-        assert_eq!(felt_to_u128(&Felt::ONE).unwrap(), 1);
-        assert_eq!(felt_to_u128(&Felt::TWO).unwrap(), 2);
-        assert_eq!(felt_to_u128(&Felt::THREE).unwrap(), 3);
-        assert_eq!(felt_to_u128(&Felt::from(u64::MAX)).unwrap(), u64::MAX as u128);
-        assert_eq!(felt_to_u128(&Felt::from(u128::MAX)).unwrap(), u128::MAX);
-        assert_matches!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)), Err(FeltToU128Error));
-        assert_matches!(felt_to_u128(&Felt::MAX), Err(FeltToU128Error));
+    fn test_felt_tu_h160() {
+        const MAX_H160: [u8; 20] = [0xff; 20];
+        assert_eq!(felt_to_h160(&Felt::ZERO).unwrap(), H160::zero());
+        assert_eq!(felt_to_h160(&Felt::ONE).unwrap(), H160::from_low_u64_be(1));
+        assert_eq!(felt_to_h160(&Felt::TWO).unwrap(), H160::from_low_u64_be(2));
+        assert_eq!(felt_to_h160(&Felt::THREE).unwrap(), H160::from_low_u64_be(3));
+        assert_eq!(felt_to_h160(&Felt::from(u64::MAX)).unwrap(), H160::from_low_u64_be(u64::MAX));
+        assert_eq!(felt_to_h160(&Felt::from_bytes_be_slice(&MAX_H160)).unwrap(), H160::from_slice(&MAX_H160));
+        assert_matches!(felt_to_h160(&(Felt::from_bytes_be_slice(&MAX_H160) + Felt::ONE)), Err(FeltToH160Error));
+        assert_matches!(felt_to_h160(&Felt::MAX), Err(FeltToH160Error));
     }
 }

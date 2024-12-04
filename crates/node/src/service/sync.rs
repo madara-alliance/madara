@@ -3,15 +3,16 @@ use anyhow::Context;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
-pub struct SyncService {
+pub struct L2SyncService {
     db_backend: Arc<MadaraBackend>,
     block_importer: Arc<BlockImporter>,
     fetch_config: FetchConfig,
@@ -22,17 +23,18 @@ pub struct SyncService {
     pending_block_poll_interval: Duration,
 }
 
-impl SyncService {
+impl L2SyncService {
     pub async fn new(
         config: &SyncParams,
         chain_config: Arc<ChainConfig>,
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
         telemetry: TelemetryHandle,
+        warp_update: bool,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone());
+        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
 
-        tracing::info!("🛰️ Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
+        tracing::info!("🛰️  Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
@@ -48,12 +50,12 @@ impl SyncService {
 }
 
 #[async_trait::async_trait]
-impl Service for SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+impl Service for L2SyncService {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
-        let SyncService {
+        let L2SyncService {
             fetch_config,
             backup_every_n_blocks,
             starting_block,
@@ -66,18 +68,25 @@ impl Service for SyncService {
         let db_backend = Arc::clone(&self.db_backend);
 
         join_set.spawn(async move {
-            mc_sync::sync(
+            mc_sync::l2_sync_worker(
                 &db_backend,
-                block_importer,
+                ctx,
                 fetch_config,
-                starting_block,
-                backup_every_n_blocks,
-                telemetry,
-                pending_block_poll_interval,
+                SyncConfig {
+                    block_importer,
+                    starting_block,
+                    backup_every_n_blocks,
+                    telemetry,
+                    pending_block_poll_interval,
+                },
             )
             .await
         });
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::L2Sync
     }
 }

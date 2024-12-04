@@ -42,7 +42,7 @@ use anyhow::Context;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use metrics::BlockMetrics;
 use mp_class::{class_hash::ComputeClassHashError, compile::ClassCompilationError};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 mod metrics;
@@ -119,16 +119,11 @@ pub struct BlockImporter {
     backend: Arc<MadaraBackend>,
     verify_apply: VerifyApply,
     metrics: BlockMetrics,
-    always_force_flush: bool,
 }
 
 impl BlockImporter {
     /// The starting block is used for metrics. Setting it to None means it will look at the database latest block number.
-    pub fn new(
-        backend: Arc<MadaraBackend>,
-        starting_block: Option<u64>,
-        always_force_flush: bool,
-    ) -> anyhow::Result<Self> {
+    pub fn new(backend: Arc<MadaraBackend>, starting_block: Option<u64>) -> anyhow::Result<Self> {
         let pool = Arc::new(RayonPool::new());
         let starting_block = if let Some(n) = starting_block {
             n
@@ -145,7 +140,6 @@ impl BlockImporter {
             pool,
             metrics: BlockMetrics::register(starting_block).context("Registering metrics for block import")?,
             backend,
-            always_force_flush,
         })
     }
 
@@ -176,11 +170,6 @@ impl BlockImporter {
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
         let result = self.verify_apply.verify_apply(block, validation).await?;
-        // Flush step.
-        let force = self.always_force_flush;
-        self.backend
-            .maybe_flush(force)
-            .map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
         self.metrics.update(&result.header, &self.backend);
         Ok(result)
     }

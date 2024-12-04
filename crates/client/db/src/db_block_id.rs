@@ -11,6 +11,20 @@ pub enum DbBlockId {
 }
 
 impl DbBlockId {
+    pub fn from_block_n(block_n: Option<u64>) -> DbBlockId {
+        match block_n {
+            None => Self::Pending,
+            Some(block_n) => Self::Number(block_n),
+        }
+    }
+
+    pub fn block_n(&self) -> Option<u64> {
+        match self {
+            Self::Pending => None,
+            Self::Number(block_n) => Some(*block_n),
+        }
+    }
+
     pub fn is_pending(&self) -> bool {
         matches!(self, DbBlockId::Pending)
     }
@@ -23,12 +37,6 @@ pub trait DbBlockIdResolvable {
 impl DbBlockIdResolvable for BlockId {
     fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
         backend.id_to_storage_type(self)
-    }
-}
-
-impl DbBlockIdResolvable for starknet_core::types::BlockId {
-    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<DbBlockId>, MadaraStorageError> {
-        backend.id_to_storage_type(&(*self).into())
     }
 }
 

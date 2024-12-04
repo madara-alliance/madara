@@ -8,7 +8,7 @@ use mc_mempool::{
     block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
 };
 use mc_telemetry::TelemetryHandle;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use tokio::task::JoinSet;
 
 use crate::cli::block_production::BlockProductionParams;
@@ -62,8 +62,8 @@ impl BlockProductionService {
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
-    #[tracing::instrument(skip(self, join_set), fields(module = "BlockProductionService"))]
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    #[tracing::instrument(skip(self, join_set, ctx), fields(module = "BlockProductionService"))]
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
         }
@@ -113,11 +113,15 @@ impl Service for BlockProductionService {
 
         join_set.spawn(async move {
             BlockProductionTask::new(backend, block_import, mempool, metrics, l1_data_provider)?
-                .block_production_task()
+                .block_production_task(ctx)
                 .await?;
             Ok(())
         });
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::BlockProduction
     }
 }
