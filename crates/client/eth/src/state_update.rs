@@ -159,7 +159,7 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
                 .await
                 .expect("Failed to create database service"),
         );

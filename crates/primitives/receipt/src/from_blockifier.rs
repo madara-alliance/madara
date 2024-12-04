@@ -6,6 +6,7 @@ use blockifier::transaction::{
     transactions::L1HandlerTransaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
+use primitive_types::H256;
 use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
@@ -42,7 +43,7 @@ pub enum L1HandlerMessageError {
     InvalidNonce,
 }
 
-fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Felt, L1HandlerMessageError> {
+fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1HandlerMessageError> {
     let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
     let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
@@ -56,7 +57,7 @@ fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Felt, L1Hand
         payload: payload.into(),
         nonce,
     };
-    Ok(Felt::from_bytes_le(message.hash().as_bytes()))
+    Ok(H256::from_slice(message.hash().as_bytes()))
 }
 
 fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
@@ -112,14 +113,15 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let get_applications = |resource| {
         res.non_optional_call_infos()
             .map(|call| call.resources.builtin_instance_counter.get(resource).map(|el| *el as u64))
-            .sum()
+            .sum::<Option<_>>()
+            .unwrap_or_default()
     };
 
     let memory_holes = res.non_optional_call_infos().map(|call| call.resources.n_memory_holes as u64).sum();
 
     let execution_resources = ExecutionResources {
         steps: res.non_optional_call_infos().map(|call| call.resources.n_steps as u64).sum(),
-        memory_holes: if memory_holes == 0 { None } else { Some(memory_holes) },
+        memory_holes,
         range_check_builtin_applications: get_applications(&BuiltinName::range_check),
         pedersen_builtin_applications: get_applications(&BuiltinName::pedersen),
         poseidon_builtin_applications: get_applications(&BuiltinName::poseidon),

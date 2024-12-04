@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn test_legacy_contract_class_conversion() {
         let legacy_contract_class = CompressedLegacyContractClass {
-            program: vec![1, 2, 3],
+            program: "program".as_bytes().to_vec(),
             entry_points_by_type: LegacyEntryPointsByType {
                 constructor: vec![LegacyContractEntryPoint { offset: 0, selector: Felt::from(1) }],
                 external: vec![LegacyContractEntryPoint { offset: 1, selector: Felt::from(2) }],

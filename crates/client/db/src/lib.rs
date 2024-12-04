@@ -1,8 +1,8 @@
 //! Madara database
 
 use anyhow::Context;
+use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
-use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
@@ -10,11 +10,16 @@ use mp_utils::service::{MadaraService, Service};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
 use rocksdb_options::rocksdb_global_options;
+use snapshots::Snapshots;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
+
+mod error;
+mod rocksdb_snapshot;
+mod snapshots;
 
 pub mod block_db;
 pub mod bonsai_db;
@@ -23,13 +28,14 @@ pub mod contract_db;
 pub mod db_block_id;
 pub mod db_metrics;
 pub mod devnet_db;
-mod error;
 pub mod l1_db;
 mod rocksdb_options;
 pub mod storage_updates;
 pub mod tests;
 
-pub use error::{MadaraStorageError, TrieType};
+pub use bonsai_db::GlobalTrie;
+pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
+pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
@@ -113,9 +119,6 @@ pub enum Column {
     // contract_address history block_number => nonce
     ContractToNonces,
 
-    // Class hash => compiled class hash
-    ContractClassHashes,
-
     // Pending columns for contract db
     PendingContractToClassHashes,
     PendingContractToNonces,
@@ -124,8 +127,6 @@ pub enum Column {
     // History of contract key => values
     // (contract_address, storage_key) history block_number => felt
     ContractStorage,
-    /// Block number to state diff
-    BlockStateDiff,
 
     // Each bonsai storage has 3 columns
     BonsaiContractsTrie,
@@ -175,9 +176,7 @@ impl Column {
             PendingClassCompiled,
             ContractToClassHashes,
             ContractToNonces,
-            ContractClassHashes,
             ContractStorage,
-            BlockStateDiff,
             BonsaiContractsTrie,
             BonsaiContractsFlat,
             BonsaiContractsLog,
@@ -215,14 +214,12 @@ impl Column {
             BonsaiClassesTrie => "bonsai_classes_trie",
             BonsaiClassesFlat => "bonsai_classes_flat",
             BonsaiClassesLog => "bonsai_classes_log",
-            BlockStateDiff => "block_state_diff",
             ClassInfo => "class_info",
             ClassCompiled => "class_compiled",
             PendingClassInfo => "pending_class_info",
             PendingClassCompiled => "pending_class_compiled",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
-            ContractClassHashes => "contract_class_hashes",
             ContractStorage => "contract_storage",
             L1Messaging => "l1_messaging",
             L1MessagingNonce => "l1_messaging_nonce",
@@ -248,6 +245,19 @@ impl DatabaseExt for DB {
     }
 }
 
+#[derive(Debug)]
+pub struct TrieLogConfig {
+    pub max_saved_trie_logs: usize,
+    pub max_kept_snapshots: usize,
+    pub snapshot_interval: u64,
+}
+
+impl Default for TrieLogConfig {
+    fn default() -> Self {
+        Self { max_saved_trie_logs: 0, max_kept_snapshots: 0, snapshot_interval: 5 }
+    }
+}
+
 /// Madara client database backend singleton.
 #[derive(Debug)]
 pub struct MadaraBackend {
@@ -255,6 +265,8 @@ pub struct MadaraBackend {
     db: Arc<DB>,
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
+    snapshots: Arc<Snapshots>,
+    trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
@@ -283,12 +295,18 @@ impl DatabaseService {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
+        trie_log_config: TrieLogConfig,
     ) -> anyhow::Result<Self> {
         tracing::info!("💾 Opening database at: {}", base_path.display());
 
-        let handle =
-            MadaraBackend::open(base_path.to_owned(), backup_dir.clone(), restore_from_latest_backup, chain_config)
-                .await?;
+        let handle = MadaraBackend::open(
+            base_path.to_owned(),
+            backup_dir.clone(),
+            restore_from_latest_backup,
+            chain_config,
+            trie_log_config,
+        )
+        .await?;
 
         Ok(Self { handle })
     }
@@ -329,11 +347,15 @@ impl MadaraBackend {
     #[cfg(feature = "testing")]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
+        let db = open_rocksdb(temp_dir.as_ref()).unwrap();
+        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), None, Some(0), 5));
         Arc::new(Self {
             backup_handle: None,
-            db: open_rocksdb(temp_dir.as_ref()).unwrap(),
+            db,
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
+            snapshots,
+            trie_log_config: Default::default(),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             _temp_dir: Some(temp_dir),
         })
@@ -345,6 +367,7 @@ impl MadaraBackend {
         backup_dir: Option<PathBuf>,
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
+        trie_log_config: TrieLogConfig,
     ) -> anyhow::Result<Arc<MadaraBackend>> {
         let db_path = db_config_dir.join("db");
 
@@ -370,17 +393,27 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path)?;
+        let current_block_n = get_latest_block_n(&db).context("Getting latest block_n from database")?;
+        let snapshots = Arc::new(Snapshots::new(
+            Arc::clone(&db),
+            current_block_n,
+            Some(trie_log_config.max_kept_snapshots),
+            trie_log_config.snapshot_interval,
+        ));
 
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
             db,
             chain_config: Arc::clone(&chain_config),
+            snapshots,
+            trie_log_config,
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });
         backend.check_configuration()?;
+        backend.update_metrics();
         Ok(backend)
     }
 
@@ -414,22 +447,22 @@ impl MadaraBackend {
     pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
         &self,
         map: DatabaseKeyMapping,
-    ) -> BonsaiStorage<BasicId, BonsaiDb<'_>, H> {
-        let bonsai = BonsaiStorage::new(
-            BonsaiDb::new(&self.db, map),
-            BonsaiStorageConfig {
-                max_saved_trie_logs: Some(0),
-                max_saved_snapshots: Some(0),
-                snapshot_interval: u64::MAX,
-            },
-        )
-        // TODO(bonsai-trie): change upstream to reflect that.
-        .expect("New bonsai storage can never error");
+    ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
+        let config = BonsaiStorageConfig {
+            max_saved_trie_logs: Some(self.trie_log_config.max_saved_trie_logs),
+            max_saved_snapshots: Some(self.trie_log_config.max_kept_snapshots),
+            snapshot_interval: self.trie_log_config.snapshot_interval,
+        };
 
-        bonsai
+        BonsaiStorage::new(
+            BonsaiDb::new(Arc::clone(&self.db), Arc::clone(&self.snapshots), map),
+            config,
+            // Every global tree has keys of 251 bits.
+            251,
+        )
     }
 
-    pub fn contract_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiContractsFlat,
             trie: Column::BonsaiContractsTrie,
@@ -437,7 +470,7 @@ impl MadaraBackend {
         })
     }
 
-    pub fn contract_storage_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Pedersen> {
+    pub fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiContractsStorageFlat,
             trie: Column::BonsaiContractsStorageTrie,
@@ -445,7 +478,7 @@ impl MadaraBackend {
         })
     }
 
-    pub fn class_trie(&self) -> BonsaiStorage<BasicId, BonsaiDb<'_>, Poseidon> {
+    pub fn class_trie(&self) -> GlobalTrie<Poseidon> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: Column::BonsaiClassesFlat,
             trie: Column::BonsaiClassesTrie,

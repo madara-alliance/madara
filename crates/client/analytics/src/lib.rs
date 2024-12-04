@@ -38,7 +38,7 @@ impl Analytics {
         let custom_formatter = CustomFormatter { local_offset };
 
         let tracing_subscriber = tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter))
+            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter).with_writer(std::io::stderr))
             .with(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?);
 
         if self.collection_endpoint.is_none() {

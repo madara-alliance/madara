@@ -1,11 +1,11 @@
-use std::fmt::Display;
-
+use crate::utils::display_internal_server_error;
 use mc_db::MadaraStorageError;
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
+use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
-
-use crate::utils::display_internal_server_error;
+use starknet_types_core::felt::Felt;
+use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -15,6 +15,22 @@ pub enum StarknetTransactionExecutionError {
     ClassHashNotFound,
     InvalidContractClass,
     ContractError,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageProofLimit {
+    MaxUsedTries,
+    MaxKeys,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "trie", content = "contract_address", rename_all = "snake_case")]
+pub enum StorageProofTrie {
+    Classes,
+    Contracts,
+    /// Associated Felt is the contract address.
+    ContractStorage(Felt),
 }
 
 // Comes from the RPC Spec:
@@ -84,8 +100,10 @@ pub enum StarknetRpcApiError {
     InternalServerError,
     #[error("Unimplemented method")]
     UnimplementedMethod,
-    #[error("Too many storage keys requested")]
-    ProofLimitExceeded,
+    #[error("Proof limit exceeded")]
+    ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
+    #[error("Cannot create a storage proof for a block that old")]
+    CannotMakeProofOnOldBlock,
 }
 
 impl From<&StarknetRpcApiError> for i32 {
@@ -122,7 +140,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
-            StarknetRpcApiError::ProofLimitExceeded => 10000,
+            StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
+            StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }
     }
 }
@@ -136,6 +155,9 @@ impl StarknetRpcApiError {
                 "transaction_index": tx_index,
                 "execution_error": error,
             })),
+            StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
+                Some(json!({ "kind": kind, "limit": limit, "got": got }))
+            }
             _ => None,
         }
     }

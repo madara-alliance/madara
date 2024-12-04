@@ -62,7 +62,12 @@ impl Service for RpcService {
         self.server_handle = Some(server_handle);
 
         runner.service_loop(move |mut ctx| async move {
-            let starknet = Starknet::new(backend, add_txs_method_provider, ctx.clone());
+            let starknet = Starknet::new(
+                backend.clone(),
+                add_txs_method_provider.clone(),
+                config.storage_proof_config(),
+                ctx.clone(),
+            );
             let metrics = RpcMetrics::register()?;
 
             let server_config = {

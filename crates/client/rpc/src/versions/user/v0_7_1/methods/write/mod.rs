@@ -1,8 +1,9 @@
 use crate::{versions::user::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 
 #[async_trait]
@@ -18,8 +19,8 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     /// * `declare_transaction_result` - the result of the declare transaction
     async fn add_declare_transaction(
         &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
+        declare_transaction: BroadcastedDeclareTxn<Felt>,
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         Ok(self.add_transaction_provider.add_declare_transaction(declare_transaction).await?)
     }
 
@@ -35,8 +36,8 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     /// * `contract_address` - address of the deployed contract account
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
+        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
+    ) -> RpcResult<ContractAndTxnHash<Felt>> {
         Ok(self.add_transaction_provider.add_deploy_account_transaction(deploy_account_transaction).await?)
     }
 
@@ -51,8 +52,8 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     /// * `transaction_hash` - transaction hash corresponding to the invocation
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
+        invoke_transaction: BroadcastedInvokeTxn<Felt>,
+    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
         Ok(self.add_transaction_provider.add_invoke_transaction(invoke_transaction).await?)
     }
 }

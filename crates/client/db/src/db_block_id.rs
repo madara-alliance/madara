@@ -11,6 +11,20 @@ pub enum DbBlockId {
 }
 
 impl DbBlockId {
+    pub fn from_block_n(block_n: Option<u64>) -> DbBlockId {
+        match block_n {
+            None => Self::Pending,
+            Some(block_n) => Self::Number(block_n),
+        }
+    }
+
+    pub fn block_n(&self) -> Option<u64> {
+        match self {
+            Self::Pending => None,
+            Self::Number(block_n) => Some(*block_n),
+        }
+    }
+
     pub fn is_pending(&self) -> bool {
         matches!(self, DbBlockId::Pending)
     }

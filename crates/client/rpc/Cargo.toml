@@ -40,13 +40,13 @@ mp-utils = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
-starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Others
 anyhow = { workspace = true }
+bitvec = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",

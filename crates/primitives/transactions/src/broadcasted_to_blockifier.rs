@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use crate::{
-    into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0, Transaction, TransactionWithHash,
+    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0,
+    Transaction, TransactionWithHash,
 };
 use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::{
-    compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+    class_hash, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
 use starknet_api::transaction::TransactionHash;
@@ -20,6 +21,8 @@ pub enum BroadcastedToBlockifierError {
     ProgramError(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Failed to compute legacy class hash: {0}")]
     ComputeLegacyClassHashFailed(anyhow::Error),
+    #[error("Failed to compute sierra class hash: {0}")]
+    ComputeSierraClassHashFailed(#[from] class_hash::ComputeClassHashError),
     #[error("Failed to convert transaction to starkneti-api: {0}")]
     ConvertToTxApiError(#[from] TransactionApiError),
     #[error("Failed to convert transaction to blockifier: {0}")]
@@ -30,6 +33,8 @@ pub enum BroadcastedToBlockifierError {
     LegacyContractClassesNotSupported,
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
+    #[error("Failed to convert base64 program to cairo program: {0}")]
+    Base64ToCairoError(#[from] base64::DecodeError),
 }
 
 pub fn broadcasted_declare_v0_to_blockifier(
@@ -76,7 +81,7 @@ pub fn broadcasted_declare_v0_to_blockifier(
 }
 
 pub fn broadcasted_to_blockifier(
-    transaction: starknet_core::types::BroadcastedTransaction,
+    transaction: starknet_types_rpc::BroadcastedTxn<Felt>,
     chain_id: Felt,
     starknet_version: StarknetVersion,
 ) -> Result<
@@ -84,12 +89,19 @@ pub fn broadcasted_to_blockifier(
     BroadcastedToBlockifierError,
 > {
     let (class_info, class_hash, extra_class_info) = match &transaction {
-        starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
-            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => {
-                let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
+        starknet_types_rpc::BroadcastedTxn::Declare(tx) => match tx {
+            starknet_types_rpc::BroadcastedDeclareTxn::V1(starknet_types_rpc::BroadcastedDeclareTxnV1 {
+                contract_class,
+                ..
+            })
+            | starknet_types_rpc::BroadcastedDeclareTxn::QueryV1(starknet_types_rpc::BroadcastedDeclareTxnV1 {
+                contract_class,
+                ..
+            }) => {
+                let compressed_legacy_class: CompressedLegacyContractClass = contract_class.clone().try_into()?;
                 let class_hash = compressed_legacy_class.compute_class_hash().unwrap();
                 tracing::debug!("Computed legacy class hash: {:?}", class_hash);
-                let compressed_legacy_class: CompressedLegacyContractClass = (*tx.contract_class).clone().into();
+                let compressed_legacy_class: CompressedLegacyContractClass = contract_class.clone().try_into()?;
                 let class_blockifier = compressed_legacy_class
                     .to_blockifier_class()
                     .map_err(BroadcastedToBlockifierError::CompilationFailed)?;
@@ -101,51 +113,47 @@ pub fn broadcasted_to_blockifier(
                     Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: class_info })),
                 )
             }
-            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => {
-                let class_hash = tx.contract_class.class_hash();
-                let flatten_sierra_class: FlattenedSierraClass = (*tx.contract_class).clone().into();
-                let (compiled_class_hash, compiled) = flatten_sierra_class.compile_to_casm()?;
-                if tx.compiled_class_hash != compiled_class_hash {
+            starknet_types_rpc::BroadcastedDeclareTxn::V2(starknet_types_rpc::BroadcastedDeclareTxnV2 {
+                compiled_class_hash,
+                contract_class,
+                ..
+            })
+            | starknet_types_rpc::BroadcastedDeclareTxn::QueryV2(starknet_types_rpc::BroadcastedDeclareTxnV2 {
+                compiled_class_hash,
+                contract_class,
+                ..
+            })
+            | starknet_types_rpc::BroadcastedDeclareTxn::V3(starknet_types_rpc::BroadcastedDeclareTxnV3 {
+                compiled_class_hash,
+                contract_class,
+                ..
+            })
+            | starknet_types_rpc::BroadcastedDeclareTxn::QueryV3(starknet_types_rpc::BroadcastedDeclareTxnV3 {
+                compiled_class_hash,
+                contract_class,
+                ..
+            }) => {
+                let flatten_sierra_class: FlattenedSierraClass = contract_class.clone().into();
+                let class_hash = flatten_sierra_class
+                    .compute_class_hash()
+                    .map_err(BroadcastedToBlockifierError::ComputeSierraClassHashFailed)?;
+                let (compiled_class_hash_computed, compiled) = flatten_sierra_class.compile_to_casm()?;
+                if compiled_class_hash != &compiled_class_hash_computed {
                     return Err(BroadcastedToBlockifierError::CompiledClassHashMismatch {
-                        expected: tx.compiled_class_hash,
-                        compilation: compiled_class_hash,
+                        expected: *compiled_class_hash,
+                        compilation: compiled_class_hash_computed,
                     });
                 }
-                let class_info =
-                    SierraClassInfo { contract_class: Arc::new(flatten_sierra_class), compiled_class_hash };
+                let class_info = SierraClassInfo {
+                    contract_class: Arc::new(flatten_sierra_class),
+                    compiled_class_hash: compiled_class_hash_computed,
+                };
 
                 (
                     Some(blockifier::execution::contract_class::ClassInfo::new(
                         &compiled.to_blockifier_class()?,
-                        tx.contract_class.sierra_program.len(),
-                        tx.contract_class.abi.len(),
-                    )?),
-                    Some(class_hash),
-                    Some(ConvertedClass::Sierra(SierraConvertedClass {
-                        class_hash,
-                        info: class_info,
-                        compiled: Arc::new(compiled),
-                    })),
-                )
-            }
-            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => {
-                let class_hash = tx.contract_class.class_hash();
-                let flatten_sierra_class: FlattenedSierraClass = (*tx.contract_class).clone().into();
-                let (compiled_class_hash, compiled) = flatten_sierra_class.compile_to_casm()?;
-                if tx.compiled_class_hash != compiled_class_hash {
-                    return Err(BroadcastedToBlockifierError::CompiledClassHashMismatch {
-                        expected: tx.compiled_class_hash,
-                        compilation: compiled_class_hash,
-                    });
-                }
-                let class_info =
-                    SierraClassInfo { contract_class: Arc::new(flatten_sierra_class), compiled_class_hash };
-
-                (
-                    Some(blockifier::execution::contract_class::ClassInfo::new(
-                        &compiled.to_blockifier_class()?,
-                        tx.contract_class.sierra_program.len(),
-                        tx.contract_class.abi.len(),
+                        contract_class.sierra_program.len(),
+                        contract_class.abi.as_ref().map(|abi| abi.len()).unwrap_or(0),
                     )?),
                     Some(class_hash),
                     Some(ConvertedClass::Sierra(SierraConvertedClass {
@@ -179,22 +187,4 @@ pub fn broadcasted_to_blockifier(
         )?,
         extra_class_info,
     ))
-}
-
-fn is_query(transaction: &starknet_core::types::BroadcastedTransaction) -> bool {
-    match transaction {
-        starknet_core::types::BroadcastedTransaction::Invoke(tx) => match tx {
-            starknet_core::types::BroadcastedInvokeTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedInvokeTransaction::V3(tx) => tx.is_query,
-        },
-        starknet_core::types::BroadcastedTransaction::Declare(tx) => match tx {
-            starknet_core::types::BroadcastedDeclareTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeclareTransaction::V2(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeclareTransaction::V3(tx) => tx.is_query,
-        },
-        starknet_core::types::BroadcastedTransaction::DeployAccount(tx) => match tx {
-            starknet_core::types::BroadcastedDeployAccountTransaction::V1(tx) => tx.is_query,
-            starknet_core::types::BroadcastedDeployAccountTransaction::V3(tx) => tx.is_query,
-        },
-    }
 }

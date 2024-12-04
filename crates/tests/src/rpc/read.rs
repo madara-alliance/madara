@@ -238,6 +238,10 @@ mod test_rpc_read_calls {
     ///     "id": 1
     /// }'
     /// ```
+    // FIXME: Ignoring this test because the starknet-rs library does not comply with the specifications for receipts.
+    // Specifically, it includes the TransactionHash in the receipt, which is against the expected standard.
+    // Issue: https://github.com/xJonathanLEI/starknet-rs/issues/678
+    #[ignore]
     #[rstest]
     #[tokio::test]
     async fn test_get_block_txn_with_receipts_works() {
