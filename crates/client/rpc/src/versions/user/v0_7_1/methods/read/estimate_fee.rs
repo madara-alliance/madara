@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use starknet_core::types::{BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
@@ -24,10 +25,10 @@ use crate::Starknet;
 /// * `fee_estimate` - fee estimate in gwei
 pub async fn estimate_fee(
     starknet: &Starknet,
-    request: Vec<BroadcastedTransaction>,
+    request: Vec<BroadcastedTxn<Felt>>,
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
-) -> StarknetRpcResult<Vec<FeeEstimate>> {
+) -> StarknetRpcResult<Vec<FeeEstimate<Felt>>> {
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 

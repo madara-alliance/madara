@@ -164,6 +164,7 @@ paste = "1.0.15"
 anyhow = "1.0"
 assert_matches = "1.5"
 async-trait = "0.1"
+base64 = "0.22"
 sha3 = "0.10"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 clap = { version = "4.4" }
@@ -242,4 +243,6 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "r
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
+starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
+
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

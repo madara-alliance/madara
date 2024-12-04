@@ -1,4 +1,4 @@
-mod into_starknet_core;
+mod into_starknet_types;
 
 use starknet_types_core::{
     felt::Felt,

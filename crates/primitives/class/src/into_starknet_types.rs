@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use starknet_types_core::felt::Felt;
+
 use crate::{
     CompressedLegacyContractClass, ContractClass, EntryPointsByType, FlattenedSierraClass, FunctionStateMutability,
     LegacyContractAbiEntry, LegacyContractEntryPoint, LegacyEntryPointsByType, LegacyEventAbiEntry, LegacyEventAbiType,
@@ -7,56 +9,62 @@ use crate::{
     LegacyTypedParameter, SierraEntryPoint,
 };
 
-impl From<starknet_core::types::ContractClass> for ContractClass {
-    fn from(contract_class: starknet_core::types::ContractClass) -> Self {
+impl TryFrom<starknet_types_rpc::MaybeDeprecatedContractClass<Felt>> for ContractClass {
+    type Error = base64::DecodeError;
+
+    fn try_from(contract_class: starknet_types_rpc::MaybeDeprecatedContractClass<Felt>) -> Result<Self, Self::Error> {
         match contract_class {
-            starknet_core::types::ContractClass::Sierra(flattened_sierra_class) => {
-                ContractClass::Sierra(Arc::new(flattened_sierra_class.into()))
+            starknet_types_rpc::MaybeDeprecatedContractClass::ContractClass(flattened_sierra_class) => {
+                Ok(ContractClass::Sierra(Arc::new(flattened_sierra_class.into())))
             }
-            starknet_core::types::ContractClass::Legacy(compressed_legacy_contract_class) => {
-                ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.into()))
+            starknet_types_rpc::MaybeDeprecatedContractClass::Deprecated(compressed_legacy_contract_class) => {
+                Ok(ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.try_into()?)))
             }
         }
     }
 }
 
-impl From<ContractClass> for starknet_core::types::ContractClass {
+impl From<ContractClass> for starknet_types_rpc::MaybeDeprecatedContractClass<Felt> {
     fn from(contract_class: ContractClass) -> Self {
         match contract_class {
             ContractClass::Sierra(flattened_sierra_class) => {
-                starknet_core::types::ContractClass::Sierra((*flattened_sierra_class).clone().into())
+                starknet_types_rpc::MaybeDeprecatedContractClass::ContractClass(
+                    (*flattened_sierra_class).clone().into(),
+                )
             }
             ContractClass::Legacy(compressed_legacy_contract_class) => {
-                starknet_core::types::ContractClass::Legacy((*compressed_legacy_contract_class).clone().into())
+                starknet_types_rpc::MaybeDeprecatedContractClass::Deprecated(
+                    (*compressed_legacy_contract_class).clone().into(),
+                )
             }
         }
     }
 }
 
-impl From<starknet_core::types::FlattenedSierraClass> for FlattenedSierraClass {
-    fn from(flattened_sierra_class: starknet_core::types::FlattenedSierraClass) -> Self {
+impl From<starknet_types_rpc::ContractClass<Felt>> for FlattenedSierraClass {
+    fn from(flattened_sierra_class: starknet_types_rpc::ContractClass<Felt>) -> Self {
         FlattenedSierraClass {
             sierra_program: flattened_sierra_class.sierra_program,
             contract_class_version: flattened_sierra_class.contract_class_version,
             entry_points_by_type: flattened_sierra_class.entry_points_by_type.into(),
-            abi: flattened_sierra_class.abi,
+            abi: flattened_sierra_class.abi.unwrap_or("".to_string()),
         }
     }
 }
 
-impl From<FlattenedSierraClass> for starknet_core::types::FlattenedSierraClass {
+impl From<FlattenedSierraClass> for starknet_types_rpc::ContractClass<Felt> {
     fn from(flattened_sierra_class: FlattenedSierraClass) -> Self {
-        starknet_core::types::FlattenedSierraClass {
+        starknet_types_rpc::ContractClass {
             sierra_program: flattened_sierra_class.sierra_program,
             contract_class_version: flattened_sierra_class.contract_class_version,
             entry_points_by_type: flattened_sierra_class.entry_points_by_type.into(),
-            abi: flattened_sierra_class.abi,
+            abi: Some(flattened_sierra_class.abi),
         }
     }
 }
 
-impl From<starknet_core::types::EntryPointsByType> for EntryPointsByType {
-    fn from(entry_points_by_type: starknet_core::types::EntryPointsByType) -> Self {
+impl From<starknet_types_rpc::EntryPointsByType<Felt>> for EntryPointsByType {
+    fn from(entry_points_by_type: starknet_types_rpc::EntryPointsByType<Felt>) -> Self {
         EntryPointsByType {
             constructor: entry_points_by_type
                 .constructor
@@ -77,9 +85,9 @@ impl From<starknet_core::types::EntryPointsByType> for EntryPointsByType {
     }
 }
 
-impl From<EntryPointsByType> for starknet_core::types::EntryPointsByType {
+impl From<EntryPointsByType> for starknet_types_rpc::EntryPointsByType<Felt> {
     fn from(entry_points_by_type: EntryPointsByType) -> Self {
-        starknet_core::types::EntryPointsByType {
+        starknet_types_rpc::EntryPointsByType {
             constructor: entry_points_by_type
                 .constructor
                 .into_iter()
@@ -99,37 +107,51 @@ impl From<EntryPointsByType> for starknet_core::types::EntryPointsByType {
     }
 }
 
-impl From<starknet_core::types::SierraEntryPoint> for SierraEntryPoint {
-    fn from(sierra_entry_point: starknet_core::types::SierraEntryPoint) -> Self {
+impl From<starknet_types_rpc::SierraEntryPoint<Felt>> for SierraEntryPoint {
+    fn from(sierra_entry_point: starknet_types_rpc::SierraEntryPoint<Felt>) -> Self {
         SierraEntryPoint { selector: sierra_entry_point.selector, function_idx: sierra_entry_point.function_idx }
     }
 }
 
-impl From<SierraEntryPoint> for starknet_core::types::SierraEntryPoint {
+impl From<SierraEntryPoint> for starknet_types_rpc::SierraEntryPoint<Felt> {
     fn from(sierra_entry_point: SierraEntryPoint) -> Self {
-        starknet_core::types::SierraEntryPoint {
+        starknet_types_rpc::SierraEntryPoint {
             selector: sierra_entry_point.selector,
             function_idx: sierra_entry_point.function_idx,
         }
     }
 }
 
-impl From<starknet_core::types::CompressedLegacyContractClass> for CompressedLegacyContractClass {
-    fn from(compressed_legacy_contract_class: starknet_core::types::CompressedLegacyContractClass) -> Self {
-        CompressedLegacyContractClass {
-            program: compressed_legacy_contract_class.program,
+impl TryFrom<starknet_types_rpc::DeprecatedContractClass<Felt>> for CompressedLegacyContractClass {
+    type Error = base64::DecodeError;
+
+    fn try_from(
+        compressed_legacy_contract_class: starknet_types_rpc::DeprecatedContractClass<Felt>,
+    ) -> Result<Self, Self::Error> {
+        use base64::Engine;
+
+        let decoded_program =
+            base64::engine::general_purpose::STANDARD.decode(&compressed_legacy_contract_class.program)?;
+
+        Ok(CompressedLegacyContractClass {
+            program: decoded_program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
                 .map(|abi| abi.into_iter().map(|legacy_contract_abi_entry| legacy_contract_abi_entry.into()).collect()),
-        }
+        })
     }
 }
 
-impl From<CompressedLegacyContractClass> for starknet_core::types::CompressedLegacyContractClass {
+impl From<CompressedLegacyContractClass> for starknet_types_rpc::DeprecatedContractClass<Felt> {
     fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
-        starknet_core::types::CompressedLegacyContractClass {
-            program: compressed_legacy_contract_class.program,
+        use base64::Engine;
+
+        let encoded_program =
+            base64::engine::general_purpose::STANDARD.encode(&compressed_legacy_contract_class.program);
+
+        starknet_types_rpc::DeprecatedContractClass {
+            program: encoded_program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
                 .abi
@@ -138,8 +160,8 @@ impl From<CompressedLegacyContractClass> for starknet_core::types::CompressedLeg
     }
 }
 
-impl From<starknet_core::types::LegacyEntryPointsByType> for LegacyEntryPointsByType {
-    fn from(legacy_entry_points_by_type: starknet_core::types::LegacyEntryPointsByType) -> Self {
+impl From<starknet_types_rpc::DeprecatedEntryPointsByType<Felt>> for LegacyEntryPointsByType {
+    fn from(legacy_entry_points_by_type: starknet_types_rpc::DeprecatedEntryPointsByType<Felt>) -> Self {
         LegacyEntryPointsByType {
             constructor: legacy_entry_points_by_type
                 .constructor
@@ -160,9 +182,9 @@ impl From<starknet_core::types::LegacyEntryPointsByType> for LegacyEntryPointsBy
     }
 }
 
-impl From<LegacyEntryPointsByType> for starknet_core::types::LegacyEntryPointsByType {
+impl From<LegacyEntryPointsByType> for starknet_types_rpc::DeprecatedEntryPointsByType<Felt> {
     fn from(legacy_entry_points_by_type: LegacyEntryPointsByType) -> Self {
-        starknet_core::types::LegacyEntryPointsByType {
+        starknet_types_rpc::DeprecatedEntryPointsByType {
             constructor: legacy_entry_points_by_type
                 .constructor
                 .into_iter()
@@ -182,8 +204,8 @@ impl From<LegacyEntryPointsByType> for starknet_core::types::LegacyEntryPointsBy
     }
 }
 
-impl From<starknet_core::types::LegacyContractEntryPoint> for LegacyContractEntryPoint {
-    fn from(legacy_contract_entry_point: starknet_core::types::LegacyContractEntryPoint) -> Self {
+impl From<starknet_types_rpc::DeprecatedCairoEntryPoint<Felt>> for LegacyContractEntryPoint {
+    fn from(legacy_contract_entry_point: starknet_types_rpc::DeprecatedCairoEntryPoint<Felt>) -> Self {
         LegacyContractEntryPoint {
             offset: legacy_contract_entry_point.offset,
             selector: legacy_contract_entry_point.selector,
@@ -191,51 +213,51 @@ impl From<starknet_core::types::LegacyContractEntryPoint> for LegacyContractEntr
     }
 }
 
-impl From<LegacyContractEntryPoint> for starknet_core::types::LegacyContractEntryPoint {
+impl From<LegacyContractEntryPoint> for starknet_types_rpc::DeprecatedCairoEntryPoint<Felt> {
     fn from(legacy_contract_entry_point: LegacyContractEntryPoint) -> Self {
-        starknet_core::types::LegacyContractEntryPoint {
+        starknet_types_rpc::DeprecatedCairoEntryPoint {
             offset: legacy_contract_entry_point.offset,
             selector: legacy_contract_entry_point.selector,
         }
     }
 }
 
-impl From<starknet_core::types::LegacyContractAbiEntry> for LegacyContractAbiEntry {
-    fn from(legacy_contract_abi_entry: starknet_core::types::LegacyContractAbiEntry) -> Self {
+impl From<starknet_types_rpc::ContractAbiEntry> for LegacyContractAbiEntry {
+    fn from(legacy_contract_abi_entry: starknet_types_rpc::ContractAbiEntry) -> Self {
         match legacy_contract_abi_entry {
-            starknet_core::types::LegacyContractAbiEntry::Function(legacy_function_abi_entry) => {
+            starknet_types_rpc::ContractAbiEntry::Function(legacy_function_abi_entry) => {
                 LegacyContractAbiEntry::Function(legacy_function_abi_entry.into())
             }
-            starknet_core::types::LegacyContractAbiEntry::Event(legacy_event_abi_entry) => {
+            starknet_types_rpc::ContractAbiEntry::Event(legacy_event_abi_entry) => {
                 LegacyContractAbiEntry::Event(legacy_event_abi_entry.into())
             }
-            starknet_core::types::LegacyContractAbiEntry::Struct(legacy_struct_abi_entry) => {
+            starknet_types_rpc::ContractAbiEntry::Struct(legacy_struct_abi_entry) => {
                 LegacyContractAbiEntry::Struct(legacy_struct_abi_entry.into())
             }
         }
     }
 }
 
-impl From<LegacyContractAbiEntry> for starknet_core::types::LegacyContractAbiEntry {
+impl From<LegacyContractAbiEntry> for starknet_types_rpc::ContractAbiEntry {
     fn from(legacy_contract_abi_entry: LegacyContractAbiEntry) -> Self {
         match legacy_contract_abi_entry {
             LegacyContractAbiEntry::Function(legacy_function_abi_entry) => {
-                starknet_core::types::LegacyContractAbiEntry::Function(legacy_function_abi_entry.into())
+                starknet_types_rpc::ContractAbiEntry::Function(legacy_function_abi_entry.into())
             }
             LegacyContractAbiEntry::Event(legacy_event_abi_entry) => {
-                starknet_core::types::LegacyContractAbiEntry::Event(legacy_event_abi_entry.into())
+                starknet_types_rpc::ContractAbiEntry::Event(legacy_event_abi_entry.into())
             }
             LegacyContractAbiEntry::Struct(legacy_struct_abi_entry) => {
-                starknet_core::types::LegacyContractAbiEntry::Struct(legacy_struct_abi_entry.into())
+                starknet_types_rpc::ContractAbiEntry::Struct(legacy_struct_abi_entry.into())
             }
         }
     }
 }
 
-impl From<starknet_core::types::LegacyFunctionAbiEntry> for LegacyFunctionAbiEntry {
-    fn from(legacy_function_abi_entry: starknet_core::types::LegacyFunctionAbiEntry) -> Self {
+impl From<starknet_types_rpc::FunctionAbiEntry> for LegacyFunctionAbiEntry {
+    fn from(legacy_function_abi_entry: starknet_types_rpc::FunctionAbiEntry) -> Self {
         LegacyFunctionAbiEntry {
-            r#type: legacy_function_abi_entry.r#type.into(),
+            r#type: legacy_function_abi_entry.ty.into(),
             name: legacy_function_abi_entry.name,
             inputs: legacy_function_abi_entry.inputs.into_iter().map(|abi_entry| abi_entry.into()).collect(),
             outputs: legacy_function_abi_entry.outputs.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -246,10 +268,10 @@ impl From<starknet_core::types::LegacyFunctionAbiEntry> for LegacyFunctionAbiEnt
     }
 }
 
-impl From<LegacyFunctionAbiEntry> for starknet_core::types::LegacyFunctionAbiEntry {
+impl From<LegacyFunctionAbiEntry> for starknet_types_rpc::FunctionAbiEntry {
     fn from(legacy_function_abi_entry: LegacyFunctionAbiEntry) -> Self {
-        starknet_core::types::LegacyFunctionAbiEntry {
-            r#type: legacy_function_abi_entry.r#type.into(),
+        starknet_types_rpc::FunctionAbiEntry {
+            ty: legacy_function_abi_entry.r#type.into(),
             name: legacy_function_abi_entry.name,
             inputs: legacy_function_abi_entry.inputs.into_iter().map(|abi_entry| abi_entry.into()).collect(),
             outputs: legacy_function_abi_entry.outputs.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -260,10 +282,10 @@ impl From<LegacyFunctionAbiEntry> for starknet_core::types::LegacyFunctionAbiEnt
     }
 }
 
-impl From<starknet_core::types::LegacyEventAbiEntry> for LegacyEventAbiEntry {
-    fn from(legacy_event_abi_entry: starknet_core::types::LegacyEventAbiEntry) -> Self {
+impl From<starknet_types_rpc::EventAbiEntry> for LegacyEventAbiEntry {
+    fn from(legacy_event_abi_entry: starknet_types_rpc::EventAbiEntry) -> Self {
         LegacyEventAbiEntry {
-            r#type: legacy_event_abi_entry.r#type.into(),
+            r#type: legacy_event_abi_entry.ty.into(),
             name: legacy_event_abi_entry.name,
             keys: legacy_event_abi_entry.keys.into_iter().map(|abi_entry| abi_entry.into()).collect(),
             data: legacy_event_abi_entry.data.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -271,10 +293,10 @@ impl From<starknet_core::types::LegacyEventAbiEntry> for LegacyEventAbiEntry {
     }
 }
 
-impl From<LegacyEventAbiEntry> for starknet_core::types::LegacyEventAbiEntry {
+impl From<LegacyEventAbiEntry> for starknet_types_rpc::EventAbiEntry {
     fn from(legacy_event_abi_entry: LegacyEventAbiEntry) -> Self {
-        starknet_core::types::LegacyEventAbiEntry {
-            r#type: legacy_event_abi_entry.r#type.into(),
+        starknet_types_rpc::EventAbiEntry {
+            ty: legacy_event_abi_entry.r#type.into(),
             name: legacy_event_abi_entry.name,
             keys: legacy_event_abi_entry.keys.into_iter().map(|abi_entry| abi_entry.into()).collect(),
             data: legacy_event_abi_entry.data.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -282,10 +304,10 @@ impl From<LegacyEventAbiEntry> for starknet_core::types::LegacyEventAbiEntry {
     }
 }
 
-impl From<starknet_core::types::LegacyStructAbiEntry> for LegacyStructAbiEntry {
-    fn from(legacy_struct_abi_entry: starknet_core::types::LegacyStructAbiEntry) -> Self {
+impl From<starknet_types_rpc::StructAbiEntry> for LegacyStructAbiEntry {
+    fn from(legacy_struct_abi_entry: starknet_types_rpc::StructAbiEntry) -> Self {
         LegacyStructAbiEntry {
-            r#type: legacy_struct_abi_entry.r#type.into(),
+            r#type: legacy_struct_abi_entry.ty.into(),
             name: legacy_struct_abi_entry.name,
             size: legacy_struct_abi_entry.size,
             members: legacy_struct_abi_entry.members.into_iter().map(|member| member.into()).collect(),
@@ -293,10 +315,10 @@ impl From<starknet_core::types::LegacyStructAbiEntry> for LegacyStructAbiEntry {
     }
 }
 
-impl From<LegacyStructAbiEntry> for starknet_core::types::LegacyStructAbiEntry {
+impl From<LegacyStructAbiEntry> for starknet_types_rpc::StructAbiEntry {
     fn from(legacy_struct_abi_entry: LegacyStructAbiEntry) -> Self {
-        starknet_core::types::LegacyStructAbiEntry {
-            r#type: legacy_struct_abi_entry.r#type.into(),
+        starknet_types_rpc::StructAbiEntry {
+            ty: legacy_struct_abi_entry.r#type.into(),
             name: legacy_struct_abi_entry.name,
             size: legacy_struct_abi_entry.size,
             members: legacy_struct_abi_entry.members.into_iter().map(|member| member.into()).collect(),
@@ -304,105 +326,98 @@ impl From<LegacyStructAbiEntry> for starknet_core::types::LegacyStructAbiEntry {
     }
 }
 
-impl From<starknet_core::types::LegacyStructMember> for LegacyStructMember {
-    fn from(legacy_struct_member: starknet_core::types::LegacyStructMember) -> Self {
+impl From<starknet_types_rpc::StructMember> for LegacyStructMember {
+    fn from(legacy_struct_member: starknet_types_rpc::StructMember) -> Self {
         LegacyStructMember {
-            name: legacy_struct_member.name,
-            r#type: legacy_struct_member.r#type,
+            name: legacy_struct_member.typed_parameter.name,
+            r#type: legacy_struct_member.typed_parameter.ty,
             offset: legacy_struct_member.offset,
         }
     }
 }
 
-impl From<LegacyStructMember> for starknet_core::types::LegacyStructMember {
+impl From<LegacyStructMember> for starknet_types_rpc::StructMember {
     fn from(legacy_struct_member: LegacyStructMember) -> Self {
-        starknet_core::types::LegacyStructMember {
-            name: legacy_struct_member.name,
-            r#type: legacy_struct_member.r#type,
+        starknet_types_rpc::StructMember {
+            typed_parameter: starknet_types_rpc::TypedParameter {
+                name: legacy_struct_member.name,
+                ty: legacy_struct_member.r#type,
+            },
             offset: legacy_struct_member.offset,
         }
     }
 }
 
-impl From<starknet_core::types::LegacyTypedParameter> for LegacyTypedParameter {
-    fn from(legacy_typed_parameter: starknet_core::types::LegacyTypedParameter) -> Self {
-        LegacyTypedParameter { r#type: legacy_typed_parameter.r#type, name: legacy_typed_parameter.name }
+impl From<starknet_types_rpc::TypedParameter> for LegacyTypedParameter {
+    fn from(legacy_typed_parameter: starknet_types_rpc::TypedParameter) -> Self {
+        LegacyTypedParameter { r#type: legacy_typed_parameter.ty, name: legacy_typed_parameter.name }
     }
 }
 
-impl From<LegacyTypedParameter> for starknet_core::types::LegacyTypedParameter {
+impl From<LegacyTypedParameter> for starknet_types_rpc::TypedParameter {
     fn from(legacy_typed_parameter: LegacyTypedParameter) -> Self {
-        starknet_core::types::LegacyTypedParameter {
-            r#type: legacy_typed_parameter.r#type,
-            name: legacy_typed_parameter.name,
-        }
+        starknet_types_rpc::TypedParameter { ty: legacy_typed_parameter.r#type, name: legacy_typed_parameter.name }
     }
 }
 
-impl From<starknet_core::types::LegacyFunctionAbiType> for LegacyFunctionAbiType {
-    fn from(legacy_function_abi_type: starknet_core::types::LegacyFunctionAbiType) -> Self {
+impl From<starknet_types_rpc::FunctionAbiType> for LegacyFunctionAbiType {
+    fn from(legacy_function_abi_type: starknet_types_rpc::FunctionAbiType) -> Self {
         match legacy_function_abi_type {
-            starknet_core::types::LegacyFunctionAbiType::Function => LegacyFunctionAbiType::Function,
-            starknet_core::types::LegacyFunctionAbiType::L1Handler => LegacyFunctionAbiType::L1Handler,
-            starknet_core::types::LegacyFunctionAbiType::Constructor => LegacyFunctionAbiType::Constructor,
+            starknet_types_rpc::FunctionAbiType::Function => LegacyFunctionAbiType::Function,
+            starknet_types_rpc::FunctionAbiType::L1Handler => LegacyFunctionAbiType::L1Handler,
+            starknet_types_rpc::FunctionAbiType::Constructor => LegacyFunctionAbiType::Constructor,
         }
     }
 }
 
-impl From<LegacyFunctionAbiType> for starknet_core::types::LegacyFunctionAbiType {
+impl From<LegacyFunctionAbiType> for starknet_types_rpc::FunctionAbiType {
     fn from(legacy_function_abi_type: LegacyFunctionAbiType) -> Self {
         match legacy_function_abi_type {
-            LegacyFunctionAbiType::Function => starknet_core::types::LegacyFunctionAbiType::Function,
-            LegacyFunctionAbiType::L1Handler => starknet_core::types::LegacyFunctionAbiType::L1Handler,
-            LegacyFunctionAbiType::Constructor => starknet_core::types::LegacyFunctionAbiType::Constructor,
+            LegacyFunctionAbiType::Function => starknet_types_rpc::FunctionAbiType::Function,
+            LegacyFunctionAbiType::L1Handler => starknet_types_rpc::FunctionAbiType::L1Handler,
+            LegacyFunctionAbiType::Constructor => starknet_types_rpc::FunctionAbiType::Constructor,
         }
     }
 }
 
-impl From<starknet_core::types::LegacyEventAbiType> for LegacyEventAbiType {
-    fn from(legacy_event_abi_type: starknet_core::types::LegacyEventAbiType) -> Self {
-        match legacy_event_abi_type {
-            starknet_core::types::LegacyEventAbiType::Event => LegacyEventAbiType::Event,
-        }
+impl From<starknet_types_rpc::EventAbiType> for LegacyEventAbiType {
+    fn from(_: starknet_types_rpc::EventAbiType) -> Self {
+        LegacyEventAbiType::Event
     }
 }
 
-impl From<LegacyEventAbiType> for starknet_core::types::LegacyEventAbiType {
+impl From<LegacyEventAbiType> for starknet_types_rpc::EventAbiType {
     fn from(legacy_event_abi_type: LegacyEventAbiType) -> Self {
         match legacy_event_abi_type {
-            LegacyEventAbiType::Event => starknet_core::types::LegacyEventAbiType::Event,
+            LegacyEventAbiType::Event => "event".to_string(),
         }
     }
 }
 
-impl From<starknet_core::types::LegacyStructAbiType> for LegacyStructAbiType {
-    fn from(legacy_struct_abi_type: starknet_core::types::LegacyStructAbiType) -> Self {
-        match legacy_struct_abi_type {
-            starknet_core::types::LegacyStructAbiType::Struct => LegacyStructAbiType::Struct,
-        }
+impl From<starknet_types_rpc::StructAbiType> for LegacyStructAbiType {
+    fn from(_: starknet_types_rpc::StructAbiType) -> Self {
+        LegacyStructAbiType::Struct
     }
 }
 
-impl From<LegacyStructAbiType> for starknet_core::types::LegacyStructAbiType {
+impl From<LegacyStructAbiType> for starknet_types_rpc::StructAbiType {
     fn from(legacy_struct_abi_type: LegacyStructAbiType) -> Self {
         match legacy_struct_abi_type {
-            LegacyStructAbiType::Struct => starknet_core::types::LegacyStructAbiType::Struct,
+            LegacyStructAbiType::Struct => "struct".to_string(),
         }
     }
 }
 
-impl From<starknet_core::types::FunctionStateMutability> for FunctionStateMutability {
-    fn from(function_state_mutability: starknet_core::types::FunctionStateMutability) -> Self {
-        match function_state_mutability {
-            starknet_core::types::FunctionStateMutability::View => FunctionStateMutability::View,
-        }
+impl From<starknet_types_rpc::FunctionStateMutability> for FunctionStateMutability {
+    fn from(_: starknet_types_rpc::FunctionStateMutability) -> Self {
+        FunctionStateMutability::View
     }
 }
 
-impl From<FunctionStateMutability> for starknet_core::types::FunctionStateMutability {
+impl From<FunctionStateMutability> for starknet_types_rpc::FunctionStateMutability {
     fn from(function_state_mutability: FunctionStateMutability) -> Self {
         match function_state_mutability {
-            FunctionStateMutability::View => starknet_core::types::FunctionStateMutability::View,
+            FunctionStateMutability::View => "view".to_string(),
         }
     }
 }
@@ -416,8 +431,8 @@ mod tests {
         LegacyStructMember, LegacyTypedParameter, SierraEntryPoint,
     };
     use mp_convert::test::assert_consistent_conversion;
-    use starknet_core::types::ContractClass as StarknetContractClass;
     use starknet_types_core::felt::Felt;
+    use starknet_types_rpc::MaybeDeprecatedContractClass as StarknetContractClass;
 
     #[test]
     fn test_legacy_contract_class_conversion() {
@@ -457,7 +472,7 @@ mod tests {
 
         let contract_class: ContractClass = legacy_contract_class.clone().into();
 
-        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
+        assert_consistent_conversion::<_, StarknetContractClass<Felt>>(contract_class);
     }
 
     #[test]
@@ -475,6 +490,6 @@ mod tests {
 
         let contract_class: ContractClass = sierra_contract_class.into();
 
-        assert_consistent_conversion::<_, StarknetContractClass>(contract_class);
+        assert_consistent_conversion::<_, StarknetContractClass<Felt>>(contract_class);
     }
 }

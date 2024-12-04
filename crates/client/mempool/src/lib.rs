@@ -19,11 +19,11 @@ use mp_transactions::{
 use mp_transactions::{BroadcastedToBlockifierError, L1HandlerTransactionResult};
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    BroadcastedTransaction, DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
-};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
+};
 use std::sync::{Arc, RwLock};
 
 pub use inner::TxInsersionError;
@@ -61,13 +61,13 @@ impl Error {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
-    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error>;
-    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error>;
-    fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error>;
+    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTxn<Felt>) -> Result<AddInvokeTransactionResult<Felt>, Error>;
+    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, Error>;
+    fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, Error>;
     fn accept_deploy_account_tx(
         &self,
-        tx: BroadcastedDeployAccountTransaction,
-    ) -> Result<DeployAccountTransactionResult, Error>;
+        tx: BroadcastedDeployAccountTxn<Felt>,
+    ) -> Result<ContractAndTxnHash<Felt>, Error>;
     fn accept_l1_handler_tx(&self, tx: Transaction) -> Result<L1HandlerTransactionResult, Error>;
     fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
     where
@@ -179,27 +179,27 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 
 impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTransaction) -> Result<InvokeTransactionResult, Error> {
+    fn accept_invoke_tx(&self, tx: BroadcastedInvokeTxn<Felt>) -> Result<AddInvokeTransactionResult<Felt>, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::Invoke(tx),
+            BroadcastedTxn::Invoke(tx),
             self.chain_id(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = InvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
+        let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
         self.accept_tx(tx, classes)?;
         Ok(res)
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<DeclareTransactionResult, Error> {
+    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, Error> {
         let (tx, classes) = broadcasted_declare_v0_to_blockifier(
             tx,
             self.chain_id(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = DeclareTransactionResult {
+        let res = ClassAndTxnHash {
             transaction_hash: transaction_hash(&tx),
             class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
         };
@@ -215,14 +215,14 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_declare_tx(&self, tx: BroadcastedDeclareTransaction) -> Result<DeclareTransactionResult, Error> {
+    fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::Declare(tx),
+            BroadcastedTxn::Declare(tx),
             self.chain_id(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = DeclareTransactionResult {
+        let res = ClassAndTxnHash {
             transaction_hash: transaction_hash(&tx),
             class_hash: declare_class_hash(&tx).expect("Created transaction should be declare"),
         };
@@ -233,15 +233,15 @@ impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_deploy_account_tx(
         &self,
-        tx: BroadcastedDeployAccountTransaction,
-    ) -> Result<DeployAccountTransactionResult, Error> {
+        tx: BroadcastedDeployAccountTxn<Felt>,
+    ) -> Result<ContractAndTxnHash<Felt>, Error> {
         let (tx, classes) = broadcasted_to_blockifier(
-            BroadcastedTransaction::DeployAccount(tx),
+            BroadcastedTxn::DeployAccount(tx),
             self.chain_id(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = DeployAccountTransactionResult {
+        let res = ContractAndTxnHash {
             transaction_hash: transaction_hash(&tx),
             contract_address: deployed_contract_address(&tx).expect("Created transaction should be deploy account"),
         };

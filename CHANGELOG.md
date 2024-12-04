@@ -2,6 +2,8 @@
 
 ## Next release
 
+- refactor(rpc): replace starknet-rs by starknet-types-rpc
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
 - feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
 - feat(warp): added warp update to madara
 - docs(readme): updated README.md docs and added Docker Compose support

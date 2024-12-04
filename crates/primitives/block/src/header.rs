@@ -18,13 +18,13 @@ pub enum BlockStatus {
     Rejected,
 }
 
-impl From<BlockStatus> for starknet_core::types::BlockStatus {
+impl From<BlockStatus> for starknet_types_rpc::BlockStatus {
     fn from(status: BlockStatus) -> Self {
         match status {
-            BlockStatus::Pending => starknet_core::types::BlockStatus::Pending,
-            BlockStatus::AcceptedOnL2 => starknet_core::types::BlockStatus::AcceptedOnL2,
-            BlockStatus::AcceptedOnL1 => starknet_core::types::BlockStatus::AcceptedOnL1,
-            BlockStatus::Rejected => starknet_core::types::BlockStatus::Rejected,
+            BlockStatus::Pending => starknet_types_rpc::BlockStatus::Pending,
+            BlockStatus::AcceptedOnL2 => starknet_types_rpc::BlockStatus::AcceptedOnL2,
+            BlockStatus::AcceptedOnL1 => starknet_types_rpc::BlockStatus::AcceptedOnL1,
+            BlockStatus::Rejected => starknet_types_rpc::BlockStatus::Rejected,
         }
     }
 }
@@ -102,14 +102,15 @@ impl From<&GasPrices> for blockifier::blockifier::block::GasPrices {
 }
 
 impl GasPrices {
-    pub fn l1_gas_price(&self) -> starknet_core::types::ResourcePrice {
-        starknet_core::types::ResourcePrice {
+    pub fn l1_gas_price(&self) -> starknet_types_rpc::ResourcePrice<Felt> {
+        starknet_types_rpc::ResourcePrice {
             price_in_fri: self.strk_l1_gas_price.into(),
             price_in_wei: self.eth_l1_gas_price.into(),
         }
     }
-    pub fn l1_data_gas_price(&self) -> starknet_core::types::ResourcePrice {
-        starknet_core::types::ResourcePrice {
+
+    pub fn l1_data_gas_price(&self) -> starknet_types_rpc::ResourcePrice<Felt> {
+        starknet_types_rpc::ResourcePrice {
             price_in_fri: self.strk_l1_data_gas_price.into(),
             price_in_wei: self.eth_l1_data_gas_price.into(),
         }
@@ -126,19 +127,11 @@ pub enum L1DataAvailabilityMode {
     Blob,
 }
 
-impl From<L1DataAvailabilityMode> for starknet_core::types::L1DataAvailabilityMode {
+impl From<L1DataAvailabilityMode> for starknet_types_rpc::L1DaMode {
     fn from(value: L1DataAvailabilityMode) -> Self {
         match value {
             L1DataAvailabilityMode::Calldata => Self::Calldata,
             L1DataAvailabilityMode::Blob => Self::Blob,
-        }
-    }
-}
-impl From<starknet_core::types::L1DataAvailabilityMode> for L1DataAvailabilityMode {
-    fn from(value: starknet_core::types::L1DataAvailabilityMode) -> Self {
-        match value {
-            starknet_core::types::L1DataAvailabilityMode::Calldata => Self::Calldata,
-            starknet_core::types::L1DataAvailabilityMode::Blob => Self::Blob,
         }
     }
 }
