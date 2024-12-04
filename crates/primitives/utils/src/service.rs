@@ -12,24 +12,15 @@
 //!
 //! # The [Service] trait
 //!
-//! This is the backbone of Madara service and serves as a common interface to
-//! all services. The [Service] trait specifies how a service must start as well
-//! as how to _identify_ it. For reasons of atomicity, services are currently
-//! identified as a single [std::sync::atomic::AtomicU8]. More about this later.
+//! This is the backbone of Madara services and serves as a common interface to
+//! all. The [Service] trait specifies how a service must start as well as how
+//! to _identify_ it. For reasons of atomicity, services are currently
+//! identified by a single [std::sync::atomic::AtomicU8]. More about this later.
 //!
-//! Services are started from [Service::start] using [ServiceRunner::service_loop].
+//! Services are started with [Service::start] using [ServiceRunner::service_loop].
 //! [ServiceRunner::service_loop] is a function which takes in a future: this
 //! future represents the main loop of your service, and should run until your
 //! service completes or is canceled.
-//!
-//! > **Note**
-//! > It is assumed that services can and might be restarted. You have the
-//! > responsibility to ensure this is possible. This means you should make sure
-//! > not to use the like of [std::mem::take] or similar on your service inside
-//! > [Service::start]. In general, make sure your service still contains all
-//! > the necessary information it needs to restart. This might mean certain
-//! > attributes need to be stored as a [std::sync::Arc] and cloned so that the
-//! > future in [ServiceRunner::service_loop] can safely take ownership of them.
 //!
 //! It is part of the contract of the [Service] trait that calls to
 //! [ServiceRunner::service_loop] should not complete until the service has
@@ -39,6 +30,15 @@
 //! execution will be automatically marked for shutdown as a safety mechanism.
 //! This is done as a safeguard to avoid an invalid state where it would be
 //! impossible for the node to shutdown.
+//!
+//! > **Note**
+//! > It is assumed that services can and might be restarted. You have the
+//! > responsibility to ensure this is possible. This means you should make sure
+//! > not to use the like of [std::mem::take] or similar on your service inside
+//! > [Service::start]. In general, make sure your service still contains all
+//! > the necessary information it needs to restart. This might mean certain
+//! > attributes need to be stored as a [std::sync::Arc] and cloned so that the
+//! > future in [ServiceRunner::service_loop] can safely take ownership of them.
 //!
 //! ## An incorrect implementation of the [Service] trait
 //!
@@ -151,8 +151,9 @@
 //! Note that by design service shutdown is designed to be manual. We still
 //! implement a [SERVICE_GRACE_PERIOD] which is the maximum duration a service
 //! is allowed to take to shutdown, after which it is forcefully canceled. This
-//! should not happen in practice but helps avoid cases where someone forgets to
-//! implement a cancellation check. More on this in the next section.
+//! should not happen in practice and only serves to avoid cases where someone
+//! would forgets to implement a cancellation check. More on this in the next
+//! section.
 //!
 //! ---
 //!
@@ -160,16 +161,16 @@
 //!
 //! Services are passed a [ServiceContext] as part of [ServiceRunner::service_loop]
 //! to be used during their execution to check for and request cancellation.
-//! Services can also spawn child services using [ServiceContext::child] to
+//! Services can also start child services with [ServiceContext::child] to
 //! create a hierarchy of services.
 //!
 //! ## Cancellation checks
 //!
-//! The great advantage of [ServiceContext] is that it allows you to gracefully
-//! handle the cancellation of your services by checking for cancellation at
-//! logical points in the execution of your services, such as at the end of
-//! every iteration of a service's main loop. You can use the following methods
-//! to check for cancellation, each with their own caveats.
+//! The main advantage of [ServiceContext] is that it allows you to gracefully
+//! handle the shutdown of your services by checking for cancellation at logical
+//! points in the execution, such as every iteration of a service's main loop.
+//! You can use the following methods to check for cancellation, each with their
+//! own caveats.
 //!
 //! - [ServiceContext::is_cancelled]: synchronous, useful in non-blocking
 //!   scenarios.
@@ -187,8 +188,8 @@
 //! Any service with access to a [ServiceContext] can request the cancellation
 //! of _any other service, at any point during execution_. This can be used for
 //! error handling for example, by having a single service shut itself down
-//! without affecting other services, or for administrative and testing reasons
-//! by having a node operator toggle services from an endpoint.
+//! without affecting other services, or for administrative and testing purposes
+//! by having a node operator toggle services on and off from a remote endpoint.
 //!
 //! You can use the following methods to request for the cancellation of a
 //! service:
@@ -223,6 +224,18 @@
 //! ---
 //!
 //! # Service orchestration
+//!
+//! Services are orchestrated by a [ServiceMonitor], which is responsible for
+//! registering services, marking them as active or inactive as well as starting
+//! and restarting them upon request. [ServiceMonitor] also handles the
+//! cancellation of all services upon receiving a `SIGINT`.
+//!
+//! > **Important**
+//! > Services cannot be started or restarted if they have not been registered
+//! > with [ServiceMonitor::with].
+//!
+//! Services are run to completion until no service remains, at which point the
+//! node will automatically shutdown.
 //!
 //! [microservices]: https://en.wikipedia.org/wiki/Microservices
 
@@ -429,12 +442,6 @@ impl MadaraServiceMask {
 
         set
     }
-}
-
-#[derive(Clone, Copy)]
-pub struct ServiceTransport {
-    pub svc: MadaraService,
-    pub status: MadaraServiceStatus,
 }
 
 /// Atomic state and cancellation context associated to a [Service].
@@ -721,6 +728,15 @@ impl ServiceContext {
     }
 }
 
+/// Provides info about a [Service]'s status.
+///
+/// Used as part of [ServiceContext::service_subscribe].
+#[derive(Clone, Copy)]
+pub struct ServiceTransport {
+    pub svc: MadaraService,
+    pub status: MadaraServiceStatus,
+}
+
 /// A microservice in the Madara node.
 ///
 /// The app is divided into services, with each service handling different
@@ -809,7 +825,7 @@ impl<'a> ServiceRunner<'a> {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
 
-        tracing::info!("forcefully shutting down {id}");
+        tracing::warn!("⚠️  Forcefully shutting down {id}");
     }
 }
 
@@ -831,7 +847,23 @@ impl Default for ServiceMonitor {
     }
 }
 
+/// Orchestrates the execution of various [Service]s.
+///
+/// A [ServiceMonitor] is responsible for registering services, starting and
+/// stopping them as well as handling `SIGINT`. Services are run to completion
+/// until no service remains, at which point the node will automatically
+/// shutdown.
+///
+/// All services are inactive by default. Only the services which are marked as
+/// _explicitly active_ with [ServiceMonitor::activate] will be automatically
+/// started when calling [ServiceMonitor::start]. If no service was activated,
+/// the node will shutdown.
+///
+/// Note that services which are not added with [ServiceMonitor::with] cannot
+/// be started or restarted.
 impl ServiceMonitor {
+    /// Registers a [Service] to the [ServiceMonitor]. This service is
+    /// _inactive_ by default and can be started at a later time.
     pub fn with(mut self, svc: impl Service) -> anyhow::Result<Self> {
         let idx = (svc.id() as u8).to_be().leading_zeros() as usize;
         self.services[idx] = match self.services[idx] {
@@ -842,19 +874,27 @@ impl ServiceMonitor {
         anyhow::Ok(self)
     }
 
+    /// Marks a [Service] as active, meaning it will be started automatically
+    /// when calling [ServiceMonitor::start].
     pub fn activate(&self, id: MadaraService) {
         self.status_request.activate(id);
     }
 
+    /// Starts all activate [Service]s and runs them to completion. Services
+    /// are activated by calling [ServiceMonitor::activate]. This function
+    /// completes once all services have been run to completion.
+    ///
+    /// Keep in mind that services can be restarted as long as other services
+    /// are running (otherwise the node would shutdown).
     pub async fn start(mut self) -> anyhow::Result<()> {
         let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request));
 
+        // start only the initially active services
         for svc in self.services.iter_mut() {
             match svc {
                 Some(svc) if self.status_request.status(svc.id() as u8) == MadaraServiceStatus::On => {
                     let id = svc.id();
                     self.status_actual.activate(id);
-                    self.status_request.activate(id);
 
                     let ctx = ctx.child().with_id(id);
                     let runner = ServiceRunner::new(ctx, &mut self.join_set);
@@ -864,6 +904,7 @@ impl ServiceMonitor {
             }
         }
 
+        // SIGINT
         let runner = ServiceRunner::new(ctx.clone(), &mut self.join_set);
         runner.service_loop(|ctx| async move {
             tokio::signal::ctrl_c().await.expect("Failed to listen for event");
@@ -874,6 +915,7 @@ impl ServiceMonitor {
 
         while self.status_request.is_active_some() {
             tokio::select! {
+                // A service has run to completion, mark it as inactive
                 Some(result) = self.join_set.join_next() => {
                     match result {
                         Ok(result) => {
@@ -889,6 +931,8 @@ impl ServiceMonitor {
                         Err(_task_cancelled_error) => {}
                     }
                 },
+                // A service has had its status updated, check if it is a
+                // restart request
                 Some(ServiceTransport { svc, status }) = ctx.service_subscribe() => {
                     if status == MadaraServiceStatus::On {
                         if let Some(svc) = self.services[svc as usize].as_mut() {
