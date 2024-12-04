@@ -60,8 +60,11 @@ impl GasPriceProvider {
 
     pub fn update_eth_l1_gas_price(&self, new_price: u128) {
         if self.gas_price_sync_enabled.load(Ordering::Relaxed) {
+            tracing::info!("Acquiring lock to update eth gas price to: {}", new_price);
             let mut prices = self.gas_prices.lock().unwrap();
             prices.eth_l1_gas_price = new_price;
+            tracing::info!("Updated eth gas price, releasing lock");
+
         }
     }
 
@@ -104,7 +107,9 @@ pub trait L1DataProvider: Send + Sync {
 /// Gas prices and DA mode
 impl L1DataProvider for GasPriceProvider {
     fn get_gas_prices(&self) -> GasPrices {
-        self.gas_prices.lock().unwrap().clone()
+        let prices = self.gas_prices.lock().unwrap();
+        tracing::info!("Getting gas prices, current eth price: {}", prices.eth_l1_gas_price);
+        prices.clone()
     }
 
     fn get_gas_prices_last_update(&self) -> SystemTime {

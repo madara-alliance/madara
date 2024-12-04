@@ -47,6 +47,7 @@ pub async fn gas_price_worker(
 }
 
 async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
+    tracing::info!("Starting gas price update");
     let block_number = eth_client.get_latest_block_number().await?;
     let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
     // The RPC responds with 301 elements for some reason. It's also just safer to manually
@@ -63,9 +64,13 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
 
     let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
 
-    tracing::info!("eth gas price: {:?} and block gas price is: {:?}", eth_gas_price, avg_blob_base_fee);
+    tracing::info!("About to update eth gas price: {}", eth_gas_price);
     l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
+    tracing::info!("After updating eth gas price");
+
+    let check_price = l1_gas_provider.get_gas_prices();
+    tracing::info!("Immediately after update, price is: {}", check_price.eth_l1_gas_price);
 
     l1_gas_provider.update_last_update_timestamp();
 
