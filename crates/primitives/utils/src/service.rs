@@ -8,6 +8,8 @@
 //! task which allows for high throughput. Inter-service communication is done
 //! via [tokio::sync] or more often through direct database reads and writes.
 //!
+//! ---
+//!
 //! # The [Service] trait
 //!
 //! This is the backbone of Madara service and serves as a common interface to
@@ -125,11 +127,11 @@
 //! }
 //! ```
 //!
-//! This sort of problem generally arises in cases similar to the example above,
-//! where the service's role is to spawn another background task. This is can
-//! happen when the service needs to start a server for example. Either avoid
-//! spawning a detached task or use mechanisms such as [ServiceContext::cancelled]
-//! to await for the service's completion.
+//! This sort of problem generally arises in cases similar to the above, where
+//! the service's role is to spawn another background task. This is can happen
+//! when the service needs to start a server for example. Either avoid spawning
+//! a detached task or use mechanisms such as [ServiceContext::cancelled] to
+//! await for the service's completion.
 //!
 //! Note that by design service shutdown is designed to be manual. We still
 //! implement a [SERVICE_GRACE_PERIOD] which is the maximum duration a service
@@ -137,15 +139,75 @@
 //! should not happen in practice but helps avoid cases where someone forgets to
 //! implement a cancellation check. More on this in the next section.
 //!
+//! ---
+//!
 //! # Cancellation status and inter-process requests
 //!
+//! Services are passed a [ServiceContext] as part of [ServiceRunner::service_loop]
+//! to be used during their execution to check for and request cancellation.
+//! Services can also spawn child services using [ServiceContext::child] to
+//! create a hierarchy of services.
+//!
+//! ## Cancellation checks
+//!
+//! The great advantage of [ServiceContext] is that it allows you to gracefully
+//! handle the cancellation of your services by checking for cancellation at
+//! logical points in the execution of your services, such as at the end of
+//! every iteration of a service's main loop. You can use the following methods
+//! to check for cancellation, each with their own caveats.
+//!
+//! - [ServiceContext::is_cancelled]: synchronous, useful in non-blocking
+//!   scenarios.
+//! - [ServiceContext::cancelled]: a future which resolves upon service
+//!   cancellation. Useful to wait on a service or alongside [tokio::select].
+//!
+//! > **Warning**
+//! > It is your responsibility to check for cancellation inside of your
+//! > service. If you do not, or your service takes longer than
+//! > [SERVICE_GRACE_PERIOD] to shutdown, then your service will be forcefully
+//! > canceled.
+//!
+//! ## Cancellation requests
+//!
+//! Any service with access to a [ServiceContext] can request the cancellation
+//! of _any other service, at any point during execution_. This can be used for
+//! error handling for example, by having a single service shut itself down
+//! without affecting other services, or for administrative and testing reasons
+//! by having a node operator toggle services from an endpoint.
+//!
+//! You can use the following methods to request for the cancellation of a
+//! service:
+//!
+//! - [ServiceContext::cancel_global]: cancels all services.
+//! - [ServiceContext::cancel_local]: cancels this service and all its children.
+//! - [ServiceContext::service_remove]: cancel a specific service.
+//!
+//! ## Start requests
+//!
+//! You can _request_ for a service to be restarted by calling
+//! [ServiceContext::service_add]. This is not guaranteed to work, and will fail
+//! if the service is already running or if it has not been registered to
+//! [the set of global services](#service-orchestration) at the start of the
+//! program.
+//!
+//! ## Atomic status checks
+//!
+//! All service updates and checks are performed atomically with the use of
+//! [tokio_util::sync::CancellationToken] and [MadaraServiceMask], which is a
+//! [std::sync::atomic::AtomicU8] bitmask with strong [std::sync::atomic::Ordering::SeqCst]
+//! cross-thread ordering of operations. Services are represented as unique
+//! powers of 2 with [MadaraService]. You can use this to construct your own
+//! mask to check the status of multiple related services at once using
+//! [MadaraServiceMask::status].
+//!
+//! > **Note**
+//! > The use of [std::sync::atomic::AtomicU8] limits the number of possible
+//! > services to 8. This might be increased in the future if new services are
+//! > added.
+//!
+//! ---
+//!
 //! # Service orchestration
-//!
-//! # Atomic status updates
-//!
-//! ## Service status updates
-//!
-//! ## Node status update
 //!
 //! [microservices]: https://en.wikipedia.org/wiki/Microservices
 
@@ -195,6 +257,22 @@ impl Display for MadaraService {
                 Self::Telemetry => "telemetry",
             }
         )
+    }
+}
+
+impl std::ops::BitOr for MadaraService {
+    type Output = u8;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self as u8 | rhs as u8
+    }
+}
+
+impl std::ops::BitAnd for MadaraService {
+    type Output = u8;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        self as u8 & rhs as u8
     }
 }
 
