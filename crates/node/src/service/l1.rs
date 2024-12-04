@@ -58,6 +58,8 @@ impl L1SyncService {
             authority && !devnet && (config.gas_price.is_none() || config.blob_gas_price.is_none());
         let gas_price_poll = config.gas_price_poll;
 
+        tracing::info!("gas price sync enabled {:?} and gas_price_poll {:?}", gas_price_sync_enabled, gas_price_poll);
+
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
