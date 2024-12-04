@@ -5517,6 +5517,7 @@ name = "m-proc-macros"
 version = "0.7.0"
 dependencies = [
  "indoc 2.0.5",
+ "jsonrpsee",
  "proc-macro2",
  "quote",
  "syn 2.0.87",

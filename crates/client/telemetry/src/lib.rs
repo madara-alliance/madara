@@ -94,7 +94,7 @@ impl Service for TelemetryService {
     }
 }
 
-async fn start_clients(telemetry_endpoints: &Vec<(String, u8)>) -> Vec<Option<(WebSocket, u8, String)>> {
+async fn start_clients(telemetry_endpoints: &[(String, u8)]) -> Vec<Option<(WebSocket, u8, String)>> {
     let client = &reqwest::Client::default();
     futures::future::join_all(telemetry_endpoints.iter().map(|(endpoint, pr)| async move {
         let websocket = match client.get(endpoint).upgrade().send().await {

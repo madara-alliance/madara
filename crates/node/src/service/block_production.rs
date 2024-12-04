@@ -71,11 +71,11 @@ impl Service for BlockProductionService {
                 .await
                 .context("Importing devnet genesis block")?;
 
-            contracts.save_to_db(&backend).context("Saving predeployed devnet contract keys to database")?;
+            contracts.save_to_db(backend).context("Saving predeployed devnet contract keys to database")?;
 
             contracts
         } else {
-            DevnetKeys::from_db(&backend).context("Getting the devnet predeployed contract keys and balances")?
+            DevnetKeys::from_db(backend).context("Getting the devnet predeployed contract keys and balances")?
         };
 
         // display devnet welcome message :)

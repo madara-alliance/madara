@@ -180,10 +180,9 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                listen_and_update_state(
-                    &eth_client,
+                state_update_worker(
                     db.backend(),
-                    &eth_client.l1_block_metrics,
+                    &eth_client,
                     chain_info.chain_id.clone(),
                     ServiceContext::new_for_testing(),
                 )

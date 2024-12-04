@@ -34,5 +34,6 @@ jobs:
       - name: Run unit tests
         run: |
           cargo test --workspace
+          cargo test --workspace --doc
         env:
           PROPTEST_CASES: 2
