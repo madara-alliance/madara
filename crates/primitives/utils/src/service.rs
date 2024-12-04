@@ -43,8 +43,13 @@
 //! ## An incorrect implementation of the [Service] trait
 //!
 //! ```rust
+//! # use mp_utils::service::Service;
+//! # use mp_utils::service::ServiceRunner;
+//! # use mp_utils::service::MadaraService;
+//!
 //! pub struct MyService;
 //!
+//! #[async_trait::async_trait]
 //! impl Service for MyService {
 //!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
 //!         runner.service_loop(move |ctx| async {
@@ -57,7 +62,7 @@
 //!             // Madara will incorrectly mark this service as ready to restart.
 //!             // In a more complex scenario, this means we might enter an
 //!             // invalid state!
-//!             anyhow::Ok(());
+//!             anyhow::Ok(())
 //!         });
 //!
 //!         anyhow::Ok(())
@@ -72,8 +77,13 @@
 //! ## A correct implementation of the [Service] trait
 //!
 //! ```rust
+//! # use mp_utils::service::Service;
+//! # use mp_utils::service::ServiceRunner;
+//! # use mp_utils::service::MadaraService;
+//!
 //! pub struct MyService;
 //!
+//! #[async_trait::async_trait]
 //! impl Service for MyService {
 //!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
 //!         runner.service_loop(move |ctx| async {
@@ -82,7 +92,7 @@
 //!             // This is correct, as the future passed to service_loop will
 //!             // only resolve once the task above completes, so Madara can
 //!             // correctly mark this service as ready to restart.
-//!             anyhow::Ok(());
+//!             anyhow::Ok(())
 //!         });
 //!
 //!         anyhow::Ok(())
@@ -97,15 +107,20 @@
 //! Or if you really need to spawn a background task:
 //!
 //! ```rust
+//! # use mp_utils::service::Service;
+//! # use mp_utils::service::ServiceRunner;
+//! # use mp_utils::service::MadaraService;
+//!
 //! pub struct MyService;
 //!
+//! #[async_trait::async_trait]
 //! impl Service for MyService {
 //!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-//!         runner.service_loop(move |ctx| async {
-//!             let ctx1 = ctx.clone();
+//!         runner.service_loop(move |mut ctx| async move {
+//!             let mut ctx1 = ctx.clone();
 //!             tokio::task::spawn(async move {
 //!                 tokio::select! {
-//!                     _ = tokio::time::sleep(std::time::Duration::MAX) = {},
+//!                     _ = tokio::time::sleep(std::time::Duration::MAX) => {},
 //!                     _ = ctx1.cancelled() => {},
 //!                 }
 //!             });
@@ -115,7 +130,7 @@
 //!             // This is correct, as even though we are spawning a background
 //!             // task we have implemented a cancellation mechanism with ctx
 //!             // and are waiting for that cancellation in service_loop.
-//!             anyhow::Ok(());
+//!             anyhow::Ok(())
 //!         });
 //!
 //!         anyhow::Ok(())
@@ -225,6 +240,10 @@ use tokio::task::JoinSet;
 pub const SERVICE_COUNT: usize = 8;
 pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
+/// Represents a [Service] as a unique power of 2.
+///
+/// Note that 0 represents [MadaraService::Monitor] as [ServiceMonitor] is
+/// always running and therefore is the genesis state of all other services.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum MadaraService {
@@ -246,7 +265,7 @@ impl Display for MadaraService {
             f,
             "{}",
             match self {
-                Self::Monitor => "none",
+                Self::Monitor => "monitor",
                 Self::Database => "database",
                 Self::L1Sync => "l1 sync",
                 Self::L2Sync => "l2 sync",
@@ -292,6 +311,7 @@ impl From<u8> for MadaraService {
     }
 }
 
+// A boolean status enum, for clarity's sake
 #[derive(PartialEq, Eq, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum MadaraServiceStatus {
     On,
@@ -346,15 +366,19 @@ impl From<bool> for MadaraServiceStatus {
 }
 
 impl MadaraServiceStatus {
+    #[inline(always)]
     pub fn is_on(&self) -> bool {
         self == &MadaraServiceStatus::On
     }
 
+    #[inline(always)]
     pub fn is_off(&self) -> bool {
         self == &MadaraServiceStatus::Off
     }
 }
 
+/// An atomic bitmask of each [MadaraService]'s status with strong
+/// [std::sync::atomic::Ordering::SeqCst] cross-thread ordering of operations.
 #[repr(transparent)]
 #[derive(Default)]
 pub struct MadaraServiceMask(std::sync::atomic::AtomicU8);
@@ -407,52 +431,31 @@ impl MadaraServiceMask {
     }
 }
 
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub enum MadaraState {
-    #[default]
-    Starting,
-    Warp,
-    Running,
-    Shutdown,
-}
-
-impl From<u8> for MadaraState {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Starting,
-            1 => Self::Warp,
-            2 => Self::Running,
-            _ => Self::Shutdown,
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct ServiceTransport {
     pub svc: MadaraService,
     pub status: MadaraServiceStatus,
 }
 
-/// Atomic state and cancellation context associated to a Service.
+/// Atomic state and cancellation context associated to a [Service].
 ///
 /// # Scope
 ///
-/// You can create a hierarchy of services by calling `ServiceContext::branch_local`.
+/// You can create a hierarchy of services by calling [ServiceContext::child].
 /// Services are said to be in the same _local scope_ if they inherit the same
-/// `token_local` cancellation token. You can think of services being local
-/// if they can cancel each other without affecting the rest of the app (this
-/// is not exact but it serves as a good mental model).
+/// `token_local` [tokio_util::sync::CancellationToken]. You can think of
+/// services being local if they can cancel each other without affecting the
+/// rest of the app.
 ///
-/// All services which descend from the same context are also said to be in the
-/// same _global scope_, that is to say any service in this scope can cancel
-/// _all_ other services in the same scope (including child services) at any
-/// time. This is true of services in the same [ServiceGroup] for example.
+/// All services which are derived from the same [ServiceContext] are said to
+/// be in the same _global scope_, that is to say any service in this scope can
+/// cancel _all_ other services in the same scope (including child services) at
+/// any time. This is true of services in the same [ServiceMonitor] for example.
 ///
-/// # Services
+/// # Service hierarchy
 ///
 /// - A services is said to be a _child service_ if it uses a context created
-///   with `ServiceContext::branch_local`
+///   with [ServiceContext::child]
 ///
 /// - A service is said to be a _parent service_ if it uses a context which was
 ///   used to create child services.
@@ -465,7 +468,6 @@ pub struct ServiceContext {
     services: Arc<MadaraServiceMask>,
     service_update_sender: Arc<tokio::sync::broadcast::Sender<ServiceTransport>>,
     service_update_receiver: Option<tokio::sync::broadcast::Receiver<ServiceTransport>>,
-    state: Arc<std::sync::atomic::AtomicU8>,
     id: MadaraService,
 }
 
@@ -477,7 +479,6 @@ impl Clone for ServiceContext {
             services: Arc::clone(&self.services),
             service_update_sender: Arc::clone(&self.service_update_sender),
             service_update_receiver: None,
-            state: Arc::clone(&self.state),
             id: self.id,
         }
     }
@@ -491,13 +492,13 @@ impl Default for ServiceContext {
             services: Arc::new(MadaraServiceMask::default()),
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(SERVICE_COUNT).0),
             service_update_receiver: None,
-            state: Arc::new(std::sync::atomic::AtomicU8::new(MadaraState::default() as u8)),
             id: MadaraService::Monitor,
         }
     }
 }
 
 impl ServiceContext {
+    /// Creates a new [Default] [ServiceContext]
     pub fn new() -> Self {
         Self::default()
     }
@@ -507,6 +508,8 @@ impl ServiceContext {
         Self { services: Arc::new(MadaraServiceMask::new_for_testing()), ..Default::default() }
     }
 
+    /// Creates a new [Default] [ServiceContext] with the state of its services
+    /// set to the specified value.
     pub fn new_with_services(services: Arc<MadaraServiceMask>) -> Self {
         Self { services, ..Default::default() }
     }
@@ -520,9 +523,9 @@ impl ServiceContext {
 
     /// Stops all services under the same local context scope.
     ///
-    /// A local context is created by calling `branch_local` and allows you to
-    /// reduce the scope of cancellation only to those services which will use
-    /// the new context.
+    /// A local context is created by calling [ServiceContext::child] and allows
+    /// you to reduce the scope of cancellation only to those services which
+    /// will use the new context.
     pub fn cancel_local(&self) {
         self.token_local.as_ref().unwrap_or(&self.token_global).cancel();
     }
@@ -531,34 +534,33 @@ impl ServiceContext {
     /// [ServiceContext] is canceled.
     ///
     /// A service is canceled after calling [ServiceContext::cancel_local],
-    /// [ServiceContext::cancel_global] or if it is marked as disabled with
+    /// [ServiceContext::cancel_global] or if it is marked for removal with
     /// [ServiceContext::service_remove].
     ///
-    /// Use this to race against other futures in a [tokio::select] for example.
+    /// Use this to race against other futures in a [tokio::select] or keep a
+    /// coroutine alive for as long as the service itself.
     #[inline(always)]
     pub async fn cancelled(&mut self) {
-        if self.state() != MadaraState::Shutdown {
-            if self.service_update_receiver.is_none() {
-                self.service_update_receiver = Some(self.service_update_sender.subscribe());
-            }
+        if self.service_update_receiver.is_none() {
+            self.service_update_receiver = Some(self.service_update_sender.subscribe());
+        }
 
-            let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
-            let token_global = &self.token_global;
-            let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
+        let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
+        let token_global = &self.token_global;
+        let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
 
-            loop {
-                // We keep checking for service status updates until a token has
-                // been canceled or this service was deactivated
-                let res = tokio::select! {
-                    svc = rx.recv() => svc.ok(),
-                    _ = token_global.cancelled() => break,
-                    _ = token_local.cancelled() => break
-                };
+        loop {
+            // We keep checking for service status updates until a token has
+            // been canceled or this service was deactivated
+            let res = tokio::select! {
+                svc = rx.recv() => svc.ok(),
+                _ = token_global.cancelled() => break,
+                _ = token_local.cancelled() => break
+            };
 
-                if let Some(ServiceTransport { svc, status }) = res {
-                    if svc == self.id && status == MadaraServiceStatus::Off {
-                        return;
-                    }
+            if let Some(ServiceTransport { svc, status }) = res {
+                if svc == self.id && status == MadaraServiceStatus::Off {
+                    return;
                 }
             }
         }
@@ -575,7 +577,7 @@ impl ServiceContext {
     /// blocking futures which can be canceled without entering an invalid
     /// state. The latter is important, so let's break this down.
     ///
-    /// - _blocking future_: this is blocking at a service level, not at the
+    /// - _blocking future_: this is blocking at a [Service] level, not at the
     ///   node level. A blocking task in this sense in a task which prevents a
     ///   service from making progress in its execution, but not necessarily the
     ///   rest of the node. A prime example of this is when you are waiting on
@@ -584,7 +586,9 @@ impl ServiceContext {
     /// - _entering an invalid state_: the entire point of [ServiceContext] is
     ///   to allow services to gracefully shutdown. We do not want to be, for
     ///   example, racing each service against a global cancellation future, as
-    ///   not every service might be cancellation safe. Put differently, we do
+    ///   not every service might be cancellation safe (we still do this
+    ///   somewhat with [SERVICE_GRACE_PERIOD] but this is a last resort and
+    ///   should not execute in normal circumstances). Put differently, we do
     ///   not want to stop in the middle of a critical computation before it has
     ///   been saved to disk.
     ///
@@ -601,30 +605,29 @@ impl ServiceContext {
     ///
     /// If this does not describe your usage, and you are waiting on a blocking
     /// future, which is cancel-safe and which does not risk putting the node
-    /// in an invalid state if cancelled, then you should be using
+    /// in an invalid state if canceled, then you should be using
     /// [ServiceContext::cancelled] instead.
     #[inline(always)]
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
             || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
             || self.services.status(self.id as u8) == MadaraServiceStatus::Off
-            || self.state() == MadaraState::Shutdown
     }
 
-    /// The id of service associated to this [ServiceContext]
+    /// The id of the [Service] associated to this [ServiceContext]
     pub fn id(&self) -> MadaraService {
         self.id
     }
 
-    /// Copies the context, maintaining its scope but with a new id.
+    /// Sets the id of this [ServiceContext]
     pub fn with_id(mut self, id: MadaraService) -> Self {
         self.id = id;
         self
     }
 
-    /// Copies the context into a new local scope.
+    /// Creates a new [ServiceContext] as a child of the current context.
     ///
-    /// Any service which uses this new context will be able to cancel the
+    /// Any [Service] which uses this new context will be able to cancel the
     /// services in the same local scope as itself, and any further child
     /// services, without affecting the rest of the global scope.
     pub fn child(&self) -> Self {
@@ -633,22 +636,24 @@ impl ServiceContext {
         Self { token_local: Some(token_local), ..Clone::clone(self) }
     }
 
-    /// Atomically checks if a set of services are running.
+    /// Atomically checks if a set of [Service]s are running.
     ///
-    /// You can combine multiple [MadaraService] into a single bitmask to
-    /// check the state of multiple services at once.
-    ///
-    /// This will return [MadaraServiceStatus::On] if _any_ of the services in
-    /// the bitmask are active.
+    /// You can combine multiple [MadaraService]s into a single bitmask to
+    /// check the state of multiple services at once. This will return
+    /// [MadaraServiceStatus::On] if _any_ of the services in the bitmask are
+    /// active.
     #[inline(always)]
     pub fn service_status(&self, svc: u8) -> MadaraServiceStatus {
         self.services.status(svc)
     }
 
-    /// Atomically marks a service as active
+    /// Atomically marks a [Service] as active.
     ///
     /// This will immediately be visible to all services in the same global
     /// scope. This is true across threads.
+    ///
+    /// You can use [ServiceContext::service_subscribe] to subscribe to changes
+    /// in the status of any service.
     #[inline(always)]
     pub fn service_add(&self, svc: MadaraService) -> MadaraServiceStatus {
         let res = self.services.activate(svc);
@@ -659,10 +664,13 @@ impl ServiceContext {
         res
     }
 
-    /// Atomically marks a service as inactive
+    /// Atomically marks a [Service] as inactive.
     ///
     /// This will immediately be visible to all services in the same global
     /// scope. This is true across threads.
+    ///
+    /// You can use [ServiceContext::service_subscribe] to subscribe to changes
+    /// in the status of any service.
     #[inline(always)]
     pub fn service_remove(&self, svc: MadaraService) -> MadaraServiceStatus {
         let res = self.services.deactivate(svc);
@@ -671,6 +679,16 @@ impl ServiceContext {
         res
     }
 
+    /// Opens up a new subscription which will complete once the status of a
+    /// [Service] has been updated.
+    ///
+    /// This subscription is stored on first call to this method and can be
+    /// accessed through the same instance of [ServiceContext].
+    ///
+    /// # Returns
+    ///
+    /// Identifying information about the service which was updated as well
+    /// as its new [MadaraServiceStatus].
     pub async fn service_subscribe(&mut self) -> Option<ServiceTransport> {
         if self.service_update_receiver.is_none() {
             self.service_update_receiver = Some(self.service_update_sender.subscribe());
@@ -686,6 +704,8 @@ impl ServiceContext {
             _ = token_local.cancelled() => None
         };
 
+        // ownership hack: `rx` cannot depend on a mutable borrow to `self` as we
+        // also depend on immutable borrows for `token_local` and `token_global`
         self.service_update_receiver = Some(rx);
         res
     }
@@ -699,28 +719,15 @@ impl ServiceContext {
     pub fn status(&self) -> MadaraServiceStatus {
         self.services.status(self.id as u8)
     }
-
-    /// Atomically checks the state of the node
-    #[inline(always)]
-    pub fn state(&self) -> MadaraState {
-        self.state.load(std::sync::atomic::Ordering::SeqCst).into()
-    }
-
-    /// Atomically sets the state of the node
-    ///
-    /// This will immediately be visible to all services in the same global
-    /// scope. This is true across threads.
-    pub fn state_advance(&mut self) -> MadaraState {
-        let state = self.state.load(std::sync::atomic::Ordering::SeqCst).saturating_add(1);
-        self.state.store(state, std::sync::atomic::Ordering::SeqCst);
-        state.into()
-    }
 }
 
-/// The app is divided into services, with each service having a different responsability within the app.
-/// Depending on the startup configuration, some services are enabled and some are disabled.
+/// A microservice in the Madara node.
 ///
-/// This trait enables launching nested services and groups.
+/// The app is divided into services, with each service handling different
+/// responsibilities within the app. Depending on the startup configuration,
+/// some services are enabled and some are disabled.
+///
+/// Services should be started with [ServiceRunner::service_loop].
 #[async_trait::async_trait]
 pub trait Service: 'static + Send + Sync {
     /// Default impl does not start any task.
@@ -742,6 +749,10 @@ impl Service for Box<dyn Service> {
     }
 }
 
+/// Wrapper around a [tokio::task::JoinSet] and a [ServiceContext].
+///
+/// Used to enforce certain shutdown behavior onto [Service]s which are started
+/// with [ServiceRunner::service_loop]
 pub struct ServiceRunner<'a> {
     ctx: ServiceContext,
     join_set: &'a mut JoinSet<anyhow::Result<MadaraService>>,
@@ -752,10 +763,18 @@ impl<'a> ServiceRunner<'a> {
         Self { ctx, join_set }
     }
 
-    pub fn ctx(&self) -> &ServiceContext {
-        &self.ctx
-    }
-
+    /// The main loop of a [Service].
+    ///
+    /// The future passed to this function should complete _only once the
+    /// service completes or is canceled_. Services that complete early will
+    /// automatically be canceled.
+    ///
+    /// > **Caution**
+    /// > As a safety mechanism, services have up to [SERVICE_GRACE_PERIOD]
+    /// > to gracefully shutdown before they are forcefully canceled. This
+    /// > should not execute in a normal context and only serves to prevent
+    /// > infinite loops on shutdown request if services have not been
+    /// > implemented correctly.
     pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
