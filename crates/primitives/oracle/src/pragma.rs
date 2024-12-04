@@ -47,6 +47,11 @@ impl PragmaOracle {
         format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
     }
 
+    /// Methods to retrieve ETH/STRK price from Pragma Oracle
+    ///
+    /// Return values:
+    /// Ok((u128, u32)) : return the price tuple as (price, decimals)
+    /// Err(e) : return an error if anything went wrong in the fetching process or eth/strk price is 0
     pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
         let response = reqwest::Client::new()
             .get(self.get_fetch_url(String::from("eth"), String::from("strk")))

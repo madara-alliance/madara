@@ -6,7 +6,7 @@ mod pragma;
 
 use pragma::*;
 
-// Wrapper enum for different oracle providers.
+/// Wrapper enum for different oracle providers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "oracle_name", content = "config")]
 pub enum Oracle {
