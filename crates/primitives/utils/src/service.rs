@@ -228,7 +228,7 @@
 //! Services are orchestrated by a [ServiceMonitor], which is responsible for
 //! registering services, marking them as active or inactive as well as starting
 //! and restarting them upon request. [ServiceMonitor] also handles the
-//! cancellation of all services upon receiving a `SIGINT`.
+//! cancellation of all services upon receiving a `SIGINT` or `SIGTERM`.
 //!
 //! > **Important**
 //! > Services cannot be started or restarted if they have not been registered
@@ -850,9 +850,9 @@ impl Default for ServiceMonitor {
 /// Orchestrates the execution of various [Service]s.
 ///
 /// A [ServiceMonitor] is responsible for registering services, starting and
-/// stopping them as well as handling `SIGINT`. Services are run to completion
-/// until no service remains, at which point the node will automatically
-/// shutdown.
+/// stopping them as well as handling `SIGINT` and `SIGTERM`. Services are run
+/// to completion until no service remains, at which point the node will
+/// automatically shutdown.
 ///
 /// All services are inactive by default. Only the services which are marked as
 /// _explicitly active_ with [ServiceMonitor::activate] will be automatically
@@ -904,10 +904,22 @@ impl ServiceMonitor {
             }
         }
 
-        // SIGINT
+        // SIGINT & SIGTERM
         let runner = ServiceRunner::new(ctx.clone(), &mut self.join_set);
         runner.service_loop(|ctx| async move {
-            tokio::signal::ctrl_c().await.expect("Failed to listen for event");
+            let sigint = tokio::signal::ctrl_c();
+            let sigterm = async {
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(mut signal) => signal.recv().await,
+                    Err(_) => core::future::pending().await, // SIGTERM not supported
+                }
+            };
+
+            tokio::select! {
+                res = sigint => res?,
+                _ = sigterm => {},
+            };
+
             ctx.cancel_global();
 
             anyhow::Ok(())

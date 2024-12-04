@@ -23,13 +23,13 @@ pub async fn l1_sync_worker(
 ) -> anyhow::Result<()> {
     if !gas_price_sync_disabled {
         tokio::try_join!(
-            state_update_worker(&backend, &eth_client, chain_id.clone(), ctx.clone()),
+            state_update_worker(&backend, &eth_client, ctx.clone()),
             gas_price_worker(&eth_client, l1_gas_provider, gas_price_poll_ms, ctx.clone()),
             sync(&backend, &eth_client, &chain_id, mempool, ctx.clone())
         )?;
     } else {
         tokio::try_join!(
-            state_update_worker(&backend, &eth_client, chain_id.clone(), ctx.clone()),
+            state_update_worker(&backend, &eth_client, ctx.clone()),
             sync(&backend, &eth_client, &chain_id, mempool, ctx.clone())
         )?;
     }
