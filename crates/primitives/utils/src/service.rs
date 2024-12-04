@@ -1,4 +1,153 @@
-//! Service trait and combinators.
+//! Madara Services Architecture
+//!
+//! Madara follows a [microservice](microservices) architecture to simplify the
+//! composability and parallelism of its services. That is to say services can
+//! be started in different orders, at different points in the program's
+//! execution, stopped and even restarted. The advantage in parallelism arises
+//! from the fact that each services runs as its own non-blocking asynchronous
+//! task which allows for high throughput. Inter-service communication is done
+//! via [tokio::sync] or more often through direct database reads and writes.
+//!
+//! # The [Service] trait
+//!
+//! This is the backbone of Madara service and serves as a common interface to
+//! all services. The [Service] trait specifies how a service must start as well
+//! as how to _identify_ it. For reasons of atomicity, services are currently
+//! identified as a single [std::sync::atomic::AtomicU8]. More about this later.
+//!
+//! Services are started from [Service::start] using [ServiceRunner::service_loop].
+//! [ServiceRunner::service_loop] is a function which takes in a future: this
+//! future represents the main loop of your service, and should run until your
+//! service completes or is canceled.
+//!
+//! > **Note**
+//! > It is assumed that services can and might be restarted. You have the
+//! > responsibility to ensure this is possible. This means you should make sure
+//! > not to use the like of [std::mem::take] or similar on your service inside
+//! > [Service::start]. In general, make sure your service still contains all
+//! > the necessary information it needs to restart. This might mean certain
+//! > attributes need to be stored as a [std::sync::Arc] and cloned so that the
+//! > future in [ServiceRunner::service_loop] can safely take ownership of them.
+//!
+//! It is part of the contract of the [Service] trait that calls to
+//! [ServiceRunner::service_loop] should not complete until the service has
+//! _finished_ execution (this should be evident by the name) as this is used
+//! to mark a service as complete and therefore ready to restart. Services where
+//! [ServiceRunner::service_loop] completes _before_ the service has finished
+//! execution will be automatically marked for shutdown as a safety mechanism.
+//! This is done as a safeguard to avoid an invalid state where it would be
+//! impossible for the node to shutdown.
+//!
+//! ## An incorrect implementation of the [Service] trait
+//!
+//! ```rust
+//! pub struct MyService;
+//!
+//! impl Service for MyService {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |ctx| async {
+//!             tokio::task::spawn(async {
+//!                 tokio::time::sleep(std::time::Duration::MAX).await;
+//!             });
+//!
+//!             // This is incorrect, as the future passed to service_loop will
+//!             // resolve before the task spawned above completes, meaning
+//!             // Madara will incorrectly mark this service as ready to restart.
+//!             // In a more complex scenario, this means we might enter an
+//!             // invalid state!
+//!             anyhow::Ok(());
+//!         });
+//!
+//!         anyhow::Ok(())
+//!     }
+//!
+//!     fn id(&self) -> MadaraService {
+//!         MadaraService::Monitor
+//!     }
+//! }
+//! ```
+//!
+//! ## A correct implementation of the [Service] trait
+//!
+//! ```rust
+//! pub struct MyService;
+//!
+//! impl Service for MyService {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |ctx| async {
+//!             tokio::time::sleep(std::time::Duration::MAX).await;
+//!
+//!             // This is correct, as the future passed to service_loop will
+//!             // only resolve once the task above completes, so Madara can
+//!             // correctly mark this service as ready to restart.
+//!             anyhow::Ok(());
+//!         });
+//!
+//!         anyhow::Ok(())
+//!     }
+//!
+//!     fn id(&self) -> MadaraService {
+//!         MadaraService::Monitor
+//!     }
+//! }
+//! ```
+//!
+//! Or if you really need to spawn a background task:
+//!
+//! ```rust
+//! pub struct MyService;
+//!
+//! impl Service for MyService {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |ctx| async {
+//!             let ctx1 = ctx.clone();
+//!             tokio::task::spawn(async move {
+//!                 tokio::select! {
+//!                     _ = tokio::time::sleep(std::time::Duration::MAX) = {},
+//!                     _ = ctx1.cancelled() => {},
+//!                 }
+//!             });
+//!
+//!             ctx.cancelled().await;
+//!
+//!             // This is correct, as even though we are spawning a background
+//!             // task we have implemented a cancellation mechanism with ctx
+//!             // and are waiting for that cancellation in service_loop.
+//!             anyhow::Ok(());
+//!         });
+//!
+//!         anyhow::Ok(())
+//!     }
+//!
+//!     fn id(&self) -> MadaraService {
+//!         MadaraService::Monitor
+//!     }
+//! }
+//! ```
+//!
+//! This sort of problem generally arises in cases similar to the example above,
+//! where the service's role is to spawn another background task. This is can
+//! happen when the service needs to start a server for example. Either avoid
+//! spawning a detached task or use mechanisms such as [ServiceContext::cancelled]
+//! to await for the service's completion.
+//!
+//! Note that by design service shutdown is designed to be manual. We still
+//! implement a [SERVICE_GRACE_PERIOD] which is the maximum duration a service
+//! is allowed to take to shutdown, after which it is forcefully canceled. This
+//! should not happen in practice but helps avoid cases where someone forgets to
+//! implement a cancellation check. More on this in the next section.
+//!
+//! # Cancellation status and inter-process requests
+//!
+//! # Service orchestration
+//!
+//! # Atomic status updates
+//!
+//! ## Service status updates
+//!
+//! ## Node status update
+//!
+//! [microservices]: https://en.wikipedia.org/wiki/Microservices
 
 use anyhow::Context;
 use futures::Future;
@@ -7,10 +156,12 @@ use std::{
     fmt::{Debug, Display},
     panic,
     sync::Arc,
+    time::Duration,
 };
 use tokio::task::JoinSet;
 
-const SERVICE_COUNT: usize = 8;
+pub const SERVICE_COUNT: usize = 8;
+pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -527,7 +678,7 @@ impl<'a> ServiceRunner<'a> {
         &self.ctx
     }
 
-    pub fn start_service<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
+    pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
@@ -539,7 +690,15 @@ impl<'a> ServiceRunner<'a> {
                 tracing::debug!("Starting {id}");
             }
 
-            runner(ctx).await.map_err(Into::into)?;
+            // If a service is implemented correctly, `stopper` should never
+            // cancel first. This is a safety measure in case someone forgets to
+            // implement a cancellation check along some branch of the service's
+            // execution, or if they don't read the docs :D
+            let ctx1 = ctx.clone();
+            tokio::select! {
+                res = runner(ctx) => res.map_err(Into::into)?,
+                _ = Self::stopper(ctx1, &id) => {},
+            }
 
             if id != MadaraService::Monitor {
                 tracing::debug!("Shutting down {id}");
@@ -547,6 +706,13 @@ impl<'a> ServiceRunner<'a> {
 
             Ok(id)
         });
+    }
+
+    async fn stopper(mut ctx: ServiceContext, id: &MadaraService) {
+        ctx.cancelled().await;
+        tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
+
+        tracing::info!("forcefully shutting down {id}");
     }
 }
 
@@ -602,7 +768,7 @@ impl ServiceMonitor {
         }
 
         let runner = ServiceRunner::new(ctx.clone(), &mut self.join_set);
-        runner.start_service(|ctx| async move {
+        runner.service_loop(|ctx| async move {
             tokio::signal::ctrl_c().await.expect("Failed to listen for event");
             ctx.cancel_global();
 

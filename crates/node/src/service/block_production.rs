@@ -91,7 +91,7 @@ impl Service for BlockProductionService {
             Arc::clone(l1_data_provider),
         )?;
 
-        runner.start_service(move |ctx| block_production_task.block_production_task(ctx));
+        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
 
         Ok(())
     }

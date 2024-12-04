@@ -59,7 +59,7 @@ impl Service for L2SyncService {
         } = self.clone();
         let telemetry = Arc::clone(&self.telemetry);
 
-        runner.start_service(move |ctx| {
+        runner.service_loop(move |ctx| {
             mc_sync::l2_sync_worker(
                 db_backend,
                 ctx,

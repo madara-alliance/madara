@@ -26,7 +26,7 @@ impl Service for GatewayService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
 
-        runner.start_service(move |ctx| {
+        runner.service_loop(move |ctx| {
             mc_gateway_server::service::start_server(
                 db_backend,
                 add_transaction_provider,

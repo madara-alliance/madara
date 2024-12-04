@@ -97,7 +97,7 @@ impl Service for L1SyncService {
             // enabled
 
             let eth_client = Arc::clone(eth_client);
-            runner.start_service(move |ctx| {
+            runner.service_loop(move |ctx| {
                 mc_eth::sync::l1_sync_worker(
                     db_backend,
                     eth_client,
