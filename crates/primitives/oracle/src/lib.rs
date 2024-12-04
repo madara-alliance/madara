@@ -1,10 +1,12 @@
 use anyhow::bail;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 mod pragma;
 
 use pragma::*;
 
+// Wrapper enum for different oracle providers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "oracle_name", content = "config")]
 pub enum Oracle {
@@ -12,14 +14,14 @@ pub enum Oracle {
 }
 
 impl Oracle {
-    pub fn new(oracle_name: &str, url: String, key: String) -> anyhow::Result<Self> {
+    pub fn new(oracle_name: &str, url: Url, key: String) -> anyhow::Result<Self> {
         match oracle_name {
             "Pragma" => Ok(Oracle::Pragma(PragmaOracle::new(url, key))),
             _ => bail!("Unknown Oracle name"),
         }
     }
 
-    pub fn set_base_url(&mut self, url: String) {
+    pub fn set_base_url(&mut self, url: Url) {
         match self {
             Oracle::Pragma(pragma_oracle) => pragma_oracle.api_url = url,
         }

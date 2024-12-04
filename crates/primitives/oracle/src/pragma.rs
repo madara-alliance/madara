@@ -1,6 +1,7 @@
 use std::fmt;
 
 use anyhow::{bail, Context};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
@@ -8,7 +9,7 @@ pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PragmaOracle {
     #[serde(default = "default_oracle_api_url")]
-    pub api_url: String,
+    pub api_url: Url,
     #[serde(default)]
     pub api_key: String,
     #[serde(default)]
@@ -32,7 +33,7 @@ impl Default for PragmaOracle {
 }
 
 impl PragmaOracle {
-    pub fn new(api_url: String, api_key: String) -> Self {
+    pub fn new(api_url: Url, api_key: String) -> Self {
         Self {
             api_url,
             api_key,
@@ -123,8 +124,9 @@ impl Default for PriceBounds {
     }
 }
 
-fn default_oracle_api_url() -> String {
-    DEFAULT_API_URL.into()
+fn default_oracle_api_url() -> Url {
+    // safe unwrap because its parsed from a const
+    Url::parse(DEFAULT_API_URL).unwrap()
 }
 
 #[derive(Deserialize, Debug)]

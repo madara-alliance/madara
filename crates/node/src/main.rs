@@ -111,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(ref oracle_url) = run_cmd.l1_sync_params.oracle_url {
         if let Some(ref oracle_api_key) = run_cmd.l1_sync_params.oracle_api_key {
-            let oracle = Oracle::new("Pragma", oracle_url.to_string(), oracle_api_key.clone())?;
+            let oracle = Oracle::new("Pragma", oracle_url.clone(), oracle_api_key.clone())?;
             l1_gas_setter.set_oracle_provider(oracle);
         }
     }

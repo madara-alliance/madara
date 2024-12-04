@@ -33,8 +33,9 @@ impl GasPriceProvider {
             || self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed)
     }
 
-    pub fn set_oracle_provider(&mut self, oracle_provider: Oracle) {
+    pub fn set_oracle_provider(&mut self, oracle_provider: Oracle) -> &mut Self {
         self.oracle_provider = Some(Arc::new(oracle_provider));
+        self
     }
 
     pub fn set_gas_prices(&self, new_prices: GasPrices) {
