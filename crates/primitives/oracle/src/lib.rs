@@ -21,10 +21,11 @@ impl Oracle {
         }
     }
 
-    pub fn set_base_url(&mut self, url: Url) {
+    pub fn set_base_url(&mut self, url: Url) -> &mut Self {
         match self {
             Oracle::Pragma(pragma_oracle) => pragma_oracle.api_url = url,
         }
+        self
     }
 
     pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
@@ -33,10 +34,11 @@ impl Oracle {
         }
     }
 
-    pub fn set_api_key(&mut self, key: String) {
+    pub fn set_api_key(&mut self, key: String) -> &mut Self {
         match self {
             Oracle::Pragma(pragma_oracle) => pragma_oracle.api_key = key,
         }
+        self
     }
 
     pub fn get_fetch_url(&self, base: String, quote: String) -> String {
