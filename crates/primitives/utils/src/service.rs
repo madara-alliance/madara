@@ -259,7 +259,7 @@ pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 /// always running and therefore is the genesis state of all other services.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum MadaraService {
+pub enum MadaraServiceId {
     #[default]
     Monitor = 0,
     Database = 1,
@@ -272,7 +272,7 @@ pub enum MadaraService {
     Telemetry = 128,
 }
 
-impl Display for MadaraService {
+impl Display for MadaraServiceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -292,7 +292,7 @@ impl Display for MadaraService {
     }
 }
 
-impl std::ops::BitOr for MadaraService {
+impl std::ops::BitOr for MadaraServiceId {
     type Output = u8;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -300,7 +300,7 @@ impl std::ops::BitOr for MadaraService {
     }
 }
 
-impl std::ops::BitAnd for MadaraService {
+impl std::ops::BitAnd for MadaraServiceId {
     type Output = u8;
 
     fn bitand(self, rhs: Self) -> Self::Output {
@@ -308,7 +308,7 @@ impl std::ops::BitAnd for MadaraService {
     }
 }
 
-impl From<u8> for MadaraService {
+impl From<u8> for MadaraServiceId {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::Monitor,
@@ -321,6 +321,14 @@ impl From<u8> for MadaraService {
             64 => Self::Gateway,
             _ => Self::Telemetry,
         }
+    }
+}
+
+impl MadaraServiceId {
+    /// Converts a [MadaraServiceId] into a unique index which can be used in an
+    /// array.
+    pub fn index(&self) -> usize {
+        (*self as u8).to_be().leading_zeros() as usize
     }
 }
 
@@ -413,20 +421,20 @@ impl MadaraServiceMask {
     }
 
     #[inline(always)]
-    pub fn activate(&self, svc: MadaraService) -> MadaraServiceStatus {
+    pub fn activate(&self, svc: MadaraServiceId) -> MadaraServiceStatus {
         let prev = self.0.fetch_or(svc as u8, std::sync::atomic::Ordering::SeqCst);
         (prev & svc as u8 > 0).into()
     }
 
     #[inline(always)]
-    pub fn deactivate(&self, svc: MadaraService) -> MadaraServiceStatus {
+    pub fn deactivate(&self, svc: MadaraServiceId) -> MadaraServiceStatus {
         let svc = svc as u8;
         let prev = self.0.fetch_and(!svc, std::sync::atomic::Ordering::SeqCst);
         (prev & svc > 0).into()
     }
 
-    fn active_set(&self) -> Vec<MadaraService> {
-        let mut i = MadaraService::Telemetry as u8;
+    fn active_set(&self) -> Vec<MadaraServiceId> {
+        let mut i = MadaraServiceId::Telemetry as u8;
         let state = self.0.load(std::sync::atomic::Ordering::SeqCst);
         let mut set = Vec::with_capacity(SERVICE_COUNT);
 
@@ -434,7 +442,7 @@ impl MadaraServiceMask {
             let mask = i & state;
 
             if mask > 0 {
-                set.push(MadaraService::from(mask));
+                set.push(MadaraServiceId::from(mask));
             }
 
             i >>= 1;
@@ -475,7 +483,7 @@ pub struct ServiceContext {
     services: Arc<MadaraServiceMask>,
     service_update_sender: Arc<tokio::sync::broadcast::Sender<ServiceTransport>>,
     service_update_receiver: Option<tokio::sync::broadcast::Receiver<ServiceTransport>>,
-    id: MadaraService,
+    id: MadaraServiceId,
 }
 
 impl Clone for ServiceContext {
@@ -499,7 +507,7 @@ impl Default for ServiceContext {
             services: Arc::new(MadaraServiceMask::default()),
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(SERVICE_COUNT).0),
             service_update_receiver: None,
-            id: MadaraService::Monitor,
+            id: MadaraServiceId::Monitor,
         }
     }
 }
@@ -565,8 +573,8 @@ impl ServiceContext {
                 _ = token_local.cancelled() => break
             };
 
-            if let Some(ServiceTransport { svc, status }) = res {
-                if svc == self.id && status == MadaraServiceStatus::Off {
+            if let Some(ServiceTransport { svc_id, status }) = res {
+                if svc_id == self.id && status == MadaraServiceStatus::Off {
                     return;
                 }
             }
@@ -622,12 +630,12 @@ impl ServiceContext {
     }
 
     /// The id of the [Service] associated to this [ServiceContext]
-    pub fn id(&self) -> MadaraService {
+    pub fn id(&self) -> MadaraServiceId {
         self.id
     }
 
     /// Sets the id of this [ServiceContext]
-    pub fn with_id(mut self, id: MadaraService) -> Self {
+    pub fn with_id(mut self, id: MadaraServiceId) -> Self {
         self.id = id;
         self
     }
@@ -662,11 +670,11 @@ impl ServiceContext {
     /// You can use [ServiceContext::service_subscribe] to subscribe to changes
     /// in the status of any service.
     #[inline(always)]
-    pub fn service_add(&self, svc: MadaraService) -> MadaraServiceStatus {
-        let res = self.services.activate(svc);
+    pub fn service_add(&self, svc_id: MadaraServiceId) -> MadaraServiceStatus {
+        let res = self.services.activate(svc_id);
 
         // TODO: make an internal server error out of this
-        let _ = self.service_update_sender.send(ServiceTransport { svc, status: MadaraServiceStatus::On });
+        let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::On });
 
         res
     }
@@ -679,9 +687,9 @@ impl ServiceContext {
     /// You can use [ServiceContext::service_subscribe] to subscribe to changes
     /// in the status of any service.
     #[inline(always)]
-    pub fn service_remove(&self, svc: MadaraService) -> MadaraServiceStatus {
-        let res = self.services.deactivate(svc);
-        let _ = self.service_update_sender.send(ServiceTransport { svc, status: MadaraServiceStatus::Off });
+    pub fn service_remove(&self, svc_id: MadaraServiceId) -> MadaraServiceStatus {
+        let res = self.services.deactivate(svc_id);
+        let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::Off });
 
         res
     }
@@ -733,7 +741,7 @@ impl ServiceContext {
 /// Used as part of [ServiceContext::service_subscribe].
 #[derive(Clone, Copy)]
 pub struct ServiceTransport {
-    pub svc: MadaraService,
+    pub svc_id: MadaraServiceId,
     pub status: MadaraServiceStatus,
 }
 
@@ -751,7 +759,7 @@ pub trait Service: 'static + Send + Sync {
         Ok(())
     }
 
-    fn id(&self) -> MadaraService;
+    fn id(&self) -> MadaraServiceId;
 }
 
 #[async_trait::async_trait]
@@ -760,7 +768,7 @@ impl Service for Box<dyn Service> {
         self.as_mut().start(_runner).await
     }
 
-    fn id(&self) -> MadaraService {
+    fn id(&self) -> MadaraServiceId {
         self.as_ref().id()
     }
 }
@@ -771,11 +779,11 @@ impl Service for Box<dyn Service> {
 /// with [ServiceRunner::service_loop]
 pub struct ServiceRunner<'a> {
     ctx: ServiceContext,
-    join_set: &'a mut JoinSet<anyhow::Result<MadaraService>>,
+    join_set: &'a mut JoinSet<anyhow::Result<MadaraServiceId>>,
 }
 
 impl<'a> ServiceRunner<'a> {
-    fn new(ctx: ServiceContext, join_set: &'a mut JoinSet<anyhow::Result<MadaraService>>) -> Self {
+    fn new(ctx: ServiceContext, join_set: &'a mut JoinSet<anyhow::Result<MadaraServiceId>>) -> Self {
         Self { ctx, join_set }
     }
 
@@ -799,7 +807,7 @@ impl<'a> ServiceRunner<'a> {
         let Self { ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id();
-            if id != MadaraService::Monitor {
+            if id != MadaraServiceId::Monitor {
                 tracing::debug!("Starting {id}");
             }
 
@@ -813,7 +821,7 @@ impl<'a> ServiceRunner<'a> {
                 _ = Self::stopper(ctx1, &id) => {},
             }
 
-            if id != MadaraService::Monitor {
+            if id != MadaraServiceId::Monitor {
                 tracing::debug!("Shutting down {id}");
             }
 
@@ -821,7 +829,7 @@ impl<'a> ServiceRunner<'a> {
         });
     }
 
-    async fn stopper(mut ctx: ServiceContext, id: &MadaraService) {
+    async fn stopper(mut ctx: ServiceContext, id: &MadaraServiceId) {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
 
@@ -829,22 +837,12 @@ impl<'a> ServiceRunner<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct ServiceMonitor {
     services: [Option<Box<dyn Service>>; SERVICE_COUNT],
-    join_set: JoinSet<anyhow::Result<MadaraService>>,
+    join_set: JoinSet<anyhow::Result<MadaraServiceId>>,
     status_request: Arc<MadaraServiceMask>,
     status_actual: Arc<MadaraServiceMask>,
-}
-
-impl Default for ServiceMonitor {
-    fn default() -> Self {
-        Self {
-            services: Default::default(),
-            join_set: Default::default(),
-            status_request: Default::default(),
-            status_actual: Arc::new(MadaraServiceMask(std::sync::atomic::AtomicU8::new(u8::MAX))),
-        }
-    }
 }
 
 /// Orchestrates the execution of various [Service]s.
@@ -865,7 +863,7 @@ impl ServiceMonitor {
     /// Registers a [Service] to the [ServiceMonitor]. This service is
     /// _inactive_ by default and can be started at a later time.
     pub fn with(mut self, svc: impl Service) -> anyhow::Result<Self> {
-        let idx = (svc.id() as u8).to_be().leading_zeros() as usize;
+        let idx = svc.id().index();
         self.services[idx] = match self.services[idx] {
             Some(_) => anyhow::bail!("Services has already been added"),
             None => Some(Box::new(svc)),
@@ -876,7 +874,7 @@ impl ServiceMonitor {
 
     /// Marks a [Service] as active, meaning it will be started automatically
     /// when calling [ServiceMonitor::start].
-    pub fn activate(&self, id: MadaraService) {
+    pub fn activate(&self, id: MadaraServiceId) {
         self.status_request.activate(id);
     }
 
@@ -945,19 +943,20 @@ impl ServiceMonitor {
                 },
                 // A service has had its status updated, check if it is a
                 // restart request
-                Some(ServiceTransport { svc, status }) = ctx.service_subscribe() => {
+                Some(ServiceTransport { svc_id, status }) = ctx.service_subscribe() => {
                     if status == MadaraServiceStatus::On {
-                        if let Some(svc) = self.services[svc as usize].as_mut() {
-                            let id = svc.id();
-                            if self.status_actual.status(id as u8) == MadaraServiceStatus::Off {
-                                self.status_actual.activate(id);
-                                self.status_request.activate(id);
+                        if let Some(svc) = self.services[svc_id.index()].as_mut() {
+                            if self.status_actual.status(svc_id as u8) == MadaraServiceStatus::Off {
+                                self.status_actual.activate(svc_id);
 
-                                let ctx = ctx.child().with_id(id);
+                                let ctx = ctx.child().with_id(svc_id);
                                 let runner = ServiceRunner::new(ctx, &mut self.join_set);
                                 svc.start(runner)
                                     .await
                                     .context("Starting service")?;
+                            } else {
+                                // reset request
+                                self.status_request.deactivate(svc_id);
                             }
                         }
                     }

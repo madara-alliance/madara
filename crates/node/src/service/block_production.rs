@@ -7,7 +7,7 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{
     block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
 };
-use mp_utils::service::{MadaraService, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 
 use crate::cli::block_production::BlockProductionParams;
 
@@ -96,7 +96,7 @@ impl Service for BlockProductionService {
         Ok(())
     }
 
-    fn id(&self) -> MadaraService {
-        MadaraService::BlockProduction
+    fn id(&self) -> MadaraServiceId {
+        MadaraServiceId::BlockProduction
     }
 }

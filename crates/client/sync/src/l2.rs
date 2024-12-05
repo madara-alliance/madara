@@ -1,5 +1,6 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use crate::fetch::fetchers::fetch_pending_block_and_updates;
+use crate::fetch::fetchers::WarpUpdateConfig;
 use crate::fetch::l2_fetch_task;
 use crate::fetch::L2FetchConfig;
 use crate::utils::trim_hash;
@@ -242,12 +243,10 @@ pub struct L2SyncConfig {
     pub flush_every_n_seconds: u64,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
-    pub warp_update: bool,
-    pub warp_update_port_rpc: u16,
-    pub warp_update_port_fgw: u16,
     pub chain_id: ChainId,
     pub telemetry: Arc<TelemetryHandle>,
     pub block_importer: Arc<BlockImporter>,
+    pub warp_update: Option<WarpUpdateConfig>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
@@ -294,8 +293,6 @@ pub async fn sync(
             stop_on_sync: config.stop_on_sync,
             sync_parallelism: config.sync_parallelism as usize,
             warp_update: config.warp_update,
-            warp_update_port_rpc: config.warp_update_port_rpc,
-            warp_update_port_fgw: config.warp_update_port_fgw,
         },
     ));
     join_set.spawn(l2_block_conversion_task(

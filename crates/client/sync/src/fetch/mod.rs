@@ -13,6 +13,8 @@ use url::Url;
 
 use crate::fetch::fetchers::fetch_block_and_updates;
 
+use self::fetchers::WarpUpdateConfig;
+
 pub mod fetchers;
 
 pub struct L2FetchConfig {
@@ -23,9 +25,7 @@ pub struct L2FetchConfig {
     pub n_blocks_to_sync: Option<u64>,
     pub stop_on_sync: bool,
     pub sync_parallelism: usize,
-    pub warp_update: bool,
-    pub warp_update_port_rpc: u16,
-    pub warp_update_port_fgw: u16,
+    pub warp_update: Option<WarpUpdateConfig>,
 }
 
 pub async fn l2_fetch_task(
@@ -35,11 +35,9 @@ pub async fn l2_fetch_task(
     mut config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
-    // let backend = &backend;
+    let L2FetchConfig { first_block, ref warp_update, .. } = config;
 
-    let L2FetchConfig { first_block, warp_update, warp_update_port_rpc, warp_update_port_fgw, .. } = config;
-
-    if warp_update {
+    if let Some(WarpUpdateConfig { warp_update_port_rpc, warp_update_port_fgw, deferred_services }) = warp_update {
         let client = jsonrpsee::http_client::HttpClientBuilder::default()
             .build(format!("http://localhost:{warp_update_port_rpc}"))
             .expect("Building client");
@@ -76,6 +74,10 @@ pub async fn l2_fetch_task(
         config.n_blocks_to_sync = config.n_blocks_to_sync.map(|n| n - (next_block - first_block));
         config.first_block = next_block;
         config.sync_parallelism = save;
+
+        for svc_id in deferred_services {
+            ctx.service_add(*svc_id);
+        }
     }
 
     let mut next_block = match sync_blocks(backend.as_ref(), &provider, &mut ctx, &config).await? {
@@ -266,9 +268,7 @@ mod test_l2_fetch_task {
                             n_blocks_to_sync: Some(5),
                             stop_on_sync: false,
                             sync_parallelism: 10,
-                            warp_update: false,
-                            warp_update_port_rpc: 9943,
-                            warp_update_port_fgw: 8080,
+                            warp_update: None,
                         },
                     ),
                 )

@@ -17,8 +17,9 @@ use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
+use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_utils::service::{MadaraService, Service, ServiceMonitor};
+use mp_utils::service::{MadaraServiceId, Service, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 
 const GREET_IMPL_NAME: &str = "Madara";
@@ -29,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
-    let mut run_cmd: RunCmd = RunCmd::parse().apply_arg_preset();
+    let mut run_cmd = RunCmd::parse().apply_arg_preset();
 
     // Setting up analytics
 
@@ -64,10 +65,10 @@ async fn main() -> anyhow::Result<()> {
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("MADARA_BUILD_VERSION");
 
-    tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
+    tracing::info!("🥷 {} Node", GREET_IMPL_NAME);
     tracing::info!("✌️  Version {}", node_version);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
-    tracing::info!("🏷  Node Name: {}", node_name);
+    tracing::info!("🏷 Node Name: {}", node_name);
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     tracing::info!("👤 Role: {}", role);
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
@@ -165,13 +166,41 @@ async fn main() -> anyhow::Result<()> {
         (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
     } else {
         // Block sync service. (full node)
+        let warp_update = if run_cmd.args_preset.warp_update_receiver {
+            let mut deferred_services = vec![];
+
+            if !run_cmd.rpc_params.rpc_disable {
+                deferred_services.push(MadaraServiceId::RpcUser);
+            }
+
+            if run_cmd.rpc_params.rpc_admin {
+                deferred_services.push(MadaraServiceId::RpcAdmin);
+            }
+
+            if run_cmd.gateway_params.feeder_gateway_enable {
+                deferred_services.push(MadaraServiceId::Gateway);
+            }
+
+            if run_cmd.telemetry_params.telemetry {
+                deferred_services.push(MadaraServiceId::Telemetry);
+            }
+
+            Some(WarpUpdateConfig {
+                warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+                warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+                deferred_services,
+            })
+        } else {
+            None
+        };
+
         let l2_sync_service = L2SyncService::new(
             &run_cmd.l2_sync_params,
             Arc::clone(&chain_config),
             &service_db,
             importer,
             service_telemetry.new_handle(),
-            run_cmd.args_preset.warp_update_receiver,
+            warp_update,
         )
         .await
         .context("Initializing sync service")?;
@@ -232,32 +261,32 @@ async fn main() -> anyhow::Result<()> {
     //
     // app.activate(MadaraService::Database);
 
-    if run_cmd.telemetry_params.telemetry {
-        app.activate(MadaraService::Telemetry);
-    }
-
     let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
-        app.activate(MadaraService::L1Sync);
+        app.activate(MadaraServiceId::L1Sync);
     }
 
     if run_cmd.is_sequencer() {
-        app.activate(MadaraService::BlockProduction);
+        app.activate(MadaraServiceId::BlockProduction);
     } else if !run_cmd.l2_sync_params.l2_sync_disabled {
-        app.activate(MadaraService::L2Sync);
+        app.activate(MadaraServiceId::L2Sync);
     }
 
-    if !run_cmd.rpc_params.rpc_disable {
-        app.activate(MadaraService::RpcUser);
+    if !run_cmd.rpc_params.rpc_disable && !run_cmd.args_preset.warp_update_receiver {
+        app.activate(MadaraServiceId::RpcUser);
     }
 
-    if !run_cmd.rpc_params.rpc_disable && !run_cmd.rpc_params.rpc_admin {
-        app.activate(MadaraService::RpcAdmin);
+    if run_cmd.rpc_params.rpc_admin && !run_cmd.args_preset.warp_update_receiver {
+        app.activate(MadaraServiceId::RpcAdmin);
     }
 
-    if run_cmd.gateway_params.feeder_gateway_enable || run_cmd.gateway_params.gateway_enable {
-        app.activate(MadaraService::Gateway);
+    if run_cmd.gateway_params.feeder_gateway_enable && !run_cmd.args_preset.warp_update_receiver {
+        app.activate(MadaraServiceId::Gateway);
+    }
+
+    if run_cmd.telemetry_params.telemetry && !run_cmd.args_preset.warp_update_receiver {
+        app.activate(MadaraServiceId::Telemetry);
     }
 
     app.start().await?;

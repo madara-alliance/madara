@@ -13,6 +13,7 @@ use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
 use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
+use mp_utils::service::MadaraServiceId;
 use mp_utils::{stopwatch_end, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
@@ -48,12 +49,18 @@ pub struct FetchConfig {
     pub stop_on_sync: bool,
     /// Number of blocks to fetch in parallel during the sync process
     pub sync_parallelism: u8,
-    /// True if the node is called with `--warp-update-receiver`
-    pub warp_update: bool,
+    /// Warp update configuration
+    pub warp_update: Option<WarpUpdateConfig>,
+}
+
+#[derive(Clone, Debug)]
+pub struct WarpUpdateConfig {
     /// The port used for nodes to make rpc calls during a warp update.
     pub warp_update_port_rpc: u16,
     /// The port used for nodes to send blocks during a warp update.
     pub warp_update_port_fgw: u16,
+    /// A list of services to start once warp update has completed.
+    pub deferred_services: Vec<MadaraServiceId>,
 }
 
 pub async fn fetch_pending_block_and_updates(

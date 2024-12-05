@@ -1,11 +1,11 @@
 use crate::cli::L2SyncParams;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, MadaraBackend};
-use mc_sync::fetch::fetchers::FetchConfig;
+use mc_sync::fetch::fetchers::{FetchConfig, WarpUpdateConfig};
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraService, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -27,11 +27,11 @@ impl L2SyncService {
         db: &DatabaseService,
         block_importer: Arc<BlockImporter>,
         telemetry: TelemetryHandle,
-        warp_update: bool,
+        warp_update: Option<WarpUpdateConfig>,
     ) -> anyhow::Result<Self> {
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
 
-        tracing::info!("🛰️  Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
+        tracing::info!("🛰️ Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
 
         Ok(Self {
             db_backend: Arc::clone(db.backend()),
@@ -55,9 +55,9 @@ impl Service for L2SyncService {
             starting_block,
             pending_block_poll_interval,
             block_importer,
-            ..
+            telemetry,
         } = self.clone();
-        let telemetry = Arc::clone(&self.telemetry);
+        let telemetry = Arc::clone(&telemetry);
 
         runner.service_loop(move |ctx| {
             mc_sync::l2_sync_worker(
@@ -77,7 +77,7 @@ impl Service for L2SyncService {
         Ok(())
     }
 
-    fn id(&self) -> MadaraService {
-        MadaraService::L2Sync
+    fn id(&self) -> MadaraServiceId {
+        MadaraServiceId::L2Sync
     }
 }

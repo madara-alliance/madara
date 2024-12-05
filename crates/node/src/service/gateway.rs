@@ -1,7 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::service::{MadaraService, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -40,7 +40,7 @@ impl Service for GatewayService {
         Ok(())
     }
 
-    fn id(&self) -> MadaraService {
-        MadaraService::Gateway
+    fn id(&self) -> MadaraServiceId {
+        MadaraServiceId::Gateway
     }
 }

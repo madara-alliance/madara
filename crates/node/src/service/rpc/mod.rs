@@ -4,7 +4,7 @@ use jsonrpsee::server::ServerHandle;
 
 use mc_db::MadaraBackend;
 use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::{MadaraService, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -61,7 +61,7 @@ impl Service for RpcService {
 
         self.server_handle = Some(server_handle);
 
-        runner.service_loop(move |mut ctx| async move {
+        runner.service_loop(move |ctx| async move {
             let starknet = Starknet::new(
                 backend.clone(),
                 add_txs_method_provider.clone(),
@@ -103,11 +103,7 @@ impl Service for RpcService {
                 }
             };
 
-            // Services need to be running until they are stopped or else the
-            // monitor will enter an invalid state. Maybe there is a better way
-            // to represent this contract but for now this works.
             start_server(server_config, ctx.clone(), stop_handle).await?;
-            ctx.cancelled().await;
 
             anyhow::Ok(())
         });
@@ -115,10 +111,10 @@ impl Service for RpcService {
         anyhow::Ok(())
     }
 
-    fn id(&self) -> MadaraService {
+    fn id(&self) -> MadaraServiceId {
         match self.rpc_type {
-            RpcType::User => MadaraService::RpcUser,
-            RpcType::Admin => MadaraService::RpcAdmin,
+            RpcType::User => MadaraServiceId::RpcUser,
+            RpcType::Admin => MadaraServiceId::RpcAdmin,
         }
     }
 }

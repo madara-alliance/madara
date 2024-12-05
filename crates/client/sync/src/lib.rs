@@ -68,12 +68,10 @@ pub async fn l2_sync_worker(
         pending_block_poll_interval: sync_config.pending_block_poll_interval,
         ignore_block_order,
         sync_parallelism: fetch_config.sync_parallelism,
-        warp_update: fetch_config.warp_update,
-        warp_update_port_rpc: fetch_config.warp_update_port_rpc,
-        warp_update_port_fgw: fetch_config.warp_update_port_fgw,
         chain_id: backend.chain_config().chain_id.clone(),
         telemetry: sync_config.telemetry,
         block_importer: sync_config.block_importer,
+        warp_update: fetch_config.warp_update,
     };
 
     l2::sync(backend, provider, ctx, l2_config).await?;

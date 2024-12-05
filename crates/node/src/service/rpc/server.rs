@@ -43,6 +43,8 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 }
 
 /// Start RPC server listening on given address.
+///
+/// This future will complete once the server has been shutdown.
 pub async fn start_server<'a>(
     config: ServerConfig,
     mut ctx: ServiceContext,
@@ -159,14 +161,15 @@ pub async fn start_server<'a>(
         format_cors(cors.as_ref())
     );
 
-    server.with_graceful_shutdown(async move {
-        tokio::select! {
-            _ = stop_handle.shutdown() => {},
-            _ = ctx.cancelled() => {},
-        }
-    });
-
-    anyhow::Ok(())
+    server
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = stop_handle.shutdown() => {},
+                _ = ctx.cancelled() => {},
+            }
+        })
+        .await
+        .context("Running rpc server")
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192

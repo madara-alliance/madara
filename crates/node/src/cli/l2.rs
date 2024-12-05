@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mp_chain_config::ChainConfig;
 use starknet_api::core::ChainId;
 
@@ -142,7 +143,7 @@ impl L2SyncParams {
         &self,
         chain_id: ChainId,
         chain_config: Arc<ChainConfig>,
-        warp_update: bool,
+        warp_update: Option<WarpUpdateConfig>,
     ) -> FetchConfig {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
@@ -167,8 +168,6 @@ impl L2SyncParams {
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_parallelism,
             warp_update,
-            warp_update_port_rpc: self.warp_update_port_rpc,
-            warp_update_port_fgw: self.warp_update_port_fgw,
         }
     }
 }
