@@ -9,7 +9,6 @@ use blockifier::transaction::transaction_execution::Transaction as BlockifierTra
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mc_mempool::{Mempool, MempoolProvider};
-use mp_utils::channel_wait_or_graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionVersion};
@@ -43,7 +42,7 @@ pub async fn sync(
     client: &EthereumClient,
     chain_id: &ChainId,
     mempool: Arc<Mempool>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
@@ -68,7 +67,11 @@ pub async fn sync(
             "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
         )?
         .into_stream();
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &ctx).await {
+
+    while let Some(event_result) = tokio::select! {
+        res = event_stream.next() => res,
+        _ = ctx.cancelled() => None
+    } {
         if let Ok((event, meta)) = event_result {
             tracing::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",

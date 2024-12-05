@@ -5,21 +5,22 @@ use anyhow::Context;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::time::{Duration, UNIX_EPOCH};
 
-use mp_utils::{service::ServiceContext, wait_or_graceful_shutdown};
+use mp_utils::service::ServiceContext;
 use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(
     eth_client: &EthereumClient,
-    l1_gas_provider: GasPriceProvider,
+    l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
-    match update_gas_price(eth_client, l1_gas_provider.clone()).await {
+    match update_gas_price(eth_client, l1_gas_provider).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
         Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
     }
 
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
+
     let last_update_timestemp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
     if duration_since_last_update > 10 * gas_price_poll_ms {
@@ -30,7 +31,7 @@ pub async fn gas_price_worker_once(
         );
     }
 
-    Ok(())
+    anyhow::Ok(())
 }
 pub async fn gas_price_worker(
     eth_client: &EthereumClient,
@@ -41,13 +42,16 @@ pub async fn gas_price_worker(
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
-        gas_price_worker_once(eth_client, l1_gas_provider.clone(), gas_price_poll_ms).await?;
+
+    while !ctx.is_cancelled() {
+        interval.tick().await;
+        gas_price_worker_once(eth_client, &l1_gas_provider, gas_price_poll_ms).await?;
     }
-    Ok(())
+
+    anyhow::Ok(())
 }
 
-async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
+async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: &GasPriceProvider) -> anyhow::Result<()> {
     let block_number = eth_client.get_latest_block_number().await?;
     let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
 
@@ -76,7 +80,10 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
     Ok(())
 }
 
-async fn update_l1_block_metrics(eth_client: &EthereumClient, l1_gas_provider: GasPriceProvider) -> anyhow::Result<()> {
+async fn update_l1_block_metrics(
+    eth_client: &EthereumClient,
+    l1_gas_provider: &GasPriceProvider,
+) -> anyhow::Result<()> {
     // Get the latest block number
     let latest_block_number = eth_client.get_latest_block_number().await?;
 
@@ -176,7 +183,7 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -202,7 +209,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -228,7 +235,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, l1_gas_provider.clone(), Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -264,8 +271,10 @@ mod eth_client_gas_price_worker_test {
         });
 
         mock_server.mock(|when, then| {
-            when.method("POST").path("/").json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
-            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}                                                                                                                                                                         ));
+            when.method("POST")
+                .path("/")
+                .json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
+            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}));
         });
 
         let l1_gas_provider = GasPriceProvider::new();
@@ -318,7 +327,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.update_last_update_timestamp();
 
         // Update gas prices
-        update_gas_price(&eth_client, l1_gas_provider.clone()).await.expect("Failed to update gas prices");
+        update_gas_price(&eth_client, &l1_gas_provider).await.expect("Failed to update gas prices");
 
         // Access the updated gas prices
         let updated_prices = l1_gas_provider.get_gas_prices();

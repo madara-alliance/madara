@@ -7,26 +7,19 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{
     block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
 };
-use mc_telemetry::TelemetryHandle;
-use mp_utils::service::{MadaraService, Service, ServiceContext};
-use tokio::task::JoinSet;
+use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 
 use crate::cli::block_production::BlockProductionParams;
 
-struct StartParams {
+pub struct BlockProductionService {
     backend: Arc<MadaraBackend>,
     block_import: Arc<BlockImporter>,
     mempool: Arc<Mempool>,
-    metrics: BlockProductionMetrics,
+    metrics: Arc<BlockProductionMetrics>,
     l1_data_provider: Arc<dyn L1DataProvider>,
-    is_devnet: bool,
     n_devnet_contracts: u64,
 }
 
-pub struct BlockProductionService {
-    start: Option<StartParams>,
-    enabled: bool,
-}
 impl BlockProductionService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -35,26 +28,16 @@ impl BlockProductionService {
         mempool: Arc<mc_mempool::Mempool>,
         block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
-        is_devnet: bool,
-        _telemetry: TelemetryHandle,
     ) -> anyhow::Result<Self> {
-        if config.block_production_disabled {
-            return Ok(Self { start: None, enabled: false });
-        }
-
-        let metrics = BlockProductionMetrics::register();
+        let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
-            start: Some(StartParams {
-                backend: Arc::clone(db_service.backend()),
-                l1_data_provider,
-                mempool,
-                metrics,
-                block_import,
-                n_devnet_contracts: config.devnet_contracts,
-                is_devnet,
-            }),
-            enabled: true,
+            backend: Arc::clone(db_service.backend()),
+            l1_data_provider,
+            mempool,
+            metrics,
+            block_import,
+            n_devnet_contracts: config.devnet_contracts,
         })
     }
 }
@@ -62,66 +45,58 @@ impl BlockProductionService {
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
-    #[tracing::instrument(skip(self, join_set, ctx), fields(module = "BlockProductionService"))]
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
-        if !self.enabled {
-            return Ok(());
-        }
-        let StartParams { backend, l1_data_provider, mempool, metrics, is_devnet, n_devnet_contracts, block_import } =
-            self.start.take().expect("Service already started");
+    #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        let Self { backend, l1_data_provider, mempool, metrics, n_devnet_contracts, block_import } = self;
 
-        if is_devnet {
-            // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
+        // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
 
-            let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
-                // deploy devnet genesis
+        let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
+            // deploy devnet genesis
+            tracing::info!("⛏️  Deploying devnet genesis block");
 
-                tracing::info!("⛏️  Deploying devnet genesis block");
+            let mut genesis_config =
+                ChainGenesisDescription::base_config().context("Failed to create base genesis config")?;
+            let contracts =
+                genesis_config.add_devnet_contracts(*n_devnet_contracts).context("Failed to add devnet contracts")?;
 
-                let mut genesis_config =
-                    ChainGenesisDescription::base_config().context("Failed to create base genesis config")?;
-                let contracts = genesis_config
-                    .add_devnet_contracts(n_devnet_contracts)
-                    .context("Failed to add devnet contracts")?;
+            let genesis_block =
+                genesis_config.build(backend.chain_config()).context("Building genesis block from devnet config")?;
 
-                let genesis_block = genesis_config
-                    .build(backend.chain_config())
-                    .context("Building genesis block from devnet config")?;
+            block_import
+                .add_block(
+                    genesis_block,
+                    BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true),
+                )
+                .await
+                .context("Importing devnet genesis block")?;
 
-                block_import
-                    .add_block(
-                        genesis_block,
-                        BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true),
-                    )
-                    .await
-                    .context("Importing devnet genesis block")?;
+            contracts.save_to_db(backend).context("Saving predeployed devnet contract keys to database")?;
 
-                contracts.save_to_db(&backend).context("Saving predeployed devnet contract keys to database")?;
+            contracts
+        } else {
+            DevnetKeys::from_db(backend).context("Getting the devnet predeployed contract keys and balances")?
+        };
 
-                contracts
-            } else {
-                DevnetKeys::from_db(&backend).context("Getting the devnet predeployed contract keys and balances")?
-            };
+        // display devnet welcome message :)
+        // we display it to stdout instead of stderr
+        let msg = format!("{}", keys);
+        std::io::stdout().write(msg.as_bytes()).context("Writing devnet welcome message to stdout")?;
 
-            // display devnet welcome message :)
-            // we display it to stdout instead of stderr
+        let block_production_task = BlockProductionTask::new(
+            Arc::clone(backend),
+            Arc::clone(block_import),
+            Arc::clone(mempool),
+            Arc::clone(metrics),
+            Arc::clone(l1_data_provider),
+        )?;
 
-            let msg = format!("{}", keys);
-
-            std::io::stdout().write(msg.as_bytes()).context("Writing devnet welcome message to stdout")?;
-        }
-
-        join_set.spawn(async move {
-            BlockProductionTask::new(backend, block_import, mempool, metrics, l1_data_provider)?
-                .block_production_task(ctx)
-                .await?;
-            Ok(())
-        });
+        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
 
         Ok(())
     }
 
-    fn id(&self) -> MadaraService {
-        MadaraService::BlockProduction
+    fn id(&self) -> MadaraServiceId {
+        MadaraServiceId::BlockProduction
     }
 }

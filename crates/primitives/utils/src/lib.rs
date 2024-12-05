@@ -7,8 +7,6 @@ pub mod service;
 
 use std::time::{Duration, Instant};
 
-use futures::Future;
-use service::ServiceContext;
 use tokio::sync::oneshot;
 
 /// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
@@ -25,43 +23,6 @@ where
     });
 
     rx.await.expect("tokio channel closed")
-}
-
-async fn graceful_shutdown_inner(ctx: &ServiceContext) {
-    let sigterm = async {
-        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-            Ok(mut signal) => signal.recv().await,
-            // SIGTERM not supported
-            Err(_) => core::future::pending().await,
-        }
-    };
-
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {},
-        _ = sigterm => {},
-        _ = ctx.cancelled() => {},
-    };
-
-    ctx.cancel_local()
-}
-pub async fn graceful_shutdown(ctx: &ServiceContext) {
-    graceful_shutdown_inner(ctx).await
-}
-
-/// Should be used with streams/channels `next`/`recv` function.
-pub async fn wait_or_graceful_shutdown<T>(future: impl Future<Output = T>, ctx: &ServiceContext) -> Option<T> {
-    tokio::select! {
-        _ = graceful_shutdown_inner(ctx) => { None },
-        res = future => { Some(res) },
-    }
-}
-
-/// Should be used with streams/channels `next`/`recv` function.
-pub async fn channel_wait_or_graceful_shutdown<T>(
-    future: impl Future<Output = Option<T>>,
-    ctx: &ServiceContext,
-) -> Option<T> {
-    wait_or_graceful_shutdown(future, ctx).await?
 }
 
 #[derive(Debug, Default)]
