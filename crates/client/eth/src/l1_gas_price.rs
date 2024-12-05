@@ -20,6 +20,7 @@ pub async fn gas_price_worker_once(
 
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
+
     let last_update_timestemp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
     if duration_since_last_update > 10 * gas_price_poll_ms {
@@ -270,8 +271,10 @@ mod eth_client_gas_price_worker_test {
         });
 
         mock_server.mock(|when, then| {
-            when.method("POST").path("/").json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
-            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}                                                                                                                                                                         ));
+            when.method("POST")
+                .path("/")
+                .json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
+            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}));
         });
 
         let l1_gas_provider = GasPriceProvider::new();

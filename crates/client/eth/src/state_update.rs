@@ -56,10 +56,12 @@ pub async fn state_update_worker(
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
-    // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
-    // Get and store the latest verified state
-    let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
-    update_l1(backend, initial_state, &eth_client.l1_block_metrics)?;
+    // This does not seem to play well with anvil
+    #[cfg(not(test))]
+    {
+        let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
+        update_l1(backend, initial_state, &eth_client.l1_block_metrics)?;
+    }
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
@@ -168,7 +170,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker(db.backend(), &eth_client, ServiceContext::new_for_testing()).await
+                state_update_worker(db.backend(), &eth_client, ServiceContext::new_for_testing()).await.unwrap()
             })
         };
 

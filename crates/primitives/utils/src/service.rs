@@ -45,7 +45,7 @@
 //! ```rust
 //! # use mp_utils::service::Service;
 //! # use mp_utils::service::ServiceRunner;
-//! # use mp_utils::service::MadaraService;
+//! # use mp_utils::service::MadaraServiceId;
 //!
 //! pub struct MyService;
 //!
@@ -68,8 +68,8 @@
 //!         anyhow::Ok(())
 //!     }
 //!
-//!     fn id(&self) -> MadaraService {
-//!         MadaraService::Monitor
+//!     fn id(&self) -> MadaraServiceId {
+//!         MadaraServiceId::Monitor
 //!     }
 //! }
 //! ```
@@ -79,7 +79,7 @@
 //! ```rust
 //! # use mp_utils::service::Service;
 //! # use mp_utils::service::ServiceRunner;
-//! # use mp_utils::service::MadaraService;
+//! # use mp_utils::service::MadaraServiceId;
 //!
 //! pub struct MyService;
 //!
@@ -98,8 +98,8 @@
 //!         anyhow::Ok(())
 //!     }
 //!
-//!     fn id(&self) -> MadaraService {
-//!         MadaraService::Monitor
+//!     fn id(&self) -> MadaraServiceId {
+//!         MadaraServiceId::Monitor
 //!     }
 //! }
 //! ```
@@ -109,7 +109,7 @@
 //! ```rust
 //! # use mp_utils::service::Service;
 //! # use mp_utils::service::ServiceRunner;
-//! # use mp_utils::service::MadaraService;
+//! # use mp_utils::service::MadaraServiceId;
 //!
 //! pub struct MyService;
 //!
@@ -136,8 +136,8 @@
 //!         anyhow::Ok(())
 //!     }
 //!
-//!     fn id(&self) -> MadaraService {
-//!         MadaraService::Monitor
+//!     fn id(&self) -> MadaraServiceId {
+//!         MadaraServiceId::Monitor
 //!     }
 //! }
 //! ```
@@ -212,7 +212,7 @@
 //! [tokio_util::sync::CancellationToken] and [MadaraServiceMask], which is a
 //! [std::sync::atomic::AtomicU8] bitmask with strong [std::sync::atomic::Ordering::SeqCst]
 //! cross-thread ordering of operations. Services are represented as unique
-//! powers of 2 with [MadaraService]. You can use this to construct your own
+//! powers of 2 with [MadaraServiceId]. You can use this to construct your own
 //! mask to check the status of multiple related services at once using
 //! [MadaraServiceMask::status].
 //!
@@ -434,7 +434,7 @@ impl MadaraServiceStatus {
     }
 }
 
-/// An atomic bitmask of each [MadaraService]'s status with strong
+/// An atomic bitmask of each [MadaraServiceId]'s status with strong
 /// [std::sync::atomic::Ordering::SeqCst] cross-thread ordering of operations.
 #[repr(transparent)]
 #[derive(Default)]
@@ -556,7 +556,11 @@ impl ServiceContext {
 
     #[cfg(feature = "testing")]
     pub fn new_for_testing() -> Self {
-        Self { services: Arc::new(MadaraServiceMask::new_for_testing()), ..Default::default() }
+        Self {
+            services: Arc::new(MadaraServiceMask::new_for_testing()),
+            id: MadaraServiceId::Database,
+            ..Default::default()
+        }
     }
 
     /// Creates a new [Default] [ServiceContext] with the state of its services
@@ -689,7 +693,7 @@ impl ServiceContext {
 
     /// Atomically checks if a set of [Service]s are running.
     ///
-    /// You can combine multiple [MadaraService]s into a single bitmask to
+    /// You can combine multiple [MadaraServiceId]s into a single bitmask to
     /// check the state of multiple services at once. This will return
     /// [MadaraServiceStatus::On] if _any_ of the services in the bitmask are
     /// active.
