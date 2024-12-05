@@ -2,10 +2,10 @@ chain_name: "Madara"
 chain_id: "MADARA_DEVNET"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"
-native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+native_fee_token_address: "0xe1b2c0e3fe25b00d641a64cf8450f096121c96fec9bfd2ddbfba0baee54b84"
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 latest_protocol_version: "0.13.2"
-block_time: "10s"
+block_time: "30s"
 pending_block_update_time: "2s"
 execution_batch_size: 16
 bouncer_config:
@@ -29,3 +29,4 @@ bouncer_config:
 sequencer_address: "0x123"
 eth_core_contract_address: "0xdf13b98ea1c1f8b104d63b9021be731f6e91c75b"
 eth_gps_statement_verifier: "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe"
+private_key: "0x1234"
