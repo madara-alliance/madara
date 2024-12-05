@@ -429,16 +429,25 @@ are exposed on a separate port **9943** unless specified otherwise with
 <details>
   <summary>Status Methods</summary>
 
-| Method               | About                                                |
-| -------------------- | ---------------------------------------------------- |
-| `madara_ping`        | Return the unix time at which this method was called |
-| `madara_shutdown`    | Gracefully stops the running node                    |
-| `madara_rpcDisable`  | Disables user-facing rpc services                    |
-| `madara_rpcEnable`   | Enables user-facing rpc services                     |
-| `madara_rpcRestart`  | Restarts user-facing rpc services                    |
-| `madara_syncDisable` | Disables l1 and l2 sync services                     |
-| `madara_syncEnable`  | Enables l1 and l2 sync services                      |
-| `madara_syncRestart` | Restarts l1 and l2 sync services                     |
+| Method                          | About                                                               |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `madara_ping`                   | Return the unix time at which this method was called                |
+| `madara_shutdown`               | Gracefully stops the running node                                   |
+| `madara_syncDisable`            | Disables l1 and l2 sync (requires `--l1-endpoint` to have been set) |
+| `madara_syncEnable`             | Enables l1 and l2 sync (requires `--l1-endpoint` to have been set)  |
+| `madara_syncRestart`            | Restarts l1 and l2 sync (requires `--l1-endpoint` to have been set) |
+| `madara_blockProductionDisable` | Disables block production (does not work on a full node)            |
+| `madara_blockProductionEnable`  | Enables block production (does not work on a full node)             |
+| `madara_blockProductionRestart` | Restarts block production (does not work on a full node)            |
+| `madara_rpcDisable`             | Disables user-facing rpc                                            |
+| `madara_rpcEnable`              | Enables user-facing rpc                                             |
+| `madara_rpcRestart`             | Restarts user-facing rpc                                            |
+| `madara_gatewayDisable`         | Disables the feeder gateway                                         |
+| `madara_gatewayEnable`          | Enables the feeder gateway                                          |
+| `madara_gatewayRestart`         | Restarts the feeder gateway                                         |
+| `madara_telemetryDisable`       | Disables node telemetry                                             |
+| `madara_telemetryEnable`        | Enables node telemetry                                              |
+| `madara_telemetryRestart`       | Restarts node telemetry                                             |
 
 </details>
 
