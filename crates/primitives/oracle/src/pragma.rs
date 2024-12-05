@@ -73,7 +73,6 @@ impl PragmaOracle {
 /// Supported Aggregation Methods
 #[serde(rename_all = "snake_case")]
 pub enum AggregationMethod {
-pub enum AggregationMethod {
     /// Computes the median value from the data.
     Median,
     /// Computes the mean (average) value from the data.
