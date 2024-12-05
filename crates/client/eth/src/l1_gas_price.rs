@@ -80,8 +80,16 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: GasPrice
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
         .as_bigint_and_exponent();
 
-        l1_gas_provider.update_strk_l1_gas_price(strk_gas_price.0.to_str_radix(10).parse::<u128>().context("failed to update strk l1 gas price")?);
-        l1_gas_provider.update_strk_l1_data_gas_price(strk_data_gas_price.0.to_str_radix(10).parse::<u128>().context("failed to update strk l1 data gas price")?);
+        l1_gas_provider.update_strk_l1_gas_price(
+            strk_gas_price.0.to_str_radix(10).parse::<u128>().context("failed to update strk l1 gas price")?,
+        );
+        l1_gas_provider.update_strk_l1_data_gas_price(
+            strk_data_gas_price
+                .0
+                .to_str_radix(10)
+                .parse::<u128>()
+                .context("failed to update strk l1 data gas price")?,
+        );
     }
 
     l1_gas_provider.update_last_update_timestamp();

@@ -20,5 +20,5 @@ targets = ["x86_64-unknown-linux-gnu"]
 anyhow = { workspace = true }
 num-bigint = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true, features = ["derive"]}
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
