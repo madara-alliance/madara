@@ -365,6 +365,18 @@ impl std::ops::BitOr for MadaraServiceStatus {
     }
 }
 
+impl std::ops::BitOr for &MadaraServiceStatus {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        if self.is_on() || rhs.is_on() {
+            &MadaraServiceStatus::On
+        } else {
+            &MadaraServiceStatus::Off
+        }
+    }
+}
+
 impl std::ops::BitAnd for MadaraServiceStatus {
     type Output = Self;
 
@@ -374,6 +386,30 @@ impl std::ops::BitAnd for MadaraServiceStatus {
         } else {
             MadaraServiceStatus::Off
         }
+    }
+}
+
+impl std::ops::BitAnd for &MadaraServiceStatus {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        if self.is_on() && rhs.is_on() {
+            &MadaraServiceStatus::On
+        } else {
+            &MadaraServiceStatus::Off
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for MadaraServiceStatus {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = if self.is_on() || rhs.is_on() { MadaraServiceStatus::On } else { MadaraServiceStatus::Off }
+    }
+}
+
+impl std::ops::BitAndAssign for MadaraServiceStatus {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = if self.is_on() && rhs.is_on() { MadaraServiceStatus::On } else { MadaraServiceStatus::Off }
     }
 }
 
@@ -799,6 +835,7 @@ impl<'a> ServiceRunner<'a> {
     /// > should not execute in a normal context and only serves to prevent
     /// > infinite loops on shutdown request if services have not been
     /// > implemented correctly.
+    #[tracing::instrument(skip(self, runner), fields(module = "Service"))]
     pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
@@ -884,6 +921,7 @@ impl ServiceMonitor {
     ///
     /// Keep in mind that services can be restarted as long as other services
     /// are running (otherwise the node would shutdown).
+    #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
         let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request));
 
