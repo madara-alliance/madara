@@ -33,7 +33,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Madara-specific JSON-RPC Methods](#madara-specific-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
-- 📚 [Database Migration with Zero Downtime](#database-migration-with-zero-downtme)
+- 📚 [Database Migration with Zero Downtime](#-database-migration-with-zero-downtime)
   - [Warp Update](#warp-update)
   - [Achieving Zero Downtime](#achieving-zero-downtime)
   - [Running without `--warp-update-sender`](#running-without---warp-update-sender)
@@ -549,6 +549,8 @@ which is returned with each websocket response.
 
 ## 📚 Database Migration with Zero Downtime
 
+[⬅️ back to top](#-madara-starknet-client)
+
 When migration to a newer version of Madara you might need to update your
 database. Instead of re-synchronizing the entirety of your chain's state from
 genesis, you can use Madara's **warp update** feature.
@@ -573,7 +575,7 @@ To begin the database migration, you will need to start your node with
 [admin methods](#madara-specific-json-rpc-methods) and
 [feeder gateway](#feeder-gateway-state-synchronization) enabled. This will be
 the _source_ of the migration. You can do this with the `--warp-update-sender`
-[preset](#4.-presets):
+[preset](#4-presets):
 
 ```bash
 cargo run --release -- \
@@ -645,7 +647,7 @@ _after_ it has shutdown. This is because the receiver has taken its place.
 ### Running without `--warp-update-sender`
 
 Up until now we have had to start a node with `--warp-update-sender` to start
-a migration, but this is only a [preset](#4.-presets). In a production
+a migration, but this is only a [preset](#4-presets). In a production
 environment, you can start your node with the following arguments and achieve
 the same results:
 
