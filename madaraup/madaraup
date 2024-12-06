@@ -49,7 +49,6 @@ main() {
     fi
   fi
 
-  # Check for mutually exclusive options
   REMOTE_OPTION=$(check_exclusive_options MADARAUP_BRANCH MADARAUP_TAG MADARAUP_PR)
 
   if [ -n "$REMOTE_OPTION" ]; then
@@ -61,7 +60,6 @@ main() {
     fi
   fi
 
-  # Local install handling
   if [[ -n "$MADARAUP_LOCAL_REPO" ]]; then
     need_cmd cargo
     
@@ -141,7 +139,6 @@ main() {
     exit 0
   fi
 
-  # Rest of the script for source installation
   need_cmd cargo
   MADARAUP_BRANCH=${MADARAUP_BRANCH-main}
   REPO_PATH="$MADARA_DIR/$MADARAUP_REPO"
@@ -246,7 +243,7 @@ welcome_msg() {
 
              __  ___          __                
             /  |/  /___ _____/ /___ __________ _
-           / /|_/ / __ \`/ __ / __ \`/ ___/ __ \`/
+           / /|_/ / __ `/ __  / __ `/ ___/ __ `/
           / /  / / /_/ / /_/ / /_/ / /  / /_/ / 
          /_/  /_/\__,_/\__,_/\__,_/_/   \__,_/  
                                         v0.7.0   

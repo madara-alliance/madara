@@ -1,2 +1,13 @@
-https://github.com/madara-alliance/madara/tree/feat/madaraup/madaraup
-curl -fsSL https://raw.githubusercontent.com/madara-alliance/madara/refs/heads/feat/madaraup/madaraup/install | bash
+# `madaraup`
+
+```sh
+curl -L https://install.madara.build | bash
+```
+
+For more details, you can then issue the following command:
+
+```sh
+madaraup --help
+```
+
+[Documentation](https://docs.madara.build/)

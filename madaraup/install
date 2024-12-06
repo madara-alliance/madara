@@ -10,7 +10,7 @@ MADARA_BIN_DIR="$MADARA_DIR/bin"
 MADARA_MAN_DIR="$MADARA_DIR/share/man/man1"
 
 # URL for the madaraup binary
-BIN_URL="https://raw.githubusercontent.com/madara-alliance/madara/feat/madaraup/madaraup/madaraup"
+BIN_URL="BIN_URL="https://raw.githubusercontent.com/madara-alliance/madara/main/madaraup/madaraup"
 BIN_PATH="$MADARA_BIN_DIR/madaraup"
 
 # Create the .madara bin directory and madaraup binary if it doesn't exist
@@ -18,10 +18,8 @@ mkdir -p $MADARA_BIN_DIR
 curl -# -L $BIN_URL -o $BIN_PATH
 chmod +x $BIN_PATH
 
-# Create the man directory for future man files
 mkdir -p $MADARA_MAN_DIR
 
-# Detect shell and set appropriate profile file
 case $SHELL in
 */zsh)
     PROFILE=${ZDOTDIR-"$HOME"}/.zshenv
@@ -44,9 +42,7 @@ case $SHELL in
     exit 1
 esac
 
-# Only add madaraup to PATH if it isn't already there
 if [[ ":$PATH:" != *":${MADARA_BIN_DIR}:"* ]]; then
-    # Add the madaraup directory to the path while preserving existing PATH
     echo >> $PROFILE && echo "export PATH=\"\$PATH:$MADARA_BIN_DIR\"" >> $PROFILE
 fi
 
