@@ -11,7 +11,7 @@ use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 use jsonrpsee::core::RpcResult;
 use mc_db::{bonsai_identifier, db_block_id::DbBlockId, BasicId, GlobalTrie};
 use mp_block::{BlockId, BlockTag};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
 use std::iter;
 

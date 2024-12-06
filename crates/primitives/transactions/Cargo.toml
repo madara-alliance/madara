@@ -28,11 +28,12 @@ cairo-lang-utils = { workspace = true }
 cairo-vm = { workspace = true }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
+starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
 anyhow = { workspace = true }
-
+base64 = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }

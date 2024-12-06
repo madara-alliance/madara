@@ -1,21 +1,19 @@
-use crate::{into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction, TransactionWithHash};
-use crate::{BroadcastedDeclareTransactionV0, DeclareTransaction};
+use crate::{
+    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0,
+    L1HandlerTransaction, Transaction, TransactionWithHash,
+};
 use blockifier::{
-    execution::contract_class::ClassInfo as BClassInfo, transaction::transaction_execution::Transaction as BTransaction,
+    execution::contract_class::ClassInfo as BClassInfo, execution::errors::ContractClassError,
+    transaction::errors::TransactionExecutionError, transaction::transaction_execution::Transaction as BTransaction,
 };
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    BroadcastedTransaction,
-};
-
-use blockifier::{execution::errors::ContractClassError, transaction::errors::TransactionExecutionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::{
-    class_hash::ComputeClassHashError, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass,
-    FlattenedSierraClass, LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
+    class_hash, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
+    LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
 use std::sync::Arc;
 
 pub trait BroadcastedTransactionExt {
@@ -26,40 +24,22 @@ pub trait BroadcastedTransactionExt {
     ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError>;
 }
 
-pub fn is_query(tx: &BroadcastedTransaction) -> bool {
-    match tx {
-        BroadcastedTransaction::Invoke(tx) => match tx {
-            BroadcastedInvokeTransaction::V1(tx) => tx.is_query,
-            BroadcastedInvokeTransaction::V3(tx) => tx.is_query,
-        },
-        BroadcastedTransaction::Declare(tx) => match tx {
-            BroadcastedDeclareTransaction::V1(tx) => tx.is_query,
-            BroadcastedDeclareTransaction::V2(tx) => tx.is_query,
-            BroadcastedDeclareTransaction::V3(tx) => tx.is_query,
-        },
-        BroadcastedTransaction::DeployAccount(tx) => match tx {
-            BroadcastedDeployAccountTransaction::V1(tx) => tx.is_query,
-            BroadcastedDeployAccountTransaction::V3(tx) => tx.is_query,
-        },
-    }
-}
-
-impl BroadcastedTransactionExt for BroadcastedTransaction {
+impl BroadcastedTransactionExt for BroadcastedTxn<Felt> {
     fn into_blockifier(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError> {
         let (class_info, converted_class, class_hash) = match &self {
-            BroadcastedTransaction::Declare(tx) => match tx {
-                BroadcastedDeclareTransaction::V1(tx) => {
-                    handle_class_legacy(Arc::new((*tx.contract_class).clone().into()))?
+            BroadcastedTxn::Declare(tx) => match tx {
+                BroadcastedDeclareTxn::V1(tx) | BroadcastedDeclareTxn::QueryV1(tx) => {
+                    handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
                 }
-                BroadcastedDeclareTransaction::V2(tx) => {
-                    handle_class_sierra(Arc::new((*tx.contract_class).clone().into()), tx.compiled_class_hash)?
+                BroadcastedDeclareTxn::V2(tx) | BroadcastedDeclareTxn::QueryV2(tx) => {
+                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
                 }
-                BroadcastedDeclareTransaction::V3(tx) => {
-                    handle_class_sierra(Arc::new((*tx.contract_class).clone().into()), tx.compiled_class_hash)?
+                BroadcastedDeclareTxn::V3(tx) | BroadcastedDeclareTxn::QueryV3(tx) => {
+                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
                 }
             },
             _ => (None, None, None),
@@ -116,7 +96,7 @@ impl BroadcastedDeclareTransactionV0 {
         let (class_info, converted_class, class_hash) = handle_class_legacy(Arc::clone(&self.contract_class))?;
 
         let is_query = self.is_query;
-        let transaction = Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(
+        let transaction = Transaction::Declare(crate::DeclareTransaction::from_broadcasted_declare_v0(
             self,
             class_hash.expect("Class hash must be provided for DeclareTransaction"),
         ));
@@ -137,7 +117,9 @@ pub enum BroadcastedToBlockifierError {
     #[error("Failed to convert program: {0}")]
     ProgramError(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Failed to compute legacy class hash: {0}")]
-    ComputeLegacyClassHashFailed(#[from] ComputeClassHashError),
+    ComputeLegacyClassHashFailed(anyhow::Error),
+    #[error("Failed to compute sierra class hash: {0}")]
+    ComputeSierraClassHashFailed(#[from] class_hash::ComputeClassHashError),
     #[error("Failed to convert transaction to starkneti-api: {0}")]
     ConvertToTxApiError(#[from] TransactionApiError),
     #[error("Failed to convert transaction to blockifier: {0}")]
@@ -146,6 +128,8 @@ pub enum BroadcastedToBlockifierError {
     ConvertContractClassError(#[from] ContractClassError),
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
+    #[error("Failed to convert base64 program to cairo program: {0}")]
+    Base64ToCairoError(#[from] base64::DecodeError),
 }
 
 #[allow(clippy::type_complexity)]

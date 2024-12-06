@@ -54,11 +54,11 @@ impl FlattenedSierraClass {
 }
 
 fn compute_hash_entries_point(entry_points: &[SierraEntryPoint]) -> Felt {
-    let entry_pointfalten: Vec<_> = entry_points
+    let entry_point_flatten: Vec<_> = entry_points
         .iter()
         .flat_map(|SierraEntryPoint { selector, function_idx }| [*selector, Felt::from(*function_idx)].into_iter())
         .collect();
-    Poseidon::hash_array(&entry_pointfalten)
+    Poseidon::hash_array(&entry_point_flatten)
 }
 
 impl CompressedLegacyContractClass {

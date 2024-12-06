@@ -195,17 +195,17 @@ mod tests {
 
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
-    use mp_class::ClassInfo;
+    use mp_class::{ClassInfo, FlattenedSierraClass};
+
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::BroadcastedTransactionExt;
     use rstest::{fixture, rstest};
     use starknet_core::types::contract::SierraClass;
-    use starknet_core::types::{
-        BroadcastedDeclareTransaction, BroadcastedDeclareTransactionV3, BroadcastedDeployAccountTransaction,
-        BroadcastedDeployAccountTransactionV3, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV3,
-        BroadcastedTransaction, DataAvailabilityMode, DeclareTransactionResult, DeployAccountTransactionResult,
-        FlattenedSierraClass, InvokeTransactionResult, ResourceBounds, ResourceBoundsMapping,
+    use starknet_types_rpc::{
+        AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
+        BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
+        InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
     use std::sync::Arc;
     use std::time::Duration;
@@ -220,10 +220,10 @@ mod tests {
     impl DevnetForTesting {
         pub fn sign_and_add_invoke_tx(
             &self,
-            mut tx: BroadcastedInvokeTransaction,
+            mut tx: BroadcastedInvokeTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<InvokeTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = BroadcastedTransaction::Invoke(tx.clone())
+        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::Error> {
+            let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
@@ -232,8 +232,10 @@ mod tests {
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {
-                BroadcastedInvokeTransaction::V1(tx) => &mut tx.signature,
-                BroadcastedInvokeTransaction::V3(tx) => &mut tx.signature,
+                BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
+                BroadcastedInvokeTxn::V1(tx) => &mut tx.signature,
+                BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
+                _ => unreachable!("the invoke tx is not query only"),
             };
             *tx_signature = vec![signature.r, signature.s];
 
@@ -244,10 +246,10 @@ mod tests {
 
         pub fn sign_and_add_declare_tx(
             &self,
-            mut tx: BroadcastedDeclareTransaction,
+            mut tx: BroadcastedDeclareTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<DeclareTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = BroadcastedTransaction::Declare(tx.clone())
+        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::Error> {
+            let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
@@ -256,9 +258,10 @@ mod tests {
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {
-                BroadcastedDeclareTransaction::V1(tx) => &mut tx.signature,
-                BroadcastedDeclareTransaction::V2(tx) => &mut tx.signature,
-                BroadcastedDeclareTransaction::V3(tx) => &mut tx.signature,
+                BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
+                BroadcastedDeclareTxn::V2(tx) => &mut tx.signature,
+                BroadcastedDeclareTxn::V3(tx) => &mut tx.signature,
+                _ => unreachable!("the declare tx is not query only"),
             };
             *tx_signature = vec![signature.r, signature.s];
 
@@ -267,10 +270,10 @@ mod tests {
 
         pub fn sign_and_add_deploy_account_tx(
             &self,
-            mut tx: BroadcastedDeployAccountTransaction,
+            mut tx: BroadcastedDeployAccountTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<DeployAccountTransactionResult, mc_mempool::Error> {
-            let (blockifier_tx, _classes) = BroadcastedTransaction::DeployAccount(tx.clone())
+        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::Error> {
+            let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
@@ -279,8 +282,9 @@ mod tests {
             let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
 
             let tx_signature = match &mut tx {
-                BroadcastedDeployAccountTransaction::V1(tx) => &mut tx.signature,
-                BroadcastedDeployAccountTransaction::V3(tx) => &mut tx.signature,
+                BroadcastedDeployAccountTxn::V1(tx) => &mut tx.signature,
+                BroadcastedDeployAccountTxn::V3(tx) => &mut tx.signature,
+                _ => unreachable!("the deploy account tx is not query only"),
             };
             *tx_signature = vec![signature.r, signature.s];
 
@@ -354,30 +358,29 @@ mod tests {
         let sender_address = &chain.contracts.0[0];
 
         let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
-        let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap();
+        let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
         // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
         let compiled_contract_class_hash =
             Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
 
-        let declare_txn: BroadcastedDeclareTransaction =
-            BroadcastedDeclareTransaction::V3(BroadcastedDeclareTransactionV3 {
-                sender_address: sender_address.address,
-                compiled_class_hash: compiled_contract_class_hash,
-                signature: vec![],
-                nonce: Felt::ZERO,
-                contract_class: Arc::new(flattened_class),
-                resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
-                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                },
-                tip: 0,
-                paymaster_data: vec![],
-                account_deployment_data: vec![],
-                nonce_data_availability_mode: DataAvailabilityMode::L1,
-                fee_data_availability_mode: DataAvailabilityMode::L1,
-                is_query: false,
-            });
+        let declare_txn: BroadcastedDeclareTxn<Felt> = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
+            sender_address: sender_address.address,
+            compiled_class_hash: compiled_contract_class_hash,
+            signature: vec![],
+            nonce: Felt::ZERO,
+            contract_class: flattened_class.into(),
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: DaMode::L1,
+            fee_data_availability_mode: DaMode::L1,
+            version: starknet_types_rpc::Version::X3,
+        });
 
         let res = chain.sign_and_add_declare_tx(declare_txn, sender_address).unwrap();
 
@@ -427,7 +430,7 @@ mod tests {
 
         let transfer_txn = chain
             .sign_and_add_invoke_tx(
-                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                BroadcastedInvokeTxn::V3(InvokeTxnV3 {
                     sender_address: contract_0.address,
                     calldata: Multicall::default()
                         .with(Call {
@@ -446,9 +449,8 @@ mod tests {
                     tip: 0,
                     paymaster_data: vec![],
                     account_deployment_data: vec![],
-                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    is_query: false,
+                    nonce_data_availability_mode: DaMode::L1,
+                    fee_data_availability_mode: DaMode::L1,
                 }),
                 contract_0,
             )
@@ -469,7 +471,7 @@ mod tests {
             class_hash: account_class_hash,
         };
 
-        let deploy_account_txn = BroadcastedDeployAccountTransaction::V3(BroadcastedDeployAccountTransactionV3 {
+        let deploy_account_txn = BroadcastedDeployAccountTxn::V3(DeployAccountTxnV3 {
             signature: vec![],
             nonce: Felt::ZERO,
             contract_address_salt: Felt::ZERO,
@@ -481,9 +483,8 @@ mod tests {
             },
             tip: 0,
             paymaster_data: vec![],
-            nonce_data_availability_mode: DataAvailabilityMode::L1,
-            fee_data_availability_mode: DataAvailabilityMode::L1,
-            is_query: false,
+            nonce_data_availability_mode: DaMode::L1,
+            fee_data_availability_mode: DaMode::L1,
         });
 
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
@@ -521,7 +522,7 @@ mod tests {
 
         let result = chain
             .sign_and_add_invoke_tx(
-                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                BroadcastedInvokeTxn::V3(InvokeTxnV3 {
                     sender_address: contract_0.address,
                     calldata: Multicall::default()
                         .with(Call {
@@ -540,9 +541,8 @@ mod tests {
                     tip: 0,
                     paymaster_data: vec![],
                     account_deployment_data: vec![],
-                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    is_query: false,
+                    nonce_data_availability_mode: DaMode::L1,
+                    fee_data_availability_mode: DaMode::L1,
                 }),
                 contract_0,
             )
@@ -653,7 +653,7 @@ mod tests {
         for nonce in 0..5 {
             chain
                 .sign_and_add_invoke_tx(
-                    BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                    BroadcastedInvokeTxn::V3(InvokeTxnV3 {
                         sender_address: contract_0.address,
                         calldata: Multicall::default()
                             .with(Call {
@@ -672,9 +672,8 @@ mod tests {
                         tip: 0,
                         paymaster_data: vec![],
                         account_deployment_data: vec![],
-                        nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                        fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                        is_query: false,
+                        nonce_data_availability_mode: DaMode::L1,
+                        fee_data_availability_mode: DaMode::L1,
                     }),
                     contract_0,
                 )
@@ -682,7 +681,7 @@ mod tests {
         }
 
         let result = chain.sign_and_add_invoke_tx(
-            BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+            BroadcastedInvokeTxn::V3(InvokeTxnV3 {
                 sender_address: contract_0.address,
                 calldata: Multicall::default()
                     .with(Call {
@@ -701,9 +700,8 @@ mod tests {
                 tip: 0,
                 paymaster_data: vec![],
                 account_deployment_data: vec![],
-                nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                is_query: false,
+                nonce_data_availability_mode: DaMode::L1,
+                fee_data_availability_mode: DaMode::L1,
             }),
             contract_0,
         );
@@ -728,7 +726,7 @@ mod tests {
 
         chain
             .sign_and_add_invoke_tx(
-                BroadcastedInvokeTransaction::V3(BroadcastedInvokeTransactionV3 {
+                BroadcastedInvokeTxn::V3(InvokeTxnV3 {
                     sender_address: contract_0.address,
                     calldata: Multicall::default()
                         .with(Call {
@@ -747,9 +745,8 @@ mod tests {
                     tip: 0,
                     paymaster_data: vec![],
                     account_deployment_data: vec![],
-                    nonce_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    fee_data_availability_mode: starknet_core::types::DataAvailabilityMode::L1,
-                    is_query: false,
+                    nonce_data_availability_mode: DaMode::L1,
+                    fee_data_availability_mode: DaMode::L1,
                 }),
                 contract_0,
             )

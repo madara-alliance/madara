@@ -3,7 +3,7 @@ use crate::{Column, MadaraBackend, MadaraStorageError};
 use mp_class::ConvertedClass;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 

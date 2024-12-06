@@ -16,7 +16,7 @@ use starknet_api::{
     core::ContractAddress,
     transaction::{Fee, Transaction as StarknetApiTransaction, TransactionHash},
 };
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 
 pub fn blockifier_to_saved_tx(tx: &BTransaction, arrived_at: SystemTime) -> SavedTransaction {
     let arrived_at = arrived_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();

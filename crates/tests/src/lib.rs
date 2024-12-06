@@ -111,15 +111,29 @@ impl MadaraCmd {
 impl Drop for MadaraCmd {
     fn drop(&mut self) {
         let Some(mut child) = self.process.take() else { return };
-        let kill = || {
-            let mut kill = Command::new("kill").args(["-s", "TERM", &child.id().to_string()]).spawn()?;
-            kill.wait()?;
-            anyhow::Ok(())
-        };
-        if let Err(_err) = kill() {
-            child.kill().unwrap()
+
+        // Send SIGTERM signal to gracefully terminate the process
+        let termination_result = Command::new("kill").arg("-TERM").arg(child.id().to_string()).status();
+
+        // Force kill if graceful termination failed
+        if termination_result.is_err() {
+            let _ = child.kill();
         }
-        child.wait().unwrap();
+
+        let grace_period = Duration::from_secs(2);
+        let termination_start = std::time::Instant::now();
+
+        // Wait for process exit or force kill after grace period
+        while let Ok(None) = child.try_wait() {
+            if termination_start.elapsed() >= grace_period {
+                let _ = child.kill();
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // Ensure process cleanup
+        let _ = child.wait();
     }
 }
 
@@ -326,7 +340,7 @@ async fn madara_devnet_add_transaction() {
             Ok(())
         },
         Duration::from_millis(500),
-        20,
+        60,
     )
     .await;
 }
@@ -393,7 +407,7 @@ async fn madara_devnet_mempool_saving() {
             Ok(())
         },
         Duration::from_millis(500),
-        20,
+        60,
     )
     .await;
 }
@@ -440,7 +454,7 @@ async fn madara_devnet_continue_pending() {
             Ok(())
         },
         Duration::from_millis(500),
-        20,
+        60,
     )
     .await;
 

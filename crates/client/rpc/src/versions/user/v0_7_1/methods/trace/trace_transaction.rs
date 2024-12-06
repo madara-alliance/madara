@@ -7,8 +7,8 @@ use mc_exec::execution_result_to_tx_trace;
 use mc_exec::ExecutionContext;
 use mp_chain_config::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
-use starknet_core::types::TransactionTraceWithHash;
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TraceBlockTransactionsResult;
 use std::sync::Arc;
 
 // For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
@@ -17,7 +17,7 @@ pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVe
 pub async fn trace_transaction(
     starknet: &Starknet,
     transaction_hash: Felt,
-) -> StarknetRpcResult<TransactionTraceWithHash> {
+) -> StarknetRpcResult<TraceBlockTransactionsResult<Felt>> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
@@ -50,5 +50,5 @@ pub async fn trace_transaction(
     let trace = execution_result_to_tx_trace(&execution_result)
         .or_internal_server_error("Converting execution infos to tx trace")?;
 
-    Ok(TransactionTraceWithHash { transaction_hash, trace_root: trace })
+    Ok(TraceBlockTransactionsResult { transaction_hash, trace_root: trace })
 }

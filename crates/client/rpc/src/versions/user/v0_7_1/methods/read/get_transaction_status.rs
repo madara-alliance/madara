@@ -1,6 +1,7 @@
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_receipt::ExecutionResult;
-use starknet_core::types::{Felt, TransactionExecutionStatus, TransactionStatus};
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
@@ -24,7 +25,10 @@ use crate::Starknet;
 ///     confirmed, pending, or rejected.
 ///   - `execution_status`: The execution status of the transaction, providing details on the
 ///     execution outcome if the transaction has been processed.
-pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TransactionStatus> {
+pub fn get_transaction_status(
+    starknet: &Starknet,
+    transaction_hash: Felt,
+) -> StarknetRpcResult<TxnFinalityAndExecutionStatus> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
@@ -36,20 +40,22 @@ pub fn get_transaction_status(starknet: &Starknet, transaction_hash: Felt) -> St
     let tx_receipt = block.inner.receipts.get(tx_index.0 as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     let tx_execution_status = match tx_receipt.execution_result() {
-        ExecutionResult::Reverted { .. } => TransactionExecutionStatus::Reverted,
-        ExecutionResult::Succeeded => TransactionExecutionStatus::Succeeded,
+        ExecutionResult::Reverted { .. } => TxnExecutionStatus::Reverted,
+        ExecutionResult::Succeeded => TxnExecutionStatus::Succeeded,
     };
 
-    match block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => Ok(TransactionStatus::AcceptedOnL2(tx_execution_status)),
+    let finality_status = match block.info {
+        MadaraMaybePendingBlockInfo::Pending(_) => TxnStatus::AcceptedOnL2,
         MadaraMaybePendingBlockInfo::NotPending(block) => {
             if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
-                Ok(TransactionStatus::AcceptedOnL1(tx_execution_status))
+                TxnStatus::AcceptedOnL1
             } else {
-                Ok(TransactionStatus::AcceptedOnL2(tx_execution_status))
+                TxnStatus::AcceptedOnL2
             }
         }
-    }
+    };
+
+    Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status: Some(tx_execution_status) })
 }
 
 #[cfg(test)]
@@ -65,7 +71,10 @@ mod tests {
         // Block 0
         assert_eq!(
             get_transaction_status(&rpc, tx_hashes[0]).unwrap(),
-            TransactionStatus::AcceptedOnL1(TransactionExecutionStatus::Succeeded)
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::AcceptedOnL1,
+                execution_status: Some(TxnExecutionStatus::Succeeded)
+            }
         );
 
         // Block 1
@@ -73,17 +82,26 @@ mod tests {
         // Block 2
         assert_eq!(
             get_transaction_status(&rpc, tx_hashes[1]).unwrap(),
-            TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Succeeded)
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::AcceptedOnL2,
+                execution_status: Some(TxnExecutionStatus::Succeeded)
+            }
         );
         assert_eq!(
             get_transaction_status(&rpc, tx_hashes[2]).unwrap(),
-            TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Reverted)
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::AcceptedOnL2,
+                execution_status: Some(TxnExecutionStatus::Reverted)
+            }
         );
 
         // Pending
         assert_eq!(
             get_transaction_status(&rpc, tx_hashes[3]).unwrap(),
-            TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Succeeded)
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::AcceptedOnL2,
+                execution_status: Some(TxnExecutionStatus::Succeeded)
+            }
         );
     }
 

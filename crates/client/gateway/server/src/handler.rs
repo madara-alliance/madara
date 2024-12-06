@@ -12,6 +12,9 @@ use mc_rpc::{
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::error::StarknetError;
+use mp_gateway::user_transaction::{
+    UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
+};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
@@ -19,11 +22,8 @@ use mp_gateway::{
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    BroadcastedTransaction, TransactionTraceWithHash,
-};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TraceBlockTransactionsResult;
 
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
@@ -236,7 +236,7 @@ pub async fn handle_get_block_traces(
 
     #[derive(Serialize)]
     struct BlockTraces {
-        traces: Vec<TransactionTraceWithHash>,
+        traces: Vec<TraceBlockTransactionsResult<Felt>>,
     }
 
     // TODO: we should probably use the actual service context here instead of
@@ -334,43 +334,43 @@ pub async fn handle_add_transaction(
 ) -> Result<Response<String>, GatewayError> {
     let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
-    let transaction = serde_json::from_reader::<_, BroadcastedTransaction>(whole_body.reader())
+    let transaction = serde_json::from_reader::<_, UserTransaction>(whole_body.reader())
         .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
 
     let response = match transaction {
-        BroadcastedTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
-        BroadcastedTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
-        BroadcastedTransaction::Invoke(tx) => invoke_transaction(tx, add_transaction_provider).await,
+        UserTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
+        UserTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
+        UserTransaction::InvokeFunction(tx) => invoke_transaction(tx, add_transaction_provider).await,
     };
 
     Ok(response)
 }
 
 async fn declare_transaction(
-    tx: BroadcastedDeclareTransaction,
+    tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    match add_transaction_provider.add_declare_transaction(tx).await {
+    match add_transaction_provider.add_declare_transaction(tx.into()).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }
 }
 
 async fn deploy_account_transaction(
-    tx: BroadcastedDeployAccountTransaction,
+    tx: UserDeployAccountTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    match add_transaction_provider.add_deploy_account_transaction(tx).await {
+    match add_transaction_provider.add_deploy_account_transaction(tx.into()).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }
 }
 
 async fn invoke_transaction(
-    tx: BroadcastedInvokeTransaction,
+    tx: UserInvokeFunctionTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    match add_transaction_provider.add_invoke_transaction(tx).await {
+    match add_transaction_provider.add_invoke_transaction(tx.into()).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }

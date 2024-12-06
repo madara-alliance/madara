@@ -9,7 +9,7 @@ use deployed_contracts::DeployedContracts;
 use mp_convert::ToFelt;
 use nonce_chain::{InsertedPosition, NonceChain, NonceChainNewState, ReplacedState};
 use starknet_api::core::ContractAddress;
-use starknet_core::types::Felt;
+use starknet_types_core::felt::Felt;
 use std::{
     cmp,
     collections::{hash_map, BTreeSet, HashMap},
@@ -118,7 +118,8 @@ impl MempoolInner {
         let is_replaced = match self.nonce_chains.entry(contract_addr) {
             hash_map::Entry::Occupied(mut entry) => {
                 // Handle nonce collision.
-                let (position, is_replaced) = match entry.get_mut().insert(mempool_tx, force) {
+                let chain: &mut NonceChain = entry.get_mut();
+                let (position, is_replaced) = match chain.insert(mempool_tx, force) {
                     Ok(position) => position,
                     Err(nonce_collision_or_duplicate_hash) => {
                         debug_assert!(!force); // "Force add should never error

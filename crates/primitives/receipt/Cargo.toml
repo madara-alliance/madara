@@ -22,11 +22,13 @@ cairo-vm = { workspace = true }
 rstest.workspace = true
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
+starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true }
 thiserror = { workspace = true }
 tracing.workspace = true
 
 # Other
+primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
