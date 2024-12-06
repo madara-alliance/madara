@@ -255,18 +255,23 @@ pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
 /// Represents a [Service] as a unique power of 2.
 ///
-/// Note that 0 represents [MadaraService::Monitor] as [ServiceMonitor] is
+/// Note that 0 represents [MadaraServiceId::Monitor] as [ServiceMonitor] is
 /// always running and therefore is the genesis state of all other services.
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MadaraServiceId {
     #[default]
+    #[serde(skip)]
     Monitor = 0,
+    #[serde(skip)]
     Database = 1,
     L1Sync = 2,
     L2Sync = 4,
     BlockProduction = 8,
+    #[serde(rename = "rpc")]
     RpcUser = 16,
+    #[serde(skip)]
     RpcAdmin = 32,
     Gateway = 64,
     Telemetry = 128,
