@@ -10,7 +10,7 @@ MADARA_BIN_DIR="$MADARA_DIR/bin"
 MADARA_MAN_DIR="$MADARA_DIR/share/man/man1"
 
 # URL for the madaraup binary
-BIN_URL="https://raw.githubusercontent.com/madara-alliance/madara/feat/madaraup/madaraup"
+BIN_URL="https://raw.githubusercontent.com/madara-alliance/madara/feat/madaraup/madaraup/madaraup"
 BIN_PATH="$MADARA_BIN_DIR/madaraup"
 
 # Create the .madara bin directory and madaraup binary if it doesn't exist
