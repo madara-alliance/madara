@@ -17,10 +17,6 @@ BINS=(madara)
 
 export RUSTFLAGS="-C target-cpu=native"
 
-start_madara() {
-  "$MADARA_BIN_DIR/madara" --devnet
-}
-
 main() {
   need_cmd git
   need_cmd curl
@@ -85,7 +81,6 @@ main() {
 
     say "done"
     welcome_msg
-    start_madara
     exit 0
   fi
 
@@ -143,7 +138,6 @@ main() {
 
     say "done!"
     welcome_msg
-    start_madara
     exit 0
   fi
 
@@ -177,7 +171,6 @@ main() {
 
   say "done"
   welcome_msg
-  start_madara
 }
 
 usage() {
@@ -267,6 +260,9 @@ Successfully installed Madara ${MADARAUP_VERSION}! 🎉
 
 For more info on how to get started, check out:
 https://docs.madara.build/
+
+To start the devnet, run:
+    madara --devnet
 
 ════════════════════════════════════════════════════════
 
