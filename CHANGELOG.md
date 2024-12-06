@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(cli): madaraup quickfix
 - feat(cli): added madaraup for v0.7.0
 - refactor(rpc): replace starknet-rs by starknet-types-rpc
 - fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
