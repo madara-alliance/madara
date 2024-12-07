@@ -5394,6 +5394,7 @@ dependencies = [
  "jsonrpsee",
  "mc-analytics",
  "mc-block-import",
+ "mc-block-production",
  "mc-db",
  "mc-devnet",
  "mc-eth",
@@ -5517,11 +5518,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-block-production"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "bitvec",
+ "blockifier",
+ "lazy_static",
+ "mc-analytics",
+ "mc-block-import",
+ "mc-db",
+ "mc-exec",
+ "mc-mempool",
+ "mockall",
+ "mp-block",
+ "mp-chain-config",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "proptest",
+ "proptest-derive",
+ "rstest 0.18.2",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "starknet_api",
+ "thiserror 2.0.3",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mc-db"
 version = "0.7.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
+ "blockifier",
  "bonsai-trie",
  "lazy_static",
  "librocksdb-sys",
@@ -5562,6 +5609,7 @@ dependencies = [
  "blockifier",
  "m-cairo-test-contracts",
  "mc-block-import",
+ "mc-block-production",
  "mc-db",
  "mc-mempool",
  "mockall",
@@ -5671,6 +5719,8 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-receipt",
+ "mp-transactions",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -5787,6 +5837,7 @@ dependencies = [
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-test",
 ]
 
 [[package]]

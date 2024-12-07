@@ -1,11 +1,10 @@
-use mp_chain_config::StarknetVersion;
-use starknet_types_core::felt::Felt;
-
 use crate::{
     BroadcastedDeclareTransactionV0, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1,
     DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, InvokeTransaction, Transaction,
     TransactionWithHash,
 };
+use mp_chain_config::StarknetVersion;
+use starknet_types_core::felt::Felt;
 
 // class_hash is required for DeclareTransaction
 impl TransactionWithHash {
@@ -26,21 +25,6 @@ impl TransactionWithHash {
             }
             starknet_types_rpc::BroadcastedTxn::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
-        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
-        Self { hash, transaction }
-    }
-
-    pub fn from_broadcasted_declare_v0(
-        tx: BroadcastedDeclareTransactionV0,
-        chain_id: Felt,
-        starknet_version: StarknetVersion,
-        class_hash: Option<Felt>,
-    ) -> Self {
-        let is_query = tx.is_query;
-        let transaction: Transaction = Transaction::Declare(DeclareTransaction::from_broadcasted_declare_v0(
-            tx,
-            class_hash.expect("Class hash must be provided for DeclareTransactionV0"),
-        ));
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
@@ -77,7 +61,7 @@ impl DeclareTransaction {
         }
     }
 
-    fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+    pub fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
         DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted_declare_v0(tx, class_hash))
     }
 }

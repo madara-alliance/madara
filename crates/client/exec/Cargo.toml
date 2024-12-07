@@ -22,6 +22,8 @@ mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }

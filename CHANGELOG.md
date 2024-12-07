@@ -2,6 +2,9 @@
 
 ## Next release
 
+- feat(block_production): continue pending block on restart
+- feat(mempool): mempool transaction saving on db
+- feat(mempool): mempool transaction limits
 - feat(cli): madaraup quickfix
 - feat(cli): added madaraup for v0.7.0
 - refactor(rpc): replace starknet-rs by starknet-types-rpc

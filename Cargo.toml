@@ -25,6 +25,7 @@ members = [
   "crates/proc-macros",
   "crates/tests",
   "crates/cairo-test-contracts",
+  "crates/client/block_production",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -127,6 +128,7 @@ mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-mempool = { path = "crates/client/mempool" }
+mc-block-production = { path = "crates/client/block_production" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
 
@@ -236,6 +238,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "registry",
   "std",
 ] }
+tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]
