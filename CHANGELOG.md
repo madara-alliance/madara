@@ -3,6 +3,8 @@
 ## Next release
 
 - feat: fetch eth/strk price and sync strk gas price
+- feat(cli): madaraup quickfix
+- feat(cli): added madaraup for v0.7.0
 - refactor(rpc): replace starknet-rs by starknet-types-rpc
 - fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
 - feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
