@@ -11,7 +11,7 @@
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
 <a href="https://twitter.com/madara-alliance">
 <img src="https://img.shields.io/twitter/follow/madara-alliance?style=social"/> </a>
-<a href="https://github.com/madara-alliance/madara">
+<a href="https://github.com/KasarLabs/deoxys-telemetry/stargazers">
 <img src="https://img.shields.io/github/stars/madara-alliance/madara?style=social"/>
 </a>
 
