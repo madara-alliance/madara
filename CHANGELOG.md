@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: fetch eth/strk price and sync strk gas price
 - feat(cli): madaraup quickfix
 - feat(cli): added madaraup for v0.7.0
 - refactor(rpc): replace starknet-rs by starknet-types-rpc

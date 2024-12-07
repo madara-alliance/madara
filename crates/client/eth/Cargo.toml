@@ -35,6 +35,7 @@ starknet_api = { workspace = true }
 # Other
 alloy = { workspace = true }
 anyhow = "1.0.75"
+bigdecimal = "0.4.5"
 bitvec = { workspace = true }
 blockifier = { workspace = true }
 futures = { workspace = true, default-features = true }
