@@ -1,9 +1,10 @@
 // TODO: Move this into its own crate.
 
 use crate::block_production_metrics::BlockProductionMetrics;
+use crate::clone_transaction;
 use crate::close_block::close_block;
 use crate::header::make_pending_header;
-use crate::{L1DataProvider, MempoolProvider, MempoolTransaction};
+use crate::{transaction_hash, L1DataProvider, MempoolProvider, MempoolTransaction};
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
 use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
 use blockifier::state::cached_state::StateMaps;
@@ -12,6 +13,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_devnet::{Call, Multicall, Selector};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use mp_class::ConvertedClass;
@@ -21,21 +23,37 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use mp_transactions::TransactionWithHash;
+use mp_transactions::{broadcasted_to_blockifier, TransactionWithHash};
 use mp_utils::graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
+use serde::{Deserialize, Serialize};
+use starknet::signers::SigningKey;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedInvokeTxn, BroadcastedTxn, InvokeTxnV1};
 use std::borrow::Cow;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
+use std::ops::{Add, Sub};
+use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Instant;
 
-use crate::clone_transaction;
+// ===============================================================
+// Global Store
+static GLOBAL_VALUE: AtomicI64 = AtomicI64::new(354);
+fn set_value(value: i64) {
+    GLOBAL_VALUE.store(value, Ordering::SeqCst);
+}
+fn get_value() -> i64 {
+    GLOBAL_VALUE.load(Ordering::SeqCst)
+}
+// ===============================================================
+
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -421,6 +439,31 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // do not forget to flush :)
         self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
 
+        // =========================================================================================
+        // Execute BOT transactions :
+        println!(">>> triggering bot transactions");
+        let data = include_str!("/Users/ocdbytes/Karnot/griddy/scripts/bots.json");
+        let addresses: Vec<String> = serde_json::from_str(&data).expect("unable to parse json");
+
+        println!(">>> addresses : {:?}", addresses.len());
+
+        let sequencer_priv_key = Felt::from_hex("35b265c6c30c40da34ed0558c20742de1bff611334d186f66435869480f1791")
+            .expect("Unable to extract priv key from hex");
+        let sequencer_address = Felt::from_hex("6744cff5a28d71baa8ac32571b2943d83214acb83a49056099ad9ccf955b9cc")
+            .expect("Unable to extract public key from hex");
+        // let mine_contract = Felt::from_hex("0x211f44f9f00f590b50bc7d49cfecadb16304a6512c0295cb6774ab5f74c922a")
+        //     .expect("Unable to extract contract from hex");
+
+        let addresses_clone = addresses.clone();
+        let txn = self.generate_txns(
+            addresses_clone,
+            sequencer_address,
+            sequencer_priv_key,
+        );
+        self.mempool.accept_invoke_tx_broadcast_txn(txn).expect("Unable to accept invoke tx");
+        println!(">>> Txn added to mempool");
+        // =========================================================================================
+
         Ok(())
     }
 
@@ -558,6 +601,60 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         Ok(())
+    }
+
+    fn generate_txns(
+        &self,
+        contract_addresses: Vec<String>,
+        sequencer_address: Felt,
+        sequencer_priv_key: Felt,
+    ) -> BroadcastedTxn<Felt> {
+        let signing_key = SigningKey::from_secret_scalar(sequencer_priv_key);
+
+        let nonce = self
+            .backend
+            .get_contract_nonce_at(&DbBlockId::Pending, &sequencer_address)
+            .expect("Unable to fetch nonce from the block.")
+            .unwrap();
+
+        let mut call_vec = Vec::new();
+        for address in contract_addresses {
+            call_vec.push(
+                Call {
+                    to: Felt::from_str(&address).unwrap(),
+                    selector: Selector::from("call_mine"),
+                    calldata: vec![],
+                }
+            )
+        }
+
+        let txn = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V1(InvokeTxnV1 {
+            sender_address: sequencer_address,
+            calldata: Multicall::with_vec(call_vec).flatten().collect(),
+            max_fee: Felt::from_hex("2386f26fc10000").unwrap(),
+            signature: vec![], // will be added when signing
+            nonce: Felt::from(get_value()),
+        }));
+        set_value(get_value() + 1);
+        self.sign_tx(txn, signing_key.clone()).expect("Not able to sign the transaction.")
+    }
+
+    fn sign_tx(&self, mut tx: BroadcastedTxn<Felt>, signing_key: SigningKey) -> anyhow::Result<BroadcastedTxn<Felt>> {
+        let (blockifier_tx, _) = broadcasted_to_blockifier(
+            tx.clone(),
+            self.backend.chain_config().chain_id.to_felt(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
+        let signature = signing_key.sign(&transaction_hash(&blockifier_tx))?;
+        let tx_signature = match &mut tx {
+            BroadcastedTxn::Invoke(tx) => match tx {
+                BroadcastedInvokeTxn::V1(tx) => &mut tx.signature,
+                _ => panic!("Invalid Txn"),
+            },
+            _ => panic!("Invalid Txn"),
+        };
+        *tx_signature = vec![signature.r, signature.s];
+        Ok(tx)
     }
 
     fn block_n(&self) -> u64 {

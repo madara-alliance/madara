@@ -62,6 +62,10 @@ impl Error {
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTxn<Felt>) -> Result<AddInvokeTransactionResult<Felt>, Error>;
+    fn accept_invoke_tx_broadcast_txn(
+        &self,
+        tx: BroadcastedTxn<Felt>,
+    ) -> Result<AddInvokeTransactionResult<Felt>, Error>;
     fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, Error>;
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, Error>;
     fn accept_deploy_account_tx(
@@ -187,6 +191,22 @@ impl MempoolProvider for Mempool {
         )?;
 
         let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
+        self.accept_tx(tx, classes)?;
+        Ok(res)
+    }
+
+    /// Custom method to add transaction to the block
+    fn accept_invoke_tx_broadcast_txn(
+        &self,
+        tx: BroadcastedTxn<Felt>,
+    ) -> Result<AddInvokeTransactionResult<Felt>, Error> {
+        let res = broadcasted_to_blockifier(tx, self.chain_id(), self.backend.chain_config().latest_protocol_version);
+        println!(">>> txn exec result : {:?}", res);
+        let (tx, classes) = res?;
+        println!(">>> tx : {:?} | classes : {:?}", tx, classes);
+        let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&tx) };
+        println!(">>> res : {:?}", res);
+
         self.accept_tx(tx, classes)?;
         Ok(res)
     }

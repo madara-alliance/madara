@@ -21,6 +21,10 @@ impl Multicall {
         self
     }
 
+    pub fn with_vec(calls: Vec<Call>) -> Self {
+        Multicall(calls)
+    }
+
     pub fn flatten(&self) -> impl Iterator<Item = Felt> + '_ {
         [self.0.len().into()].into_iter().chain(self.0.iter().flat_map(|c| c.flatten()))
     }
