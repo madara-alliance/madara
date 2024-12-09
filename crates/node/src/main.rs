@@ -5,8 +5,6 @@ mod cli;
 mod service;
 mod util;
 
-use std::sync::Arc;
-
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
