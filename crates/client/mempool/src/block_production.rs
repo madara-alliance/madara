@@ -256,8 +256,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats), Error> {
+    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats, bool), Error> {
         let mut stats = ContinueBlockStats::default();
+        let mut block_now_full = false;
 
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
         let batch_size = self.backend.chain_config().execution_batch_size;
@@ -288,7 +289,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             // Execute the transactions.
             let all_results = self.executor.execute_txs(&txs_to_process_blockifier);
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
-            let block_now_full = all_results.len() < txs_to_process_blockifier.len();
+            block_now_full = all_results.len() < txs_to_process_blockifier.len();
 
             txs_to_process_blockifier.drain(..all_results.len()); // remove the used txs
 
@@ -360,54 +361,23 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, stats))
+        Ok((state_diff, stats, block_now_full))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub fn on_pending_time_tick(&mut self) -> Result<(), Error> {
+    pub async fn on_pending_time_tick(&mut self) -> Result<(), Error> {
         let current_pending_tick = self.current_pending_tick;
-        let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
-        let config_bouncer = self.backend.chain_config().bouncer_config.block_max_capacity;
         if current_pending_tick == 0 {
             return Ok(());
         }
 
-        // Reduced bouncer capacity for the current pending tick
-
-        // reduced_gas = gas * current_pending_tick/n_pending_ticks_per_block
-        // - we're dealing with integers here so prefer having the division last
-        // - use u128 here because the multiplication would overflow
-        // - div by zero: see [`ChainConfig::precheck_block_production`]
-        let reduced_cap =
-            |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
-
-        let gas = reduced_cap(config_bouncer.gas);
-        let frac = current_pending_tick as f64 / n_pending_ticks_per_block as f64;
-        tracing::debug!("begin pending tick {current_pending_tick}/{n_pending_ticks_per_block}, proportion for this tick: {frac:.2}, gas limit: {gas}/{}", config_bouncer.gas);
-
-        let bouncer_cap = BouncerWeights {
-            builtin_count: BuiltinCount {
-                add_mod: reduced_cap(config_bouncer.builtin_count.add_mod),
-                bitwise: reduced_cap(config_bouncer.builtin_count.bitwise),
-                ecdsa: reduced_cap(config_bouncer.builtin_count.ecdsa),
-                ec_op: reduced_cap(config_bouncer.builtin_count.ec_op),
-                keccak: reduced_cap(config_bouncer.builtin_count.keccak),
-                mul_mod: reduced_cap(config_bouncer.builtin_count.mul_mod),
-                pedersen: reduced_cap(config_bouncer.builtin_count.pedersen),
-                poseidon: reduced_cap(config_bouncer.builtin_count.poseidon),
-                range_check: reduced_cap(config_bouncer.builtin_count.range_check),
-                range_check96: reduced_cap(config_bouncer.builtin_count.range_check96),
-            },
-            gas,
-            message_segment_length: reduced_cap(config_bouncer.message_segment_length),
-            n_events: reduced_cap(config_bouncer.n_events),
-            n_steps: reduced_cap(config_bouncer.n_steps),
-            state_diff_size: reduced_cap(config_bouncer.state_diff_size),
-        };
+        // Use full bouncer capacity
+        let bouncer_cap = self.backend.chain_config().bouncer_config.block_max_capacity;
 
         let start_time = Instant::now();
-        let (state_diff, stats) = self.continue_block(bouncer_cap)?;
+        let (state_diff, stats, block_now_full) = self.continue_block(bouncer_cap)?;
+        
         if stats.n_added_to_block > 0 {
             tracing::info!(
                 "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
@@ -415,6 +385,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 self.block_n(),
                 start_time.elapsed(),
             );
+        }
+
+        // Check if block is full
+        if block_now_full {
+            tracing::info!("Resource limits reached, closing block early");
+            self.on_block_time().await?;
+            return Ok(());
         }
 
         // Store pending block
@@ -436,7 +413,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (mut new_state_diff, _n_executed) =
+        let (mut new_state_diff, _n_executed, _block_now_full) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
@@ -548,7 +525,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         continue
                     }
 
-                    if let Err(err) = self.on_pending_time_tick() {
+                    if let Err(err) = self.on_pending_time_tick().await {
                         tracing::error!("Pending block update task has errored: {err:#}");
                     }
                     self.current_pending_tick += 1;
