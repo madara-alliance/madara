@@ -6099,6 +6099,7 @@ name = "mp-oracle"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "num-bigint",
  "reqwest 0.12.8",
  "serde",

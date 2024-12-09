@@ -18,7 +18,7 @@ use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_oracle::Oracle;
+use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 
@@ -110,8 +110,11 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(ref oracle_url) = run_cmd.l1_sync_params.oracle_url {
         if let Some(ref oracle_api_key) = run_cmd.l1_sync_params.oracle_api_key {
-            let oracle = Oracle::new("Pragma", oracle_url.clone(), oracle_api_key.clone())?;
-            l1_gas_setter.set_oracle_provider(oracle);
+            let oracle = PragmaOracleBuilder::new()
+                .with_api_url(oracle_url.clone())
+                .with_api_key(oracle_api_key.clone())
+                .build();
+            l1_gas_setter.set_oracle_provider(Box::new(oracle));
         }
     }
 

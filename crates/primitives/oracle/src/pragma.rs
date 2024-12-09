@@ -1,8 +1,11 @@
 use std::fmt;
 
 use anyhow::{bail, Context};
+use async_trait::async_trait;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+
+use crate::Oracle;
 
 pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
 
@@ -33,18 +36,19 @@ impl Default for PragmaOracle {
 }
 
 impl PragmaOracle {
-    pub fn new(api_url: Url, api_key: String) -> Self {
-        Self {
-            api_url,
-            api_key,
-            aggregation_method: AggregationMethod::Median,
-            interval: Interval::OneMinute,
-            price_bounds: Default::default(),
-        }
+    fn is_in_bounds(&self, price: u128) -> bool {
+        self.price_bounds.low <= price && price <= self.price_bounds.high
+    }
+}
+
+#[async_trait]
+impl Oracle for PragmaOracle {
+    fn get_fetch_url(&self, base: String, quote: String) -> String {
+        format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
     }
 
-    pub fn get_fetch_url(&self, base: String, quote: String) -> String {
-        format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
+    fn get_api_key(&self) -> &String {
+        &self.api_key
     }
 
     /// Methods to retrieve ETH/STRK price from Pragma Oracle
@@ -52,7 +56,7 @@ impl PragmaOracle {
     /// Return values:
     /// Ok((u128, u32)) : return the price tuple as (price, decimals)
     /// Err(e) : return an error if anything went wrong in the fetching process or eth/strk price is 0
-    pub async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
+    async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
         let response = reqwest::Client::new()
             .get(self.get_fetch_url(String::from("eth"), String::from("strk")))
             .header("x-api-key", self.api_key.clone())
@@ -65,6 +69,9 @@ impl PragmaOracle {
             .context("failed to parse price")?;
         if eth_strk_price == 0 {
             bail!("Pragma api returned 0 for eth/strk price");
+        }
+        if !self.is_in_bounds(eth_strk_price) {
+            bail!("ETH/STRK price outside of bounds");
         }
         Ok((eth_strk_price, oracle_api_response.decimals))
     }
@@ -141,4 +148,36 @@ fn default_oracle_api_url() -> Url {
 struct PragmaApiResponse {
     price: String,
     decimals: u32,
+}
+
+#[derive(Default)]
+pub struct PragmaOracleBuilder {
+    api_url: Option<Url>,
+    api_key: Option<String>,
+}
+
+impl PragmaOracleBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_api_url(mut self, api_url: Url) -> Self {
+        self.api_url = Some(api_url);
+        self
+    }
+
+    pub fn with_api_key(mut self, api_key: String) -> Self {
+        self.api_key = Some(api_key);
+        self
+    }
+
+    pub fn build(self) -> PragmaOracle {
+        PragmaOracle {
+            api_url: self.api_url.unwrap_or_else(default_oracle_api_url),
+            api_key: self.api_key.unwrap_or_default(),
+            aggregation_method: AggregationMethod::default(),
+            interval: Interval::default(),
+            price_bounds: PriceBounds::default(),
+        }
+    }
 }
