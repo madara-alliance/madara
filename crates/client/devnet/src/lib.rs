@@ -352,7 +352,8 @@ mod tests {
 
     #[rstest]
     #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
-    fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
+    #[tokio::test]
+    async fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
         tracing::info!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -389,7 +390,7 @@ mod tests {
         assert_eq!(res.class_hash, calculated_class_hash);
 
         chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        chain.block_production.on_pending_time_tick().await.unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -411,7 +412,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_deploy(mut chain: DevnetForTesting) {
+    #[tokio::test]
+    async fn test_account_deploy(mut chain: DevnetForTesting) {
         let key = SigningKey::from_random();
         tracing::debug!("Secret Key : {:?}", key.secret_scalar());
 
@@ -458,7 +460,7 @@ mod tests {
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().unwrap();
+        chain.block_production.on_pending_time_tick().await.unwrap();
 
         // =====================================================================================
 
@@ -490,7 +492,7 @@ mod tests {
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().unwrap();
+        chain.block_production.on_pending_time_tick().await.unwrap();
 
         assert_eq!(res.contract_address, account.address);
 
@@ -509,7 +511,12 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+    #[tokio::test]
+    async fn test_basic_transfer(
+        mut chain: DevnetForTesting,
+        #[case] transfer_amount: u128,
+        #[case] expect_reverted: bool,
+    ) {
         tracing::info!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -551,7 +558,7 @@ mod tests {
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
         chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        chain.block_production.on_pending_time_tick().await.unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -639,7 +646,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mempool_tx_limit() {
+    #[tokio::test]
+    async fn test_mempool_tx_limit() {
         let chain = chain_with_mempool_limits(MempoolLimits {
             max_age: Duration::from_millis(1000000),
             max_declare_transactions: 2,
@@ -715,7 +723,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mempool_age_limit() {
+    #[tokio::test]
+    async fn test_mempool_age_limit() {
         let max_age = Duration::from_millis(1000);
         let mut chain =
             chain_with_mempool_limits(MempoolLimits { max_age, max_declare_transactions: 2, max_transactions: 5 });
@@ -754,7 +763,7 @@ mod tests {
 
         std::thread::sleep(max_age); // max age reached
         chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        chain.block_production.on_pending_time_tick().await.unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
