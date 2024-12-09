@@ -2,6 +2,8 @@
 
 ## Next release
 
+- feat: block resource cap removed from the pending tick
+- fix: replace class hash issue resolved + gas fees issue resolved 
 - feat(block_production): continue pending block on restart
 - feat(mempool): mempool transaction saving on db
 - feat(mempool): mempool transaction limits
