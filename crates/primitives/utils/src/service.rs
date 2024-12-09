@@ -92,8 +92,11 @@
 //! #[async_trait::async_trait]
 //! impl Service for MyService {
 //!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-//!         runner.service_loop(move |ctx| async {
-//!             tokio::time::sleep(std::time::Duration::MAX).await;
+//!         runner.service_loop(move |mut ctx| async move {
+//!             tokio::select! {
+//!                 _ = tokio::time::sleep(std::time::Duration::MAX) => {},
+//!                 _ = ctx.cancelled() => {},
+//!             }
 //!
 //!             // This is correct, as the future passed to service_loop will
 //!             // only resolve once the task above completes, so Madara can
@@ -905,6 +908,155 @@ pub struct ServiceTransport {
 /// some services are enabled and some are disabled.
 ///
 /// Services should be started with [ServiceRunner::service_loop].
+///
+/// # Writing your own service
+///
+/// Writing a service involves two main steps:
+///
+/// 1. Implementing the [Service] trait
+/// 2. Implementing the [ServiceId] trait
+///
+/// It is also recommended you create your own enum for storing service ids
+/// which itself implements [ServiceId]. This helps keep your code organized as
+/// [PowerOfTwo::P17] does not have much meaning in of itself.
+///
+/// ```rust
+/// # use mp_utils::service::Service;
+/// # use mp_utils::service::ServiceId;
+/// # use mp_utils::service::PowerOfTwo;
+/// # use mp_utils::service::ServiceRunner;
+/// # use mp_utils::service::ServiceMonitor;
+///
+/// // This enum only exist to make it easier for us to remember which
+/// // PowerOfTwo represents our services.
+/// pub enum MyServiceId {
+///     MyServiceA,
+///     MyServiceB
+/// }
+///
+/// impl ServiceId for MyServiceId {
+///     #[inline(always)]
+///     fn svc_id(&self) -> PowerOfTwo {
+///         match self {
+///             // PowerOfTwo::P0 up until PowerOfTwo::P7 are already in use by
+///             // MadaraServiceId, you should not use them!
+///             Self::MyServiceA => PowerOfTwo::P8,
+///             Self::MyServiceB => PowerOfTwo::P9,
+///         }
+///     }
+/// }
+///
+/// // Similarly, this enum is more explicit for our usecase than Option<T>
+/// #[derive(Clone, Debug)]
+/// pub enum Channel<T: Sized + Send + Sync> {
+///     Open(T),
+///     Closed
+/// }
+///
+/// // An example service, sends over 4 integers to `ServiceB` and the exits
+/// struct MyServiceA(tokio::sync::broadcast::Sender<Channel<usize>>);
+///
+/// #[async_trait::async_trait]
+/// impl Service for MyServiceA {
+///     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+///         let mut sx = self.0.clone();
+///
+///         runner.service_loop(move |mut ctx| async move {
+///             for i in 0..4 {
+///                 sx.send(Channel::Open(i))?;
+///
+///                 tokio::select! {
+///                     _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+///                     _ = ctx.cancelled() => break,
+///                 }
+///             }
+///
+///             // An important subtlety: we are using a broadcast channel to
+///             // keep the connection alive between A and B even between
+///             // restarts. To do this, we always keep a broadcast sender and
+///             // receiver alive in A and B respectively, which we clone
+///             // whenever either service starts. This means the channel won't
+///             // close when the sender in A's service_loop is dropped! We need
+///             // to explicitly notify B that it has received all the
+///             // information A has to send to it, which is why we use the
+///             // `Channel` enum.
+///             sx.send(Channel::Closed);
+///
+///             anyhow::Ok(())
+///         });
+///
+///         anyhow::Ok(())
+///     }
+/// }
+///
+/// impl ServiceId for MyServiceA {
+///     fn svc_id(&self) -> PowerOfTwo {
+///         MyServiceId::MyServiceA.svc_id()
+///     }
+/// }
+///
+/// // An example service, listens for messages from `ServiceA` and the exits
+/// struct MyServiceB(tokio::sync::broadcast::Receiver<Channel<usize>>);
+///
+/// #[async_trait::async_trait]
+/// impl Service for MyServiceB {
+///     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+///         let mut rx = self.0.resubscribe();
+///
+///         runner.service_loop(move |mut ctx| async move {
+///             loop {
+///                 let i = tokio::select! {
+///                     res = rx.recv() => {
+///                         // As mentioned above, `res` will never receive an
+///                         // `Err(RecvError::Closed)` since we always keep a
+///                         // sender alive in A for restarts, so we manually
+///                         // check if the channel was closed.
+///                         match res? {
+///                             Channel::Open(i) => i,
+///                             Channel::Closed => break,
+///                         }
+///                     },
+///                     _ = ctx.cancelled() => break,
+///                 };
+///
+///                 println!("MyServiceB received {i}");
+///             }
+///
+///             anyhow::Ok(())
+///         });
+///
+///         anyhow::Ok(())
+///     }
+/// }
+///
+/// impl ServiceId for MyServiceB {
+///     fn svc_id(&self) -> PowerOfTwo {
+///         MyServiceId::MyServiceB.svc_id()
+///     }
+/// }
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let (sx, rx) = tokio::sync::broadcast::channel(16);
+///
+///     let service_a = MyServiceA(sx);
+///     let service_b = MyServiceB(rx);
+///
+///     let monitor = ServiceMonitor::default()
+///         .with(service_a)?
+///         .with(service_b)?;
+///
+///     // We can use `MyServiceId` directly here. Most service methods only
+///     // require an `impl ServiceId`, so this kind of pattern is very much
+///     // recommended.
+///     monitor.activate(MyServiceId::MyServiceA);
+///     monitor.activate(MyServiceId::MyServiceB);
+///
+///     monitor.start().await?;
+///
+///     anyhow::Ok(())
+/// }
+/// ```
 #[async_trait::async_trait]
 pub trait Service: 'static + Send + Sync + ServiceId {
     /// Default impl does not start any task.
@@ -1009,7 +1161,7 @@ pub struct ServiceMonitor {
 impl Default for ServiceMonitor {
     fn default() -> Self {
         Self {
-            services: [const { None }; SERVICE_COUNT_MAX + 1],
+            services: [const { None }; SERVICE_COUNT_MAX],
             join_set: JoinSet::new(),
             status_request: Arc::default(),
             status_actual: Arc::default(),

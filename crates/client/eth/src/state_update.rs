@@ -63,7 +63,7 @@ pub async fn state_update_worker(
         update_l1(backend, initial_state, &eth_client.l1_block_metrics)?;
     }
 
-    // Listen to LogStateUpdate (0x77552641) update and send changes continusly
+    // Listen to LogStateUpdate (0x77552641) update and send changes continuously
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
     let mut event_stream = event_filter
