@@ -518,11 +518,7 @@ mod tests {
     #[case(24235u128, false)]
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
-    fn test_basic_transfer(
-        mut chain: DevnetForTesting,
-        #[case] transfer_amount: u128,
-        #[case] expect_reverted: bool,
-    ) {
+    fn test_basic_transfer(mut chain: DevnetForTesting, #[case] transfer_amount: u128, #[case] expect_reverted: bool) {
         tracing::info!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -733,11 +729,8 @@ mod tests {
     #[rstest]
     fn test_mempool_age_limit() {
         let max_age = Duration::from_millis(1000);
-        let mut chain = chain_with_mempool_limits(MempoolLimits { 
-            max_age, 
-            max_declare_transactions: 2, 
-            max_transactions: 5 
-        });
+        let mut chain =
+            chain_with_mempool_limits(MempoolLimits { max_age, max_declare_transactions: 2, max_transactions: 5 });
         tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];
