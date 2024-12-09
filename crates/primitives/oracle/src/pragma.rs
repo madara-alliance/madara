@@ -47,7 +47,6 @@ impl PragmaOracle {
 
 #[async_trait]
 impl Oracle for PragmaOracle {
-
     /// Methods to retrieve ETH/STRK price from Pragma Oracle
     ///
     /// Return values:

@@ -30,8 +30,9 @@ impl GasPriceProvider {
     }
 
     pub fn is_oracle_needed(&self) -> bool {
-        self.strk_gas_price_sync_enabled.load(Ordering::Relaxed)
-            || self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed)
+        self.gas_price_sync_enabled.load(Ordering::Relaxed)
+            && (self.strk_gas_price_sync_enabled.load(Ordering::Relaxed)
+                || self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed))
     }
 
     pub fn set_oracle_provider(&mut self, oracle_provider: impl Oracle + 'static) -> &mut Self {
