@@ -116,7 +116,7 @@ cargo run --release --        \
   --name Madara               \
   --sequencer                 \
   --base-path /var/lib/madara \
-  --preset test               \
+  --preset sepolia            \
   --l1-endpoint ${ETHEREUM_API_URL}
 ```
 
@@ -129,7 +129,7 @@ cargo run --release --        \
   --name Madara               \
   --devnet                    \
   --base-path /var/lib/madara \
-  --preset test
+  --preset sepolia
 ```
 
 > [!NOTE]
@@ -552,9 +552,9 @@ genesis, you can use Madara's **warp update** feature.
 
 ### Warp Update
 
-Warp update requires an already synchronized _local_ node with a working
-database. If you do not already have one, you can use the following command to
-generate a sample database:
+Warp update requires a working database source for the migration. If you do not
+already have one, you can use the following command to generate a sample
+database:
 
 ```bash
 cargo run --release --      \
@@ -581,6 +581,14 @@ cargo run --release -- \
   --l1-sync-disabled   `# We disable sync, for testing purposes` \
   --l2-sync-disabled
 ```
+
+> [!TIP]
+> Here, we have disabled sync for testing purposes, so the migration only
+> synchronizes the blocks that were already present in the source node's
+> database. In a production usecase, you most likely want the source node to
+> keep synchronizing with an `--l1-endpoint`, that way when the migration is
+> complete the receiver is fully up-to-date with any state that might have been
+> produced by the chain _during the migration_.
 
 You will then need to start a second node to synchronize the state of your
 database:

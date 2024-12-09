@@ -3,7 +3,10 @@ use std::sync::Arc;
 use jsonrpsee::server::ServerHandle;
 
 use mc_db::MadaraBackend;
-use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
+use mc_rpc::{
+    providers::{AddTransactionProvider, AddTransactionProviderGroup},
+    rpc_api_admin, rpc_api_user, Starknet,
+};
 use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
 
 use metrics::RpcMetrics;
@@ -26,7 +29,8 @@ pub enum RpcType {
 pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
-    add_txs_method_provider: Arc<dyn AddTransactionProvider>,
+    add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+    add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
 }
@@ -35,17 +39,33 @@ impl RpcService {
     pub fn user(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
-        add_txs_method_provider: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
     ) -> Self {
-        Self { config, backend, add_txs_method_provider, server_handle: None, rpc_type: RpcType::User }
+        Self {
+            config,
+            backend,
+            add_txs_provider_l2_sync,
+            add_txs_provider_mempool,
+            server_handle: None,
+            rpc_type: RpcType::User,
+        }
     }
 
     pub fn admin(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
-        add_txs_method_provider: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
     ) -> Self {
-        Self { config, backend, add_txs_method_provider, server_handle: None, rpc_type: RpcType::Admin }
+        Self {
+            config,
+            backend,
+            add_txs_provider_l2_sync,
+            add_txs_provider_mempool,
+            server_handle: None,
+            rpc_type: RpcType::Admin,
+        }
     }
 }
 
@@ -54,7 +74,8 @@ impl Service for RpcService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
-        let add_txs_method_provider = Arc::clone(&self.add_txs_method_provider);
+        let add_tx_provider_l2_sync = Arc::clone(&self.add_txs_provider_l2_sync);
+        let add_tx_provider_mempool = Arc::clone(&self.add_txs_provider_mempool);
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -62,12 +83,13 @@ impl Service for RpcService {
         self.server_handle = Some(server_handle);
 
         runner.service_loop(move |ctx| async move {
-            let starknet = Starknet::new(
-                backend.clone(),
-                add_txs_method_provider.clone(),
-                config.storage_proof_config(),
+            let add_tx_provider = Arc::new(AddTransactionProviderGroup::new(
+                add_tx_provider_l2_sync,
+                add_tx_provider_mempool,
                 ctx.clone(),
-            );
+            ));
+
+            let starknet = Starknet::new(backend.clone(), add_tx_provider, config.storage_proof_config(), ctx.clone());
             let metrics = RpcMetrics::register()?;
 
             let server_config = {

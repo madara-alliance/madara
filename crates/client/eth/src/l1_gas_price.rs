@@ -37,14 +37,18 @@ pub async fn gas_price_worker(
     eth_client: &EthereumClient,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    while !ctx.is_cancelled() {
-        interval.tick().await;
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {},
+            _ = ctx.cancelled() => break
+        }
+
         gas_price_worker_once(eth_client, &l1_gas_provider, gas_price_poll_ms).await?;
     }
 

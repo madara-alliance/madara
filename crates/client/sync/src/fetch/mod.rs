@@ -37,7 +37,13 @@ pub async fn l2_fetch_task(
     // First, catch up with the chain
     let L2FetchConfig { first_block, ref warp_update, .. } = config;
 
-    if let Some(WarpUpdateConfig { warp_update_port_rpc, warp_update_port_fgw, deferred_services }) = warp_update {
+    if let Some(WarpUpdateConfig {
+        warp_update_port_rpc,
+        warp_update_port_fgw,
+        deferred_service_start,
+        deferred_service_stop,
+    }) = warp_update
+    {
         let client = jsonrpsee::http_client::HttpClientBuilder::default()
             .build(format!("http://localhost:{warp_update_port_rpc}"))
             .expect("Building client");
@@ -75,7 +81,11 @@ pub async fn l2_fetch_task(
         config.first_block = next_block;
         config.sync_parallelism = save;
 
-        for svc_id in deferred_services {
+        for svc_id in deferred_service_stop {
+            ctx.service_remove(*svc_id);
+        }
+
+        for svc_id in deferred_service_start {
             ctx.service_add(*svc_id);
         }
     }

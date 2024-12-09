@@ -970,6 +970,7 @@ impl ServiceMonitor {
             anyhow::Ok(())
         });
 
+        tracing::debug!("Running services: {:?}", self.status_request.active_set());
         while self.status_request.is_active_some() {
             tokio::select! {
                 // A service has run to completion, mark it as inactive
@@ -1001,6 +1002,8 @@ impl ServiceMonitor {
                                 svc.start(runner)
                                     .await
                                     .context("Starting service")?;
+
+                                tracing::debug!("service {svc_id} has started");
                             } else {
                                 // reset request
                                 self.status_request.deactivate(svc_id);

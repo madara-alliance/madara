@@ -45,14 +45,16 @@ pub async fn start_server(
             let io = TokioIo::new(stream);
 
             let db_backend = Arc::clone(&db_backend);
-            let add_transaction_provider = Arc::clone(&add_transaction_provider);
+            let add_transaction_provider = add_transaction_provider.clone();
+            let ctx = ctx.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
                     main_router(
                         req,
                         Arc::clone(&db_backend),
-                        Arc::clone(&add_transaction_provider),
+                        add_transaction_provider.clone(),
+                        ctx.clone(),
                         feeder_gateway_enable,
                         gateway_enable,
                     )

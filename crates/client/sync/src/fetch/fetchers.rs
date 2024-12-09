@@ -60,7 +60,9 @@ pub struct WarpUpdateConfig {
     /// The port used for nodes to send blocks during a warp update.
     pub warp_update_port_fgw: u16,
     /// A list of services to start once warp update has completed.
-    pub deferred_services: Vec<MadaraServiceId>,
+    pub deferred_service_start: Vec<MadaraServiceId>,
+    /// A list of services to stop one warp update has completed.
+    pub deferred_service_stop: Vec<MadaraServiceId>,
 }
 
 pub async fn fetch_pending_block_and_updates(

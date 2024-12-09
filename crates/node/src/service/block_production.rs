@@ -47,9 +47,34 @@ impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, n_devnet_contracts, block_import } = self;
+        let Self { backend, l1_data_provider, mempool, metrics, block_import, .. } = self;
 
-        // DEVNET: we the genesis block for the devnet if not deployed, otherwise we only print the devnet keys.
+        let block_production_task = BlockProductionTask::new(
+            Arc::clone(backend),
+            Arc::clone(block_import),
+            Arc::clone(mempool),
+            Arc::clone(metrics),
+            Arc::clone(l1_data_provider),
+        )?;
+
+        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
+
+        Ok(())
+    }
+
+    fn id(&self) -> MadaraServiceId {
+        MadaraServiceId::BlockProduction
+    }
+}
+
+impl BlockProductionService {
+    /// Initializes the genesis state of a devnet. This is needed for local sequencers.
+    ///
+    /// This methods was made external to [Service::start] as it needs to be
+    /// called on node startup even if sequencer block production is not yet
+    /// enabled. This happens during warp updates on a local sequencer.
+    pub async fn setup_devnet(&self) -> anyhow::Result<()> {
+        let Self { backend, l1_data_provider, mempool, metrics, n_devnet_contracts, block_import } = self;
 
         let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
             // deploy devnet genesis
@@ -83,20 +108,6 @@ impl Service for BlockProductionService {
         let msg = format!("{}", keys);
         std::io::stdout().write(msg.as_bytes()).context("Writing devnet welcome message to stdout")?;
 
-        let block_production_task = BlockProductionTask::new(
-            Arc::clone(backend),
-            Arc::clone(block_import),
-            Arc::clone(mempool),
-            Arc::clone(metrics),
-            Arc::clone(l1_data_provider),
-        )?;
-
-        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
-
-        Ok(())
-    }
-
-    fn id(&self) -> MadaraServiceId {
-        MadaraServiceId::BlockProduction
+        anyhow::Ok(())
     }
 }

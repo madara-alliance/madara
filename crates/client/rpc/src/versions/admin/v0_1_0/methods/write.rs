@@ -20,6 +20,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.add_transaction_provider.add_declare_v0_transaction(declare_transaction).await?)
+        self.add_transaction_provider.add_declare_v0_transaction(declare_transaction).await
     }
 }

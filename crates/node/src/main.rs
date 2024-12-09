@@ -19,7 +19,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_utils::service::{MadaraServiceId, Service, ServiceMonitor};
+use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 
 const GREET_IMPL_NAME: &str = "Madara";
@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mempool = Arc::new(Mempool::new(Arc::clone(service_db.backend()), Arc::clone(&l1_data_provider)));
 
-    let service_l1 = L1SyncService::new(
+    let service_l1_sync = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &service_db,
         l1_gas_setter,
@@ -141,90 +141,94 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing the l1 sync service")?;
 
-    // Block production & L2 sync
+    // L2 Sync
 
     let importer = Arc::new(
         BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
             .context("Initializing importer service")?,
     );
 
-    // `rpc_add_txs_method_provider` is a trait object that tells the RPC task
-    // where to put the transactions when using the write endpoints.
-    let (service_block_prod_or_l2_sync, rpc_add_txs_method_provider): (
-        Box<dyn Service>,
-        Arc<dyn AddTransactionProvider>,
-    ) = if run_cmd.is_sequencer() {
-        // Block production service. (authority)
-        let block_production_service = BlockProductionService::new(
-            &run_cmd.block_production_params,
-            &service_db,
-            Arc::clone(&mempool),
-            importer,
-            Arc::clone(&l1_data_provider),
-        )?;
+    let warp_update = if run_cmd.args_preset.warp_update_receiver {
+        let mut deferred_service_start = vec![];
+        let mut deferred_service_stop = vec![];
 
-        (Box::new(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-    } else {
-        // Block sync service. (full node)
-        let warp_update = if run_cmd.args_preset.warp_update_receiver {
-            let mut deferred_services = vec![];
-
-            if !run_cmd.rpc_params.rpc_disable {
-                deferred_services.push(MadaraServiceId::RpcUser);
-            }
-
-            if run_cmd.rpc_params.rpc_admin {
-                deferred_services.push(MadaraServiceId::RpcAdmin);
-            }
-
-            if run_cmd.gateway_params.feeder_gateway_enable {
-                deferred_services.push(MadaraServiceId::Gateway);
-            }
-
-            if run_cmd.telemetry_params.telemetry {
-                deferred_services.push(MadaraServiceId::Telemetry);
-            }
-
-            Some(WarpUpdateConfig {
-                warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
-                warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
-                deferred_services,
-            })
-        } else {
-            None
-        };
-
-        let l2_sync_service = L2SyncService::new(
-            &run_cmd.l2_sync_params,
-            Arc::clone(&chain_config),
-            &service_db,
-            importer,
-            service_telemetry.new_handle(),
-            warp_update,
-        )
-        .await
-        .context("Initializing sync service")?;
-
-        let mut provider =
-            GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
-
-        // gateway api key is needed for declare transactions on mainnet
-        if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
-            provider.add_header(
-                HeaderName::from_static("x-throttling-bypass"),
-                HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
-            )
+        if !run_cmd.rpc_params.rpc_disable {
+            deferred_service_start.push(MadaraServiceId::RpcUser);
         }
 
-        (Box::new(l2_sync_service), Arc::new(ForwardToProvider::new(provider)))
+        if run_cmd.rpc_params.rpc_admin {
+            deferred_service_start.push(MadaraServiceId::RpcAdmin);
+        }
+
+        if run_cmd.gateway_params.feeder_gateway_enable {
+            deferred_service_start.push(MadaraServiceId::Gateway);
+        }
+
+        if run_cmd.telemetry_params.telemetry {
+            deferred_service_start.push(MadaraServiceId::Telemetry);
+        }
+
+        if run_cmd.is_sequencer() {
+            deferred_service_start.push(MadaraServiceId::BlockProduction);
+            deferred_service_stop.push(MadaraServiceId::L2Sync);
+        }
+
+        Some(WarpUpdateConfig {
+            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            deferred_service_start,
+            deferred_service_stop,
+        })
+    } else {
+        None
     };
+
+    let service_l2_sync = L2SyncService::new(
+        &run_cmd.l2_sync_params,
+        Arc::clone(&chain_config),
+        &service_db,
+        importer,
+        service_telemetry.new_handle(),
+        warp_update,
+    )
+    .await
+    .context("Initializing sync service")?;
+
+    let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
+
+    // gateway api key is needed for declare transactions on mainnet
+    if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
+        provider.add_header(
+            HeaderName::from_static("x-throttling-bypass"),
+            HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+        )
+    }
+
+    // Block production
+
+    let importer = Arc::new(
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
+    );
+    let service_block_production = BlockProductionService::new(
+        &run_cmd.block_production_params,
+        &service_db,
+        Arc::clone(&mempool),
+        importer,
+        Arc::clone(&l1_data_provider),
+    )?;
+
+    // Add transaction provider
+    let add_tx_provider_l2_sync: Arc<dyn AddTransactionProvider> = Arc::new(ForwardToProvider::new(provider));
+    let add_tx_provider_mempool: Arc<dyn AddTransactionProvider> = Arc::new(MempoolAddTxProvider::new(mempool));
 
     // User-facing RPC
 
     let service_rpc_user = RpcService::user(
         run_cmd.rpc_params.clone(),
         Arc::clone(service_db.backend()),
-        Arc::clone(&rpc_add_txs_method_provider),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
     );
 
     // Admin-facing RPC (for node operators)
@@ -232,14 +236,20 @@ async fn main() -> anyhow::Result<()> {
     let service_rpc_admin = RpcService::admin(
         run_cmd.rpc_params.clone(),
         Arc::clone(service_db.backend()),
-        Arc::clone(&rpc_add_txs_method_provider),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
     );
 
     // Feeder gateway
 
-    let service_gateway = GatewayService::new(run_cmd.gateway_params.clone(), &service_db, rpc_add_txs_method_provider)
-        .await
-        .context("Initializing gateway service")?;
+    let service_gateway = GatewayService::new(
+        run_cmd.gateway_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
+    )
+    .await
+    .context("Initializing gateway service")?;
 
     service_telemetry.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
 
@@ -247,10 +257,15 @@ async fn main() -> anyhow::Result<()> {
     //                             SERVICES (START)                          //
     // ===================================================================== //
 
+    if run_cmd.is_sequencer() {
+        service_block_production.setup_devnet().await?;
+    }
+
     let app = ServiceMonitor::default()
         .with(service_db)?
-        .with(service_l1)?
-        .with(service_block_prod_or_l2_sync)?
+        .with(service_l1_sync)?
+        .with(service_l2_sync)?
+        .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
         .with(service_gateway)?
@@ -263,29 +278,37 @@ async fn main() -> anyhow::Result<()> {
 
     let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
+    let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
+
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraServiceId::L1Sync);
     }
 
-    if run_cmd.is_sequencer() {
+    if warp_update_receiver {
+        app.activate(MadaraServiceId::L2Sync);
+    } else if run_cmd.is_sequencer() {
         app.activate(MadaraServiceId::BlockProduction);
     } else if !run_cmd.l2_sync_params.l2_sync_disabled {
         app.activate(MadaraServiceId::L2Sync);
     }
 
-    if !run_cmd.rpc_params.rpc_disable && !run_cmd.args_preset.warp_update_receiver {
+    if run_cmd.is_sequencer() && !warp_update_receiver {
+        app.activate(MadaraServiceId::BlockProduction);
+    }
+
+    if !run_cmd.rpc_params.rpc_disable && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcUser);
     }
 
-    if run_cmd.rpc_params.rpc_admin && !run_cmd.args_preset.warp_update_receiver {
+    if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcAdmin);
     }
 
-    if run_cmd.gateway_params.feeder_gateway_enable && !run_cmd.args_preset.warp_update_receiver {
+    if run_cmd.gateway_params.feeder_gateway_enable && !warp_update_receiver {
         app.activate(MadaraServiceId::Gateway);
     }
 
-    if run_cmd.telemetry_params.telemetry && !run_cmd.args_preset.warp_update_receiver {
+    if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
         app.activate(MadaraServiceId::Telemetry);
     }
 
