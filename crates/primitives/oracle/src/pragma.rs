@@ -36,6 +36,10 @@ impl Default for PragmaOracle {
 }
 
 impl PragmaOracle {
+    fn get_fetch_url(&self, base: String, quote: String) -> String {
+        format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
+    }
+
     fn is_in_bounds(&self, price: u128) -> bool {
         self.price_bounds.low <= price && price <= self.price_bounds.high
     }
@@ -43,13 +47,6 @@ impl PragmaOracle {
 
 #[async_trait]
 impl Oracle for PragmaOracle {
-    fn get_fetch_url(&self, base: String, quote: String) -> String {
-        format!("{}{}/{}?interval={}&aggregation={}", self.api_url, base, quote, self.interval, self.aggregation_method)
-    }
-
-    fn get_api_key(&self) -> &String {
-        &self.api_key
-    }
 
     /// Methods to retrieve ETH/STRK price from Pragma Oracle
     ///

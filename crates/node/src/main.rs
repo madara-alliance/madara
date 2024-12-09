@@ -113,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
                 .with_api_url(oracle_url.clone())
                 .with_api_key(oracle_api_key.clone())
                 .build();
-            l1_gas_setter.set_oracle_provider(Box::new(oracle));
+            l1_gas_setter.set_oracle_provider(oracle);
         }
     }
 

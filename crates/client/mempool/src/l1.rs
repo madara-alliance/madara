@@ -13,7 +13,7 @@ pub struct GasPriceProvider {
     data_gas_price_sync_enabled: Arc<AtomicBool>,
     strk_gas_price_sync_enabled: Arc<AtomicBool>,
     strk_data_gas_price_sync_enabled: Arc<AtomicBool>,
-    pub oracle_provider: Option<Arc<Box<dyn Oracle>>>,
+    pub oracle_provider: Option<Arc<dyn Oracle>>,
 }
 
 impl GasPriceProvider {
@@ -34,7 +34,7 @@ impl GasPriceProvider {
             || self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed)
     }
 
-    pub fn set_oracle_provider(&mut self, oracle_provider: Box<dyn Oracle>) -> &mut Self {
+    pub fn set_oracle_provider(&mut self, oracle_provider: impl Oracle + 'static) -> &mut Self {
         self.oracle_provider = Some(Arc::new(oracle_provider));
         self
     }
