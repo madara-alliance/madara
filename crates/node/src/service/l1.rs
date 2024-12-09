@@ -61,7 +61,7 @@ impl L1SyncService {
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
-                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
+                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0` and `--blob-gas-price 0`, or enable L1 sync by removing the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             tracing::info!("⏳ Getting initial L1 gas prices");
             mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)

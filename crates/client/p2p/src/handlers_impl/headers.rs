@@ -6,6 +6,7 @@ use crate::{
 };
 use futures::{channel::mpsc::Sender, stream, SinkExt, StreamExt};
 use mp_block::{header::L1DataAvailabilityMode, MadaraBlockInfo};
+use starknet_core::types::Felt;
 use tokio::pin;
 
 impl From<MadaraBlockInfo> for model::BlockHeadersResponse {
@@ -43,7 +44,7 @@ impl From<MadaraBlockInfo> for model::BlockHeadersResponse {
                     L1DataAvailabilityMode::Blob => model::L1DataAvailabilityMode::Blob,
                 }
                 .into(),
-                signatures: vec![],
+                signatures: vec![model::ConsensusSignature { r: Some(Felt::ONE.into()), s: Some(Felt::ONE.into()) }],
             })),
         }
     }
@@ -66,8 +67,11 @@ pub async fn headers_sync(
         })
     }));
 
+    tracing::debug!("headers sync!");
+
     pin!(stream);
     while let Some(res) = stream.next().await {
+        tracing::debug!("new res: {res:?}!");
         if let Err(_closed) = out.send(res.or_internal_server_error("Error while reading from block stream")?).await {
             break;
         }

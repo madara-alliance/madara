@@ -1,5 +1,4 @@
 use futures::{channel::mpsc::Sender, future::BoxFuture, pin_mut, Future};
-use libp2p::PeerId;
 use p2p_stream::InboundRequestId;
 use std::borrow::Cow;
 use std::{collections::HashMap, fmt, marker::PhantomData};
@@ -16,7 +15,6 @@ pub enum Error {
 }
 
 pub struct ReqContext<AppCtx: Clone> {
-    pub peer: PeerId,
     pub app_ctx: AppCtx,
 }
 
@@ -53,12 +51,12 @@ where
         }
     }
 
-    pub fn handle_event(&mut self, ev: p2p_stream::Event<Req, Res>) -> Result<(), Error> {
+    pub fn handle_event(&mut self, ev: p2p_stream::Event<Req, Res>) {
         match ev {
             /* === OTHER PEER => US === */
             p2p_stream::Event::InboundRequest { request_id, request, peer, channel } => {
                 tracing::debug!("New inbounds request in stream {} [peer_id {}]", self.debug_name, peer);
-                let ctx = ReqContext { peer, app_ctx: self.app_ctx.clone() };
+                let ctx = ReqContext { app_ctx: self.app_ctx.clone() };
                 // Spawn the task that responds to the request.
 
                 let fut = (self.handler)(ctx, request, channel);
@@ -98,7 +96,6 @@ where
             p2p_stream::Event::OutboundFailure { .. } => todo!(),
             p2p_stream::Event::InboundResponseStreamClosed { .. } => todo!(),
         }
-        Ok(())
     }
 }
 

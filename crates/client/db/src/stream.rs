@@ -61,8 +61,8 @@ impl MadaraBackend {
             /// `None` here means we reached the end of iteration.
             next_to_return: Option<u64>,
             num_blocks_returned: u64,
-            /// This is `+ 1` because we want to handle returning genesis. If the chain only has genesis, this field will
-            /// be 0.
+            /// This is `+ 1` because we want to handle returning genesis. If the chain is empty (does not even have a genesis
+            /// block), this field will be 0.
             latest_plus_one: Option<u64>,
             subscription: Option<Receiver<MadaraBlockInfo>>,
         }

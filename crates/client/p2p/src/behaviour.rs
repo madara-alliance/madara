@@ -43,8 +43,6 @@ pub struct MadaraP2pBehaviour {
     pub events_sync: p2p_stream::Behaviour<codecs::Events>,
 }
 
-pub const PROTOCOL_VERSION: &str = "/starknet/0.1.0";
-
 impl MadaraP2pBehaviour {
     // The return error type can't be anyhow::Error unfortunately because the SwarmBuilder won't let us
     pub fn new(
@@ -57,18 +55,23 @@ impl MadaraP2pBehaviour {
 
         let p2p_stream_config = p2p_stream::Config::default();
         Ok(Self {
+            identify: identify::Behaviour::new(
+                identify::Config::new(identify::PROTOCOL_NAME.to_string(), pubkey)
+                    .with_agent_version(format!("madara/{}", env!("CARGO_PKG_VERSION"))),
+            ),
             ping: Default::default(),
             kad: {
                 let protocol = StreamProtocol::try_from_owned(format!("/starknet/kad/{}/1.0.0", chain_config.chain_id))
                     .expect("Invalid kad stream protocol");
                 let mut cfg = kad::Config::new(protocol);
+                const PROVIDER_PUBLICATION_INTERVAL: Duration = Duration::from_secs(600);
+                cfg.set_record_ttl(Some(Duration::from_secs(0)));
+                cfg.set_provider_record_ttl(Some(PROVIDER_PUBLICATION_INTERVAL * 3));
+                cfg.set_provider_publication_interval(Some(PROVIDER_PUBLICATION_INTERVAL));
+                cfg.set_periodic_bootstrap_interval(Some(Duration::from_millis(500)));
                 cfg.set_query_timeout(Duration::from_secs(5 * 60));
                 kad::Behaviour::with_config(local_peer_id, MemoryStore::new(local_peer_id), cfg)
             },
-            identify: identify::Behaviour::new(
-                identify::Config::new(PROTOCOL_VERSION.to_string(), pubkey)
-                    .with_agent_version(format!("madara/{}", env!("CARGO_PKG_VERSION"))),
-            ),
             autonat: autonat::Behaviour::new(local_peer_id, autonat::Config::default()),
             dcutr: dcutr::Behaviour::new(local_peer_id),
             relay: relay_behaviour,

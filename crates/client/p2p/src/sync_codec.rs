@@ -32,13 +32,6 @@ pub mod protocols {
         struct Transactions = "/starknet/transactions/0.1.0-rc.0";
         struct Events = "/starknet/events/0.1.0-rc.0";
     }
-    pub const ALL: &[&str] = &[
-        "/starknet/headers/0.1.0-rc.0",
-        "/starknet/state_diffs/0.1.0-rc.0",
-        "/starknet/classes/0.1.0-rc.0",
-        "/starknet/transactions/0.1.0-rc.0",
-        "/starknet/events/0.1.0-rc.0",
-    ];
 }
 
 pub mod codecs {

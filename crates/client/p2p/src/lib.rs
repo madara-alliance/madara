@@ -34,7 +34,9 @@ struct MadaraP2pContext {
 
 pub struct MadaraP2p {
     config: P2pConfig,
+    #[allow(unused)]
     db: Arc<MadaraBackend>,
+    #[allow(unused)]
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 
     swarm: Swarm<MadaraP2pBehaviour>,
@@ -105,7 +107,19 @@ impl MadaraP2p {
                     let connections_in = connections_info.num_established_incoming();
                     let connections_out = connections_info.num_established_outgoing();
                     let pending_connections = connections_info.num_pending();
+                    let dht = self.swarm.behaviour_mut().kad
+                        .kbuckets()
+                        // Cannot .into_iter() a KBucketRef, hence the inner collect followed by flat_map
+                        .map(|kbucket_ref| {
+                            kbucket_ref
+                                .iter()
+                                .map(|entry_ref| *entry_ref.node.key.preimage())
+                                .collect::<Vec<_>>()
+                        })
+                        .flat_map(|peers_in_bucket| peers_in_bucket.into_iter())
+                        .collect::<std::collections::HashSet<_>>();
                     tracing::info!("P2P {peers} peers  IN: {connections_in}  OUT: {connections_out}  Pending: {pending_connections}");
+                    tracing::info!("DHT {dht:?}");
                 }
 
                 // Handle incoming service commands
@@ -113,7 +127,7 @@ impl MadaraP2p {
 
                 // Make progress on the swarm and handle the events it yields
                 event = self.swarm.next() => match event {
-                    Some(event) => self.handle_event(event).await.context("Handling p2p event")?,
+                    Some(event) => self.handle_event(event).context("Handling p2p event")?,
                     None => break,
                 }
             }
