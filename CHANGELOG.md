@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat: fetch eth/strk price and sync strk gas price
 - feat(block_production): continue pending block on restart
 - feat(mempool): mempool transaction saving on db
 - feat(mempool): mempool transaction limits

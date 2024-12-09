@@ -5,7 +5,7 @@ mod cli;
 mod service;
 mod util;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
 use http::{HeaderName, HeaderValue};
@@ -16,6 +16,7 @@ use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
+use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{Service, ServiceGroup};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use std::sync::Arc;
@@ -88,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
             .context("Initializing importer service")?,
     );
 
-    let l1_gas_setter = GasPriceProvider::new();
+    let mut l1_gas_setter = GasPriceProvider::new();
 
     if let Some(fix_gas) = run_cmd.l1_sync_params.gas_price {
         l1_gas_setter.update_eth_l1_gas_price(fix_gas as u128);
@@ -106,6 +107,23 @@ async fn main() -> anyhow::Result<()> {
         l1_gas_setter.update_strk_l1_data_gas_price(strk_fix_blob_gas as u128);
         l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
     }
+    if let Some(ref oracle_url) = run_cmd.l1_sync_params.oracle_url {
+        if let Some(ref oracle_api_key) = run_cmd.l1_sync_params.oracle_api_key {
+            let oracle = PragmaOracleBuilder::new()
+                .with_api_url(oracle_url.clone())
+                .with_api_key(oracle_api_key.clone())
+                .build();
+            l1_gas_setter.set_oracle_provider(oracle);
+        }
+    }
+
+    if !run_cmd.l1_sync_params.sync_l1_disabled
+        && l1_gas_setter.is_oracle_needed()
+        && l1_gas_setter.oracle_provider.is_none()
+    {
+        bail!("STRK gas is not fixed and oracle is not provided");
+    }
+
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service

@@ -216,7 +216,7 @@ pub mod eth_client_getter_test {
             .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
             .port(port.0)
-            .timeout(20_000)
+            .timeout(60_000)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
