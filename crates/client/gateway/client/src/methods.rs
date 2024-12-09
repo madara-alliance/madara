@@ -15,10 +15,9 @@ use mp_gateway::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use starknet_core::types::{
-    contract::legacy::LegacyContractClass, DeclareTransactionResult, DeployAccountTransactionResult, Felt,
-    InvokeTransactionResult,
-};
+use starknet_core::types::contract::legacy::LegacyContractClass;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
 
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
@@ -123,21 +122,21 @@ impl GatewayProvider {
     pub async fn add_invoke_transaction(
         &self,
         transaction: UserInvokeFunctionTransaction,
-    ) -> Result<InvokeTransactionResult, SequencerError> {
+    ) -> Result<AddInvokeTransactionResult<Felt>, SequencerError> {
         self.add_transaction(UserTransaction::InvokeFunction(transaction)).await
     }
 
     pub async fn add_declare_transaction(
         &self,
         transaction: UserDeclareTransaction,
-    ) -> Result<DeclareTransactionResult, SequencerError> {
+    ) -> Result<ClassAndTxnHash<Felt>, SequencerError> {
         self.add_transaction(UserTransaction::Declare(transaction)).await
     }
 
     pub async fn add_deploy_account_transaction(
         &self,
         transaction: UserDeployAccountTransaction,
-    ) -> Result<DeployAccountTransactionResult, SequencerError> {
+    ) -> Result<ContractAndTxnHash<Felt>, SequencerError> {
         self.add_transaction(UserTransaction::DeployAccount(transaction)).await
     }
 }
@@ -162,6 +161,8 @@ mod tests {
     use super::*;
 
     const CLASS_BLOCK_0: &str = "0x010455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8";
+
+    const CLASS_NO_ABI: &str = "0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b";
 
     const CLASS_ACCOUNT: &str = "0x07595b4f7d50010ceb00230d8b5656e3c3dd201b6df35d805d3f2988c69a1432";
     const CLASS_ACCOUNT_BLOCK: u64 = 1342;
@@ -406,6 +407,15 @@ mod tests {
             class_reference.compress().expect("Compressing legacy contract class").into();
 
         assert_eq!(class, class_compressed_reference.into());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_class_by_hash_legacy_without_abi(client_mainnet_fixture: GatewayProvider) {
+        let _ = client_mainnet_fixture
+            .get_class_by_hash(Felt::from_hex_unchecked(CLASS_NO_ABI), BlockId::Number(20734))
+            .await
+            .unwrap_or_else(|_| panic!("Getting class {CLASS_NO_ABI} at block number 0"));
     }
 
     #[rstest]

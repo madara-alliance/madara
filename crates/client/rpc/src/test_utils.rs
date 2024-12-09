@@ -14,12 +14,13 @@ use mp_state_update::{
     StorageEntry,
 };
 use mp_transactions::{BroadcastedDeclareTransactionV0, InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_utils::service::ServiceContext;
 use rstest::fixture;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
-};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+};
 use std::sync::Arc;
 
 use crate::{providers::AddTransactionProvider, Starknet};
@@ -33,25 +34,25 @@ impl AddTransactionProvider for TestTransactionProvider {
     async fn add_declare_v0_transaction(
         &self,
         _declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult> {
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         unimplemented!()
     }
     async fn add_declare_transaction(
         &self,
-        _declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
+        _declare_transaction: BroadcastedDeclareTxn<Felt>,
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         unimplemented!()
     }
     async fn add_deploy_account_transaction(
         &self,
-        _deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
+        _deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
+    ) -> RpcResult<ContractAndTxnHash<Felt>> {
         unimplemented!()
     }
     async fn add_invoke_transaction(
         &self,
-        _invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
+        _invoke_transaction: BroadcastedInvokeTxn<Felt>,
+    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
         unimplemented!()
     }
 }
@@ -60,7 +61,12 @@ impl AddTransactionProvider for TestTransactionProvider {
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let rpc = Starknet::new(backend.clone(), Arc::new(TestTransactionProvider));
+    let rpc = Starknet::new(
+        backend.clone(),
+        Arc::new(TestTransactionProvider),
+        Default::default(),
+        ServiceContext::new_for_testing(),
+    );
     (backend, rpc)
 }
 
@@ -68,8 +74,8 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
 pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
-    pub expected_txs: Vec<starknet_core::types::Transaction>,
-    pub expected_receipts: Vec<starknet_core::types::TransactionReceipt>,
+    pub expected_txs: Vec<starknet_types_rpc::TxnWithHash<Felt>>,
+    pub expected_receipts: Vec<TxnReceipt<Felt>>,
 }
 
 #[fixture]
@@ -90,83 +96,98 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         Felt::from_hex_unchecked("0xdd84847784"),
     ];
     let expected_txs = {
-        use starknet_core::types::{InvokeTransaction, InvokeTransactionV0, Transaction};
+        use starknet_types_rpc::{InvokeTxn, InvokeTxnV0, Txn};
         vec![
-            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                transaction_hash: Felt::from_hex_unchecked("0x8888888"),
-                max_fee: Felt::from_hex_unchecked("0x12"),
-                signature: vec![],
-                contract_address: Felt::from_hex_unchecked("0x4343"),
-                entry_point_selector: Felt::from_hex_unchecked("0x1212"),
-                calldata: vec![Felt::from_hex_unchecked("0x2828")],
-            })),
-            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
-                max_fee: Felt::from_hex_unchecked("0xb12"),
-                signature: vec![],
-                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                calldata: vec![Felt::from_hex_unchecked("0x2828b")],
-            })),
-            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
-                max_fee: Felt::from_hex_unchecked("0xb12"),
-                signature: vec![],
-                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
-                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")],
-            })),
-            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
-                max_fee: Felt::from_hex_unchecked("0xb12"),
-                signature: vec![],
-                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                calldata: vec![Felt::from_hex_unchecked("0x2828b")],
-            })),
+            TxnWithHash {
+                transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
+                    max_fee: Felt::from_hex_unchecked("0x12"),
+                    signature: vec![],
+                    contract_address: Felt::from_hex_unchecked("0x4343"),
+                    entry_point_selector: Felt::from_hex_unchecked("0x1212"),
+                    calldata: vec![Felt::from_hex_unchecked("0x2828")],
+                })),
+                transaction_hash: tx_hashes[0],
+            },
+            TxnWithHash {
+                transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
+                    max_fee: Felt::from_hex_unchecked("0xb12"),
+                    signature: vec![],
+                    contract_address: Felt::from_hex_unchecked("0x434b3"),
+                    entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                    calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                })),
+                transaction_hash: tx_hashes[1],
+            },
+            TxnWithHash {
+                transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
+                    max_fee: Felt::from_hex_unchecked("0xb12"),
+                    signature: vec![],
+                    contract_address: Felt::from_hex_unchecked("0x434b3"),
+                    entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
+                    calldata: vec![Felt::from_hex_unchecked("0x2828eeb")],
+                })),
+                transaction_hash: tx_hashes[2],
+            },
+            TxnWithHash {
+                transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
+                    max_fee: Felt::from_hex_unchecked("0xb12"),
+                    signature: vec![],
+                    contract_address: Felt::from_hex_unchecked("0x434b3"),
+                    entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                    calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                })),
+                transaction_hash: tx_hashes[3],
+            },
         ]
     };
     let expected_receipts = {
-        use starknet_core::types::{
-            ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionFinalityStatus,
-            TransactionReceipt,
+        use starknet_types_rpc::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
         };
         vec![
-            TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                transaction_hash: Felt::from_hex_unchecked("0x8888888"),
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
-                messages_sent: vec![],
-                events: vec![],
-                execution_resources: mp_receipt::ExecutionResources::default().into(),
-                execution_result: ExecutionResult::Succeeded,
-                finality_status: TransactionFinalityStatus::AcceptedOnL1,
+            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L1,
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                },
             }),
-            TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
-                messages_sent: vec![],
-                events: vec![],
-                execution_resources: mp_receipt::ExecutionResources::default().into(),
-                execution_result: ExecutionResult::Succeeded,
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                },
             }),
-            TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94dd"), unit: PriceUnit::Fri },
-                messages_sent: vec![],
-                events: vec![],
-                execution_resources: mp_receipt::ExecutionResources::default().into(),
-                execution_result: ExecutionResult::Reverted { reason: "too bad".into() },
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
+                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94dd"), unit: PriceUnit::Fri },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: starknet_types_rpc::ExecutionStatus::Reverted("too bad".into()),
+                },
             }),
-            TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
-                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
-                messages_sent: vec![],
-                events: vec![],
-                execution_resources: mp_receipt::ExecutionResources::default().into(),
-                execution_result: ExecutionResult::Succeeded,
-                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                    actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                },
             }),
         ]
     };
@@ -222,6 +243,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -245,6 +268,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -312,6 +337,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -348,11 +375,29 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
     }
 
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
+}
+
+fn defaut_execution_resources() -> starknet_types_rpc::ExecutionResources {
+    starknet_types_rpc::ExecutionResources {
+        bitwise_builtin_applications: None,
+        ec_op_builtin_applications: None,
+        ecdsa_builtin_applications: None,
+        keccak_builtin_applications: None,
+        memory_holes: None,
+        pedersen_builtin_applications: None,
+        poseidon_builtin_applications: None,
+        range_check_builtin_applications: None,
+        segment_arena_builtin: None,
+        steps: 0,
+        data_availability: starknet_types_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
+    }
 }
 
 // This sample chain is used for every rpcs that query info gotten from state updates.
@@ -513,6 +558,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[0].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -535,6 +582,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[1].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -557,6 +606,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[2].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -576,6 +627,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[3].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
     }

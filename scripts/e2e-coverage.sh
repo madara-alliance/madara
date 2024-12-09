@@ -19,7 +19,10 @@ subshell() {
         sleep 1
     done
 
-    cargo test --profile dev --workspace $@
+
+    ARGS=$@
+    export PROPTEST_CASES=5
+    cargo test --profile dev ${ARGS:=--workspace}
 
     cargo llvm-cov report --lcov --output-path lcov.info
     cargo llvm-cov report

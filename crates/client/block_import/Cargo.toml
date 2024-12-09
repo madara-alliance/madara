@@ -40,7 +40,6 @@ mp-state-update.workspace = true
 mp-transactions.workspace = true
 
 bonsai-trie.workspace = true
-starknet-core.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
 

@@ -1,0 +1,63 @@
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
+use crate::utils::ResultExt;
+use crate::versions::user::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::Starknet;
+use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use mp_transactions::BroadcastedTransactionExt;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use std::sync::Arc;
+
+/// Estimate the fee associated with transaction
+///
+/// # Arguments
+///
+/// * `request` - starknet transaction request
+/// * `block_id` - hash of the requested block, number (height), or tag
+///
+/// # Returns
+///
+/// * `fee_estimate` - fee estimate in gwei
+pub async fn estimate_fee(
+    starknet: &Starknet,
+    request: Vec<BroadcastedTxn<Felt>>,
+    simulation_flags: Vec<SimulationFlagForEstimateFee>,
+    block_id: BlockId,
+) -> StarknetRpcResult<Vec<FeeEstimate<Felt>>> {
+    let block_info = starknet.get_block_info(&block_id)?;
+    let starknet_version = *block_info.protocol_version();
+
+    if starknet_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+    }
+
+    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
+
+    let transactions = request
+        .into_iter()
+        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
+        .collect::<Result<Vec<_>, _>>()
+        .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
+
+    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
+
+    let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
+
+    let fee_estimates = execution_results.iter().enumerate().try_fold(
+        Vec::with_capacity(execution_results.len()),
+        |mut acc, (index, result)| {
+            if result.execution_info.is_reverted() {
+                return Err(StarknetRpcApiError::TxnExecutionError {
+                    tx_index: index,
+                    error: result.execution_info.revert_error.clone().unwrap_or_default(),
+                });
+            }
+            acc.push(exec_context.execution_result_to_fee_estimate(result));
+            Ok(acc)
+        },
+    )?;
+
+    Ok(fee_estimates)
+}

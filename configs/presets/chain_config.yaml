@@ -30,3 +30,6 @@ sequencer_address: "0x123"
 eth_core_contract_address: "0xdf13b98ea1c1f8b104d63b9021be731f6e91c75b"
 eth_gps_statement_verifier: "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe"
 private_key: "0x1234"
+mempool_tx_limit: 10000
+mempool_declare_tx_limit: 20
+mempool_tx_max_age: "5h"

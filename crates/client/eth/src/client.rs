@@ -210,12 +210,13 @@ pub mod eth_client_getter_test {
         AnvilPortNum(guard.next.next().expect("no more port to use"))
     }
 
-    fn create_anvil_instance() -> AnvilInstance {
+    pub fn create_anvil_instance() -> AnvilInstance {
         let port = get_port();
         let anvil = Anvil::new()
             .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
             .port(port.0)
+            .timeout(20_000)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());

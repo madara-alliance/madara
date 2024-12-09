@@ -5,14 +5,13 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
 use alloy::sol_types::SolValue;
 use anyhow::Context;
-use blockifier::transaction::transaction_execution::Transaction as BlockifierTransation;
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::channel_wait_or_graceful_shutdown;
+use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, Fee, L1HandlerTransaction, Transaction, TransactionVersion};
-use starknet_api::transaction_hash::get_transaction_hash;
+use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -42,6 +41,7 @@ pub async fn sync(
     client: &EthereumClient,
     chain_id: &ChainId,
     mempool: Arc<Mempool>,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
@@ -66,7 +66,7 @@ pub async fn sync(
             "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
         )?
         .into_stream();
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &ctx).await {
         if let Ok((event, meta)) = event_result {
             tracing::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
@@ -133,11 +133,12 @@ async fn process_l1_message(
     event: &LogMessageToL2,
     l1_block_number: &Option<u64>,
     event_index: &Option<u64>,
-    chain_id: &ChainId,
+    _chain_id: &ChainId,
     mempool: Arc<Mempool>,
 ) -> anyhow::Result<Option<Felt>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
+    let fees: u128 = event.fee.try_into()?;
 
     // Ensure that L1 message has not been executed
     match backend.has_l1_messaging_nonce(tx_nonce) {
@@ -154,16 +155,7 @@ async fn process_l1_message(
         }
     };
 
-    let tx_hash = get_transaction_hash(&Transaction::L1Handler(transaction.clone()), chain_id, &transaction.version)?;
-    let blockifier_transaction = BlockifierTransation::from_api(
-        Transaction::L1Handler(transaction),
-        tx_hash,
-        None,
-        Some(Fee(event.fee.try_into()?)),
-        None,
-        false,
-    )?;
-    let res = mempool.accept_l1_handler_tx(blockifier_transaction)?;
+    let res = mempool.accept_l1_handler_tx(transaction.into(), fees)?;
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?
@@ -242,8 +234,9 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
     use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
     use rstest::*;
     use starknet_api::core::Nonce;
     use starknet_types_core::felt::Felt;
@@ -356,7 +349,7 @@ mod l1_messaging_tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
                 .await
                 .expect("Failed to create database service"),
         );
@@ -364,7 +357,11 @@ mod l1_messaging_tests {
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), Arc::clone(&l1_data_provider)));
+        let mempool = Arc::new(Mempool::new(
+            Arc::clone(db.backend()),
+            Arc::clone(&l1_data_provider),
+            MempoolLimits::for_testing(),
+        ));
 
         // Set up metrics service
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
@@ -409,7 +406,10 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
+            })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -461,7 +461,10 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
+            })
         };
 
         let _ = contract.setIsCanceled(false).send().await;
@@ -508,7 +511,10 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move { sync(db.backend(), &eth_client, &chain_config.chain_id, mempool).await })
+            tokio::spawn(async move {
+                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
+                    .await
+            })
         };
 
         // Mock cancelled message

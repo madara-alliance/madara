@@ -1,25 +1,23 @@
+use mp_class::CompressedLegacyContractClass;
+use mp_convert::hex_serde::{U128AsHex, U64AsHex};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 use std::sync::Arc;
 
 mod broadcasted_to_blockifier;
 mod from_blockifier;
 mod from_broadcasted_transaction;
-mod from_starknet_core;
+mod from_starknet_types;
 mod into_starknet_api;
-mod to_starknet_core;
+mod to_starknet_types;
 
+// pub mod broadcasted;
 pub mod compute_hash;
 pub mod utils;
 
-use mp_convert::{hex_serde::U128AsHex, hex_serde::U64AsHex, ToFelt};
-// pub use from_starknet_provider::TransactionTypeError;
-pub use broadcasted_to_blockifier::{
-    broadcasted_declare_v0_to_blockifier, broadcasted_to_blockifier, BroadcastedToBlockifierError,
-};
-use mp_class::CompressedLegacyContractClass;
-use serde_with::serde_as;
-use starknet_api::transaction::TransactionVersion;
+pub use broadcasted_to_blockifier::{BroadcastedToBlockifierError, BroadcastedTransactionExt};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -45,17 +43,12 @@ impl TransactionWithHash {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BroadcastedDeclareTransactionV0 {
-    /// The address of the account contract sending the declaration transaction
     pub sender_address: Felt,
-    /// The maximal fee that can be charged for including the transaction
     pub max_fee: Felt,
-    /// Signature
     pub signature: Vec<Felt>,
-    /// The class to be declared
     pub contract_class: Arc<CompressedLegacyContractClass>,
-    /// If set to `true`, uses a query-only transaction version that's invalid for execution
     pub is_query: bool,
 }
 
@@ -363,14 +356,15 @@ impl L1HandlerTransaction {
     }
 }
 
-impl From<starknet_core::types::MsgFromL1> for L1HandlerTransaction {
-    fn from(msg: starknet_core::types::MsgFromL1) -> Self {
+impl From<starknet_types_rpc::MsgFromL1<Felt>> for L1HandlerTransaction {
+    fn from(msg: starknet_types_rpc::MsgFromL1<Felt>) -> Self {
         Self {
             version: Felt::ZERO,
             nonce: 0,
             contract_address: msg.to_address,
             entry_point_selector: msg.entry_point_selector,
-            calldata: std::iter::once(msg.from_address.to_felt()).chain(msg.payload).collect(),
+            // TODO: fix type from_address on starknet_types_rpc::MsgFromL1
+            calldata: std::iter::once(Felt::from_hex(&msg.from_address).unwrap()).chain(msg.payload).collect(),
         }
     }
 }
@@ -674,37 +668,31 @@ pub struct ResourceBounds {
     pub max_price_per_unit: u128,
 }
 
-impl From<ResourceBoundsMapping> for starknet_core::types::ResourceBoundsMapping {
+impl From<ResourceBoundsMapping> for starknet_types_rpc::ResourceBoundsMapping {
     fn from(resource: ResourceBoundsMapping) -> Self {
-        Self {
-            l1_gas: starknet_core::types::ResourceBounds {
-                max_amount: resource.l1_gas.max_amount,
-                max_price_per_unit: resource.l1_gas.max_price_per_unit,
-            },
-            l2_gas: starknet_core::types::ResourceBounds {
-                max_amount: resource.l2_gas.max_amount,
-                max_price_per_unit: resource.l2_gas.max_price_per_unit,
-            },
-        }
+        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<starknet_core::types::ResourceBoundsMapping> for ResourceBoundsMapping {
-    fn from(resource: starknet_core::types::ResourceBoundsMapping) -> Self {
-        Self {
-            l1_gas: ResourceBounds {
-                max_amount: resource.l1_gas.max_amount,
-                max_price_per_unit: resource.l1_gas.max_price_per_unit,
-            },
-            l2_gas: ResourceBounds {
-                max_amount: resource.l2_gas.max_amount,
-                max_price_per_unit: resource.l2_gas.max_price_per_unit,
-            },
-        }
+impl From<starknet_types_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(resource: starknet_types_rpc::ResourceBoundsMapping) -> Self {
+        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<DataAvailabilityMode> for starknet_core::types::DataAvailabilityMode {
+impl From<ResourceBounds> for starknet_types_rpc::ResourceBounds {
+    fn from(resource: ResourceBounds) -> Self {
+        Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
+    }
+}
+
+impl From<starknet_types_rpc::ResourceBounds> for ResourceBounds {
+    fn from(resource: starknet_types_rpc::ResourceBounds) -> Self {
+        Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
+    }
+}
+
+impl From<DataAvailabilityMode> for starknet_types_rpc::DaMode {
     fn from(da_mode: DataAvailabilityMode) -> Self {
         match da_mode {
             DataAvailabilityMode::L1 => Self::L1,
@@ -713,17 +701,19 @@ impl From<DataAvailabilityMode> for starknet_core::types::DataAvailabilityMode {
     }
 }
 
-impl From<starknet_core::types::DataAvailabilityMode> for DataAvailabilityMode {
-    fn from(da_mode: starknet_core::types::DataAvailabilityMode) -> Self {
+impl From<starknet_types_rpc::DaMode> for DataAvailabilityMode {
+    fn from(da_mode: starknet_types_rpc::DaMode) -> Self {
         match da_mode {
-            starknet_core::types::DataAvailabilityMode::L1 => Self::L1,
-            starknet_core::types::DataAvailabilityMode::L2 => Self::L2,
+            starknet_types_rpc::DaMode::L1 => Self::L1,
+            starknet_types_rpc::DaMode::L2 => Self::L2,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use mp_class::{CompressedLegacyContractClass, LegacyEntryPointsByType};
 
@@ -955,9 +945,8 @@ mod tests {
 
     #[test]
     fn test_msg_to_l1_handler() {
-        let msg = starknet_core::types::MsgFromL1 {
-            from_address: starknet_core::types::EthAddress::from_hex("0x0000000000000000000000000000000000000001")
-                .unwrap(),
+        let msg = starknet_types_rpc::MsgFromL1 {
+            from_address: "0x0000000000000000000000000000000000000001".to_string(),
             to_address: Felt::from(2),
             entry_point_selector: Felt::from(3),
             payload: vec![Felt::from(4), Felt::from(5)],
@@ -981,7 +970,7 @@ mod tests {
             l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
         };
 
-        let starknet_resource_mapping: starknet_core::types::ResourceBoundsMapping = resource_mapping.clone().into();
+        let starknet_resource_mapping: starknet_types_rpc::ResourceBoundsMapping = resource_mapping.clone().into();
         let resource_mapping_back: ResourceBoundsMapping = starknet_resource_mapping.into();
 
         assert_eq!(resource_mapping, resource_mapping_back);
@@ -990,7 +979,7 @@ mod tests {
     #[test]
     fn test_data_availability_mode_conversion() {
         let da_mode = DataAvailabilityMode::L1;
-        let starknet_da_mode: starknet_core::types::DataAvailabilityMode = da_mode.into();
+        let starknet_da_mode: starknet_types_rpc::DaMode = da_mode.into();
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);
@@ -999,7 +988,7 @@ mod tests {
     #[test]
     fn test_broadcasted_declare_transaction_v0_serialization() {
         let contract_class = CompressedLegacyContractClass {
-            program: Vec::new(),
+            program: "".as_bytes().to_vec(),
             entry_points_by_type: LegacyEntryPointsByType {
                 constructor: Vec::new(),
                 external: Vec::new(),

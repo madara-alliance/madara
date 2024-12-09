@@ -1,7 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -24,7 +24,7 @@ impl GatewayService {
 
 #[async_trait::async_trait]
 impl Service for GatewayService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         if self.config.feeder_gateway_enable || self.config.gateway_enable {
             let GatewayService { db_backend, add_transaction_provider, config } = self.clone();
 
@@ -36,10 +36,15 @@ impl Service for GatewayService {
                     config.gateway_enable,
                     config.gateway_external,
                     config.gateway_port,
+                    ctx,
                 )
                 .await
             });
         }
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::Gateway
     }
 }

@@ -1,11 +1,12 @@
-use std::fmt::Display;
-
+use crate::utils::display_internal_server_error;
 use mc_db::MadaraStorageError;
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
+use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
-
-use crate::utils::display_internal_server_error;
+use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
+use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
@@ -17,13 +18,29 @@ pub enum StarknetTransactionExecutionError {
     ContractError,
 }
 
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageProofLimit {
+    MaxUsedTries,
+    MaxKeys,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "trie", content = "contract_address", rename_all = "snake_case")]
+pub enum StorageProofTrie {
+    Classes,
+    Contracts,
+    /// Associated Felt is the contract address.
+    ContractStorage(Felt),
+}
+
 // Comes from the RPC Spec:
 // https://github.com/starkware-libs/starknet-specs/blob/0e859ff905795f789f1dfd6f7340cdaf5015acc8/api/starknet_write_api.json#L227
 #[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(thiserror::Error, Debug)]
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
-    FailedToReceiveTxn,
+    FailedToReceiveTxn { err: Option<Cow<'static, str>> },
     #[error("Contract not found")]
     ContractNotFound,
     #[error("Block not found")]
@@ -63,7 +80,7 @@ pub enum StarknetRpcApiError {
     #[error("Account balance is smaller than the transaction's max_fee")]
     InsufficientAccountBalance,
     #[error("Account validation failed")]
-    ValidationFailure { error: String },
+    ValidationFailure { error: Cow<'static, str> },
     #[error("Compilation failed")]
     CompilationFailed,
     #[error("Contract class size is too large")]
@@ -84,14 +101,16 @@ pub enum StarknetRpcApiError {
     InternalServerError,
     #[error("Unimplemented method")]
     UnimplementedMethod,
-    #[error("Too many storage keys requested")]
-    ProofLimitExceeded,
+    #[error("Proof limit exceeded")]
+    ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
+    #[error("Cannot create a storage proof for a block that old")]
+    CannotMakeProofOnOldBlock,
 }
 
 impl From<&StarknetRpcApiError> for i32 {
     fn from(err: &StarknetRpcApiError) -> Self {
         match err {
-            StarknetRpcApiError::FailedToReceiveTxn => 1,
+            StarknetRpcApiError::FailedToReceiveTxn { .. } => 1,
             StarknetRpcApiError::ContractNotFound => 20,
             StarknetRpcApiError::BlockNotFound => 24,
             StarknetRpcApiError::InvalidTxnHash => 25,
@@ -122,7 +141,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
-            StarknetRpcApiError::ProofLimitExceeded => 10000,
+            StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
+            StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }
     }
 }
@@ -132,10 +152,14 @@ impl StarknetRpcApiError {
         match self {
             StarknetRpcApiError::ErrUnexpectedError { data } => Some(json!(data)),
             StarknetRpcApiError::ValidationFailure { error } => Some(json!(error)),
+            StarknetRpcApiError::FailedToReceiveTxn { err } => err.as_ref().map(|err| json!(err)),
             StarknetRpcApiError::TxnExecutionError { tx_index, error } => Some(json!({
                 "transaction_index": tx_index,
                 "execution_error": error,
             })),
+            StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
+                Some(json!({ "kind": kind, "limit": limit, "got": got }))
+            }
             _ => None,
         }
     }
@@ -169,9 +193,10 @@ impl From<StarknetError> for StarknetRpcApiError {
     fn from(err: StarknetError) -> Self {
         match err.code {
             StarknetErrorCode::BlockNotFound => StarknetRpcApiError::BlockNotFound,
-            StarknetErrorCode::TransactionFailed | StarknetErrorCode::ValidateFailure => {
-                StarknetRpcApiError::ValidationFailure { error: err.message }
+            StarknetErrorCode::TransactionFailed => {
+                StarknetRpcApiError::FailedToReceiveTxn { err: Some(err.message.into()) }
             }
+            StarknetErrorCode::ValidateFailure => StarknetRpcApiError::ValidationFailure { error: err.message.into() },
             StarknetErrorCode::UninitializedContract => StarknetRpcApiError::ContractNotFound,
             StarknetErrorCode::UndeclaredClass => StarknetRpcApiError::ClassHashNotFound,
             StarknetErrorCode::InvalidTransactionNonce => StarknetRpcApiError::InvalidTxnNonce,

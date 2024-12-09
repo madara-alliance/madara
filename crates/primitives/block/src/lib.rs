@@ -125,7 +125,11 @@ impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
             new_root,
             parent_hash,
             sequencer_address,
-            starknet_version: protocol_version.to_string(),
+            starknet_version: if protocol_version < StarknetVersion::V0_9_1 {
+                "".to_string()
+            } else {
+                protocol_version.to_string()
+            },
             timestamp,
         }
     }
@@ -272,6 +276,17 @@ impl From<MadaraBlock> for MadaraMaybePendingBlock {
     fn from(value: MadaraBlock) -> Self {
         Self { info: value.info.into(), inner: value.inner }
     }
+}
+
+/// Visited segments are the class segments that are visited during the execution of the block.
+/// This info is an input of SNOS and used for proving.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegments(pub Vec<VisitedSegmentEntry>);
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegmentEntry {
+    pub class_hash: Felt,
+    pub segments: Vec<usize>,
 }
 
 #[cfg(test)]

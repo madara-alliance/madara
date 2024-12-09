@@ -11,7 +11,14 @@ fn client_mainnet_fixture() -> GatewayProvider {
 #[rstest]
 #[tokio::test]
 async fn test_can_fetch_pending_block(client_mainnet_fixture: GatewayProvider) {
-    let block = fetch_pending_block_and_updates(Felt::ZERO, &ChainId::Mainnet, &client_mainnet_fixture).await.unwrap();
+    let block = fetch_pending_block_and_updates(
+        Felt::ZERO,
+        &ChainId::Mainnet,
+        &client_mainnet_fixture,
+        &ServiceContext::new_for_testing(),
+    )
+    .await
+    .unwrap();
     // ignore as we can't check much here :/
     drop(block);
 }
@@ -25,7 +32,14 @@ async fn test_can_fetch_and_convert_block(client_mainnet_fixture: GatewayProvide
     // Sorting is necessary since we store storage diffs and nonces in a
     // hashmap in the fgw types before converting them to a Vec in the mp
     // types, resulting in unpredictable ordering
-    let mut block = fetch_block_and_updates(&ChainId::Mainnet, block_n, &client_mainnet_fixture).await.unwrap();
+    let mut block = fetch_block_and_updates(
+        &ChainId::Mainnet,
+        block_n,
+        &client_mainnet_fixture,
+        &ServiceContext::new_for_testing(),
+    )
+    .await
+    .unwrap();
     block.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
     block.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 

@@ -1,73 +1,113 @@
-use std::sync::Arc;
 use std::time::Duration;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use futures::prelude::*;
 use mc_block_import::UnverifiedFullBlock;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
+use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
-use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown};
+use mp_utils::{channel_wait_or_graceful_shutdown, service::ServiceContext, wait_or_graceful_shutdown};
 use tokio::sync::{mpsc, oneshot};
+use url::Url;
 
 use crate::fetch::fetchers::fetch_block_and_updates;
 
 pub mod fetchers;
 
-#[allow(clippy::too_many_arguments)]
+pub struct L2FetchConfig {
+    pub first_block: u64,
+    pub fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
+    pub once_caught_up_sender: oneshot::Sender<()>,
+    pub sync_polling_interval: Option<Duration>,
+    pub n_blocks_to_sync: Option<u64>,
+    pub stop_on_sync: bool,
+    pub sync_parallelism: usize,
+    pub warp_update: bool,
+    pub warp_update_port_rpc: u16,
+    pub warp_update_port_fgw: u16,
+}
+
 pub async fn l2_fetch_task(
     backend: Arc<MadaraBackend>,
-    first_block: u64,
-    n_blocks_to_sync: Option<u64>,
-    fetch_stream_sender: mpsc::Sender<UnverifiedFullBlock>,
     provider: Arc<GatewayProvider>,
-    sync_polling_interval: Option<Duration>,
-    once_caught_up_callback: oneshot::Sender<()>,
+    ctx: ServiceContext,
+    mut config: L2FetchConfig,
 ) -> anyhow::Result<()> {
     // First, catch up with the chain
-    let backend = &backend;
+    // let backend = &backend;
 
-    let mut next_block = first_block;
+    let L2FetchConfig { first_block, warp_update, warp_update_port_rpc, warp_update_port_fgw, .. } = config;
 
-    {
-        // Fetch blocks and updates in parallel one time before looping
-        let fetch_stream = (first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
-            let provider = Arc::clone(&provider);
-            async move { (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider).await) }
-        });
+    if warp_update {
+        let client = jsonrpsee::http_client::HttpClientBuilder::default()
+            .build(format!("http://localhost:{warp_update_port_rpc}"))
+            .expect("Building client");
 
-        // Have 10 fetches in parallel at once, using futures Buffered
-        let mut fetch_stream = stream::iter(fetch_stream).buffered(10);
-        while let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next()).await {
-            match val {
-                Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
-                    code: StarknetErrorCode::BlockNotFound,
-                    ..
-                }))) => {
-                    tracing::info!("🥳 The sync process has caught up with the tip of the chain");
-                    break;
-                }
-                val => {
-                    if fetch_stream_sender.send(val?).await.is_err() {
-                        // join error
-                        break;
-                    }
-                }
-            }
-
-            next_block = block_n + 1;
+        if client.ping().await.is_err() {
+            tracing::error!("❗ Failed to connect to warp update sender on http://localhost:{warp_update_port_rpc}");
+            ctx.cancel_global();
+            return Ok(());
         }
+
+        let provider = Arc::new(GatewayProvider::new(
+            Url::parse(&format!("http://localhost:{warp_update_port_fgw}/gateway/"))
+                .expect("Failed to parse warp update sender gateway url. This should not fail in prod"),
+            Url::parse(&format!("http://localhost:{warp_update_port_fgw}/feeder_gateway/"))
+                .expect("Failed to parse warp update sender feeder gateway url. This should not fail in prod"),
+        ));
+
+        let save = config.sync_parallelism;
+        let available_parallelism = std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(1usize).expect("1 should always be in usize bound"));
+        config.sync_parallelism = Into::<usize>::into(available_parallelism) * 2;
+
+        let next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+            SyncStatus::Full(next_block) => next_block,
+            SyncStatus::UpTo(next_block) => next_block,
+        };
+
+        if client.shutdown().await.is_err() {
+            tracing::error!("❗ Failed to shutdown warp update sender");
+            ctx.cancel_global();
+            return Ok(());
+        }
+
+        config.n_blocks_to_sync = config.n_blocks_to_sync.map(|n| n - (next_block - first_block));
+        config.first_block = next_block;
+        config.sync_parallelism = save;
+    }
+
+    let mut next_block = match sync_blocks(backend.as_ref(), &provider, &ctx, &config).await? {
+        SyncStatus::Full(next_block) => {
+            tracing::info!("🥳 The sync process has caught up with the tip of the chain");
+            next_block
+        }
+        SyncStatus::UpTo(next_block) => next_block,
     };
 
-    let _ = once_caught_up_callback.send(());
+    if config.stop_on_sync {
+        return anyhow::Ok(());
+    }
+
+    let L2FetchConfig { fetch_stream_sender, once_caught_up_sender, sync_polling_interval, stop_on_sync, .. } = config;
+
+    // We do not call cancellation here as we still want the blocks to be stored
+    if stop_on_sync {
+        return anyhow::Ok(());
+    }
+
+    // TODO: replace this with a tokio::sync::Notify
+    let _ = once_caught_up_sender.send(());
 
     if let Some(sync_polling_interval) = sync_polling_interval {
         // Polling
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while wait_or_graceful_shutdown(interval.tick()).await.is_some() {
+        while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
             loop {
-                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider).await {
+                match fetch_block_and_updates(&backend.chain_config().chain_id, next_block, &provider, &ctx).await {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..
@@ -87,6 +127,74 @@ pub async fn l2_fetch_task(
         }
     }
     Ok(())
+}
+
+/// Whether a chain has been caught up to the tip or only a certain block number
+///
+/// This is mostly relevant in the context of the `--n-blocks-to-sync` cli
+/// argument which states that a node might stop synchronizing before it has
+/// caught up with the tip of the chain.
+enum SyncStatus {
+    Full(u64),
+    UpTo(u64),
+}
+
+/// Sync blocks in parallel from a [GatewayProvider]
+///
+/// This function is called during warp update as well as l2 catch up to sync
+/// to the tip of a chain. In the case of warp update, this is the tip of the
+/// chain provided by the warp update sender. In the case of l2 sync, this is
+/// the tip of the entire chain (mainnet, sepolia, devnet).
+///
+/// This function _is not_ called after the chain has been synced as this has
+/// a different fetch logic which does not fetch block in parallel.
+///
+/// Fetch config, including number of blocks to fetch and fetch parallelism,
+/// is defined in [L2FetchConfig].
+async fn sync_blocks(
+    backend: &MadaraBackend,
+    provider: &Arc<GatewayProvider>,
+    ctx: &ServiceContext,
+    config: &L2FetchConfig,
+) -> anyhow::Result<SyncStatus> {
+    let L2FetchConfig { first_block, fetch_stream_sender, n_blocks_to_sync, sync_parallelism, .. } = config;
+
+    // Fetch blocks and updates in parallel one time before looping
+    let fetch_stream =
+        (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
+            let provider = Arc::clone(provider);
+            let ctx = ctx.clone();
+            async move {
+                (block_n, fetch_block_and_updates(&backend.chain_config().chain_id, block_n, &provider, &ctx).await)
+            }
+        });
+
+    // Have `sync_parallelism` fetches in parallel at once, using futures Buffered
+    let mut next_block = *first_block;
+    let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism);
+
+    loop {
+        let Some((block_n, val)) = channel_wait_or_graceful_shutdown(fetch_stream.next(), ctx).await else {
+            return anyhow::Ok(SyncStatus::UpTo(next_block));
+        };
+
+        match val {
+            Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
+                code: StarknetErrorCode::BlockNotFound,
+                ..
+            }))) => {
+                return anyhow::Ok(SyncStatus::Full(next_block));
+            }
+            val => {
+                if fetch_stream_sender.send(val?).await.is_err() {
+                    // join error
+                    return anyhow::Ok(SyncStatus::UpTo(next_block));
+                }
+            }
+        }
+
+        next_block = block_n + 1;
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -135,12 +243,20 @@ mod test_l2_fetch_task {
                     Duration::from_secs(5),
                     l2_fetch_task(
                         backend,
-                        0,
-                        Some(5),
-                        fetch_stream_sender,
                         provider,
-                        Some(polling_interval),
-                        once_caught_up_sender,
+                        ServiceContext::new_for_testing(),
+                        L2FetchConfig {
+                            first_block: 0,
+                            fetch_stream_sender,
+                            once_caught_up_sender,
+                            sync_polling_interval: Some(polling_interval),
+                            n_blocks_to_sync: Some(5),
+                            stop_on_sync: false,
+                            sync_parallelism: 10,
+                            warp_update: false,
+                            warp_update_port_rpc: 9943,
+                            warp_update_port_fgw: 8080,
+                        },
                     ),
                 )
                 .await

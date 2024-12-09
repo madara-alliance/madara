@@ -1,2 +1,1 @@
-pub mod get_compiled_casm;
-pub mod lib;
+pub mod get_storage_proof;

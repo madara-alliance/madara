@@ -1,5 +1,8 @@
+use crate::db_block_id::DbBlockId;
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
+use blockifier::bouncer::BouncerWeights;
+use mp_block::VisitedSegments;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_state_update::{
@@ -15,6 +18,8 @@ impl MadaraBackend {
         block: MadaraMaybePendingBlock,
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
+        visited_segments: Option<VisitedSegments>,
+        bouncer_weights: Option<BouncerWeights>,
     ) -> Result<(), MadaraStorageError> {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
@@ -23,9 +28,12 @@ impl MadaraBackend {
         self.clear_pending_block()?;
 
         let task_block_db = || match block.info {
-            MadaraMaybePendingBlockInfo::Pending(info) => {
-                self.block_db_store_pending(&MadaraPendingBlock { info, inner: block.inner }, &state_diff_cpy)
-            }
+            MadaraMaybePendingBlockInfo::Pending(info) => self.block_db_store_pending(
+                &MadaraPendingBlock { info, inner: block.inner },
+                &state_diff_cpy,
+                visited_segments,
+                bouncer_weights,
+            ),
             MadaraMaybePendingBlockInfo::NotPending(info) => {
                 self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
             }
@@ -78,7 +86,10 @@ impl MadaraBackend {
 
         let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
 
-        r1.and(r2).and(r3)
+        r1.and(r2).and(r3)?;
+
+        self.snapshots.set_new_head(DbBlockId::from_block_n(block_n));
+        Ok(())
     }
 
     pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {

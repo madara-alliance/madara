@@ -3,7 +3,7 @@
 
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
-    Header,
+    Header, VisitedSegments,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -142,13 +142,14 @@ pub struct UnverifiedCommitments {
 }
 
 /// An unverified pending full block as input for the block import pipeline.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct UnverifiedPendingFullBlock {
     pub header: UnverifiedHeader,
     pub state_diff: StateDiff,
     pub transactions: Vec<Transaction>,
     pub receipts: Vec<TransactionReceipt>,
     pub declared_classes: Vec<DeclaredClass>,
+    pub visited_segments: Option<VisitedSegments>,
 }
 
 /// An unverified full block as input for the block import pipeline.
@@ -165,6 +166,7 @@ pub struct UnverifiedFullBlock {
     #[serde(skip)]
     pub trusted_converted_classes: Vec<ConvertedClass>,
     pub commitments: UnverifiedCommitments,
+    pub visited_segments: Option<VisitedSegments>,
 }
 
 // Pre-validate outputs.
@@ -192,6 +194,7 @@ pub struct PreValidatedBlock {
     pub unverified_global_state_root: Option<Felt>,
     pub unverified_block_hash: Option<Felt>,
     pub unverified_block_number: Option<u64>,
+    pub visited_segments: Option<VisitedSegments>,
 }
 
 /// Output of the [`crate::pre_validate`] step.
@@ -202,6 +205,7 @@ pub struct PreValidatedPendingBlock {
     pub state_diff: StateDiff,
     pub receipts: Vec<TransactionReceipt>,
     pub converted_classes: Vec<ConvertedClass>,
+    pub visited_segments: Option<VisitedSegments>,
 }
 
 // Verify-apply output.

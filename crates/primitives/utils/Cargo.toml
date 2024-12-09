@@ -30,6 +30,7 @@ rand.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+tokio-util.workspace = true
 tokio.workspace = true
 url.workspace = true
 
@@ -52,3 +53,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 rstest.workspace = true
+
+[features]
+testing = []

@@ -2,6 +2,22 @@
 
 ## Next release
 
+- feat(block_production): continue pending block on restart
+- feat(mempool): mempool transaction saving on db
+- feat(mempool): mempool transaction limits
+- feat(cli): madaraup quickfix
+- feat(cli): added madaraup for v0.7.0
+- refactor(rpc): replace starknet-rs by starknet-types-rpc
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
+- feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
+- feat(warp): added warp update to madara
+- docs(readme): updated README.md docs and added Docker Compose support
+- fix(log): define RUST_LOG=info by default
+- fix(tracing): RUST_LOG filtering support
+- fix(fgw): fetch class
+- feat: possibility of starting madara & kakarot-rpc in docker
+- feat(debug): service cancelling and profiling build
+- feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
 - fix: FeePayment conversion
 - fix(block_production): get l2-to-l1 messages recursively from the call tree

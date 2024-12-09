@@ -9,6 +9,7 @@ use mc_db::MadaraBackend;
 use mp_convert::ToFelt;
 use mp_transactions::MAIN_CHAIN_ID;
 use mp_utils::channel_wait_or_graceful_shutdown;
+use mp_utils::service::ServiceContext;
 use serde::Deserialize;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
@@ -36,6 +37,7 @@ pub async fn listen_and_update_state(
     backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
     chain_id: ChainId,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
@@ -47,7 +49,7 @@ pub async fn listen_and_update_state(
         )?
         .into_stream();
 
-    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next()).await {
+    while let Some(event_result) = channel_wait_or_graceful_shutdown(event_stream.next(), &ctx).await {
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
@@ -89,6 +91,7 @@ pub async fn state_update_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
     chain_id: ChainId,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -101,7 +104,7 @@ pub async fn state_update_worker(
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id)
+    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id, ctx)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
 
@@ -170,7 +173,7 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone())
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
                 .await
                 .expect("Failed to create database service"),
         );
@@ -196,6 +199,7 @@ mod eth_client_event_subscription_test {
                     db.backend(),
                     &eth_client.l1_block_metrics,
                     chain_info.chain_id.clone(),
+                    ServiceContext::new_for_testing(),
                 )
                 .await
             })

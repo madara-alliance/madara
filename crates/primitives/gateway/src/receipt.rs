@@ -1,7 +1,9 @@
 use mp_block::H160;
 use mp_convert::felt_to_h160;
 use mp_receipt::{Event, L1Gas, MsgToL1};
+use primitive_types::H256;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 use starknet_types_core::felt::Felt;
 
 use crate::transaction::{
@@ -87,7 +89,7 @@ impl ConfirmedReceipt {
         let message_hash = message_to_l2.hash();
 
         mp_receipt::L1HandlerTransactionReceipt {
-            message_hash: message_hash.try_into().unwrap_or_default(),
+            message_hash: H256::from_slice(message_hash.as_bytes()),
             transaction_hash: self.transaction_hash,
             actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
@@ -170,19 +172,19 @@ impl From<mp_receipt::ExecutionResources> for ExecutionResources {
         Self {
             builtin_instance_counter: BuiltinCounters {
                 output_builtin: 0,
-                pedersen_builtin: resources.pedersen_builtin_applications.unwrap_or(0),
-                range_check_builtin: resources.range_check_builtin_applications.unwrap_or(0),
-                ecdsa_builtin: resources.ecdsa_builtin_applications.unwrap_or(0),
-                bitwise_builtin: resources.bitwise_builtin_applications.unwrap_or(0),
-                ec_op_builtin: resources.ec_op_builtin_applications.unwrap_or(0),
-                keccak_builtin: resources.keccak_builtin_applications.unwrap_or(0),
-                poseidon_builtin: resources.poseidon_builtin_applications.unwrap_or(0),
-                segment_arena_builtin: resources.segment_arena_builtin.unwrap_or(0),
+                pedersen_builtin: resources.pedersen_builtin_applications,
+                range_check_builtin: resources.range_check_builtin_applications,
+                ecdsa_builtin: resources.ecdsa_builtin_applications,
+                bitwise_builtin: resources.bitwise_builtin_applications,
+                ec_op_builtin: resources.ec_op_builtin_applications,
+                keccak_builtin: resources.keccak_builtin_applications,
+                poseidon_builtin: resources.poseidon_builtin_applications,
+                segment_arena_builtin: resources.segment_arena_builtin,
                 add_mod_builtin: 0,
                 mul_mod_builtin: 0,
             },
             n_steps: resources.steps,
-            n_memory_holes: resources.memory_holes.unwrap_or(0),
+            n_memory_holes: resources.memory_holes,
             data_availability: none_if_zero(resources.data_availability),
             total_gas_consumed: none_if_zero(resources.total_gas_consumed),
         }
@@ -191,14 +193,6 @@ impl From<mp_receipt::ExecutionResources> for ExecutionResources {
 
 impl From<ExecutionResources> for mp_receipt::ExecutionResources {
     fn from(resources: ExecutionResources) -> Self {
-        fn none_if_zero(n: u64) -> Option<u64> {
-            if n == 0 {
-                None
-            } else {
-                Some(n)
-            }
-        }
-
         let BuiltinCounters {
             output_builtin: _,
             pedersen_builtin,
@@ -215,15 +209,15 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
 
         Self {
             steps: resources.n_steps,
-            memory_holes: none_if_zero(resources.n_memory_holes),
-            range_check_builtin_applications: none_if_zero(range_check_builtin),
-            pedersen_builtin_applications: none_if_zero(pedersen_builtin),
-            poseidon_builtin_applications: none_if_zero(poseidon_builtin),
-            ec_op_builtin_applications: none_if_zero(ec_op_builtin),
-            ecdsa_builtin_applications: none_if_zero(ecdsa_builtin),
-            bitwise_builtin_applications: none_if_zero(bitwise_builtin),
-            keccak_builtin_applications: none_if_zero(keccak_builtin),
-            segment_arena_builtin: none_if_zero(segment_arena_builtin),
+            memory_holes: resources.n_memory_holes,
+            range_check_builtin_applications: range_check_builtin,
+            pedersen_builtin_applications: pedersen_builtin,
+            poseidon_builtin_applications: poseidon_builtin,
+            ec_op_builtin_applications: ec_op_builtin,
+            ecdsa_builtin_applications: ecdsa_builtin,
+            bitwise_builtin_applications: bitwise_builtin,
+            keccak_builtin_applications: keccak_builtin,
+            segment_arena_builtin,
             data_availability: resources.data_availability.unwrap_or_default(),
             total_gas_consumed: resources.total_gas_consumed.unwrap_or_default(),
         }
@@ -271,6 +265,21 @@ pub struct MsgToL2 {
     pub nonce: Option<Felt>,
 }
 
+impl MsgToL2 {
+    pub fn compute_hash(&self) -> H256 {
+        let mut hasher = Keccak256::new();
+        hasher.update([0u8; 12]); // Padding
+        hasher.update(self.from_address.as_bytes());
+        hasher.update(self.to_address.to_bytes_be());
+        hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
+        hasher.update(self.selector.to_bytes_be());
+        hasher.update([0u8; 24]); // Padding
+        hasher.update((self.payload.len() as u64).to_be_bytes());
+        self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
+        H256::from_slice(&hasher.finalize())
+    }
+}
+
 impl TryFrom<&L1HandlerTransaction> for MsgToL2 {
     type Error = ();
 
@@ -298,5 +307,29 @@ fn fee_payment(fee: Felt, tx_version: u8) -> mp_receipt::FeePayment {
     mp_receipt::FeePayment {
         amount: fee,
         unit: if tx_version < 3 { mp_receipt::PriceUnit::Wei } else { mp_receipt::PriceUnit::Fri },
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_compute_hash_msg_to_l2() {
+        let msg = MsgToL2 {
+            from_address: H160::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            to_address: Felt::from(2),
+            selector: Felt::from(3),
+            payload: vec![Felt::from(4), Felt::from(5), Felt::from(6)],
+            nonce: Some(Felt::from(7)),
+        };
+
+        let hash = msg.compute_hash();
+
+        let expected_hash =
+            H256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
+
+        assert_eq!(hash, expected_hash);
     }
 }
