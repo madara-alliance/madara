@@ -5,7 +5,7 @@ use mc_sync::fetch::fetchers::{FetchConfig, WarpUpdateConfig};
 use mc_sync::SyncConfig;
 use mc_telemetry::TelemetryHandle;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -76,8 +76,11 @@ impl Service for L2SyncService {
 
         Ok(())
     }
+}
 
-    fn id(&self) -> MadaraServiceId {
-        MadaraServiceId::L2Sync
+impl ServiceId for L2SyncService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::L2Sync.svc_id()
     }
 }

@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use futures::SinkExt;
-use mp_utils::service::{MadaraServiceId, Service, ServiceContext, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceContext, ServiceId, ServiceRunner};
 use reqwest_websocket::{Message, RequestBuilderExt, WebSocket};
 
 mod sysinfo;
@@ -88,9 +88,12 @@ impl Service for TelemetryService {
 
         anyhow::Ok(())
     }
+}
 
-    fn id(&self) -> MadaraServiceId {
-        MadaraServiceId::Telemetry
+impl ServiceId for TelemetryService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::Telemetry.svc_id()
     }
 }
 

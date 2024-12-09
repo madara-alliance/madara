@@ -25,7 +25,6 @@ const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x10000000000
 
 /// Legacy check for deprecated txs
 /// See `https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/` for more details.
-
 pub const LEGACY_BLOCK_NUMBER: u64 = 1470;
 pub const V0_7_BLOCK_NUMBER: u64 = 833;
 

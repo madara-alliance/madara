@@ -7,7 +7,7 @@ use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{
     block_production::BlockProductionTask, block_production_metrics::BlockProductionMetrics, L1DataProvider, Mempool,
 };
-use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 
 use crate::cli::block_production::BlockProductionParams;
 
@@ -61,9 +61,12 @@ impl Service for BlockProductionService {
 
         Ok(())
     }
+}
 
-    fn id(&self) -> MadaraServiceId {
-        MadaraServiceId::BlockProduction
+impl ServiceId for BlockProductionService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::BlockProduction.svc_id()
     }
 }
 
@@ -74,7 +77,7 @@ impl BlockProductionService {
     /// called on node startup even if sequencer block production is not yet
     /// enabled. This happens during warp updates on a local sequencer.
     pub async fn setup_devnet(&self) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, n_devnet_contracts, block_import } = self;
+        let Self { backend, n_devnet_contracts, block_import, .. } = self;
 
         let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
             // deploy devnet genesis

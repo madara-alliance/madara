@@ -1,7 +1,7 @@
 use crate::cli::GatewayParams;
 use mc_db::MadaraBackend;
 use mc_rpc::providers::{AddTransactionProvider, AddTransactionProviderGroup};
-use mp_utils::service::{MadaraServiceId, Service, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -47,8 +47,11 @@ impl Service for GatewayService {
         });
         Ok(())
     }
+}
 
-    fn id(&self) -> MadaraServiceId {
-        MadaraServiceId::Gateway
+impl ServiceId for GatewayService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::Gateway.svc_id()
     }
 }

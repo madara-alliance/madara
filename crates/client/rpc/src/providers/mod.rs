@@ -72,9 +72,9 @@ impl AddTransactionProviderGroup {
     }
 
     fn provider(&self) -> Option<&Arc<dyn AddTransactionProvider>> {
-        if self.ctx.service_status(MadaraServiceId::L2Sync as u8).is_on() {
+        if self.ctx.service_status(MadaraServiceId::L2Sync).is_on() {
             Some(&self.l2_sync)
-        } else if self.ctx.service_status(MadaraServiceId::BlockProduction as u8).is_on() {
+        } else if self.ctx.service_status(MadaraServiceId::BlockProduction).is_on() {
             Some(&self.block_production)
         } else {
             None

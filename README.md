@@ -717,7 +717,7 @@ a regular sync.
 
 ### State Commitment Computation
 
-Madara supports merkelized state verification through its own implementation of
+Madara supports merkelized state commitments through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
