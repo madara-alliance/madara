@@ -1,4 +1,8 @@
+use mp_class::CompressedLegacyContractClass;
+use mp_convert::hex_serde::{U128AsHex, U64AsHex};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 use std::sync::Arc;
 
@@ -9,17 +13,11 @@ mod from_starknet_types;
 mod into_starknet_api;
 mod to_starknet_types;
 
+// pub mod broadcasted;
 pub mod compute_hash;
 pub mod utils;
 
-use mp_convert::hex_serde::{U128AsHex, U64AsHex};
-// pub use from_starknet_provider::TransactionTypeError;
-pub use broadcasted_to_blockifier::{
-    broadcasted_declare_v0_to_blockifier, broadcasted_to_blockifier, BroadcastedToBlockifierError,
-};
-use mp_class::CompressedLegacyContractClass;
-use serde_with::serde_as;
-use starknet_api::transaction::TransactionVersion;
+pub use broadcasted_to_blockifier::{BroadcastedToBlockifierError, BroadcastedTransactionExt};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -45,17 +43,12 @@ impl TransactionWithHash {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BroadcastedDeclareTransactionV0 {
-    /// The address of the account contract sending the declaration transaction
     pub sender_address: Felt,
-    /// The maximal fee that can be charged for including the transaction
     pub max_fee: Felt,
-    /// Signature
     pub signature: Vec<Felt>,
-    /// The class to be declared
     pub contract_class: Arc<CompressedLegacyContractClass>,
-    /// If set to `true`, uses a query-only transaction version that's invalid for execution
     pub is_query: bool,
 }
 
@@ -719,6 +712,8 @@ impl From<starknet_types_rpc::DaMode> for DataAvailabilityMode {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use mp_class::{CompressedLegacyContractClass, LegacyEntryPointsByType};
 

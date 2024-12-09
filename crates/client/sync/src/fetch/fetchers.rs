@@ -273,6 +273,7 @@ fn convert_sequencer_block_pending(
             .collect(),
         transactions: block.transactions.into_iter().map(Into::into).collect(),
         declared_classes: class_update.into_iter().map(Into::into).collect(),
+        ..Default::default()
     })
 }
 

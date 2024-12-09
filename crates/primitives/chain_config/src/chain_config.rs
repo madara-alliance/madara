@@ -130,6 +130,14 @@ pub struct ChainConfig {
     #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_private_key")]
     pub private_key: ZeroingPrivateKey,
+
+    /// Transaction limit in the mempool.
+    pub mempool_tx_limit: usize,
+    /// Transaction limit in the mempool, we have an additional limit for declare transactions.
+    pub mempool_declare_tx_limit: usize,
+    /// Max age of a transaction in the mempool.
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub mempool_tx_max_age: Duration,
 }
 
 impl ChainConfig {
@@ -236,6 +244,10 @@ impl ChainConfig {
             ),
 
             private_key: ZeroingPrivateKey::default(),
+
+            mempool_tx_limit: 10_000,
+            mempool_declare_tx_limit: 20,
+            mempool_tx_max_age: Duration::from_secs(60 * 60), // an hour?
         }
     }
 

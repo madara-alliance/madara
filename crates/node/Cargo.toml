@@ -23,6 +23,7 @@ name = "madara"
 # Madara
 mc-analytics = { workspace = true }
 mc-block-import = { workspace = true }
+mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
 mc-eth = { workspace = true }

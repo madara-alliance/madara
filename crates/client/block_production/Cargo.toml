@@ -1,6 +1,6 @@
 [package]
-name = "mc-devnet"
-description = "Madara client devnet creation"
+name = "mc-block-production"
+description = "Madara client block production service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,23 +18,27 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
-mc-mempool = { workspace = true, features = ["testing"] }
-mc-block-production = { workspace = true, features = ["testing"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
+bitvec.workspace = true
 blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
+lazy_static.workspace = true
+serde_json.workspace = true
 
-# Compile the test contracts in test cfg.
-m-cairo-test-contracts.workspace = true
+[features]
+testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 
 [dependencies]
 
 # Madara
+mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
+mc-exec.workspace = true
+mc-mempool.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -42,21 +46,22 @@ mp-convert.workspace = true
 mp-receipt.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
 starknet-core.workspace = true
-starknet-signers.workspace = true
 starknet-types-core.workspace = true
-starknet-types-rpc.workspace = true
 starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
-serde_json.workspace = true
+mockall = { workspace = true, optional = true }
+thiserror.workspace = true
 tokio.workspace = true
 
-#Instrumentation
+# Instrumentation
+once_cell = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
