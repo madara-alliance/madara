@@ -9,7 +9,7 @@ use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transactions::{ExecutableTransaction, ExecutionFlags};
 use starknet_api::transaction::TransactionHash;
 
-use crate::{Error, ExecutionContext, ExecutionResult, TxFeeEstimationError, TxExecError};
+use crate::{Error, ExecutionContext, ExecutionResult, TxExecError, TxFeeEstimationError};
 
 impl ExecutionContext {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
