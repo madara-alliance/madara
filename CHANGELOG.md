@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(block_production): continue pending block now reexecutes the previous transactions
 - feat(block_production): continue pending block on restart
 - feat(mempool): mempool transaction saving on db
 - feat(mempool): mempool transaction limits

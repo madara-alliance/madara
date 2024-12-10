@@ -10,7 +10,7 @@ use crate::MempoolTransaction;
 pub struct MempoolLimits {
     pub max_transactions: usize,
     pub max_declare_transactions: usize,
-    pub max_age: Duration,
+    pub max_age: Option<Duration>,
 }
 
 impl MempoolLimits {
@@ -23,11 +23,7 @@ impl MempoolLimits {
     }
     #[cfg(any(test, feature = "testing"))]
     pub fn for_testing() -> Self {
-        Self {
-            max_age: Duration::from_secs(10000000),
-            max_declare_transactions: usize::MAX,
-            max_transactions: usize::MAX,
-        }
+        Self { max_age: None, max_declare_transactions: usize::MAX, max_transactions: usize::MAX }
     }
 }
 
@@ -111,18 +107,20 @@ impl MempoolLimiter {
         }
 
         // age
-        if self.tx_age_exceeded(to_check) {
-            return Err(MempoolLimitReached::Age { max: self.config.max_age });
+        if let Some(max_age) = self.config.max_age {
+            if self.tx_age_exceeded(to_check) {
+                return Err(MempoolLimitReached::Age { max: max_age });
+            }
         }
 
         Ok(())
     }
 
     pub fn tx_age_exceeded(&self, to_check: &TransactionCheckedLimits) -> bool {
+        let Some(max_age) = self.config.max_age else { return false };
         if to_check.check_age {
             let current_time = SystemTime::now();
-            if to_check.tx_arrived_at < current_time.checked_sub(self.config.max_age).unwrap_or(SystemTime::UNIX_EPOCH)
-            {
+            if to_check.tx_arrived_at < current_time.checked_sub(max_age).unwrap_or(SystemTime::UNIX_EPOCH) {
                 return true;
             }
         }
@@ -139,9 +137,11 @@ impl MempoolLimiter {
 
     pub fn mark_removed(&mut self, to_update: &TransactionCheckedLimits) {
         // These should not overflow unless block prod marks transactions as consumed even though they have not been popped.
-        self.current_transactions -= 1;
+        debug_assert!(self.current_transactions > 0);
+        self.current_transactions = self.current_transactions.saturating_sub(1);
         if to_update.check_declare_limit {
-            self.current_declare_transactions -= 1;
+            debug_assert!(self.current_declare_transactions > 0);
+            self.current_declare_transactions = self.current_declare_transactions.saturating_sub(1);
         }
     }
 }

@@ -405,7 +405,7 @@ mod tests {
         let applied_block = MadaraBlock::try_from(applied_block.unwrap()).unwrap();
 
         assert_eq!(applied_block.info.header.block_number, 0, "Block number does not match");
-        assert_eq!(applied_block.info.header.block_timestamp, 0, "Block timestamp does not match");
+        assert_eq!(applied_block.info.header.block_timestamp.0, 0, "Block timestamp does not match");
         assert_eq!(applied_block.info.header.parent_block_hash, Felt::ZERO, "Parent block hash does not match");
         assert!(applied_block.inner.transactions.is_empty(), "Block should not contain any transactions");
         assert_eq!(
