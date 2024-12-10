@@ -1,40 +1,53 @@
-// TODO: Move this into its own crate.
+//! Block production service.
+//!
+//! # Testing
+//!
+//! Testing is done in a few places:
+//! - devnet has a few tests for declare transactions and basic transfers as of now. This is proobably
+//!   the simplest place where we could add more tests about block-time, mempool saving to db and such.
+//! - e2e tests test a few transactions, with the rpc/gateway in scope too.
+//! - js-tests in the CI, not that much in depth
+//! - higher level, block production is more hreavily tested (currently outside of the CI) by running the
+//!   bootstrapper and the kakarot test suite. This is the only place where L1-L2 messaging is really tested
+//!   as of now. We should make better tests around this area.
+//!
+//! There are no tests in this crate because they would require a proper genesis block. Devnet provides that,
+//! so that's where block-production integration tests are the simplest to add.
+//! L1-L2 testing is a bit harder to setup, but we should definitely make the testing more comprehensive here.
 
-use crate::block_production_metrics::BlockProductionMetrics;
 use crate::close_block::close_block;
-use crate::header::make_pending_header;
-use crate::{L1DataProvider, MempoolProvider, MempoolTransaction};
-use blockifier::blockifier::transaction_executor::{TransactionExecutor, VisitedSegmentsMapping};
-use blockifier::bouncer::{Bouncer, BouncerWeights, BuiltinCount};
-use blockifier::state::cached_state::StateMaps;
-use blockifier::state::state_api::StateReader;
+use crate::metrics::BlockProductionMetrics;
+use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
+use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::state::state_api::UpdatableState;
 use blockifier::transaction::errors::TransactionExecutionError;
+use finalize_execution_state::{state_diff_to_state_map, StateDiffToStateMapError};
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
-use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
-use mp_class::ConvertedClass;
+use mc_mempool::header::make_pending_header;
+use mc_mempool::{L1DataProvider, MempoolProvider};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlockInfo, MadaraPendingBlock, VisitedSegments};
+use mp_class::compile::ClassCompilationError;
+use mp_class::{ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
-use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry,
-};
+use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
-use starknet_api::core::ContractAddress;
+use starknet_api::core::ClassHash;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
-use std::collections::hash_map;
-use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::clone_transaction;
+mod close_block;
+mod finalize_execution_state;
+pub mod metrics;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -60,130 +73,11 @@ pub enum Error {
     Import(#[from] mc_block_import::BlockImportError),
     #[error("Unexpected error: {0:#}")]
     Unexpected(Cow<'static, str>),
+    #[error("Class compilation error when continuing the pending block: {0:#}")]
+    PendingClassCompilationError(#[from] ClassCompilationError),
+    #[error("State diff error when continuing the pending block: {0:#}")]
+    PendingStateDiff(#[from] StateDiffToStateMapError),
 }
-
-fn state_map_to_state_diff(
-    backend: &MadaraBackend,
-    on_top_of: &Option<DbBlockId>,
-    diff: StateMaps,
-) -> Result<StateDiff, Error> {
-    let mut backing_map = HashMap::<ContractAddress, usize>::default();
-    let mut storage_diffs = Vec::<ContractStorageDiffItem>::default();
-    for ((address, key), value) in diff.storage {
-        match backing_map.entry(address) {
-            hash_map::Entry::Vacant(e) => {
-                e.insert(storage_diffs.len());
-                storage_diffs.push(ContractStorageDiffItem {
-                    address: address.to_felt(),
-                    storage_entries: vec![StorageEntry { key: key.to_felt(), value }],
-                });
-            }
-            hash_map::Entry::Occupied(e) => {
-                storage_diffs[*e.get()].storage_entries.push(StorageEntry { key: key.to_felt(), value });
-            }
-        }
-    }
-
-    let mut deprecated_declared_classes = Vec::default();
-    for (class_hash, _) in diff.declared_contracts {
-        if !diff.compiled_class_hashes.contains_key(&class_hash) {
-            deprecated_declared_classes.push(class_hash.to_felt());
-        }
-    }
-
-    let declared_classes = diff
-        .compiled_class_hashes
-        .iter()
-        .map(|(class_hash, compiled_class_hash)| DeclaredClassItem {
-            class_hash: class_hash.to_felt(),
-            compiled_class_hash: compiled_class_hash.to_felt(),
-        })
-        .collect();
-
-    let nonces = diff
-        .nonces
-        .into_iter()
-        .map(|(contract_address, nonce)| NonceUpdate {
-            contract_address: contract_address.to_felt(),
-            nonce: nonce.to_felt(),
-        })
-        .collect();
-
-    let mut deployed_contracts = Vec::new();
-    let mut replaced_classes = Vec::new();
-    for (contract_address, new_class_hash) in diff.class_hashes {
-        let replaced = if let Some(on_top_of) = on_top_of {
-            backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
-        } else {
-            // Executing genesis block: nothing being redefined here
-            false
-        };
-        if replaced {
-            replaced_classes.push(ReplacedClassItem {
-                contract_address: contract_address.to_felt(),
-                class_hash: new_class_hash.to_felt(),
-            })
-        } else {
-            deployed_contracts.push(DeployedContractItem {
-                address: contract_address.to_felt(),
-                class_hash: new_class_hash.to_felt(),
-            })
-        }
-    }
-
-    Ok(StateDiff {
-        storage_diffs,
-        deprecated_declared_classes,
-        declared_classes,
-        nonces,
-        deployed_contracts,
-        replaced_classes,
-    })
-}
-
-pub const BLOCK_STATE_ACCESS_ERR: &str = "Error: The block state should be `Some`.";
-fn get_visited_segments<S: StateReader>(
-    tx_executor: &mut TransactionExecutor<S>,
-) -> Result<VisitedSegmentsMapping, Error> {
-    let visited_segments = tx_executor
-        .block_state
-        .as_ref()
-        .expect(BLOCK_STATE_ACCESS_ERR)
-        .visited_pcs
-        .iter()
-        .map(|(class_hash, class_visited_pcs)| -> Result<_, Error> {
-            let contract_class = tx_executor
-                .block_state
-                .as_ref()
-                .expect(BLOCK_STATE_ACCESS_ERR)
-                .get_compiled_contract_class(*class_hash)
-                .map_err(TransactionExecutionError::StateError)?;
-            Ok((*class_hash, contract_class.get_visited_segments(class_visited_pcs)?))
-        })
-        .collect::<Result<_, Error>>()?;
-
-    Ok(visited_segments)
-}
-
-fn finalize_execution_state<S: StateReader>(
-    _executed_txs: &[MempoolTransaction],
-    tx_executor: &mut TransactionExecutor<S>,
-    backend: &MadaraBackend,
-    on_top_of: &Option<DbBlockId>,
-) -> Result<(StateDiff, VisitedSegmentsMapping, BouncerWeights), Error> {
-    let state_map = tx_executor
-        .block_state
-        .as_mut()
-        .expect(BLOCK_STATE_ACCESS_ERR)
-        .to_state_diff()
-        .map_err(TransactionExecutionError::StateError)?;
-    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
-
-    let visited_segments = get_visited_segments(tx_executor)?;
-
-    Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
-}
-
 /// The block production task consumes transactions from the mempool in batches.
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
@@ -209,10 +103,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
-    #[tracing::instrument(
-        skip(backend, importer, mempool, l1_data_provider, metrics),
-        fields(module = "BlockProductionTask")
-    )]
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
@@ -220,24 +110,78 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        let parent_block_hash = backend
-            .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
-            .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
-        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
-            parent_block_hash,
-            backend.chain_config(),
-            l1_data_provider.as_ref(),
-        ));
-        // NB: we cannot continue a previously started pending block yet.
-        // let pending_block = backend.get_or_create_pending_block(|| CreatePendingBlockExtraInfo {
-        //     l1_gas_price: l1_data_provider.get_gas_prices(),
-        //     l1_da_mode: l1_data_provider.get_da_mode(),
-        // })?;
+        let (pending_block, state_diff, pcs) = match backend.get_block(&DbBlockId::Pending)? {
+            Some(pending) => {
+                let MadaraMaybePendingBlockInfo::Pending(info) = pending.info else {
+                    return Err(Error::Unexpected("Get a pending block".into()));
+                };
+                let pending_state_update = backend.get_pending_block_state_update()?;
+                (MadaraPendingBlock { info, inner: pending.inner }, pending_state_update, Default::default())
+            }
+            None => {
+                let parent_block_hash = backend
+                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+                    .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
+
+                (
+                    MadaraPendingBlock::new_empty(make_pending_header(
+                        parent_block_hash,
+                        backend.chain_config(),
+                        l1_data_provider.as_ref(),
+                    )),
+                    StateDiff::default(),
+                    Default::default(),
+                )
+            }
+        };
+
+        let declared_classes: Vec<ConvertedClass> = state_diff
+            .declared_classes
+            .iter()
+            .map(|item| {
+                let class_info = backend.get_class_info(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
+                    Error::Unexpected(format!("No class info for declared class {:#x}", item.class_hash).into())
+                })?;
+                let converted_class = match class_info {
+                    mp_class::ClassInfo::Sierra(info) => {
+                        let compiled =
+                            backend.get_sierra_compiled(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
+                                Error::Unexpected(
+                                    format!("No compiled class for declared class {:#x}", item.class_hash).into(),
+                                )
+                            })?;
+                        let compiled = Arc::new(compiled);
+                        ConvertedClass::Sierra(SierraConvertedClass { class_hash: item.class_hash, info, compiled })
+                    }
+                    mp_class::ClassInfo::Legacy(info) => {
+                        ConvertedClass::Legacy(LegacyConvertedClass { class_hash: item.class_hash, info })
+                    }
+                };
+
+                Ok(converted_class)
+            })
+            .collect::<Result<_, Error>>()?;
+
+        let class_hash_to_class = declared_classes
+            .iter()
+            .map(|c| {
+                Ok((
+                    ClassHash(c.class_hash()),
+                    match c {
+                        ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
+                        ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
+                    },
+                ))
+            })
+            .collect::<Result<_, Error>>()?;
+
         let mut executor =
             ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+        let block_state =
+            executor.block_state.as_mut().expect("Block state can not be None unless we take ownership of it");
 
-        let bouncer_config = backend.chain_config().bouncer_config.clone();
-        executor.bouncer = Bouncer::new(bouncer_config);
+        // Apply pending state
+        block_state.apply_writes(&state_diff_to_state_map(state_diff)?, &class_hash_to_class, &pcs);
 
         Ok(Self {
             importer,
@@ -246,14 +190,17 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             executor,
             current_pending_tick: 0,
             block: pending_block,
-            declared_classes: vec![],
+            declared_classes,
             l1_data_provider,
             metrics,
         })
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<(StateDiff, ContinueBlockStats), Error> {
+    fn continue_block(
+        &mut self,
+        bouncer_cap: BouncerWeights,
+    ) -> Result<(StateDiff, VisitedSegments, BouncerWeights, ContinueBlockStats), Error> {
         let mut stats = ContinueBlockStats::default();
 
         self.executor.bouncer.bouncer_config.block_max_capacity = bouncer_cap;
@@ -264,6 +211,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // This does not need to be outside the loop, but that saves an allocation
         let mut executed_txs = Vec::with_capacity(batch_size);
 
+        // Cloning transactions: That's a lot of cloning, but we're kind of forced to do that because blockifier takes
+        // a `&[Transaction]` slice. In addition, declare transactions have their class behind an Arc.
         loop {
             // Take transactions from mempool.
             let to_take = batch_size.saturating_sub(txs_to_process.len());
@@ -271,8 +220,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier
-                    .extend(txs_to_process.iter().skip(cur_len).map(|tx| clone_transaction(&tx.tx)));
+                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.clone_tx()));
             }
 
             if txs_to_process.is_empty() {
@@ -292,6 +240,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             for exec_result in all_results {
                 let mut mempool_tx =
                     txs_to_process.pop_front().ok_or_else(|| Error::Unexpected("Vector length mismatch".into()))?;
+
+                // Remove tx from mempool
+                self.backend.remove_mempool_transaction(&mempool_tx.tx_hash().to_felt())?;
+
                 match exec_result {
                     Ok(execution_info) => {
                         // Reverted transactions appear here as Ok too.
@@ -309,8 +261,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         self.block
                             .inner
                             .receipts
-                            .push(from_blockifier_execution_info(&execution_info, &clone_transaction(&mempool_tx.tx)));
-                        let converted_tx = TransactionWithHash::from(clone_transaction(&mempool_tx.tx)); // TODO: too many tx clones!
+                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.clone_tx()));
+                        let converted_tx = TransactionWithHash::from(mempool_tx.clone_tx());
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -335,20 +287,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             }
         }
 
+        let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
+
+        let (state_diff, visited_segments, bouncer_weights) =
+            finalize_execution_state::finalize_execution_state(&mut self.executor, &self.backend, &on_top_of)?;
+
         // Add back the unexecuted transactions to the mempool.
         stats.n_re_added_to_mempool = txs_to_process.len();
-        self.mempool.re_add_txs(txs_to_process);
-
-        let on_top_of = self
-            .executor
-            .block_state
-            .as_ref()
-            .expect("Block state can not be None unless we take ownership of it")
-            .state
-            .on_top_of_block_id;
-
-        let (state_diff, _visited_segments, _weights) =
-            finalize_execution_state(&executed_txs, &mut self.executor, &self.backend, &on_top_of)?;
+        self.mempool.re_add_txs(txs_to_process, executed_txs);
 
         tracing::debug!(
             "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",
@@ -357,7 +303,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, stats))
+        Ok((state_diff, visited_segments, bouncer_weights, stats))
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -404,7 +350,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         };
 
         let start_time = Instant::now();
-        let (state_diff, stats) = self.continue_block(bouncer_cap)?;
+        let (state_diff, visited_segments, bouncer_weights, stats) = self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             tracing::info!(
                 "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
@@ -416,7 +362,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Store pending block
         // todo, prefer using the block import pipeline?
-        self.backend.store_block(self.block.clone().into(), state_diff, self.declared_classes.clone())?;
+        self.backend.store_block(
+            self.block.clone().into(),
+            state_diff,
+            self.declared_classes.clone(),
+            Some(visited_segments),
+            Some(bouncer_weights),
+        )?;
         // do not forget to flush :)
         self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
 
@@ -431,7 +383,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (mut new_state_diff, _n_executed) =
+        let (mut new_state_diff, visited_segments, _weights, _stats) =
             self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
@@ -478,6 +430,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.backend.chain_config().chain_id.clone(),
             block_n,
             declared_classes,
+            visited_segments,
         )
         .await?;
         // do not forget to flush :)
@@ -568,7 +521,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
@@ -585,8 +538,10 @@ mod test {
     };
     use starknet_types_core::felt::Felt;
 
+    use crate::finalize_execution_state::state_map_to_state_diff;
+
     #[test]
-    fn state_map_to_state_diff() {
+    fn test_state_map_to_state_diff() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
         let mut nonces = HashMap::new();
@@ -688,7 +643,7 @@ mod test {
             replaced_classes,
         };
 
-        let mut actual = super::state_map_to_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
+        let mut actual = state_map_to_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
 
         actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
         actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));

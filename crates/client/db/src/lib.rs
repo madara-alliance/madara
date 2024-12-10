@@ -8,7 +8,9 @@ use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
-use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
+use rocksdb::{
+    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded, WriteOptions,
+};
 use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
@@ -18,6 +20,7 @@ use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
 
 mod error;
+mod rocksdb_options;
 mod rocksdb_snapshot;
 mod snapshots;
 
@@ -29,7 +32,7 @@ pub mod db_block_id;
 pub mod db_metrics;
 pub mod devnet_db;
 pub mod l1_db;
-mod rocksdb_options;
+pub mod mempool_db;
 pub mod storage_updates;
 pub mod tests;
 
@@ -72,7 +75,7 @@ fn spawn_backup_db_task(
     if restore_from_latest_backup {
         tracing::info!("⏳ Restoring latest backup...");
         tracing::debug!("restore path is {db_path:?}");
-        fs::create_dir_all(db_path).with_context(|| format!("creating directories {:?}", db_path))?;
+        fs::create_dir_all(db_path).with_context(|| format!("Creating parent directories {:?}", db_path))?;
 
         let opts = rocksdb::backup::RestoreOptions::default();
         engine.restore_from_latest_backup(db_path, db_path, &opts).context("Restoring database")?;
@@ -146,6 +149,8 @@ pub enum Column {
 
     /// Devnet: stores the private keys for the devnet predeployed contracts
     Devnet,
+
+    MempoolTransactions,
 }
 
 impl fmt::Debug for Column {
@@ -192,6 +197,7 @@ impl Column {
             PendingContractToNonces,
             PendingContractStorage,
             Devnet,
+            MempoolTransactions,
         ]
     };
     pub const NUM_COLUMNS: usize = Self::ALL.len();
@@ -227,6 +233,7 @@ impl Column {
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
             Devnet => "devnet",
+            MempoolTransactions => "mempool_transactions",
         }
     }
 }
@@ -245,6 +252,12 @@ impl DatabaseExt for DB {
     }
 }
 
+fn make_write_opt_no_wal() -> WriteOptions {
+    let mut opts = WriteOptions::new();
+    opts.disable_wal(true);
+    opts
+}
+
 #[derive(Debug)]
 pub struct TrieLogConfig {
     pub max_saved_trie_logs: usize,
@@ -259,7 +272,6 @@ impl Default for TrieLogConfig {
 }
 
 /// Madara client database backend singleton.
-#[derive(Debug)]
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -268,8 +280,21 @@ pub struct MadaraBackend {
     snapshots: Arc<Snapshots>,
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
+    write_opt_no_wal: WriteOptions,
     #[cfg(feature = "testing")]
     _temp_dir: Option<tempfile::TempDir>,
+}
+
+impl fmt::Debug for MadaraBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MadaraBackend")
+            .field("backup_handle", &self.backup_handle)
+            .field("db", &self.db)
+            .field("chain_config", &self.chain_config)
+            .field("db_metrics", &self.db_metrics)
+            .field("sender_block_info", &self.sender_block_info)
+            .finish()
+    }
 }
 
 pub struct DatabaseService {
@@ -360,6 +385,7 @@ impl MadaraBackend {
             snapshots,
             trie_log_config: Default::default(),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
+            write_opt_no_wal: make_write_opt_no_wal(),
             _temp_dir: Some(temp_dir),
         })
     }
@@ -412,6 +438,7 @@ impl MadaraBackend {
             snapshots,
             trie_log_config,
             sender_block_info: tokio::sync::broadcast::channel(100).0,
+            write_opt_no_wal: make_write_opt_no_wal(),
             #[cfg(feature = "testing")]
             _temp_dir: None,
         });

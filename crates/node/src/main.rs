@@ -5,8 +5,6 @@ mod cli;
 mod service;
 mod util;
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use clap::Parser;
 use cli::{NetworkType, RunCmd};
@@ -15,12 +13,13 @@ use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
+use std::sync::Arc;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -126,7 +125,13 @@ async fn main() -> anyhow::Result<()> {
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mempool = Arc::new(Mempool::new(Arc::clone(service_db.backend()), Arc::clone(&l1_data_provider)));
+    let mut mempool = Mempool::new(
+        Arc::clone(service_db.backend()),
+        Arc::clone(&l1_data_provider),
+        MempoolLimits::new(&chain_config),
+    );
+    mempool.load_txs_from_db().context("Loading mempool transactions")?;
+    let mempool = Arc::new(mempool);
 
     let service_l1_sync = L1SyncService::new(
         &run_cmd.l1_sync_params,

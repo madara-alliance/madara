@@ -278,6 +278,17 @@ impl From<MadaraBlock> for MadaraMaybePendingBlock {
     }
 }
 
+/// Visited segments are the class segments that are visited during the execution of the block.
+/// This info is an input of SNOS and used for proving.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegments(pub Vec<VisitedSegmentEntry>);
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VisitedSegmentEntry {
+    pub class_hash: Felt,
+    pub segments: Vec<usize>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

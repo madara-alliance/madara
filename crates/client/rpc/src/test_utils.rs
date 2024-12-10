@@ -243,6 +243,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -266,6 +268,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -333,6 +337,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -369,6 +375,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                 },
                 StateDiff::default(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
     }
@@ -550,6 +558,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[0].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -572,6 +582,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[1].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -594,6 +606,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[2].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
 
@@ -613,6 +627,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 },
                 state_diffs[3].clone(),
                 vec![],
+                None,
+                None,
             )
             .unwrap();
     }

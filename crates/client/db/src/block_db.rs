@@ -2,10 +2,11 @@ use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 use crate::{MadaraStorageError, DB};
 use anyhow::Context;
+use blockifier::bouncer::BouncerWeights;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
-    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
+    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments,
 };
 use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
@@ -23,6 +24,8 @@ struct ChainInfo {
 const ROW_CHAIN_INFO: &[u8] = b"chain_info";
 const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
+const ROW_PENDING_SEGMENTS: &[u8] = b"pending_segments";
+const ROW_PENDING_BOUNCER_WEIGHTS: &[u8] = b"pending_bouncer_weights";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
@@ -194,6 +197,28 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_pending_block_segments(&self) -> Result<Option<VisitedSegments>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_PENDING_SEGMENTS)? else {
+            // See pending block quirk
+            return Ok(None);
+        };
+        let res = Some(bincode::deserialize(&res)?);
+        Ok(res)
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_pending_block_bouncer_weights(&self) -> Result<Option<BouncerWeights>> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        let Some(res) = self.db.get_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS)? else {
+            // See pending block quirk
+            return Ok(None);
+        };
+        let res = Some(bincode::deserialize(&res)?);
+        Ok(res)
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
@@ -204,12 +229,24 @@ impl MadaraBackend {
     // DB write
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub(crate) fn block_db_store_pending(&self, block: &MadaraPendingBlock, state_update: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_pending(
+        &self,
+        block: &MadaraPendingBlock,
+        state_update: &StateDiff,
+        visited_segments: Option<VisitedSegments>,
+        bouncer_weights: Option<BouncerWeights>,
+    ) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
+        if let Some(visited_segments) = visited_segments {
+            tx.put_cf(&col, ROW_PENDING_SEGMENTS, bincode::serialize(&visited_segments)?);
+        }
+        if let Some(bouncer_weights) = bouncer_weights {
+            tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
+        }
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
@@ -223,6 +260,8 @@ impl MadaraBackend {
         tx.delete_cf(&col, ROW_PENDING_INFO);
         tx.delete_cf(&col, ROW_PENDING_INNER);
         tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
+        tx.delete_cf(&col, ROW_PENDING_SEGMENTS);
+        tx.delete_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS);
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;

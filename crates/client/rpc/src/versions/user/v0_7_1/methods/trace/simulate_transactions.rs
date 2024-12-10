@@ -1,14 +1,13 @@
-use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
-use mp_block::BlockId;
-use mp_transactions::broadcasted_to_blockifier;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
-use std::sync::Arc;
-
 use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
+use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
+use mp_block::BlockId;
+use mp_transactions::BroadcastedTransactionExt;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use std::sync::Arc;
 
 pub async fn simulate_transactions(
     starknet: &Starknet,
@@ -29,7 +28,7 @@ pub async fn simulate_transactions(
 
     let user_transactions = transactions
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
+        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 

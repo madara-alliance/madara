@@ -108,30 +108,18 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::create_ethereum_client;
-    use alloy::node_bindings::Anvil;
+    use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use serial_test::serial;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
-    const ANOTHER_ANVIL_PORT: u16 = 8546;
-    const L1_BLOCK_NUMBER: u64 = 20395662;
-
-    lazy_static::lazy_static! {
-        static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
-    }
 
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANOTHER_ANVIL_PORT)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -175,12 +163,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANOTHER_ANVIL_PORT)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -199,12 +182,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANOTHER_ANVIL_PORT)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
@@ -225,12 +203,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANOTHER_ANVIL_PORT)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
@@ -317,12 +290,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn update_gas_price_works() {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(ANOTHER_ANVIL_PORT)
-            .try_spawn()
-            .expect("issue while forking for the anvil");
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
