@@ -1,5 +1,7 @@
 use std::process::Command;
+use std::time::Duration;
 
+use async_std::task::sleep;
 use aws_config::SdkConfig;
 
 use crate::alerts::aws_sns::AWSSNS;
@@ -25,23 +27,11 @@ pub enum SetupConfig {
 // Note: we are using println! instead of tracing::info! because telemetry is not yet initialized
 // and it get initialized during the run_orchestrator function.
 pub async fn setup_cloud(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
-    println!("Setting up cloud. ⏳");
     // AWS
+    println!("Setting up cloud. ⏳");
     let provider_params = setup_cmd.validate_provider_params().expect("Failed to validate provider params");
     let provider_config = build_provider_config(&provider_params).await;
-
-    // Data Storage
-    println!("Setting up data storage. ⏳");
-    let data_storage_params = setup_cmd.validate_storage_params().expect("Failed to validate storage params");
     let aws_config = provider_config.get_aws_client_or_panic();
-
-    match data_storage_params {
-        StorageValidatedArgs::AWSS3(aws_s3_params) => {
-            let s3 = Box::new(AWSS3::new_with_args(&aws_s3_params, aws_config).await);
-            s3.setup(&StorageValidatedArgs::AWSS3(aws_s3_params.clone())).await?
-        }
-    }
-    println!("Data storage setup completed ✅");
 
     // Queues
     println!("Setting up queues. ⏳");
@@ -54,8 +44,25 @@ pub async fn setup_cloud(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
     }
     println!("Queues setup completed ✅");
 
+    // Waiting for few seconds to let AWS index the queues
+    sleep(Duration::from_secs(20)).await;
+
+    // Data Storage
+    println!("Setting up data storage. ⏳");
+    let data_storage_params = setup_cmd.validate_storage_params().expect("Failed to validate storage params");
+
+    match data_storage_params {
+        StorageValidatedArgs::AWSS3(aws_s3_params) => {
+            let s3 = Box::new(AWSS3::new_with_args(&aws_s3_params, aws_config).await);
+            s3.setup(&StorageValidatedArgs::AWSS3(aws_s3_params.clone())).await?
+        }
+    }
+    println!("Data storage setup completed ✅");
+
     // Cron
     println!("Setting up cron. ⏳");
+    // Sleeping for few seconds to let AWS index the newly created queues to be used for setting up cron
+    sleep(Duration::from_secs(100)).await;
     let cron_params = setup_cmd.validate_cron_params().expect("Failed to validate cron params");
     match cron_params {
         CronValidatedArgs::AWSEventBridge(aws_event_bridge_params) => {

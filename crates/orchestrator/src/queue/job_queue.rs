@@ -7,6 +7,7 @@ use color_eyre::eyre::Context;
 use color_eyre::Result as EyreResult;
 use omniqueue::{Delivery, QueueError};
 use serde::{Deserialize, Deserializer, Serialize};
+use strum::Display;
 use thiserror::Error;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -42,7 +43,8 @@ pub struct JobQueueMessage {
     pub id: Uuid,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display)]
+#[strum(serialize_all = "PascalCase")]
 pub enum WorkerTriggerType {
     Snos,
     Proving,
@@ -80,13 +82,14 @@ impl<'de> Deserialize<'de> for WorkerTriggerMessage {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let s = s.trim_start_matches('{').trim_end_matches('}');
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 || parts[0] != "worker" {
-            return Err(serde::de::Error::custom("Invalid format"));
+        #[derive(Deserialize, Debug)]
+        struct Helper {
+            worker: String,
         }
-        Ok(WorkerTriggerMessage { worker: WorkerTriggerType::from_str(parts[1]).map_err(serde::de::Error::custom)? })
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(WorkerTriggerMessage {
+            worker: WorkerTriggerType::from_str(&helper.worker).map_err(serde::de::Error::custom)?,
+        })
     }
 }
 
@@ -221,11 +224,15 @@ fn parse_job_message(message: &Delivery) -> Result<Option<JobQueueMessage>, Cons
         .map_err(|e| ConsumptionError::Other(OtherError::from(e)))
 }
 
+/// Using string since localstack currently is instable with deserializing maps.
+/// Change this to accept a map after localstack is stable
 fn parse_worker_message(message: &Delivery) -> Result<Option<WorkerTriggerMessage>, ConsumptionError> {
-    message
-        .payload_serde_json()
-        .wrap_err("Payload Serde Error")
-        .map_err(|e| ConsumptionError::Other(OtherError::from(e)))
+    let payload = message
+        .borrow_payload()
+        .ok_or_else(|| ConsumptionError::Other(OtherError::from("Empty payload".to_string())))?;
+    let message_string = String::from_utf8_lossy(payload).to_string().trim_matches('\"').to_string();
+    let trigger_type = WorkerTriggerType::from_str(message_string.as_str()).expect("trigger type unwrapping failed");
+    Ok(Some(WorkerTriggerMessage { worker: trigger_type }))
 }
 
 async fn handle_job_message<F, Fut>(
@@ -258,7 +265,8 @@ where
                 .await
                 .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
 
-            match message.nack().await {
+            // not using `nack` as we dont' want retries in case of failures
+            match message.ack().await {
                 Ok(_) => Err(ConsumptionError::FailedToHandleJob {
                     job_id: job_message.id,
                     error_msg: "Job handling failed, message nack-ed".to_string(),
@@ -302,7 +310,8 @@ where
                 .await
                 .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
 
-            message.nack().await.map_err(|(e, _)| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+            // not using `nack` as we dont' want retries in case of failures
+            message.ack().await.map_err(|(e, _)| ConsumptionError::Other(OtherError::from(e.to_string())))?;
             Err(ConsumptionError::FailedToSpawnWorker {
                 worker_trigger_type: job_message.worker,
                 error_msg: "Worker handling failed, message nack-ed".to_string(),

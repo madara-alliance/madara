@@ -91,7 +91,7 @@ lazy_static! {
         },
         QueueConfig {
             name: QueueType::UpdateStateJobProcessing,
-            visibility_timeout: 300,
+            visibility_timeout: 900,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
         QueueConfig {

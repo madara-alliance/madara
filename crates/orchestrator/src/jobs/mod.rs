@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
@@ -151,6 +151,7 @@ pub async fn create_job(
     metadata: HashMap<String, String>,
     config: Arc<Config>,
 ) -> Result<(), JobError> {
+    let start = Instant::now();
     tracing::info!(log_type = "starting", category = "general", function_type = "create_job", job_type = ?job_type, block_no = %internal_id, "General create job started for block");
 
     tracing::debug!(
@@ -180,13 +181,16 @@ pub async fn create_job(
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
     let attributes = [
-        KeyValue::new("job_type", format!("{:?}", job_type)),
-        KeyValue::new("type", "create_job"),
-        KeyValue::new("job", format!("{:?}", job_item)),
+        KeyValue::new("operation_job_type", format!("{:?}", job_type)),
+        KeyValue::new("operation_type", "create_job"),
+        KeyValue::new("operation_job", format!("{:?}", job_item)),
     ];
 
-    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&internal_id)?, &attributes);
     tracing::info!(log_type = "completed", category = "general", function_type = "create_job", block_no = %internal_id, "General create job completed for block");
+    let duration = start.elapsed();
+    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&internal_id)?, &attributes);
+    ORCHESTRATOR_METRICS.successful_jobs.add(1.0, &attributes);
+    ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
     Ok(())
 }
 
@@ -194,6 +198,7 @@ pub async fn create_job(
 /// DB. It then adds the job to the verification queue.
 #[tracing::instrument(skip(config), fields(category = "general", job, job_type, internal_id), ret, err)]
 pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    let start = Instant::now();
     let job = get_job(id, config.clone()).await?;
     let internal_id = job.internal_id.clone();
     tracing::info!(log_type = "starting", category = "general", function_type = "process_job", block_no = %internal_id, "General process job started for block");
@@ -292,13 +297,16 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     })?;
 
     let attributes = [
-        KeyValue::new("job_type", format!("{:?}", job.job_type)),
-        KeyValue::new("type", "process_job"),
-        KeyValue::new("job", format!("{:?}", job)),
+        KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
+        KeyValue::new("operation_type", "process_job"),
+        KeyValue::new("operation_job", format!("{:?}", job)),
     ];
 
-    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
     tracing::info!(log_type = "completed", category = "general", function_type = "process_job", block_no = %internal_id, "General process job completed for block");
+    let duration = start.elapsed();
+    ORCHESTRATOR_METRICS.successful_jobs.add(1.0, &attributes);
+    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
+    ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
     Ok(())
 }
 
@@ -315,6 +323,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     err
 )]
 pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    let start = Instant::now();
     let mut job = get_job(id, config.clone()).await?;
     let internal_id = job.internal_id.clone();
     tracing::info!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
@@ -433,13 +442,16 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     };
 
     let attributes = [
-        KeyValue::new("job_type", format!("{:?}", job.job_type)),
-        KeyValue::new("type", "verify_job"),
-        KeyValue::new("job", format!("{:?}", job)),
+        KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
+        KeyValue::new("operation_type", "verify_job"),
+        KeyValue::new("operation_job", format!("{:?}", job)),
     ];
 
-    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
     tracing::info!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
+    let duration = start.elapsed();
+    ORCHESTRATOR_METRICS.successful_jobs.add(1.0, &attributes);
+    ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
+    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
     Ok(())
 }
 

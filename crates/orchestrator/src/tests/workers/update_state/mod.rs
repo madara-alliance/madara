@@ -76,8 +76,8 @@ async fn update_state_worker_first_block_missing() {
         .build()
         .await;
 
-    // skiip first block from DA completion
-    let mut job_item = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
+    // skip first block from DA completion
+    let mut job_item = get_job_item_mock_by_id("2".to_string(), Uuid::new_v4());
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::DataSubmission;
     services.config.database().create_job(job_item).await.unwrap();

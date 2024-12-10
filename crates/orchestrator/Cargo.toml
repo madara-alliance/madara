@@ -74,6 +74,9 @@ url = { workspace = true }
 utils = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
+aws-sdk-iam = { workspace = true }
+aws-sdk-scheduler = { workspace = true }
+
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -10,6 +12,7 @@ use mongodb::options::{
     UpdateOptions,
 };
 use mongodb::{bson, Client, Collection};
+use opentelemetry::KeyValue;
 use url::Url;
 use utils::ToDocument;
 use uuid::Uuid;
@@ -17,6 +20,7 @@ use uuid::Uuid;
 use crate::database::Database;
 use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 use crate::jobs::JobError;
+use crate::metrics::ORCHESTRATOR_METRICS;
 
 mod utils;
 
@@ -67,6 +71,7 @@ impl MongoDb {
 impl Database for MongoDb {
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn create_job(&self, job: JobItem) -> Result<JobItem, JobError> {
+        let start = Instant::now();
         let options = UpdateOptions::builder().upsert(true).build();
 
         let updates = job.to_document().map_err(|e| JobError::Other(e.into()))?;
@@ -93,6 +98,12 @@ impl Database for MongoDb {
             .map_err(|e| JobError::Other(e.to_string().into()))?;
 
         if result.matched_count == 0 {
+            let attributes = [
+                KeyValue::new("db_operation_name", "create_job"),
+                KeyValue::new("db_operation_job", format!("{:?}", job)),
+            ];
+            let duration = start.elapsed();
+            ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
             Ok(job)
         } else {
             Err(JobError::JobAlreadyExists { internal_id: job.internal_id, job_type: job.job_type })
@@ -101,25 +112,40 @@ impl Database for MongoDb {
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>> {
+        let start = Instant::now();
         let filter = doc! {
             "id":  id
         };
         tracing::debug!(job_id = %id, category = "db_call", "Fetched job by ID");
+        let attributes = [
+            KeyValue::new("db_operation_name", "get_job_by_id"),
+            KeyValue::new("db_operation_id", format!("{:?}", id)),
+        ];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_internal_id_and_type(&self, internal_id: &str, job_type: &JobType) -> Result<Option<JobItem>> {
+        let start = Instant::now();
         let filter = doc! {
             "internal_id": internal_id,
             "job_type": mongodb::bson::to_bson(&job_type)?,
         };
         tracing::debug!(internal_id = %internal_id, job_type = ?job_type, category = "db_call", "Fetched job by internal ID and type");
+        let attributes = [
+            KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type"),
+            KeyValue::new("db_operation_id", format!("{:?}", internal_id)),
+        ];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn update_job(&self, current_job: &JobItem, updates: JobItemUpdates) -> Result<JobItem> {
+        let start = Instant::now();
         // Filters to search for the job
         let filter = doc! {
             "id": current_job.id,
@@ -154,6 +180,12 @@ impl Database for MongoDb {
         match result {
             Some(job) => {
                 tracing::debug!(job_id = %current_job.id, category = "db_call", "Job updated successfully");
+                let attributes = [
+                    KeyValue::new("db_operation_name", "update_job"),
+                    KeyValue::new("db_operation_id", format!("{:?}", current_job.id)),
+                ];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(job)
             }
             None => {
@@ -165,6 +197,7 @@ impl Database for MongoDb {
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>> {
+        let start = Instant::now();
         let pipeline = vec![
             doc! {
                 "$match": {
@@ -199,6 +232,12 @@ impl Database for MongoDb {
         match cursor.try_next().await? {
             Some(doc) => {
                 let job: JobItem = mongodb::bson::from_document(doc)?;
+                let attributes = [
+                    KeyValue::new("db_operation_name", "get_latest_job_by_type"),
+                    KeyValue::new("db_operation_job_type", format!("{:?}", job_type)),
+                ];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(Some(job))
             }
             None => Ok(None),
@@ -233,6 +272,7 @@ impl Database for MongoDb {
         job_a_status: JobStatus,
         job_b_type: JobType,
     ) -> Result<Vec<JobItem>> {
+        let start = Instant::now();
         // Convert enums to Bson strings
         let job_a_type_bson = Bson::String(format!("{:?}", job_a_type));
         let job_a_status_bson = Bson::String(format!("{:?}", job_a_status));
@@ -323,6 +363,9 @@ impl Database for MongoDb {
         }
 
         tracing::debug!(job_count = vec_jobs.len(), category = "db_call", "Retrieved jobs without successor");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_successor")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(vec_jobs)
     }
 
@@ -332,6 +375,7 @@ impl Database for MongoDb {
         job_type: JobType,
         job_status: JobStatus,
     ) -> Result<Option<JobItem>> {
+        let start = Instant::now();
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?
@@ -339,6 +383,9 @@ impl Database for MongoDb {
         let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
 
         tracing::debug!(job_type = ?job_type, job_status = ?job_status, category = "db_call", "Fetched latest job by type and status");
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, find_options).await?)
     }
 
@@ -349,6 +396,7 @@ impl Database for MongoDb {
         job_status: JobStatus,
         internal_id: String,
     ) -> Result<Vec<JobItem>> {
+        let start = Instant::now();
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?,
@@ -361,11 +409,15 @@ impl Database for MongoDb {
         };
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
         tracing::debug!(job_type = ?job_type, job_status = ?job_status, internal_id = internal_id, category = "db_call", "Fetched jobs after internal ID by job type");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_after_internal_id_by_job_type")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
     #[tracing::instrument(skip(self, limit), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_statuses(&self, job_status: Vec<JobStatus>, limit: Option<i64>) -> Result<Vec<JobItem>> {
+        let start = Instant::now();
         let filter = doc! {
             "status": {
                 // TODO: Check that the conversion leads to valid output!
@@ -377,6 +429,9 @@ impl Database for MongoDb {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
         tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved jobs by statuses");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_statuses")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 }

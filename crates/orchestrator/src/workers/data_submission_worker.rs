@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use opentelemetry::KeyValue;
 
 use crate::config::Config;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobStatus, JobType};
+use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
 
 pub struct DataSubmissionWorker;
@@ -24,7 +26,18 @@ impl Worker for DataSubmissionWorker {
             .await?;
 
         for job in successful_proving_jobs {
-            create_job(JobType::DataSubmission, job.internal_id, HashMap::new(), config.clone()).await?;
+            match create_job(JobType::DataSubmission, job.internal_id.clone(), HashMap::new(), config.clone()).await {
+                Ok(_) => tracing::info!(block_id = %job.internal_id, "Successfully created new data submission job"),
+                Err(e) => {
+                    tracing::warn!(block_id = %job.internal_id, error = %e, "Failed to create new data submission job");
+                    let attributes = [
+                        KeyValue::new("operation_job_type", format!("{:?}", JobType::DataSubmission)),
+                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                        KeyValue::new("operation_internal_id", format!("{:?}", job.internal_id)),
+                    ];
+                    ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+                }
+            }
         }
 
         tracing::trace!(log_type = "completed", category = "DataSubmissionWorker", "DataSubmissionWorker completed.");

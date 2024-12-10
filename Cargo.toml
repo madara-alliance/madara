@@ -41,6 +41,8 @@ aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
 aws-sdk-eventbridge = { version = "1.41.0", features = [
   "behavior-version-latest",
 ] }
+aws-sdk-iam = "1.52.0"
+aws-sdk-scheduler = "1.49.0"
 aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
 aws-credential-types = { version = "1.2.1", features = [
   "hardcoded-credentials",
@@ -122,17 +124,17 @@ tracing-subscriber = { version = "0.3.18", features = [
 tracing-opentelemetry = "0.26.0"
 
 # Cairo VM
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "herman/fix-pie-serialization", features = [
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "notlesh/snos-2024-11-04", features = [
   "cairo-1-hints",
   "extensive_hints",
   "mod_builtin",
 ] }
 
+
 # Snos & Sharp (Starkware)
 # TODO: need to update this once the updated PR merges
-starknet-os = { git = "https://github.com/Mohiiit/snos", rev = "2dcd3b0f0c6bfa368a802de12de29cd124c72bb8" }
-prove_block = { git = "https://github.com/Mohiiit/snos", rev = "2dcd3b0f0c6bfa368a802de12de29cd124c72bb8" }
-
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
+prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
 
 # Madara prover API
 madara-prover-common = { git = "https://github.com/Moonsong-Labs/madara-prover-api", branch = "od/use-latest-cairo-vm" }

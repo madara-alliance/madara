@@ -89,7 +89,7 @@ pub enum Commands {
     ),
     group(
         ArgGroup::new("prover")
-            .args(&["sharp"])
+            .args(&["sharp", "atlantic"])
             .required(true)
             .multiple(false)
     ),
@@ -421,6 +421,16 @@ pub mod validate_params {
                     .trigger_rule_name
                     .clone()
                     .expect("Trigger rule name is required"),
+
+                trigger_role_name: aws_event_bridge_args
+                    .trigger_role_name
+                    .clone()
+                    .expect("Trigger role name is required"),
+
+                trigger_policy_name: aws_event_bridge_args
+                    .trigger_policy_name
+                    .clone()
+                    .expect("Trigger policy name is required"),
             }))
         } else {
             Err("Only AWS Event Bridge is supported as of now".to_string())
@@ -709,7 +719,11 @@ pub mod validate_params {
         #[case(false, true)]
         #[case(false, false)]
         fn test_validate_storage_params(#[case] is_aws: bool, #[case] is_s3: bool) {
-            let aws_s3_args: AWSS3CliArgs = AWSS3CliArgs { aws_s3: is_s3, bucket_name: Some("".to_string()) };
+            let aws_s3_args: AWSS3CliArgs = AWSS3CliArgs {
+                aws_s3: is_s3,
+                bucket_name: Some("".to_string()),
+                bucket_location_constraint: Some("".to_string()),
+            };
             let aws_config_args: AWSConfigCliArgs = AWSConfigCliArgs {
                 aws: is_aws,
                 aws_access_key_id: "".to_string(),
@@ -831,6 +845,8 @@ pub mod validate_params {
                 target_queue_name: Some(String::from("test")),
                 cron_time: Some(String::from("12")),
                 trigger_rule_name: Some(String::from("test")),
+                trigger_role_name: Some(String::from("test-role")),
+                trigger_policy_name: Some(String::from("test-policy")),
             };
             let aws_config_args: AWSConfigCliArgs = AWSConfigCliArgs {
                 aws: is_aws,

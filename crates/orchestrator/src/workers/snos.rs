@@ -3,11 +3,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 
 use crate::config::Config;
 use crate::jobs::create_job;
 use crate::jobs::types::JobType;
+use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
 
 pub struct SnosWorker;
@@ -47,9 +49,15 @@ impl Worker for SnosWorker {
 
         for block_num in block_start..latest_block_number + 1 {
             match create_job(JobType::SnosRun, block_num.to_string(), HashMap::new(), config.clone()).await {
-                Ok(_) => {}
+                Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
                 Err(e) => {
-                    log::warn!("Failed to create job: {:?}", e);
+                    tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
+                    let attributes = [
+                        KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                        KeyValue::new("operation_internal_id", format!("{:?}", block_num.to_string())),
+                    ];
+                    ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
                 }
             }
         }

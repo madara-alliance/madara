@@ -17,6 +17,7 @@ use starknet::providers::JsonRpcClient;
 use url::Url;
 use utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
 
+use super::common::delete_storage;
 use crate::alerts::aws_sns::AWSSNSValidatedArgs;
 use crate::alerts::Alerts;
 use crate::cli::alert::AlertValidatedArgs;
@@ -229,6 +230,9 @@ impl TestConfigBuilder {
             implement_client::init_settlement_client(settlement_client_type, &params.settlement_params).await;
 
         let prover_client = implement_client::init_prover_client(prover_client_type, &params.prover_params).await;
+
+        // Delete the Storage before use
+        delete_storage(provider_config.clone(), &params.storage_params).await.expect("Could not delete storage");
 
         // External Dependencies
         let storage =

@@ -24,14 +24,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.path("/l1/atlantic-query/proof-generation-verification")
+        request.path("v1").path("l1/atlantic-query/proof-generation-verification")
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.path("/l2/submit-sharp-query/from-proof-generation-to-proof-verification")
+        request.path("v1").path("l2/submit-sharp-query/from-proof-generation-to-proof-verification")
     }
 }
 
@@ -100,6 +100,7 @@ impl AtlanticClient {
             .client
             .request()
             .method(Method::GET)
+            .path("v1")
             .path("atlantic-query")
             .path(job_key)
             .send()

@@ -1779,7 +1779,7 @@ dependencies = [
  "alloy 0.2.1",
  "async-trait",
  "base64 0.22.1",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "chrono",
  "color-eyre",
  "dotenvy",
@@ -1910,15 +1910,16 @@ dependencies = [
 
 [[package]]
 name = "aws-runtime"
-version = "1.4.0"
+version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f42c2d4218de4dcd890a109461e2f799a1a2ba3bcd2cde9af88360f5df9266c6"
+checksum = "a10d5c055aa540164d9561a0e2e74ad30f0dcf7393c3a92f6733ddf9c5762468"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-http",
+ "aws-smithy-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
@@ -1949,6 +1950,29 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
+ "http 0.2.12",
+ "once_cell",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-iam"
+version = "1.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a8c7a2bff782d1eecd80f6d56547aae572c7b46a3f7253dd3dcd1e7fce27ed"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-query",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
  "http 0.2.12",
  "once_cell",
  "regex-lite",
@@ -1988,6 +2012,29 @@ dependencies = [
  "sha2",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "aws-sdk-scheduler"
+version = "1.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9c5c5a4a8389740229ff10f69962b3955aaa63ae2f297a4a366d563b4133591"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand 2.1.1",
+ "http 0.2.12",
+ "once_cell",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -2104,9 +2151,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sigv4"
-version = "1.2.3"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5df1b0fa6be58efe9d4ccc257df0a53b89cd8909e86591a13ca54817c87517be"
+checksum = "5619742a0d8f253be760bfbb8e8e8368c69e3587e4637af5754e488a611499b1"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-eventstream",
@@ -2165,9 +2212,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-eventstream"
-version = "0.60.4"
+version = "0.60.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6363078f927f612b970edf9d1903ef5cef9a64d1e8423525ebb1f0a1633c858"
+checksum = "cef7d0a272725f87e51ba2bf89f8c21e4df61b9e49ae1ac367a6d69916ef7c90"
 dependencies = [
  "aws-smithy-types",
  "bytes",
@@ -2176,9 +2223,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-http"
-version = "0.60.9"
+version = "0.60.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9cd0ae3d97daa0a2bf377a4d8e8e1362cae590c4a1aad0d40058ebca18eb91e"
+checksum = "5c8bc3e8fdc6b8d07d976e301c02fe553f72a39b7a9fea820e023268467d7ab6"
 dependencies = [
  "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
@@ -2216,9 +2263,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.6.3"
+version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0abbf454960d0db2ad12684a1640120e7557294b0ff8e2f11236290a1b293225"
+checksum = "be28bd063fa91fd871d131fc8b68d7cd4c5fa0869bea68daca50dcb1cbd76be2"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -2243,9 +2290,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.7.2"
+version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e086682a53d3aa241192aa110fa8dfce98f2f5ac2ead0de84d41582c7e8fdb96"
+checksum = "92165296a47a812b267b4f41032ff8069ab7ff783696d217f0994a0d7ab585cd"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-types",
@@ -2260,9 +2307,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-types"
-version = "1.2.4"
+version = "1.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "273dcdfd762fae3e1650b8024624e7cd50e484e37abdab73a7a706188ad34543"
+checksum = "4fbd94a32b3a7d55d3806fe27d98d3ad393050439dd05eb53ece36ec5e3d3510"
 dependencies = [
  "base64-simd",
  "bytes",
@@ -2286,9 +2333,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-xml"
-version = "0.60.8"
+version = "0.60.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d123fbc2a4adc3c301652ba8e149bf4bc1d1725affb9784eb20c953ace06bf55"
+checksum = "ab0b0166827aa700d3dc519f72f8b3a91c35d0b8d042dc5d643a91e6f80648fc"
 dependencies = [
  "xmlparser",
 ]
@@ -3378,7 +3425,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3419,7 +3466,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization#6036ab9533e1754f1612fbea9c9d2a27063ca5f8"
+source = "git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04#1fa902bafae507424b5ea83a625830ffe6b0eca5"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -4516,7 +4563,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "c-kzg",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "color-eyre",
  "dotenvy",
  "lazy_static",
@@ -5074,7 +5121,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bincode 1.3.3",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "dotenvy",
  "itertools 0.13.0",
  "log",
@@ -6880,7 +6927,9 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-eventbridge",
+ "aws-sdk-iam",
  "aws-sdk-s3",
+ "aws-sdk-scheduler",
  "aws-sdk-sns",
  "aws-sdk-sqs",
  "axum 0.7.5",
@@ -6888,7 +6937,7 @@ dependencies = [
  "bincode 1.3.3",
  "bytes",
  "c-kzg",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "chrono",
  "clap",
  "color-eyre",
@@ -7677,13 +7726,13 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "anyhow",
  "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "clap",
  "env_logger",
  "futures-core",
@@ -7712,7 +7761,7 @@ name = "prover-client-interface"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "gps-fact-checker",
  "mockall",
  "starknet-os",
@@ -8140,7 +8189,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -8155,7 +8204,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
@@ -9086,7 +9135,7 @@ dependencies = [
  "alloy 0.2.1",
  "async-trait",
  "base64 0.22.1",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "color-eyre",
  "dotenvy",
  "gps-fact-checker",
@@ -9518,7 +9567,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -9533,7 +9582,7 @@ dependencies = [
  "cairo-lang-starknet",
  "cairo-lang-starknet-classes",
  "cairo-type-derive",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "futures",
  "futures-util",
  "heck 0.4.1",
@@ -9567,11 +9616,11 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/Mohiiit/snos?rev=2dcd3b0f0c6bfa368a802de12de29cd124c72bb8#2dcd3b0f0c6bfa368a802de12de29cd124c72bb8"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=tmp%2Fsnos_devnet_zero_txs#2c472815ebebca927caa5382c3bb8e3c1bbf0d86"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
- "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=herman%2Ffix-pie-serialization)",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=notlesh%2Fsnos-2024-11-04)",
  "flate2",
  "num-bigint",
  "serde",

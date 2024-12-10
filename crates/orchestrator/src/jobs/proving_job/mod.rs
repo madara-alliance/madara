@@ -128,6 +128,9 @@ impl Job for ProvingJob {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
+                // TODO: call isValid on the contract over here to cross-verify whether the proof was registered on
+                // chain or not
+
                 tracing::info!(log_type = "completed", category = "proving", function_type = "verify_job", job_id = ?job.id,  block_no = %internal_id,     "Proving job verification completed.");
                 Ok(JobVerificationStatus::Verified)
             }
@@ -142,14 +145,14 @@ impl Job for ProvingJob {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        1
+        2
     }
 
     fn max_verification_attempts(&self) -> u64 {
-        1
+        1200
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        60
+        30
     }
 }

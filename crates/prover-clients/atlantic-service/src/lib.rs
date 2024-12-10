@@ -1,6 +1,9 @@
 pub mod client;
 pub mod error;
 mod types;
+use std::str::FromStr;
+
+use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use gps_fact_checker::FactChecker;
@@ -9,6 +12,7 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
+use crate::types::AtlanticQueryStatus;
 
 pub const ATLANTIC_SETTINGS_NAME: &str = "atlantic";
 
@@ -54,36 +58,31 @@ impl ProverClient for AtlanticProverService {
                 let atlantic_job_response =
                     self.atlantic_client.add_job(pie_file_path, proof_layout, self.atlantic_api_key.clone()).await?;
                 // sleep for 2 seconds to make sure the job is submitted
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 log::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
                 // The temporary file will be automatically deleted when `temp_file` goes out of scope
-                Ok(atlantic_job_response.sharp_query_id)
+                Ok(atlantic_job_response.atlantic_query_id)
             }
         }
     }
 
     #[tracing::instrument(skip(self))]
     async fn get_task_status(&self, job_key: &str, fact: &str) -> Result<TaskStatus, ProverClientError> {
-        // let res = self.atlantic_client.get_job_status(job_key).await?;
-        //
-        // match res.sharp_query.status {
-        //     SharpQueryStatus::InProgress => Ok(TaskStatus::Processing),
-        //     SharpQueryStatus::Done => {
-        //         let fact = B256::from_str(fact).map_err(|e|
-        // ProverClientError::FailedToConvertFact(e.to_string()))?;         if
-        // self.fact_checker.is_valid(&fact).await? {             Ok(TaskStatus::Succeeded)
-        //         } else {
-        //             Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered",
-        // hex::encode(fact))))         }
-        //     }
-        //     SharpQueryStatus::Failed => {
-        //         Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
-        //     }
-        // }
-
-        // TODO: Commented the above code since, atlantic infra is not able
-        // to prove snos blocks currently so to run e2e tests returning Succeeded.
-        Ok(TaskStatus::Succeeded)
+        let res = self.atlantic_client.get_job_status(job_key).await?;
+        match res.atlantic_query.status {
+            AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
+            AtlanticQueryStatus::Done => {
+                let fact = B256::from_str(fact).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                if self.fact_checker.is_valid(&fact).await? {
+                    Ok(TaskStatus::Succeeded)
+                } else {
+                    Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
+                }
+            }
+            AtlanticQueryStatus::Failed => {
+                Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
+            }
+        }
     }
 }
 

@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use opentelemetry::KeyValue;
 
 use crate::config::Config;
 use crate::jobs::create_job;
 use crate::jobs::types::{JobStatus, JobType};
+use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
 
 pub struct ProvingWorker;
@@ -25,7 +27,18 @@ impl Worker for ProvingWorker {
 
         for job in successful_snos_jobs {
             tracing::debug!(job_id = %job.internal_id, "Creating proof creation job for SNOS job");
-            create_job(JobType::ProofCreation, job.internal_id.to_string(), job.metadata, config.clone()).await?;
+            match create_job(JobType::ProofCreation, job.internal_id.to_string(), job.metadata, config.clone()).await {
+                Ok(_) => tracing::info!(block_id = %job.internal_id, "Successfully created new proving job"),
+                Err(e) => {
+                    tracing::warn!(job_id = %job.internal_id, error = %e, "Failed to create new state transition job");
+                    let attributes = [
+                        KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
+                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                        KeyValue::new("operation_internal_id", format!("{:?}", job.internal_id)),
+                    ];
+                    ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+                }
+            }
         }
 
         tracing::trace!(log_type = "completed", category = "ProvingWorker", "ProvingWorker completed.");

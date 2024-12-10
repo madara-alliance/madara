@@ -4,12 +4,14 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ApiResponse;
 use crate::config::Config;
 use crate::jobs::{process_job, verify_job, JobError};
+use crate::metrics::ORCHESTRATOR_METRICS;
 
 #[derive(Deserialize)]
 struct JobId {
@@ -40,7 +42,14 @@ async fn handle_process_job_request(
             let response = JobApiResponse { job_id: job_id.to_string(), status: "completed".to_string() };
             ApiResponse::success(response).into_response()
         }
-        Err(e) => ApiResponse::<JobApiResponse>::error(e.to_string()).into_response(),
+        Err(e) => {
+            let attributes = [
+                KeyValue::new("operation_type", "process_job"),
+                KeyValue::new("operation_job_id", format!("{:?}", job_id)),
+            ];
+            ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+            ApiResponse::<JobApiResponse>::error(e.to_string()).into_response()
+        }
     }
 }
 
@@ -62,7 +71,14 @@ async fn handle_verify_job_request(
             let response = JobApiResponse { job_id: job_id.to_string(), status: "verified".to_string() };
             ApiResponse::success(response).into_response()
         }
-        Err(e) => ApiResponse::<JobApiResponse>::error(e.to_string()).into_response(),
+        Err(e) => {
+            let attributes = [
+                KeyValue::new("operation_type", "verify_job"),
+                KeyValue::new("operation_job_id", format!("{:?}", job_id)),
+            ];
+            ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+            ApiResponse::<JobApiResponse>::error(e.to_string()).into_response()
+        }
     }
 }
 pub fn job_router(config: Arc<Config>) -> Router {

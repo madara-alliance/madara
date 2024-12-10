@@ -1,14 +1,18 @@
 use once_cell;
 use once_cell::sync::Lazy;
-use opentelemetry::metrics::Gauge;
+use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, KeyValue};
-use utils::metrics::lib::{register_gauge_metric_instrument, Metrics};
+use utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
 use utils::register_metric;
 
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
 
 pub struct OrchestratorMetrics {
     pub block_gauge: Gauge<f64>,
+    pub successful_jobs: Counter<f64>,
+    pub failed_jobs: Counter<f64>,
+    pub jobs_response_time: Gauge<f64>,
+    pub db_calls_response_time: Gauge<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -31,6 +35,34 @@ impl Metrics for OrchestratorMetrics {
             "block".to_string(),
         );
 
-        Self { block_gauge }
+        let successful_jobs = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "successful_jobs".to_string(),
+            "A counter to show count of successful jobs over time".to_string(),
+            "jobs".to_string(),
+        );
+
+        let failed_jobs = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "failed_jobs".to_string(),
+            "A counter to show count of failed jobs over time".to_string(),
+            "jobs".to_string(),
+        );
+
+        let jobs_response_time = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "jobs_response_time".to_string(),
+            "A gauge to show response time of jobs over time".to_string(),
+            "Time".to_string(),
+        );
+
+        let db_calls_response_time = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "db_calls_response_time".to_string(),
+            "A gauge to show response time of jobs over time".to_string(),
+            "Time".to_string(),
+        );
+
+        Self { block_gauge, successful_jobs, failed_jobs, jobs_response_time, db_calls_response_time }
     }
 }

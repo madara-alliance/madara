@@ -1,4 +1,4 @@
-use opentelemetry::metrics::{Gauge, Meter};
+use opentelemetry::metrics::{Counter, Gauge, Meter};
 
 pub trait Metrics {
     fn register() -> Self;
@@ -18,4 +18,13 @@ pub fn register_gauge_metric_instrument(
     unit: String,
 ) -> Gauge<f64> {
     crate_meter.f64_gauge(instrument_name).with_description(desc).with_unit(unit).init()
+}
+
+pub fn register_counter_metric_instrument(
+    crate_meter: &Meter,
+    instrument_name: String,
+    desc: String,
+    unit: String,
+) -> Counter<f64> {
+    crate_meter.f64_counter(instrument_name).with_description(desc).with_unit(unit).init()
 }
