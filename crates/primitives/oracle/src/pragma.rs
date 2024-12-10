@@ -146,10 +146,15 @@ struct PragmaApiResponse {
     decimals: u32,
 }
 
-#[derive(Default)]
 pub struct PragmaOracleBuilder {
-    api_url: Option<Url>,
-    api_key: Option<String>,
+    api_url: Url,
+    api_key: String,
+}
+
+impl Default for PragmaOracleBuilder {
+    fn default() -> Self {
+        Self { api_url: Url::parse("about:blank").expect("valid URL"), api_key: String::default() }
+    }
 }
 
 impl PragmaOracleBuilder {
@@ -158,19 +163,19 @@ impl PragmaOracleBuilder {
     }
 
     pub fn with_api_url(mut self, api_url: Url) -> Self {
-        self.api_url = Some(api_url);
+        self.api_url = api_url;
         self
     }
 
     pub fn with_api_key(mut self, api_key: String) -> Self {
-        self.api_key = Some(api_key);
+        self.api_key = api_key;
         self
     }
 
     pub fn build(self) -> PragmaOracle {
         PragmaOracle {
-            api_url: self.api_url.unwrap_or_else(default_oracle_api_url),
-            api_key: self.api_key.unwrap_or_default(),
+            api_url: self.api_url,
+            api_key: self.api_key,
             aggregation_method: AggregationMethod::default(),
             interval: Interval::default(),
             price_bounds: PriceBounds::default(),
