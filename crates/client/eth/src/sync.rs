@@ -21,17 +21,17 @@ pub async fn l1_sync_worker(
     mempool: Arc<Mempool>,
     ctx: ServiceContext,
 ) -> anyhow::Result<()> {
+    let mut join_set = tokio::task::JoinSet::new();
+
+    join_set.spawn(state_update_worker(Arc::clone(&backend), Arc::clone(&eth_client), ctx.clone()));
+    join_set.spawn(sync(Arc::clone(&backend), Arc::clone(&eth_client), chain_id, mempool, ctx.clone()));
+
     if !gas_price_sync_disabled {
-        tokio::try_join!(
-            state_update_worker(&backend, &eth_client, ctx.clone()),
-            gas_price_worker(&eth_client, l1_gas_provider, gas_price_poll_ms, ctx.clone()),
-            sync(&backend, &eth_client, &chain_id, mempool, ctx.clone())
-        )?;
-    } else {
-        tokio::try_join!(
-            state_update_worker(&backend, &eth_client, ctx.clone()),
-            sync(&backend, &eth_client, &chain_id, mempool, ctx.clone())
-        )?;
+        join_set.spawn(gas_price_worker(Arc::clone(&eth_client), l1_gas_provider, gas_price_poll_ms, ctx.clone()));
+    }
+
+    while let Some(res) = join_set.join_next().await {
+        res??;
     }
 
     Ok(())

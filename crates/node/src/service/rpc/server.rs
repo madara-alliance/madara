@@ -162,11 +162,8 @@ pub async fn start_server<'a>(
     );
 
     server
-        .with_graceful_shutdown(async move {
-            tokio::select! {
-                _ = stop_handle.shutdown() => {},
-                _ = ctx.cancelled() => {},
-            }
+        .with_graceful_shutdown(async {
+            ctx.run_until_cancelled(stop_handle.shutdown()).await;
         })
         .await
         .context("Running rpc server")

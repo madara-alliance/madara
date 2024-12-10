@@ -117,15 +117,15 @@ pub async fn l2_fetch_task(
 
         let mut interval = tokio::time::interval(sync_polling_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        while !ctx.is_cancelled() {
-            interval.tick().await;
-
+        while ctx.run_until_cancelled(interval.tick()).await.is_some() {
             // It is possible the chain produces multiple blocks in the span of
             // a single loop iteration, so we keep fetching until we reach the
             // tip again.
-            loop {
-                let chain_id = &backend.chain_config().chain_id;
-                match fetch_block_and_updates(chain_id, next_block, &provider).await {
+            let chain_id = &backend.chain_config().chain_id;
+            let fetch = |next_block: u64| fetch_block_and_updates(chain_id, next_block, &provider);
+
+            while let Some(block) = ctx.run_until_cancelled(fetch(next_block)).await {
+                match block {
                     Err(FetchError::Sequencer(SequencerError::StarknetError(StarknetError {
                         code: StarknetErrorCode::BlockNotFound,
                         ..
@@ -193,12 +193,7 @@ async fn sync_blocks(
     let mut next_block = *first_block;
     let mut fetch_stream = stream::iter(fetch_stream).buffered(*sync_parallelism);
 
-    loop {
-        let next = tokio::select! {
-            res = fetch_stream.next() => res,
-            _ = ctx.cancelled() => None,
-        };
-
+    while let Some(next) = ctx.run_until_cancelled(fetch_stream.next()).await {
         let Some((block_n, val)) = next else {
             return anyhow::Ok(SyncStatus::UpTo(next_block));
         };
@@ -220,6 +215,8 @@ async fn sync_blocks(
 
         next_block = block_n + 1;
     }
+
+    anyhow::Ok(SyncStatus::UpTo(next_block))
 }
 
 #[derive(thiserror::Error, Debug)]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::client::{L1BlockMetrics, StarknetCoreContract};
 use crate::{
     client::EthereumClient,
@@ -9,6 +11,9 @@ use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
+
+const ERR_ARCHIVE: &str =
+    "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node";
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1StateUpdate {
@@ -47,8 +52,8 @@ pub fn update_l1(
 }
 
 pub async fn state_update_worker(
-    backend: &MadaraBackend,
-    eth_client: &EthereumClient,
+    backend: Arc<MadaraBackend>,
+    eth_client: Arc<EthereumClient>,
     mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
@@ -59,29 +64,23 @@ pub async fn state_update_worker(
     // This does not seem to play well with anvil
     #[cfg(not(test))]
     {
-        let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
-        update_l1(backend, initial_state, &eth_client.l1_block_metrics)?;
+        let initial_state = get_initial_state(&eth_client).await.context("Getting initial ethereum state")?;
+        update_l1(&backend, initial_state, &eth_client.l1_block_metrics)?;
     }
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continuously
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-    let mut event_stream = event_filter
-        .watch()
-        .await
-        .context(
-            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
-        )?
-        .into_stream();
+    let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
+        Some(res) => res.context(ERR_ARCHIVE)?.into_stream(),
+        None => return anyhow::Ok(()),
+    };
 
-    while let Some(event_result) = tokio::select! {
-        res = event_stream.next() => res,
-        _ = ctx.cancelled() => None
-    } {
+    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(backend, format_event, &eth_client.l1_block_metrics)?;
+        update_l1(&backend, format_event, &eth_client.l1_block_metrics)?;
     }
 
     anyhow::Ok(())
@@ -170,7 +169,9 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker(db.backend(), &eth_client, ServiceContext::new_for_testing()).await.unwrap()
+                state_update_worker(Arc::clone(db.backend()), Arc::new(eth_client), ServiceContext::new_for_testing())
+                    .await
+                    .unwrap()
             })
         };
 

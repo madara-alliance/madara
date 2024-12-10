@@ -38,9 +38,9 @@ impl EthereumClient {
 }
 
 pub async fn sync(
-    backend: &MadaraBackend,
-    client: &EthereumClient,
-    chain_id: &ChainId,
+    backend: Arc<MadaraBackend>,
+    client: Arc<EthereumClient>,
+    chain_id: ChainId,
     mempool: Arc<Mempool>,
     mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
@@ -68,10 +68,7 @@ pub async fn sync(
         )?
         .into_stream();
 
-    while let Some(event_result) = tokio::select! {
-        res = event_stream.next() => res,
-        _ = ctx.cancelled() => None
-    } {
+    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
         if let Ok((event, meta)) = event_result {
             tracing::info!(
                 "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
@@ -102,7 +99,7 @@ pub async fn sync(
                 continue;
             }
 
-            match process_l1_message(backend, &event, &meta.block_number, &meta.log_index, chain_id, mempool.clone())
+            match process_l1_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
                 .await
             {
                 Ok(Some(tx_hash)) => {
@@ -416,8 +413,14 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
-                    .await
+                sync(
+                    Arc::clone(db.backend()),
+                    Arc::new(eth_client),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
             })
         };
 
@@ -471,8 +474,14 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
-                    .await
+                sync(
+                    Arc::clone(db.backend()),
+                    Arc::new(eth_client),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
             })
         };
 
@@ -521,8 +530,14 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(db.backend(), &eth_client, &chain_config.chain_id, mempool, ServiceContext::new_for_testing())
-                    .await
+                sync(
+                    Arc::clone(db.backend()),
+                    Arc::new(eth_client),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
             })
         };
 

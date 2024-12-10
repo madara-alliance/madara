@@ -36,12 +36,9 @@ pub async fn start_server(
 
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
 
-    loop {
+    while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
         // Handle new incoming connections
-        if let Ok((stream, _)) = tokio::select! {
-            res = listener.accept() => res,
-            _ = ctx.cancelled() => return anyhow::Ok(())
-        } {
+        if let Ok((stream, _)) = res {
             let io = TokioIo::new(stream);
 
             let db_backend = Arc::clone(&db_backend);
@@ -66,4 +63,6 @@ pub async fn start_server(
             });
         }
     }
+
+    anyhow::Ok(())
 }

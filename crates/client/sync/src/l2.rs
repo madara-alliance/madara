@@ -79,10 +79,7 @@ async fn l2_verify_and_apply_task(
     let mut instant = std::time::Instant::now();
     let target_duration = std::time::Duration::from_secs(flush_every_n_seconds);
 
-    while let Some(block) = tokio::select! {
-        res = pin!(block_conv_receiver.recv()) => res,
-        _ = ctx.cancelled() => None
-    } {
+    while let Some(Some(block)) = ctx.run_until_cancelled(pin!(block_conv_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
         if header.block_number - last_block_n >= flush_every_n_blocks || instant.elapsed() >= target_duration {
@@ -126,7 +123,7 @@ async fn l2_verify_and_apply_task(
         ctx.cancel_global()
     }
 
-    Ok(())
+    anyhow::Ok(())
 }
 
 async fn l2_block_conversion_task(
@@ -153,16 +150,14 @@ async fn l2_block_conversion_task(
     );
 
     let mut stream = pin!(conversion_stream.buffered(10));
-    while let Some(block) = tokio::select! {
-        res = stream.next() => res,
-        _ = ctx.cancelled() => None,
-    } {
+    while let Some(Some(block)) = ctx.run_until_cancelled(stream.next()).await {
         if output.send(block?).await.is_err() {
             // channel closed
             break;
         }
     }
-    Ok(())
+
+    anyhow::Ok(())
 }
 
 struct L2PendingBlockConfig {
@@ -175,7 +170,7 @@ struct L2PendingBlockConfig {
 async fn l2_pending_block_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     config: L2PendingBlockConfig,
 ) -> anyhow::Result<()> {
     let L2PendingBlockConfig { block_import, once_caught_up_receiver, pending_block_poll_interval, validation } =
@@ -197,9 +192,7 @@ async fn l2_pending_block_task(
 
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while !ctx.is_cancelled() {
-        interval.tick().await;
-
+    while ctx.run_until_cancelled(interval.tick()).await.is_some() {
         tracing::debug!("Getting pending block...");
 
         let current_block_hash = backend

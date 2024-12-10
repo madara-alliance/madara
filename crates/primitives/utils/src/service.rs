@@ -20,7 +20,7 @@
 //! Services are started with [Service::start] using [ServiceRunner::service_loop].
 //! [ServiceRunner::service_loop] is a function which takes in a future: this
 //! future represents the main loop of your service, and should run until your
-//! service completes or is canceled.
+//! service completes or is cancelled.
 //!
 //! It is part of the contract of the [Service] trait that calls to
 //! [ServiceRunner::service_loop] should not complete until the service has
@@ -93,10 +93,7 @@
 //! impl Service for MyService {
 //!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
 //!         runner.service_loop(move |mut ctx| async move {
-//!             tokio::select! {
-//!                 _ = tokio::time::sleep(std::time::Duration::MAX) => {},
-//!                 _ = ctx.cancelled() => {},
-//!             }
+//!             ctx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
 //!
 //!             // This is correct, as the future passed to service_loop will
 //!             // only resolve once the task above completes, so Madara can
@@ -132,10 +129,7 @@
 //!         runner.service_loop(move |mut ctx| async move {
 //!             let mut ctx1 = ctx.clone();
 //!             tokio::task::spawn(async move {
-//!                 tokio::select! {
-//!                     _ = tokio::time::sleep(std::time::Duration::MAX) => {},
-//!                     _ = ctx1.cancelled() => {},
-//!                 }
+//!                 ctx1.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
 //!             });
 //!
 //!             ctx.cancelled().await;
@@ -165,7 +159,7 @@
 //!
 //! Note that service shutdown is designed to be manual. We still implement a
 //! [SERVICE_GRACE_PERIOD] which is the maximum duration a service is allowed
-//! to take to shutdown, after which it is forcefully canceled. This should not
+//! to take to shutdown, after which it is forcefully cancelled. This should not
 //! happen in practice and only serves to avoid cases where someone would forget
 //! to implement a cancellation check. More on this in the next section.
 //!
@@ -195,7 +189,7 @@
 //! > It is your responsibility to check for cancellation inside of your
 //! > service. If you do not, or your service takes longer than
 //! > [SERVICE_GRACE_PERIOD] to shutdown, then your service will be forcefully
-//! > canceled.
+//! > cancelled.
 //!
 //! ## Cancellation requests
 //!
@@ -267,7 +261,7 @@ use tokio::task::JoinSet;
 pub const SERVICE_COUNT_MAX: usize = 64;
 
 /// Maximum duration a service is allowed to take to shutdown, after which it
-/// will be forcefully canceled
+/// will be forcefully cancelled
 pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
 macro_rules! power_of_two {
@@ -705,9 +699,14 @@ impl ServiceContext {
     }
 
     /// A future which completes when the service associated to this
-    /// [ServiceContext] is canceled.
+    /// [ServiceContext] is cancelled.
     ///
-    /// A service is canceled after calling [ServiceContext::cancel_local],
+    /// This allows for more manual implementation of cancellation logic than
+    /// [ServiceContext::run_until_cancelled], and should only be used in cases
+    /// where using `run_until_cancelled` is not possible or would be less
+    /// clear.
+    ///
+    /// A service is cancelled after calling [ServiceContext::cancel_local],
     /// [ServiceContext::cancel_global] or if it is marked for removal with
     /// [ServiceContext::service_remove].
     ///
@@ -725,7 +724,7 @@ impl ServiceContext {
 
         loop {
             // We keep checking for service status updates until a token has
-            // been canceled or this service was deactivated
+            // been cancelled or this service was deactivated
             let res = tokio::select! {
                 svc = rx.recv() => svc.ok(),
                 _ = token_global.cancelled() => break,
@@ -740,15 +739,15 @@ impl ServiceContext {
         }
     }
 
-    /// Checks if the service associated to this [ServiceContext] was canceled.
+    /// Checks if the service associated to this [ServiceContext] was cancelled.
     ///
     /// This happens after calling [ServiceContext::cancel_local],
-    /// [ServiceContext::cancel_global].or [ServiceContext::service_remove].
+    /// [ServiceContext::cancel_global] or [ServiceContext::service_remove].
     ///
     /// # Limitations
     ///
     /// This function should _not_ be used when waiting on potentially
-    /// blocking futures which can be canceled without entering an invalid
+    /// blocking futures which can be cancelled without entering an invalid
     /// state. The latter is important, so let's break this down.
     ///
     /// - _blocking future_: this is blocking at a [Service] level, not at the
@@ -779,13 +778,45 @@ impl ServiceContext {
     ///
     /// If this does not describe your usage, and you are waiting on a blocking
     /// future, which is cancel-safe and which does not risk putting the node
-    /// in an invalid state if canceled, then you should be using
+    /// in an invalid state if cancelled, then you should be using
     /// [ServiceContext::cancelled] instead.
     #[inline(always)]
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
             || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
             || self.services.status(self.id) == MadaraServiceStatus::Off
+    }
+
+    /// Runs a [Future] until the [Service] associated to this [ServiceContext]
+    /// is cancelled.
+    ///
+    /// This happens after calling [ServiceContext::cancel_local],
+    /// [ServiceContext::cancel_global] or [ServiceContext::service_remove].
+    ///
+    /// # Cancellation safety
+    ///
+    /// It is important that the future you pass to this function is _cancel-
+    /// safe_ as it will be forcefully shutdown if ever the service is cancelled.
+    /// This means your future might be interrupted at _any_ point in its
+    /// execution.
+    ///
+    /// Futures can be considered as cancel-safe in the context of Madara if
+    /// their computation can be interrupted at any point without causing any
+    /// side-effects to the running node.
+    ///
+    /// # Returns
+    ///
+    /// The return value of the future wrapped in [Some], or [None] if the
+    /// service was cancelled.
+    pub async fn run_until_cancelled<T, F>(&mut self, f: F) -> Option<T>
+    where
+        T: Sized + Send + Sync,
+        F: Future<Output = T>,
+    {
+        tokio::select! {
+            res = f => Some(res),
+            _ = self.cancelled() => None
+        }
     }
 
     /// The id of the [Service] associated to this [ServiceContext]
@@ -965,10 +996,8 @@ pub struct ServiceTransport {
 ///             for i in 0..4 {
 ///                 sx.send(Channel::Open(i))?;
 ///
-///                 tokio::select! {
-///                     _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
-///                     _ = ctx.cancelled() => break,
-///                 }
+///                 const SLEEP: std::time::Duration = std::time::Duration::from_secs(1);
+///                 ctx.run_until_cancelled(tokio::time::sleep(SLEEP)).await;
 ///             }
 ///
 ///             // An important subtlety: we are using a broadcast channel to
@@ -1016,6 +1045,8 @@ pub struct ServiceTransport {
 ///                             Channel::Closed => break,
 ///                         }
 ///                     },
+///                     // This is a case where using `ctx.run_until_cancelled`
+///                     // would probably be harder to read.
 ///                     _ = ctx.cancelled() => break,
 ///                 };
 ///
@@ -1103,12 +1134,12 @@ impl<'a> ServiceRunner<'a> {
     /// The main loop of a [Service].
     ///
     /// The future passed to this function should complete _only once the
-    /// service completes or is canceled_. Services that complete early will
-    /// automatically be canceled.
+    /// service completes or is cancelled_. Services that complete early will
+    /// automatically be cancelled.
     ///
     /// > **Caution**
     /// > As a safety mechanism, services have up to [SERVICE_GRACE_PERIOD]
-    /// > to gracefully shutdown before they are forcefully canceled. This
+    /// > to gracefully shutdown before they are forcefully cancelled. This
     /// > should not execute in a normal context and only serves to prevent
     /// > infinite loops on shutdown request if services have not been
     /// > implemented correctly.

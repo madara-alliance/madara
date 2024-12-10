@@ -3,7 +3,10 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
-use std::time::{Duration, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use mp_utils::service::ServiceContext;
 use std::time::SystemTime;
@@ -34,7 +37,7 @@ pub async fn gas_price_worker_once(
     anyhow::Ok(())
 }
 pub async fn gas_price_worker(
-    eth_client: &EthereumClient,
+    eth_client: Arc<EthereumClient>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -43,13 +46,8 @@ pub async fn gas_price_worker(
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {},
-            _ = ctx.cancelled() => break
-        }
-
-        gas_price_worker_once(eth_client, &l1_gas_provider, gas_price_poll_ms).await?;
+    while ctx.run_until_cancelled(interval.tick()).await.is_some() {
+        gas_price_worker_once(&eth_client, &l1_gas_provider, gas_price_poll_ms).await?;
     }
 
     anyhow::Ok(())
@@ -143,7 +141,7 @@ mod eth_client_gas_price_worker_test {
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
                 gas_price_worker(
-                    &eth_client,
+                    Arc::new(eth_client),
                     l1_gas_provider,
                     Duration::from_millis(200),
                     ServiceContext::new_for_testing(),
@@ -290,7 +288,7 @@ mod eth_client_gas_price_worker_test {
         let result = timeout(
             timeout_duration,
             gas_price_worker(
-                &eth_client,
+                Arc::new(eth_client),
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
                 ServiceContext::new_for_testing(),

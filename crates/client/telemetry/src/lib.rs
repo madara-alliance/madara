@@ -124,10 +124,7 @@ async fn start_telemetry(
     mut ctx: ServiceContext,
     mut clients: Vec<Option<(WebSocket, u8, String)>>,
 ) -> anyhow::Result<()> {
-    while let Ok(event) = tokio::select! {
-        res = rx.recv() => res,
-        _ = ctx.cancelled() => return anyhow::Ok(())
-    } {
+    while let Some(Ok(event)) = ctx.run_until_cancelled(rx.recv()).await {
         tracing::debug!(
             "Sending telemetry event '{}'.",
             event.message.get("msg").and_then(|e| e.as_str()).unwrap_or("<unknown>")
