@@ -30,6 +30,14 @@ pub struct L1SyncParams {
     #[clap(env = "MADARA_STRK_DATA_GAS_PRICE", long, alias = "strk-blob-gas-price")]
     pub strk_blob_gas_price: Option<u64>,
 
+    /// Oracle API url.
+    #[clap(env = "ORACLE_URL", long, alias = "oracle-url")]
+    pub oracle_url: Option<Url>,
+
+    /// Oracle API key.
+    #[clap(env = "ORACLE_API_KEY", long, alias = "oracle-api-key")]
+    pub oracle_api_key: Option<String>,
+
     /// Time in which the gas price worker will fetch the gas price.
     #[clap(
 		env = "MADARA_GAS_PRICE_POLL",
