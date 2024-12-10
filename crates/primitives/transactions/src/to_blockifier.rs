@@ -16,12 +16,60 @@ use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
 use std::sync::Arc;
 
+impl TransactionWithHash {
+    /// Very important note: When the transaction is an L1HandlerTransaction, the paid_fee_on_l1 field will be set to
+    /// a very high value, as it is not stored in the transaction. This field does not affect the execution except
+    /// that it may lead to a rejection on L2. (L1HandlerTransactions are not revertible) This means that this
+    /// implementation is fine as long as the transaction has been checked beforehand.
+    /// TODO: check that this is always true.
+    ///
+    /// Callers of this function must make sure that the transaction has originally been executed with the correct,
+    /// paid_fee_on_l1 field.
+    ///
+    /// In madara, there are currently two places where this function is executed:
+    /// - in RPCs, to replay (trace) transactions.
+    /// - in block production, to replay the pending block when restarting sequencing.
+    ///
+    /// In the first case, we can't always get the paid_fees_on_l1 field, but since the sequencer supposedly has
+    /// executed this transaction before, it's fine to suppose that it's valid.
+    /// In the second case, this transaction has already been validated by the mempool and block production.
+    pub fn into_blockifier(self, class: Option<&ConvertedClass>) -> Result<BTransaction, ToBlockifierError> {
+        let class_info = match &self.transaction {
+            Transaction::Declare(_txn) => {
+                let class = class.ok_or(ToBlockifierError::MissingClass)?;
+                Some(class.to_blockifier_class_info()?)
+            }
+            _ => None,
+        };
+
+        // see doc comment
+        let paid_fee_on_l1 =
+            self.transaction.as_l1_handler().map(|_| starknet_api::transaction::Fee(1_000_000_000_000));
+
+        let deployed_address = match &self.transaction {
+            // todo: this shouldnt be computed here...
+            Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
+            _ => None,
+        };
+        let transaction: starknet_api::transaction::Transaction = self.transaction.try_into()?;
+
+        Ok(BTransaction::from_api(
+            transaction,
+            TransactionHash(self.hash),
+            class_info,
+            paid_fee_on_l1,
+            deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
+            /* is_query */ false,
+        )?)
+    }
+}
+
 pub trait BroadcastedTransactionExt {
     fn into_blockifier(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError>;
+    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
 }
 
 impl BroadcastedTransactionExt for BroadcastedTxn<Felt> {
@@ -29,7 +77,7 @@ impl BroadcastedTransactionExt for BroadcastedTxn<Felt> {
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError> {
+    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) = match &self {
             BroadcastedTxn::Declare(tx) => match tx {
                 BroadcastedDeclareTxn::V1(tx) | BroadcastedDeclareTxn::QueryV1(tx) => {
@@ -74,7 +122,7 @@ impl L1HandlerTransaction {
         chain_id: Felt,
         _starknet_version: StarknetVersion,
         paid_fees_on_l1: u128,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError> {
+    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let transaction = Transaction::L1Handler(self.clone());
         // TODO: check self.version
         let hash = self.compute_hash(chain_id, false, false);
@@ -92,7 +140,7 @@ impl BroadcastedDeclareTransactionV0 {
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), BroadcastedToBlockifierError> {
+    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) = handle_class_legacy(Arc::clone(&self.contract_class))?;
 
         let is_query = self.is_query;
@@ -111,7 +159,7 @@ impl BroadcastedDeclareTransactionV0 {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum BroadcastedToBlockifierError {
+pub enum ToBlockifierError {
     #[error("Failed to compile contract class: {0}")]
     CompilationFailed(#[from] ClassCompilationError),
     #[error("Failed to convert program: {0}")]
@@ -130,47 +178,38 @@ pub enum BroadcastedToBlockifierError {
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
     #[error("Failed to convert base64 program to cairo program: {0}")]
     Base64ToCairoError(#[from] base64::DecodeError),
+    #[error("Missing class")]
+    MissingClass,
 }
 
 #[allow(clippy::type_complexity)]
 fn handle_class_legacy(
     contract_class: Arc<CompressedLegacyContractClass>,
-) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), BroadcastedToBlockifierError> {
+) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
     let class_hash = contract_class.compute_class_hash()?;
     tracing::debug!("Computed legacy class hash: {:?}", class_hash);
-    let class_blockifier =
-        contract_class.to_blockifier_class().map_err(BroadcastedToBlockifierError::CompilationFailed)?;
-    Ok((
-        Some(BClassInfo::new(&class_blockifier, 0, 0)?),
-        Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: LegacyClassInfo { contract_class } })),
-        Some(class_hash),
-    ))
+    let converted_class =
+        ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: LegacyClassInfo { contract_class } });
+    Ok((Some(converted_class.to_blockifier_class_info()?), Some(converted_class), Some(class_hash)))
 }
 
 #[allow(clippy::type_complexity)]
 fn handle_class_sierra(
     contract_class: Arc<FlattenedSierraClass>,
     expected_compiled_class_hash: Felt,
-) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), BroadcastedToBlockifierError> {
+) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
     let class_hash = contract_class.compute_class_hash()?;
     let (compiled_class_hash, compiled) = contract_class.compile_to_casm()?;
     if expected_compiled_class_hash != compiled_class_hash {
-        return Err(BroadcastedToBlockifierError::CompiledClassHashMismatch {
+        return Err(ToBlockifierError::CompiledClassHashMismatch {
             expected: expected_compiled_class_hash,
             compilation: compiled_class_hash,
         });
     }
-    Ok((
-        Some(BClassInfo::new(
-            &compiled.to_blockifier_class()?,
-            contract_class.sierra_program.len(),
-            contract_class.abi.len(),
-        )?),
-        Some(ConvertedClass::Sierra(SierraConvertedClass {
-            class_hash,
-            info: SierraClassInfo { contract_class, compiled_class_hash },
-            compiled: Arc::new(compiled),
-        })),
-        Some(class_hash),
-    ))
+    let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
+        class_hash,
+        info: SierraClassInfo { contract_class, compiled_class_hash },
+        compiled: Arc::new(compiled),
+    });
+    Ok((Some(converted_class.to_blockifier_class_info()?), Some(converted_class), Some(class_hash)))
 }

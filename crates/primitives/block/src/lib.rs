@@ -1,17 +1,15 @@
 //! Starknet block primitives.
 
-pub mod header;
-
-pub use header::Header;
-use header::{L1DataAvailabilityMode, PendingHeader};
+use crate::header::GasPrices;
+use header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader};
 use mp_chain_config::StarknetVersion;
 use mp_receipt::TransactionReceipt;
 use mp_transactions::Transaction;
-pub use primitive_types::{H160, U256};
 use starknet_types_core::felt::Felt;
 
-use crate::header::GasPrices;
-
+pub mod header;
+pub use header::Header;
+pub use primitive_types::{H160, U256};
 pub type BlockId = starknet_types_rpc::BlockId<Felt>;
 pub type BlockTag = starknet_types_rpc::BlockTag;
 
@@ -72,6 +70,13 @@ impl MadaraMaybePendingBlockInfo {
             MadaraMaybePendingBlockInfo::Pending(block) => &block.header.protocol_version,
         }
     }
+
+    pub fn block_timestamp(&self) -> BlockTimestamp {
+        match self {
+            MadaraMaybePendingBlockInfo::NotPending(block) => block.header.block_timestamp,
+            MadaraMaybePendingBlockInfo::Pending(block) => block.header.block_timestamp,
+        }
+    }
 }
 
 impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
@@ -130,7 +135,7 @@ impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
             } else {
                 protocol_version.to_string()
             },
-            timestamp,
+            timestamp: timestamp.0,
         }
     }
 }

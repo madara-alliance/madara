@@ -1,14 +1,18 @@
 use core::num::NonZeroU128;
 use mp_chain_config::StarknetVersion;
+use serde::Deserialize;
+use serde::Serialize;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::Pedersen;
 use starknet_types_core::hash::Poseidon;
 use starknet_types_core::hash::StarkHash as StarkHashTrait;
+use std::fmt;
+use std::time::SystemTime;
 
 /// Block status.
 ///
 /// The status of the block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BlockStatus {
     Pending,
@@ -29,14 +33,31 @@ impl From<BlockStatus> for starknet_types_rpc::BlockStatus {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, PartialOrd, Ord, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BlockTimestamp(pub u64);
+impl BlockTimestamp {
+    pub fn now() -> Self {
+        Self(
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs(),
+        )
+    }
+}
+
+impl fmt::Display for BlockTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingHeader {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
     /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
-    pub block_timestamp: u64,
+    pub block_timestamp: BlockTimestamp,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
@@ -45,7 +66,7 @@ pub struct PendingHeader {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Starknet header definition.
 pub struct Header {
     /// The hash of this block’s parent.
@@ -56,8 +77,8 @@ pub struct Header {
     pub global_state_root: Felt,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
-    /// The time the sequencer created this block before executing transactions
-    pub block_timestamp: u64,
+    /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
+    pub block_timestamp: BlockTimestamp,
     /// The number of transactions in a block
     pub transaction_count: u64,
     /// A commitment to the transactions included in the block
@@ -80,7 +101,7 @@ pub struct Header {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GasPrices {
     pub eth_l1_gas_price: u128,
     pub strk_l1_gas_price: u128,
@@ -117,7 +138,7 @@ impl GasPrices {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum L1DataAvailabilityMode {
     #[serde(alias = "Calldata")]
@@ -153,7 +174,7 @@ impl Header {
         block_number: u64,
         global_state_root: Felt,
         sequencer_address: Felt,
-        block_timestamp: u64,
+        block_timestamp: BlockTimestamp,
         transaction_count: u64,
         transaction_commitment: Felt,
         event_count: u64,
@@ -193,7 +214,7 @@ impl Header {
                 Felt::from(self.block_number),
                 self.global_state_root,
                 self.sequencer_address,
-                Felt::from(self.block_timestamp),
+                Felt::from(self.block_timestamp.0),
                 Felt::from(self.transaction_count),
                 self.transaction_commitment,
                 Felt::from(self.event_count),
@@ -209,7 +230,7 @@ impl Header {
                 Felt::from(self.block_number),
                 self.global_state_root,
                 self.sequencer_address,
-                Felt::from(self.block_timestamp),
+                Felt::from(self.block_timestamp.0),
                 concat_counts(
                     self.transaction_count,
                     self.event_count,
@@ -291,7 +312,7 @@ mod tests {
             2,
             Felt::from(3),
             Felt::from(4),
-            5,
+            BlockTimestamp(5),
             6,
             Felt::from(7),
             8,
@@ -345,7 +366,7 @@ mod tests {
             block_number: 2,
             global_state_root: Felt::from(3),
             sequencer_address: Felt::from(4),
-            block_timestamp: 5,
+            block_timestamp: BlockTimestamp(5),
             transaction_count: 6,
             transaction_commitment: Felt::from(7),
             event_count: 8,

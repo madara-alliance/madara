@@ -27,7 +27,7 @@ pub enum Error {
     #[error(transparent)]
     UnsupportedProtocolVersion(#[from] mp_chain_config::UnsupportedProtocolVersion),
     #[error(transparent)]
-    Reexecution(#[from] TxReexecError),
+    Reexecution(#[from] TxExecError),
     #[error(transparent)]
     FeeEstimation(#[from] TxFeeEstimationError),
     #[error(transparent)]
@@ -41,8 +41,8 @@ pub enum Error {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Reexecuting tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
-pub struct TxReexecError {
+#[error("Executing tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
+pub struct TxExecError {
     block_n: DbBlockId,
     hash: TransactionHash,
     index: usize,

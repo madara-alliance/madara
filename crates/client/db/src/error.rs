@@ -1,3 +1,5 @@
+use starknet_types_core::felt::Felt;
+
 use crate::Column;
 use std::borrow::Cow;
 
@@ -21,6 +23,10 @@ pub enum MadaraStorageError {
     InconsistentStorage(Cow<'static, str>),
     #[error("Cannot create a pending block of the genesis block of a chain")]
     PendingCreationNoGenesis,
+    #[error(
+        "Missing compiled class for class with hash {class_hash:#x} (compiled_class_hash={compiled_class_hash:#x}"
+    )]
+    MissingCompiledClass { class_hash: Felt, compiled_class_hash: Felt },
 }
 
 pub type BonsaiStorageError = bonsai_trie::BonsaiStorageError<DbError>;

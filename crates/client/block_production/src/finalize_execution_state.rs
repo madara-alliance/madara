@@ -12,50 +12,12 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::core::ContractAddress;
 use std::collections::{hash_map, HashMap};
 
 #[derive(Debug, thiserror::Error)]
 #[error("Error converting state diff to state map")]
 pub struct StateDiffToStateMapError;
-
-pub fn state_diff_to_state_map(diff: StateDiff) -> Result<StateMaps, StateDiffToStateMapError> {
-    let nonces = diff
-        .nonces
-        .into_iter()
-        .map(|entry| Ok((entry.contract_address.try_into().map_err(|_| StateDiffToStateMapError)?, Nonce(entry.nonce))))
-        .collect::<Result<_, StateDiffToStateMapError>>()?;
-    let class_hashes = diff
-        .deployed_contracts
-        .into_iter()
-        .map(|entry| Ok((entry.address.try_into().map_err(|_| StateDiffToStateMapError)?, ClassHash(entry.class_hash))))
-        .chain(diff.replaced_classes.into_iter().map(|entry| {
-            Ok((entry.contract_address.try_into().map_err(|_| StateDiffToStateMapError)?, ClassHash(entry.class_hash)))
-        }))
-        .collect::<Result<_, StateDiffToStateMapError>>()?;
-    let storage = diff
-        .storage_diffs
-        .into_iter()
-        .flat_map(|d| {
-            d.storage_entries.into_iter().map(move |e| {
-                Ok((
-                    (
-                        d.address.try_into().map_err(|_| StateDiffToStateMapError)?,
-                        e.key.try_into().map_err(|_| StateDiffToStateMapError)?,
-                    ),
-                    e.value,
-                ))
-            })
-        })
-        .collect::<Result<_, StateDiffToStateMapError>>()?;
-    let declared_contracts = diff.declared_classes.iter().map(|d| (ClassHash(d.class_hash), true)).collect();
-    let compiled_class_hashes = diff
-        .declared_classes
-        .into_iter()
-        .map(|d| (ClassHash(d.class_hash), CompiledClassHash(d.compiled_class_hash)))
-        .collect();
-    Ok(StateMaps { nonces, class_hashes, storage, declared_contracts, compiled_class_hashes })
-}
 
 pub(crate) fn state_map_to_state_diff(
     backend: &MadaraBackend,

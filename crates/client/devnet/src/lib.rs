@@ -1,7 +1,7 @@
 use anyhow::Context;
 use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
-use mp_block::header::GasPrices;
+use mp_block::header::{BlockTimestamp, GasPrices};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
@@ -11,7 +11,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::{collections::HashMap, time::SystemTime};
+use std::collections::HashMap;
 
 mod balances;
 mod classes;
@@ -154,10 +154,7 @@ impl ChainGenesisDescription {
             header: UnverifiedHeader {
                 parent_block_hash: Some(Felt::ZERO),
                 sequencer_address: chain_config.sequencer_address.to_felt(),
-                block_timestamp: SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("Current time is before unix epoch!")
-                    .as_secs(),
+                block_timestamp: BlockTimestamp::now(),
                 protocol_version: chain_config.latest_protocol_version,
                 l1_gas_price: GasPrices {
                     eth_l1_gas_price: 5,
@@ -641,7 +638,7 @@ mod tests {
     #[rstest]
     fn test_mempool_tx_limit() {
         let chain = chain_with_mempool_limits(MempoolLimits {
-            max_age: Duration::from_millis(1000000),
+            max_age: None,
             max_declare_transactions: 2,
             max_transactions: 5,
         });
@@ -717,8 +714,11 @@ mod tests {
     #[rstest]
     fn test_mempool_age_limit() {
         let max_age = Duration::from_millis(1000);
-        let mut chain =
-            chain_with_mempool_limits(MempoolLimits { max_age, max_declare_transactions: 2, max_transactions: 5 });
+        let mut chain = chain_with_mempool_limits(MempoolLimits {
+            max_age: Some(max_age),
+            max_declare_transactions: 2,
+            max_transactions: 5,
+        });
         tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];

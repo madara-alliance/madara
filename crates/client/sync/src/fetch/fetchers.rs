@@ -373,7 +373,7 @@ mod test_l2_fetchers {
             felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             "Sequencer address should match"
         );
-        assert_eq!(pending_block.header.block_timestamp, 1725950824, "Block timestamp should match");
+        assert_eq!(pending_block.header.block_timestamp.0, 1725950824, "Block timestamp should match");
         assert_eq!(
             pending_block.header.protocol_version,
             StarknetVersion::new(0, 13, 2, 1),

@@ -91,7 +91,7 @@ impl ExecutionContext {
         };
         let block_info = blockifier::blockifier::block::BlockInfo {
             block_number: BlockNumber(block_number),
-            block_timestamp: BlockTimestamp(block_timestamp),
+            block_timestamp: BlockTimestamp(block_timestamp.0),
             sequencer_address: sequencer_address
                 .try_into()
                 .map_err(|_| Error::InvalidSequencerAddress(sequencer_address))?,

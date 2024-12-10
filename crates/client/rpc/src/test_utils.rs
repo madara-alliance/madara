@@ -1,7 +1,7 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraBackend;
 use mp_block::{
-    header::{GasPrices, L1DataAvailabilityMode, PendingHeader},
+    header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
@@ -204,7 +204,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             transaction_count: 1,
                             global_state_root: Felt::from_hex_unchecked("0x88912"),
                             sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                            block_timestamp: 43,
+                            block_timestamp: BlockTimestamp(43),
                             transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
                             event_count: 0,
                             event_commitment: Felt::from_hex_unchecked("0xb"),

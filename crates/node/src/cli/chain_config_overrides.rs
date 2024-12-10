@@ -14,7 +14,10 @@ use mp_chain_config::{
     ChainConfig, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
-use mp_utils::serde::{deserialize_duration, deserialize_private_key, serialize_duration};
+use mp_utils::serde::{
+    deserialize_duration, deserialize_optional_duration, deserialize_private_key, serialize_duration,
+    serialize_optional_duration,
+};
 use url::Url;
 
 /// Override chain config parameters.
@@ -51,8 +54,8 @@ pub struct ChainConfigOverridesInner {
     pub private_key: ZeroingPrivateKey,
     pub mempool_tx_limit: usize,
     pub mempool_declare_tx_limit: usize,
-    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
-    pub mempool_tx_max_age: Duration,
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
+    pub mempool_tx_max_age: Option<Duration>,
 }
 
 impl ChainConfigOverrideParams {

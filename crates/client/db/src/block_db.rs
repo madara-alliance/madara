@@ -142,7 +142,7 @@ impl MadaraBackend {
                         // genesis has not been loaded yet will return an error. That probably fine because the ERC20 fee contracts are not even deployed yet - it
                         // will error somewhere else anyway.
                         sequencer_address: **self.chain_config().sequencer_address,
-                        block_timestamp: 0, // Junk timestamp: unix epoch
+                        block_timestamp: Default::default(), // Junk timestamp: unix epoch
                         protocol_version: self.chain_config.latest_protocol_version,
                         l1_gas_price: GasPrices {
                             eth_l1_gas_price: 1,
