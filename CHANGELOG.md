@@ -48,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- refactor: Readme and .env.example
 - refactor: http_mock version updated
 - refactor: prover-services renamed to prover-clients
 - refactor: update json made generic to update any json file
