@@ -4,9 +4,10 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mc_mempool::Mempool;
 use mc_mempool::MempoolProvider;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-use starknet_core::types::{
-    BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction,
-    DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult,
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::AddInvokeTransactionResult;
+use starknet_types_rpc::{
+    BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use std::sync::Arc;
 
@@ -27,9 +28,16 @@ impl From<mc_mempool::Error> for StarknetRpcApiError {
             mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
                 StarknetRpcApiError::DuplicateTxn
             }
-            mc_mempool::Error::Validation(err) => StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") },
-            mc_mempool::Error::InnerMempool(err) => {
-                StarknetRpcApiError::ValidationFailure { error: format!("{err:#}") }
+            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(limit)) => {
+                StarknetRpcApiError::FailedToReceiveTxn { err: Some(format!("{}", limit).into()) }
+            }
+            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+                StarknetRpcApiError::FailedToReceiveTxn {
+                    err: Some("A transaction with this nonce and sender address already exists".into()),
+                }
+            }
+            mc_mempool::Error::Validation(err) => {
+                StarknetRpcApiError::ValidationFailure { error: format!("{err:#}").into() }
             }
             mc_mempool::Error::Exec(err) => {
                 StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") }
@@ -47,25 +55,25 @@ impl AddTransactionProvider for MempoolAddTxProvider {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<DeclareTransactionResult> {
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         Ok(self.mempool.accept_declare_v0_tx(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_declare_transaction(
         &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
+        declare_transaction: BroadcastedDeclareTxn<Felt>,
+    ) -> RpcResult<ClassAndTxnHash<Felt>> {
         Ok(self.mempool.accept_declare_tx(declare_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
+        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
+    ) -> RpcResult<ContractAndTxnHash<Felt>> {
         Ok(self.mempool.accept_deploy_account_tx(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
+        invoke_transaction: BroadcastedInvokeTxn<Felt>,
+    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
         Ok(self.mempool.accept_invoke_tx(invoke_transaction).map_err(StarknetRpcApiError::from)?)
     }
 }

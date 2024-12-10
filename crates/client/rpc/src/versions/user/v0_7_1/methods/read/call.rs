@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use starknet_core::types::FunctionCall;
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::FunctionCall;
 
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
@@ -30,7 +30,7 @@ use crate::Starknet;
 /// * `CONTRACT_NOT_FOUND` - If the specified contract address does not exist.
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
-pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
+pub fn call(starknet: &Starknet, request: FunctionCall<Felt>, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
     let block_info = starknet.get_block_info(&block_id)?;
 
     let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;

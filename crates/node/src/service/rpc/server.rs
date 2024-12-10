@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
+use mp_utils::service::ServiceContext;
 use tokio::task::JoinSet;
 use tower::Service;
 
@@ -48,7 +49,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 pub async fn start_server(
     config: ServerConfig,
     join_set: &mut JoinSet<anyhow::Result<()>>,
-    cancellation_token: tokio_util::sync::CancellationToken,
+    ctx: ServiceContext,
 ) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
     let ServerConfig {
         name,
@@ -97,9 +98,11 @@ pub async fn start_server(
         metrics,
         service_builder: builder.to_service_builder(),
     };
+    let ctx1 = ctx.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let ctx1 = ctx1.clone();
 
         async move {
             let cfg = cfg.clone();
@@ -119,9 +122,14 @@ pub async fn start_server(
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
+                let ctx1 = ctx1.clone();
 
                 async move {
-                    if req.uri().path() == "/health" {
+                    if !ctx1.is_active() {
+                        Ok(hyper::Response::builder()
+                            .status(hyper::StatusCode::GONE)
+                            .body(hyper::Body::from("GONE"))?)
+                    } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else {
                         if is_websocket {
@@ -157,7 +165,7 @@ pub async fn start_server(
         );
         server
             .with_graceful_shutdown(async {
-                wait_or_graceful_shutdown(stop_handle.shutdown(), &cancellation_token).await;
+                wait_or_graceful_shutdown(stop_handle.shutdown(), &ctx).await;
             })
             .await
             .context("Running rpc server")

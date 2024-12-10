@@ -25,6 +25,7 @@ members = [
   "crates/proc-macros",
   "crates/tests",
   "crates/cairo-test-contracts",
+  "crates/client/block_production",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -94,12 +95,11 @@ version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-rocksdb = { version = "0.22", features = [
-  # "multi-threaded-cf",
-] }
+rocksdb = "0.22"
+librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/cchudant/bonsai-trie.git", branch = "fix_inserts_remove_leaks", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
   "std",
 ] }
 
@@ -116,6 +116,7 @@ mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+mp-oracle = { path = "crates/primitives/oracle", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/client/analytics" }
@@ -128,6 +129,7 @@ mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
 mc-eth = { path = "crates/client/eth" }
 mc-mempool = { path = "crates/client/mempool" }
+mc-block-production = { path = "crates/client/block_production" }
 mc-block-import = { path = "crates/client/block_import" }
 mc-devnet = { path = "crates/client/devnet" }
 
@@ -163,8 +165,10 @@ alloy = { version = "0.4.0", features = [
 # Other third party dependencies
 paste = "1.0.15"
 anyhow = "1.0"
+bigdecimal = "0.4.5"
 assert_matches = "1.5"
 async-trait = "0.1"
+base64 = "0.22"
 sha3 = "0.10"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 clap = { version = "4.4" }
@@ -193,10 +197,13 @@ indoc = "2"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
-serde_with = "3.9"
+serde_with = { version = "3.11", default-features = false, features = [
+  "alloc",
+  "macros",
+] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
-thiserror = "1.0"
+thiserror = "2.0"
 tokio = { version = "1.34", features = ["signal", "rt"] }
 tokio-util = "0.7.12"
 url = { version = "2.4", features = ["serde"] }
@@ -233,10 +240,14 @@ tracing-subscriber = { version = "0.3.18", features = [
   "registry",
   "std",
 ] }
+tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]
-# wait for PR https://github.com/starknet-io/types-rs/pull/76 to be merged
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
+starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

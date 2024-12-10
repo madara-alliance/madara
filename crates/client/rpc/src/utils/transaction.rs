@@ -13,7 +13,7 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 ///
 /// **note:** this function does not support deploy transaction
 /// because it is not supported by blockifier
-pub fn to_blockifier_transactions(
+pub fn to_blockifier_transaction(
     backend: Arc<MadaraBackend>,
     block_id: BlockId,
     transaction: mp_transactions::Transaction,

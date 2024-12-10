@@ -1,11 +1,10 @@
 //! JSON-RPC specific middleware.
 
-use std::time::Instant;
-
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
-
+use mc_rpc::utils::ResultExt;
 use mp_chain_config::RpcVersion;
+use std::time::Instant;
 
 pub use super::metrics::Metrics;
 
@@ -112,15 +111,21 @@ where
                 return inner.call(req).await;
             }
 
-            let Ok(version) = RpcVersion::from_request_path(&path, version_default).map(|v| v.name()) else {
-                return jsonrpsee::MethodResponse::error(
-                    req.id,
-                    jsonrpsee::types::ErrorObject::owned(
-                        jsonrpsee::types::error::PARSE_ERROR_CODE,
-                        jsonrpsee::types::error::PARSE_ERROR_MSG,
-                        None::<()>,
-                    ),
-                );
+            let version = match RpcVersion::from_request_path(&path, version_default)
+                .map(|v| v.name())
+                .or_internal_server_error("Failed to get request path")
+            {
+                Ok(version) => version,
+                Err(_) => {
+                    return jsonrpsee::MethodResponse::error(
+                        req.id,
+                        jsonrpsee::types::ErrorObject::owned(
+                            jsonrpsee::types::error::PARSE_ERROR_CODE,
+                            jsonrpsee::types::error::PARSE_ERROR_MSG,
+                            None::<()>,
+                        ),
+                    )
+                }
             };
 
             let Some((namespace, method)) = req.method.split_once('_') else {
@@ -134,6 +139,7 @@ where
                 );
             };
 
+            let method = method.replacen(&format!("{version}_"), "", 1);
             let method_new = format!("{namespace}_{version}_{method}");
             req.method = jsonrpsee::core::Cow::from(method_new);
 

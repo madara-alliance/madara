@@ -15,7 +15,7 @@ async fn test_can_fetch_pending_block(client_mainnet_fixture: GatewayProvider) {
         Felt::ZERO,
         &ChainId::Mainnet,
         &client_mainnet_fixture,
-        &tokio_util::sync::CancellationToken::new(),
+        &ServiceContext::new_for_testing(),
     )
     .await
     .unwrap();
@@ -36,7 +36,7 @@ async fn test_can_fetch_and_convert_block(client_mainnet_fixture: GatewayProvide
         &ChainId::Mainnet,
         block_n,
         &client_mainnet_fixture,
-        &tokio_util::sync::CancellationToken::new(),
+        &ServiceContext::new_for_testing(),
     )
     .await
     .unwrap();

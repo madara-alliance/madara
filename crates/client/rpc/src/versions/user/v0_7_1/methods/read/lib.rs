@@ -1,13 +1,14 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
-use starknet_core::types::{
-    BlockHashAndNumber, BroadcastedTransaction, ContractClass, EventFilterWithPage, EventsPage, FeeEstimate,
-    FunctionCall, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingStateUpdate, MsgFromL1, SimulationFlagForEstimateFee, SyncStatusType, Transaction,
-    TransactionReceiptWithBlockInfo, TransactionStatus,
-};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    BlockHashAndNumber, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall,
+    MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
+    MsgFromL1, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
+    TxnReceiptWithBlockInfo, TxnWithHash,
+};
+use starknet_types_rpc::{BroadcastedTxn, SimulationFlagForEstimateFee};
 
 use super::block_hash_and_number::*;
 use super::call::*;
@@ -43,11 +44,11 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(self.current_block_number()?)
     }
 
-    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
+    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber<Felt>> {
         Ok(block_hash_and_number(self)?)
     }
 
-    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
+    fn call(&self, request: FunctionCall<Felt>, block_id: BlockId) -> RpcResult<Vec<Felt>> {
         Ok(call(self, request, block_id)?)
     }
 
@@ -61,30 +62,33 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
 
     async fn estimate_fee(
         &self,
-        request: Vec<BroadcastedTransaction>,
+        request: Vec<BroadcastedTxn<Felt>>,
         simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
-    ) -> RpcResult<Vec<FeeEstimate>> {
+    ) -> RpcResult<Vec<FeeEstimate<Felt>>> {
         Ok(estimate_fee(self, request, simulation_flags, block_id).await?)
     }
 
-    async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate> {
+    async fn estimate_message_fee(&self, message: MsgFromL1<Felt>, block_id: BlockId) -> RpcResult<FeeEstimate<Felt>> {
         Ok(estimate_message_fee(self, message, block_id).await?)
     }
 
-    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithReceipts> {
+    async fn get_block_with_receipts(
+        &self,
+        block_id: BlockId,
+    ) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult<Felt>> {
         Ok(get_block_with_receipts(self, block_id)?)
     }
 
-    fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes> {
+    fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes<Felt>> {
         Ok(get_block_with_tx_hashes(self, block_id)?)
     }
 
-    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs<Felt>> {
         get_block_with_txs(self, block_id)
     }
 
-    fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<ContractClass> {
+    fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass<Felt>> {
         Ok(get_class_at(self, block_id, contract_address)?)
     }
 
@@ -92,11 +96,11 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(get_class_hash_at(self, block_id, contract_address)?)
     }
 
-    fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<ContractClass> {
+    fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<MaybeDeprecatedContractClass<Felt>> {
         Ok(get_class(self, block_id, class_hash)?)
     }
 
-    async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage> {
+    async fn get_events(&self, filter: EventFilterWithPageRequest<Felt>) -> RpcResult<EventsChunk<Felt>> {
         Ok(get_events(self, filter).await?)
     }
 
@@ -108,27 +112,27 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(get_storage_at(self, contract_address, key, block_id)?)
     }
 
-    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction> {
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash<Felt>> {
         Ok(get_transaction_by_block_id_and_index(self, block_id, index)?)
     }
 
-    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<Transaction> {
+    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<TxnWithHash<Felt>> {
         Ok(get_transaction_by_hash(self, transaction_hash)?)
     }
 
-    async fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TransactionReceiptWithBlockInfo> {
+    async fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo<Felt>> {
         Ok(get_transaction_receipt(self, transaction_hash)?)
     }
 
-    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TransactionStatus> {
+    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
         Ok(get_transaction_status(self, transaction_hash)?)
     }
 
-    async fn syncing(&self) -> RpcResult<SyncStatusType> {
+    async fn syncing(&self) -> RpcResult<SyncingStatus<Felt>> {
         Ok(syncing(self).await?)
     }
 
-    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate<Felt>> {
         Ok(get_state_update(self, block_id)?)
     }
 }

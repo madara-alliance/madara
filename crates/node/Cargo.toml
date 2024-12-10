@@ -23,6 +23,7 @@ name = "madara"
 # Madara
 mc-analytics = { workspace = true }
 mc-block-import = { workspace = true }
+mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
 mc-eth = { workspace = true }
@@ -34,22 +35,20 @@ mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
+mp-oracle = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
 blockifier.workspace = true
-starknet-providers.workspace = true
 starknet_api.workspace = true
 
 # Other
 alloy.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-chrono = "0.4.38"
 clap = { workspace = true, features = ["derive", "env"] }
 fdlimit.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }
-governor.workspace = true
 http.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 jsonrpsee.workspace = true
@@ -60,7 +59,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
-tokio-util.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tower.workspace = true

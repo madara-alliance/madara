@@ -1,5 +1,6 @@
 use mp_block::BlockId;
-use starknet_core::types::Transaction;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TxnWithHash;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
@@ -28,12 +29,13 @@ pub fn get_transaction_by_block_id_and_index(
     starknet: &Starknet,
     block_id: BlockId,
     index: u64,
-) -> StarknetRpcResult<Transaction> {
+) -> StarknetRpcResult<TxnWithHash<Felt>> {
     let block = starknet.get_block(&block_id)?;
     let transaction_hash = block.info.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
-    let transaction = block.inner.transactions.get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let transaction =
+        block.inner.transactions.into_iter().nth(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    Ok(transaction.clone().to_core(*transaction_hash))
+    Ok(TxnWithHash { transaction: transaction.into(), transaction_hash: *transaction_hash })
 }
 
 #[cfg(test)]

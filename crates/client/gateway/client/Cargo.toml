@@ -24,6 +24,7 @@ mp-gateway.workspace = true
 # Starknet
 starknet-core.workspace = true
 starknet-types-core.workspace = true
+starknet-types-rpc.workspace = true
 
 # Other
 anyhow.workspace = true
@@ -36,7 +37,6 @@ hyper-tls.workspace = true
 hyper-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-tokio-util.workspace = true
 tokio.workspace = true
 tower = { version = "0.4", features = ["timeout", "retry", "util", "limit"] }
 tracing.workspace = true

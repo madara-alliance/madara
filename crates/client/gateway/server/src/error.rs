@@ -89,7 +89,7 @@ impl From<StarknetRpcApiError> for GatewayError {
                 "Insufficient account balance".to_string(),
             )),
             StarknetRpcApiError::ValidationFailure { error } => {
-                GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::ValidateFailure, error))
+                GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::ValidateFailure, error.into()))
             }
             StarknetRpcApiError::CompilationFailed => GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::CompilationFailed,

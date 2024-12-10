@@ -1,6 +1,10 @@
 use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use starknet_core::types::{BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockWithTxs};
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{
+    BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
+    TxnWithHash,
+};
 
 use crate::Starknet;
 
@@ -22,17 +26,17 @@ use crate::Starknet;
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
+pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs<Felt>> {
     let block = starknet.get_block(&block_id)?;
 
-    let transactions_core = Iterator::zip(block.inner.transactions.iter(), block.info.tx_hashes())
-        .map(|(transaction, hash)| transaction.clone().to_core(*hash))
+    let transactions_with_hash = Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes())
+        .map(|(transaction, hash)| TxnWithHash { transaction: transaction.into(), transaction_hash: *hash })
         .collect();
 
     match block.info {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
-            Ok(MaybePendingBlockWithTxs::PendingBlock(PendingBlockWithTxs {
-                transactions: transactions_core,
+        MadaraMaybePendingBlockInfo::Pending(block) => Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
+            transactions: transactions_with_hash,
+            pending_block_header: PendingBlockHeader {
                 parent_hash: block.header.parent_block_hash,
                 timestamp: block.header.block_timestamp,
                 sequencer_address: block.header.sequencer_address,
@@ -40,8 +44,8 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
                 l1_da_mode: block.header.l1_da_mode.into(),
                 starknet_version: block.header.protocol_version.to_string(),
-            }))
-        }
+            },
+        })),
         MadaraMaybePendingBlockInfo::NotPending(block) => {
             let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 BlockStatus::AcceptedOnL1
@@ -49,18 +53,20 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 BlockStatus::AcceptedOnL2
             };
             Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
+                transactions: transactions_with_hash,
                 status,
-                block_hash: block.block_hash,
-                parent_hash: block.header.parent_block_hash,
-                block_number: block.header.block_number,
-                new_root: block.header.global_state_root,
-                timestamp: block.header.block_timestamp,
-                sequencer_address: block.header.sequencer_address,
-                l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
-                l1_da_mode: block.header.l1_da_mode.into(),
-                starknet_version: block.header.protocol_version.to_string(),
-                transactions: transactions_core,
+                block_header: BlockHeader {
+                    block_hash: block.block_hash,
+                    parent_hash: block.header.parent_block_hash,
+                    block_number: block.header.block_number,
+                    new_root: block.header.global_state_root,
+                    timestamp: block.header.block_timestamp,
+                    sequencer_address: block.header.sequencer_address,
+                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
+                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_da_mode: block.header.l1_da_mode.into(),
+                    starknet_version: block.header.protocol_version.to_string(),
+                },
             }))
         }
     }
@@ -75,8 +81,7 @@ mod tests {
     };
     use mp_block::BlockTag;
     use rstest::rstest;
-    use starknet_core::types::{L1DataAvailabilityMode, ResourcePrice};
-    use starknet_types_core::felt::Felt;
+    use starknet_types_rpc::{L1DaMode, ResourcePrice};
 
     #[rstest]
     fn test_get_block_with_txs(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
@@ -85,17 +90,19 @@ mod tests {
         // Block 0
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL1,
-            block_hash: block_hashes[0],
-            parent_hash: Felt::ZERO,
-            block_number: 0,
-            new_root: Felt::from_hex_unchecked("0x88912"),
-            timestamp: 43,
-            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-            l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
-            l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
-            l1_da_mode: L1DataAvailabilityMode::Blob,
-            starknet_version: "0.13.1.1".into(),
             transactions: vec![expected_txs[0].clone()],
+            block_header: BlockHeader {
+                block_hash: block_hashes[0],
+                parent_hash: Felt::ZERO,
+                block_number: 0,
+                new_root: Felt::from_hex_unchecked("0x88912"),
+                timestamp: 43,
+                sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.1.1".into(),
+            },
         });
         assert_eq!(get_block_with_txs(&rpc, BlockId::Number(0)).unwrap(), res);
         assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
@@ -103,17 +110,19 @@ mod tests {
         // Block 1
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
-            block_hash: block_hashes[1],
-            parent_hash: block_hashes[0],
-            block_number: 1,
-            new_root: Felt::ZERO,
-            timestamp: 0,
-            sequencer_address: Felt::ZERO,
-            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-            starknet_version: "0.13.2".into(),
             transactions: vec![],
+            block_header: BlockHeader {
+                block_hash: block_hashes[1],
+                parent_hash: block_hashes[0],
+                block_number: 1,
+                new_root: Felt::ZERO,
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Calldata,
+                starknet_version: "0.13.2".into(),
+            },
         });
         assert_eq!(get_block_with_txs(&rpc, BlockId::Number(1)).unwrap(), res);
         assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
@@ -121,32 +130,36 @@ mod tests {
         // Block 2
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
-            block_hash: block_hashes[2],
-            parent_hash: block_hashes[1],
-            block_number: 2,
-            new_root: Felt::ZERO,
-            timestamp: 0,
-            sequencer_address: Felt::ZERO,
-            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_da_mode: L1DataAvailabilityMode::Blob,
-            starknet_version: "0.13.2".into(),
             transactions: vec![expected_txs[1].clone(), expected_txs[2].clone()],
+            block_header: BlockHeader {
+                block_hash: block_hashes[2],
+                parent_hash: block_hashes[1],
+                block_number: 2,
+                new_root: Felt::ZERO,
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.2".into(),
+            },
         });
         assert_eq!(get_block_with_txs(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
         assert_eq!(get_block_with_txs(&rpc, BlockId::Number(2)).unwrap(), res);
         assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
 
         // Pending
-        let res = MaybePendingBlockWithTxs::PendingBlock(PendingBlockWithTxs {
-            parent_hash: block_hashes[2],
-            timestamp: 0,
-            sequencer_address: Felt::ZERO,
-            l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
-            l1_da_mode: L1DataAvailabilityMode::Blob,
-            starknet_version: "0.13.2".into(),
+        let res = MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
             transactions: vec![expected_txs[3].clone()],
+            pending_block_header: PendingBlockHeader {
+                parent_hash: block_hashes[2],
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.2".into(),
+            },
         });
         assert_eq!(get_block_with_txs(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
     }

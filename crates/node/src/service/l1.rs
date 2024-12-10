@@ -5,7 +5,7 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_utils::service::Service;
+use mp_utils::service::{MadaraService, Service, ServiceContext};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,11 +83,7 @@ impl L1SyncService {
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
-    async fn start(
-        &mut self,
-        join_set: &mut JoinSet<anyhow::Result<()>>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<()> {
+    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
         let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
             self.clone();
 
@@ -104,12 +100,16 @@ impl Service for L1SyncService {
                     gas_price_sync_disabled,
                     gas_price_poll,
                     mempool,
-                    cancellation_token,
+                    ctx,
                 )
                 .await
             });
         }
 
         Ok(())
+    }
+
+    fn id(&self) -> MadaraService {
+        MadaraService::L1Sync
     }
 }

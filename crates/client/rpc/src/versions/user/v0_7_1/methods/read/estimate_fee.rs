@@ -1,16 +1,14 @@
-use std::sync::Arc;
-
-use starknet_core::types::{BroadcastedTransaction, FeeEstimate, SimulationFlagForEstimateFee};
-
-use mc_exec::ExecutionContext;
-use mp_block::BlockId;
-use mp_transactions::broadcasted_to_blockifier;
-
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::ResultExt;
 use crate::versions::user::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::Starknet;
+use mc_exec::ExecutionContext;
+use mp_block::BlockId;
+use mp_transactions::BroadcastedTransactionExt;
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use std::sync::Arc;
 
 /// Estimate the fee associated with transaction
 ///
@@ -24,10 +22,10 @@ use crate::Starknet;
 /// * `fee_estimate` - fee estimate in gwei
 pub async fn estimate_fee(
     starknet: &Starknet,
-    request: Vec<BroadcastedTransaction>,
+    request: Vec<BroadcastedTxn<Felt>>,
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
-) -> StarknetRpcResult<Vec<FeeEstimate>> {
+) -> StarknetRpcResult<Vec<FeeEstimate<Felt>>> {
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 
@@ -39,7 +37,7 @@ pub async fn estimate_fee(
 
     let transactions = request
         .into_iter()
-        .map(|tx| broadcasted_to_blockifier(tx, starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
+        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
