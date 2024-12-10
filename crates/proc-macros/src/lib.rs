@@ -45,21 +45,31 @@
 //!
 //! Given this code:
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use m_proc_macros::versioned_rpc;
+//! # use std::sync::Arc;
+//! # use std::error::Error;
+//! # use jsonrpsee::core::RpcResult;
+//!
 //! #[versioned_rpc("V0_7_1", "starknet")]
 //! pub trait JsonRpc {
 //!     #[method(name = "blockNumber", and_versions = ["V0_8_0"])]
-//!     fn block_number(&self) -> anyhow::Result<u64>;
+//!     fn block_number(&self) -> RpcResult<u64>;
 //! }
 //! ```
 //!
 //! The macro will generate the following code:
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use m_proc_macros::versioned_rpc;
+//! # use std::sync::Arc;
+//! # use std::error::Error;
+//! # use jsonrpsee::core::RpcResult;
+//!
 //! #[jsonrpsee::proc_macros::rpc(server, client, namespace = "starknet")]
 //! pub trait JsonRpcV0_7_1 {
 //!     #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_0blockNumber"])]
-//!     fn block_number(&self) -> anyhow::Result<u64>;
+//!     fn block_number(&self) -> RpcResult<u64>;
 //! }
 //! ```
 

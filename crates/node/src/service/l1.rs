@@ -5,16 +5,15 @@ use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_utils::service::{MadaraService, Service, ServiceContext};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
 
 #[derive(Clone)]
 pub struct L1SyncService {
     db_backend: Arc<MadaraBackend>,
-    eth_client: Option<EthereumClient>,
+    eth_client: Option<Arc<EthereumClient>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -34,15 +33,15 @@ impl L1SyncService {
         devnet: bool,
         mempool: Arc<Mempool>,
     ) -> anyhow::Result<Self> {
-        let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
+        let eth_client = if !config.l1_sync_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_slice(l1_core_address.as_bytes());
                 let l1_block_metrics = L1BlockMetrics::register().expect("Registering metrics");
-                Some(
-                    EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
-                        .await
-                        .context("Creating ethereum client")?,
-                )
+                let client = EthereumClient::new(l1_rpc_url.clone(), core_address, l1_block_metrics)
+                    .await
+                    .context("Creating ethereum client")?;
+
+                Some(Arc::new(client))
             } else {
                 anyhow::bail!(
                     "No Ethereum endpoint provided. You need to provide one using --l1-endpoint <RPC URL> in order to verify the synced state or disable the l1 watcher using --no-l1-sync."
@@ -64,7 +63,7 @@ impl L1SyncService {
                 .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             tracing::info!("⏳ Getting initial L1 gas prices");
-            mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, l1_gas_provider.clone(), gas_price_poll)
+            mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, &l1_gas_provider, gas_price_poll)
                 .await
                 .context("Getting initial ethereum gas prices")?;
         }
@@ -83,18 +82,25 @@ impl L1SyncService {
 
 #[async_trait::async_trait]
 impl Service for L1SyncService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
-        let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
-            self.clone();
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        let L1SyncService {
+            db_backend,
+            l1_gas_provider,
+            chain_id,
+            gas_price_sync_disabled,
+            gas_price_poll,
+            mempool,
+            ..
+        } = self.clone();
 
-        if let Some(eth_client) = self.eth_client.take() {
+        if let Some(eth_client) = &self.eth_client {
             // enabled
 
-            let db_backend = Arc::clone(&self.db_backend);
-            join_set.spawn(async move {
+            let eth_client = Arc::clone(eth_client);
+            runner.service_loop(move |ctx| {
                 mc_eth::sync::l1_sync_worker(
-                    &db_backend,
-                    &eth_client,
+                    db_backend,
+                    eth_client,
                     chain_id,
                     l1_gas_provider,
                     gas_price_sync_disabled,
@@ -102,14 +108,18 @@ impl Service for L1SyncService {
                     mempool,
                     ctx,
                 )
-                .await
             });
+        } else {
+            tracing::error!("❗ Tried to start L1 Sync but no l1 endpoint was provided to the node on startup");
         }
 
         Ok(())
     }
+}
 
-    fn id(&self) -> MadaraService {
-        MadaraService::L1Sync
+impl ServiceId for L1SyncService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::L1Sync.svc_id()
     }
 }

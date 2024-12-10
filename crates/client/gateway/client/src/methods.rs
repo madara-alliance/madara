@@ -213,7 +213,7 @@ mod tests {
         }
     }
 
-    impl<'a> Drop for FileCleanupGuard<'a> {
+    impl Drop for FileCleanupGuard<'_> {
         fn drop(&mut self) {
             if self.is_active {
                 let _ = remove_file(self.path);

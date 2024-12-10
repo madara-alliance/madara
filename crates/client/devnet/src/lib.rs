@@ -342,7 +342,7 @@ mod tests {
             Arc::clone(&backend),
             Arc::clone(&importer),
             Arc::clone(&mempool),
-            metrics,
+            Arc::new(metrics),
             Arc::clone(&l1_data_provider),
         )
         .unwrap();

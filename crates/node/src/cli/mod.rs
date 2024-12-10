@@ -4,8 +4,8 @@ pub mod chain_config_overrides;
 pub mod db;
 pub mod gateway;
 pub mod l1;
+pub mod l2;
 pub mod rpc;
-pub mod sync;
 pub mod telemetry;
 use crate::cli::l1::L1SyncParams;
 use analytics::AnalyticsParams;
@@ -14,10 +14,10 @@ pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
+pub use l2::*;
 pub use rpc::*;
 use starknet_api::core::ChainId;
 use std::str::FromStr;
-pub use sync::*;
 pub use telemetry::*;
 
 use clap::ArgGroup;
@@ -150,7 +150,7 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
-    pub sync_params: SyncParams,
+    pub l2_sync_params: L2SyncParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -213,11 +213,9 @@ impl RunCmd {
     pub fn apply_arg_preset(mut self) -> Self {
         if self.args_preset.warp_update_sender {
             self.gateway_params.feeder_gateway_enable = true;
-            self.gateway_params.gateway_port = self.sync_params.warp_update_port_fgw;
+            self.gateway_params.gateway_port = self.l2_sync_params.warp_update_port_fgw;
             self.rpc_params.rpc_admin = true;
-            self.rpc_params.rpc_admin_port = self.sync_params.warp_update_port_rpc;
-        } else if self.args_preset.warp_update_receiver {
-            self.rpc_params.rpc_disable = true;
+            self.rpc_params.rpc_admin_port = self.l2_sync_params.warp_update_port_rpc;
         } else if self.args_preset.gateway {
             self.gateway_params.feeder_gateway_enable = true;
             self.gateway_params.gateway_enable = true;

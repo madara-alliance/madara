@@ -1,8 +1,18 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_transactions::BroadcastedDeclareTransactionV0;
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
+use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::ClassAndTxnHash;
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceRequest {
+    Start,
+    Stop,
+    Restart,
+}
 
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
@@ -44,69 +54,11 @@ pub trait MadaraStatusRpcApi {
 
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraServicesRpcApi {
-    /// Disables user-facing rpc services.
-    ///
-    /// This only works if user rpc has been enabled on startup, otherwise this
-    /// does nothing.
+    /// Sets the status of one or more services
     ///
     /// # Returns
     ///
-    /// True if user rpc was previously enabled.
-    #[method(name = "rpcDisable")]
-    async fn service_rpc_disable(&self) -> RpcResult<bool>;
-
-    /// Enables user-facing rpc services.
-    ///
-    /// This only works if user rpc has been enabled on startup, otherwise this
-    /// does nothing.
-    ///
-    /// # Returns
-    ///
-    /// True if user rpc was previously enabled.
-    #[method(name = "rpcEnable")]
-    async fn service_rpc_enable(&self) -> RpcResult<bool>;
-
-    /// Restarts user-facing rpc services, with a 5s grace period in between.
-    ///
-    /// This only works if user rpc has been enabled on startup, otherwise this
-    /// does nothing.
-    ///
-    /// # Returns
-    ///
-    /// True if user rpc was previously enabled.
-    #[method(name = "rpcRestart")]
-    async fn service_rpc_restart(&self) -> RpcResult<bool>;
-
-    /// Disables l1 and l2 sync services.
-    ///
-    /// This only works if sync services have been enabled on startup, otherwise
-    /// this does nothing.
-    ///
-    /// # Returns
-    ///
-    /// True if any of l1 or l2 sync was previously enabled.
-    #[method(name = "syncDisable")]
-    async fn service_sync_disable(&self) -> RpcResult<bool>;
-
-    /// Enables l1 and l2 sync services.
-    ///
-    /// This only works if sync services have been enabled on startup, otherwise
-    /// this does nothing.
-    ///
-    /// # Returns
-    ///
-    /// True if any of l1 or l2 sync was previously enabled.
-    #[method(name = "syncEnable")]
-    async fn service_sync_enable(&self) -> RpcResult<bool>;
-
-    /// Disables l1 and l2 sync services, with a 5s grace period in between.
-    ///
-    /// This only works if sync services have been enabled on startup, otherwise
-    /// this does nothing.
-    ///
-    /// # Returns
-    ///
-    /// True if l1 or l2 sync was previously enabled.
-    #[method(name = "syncRestart")]
-    async fn service_sync_restart(&self) -> RpcResult<bool>;
+    /// * 'on' if any service was active before being toggled, 'off' otherwise.
+    #[method(name = "service")]
+    async fn service(&self, service: Vec<MadaraServiceId>, status: ServiceRequest) -> RpcResult<MadaraServiceStatus>;
 }

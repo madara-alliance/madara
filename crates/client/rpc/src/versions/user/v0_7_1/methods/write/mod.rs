@@ -21,7 +21,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTxn<Felt>,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.add_transaction_provider.add_declare_transaction(declare_transaction).await?)
+        self.add_transaction_provider.add_declare_transaction(declare_transaction).await
     }
 
     /// Add an Deploy Account Transaction
@@ -38,7 +38,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
     ) -> RpcResult<ContractAndTxnHash<Felt>> {
-        Ok(self.add_transaction_provider.add_deploy_account_transaction(deploy_account_transaction).await?)
+        self.add_transaction_provider.add_deploy_account_transaction(deploy_account_transaction).await
     }
 
     /// Add an Invoke Transaction to invoke a contract function
@@ -54,6 +54,6 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn<Felt>,
     ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
-        Ok(self.add_transaction_provider.add_invoke_transaction(invoke_transaction).await?)
+        self.add_transaction_provider.add_invoke_transaction(invoke_transaction).await
     }
 }

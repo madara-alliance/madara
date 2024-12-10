@@ -230,6 +230,7 @@ pub async fn handle_get_block_traces(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    ctx: ServiceContext,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
@@ -239,10 +240,8 @@ pub async fn handle_get_block_traces(
         traces: Vec<TraceBlockTransactionsResult<Felt>>,
     }
 
-    // TODO: we should probably use the actual service context here instead of
-    // creating a new one!
     let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, Default::default(), ServiceContext::new()),
+        &Starknet::new(backend, add_transaction_provider, Default::default(), ctx),
         block_id,
     )
     .await?;

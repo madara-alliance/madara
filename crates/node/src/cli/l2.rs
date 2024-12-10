@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mp_chain_config::ChainConfig;
 use starknet_api::core::ChainId;
 
@@ -11,10 +12,10 @@ use super::FGW_DEFAULT_PORT;
 use super::RPC_DEFAULT_PORT_ADMIN;
 
 #[derive(Clone, Debug, clap::Args)]
-pub struct SyncParams {
+pub struct L2SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
-    pub sync_disabled: bool,
+    pub l2_sync_disabled: bool,
 
     /// The block you want to start syncing from. This will most probably break your database.
     #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
@@ -137,12 +138,12 @@ pub struct SyncParams {
     pub sync_parallelism: u8,
 }
 
-impl SyncParams {
+impl L2SyncParams {
     pub fn block_fetch_config(
         &self,
         chain_id: ChainId,
         chain_config: Arc<ChainConfig>,
-        warp_update: bool,
+        warp_update: Option<WarpUpdateConfig>,
     ) -> FetchConfig {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
@@ -167,8 +168,6 @@ impl SyncParams {
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_parallelism,
             warp_update,
-            warp_update_port_rpc: self.warp_update_port_rpc,
-            warp_update_port_fgw: self.warp_update_port_fgw,
         }
     }
 }

@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use jsonrpsee::server::ServerHandle;
-use tokio::task::JoinSet;
 
 use mc_db::MadaraBackend;
-use mc_rpc::{providers::AddTransactionProvider, rpc_api_admin, rpc_api_user, Starknet};
-use mp_utils::service::{MadaraService, Service, ServiceContext};
+use mc_rpc::{
+    providers::{AddTransactionProvider, AddTransactionProviderGroup},
+    rpc_api_admin, rpc_api_user, Starknet,
+};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -18,93 +20,126 @@ mod metrics;
 mod middleware;
 mod server;
 
+#[derive(Clone)]
+pub enum RpcType {
+    User,
+    Admin,
+}
+
 pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
-    add_txs_method_provider: Arc<dyn AddTransactionProvider>,
-    server_handle_user: Option<ServerHandle>,
-    server_handle_admin: Option<ServerHandle>,
+    add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+    add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
+    server_handle: Option<ServerHandle>,
+    rpc_type: RpcType,
 }
 
 impl RpcService {
-    pub fn new(
+    pub fn user(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
-        add_txs_method_provider: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
     ) -> Self {
-        Self { config, backend, add_txs_method_provider, server_handle_user: None, server_handle_admin: None }
+        Self {
+            config,
+            backend,
+            add_txs_provider_l2_sync,
+            add_txs_provider_mempool,
+            server_handle: None,
+            rpc_type: RpcType::User,
+        }
+    }
+
+    pub fn admin(
+        config: RpcParams,
+        backend: Arc<MadaraBackend>,
+        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
+        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
+    ) -> Self {
+        Self {
+            config,
+            backend,
+            add_txs_provider_l2_sync,
+            add_txs_provider_mempool,
+            server_handle: None,
+            rpc_type: RpcType::Admin,
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Service for RpcService {
-    async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>, ctx: ServiceContext) -> anyhow::Result<()> {
-        let RpcService { config, backend, add_txs_method_provider, .. } = self;
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        let config = self.config.clone();
+        let backend = Arc::clone(&self.backend);
+        let add_tx_provider_l2_sync = Arc::clone(&self.add_txs_provider_l2_sync);
+        let add_tx_provider_mempool = Arc::clone(&self.add_txs_provider_mempool);
+        let rpc_type = self.rpc_type.clone();
 
-        let starknet =
-            Starknet::new(backend.clone(), add_txs_method_provider.clone(), config.storage_proof_config(), ctx.clone());
-        let metrics = RpcMetrics::register()?;
+        let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
 
-        let server_config_user = if !config.rpc_disable {
-            let api_rpc_user = rpc_api_user(&starknet)?;
-            let methods_user = rpc_api_build("rpc", api_rpc_user).into();
+        self.server_handle = Some(server_handle);
 
-            Some(ServerConfig {
-                name: "JSON-RPC".to_string(),
-                addr: config.addr_user(),
-                batch_config: config.batch_config(),
-                max_connections: config.rpc_max_connections,
-                max_payload_in_mb: config.rpc_max_request_size,
-                max_payload_out_mb: config.rpc_max_response_size,
-                max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
-                message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                methods: methods_user,
-                metrics: metrics.clone(),
-                cors: config.cors(),
-                rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
-            })
-        } else {
-            None
-        };
+        runner.service_loop(move |ctx| async move {
+            let add_tx_provider = Arc::new(AddTransactionProviderGroup::new(
+                add_tx_provider_l2_sync,
+                add_tx_provider_mempool,
+                ctx.clone(),
+            ));
 
-        let server_config_admin = if config.rpc_admin {
-            let api_rpc_admin = rpc_api_admin(&starknet)?;
-            let methods_admin = rpc_api_build("admin", api_rpc_admin).into();
+            let starknet = Starknet::new(backend.clone(), add_tx_provider, config.storage_proof_config(), ctx.clone());
+            let metrics = RpcMetrics::register()?;
 
-            Some(ServerConfig {
-                name: "JSON-RPC (Admin)".to_string(),
-                addr: config.addr_admin(),
-                batch_config: config.batch_config(),
-                max_connections: config.rpc_max_connections,
-                max_payload_in_mb: config.rpc_max_request_size,
-                max_payload_out_mb: config.rpc_max_response_size,
-                max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
-                message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
-                methods: methods_admin,
-                metrics,
-                cors: config.cors(),
-                rpc_version_default: mp_chain_config::RpcVersion::RPC_VERSION_LATEST_ADMIN,
-            })
-        } else {
-            None
-        };
+            let server_config = {
+                let (name, addr, api_rpc, rpc_version_default) = match rpc_type {
+                    RpcType::User => (
+                        "JSON-RPC".to_string(),
+                        config.addr_user(),
+                        rpc_api_user(&starknet)?,
+                        mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
+                    ),
+                    RpcType::Admin => (
+                        "JSON-RPC (Admin)".to_string(),
+                        config.addr_admin(),
+                        rpc_api_admin(&starknet)?,
+                        mp_chain_config::RpcVersion::RPC_VERSION_LATEST_ADMIN,
+                    ),
+                };
+                let methods = rpc_api_build("rpc", api_rpc).into();
 
-        if let Some(server_config) = &server_config_user {
-            // rpc enabled
-            self.server_handle_user = Some(start_server(server_config.clone(), join_set, ctx.clone()).await?);
-        }
+                ServerConfig {
+                    name,
+                    addr,
+                    batch_config: config.batch_config(),
+                    max_connections: config.rpc_max_connections,
+                    max_payload_in_mb: config.rpc_max_request_size,
+                    max_payload_out_mb: config.rpc_max_response_size,
+                    max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
+                    message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
+                    methods,
+                    metrics,
+                    cors: config.cors(),
+                    rpc_version_default,
+                }
+            };
 
-        if let Some(server_config) = &server_config_admin {
-            // rpc enabled (admin)
-            let ctx = ctx.child().with_id(MadaraService::RpcAdmin);
-            ctx.service_add(MadaraService::RpcAdmin);
-            self.server_handle_admin = Some(start_server(server_config.clone(), join_set, ctx).await?);
-        }
+            start_server(server_config, ctx.clone(), stop_handle).await?;
 
-        Ok(())
+            anyhow::Ok(())
+        });
+
+        anyhow::Ok(())
     }
+}
 
-    fn id(&self) -> MadaraService {
-        MadaraService::Rpc
+impl ServiceId for RpcService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        match self.rpc_type {
+            RpcType::User => MadaraServiceId::RpcUser.svc_id(),
+            RpcType::Admin => MadaraServiceId::RpcAdmin.svc_id(),
+        }
     }
 }

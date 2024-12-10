@@ -20,7 +20,6 @@ use crate::Starknet;
 /// Returns block information with transaction hashes. This includes either a confirmed block or
 /// a pending block with transaction hashes, depending on the state of the requested block.
 /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
-
 pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,

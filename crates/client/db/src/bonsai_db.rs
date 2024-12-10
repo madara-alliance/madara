@@ -250,7 +250,10 @@ impl BonsaiDatabase for BonsaiTransaction {
 }
 
 impl BonsaiPersistentDatabase<BasicId> for BonsaiDb {
-    type Transaction<'a> = BonsaiTransaction where Self: 'a;
+    type Transaction<'a>
+        = BonsaiTransaction
+    where
+        Self: 'a;
     type DatabaseError = DbError;
 
     /// this is called upstream, but we ignore it for now because we create the snapshot in [`crate::MadaraBackend::store_block`]
