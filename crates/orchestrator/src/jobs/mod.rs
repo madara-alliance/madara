@@ -180,11 +180,8 @@ pub async fn create_job(
         .await
         .map_err(|e| JobError::Other(OtherError(e)))?;
 
-    let attributes = [
-        KeyValue::new("operation_job_type", format!("{:?}", job_type)),
-        KeyValue::new("operation_type", "create_job"),
-        KeyValue::new("operation_job", format!("{:?}", job_item)),
-    ];
+    let attributes =
+        [KeyValue::new("operation_job_type", format!("{:?}", job_type)), KeyValue::new("operation_type", "create_job")];
 
     tracing::info!(log_type = "completed", category = "general", function_type = "create_job", block_no = %internal_id, "General create job completed for block");
     let duration = start.elapsed();
@@ -299,7 +296,6 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     let attributes = [
         KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
         KeyValue::new("operation_type", "process_job"),
-        KeyValue::new("operation_job", format!("{:?}", job)),
     ];
 
     tracing::info!(log_type = "completed", category = "general", function_type = "process_job", block_no = %internal_id, "General process job completed for block");
@@ -444,7 +440,6 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let attributes = [
         KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
         KeyValue::new("operation_type", "verify_job"),
-        KeyValue::new("operation_job", format!("{:?}", job)),
     ];
 
     tracing::info!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");

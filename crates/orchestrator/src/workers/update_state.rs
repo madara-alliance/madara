@@ -122,9 +122,8 @@ impl Worker for UpdateStateWorker {
             Err(e) => {
                 tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
                 let attributes = [
-                    KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+                    KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                    KeyValue::new("operation_internal_id", format!("{:?}", new_job_id.to_string())),
                 ];
                 ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
                 return Err(e.into());

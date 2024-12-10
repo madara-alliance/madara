@@ -80,6 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- refactor: static attributes for telemetry
 - refactor: aws setup for Event Bridge
 - refactor: RUST_LOG filtering support
 - refactor: cargo.toml files cleaned

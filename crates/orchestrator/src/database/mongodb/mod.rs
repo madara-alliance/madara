@@ -98,10 +98,7 @@ impl Database for MongoDb {
             .map_err(|e| JobError::Other(e.to_string().into()))?;
 
         if result.matched_count == 0 {
-            let attributes = [
-                KeyValue::new("db_operation_name", "create_job"),
-                KeyValue::new("db_operation_job", format!("{:?}", job)),
-            ];
+            let attributes = [KeyValue::new("db_operation_name", "create_job")];
             let duration = start.elapsed();
             ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
             Ok(job)
@@ -117,10 +114,7 @@ impl Database for MongoDb {
             "id":  id
         };
         tracing::debug!(job_id = %id, category = "db_call", "Fetched job by ID");
-        let attributes = [
-            KeyValue::new("db_operation_name", "get_job_by_id"),
-            KeyValue::new("db_operation_id", format!("{:?}", id)),
-        ];
+        let attributes = [KeyValue::new("db_operation_name", "get_job_by_id")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
@@ -134,10 +128,7 @@ impl Database for MongoDb {
             "job_type": mongodb::bson::to_bson(&job_type)?,
         };
         tracing::debug!(internal_id = %internal_id, job_type = ?job_type, category = "db_call", "Fetched job by internal ID and type");
-        let attributes = [
-            KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type"),
-            KeyValue::new("db_operation_id", format!("{:?}", internal_id)),
-        ];
+        let attributes = [KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
@@ -180,10 +171,7 @@ impl Database for MongoDb {
         match result {
             Some(job) => {
                 tracing::debug!(job_id = %current_job.id, category = "db_call", "Job updated successfully");
-                let attributes = [
-                    KeyValue::new("db_operation_name", "update_job"),
-                    KeyValue::new("db_operation_id", format!("{:?}", current_job.id)),
-                ];
+                let attributes = [KeyValue::new("db_operation_name", "update_job")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(job)
@@ -232,10 +220,7 @@ impl Database for MongoDb {
         match cursor.try_next().await? {
             Some(doc) => {
                 let job: JobItem = mongodb::bson::from_document(doc)?;
-                let attributes = [
-                    KeyValue::new("db_operation_name", "get_latest_job_by_type"),
-                    KeyValue::new("db_operation_job_type", format!("{:?}", job_type)),
-                ];
+                let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(Some(job))

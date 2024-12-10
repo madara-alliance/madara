@@ -55,7 +55,6 @@ impl Worker for SnosWorker {
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                        KeyValue::new("operation_internal_id", format!("{:?}", block_num.to_string())),
                     ];
                     ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
                 }

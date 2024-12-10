@@ -33,7 +33,6 @@ impl Worker for DataSubmissionWorker {
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::DataSubmission)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                        KeyValue::new("operation_internal_id", format!("{:?}", job.internal_id)),
                     ];
                     ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
                 }
