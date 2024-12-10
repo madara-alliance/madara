@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: ci reduce-runtime covergage
 - feat(block_production): continue pending block on restart
 - feat(mempool): mempool transaction saving on db
 - feat(mempool): mempool transaction limits
