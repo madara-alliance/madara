@@ -68,6 +68,8 @@ async fn madara_devnet_add_transaction() {
     )
     .await;
 
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
     let res = account
         .execute_v3(vec![Call {
             to: ERC20_STRK_CONTRACT_ADDRESS,

@@ -9,7 +9,7 @@ use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transactions::{ExecutableTransaction, ExecutionFlags};
 use starknet_api::transaction::TransactionHash;
 
-use crate::{Error, ExecutionContext, ExecutionResult, TxFeeEstimationError, TxReexecError};
+use crate::{Error, ExecutionContext, ExecutionResult, TxFeeEstimationError, TxExecError};
 
 impl ExecutionContext {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -27,7 +27,7 @@ impl ExecutionContext {
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
             tracing::debug!("executing {hash:#}");
-            tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxReexecError {
+            tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxExecError {
                 block_n: self.db_id,
                 hash,
                 index,
@@ -56,7 +56,7 @@ impl ExecutionContext {
                 };
 
                 let make_reexec_error =
-                    |err| TxReexecError { block_n: self.db_id, hash, index: executed_prev + index, err };
+                    |err| TxExecError { block_n: self.db_id, hash, index: executed_prev + index, err };
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut cached_state);
                 let execution_flags = ExecutionFlags { charge_fee, validate, concurrency_mode: false };

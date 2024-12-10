@@ -25,7 +25,7 @@ pub enum ReAddTxsToMempoolError {
 
 /// Take a block that was already executed and saved, extract the transactions and re-add them to the mempool.
 /// This is useful to re-execute a pending block without losing any transaction when restarting block production,
-/// but it it could also be useful to avvoid dropping transactions when a reorg happens in the future.
+/// but it it could also be useful to avoid dropping transactions when a reorg happens in the future.
 /// Returns the number of transactions.
 pub fn re_add_txs_to_mempool(
     block: MadaraMaybePendingBlock,
