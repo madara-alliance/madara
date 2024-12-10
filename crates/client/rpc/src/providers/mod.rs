@@ -55,7 +55,7 @@ pub trait AddTransactionProvider: Send + Sync {
 #[derive(Clone)]
 pub struct AddTransactionProviderGroup {
     l2_sync: Arc<dyn AddTransactionProvider>,
-    block_production: Arc<dyn AddTransactionProvider>,
+    mempool: Arc<dyn AddTransactionProvider>,
     ctx: ServiceContext,
 }
 
@@ -68,14 +68,14 @@ impl AddTransactionProviderGroup {
         mempool: Arc<dyn AddTransactionProvider>,
         ctx: ServiceContext,
     ) -> Self {
-        Self { l2_sync, block_production: mempool, ctx }
+        Self { l2_sync, mempool, ctx }
     }
 
     fn provider(&self) -> Option<&Arc<dyn AddTransactionProvider>> {
         if self.ctx.service_status(MadaraServiceId::L2Sync).is_on() {
             Some(&self.l2_sync)
         } else if self.ctx.service_status(MadaraServiceId::BlockProduction).is_on() {
-            Some(&self.block_production)
+            Some(&self.mempool)
         } else {
             None
         }

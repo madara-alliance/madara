@@ -420,7 +420,7 @@ impl std::ops::BitOr for MadaraServiceId {
     type Output = u64;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        self as u64 | rhs as u64
+        self.svc_id() as u64 | rhs.svc_id() as u64
     }
 }
 
@@ -428,7 +428,7 @@ impl std::ops::BitAnd for MadaraServiceId {
     type Output = u64;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        self as u64 & rhs as u64
+        self.svc_id() as u64 & rhs.svc_id() as u64
     }
 }
 
@@ -436,13 +436,13 @@ impl From<PowerOfTwo> for MadaraServiceId {
     fn from(value: PowerOfTwo) -> Self {
         match value {
             PowerOfTwo::ZERO => Self::Monitor,
-            PowerOfTwo::P1 => Self::Database,
-            PowerOfTwo::P2 => Self::L1Sync,
-            PowerOfTwo::P3 => Self::L2Sync,
-            PowerOfTwo::P4 => Self::BlockProduction,
-            PowerOfTwo::P5 => Self::RpcUser,
-            PowerOfTwo::P6 => Self::RpcAdmin,
-            PowerOfTwo::P7 => Self::Gateway,
+            PowerOfTwo::P0 => Self::Database,
+            PowerOfTwo::P1 => Self::L1Sync,
+            PowerOfTwo::P2 => Self::L2Sync,
+            PowerOfTwo::P3 => Self::BlockProduction,
+            PowerOfTwo::P4 => Self::RpcUser,
+            PowerOfTwo::P5 => Self::RpcAdmin,
+            PowerOfTwo::P6 => Self::Gateway,
             _ => Self::Telemetry,
         }
     }
@@ -564,12 +564,12 @@ impl MadaraServiceMask {
 
     #[inline(always)]
     pub fn status(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        (self.0.load(std::sync::atomic::Ordering::SeqCst) & svc.svc_id() as u64 > 0).into()
+        (self.value() & svc.svc_id() as u64 > 0).into()
     }
 
     #[inline(always)]
     pub fn is_active_some(&self) -> bool {
-        self.0.load(std::sync::atomic::Ordering::SeqCst) > 0
+        self.value() > 0
     }
 
     #[inline(always)]
@@ -586,12 +586,12 @@ impl MadaraServiceMask {
     }
 
     fn active_set(&self) -> Vec<MadaraServiceId> {
-        let mut i = MadaraServiceId::Telemetry as u64;
-        let state = self.0.load(std::sync::atomic::Ordering::SeqCst);
+        let mut i = MadaraServiceId::Telemetry.svc_id() as u64;
+        let state = self.value();
         let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);
 
         while i > 0 {
-            let mask = i & state;
+            let mask = state & i;
 
             if mask > 0 {
                 let pow = PowerOfTwo::try_from(mask).expect("mask is a power of 2");
@@ -602,6 +602,10 @@ impl MadaraServiceMask {
         }
 
         set
+    }
+
+    fn value(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

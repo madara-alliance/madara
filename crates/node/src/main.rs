@@ -297,10 +297,6 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::L2Sync);
     }
 
-    if run_cmd.is_sequencer() && !warp_update_receiver {
-        app.activate(MadaraServiceId::BlockProduction);
-    }
-
     if !run_cmd.rpc_params.rpc_disable && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcUser);
     }

@@ -21,7 +21,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTxn<Felt>,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        self.add_declare_transaction(declare_transaction).await
+        self.add_transaction_provider.add_declare_transaction(declare_transaction).await
     }
 
     /// Add an Deploy Account Transaction
