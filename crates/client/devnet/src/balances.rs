@@ -49,7 +49,7 @@ impl InitialBalances {
             // For now we never use high - blockifier does not entirely support it, as the total supply of STRK/ETH would not reach the high bits.
             // TODO: check this is true ^
 
-            let low_key = blockifier::abi::abi_utils::get_fee_token_var_address(*contract_address);
+            let low_key = starknet_api::abi::abi_utils::get_fee_token_var_address(*contract_address);
             // let high_key = blockifier::abi::sierra_types::next_storage_key(&low_key)?;
 
             // ETH erc20

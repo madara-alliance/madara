@@ -177,7 +177,9 @@ fn class_conversion(
             Ok(ConvertedClass::Sierra(SierraConvertedClass {
                 class_hash: sierra.class_hash,
                 info: SierraClassInfo { contract_class: Arc::new(sierra.contract_class), compiled_class_hash },
-                compiled: Arc::new(compiled_class),
+                compiled: Arc::new((&compiled_class).try_into().map_err(|e| {
+                    BlockImportError::CompilationClassError { class_hash: sierra.class_hash, error: e }
+                })?),
             }))
         }
         DeclaredClass::Legacy(legacy) => {

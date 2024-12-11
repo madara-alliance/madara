@@ -1,13 +1,12 @@
 use anyhow::Context;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::objects::TransactionInfoCreator;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::{
-    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction as BL1HandlerTransaction,
-};
 use header::make_pending_header;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
@@ -18,8 +17,7 @@ use mp_transactions::BroadcastedToBlockifierError;
 use mp_transactions::BroadcastedTransactionExt;
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
-use starknet_api::core::{ContractAddress, Nonce};
-use starknet_api::transaction::TransactionHash;
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
@@ -150,9 +148,13 @@ impl Mempool {
         // If the contract has been deployed for the same block is is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
         //  may appear during that time - but it is not a problem.
-        let deploy_account_tx_hash = if let Transaction::AccountTransaction(AccountTransaction::Invoke(tx)) = &tx {
+        let deploy_account_tx_hash = if let Transaction::Account(AccountTransaction {
+            tx: ApiAccountTransaction::DeployAccount(tx),
+            ..
+        }) = &tx
+        {
             let mempool = self.inner.read().expect("Poisoned lock");
-            if mempool.has_deployed_contract(&tx.tx.sender_address()) {
+            if mempool.has_deployed_contract(&tx.contract_address()) {
                 Some(tx.tx_hash) // we return the wrong tx hash here but it's ok because the actual hash is unused by blockifier
             } else {
                 None
@@ -161,14 +163,14 @@ impl Mempool {
             None
         };
 
-        let tx_hash = tx_hash(&tx).to_felt();
+        let tx_hash = tx.tx_hash().to_felt();
         tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
         // Perform validations
         let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
 
-        if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
+        if let Transaction::Account(account_tx) = tx.clone() {
             validator.perform_validations(account_tx, deploy_account_tx_hash.is_some())?
         }
 
@@ -197,27 +199,20 @@ impl Mempool {
     }
 }
 
-pub fn transaction_hash(tx: &Transaction) -> Felt {
-    match tx {
-        Transaction::AccountTransaction(tx) => match tx {
-            AccountTransaction::Declare(tx) => *tx.tx_hash,
-            AccountTransaction::DeployAccount(tx) => *tx.tx_hash,
-            AccountTransaction::Invoke(tx) => *tx.tx_hash,
-        },
-        Transaction::L1HandlerTransaction(tx) => *tx.tx_hash,
-    }
-}
-
 fn declare_class_hash(tx: &Transaction) -> Option<Felt> {
     match tx {
-        Transaction::AccountTransaction(AccountTransaction::Declare(tx)) => Some(*tx.class_hash()),
+        Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::Declare(tx), .. }) => {
+            Some(*tx.class_hash())
+        }
         _ => None,
     }
 }
 
 fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
     match tx {
-        Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) => Some(**tx.contract_address),
+        Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) => {
+            Some(tx.contract_address().into())
+        }
         _ => None,
     }
 }
@@ -226,9 +221,10 @@ impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_invoke_tx(&self, tx: BroadcastedInvokeTxn<Felt>) -> Result<AddInvokeTransactionResult<Felt>, Error> {
         let tx = BroadcastedTxn::Invoke(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
-        let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&btx) };
+        let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().0 };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
@@ -238,7 +234,7 @@ impl MempoolProvider for Mempool {
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = ClassAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
@@ -254,7 +250,7 @@ impl MempoolProvider for Mempool {
         let (btx, class) =
             tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
 
-        let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&btx) };
+        let res = L1HandlerTransactionResult { transaction_hash: btx.tx_hash().0 };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
         Ok(res)
     }
@@ -262,10 +258,11 @@ impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, Error> {
         let tx = BroadcastedTxn::Declare(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
         let res = ClassAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
@@ -278,10 +275,11 @@ impl MempoolProvider for Mempool {
         tx: BroadcastedDeployAccountTxn<Felt>,
     ) -> Result<ContractAndTxnHash<Felt>, Error> {
         let tx = BroadcastedTxn::DeployAccount(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
         let res = ContractAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             contract_address: deployed_contract_address(&btx).expect("Created transaction should be deploy account"),
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now())?;
@@ -320,82 +318,13 @@ impl MempoolProvider for Mempool {
 }
 
 pub(crate) fn is_only_query(tx: &Transaction) -> bool {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.only_query(),
-            AccountTransaction::DeployAccount(tx) => tx.only_query,
-            AccountTransaction::Invoke(tx) => tx.only_query,
-        },
-        Transaction::L1HandlerTransaction(_) => false,
-    }
-}
-
-pub(crate) fn contract_addr(tx: &Transaction) -> ContractAddress {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.sender_address(),
-            AccountTransaction::DeployAccount(tx) => tx.contract_address,
-            AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
-    }
-}
-
-pub(crate) fn nonce(tx: &Transaction) -> Nonce {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.nonce(),
-            AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-            AccountTransaction::Invoke(tx) => tx.tx.nonce(),
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
-    }
-}
-
-pub(crate) fn tx_hash(tx: &Transaction) -> TransactionHash {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx_hash,
-            AccountTransaction::DeployAccount(tx) => tx.tx_hash,
-            AccountTransaction::Invoke(tx) => tx.tx_hash,
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx_hash,
-    }
-}
-
-// AccountTransaction does not implement Clone :(
-pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => Transaction::AccountTransaction(match account_tx {
-            AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
-                true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                    .expect("Making blockifier transaction for query"),
-                false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                    .expect("Making blockifier transaction"),
-            }),
-            AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
-                tx: tx.tx.clone(),
-                tx_hash: tx.tx_hash,
-                contract_address: tx.contract_address,
-                only_query: tx.only_query,
-            }),
-            AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
-                tx: tx.tx.clone(),
-                tx_hash: tx.tx_hash,
-                only_query: tx.only_query,
-            }),
-        }),
-        Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(BL1HandlerTransaction {
-            tx: tx.tx.clone(),
-            tx_hash: tx.tx_hash,
-            paid_fee_on_l1: tx.paid_fee_on_l1,
-        }),
-    }
+    tx.create_tx_info().only_query()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use blockifier::transaction::account_transaction::ExecutionFlags as AccountExecutionFlags;
 
     #[rstest::fixture]
     fn backend() -> Arc<mc_db::MadaraBackend> {
@@ -418,31 +347,35 @@ mod test {
 
     #[rstest::fixture]
     fn tx_account_v0_valid() -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                blockifier::transaction::transactions::InvokeTransaction {
-                    tx: starknet_api::transaction::InvokeTransaction::V0(
-                        starknet_api::transaction::InvokeTransactionV0::default(),
-                    ),
-                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
-                    only_query: true,
-                },
-            ),
+        blockifier::transaction::transaction_execution::Transaction::Account(
+            blockifier::transaction::account_transaction::AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                    starknet_api::executable_transaction::InvokeTransaction {
+                        tx: starknet_api::transaction::InvokeTransaction::V0(
+                            starknet_api::transaction::InvokeTransactionV0::default(),
+                        ),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    },
+                ),
+                execution_flags: AccountExecutionFlags::default(),
+            },
         )
     }
 
     #[rstest::fixture]
     fn tx_account_v1_invalid() -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                blockifier::transaction::transactions::InvokeTransaction {
-                    tx: starknet_api::transaction::InvokeTransaction::V1(
-                        starknet_api::transaction::InvokeTransactionV1::default(),
-                    ),
-                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
-                    only_query: true,
-                },
-            ),
+        blockifier::transaction::transaction_execution::Transaction::Account(
+            blockifier::transaction::account_transaction::AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                    starknet_api::executable_transaction::InvokeTransaction {
+                        tx: starknet_api::transaction::InvokeTransaction::V1(
+                            starknet_api::transaction::InvokeTransactionV1::default(),
+                        ),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    },
+                ),
+                execution_flags: AccountExecutionFlags::default(),
+            },
         )
     }
 

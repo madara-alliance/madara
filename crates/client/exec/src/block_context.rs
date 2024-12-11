@@ -89,7 +89,7 @@ impl ExecutionContext {
                 eth_fee_token_address: backend.chain_config().parent_fee_token_address,
             },
         };
-        let block_info = blockifier::blockifier::block::BlockInfo {
+        let block_info = starknet_api::block::BlockInfo {
             block_number: BlockNumber(block_number),
             block_timestamp: BlockTimestamp(block_timestamp),
             sequencer_address: sequencer_address

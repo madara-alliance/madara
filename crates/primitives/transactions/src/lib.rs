@@ -15,7 +15,6 @@ mod to_starknet_types;
 
 // pub mod broadcasted;
 pub mod compute_hash;
-pub mod utils;
 
 pub use broadcasted_to_blockifier::{BroadcastedToBlockifierError, BroadcastedTransactionExt};
 
@@ -212,11 +211,11 @@ impl Transaction {
         !matches!(self, Transaction::L1Handler(_))
     }
 
-    pub fn fee_type(&self) -> blockifier::transaction::objects::FeeType {
+    pub fn fee_type(&self) -> starknet_api::block::FeeType {
         if self.is_l1_handler() || self.version() < TransactionVersion::THREE {
-            blockifier::transaction::objects::FeeType::Eth
+            starknet_api::block::FeeType::Eth
         } else {
-            blockifier::transaction::objects::FeeType::Strk
+            starknet_api::block::FeeType::Strk
         }
     }
 }

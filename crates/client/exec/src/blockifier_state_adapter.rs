@@ -1,14 +1,18 @@
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::execution::contract_class::RunnableCompiledClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mp_class::ClassInfo;
 use mp_convert::ToFelt;
+use starknet_api::contract_class::ContractClass as ApiContractClass;
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+
+#[cfg(feature = "cairo_native")]
+use blockifier::execution::native::contract_class::NativeCompiledClassV1;
 
 /// Adapter for the db queries made by blockifier.
 /// There is no actual mutable logic here - when using block production, the actual key value
@@ -104,7 +108,7 @@ impl StateReader for BlockifierStateAdapter {
         ))
     }
 
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
@@ -137,12 +141,34 @@ impl StateReader for BlockifierStateAdapter {
                         class_hash.to_felt()
                     )))?;
 
-                // TODO: convert ClassCompilationError to StateError
-                Ok(compiled_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
+                #[cfg(not(feature = "cairo_native"))]
+                {
+                    // TODO: convert ClassCompilationError to StateError
+                    Ok(RunnableCompiledClass::try_from(ApiContractClass::V1(
+                        compiled_class.to_casm().map_err(|e| StateError::StateReadError(e.to_string()))?,
+                    ))?)
+                }
+
+                #[cfg(feature = "cairo_native")]
+                {
+                    let start = std::time::Instant::now();
+                    println!("compile_to_native class {:#x}", class_hash.to_felt());
+                    let executor = info.contract_class.compile_to_native().unwrap();
+                    println!("compile_to_native took {:?}", start.elapsed());
+
+                    let casm = compiled_class.to_casm().unwrap();
+                    let blockifier_compiled_class = casm.try_into().unwrap();
+                    let native_compiled_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+                    Ok(native_compiled_class.into())
+                }
             }
             ClassInfo::Legacy(info) => {
                 // TODO: convert ClassCompilationError to StateError
-                Ok(info.contract_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
+                Ok(RunnableCompiledClass::try_from(ApiContractClass::V0(
+                    info.contract_class
+                        .to_starknet_api_no_abi()
+                        .map_err(|e| StateError::StateReadError(e.to_string()))?,
+                ))?)
             }
         }
     }

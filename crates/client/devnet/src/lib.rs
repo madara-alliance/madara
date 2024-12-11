@@ -1,10 +1,10 @@
 use anyhow::Context;
-use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
 use mp_block::header::GasPrices;
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use starknet_api::abi::abi_utils::get_storage_var_address;
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::{

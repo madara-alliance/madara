@@ -1,11 +1,14 @@
 use std::{borrow::Cow, sync::Arc};
 
-use blockifier::execution::{contract_class::ClassInfo, errors::ContractClassError};
+use blockifier::transaction::account_transaction::ExecutionFlags as AccountExecutionFlags;
 use blockifier::transaction::transaction_execution as btx;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::BlockId;
 use mp_class::compile::ClassCompilationError;
 use mp_convert::ToFelt;
+use starknet_api::contract_class::{
+    ClassInfo as ApiClassInfo, ContractClass as ApiContractClass, SierraVersion as ApiSierraVersion,
+};
 use starknet_api::transaction::{Transaction, TransactionHash};
 
 #[derive(Debug, thiserror::Error)]
@@ -16,8 +19,6 @@ pub enum Error {
     Storage(#[from] MadaraStorageError),
     #[error("Class compilation error: {0:#}")]
     ClassCompilationError(#[from] ClassCompilationError),
-    #[error("Contract class error: {0:#}")]
-    ContractClassError(#[from] ContractClassError),
     #[error("{0}")]
     Internal(Cow<'static, str>),
 }
@@ -37,7 +38,7 @@ pub fn to_blockifier_transactions(
         .map_err(|err| Error::Internal(format!("Converting to starknet api transaction {:#}", err).into()))?;
 
     let paid_fee_on_l1 = match transaction {
-        Transaction::L1Handler(_) => Some(starknet_api::transaction::Fee(1_000_000_000_000)),
+        Transaction::L1Handler(_) => Some(starknet_api::transaction::fields::Fee(1_000_000_000_000)),
         _ => None,
     };
 
@@ -56,23 +57,35 @@ pub fn to_blockifier_transactions(
                             )
                         })?;
 
-                    let blockifier_class = compiled_class.to_blockifier_class()?;
-                    Some(ClassInfo::new(
-                        &blockifier_class,
-                        info.contract_class.program_length(),
-                        info.contract_class.abi_length(),
-                    )?)
+                    let contract_class = ApiContractClass::V1(compiled_class.to_casm()?);
+                    Some(ApiClassInfo {
+                        contract_class,
+                        sierra_program_length: info.contract_class.program_length(),
+                        abi_length: info.contract_class.abi_length(),
+                        sierra_version: info.contract_class.sierra_version()?,
+                    })
                 }
                 mp_class::ClassInfo::Legacy(info) => {
-                    let blockifier_class = info.contract_class.to_blockifier_class()?;
-                    Some(ClassInfo::new(&blockifier_class, 0, 0)?)
+                    let contract_class = ApiContractClass::V0(info.contract_class.to_starknet_api_no_abi()?);
+                    Some(ApiClassInfo {
+                        contract_class,
+                        sierra_program_length: 0,
+                        abi_length: 0,
+                        sierra_version: ApiSierraVersion::DEPRECATED,
+                    })
                 }
             }
         }
         _ => None,
     };
 
-    btx::Transaction::from_api(transaction.clone(), *tx_hash, class_info, paid_fee_on_l1, None, false).map_err(|err| {
-        Error::Internal(format!("Failed to convert transaction to blockifier transaction {:#}", err).into())
-    })
+    btx::Transaction::from_api(
+        transaction.clone(),
+        *tx_hash,
+        class_info,
+        paid_fee_on_l1,
+        None,
+        AccountExecutionFlags::default(),
+    )
+    .map_err(|err| Error::Internal(format!("Failed to convert transaction to blockifier transaction {:#}", err).into()))
 }

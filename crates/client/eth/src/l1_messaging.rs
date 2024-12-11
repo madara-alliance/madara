@@ -11,7 +11,7 @@ use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::channel_wait_or_graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
+use starknet_api::transaction::{fields::Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 

@@ -1,4 +1,3 @@
-use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_exec::execution::TxInfo;
 use mp_class::ConvertedClass;
@@ -11,6 +10,7 @@ use std::{fmt, time::SystemTime};
 
 pub type ArrivedAtTimestamp = SystemTime;
 
+#[derive(Clone)]
 pub struct MempoolTransaction {
     pub tx: Transaction,
     pub arrived_at: ArrivedAtTimestamp,
@@ -29,27 +29,14 @@ impl fmt::Debug for MempoolTransaction {
     }
 }
 
-impl Clone for MempoolTransaction {
-    fn clone(&self) -> Self {
-        Self {
-            tx: clone_transaction(&self.tx),
-            arrived_at: self.arrived_at,
-            converted_class: self.converted_class.clone(),
-        }
-    }
-}
-
 impl MempoolTransaction {
-    pub fn clone_tx(&self) -> Transaction {
-        clone_transaction(&self.tx)
-    }
     pub fn nonce(&self) -> Nonce {
-        nonce(&self.tx)
+        self.tx.nonce()
     }
     pub fn contract_address(&self) -> ContractAddress {
-        contract_addr(&self.tx)
+        self.tx.sender_address()
     }
     pub fn tx_hash(&self) -> TransactionHash {
-        tx_hash(&self.tx)
+        self.tx.tx_hash()
     }
 }

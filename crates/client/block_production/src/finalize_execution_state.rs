@@ -148,7 +148,7 @@ fn get_visited_segments<S: StateReader>(tx_executor: &mut TransactionExecutor<S>
                 .block_state
                 .as_ref()
                 .expect(BLOCK_STATE_ACCESS_ERR)
-                .get_compiled_contract_class(*class_hash)
+                .get_compiled_class(*class_hash)
                 .map_err(TransactionExecutionError::StateError)?;
             Ok(VisitedSegmentEntry {
                 class_hash: class_hash.to_felt(),
@@ -165,13 +165,13 @@ pub(crate) fn finalize_execution_state<S: StateReader>(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
 ) -> Result<(StateDiff, VisitedSegments, BouncerWeights), Error> {
-    let state_map = tx_executor
+    let state_changes = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
         .map_err(TransactionExecutionError::StateError)?;
-    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
+    let state_update = state_map_to_state_diff(backend, on_top_of, state_changes.state_maps)?;
 
     let visited_segments = get_visited_segments(tx_executor)?;
 

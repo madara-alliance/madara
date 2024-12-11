@@ -19,6 +19,7 @@ use crate::close_block::close_block;
 use crate::metrics::BlockProductionMetrics;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
 use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::execution::contract_class::RunnableCompiledClass;
 use blockifier::state::state_api::UpdatableState;
 use blockifier::transaction::errors::TransactionExecutionError;
 use finalize_execution_state::{state_diff_to_state_map, StateDiffToStateMapError};
@@ -38,6 +39,7 @@ use mp_transactions::TransactionWithHash;
 use mp_utils::graceful_shutdown;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
+use starknet_api::contract_class::ContractClass as ApiContractClass;
 use starknet_api::core::ClassHash;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
@@ -78,6 +80,8 @@ pub enum Error {
     PendingClassCompilationError(#[from] ClassCompilationError),
     #[error("State diff error when continuing the pending block: {0:#}")]
     PendingStateDiff(#[from] StateDiffToStateMapError),
+    #[error("Cairo VM error: {0:#}")]
+    CairoVm(#[from] cairo_vm::types::errors::program_errors::ProgramError),
 }
 /// The block production task consumes transactions from the mempool in batches.
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
@@ -169,8 +173,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 Ok((
                     ClassHash(c.class_hash()),
                     match c {
-                        ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
-                        ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
+                        ConvertedClass::Legacy(class) => RunnableCompiledClass::try_from(ApiContractClass::V0(
+                            class.info.contract_class.to_starknet_api_no_abi()?,
+                        ))?,
+                        ConvertedClass::Sierra(class) => {
+                            RunnableCompiledClass::try_from(ApiContractClass::V1(class.compiled.to_casm()?))?
+                        }
                     },
                 ))
             })
@@ -221,7 +229,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.clone_tx()));
+                txs_to_process_blockifier
+                    .extend(txs_to_process.iter().skip(cur_len).map(|mempool_tx| mempool_tx.tx.clone()));
             }
 
             if txs_to_process.is_empty() {
@@ -262,8 +271,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         self.block
                             .inner
                             .receipts
-                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.clone_tx()));
-                        let converted_tx = TransactionWithHash::from(mempool_tx.clone_tx());
+                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.tx.clone()));
+                        let converted_tx = TransactionWithHash::from(mempool_tx.tx.clone());
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -326,9 +335,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let reduced_cap =
             |v: usize| (v as u128 * current_pending_tick as u128 / n_pending_ticks_per_block as u128) as usize;
 
-        let gas = reduced_cap(config_bouncer.gas);
+        let l1_gas = reduced_cap(config_bouncer.l1_gas);
+        let sierra_gas = (reduced_cap(config_bouncer.sierra_gas.0 as _) as u64).into();
         let frac = current_pending_tick as f64 / n_pending_ticks_per_block as f64;
-        tracing::debug!("begin pending tick {current_pending_tick}/{n_pending_ticks_per_block}, proportion for this tick: {frac:.2}, gas limit: {gas}/{}", config_bouncer.gas);
+        tracing::debug!("begin pending tick {current_pending_tick}/{n_pending_ticks_per_block}, proportion for this tick: {frac:.2}, gas limit: {l1_gas}/{}", config_bouncer.l1_gas);
 
         let bouncer_cap = BouncerWeights {
             builtin_count: BuiltinCount {
@@ -343,11 +353,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 range_check: reduced_cap(config_bouncer.builtin_count.range_check),
                 range_check96: reduced_cap(config_bouncer.builtin_count.range_check96),
             },
-            gas,
+            l1_gas,
             message_segment_length: reduced_cap(config_bouncer.message_segment_length),
             n_events: reduced_cap(config_bouncer.n_events),
             n_steps: reduced_cap(config_bouncer.n_steps),
             state_diff_size: reduced_cap(config_bouncer.state_diff_size),
+            sierra_gas,
         };
 
         let start_time = Instant::now();

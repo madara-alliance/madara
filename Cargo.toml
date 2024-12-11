@@ -136,7 +136,6 @@ mc-devnet = { path = "crates/client/devnet" }
 m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.1"
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -148,10 +147,12 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 ] }
 starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.8.0"
-starknet_api = "=0.13.0-rc.1"
-cairo-lang-starknet-classes = "=2.8.4"
-cairo-lang-utils = "=2.8.4"
+blockifier = { version = "=0.0.0", git = "https://github.com/starkware-libs/sequencer.git", branch = "main" }
+starknet_api = { version = "=0.0.0", git = "https://github.com/starkware-libs/sequencer.git", branch = "main" }
+cairo-lang-starknet-classes = "2.9.0-dev.0"
+cairo-lang-utils = "2.9.0-dev.0"
+cairo-vm = "=1.0.1"
+cairo-native = "0.2.4"
 
 alloy = { version = "0.4.0", features = [
   "node-bindings",

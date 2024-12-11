@@ -56,7 +56,7 @@ bouncer_config:
       range_check: 18446744073709551615
       range_check96: 18446744073709551615
     # Maximum gas limit per block
-    gas: 5000000
+    l1_gas: 5000000
     # Maximum number of steps per block
     n_steps: 40000000
     # Maximum length of message segments
@@ -65,6 +65,7 @@ bouncer_config:
     n_events: 18446744073709551615
     # Maximum size of state differences per block
     state_diff_size: 131072
+    sierra_gas: 10000000000
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

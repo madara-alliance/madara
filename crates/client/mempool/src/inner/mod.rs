@@ -9,6 +9,7 @@ use deployed_contracts::DeployedContracts;
 use mp_convert::ToFelt;
 use nonce_chain::{InsertedPosition, NonceChain, NonceChainNewState, ReplacedState};
 use starknet_api::core::ContractAddress;
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
 use starknet_types_core::felt::Felt;
 use std::{
     cmp,
@@ -87,7 +88,9 @@ impl MempoolInner {
         assert_eq!(tx_queue, Default::default());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for (contract, _) in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &contract.0.tx {
+            if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) =
+                &contract.0.tx
+            {
                 deployed_contracts.decrement(tx.contract_address)
             }
         }
@@ -109,7 +112,9 @@ impl MempoolInner {
         let contract_addr = mempool_tx.contract_address().to_felt();
         let arrived_at = mempool_tx.arrived_at;
         let deployed_contract_address =
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+            if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) =
+                &mempool_tx.tx
+            {
                 Some(tx.contract_address)
             } else {
                 None
@@ -196,7 +201,9 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+        if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) =
+            &mempool_tx.tx
+        {
             self.deployed_contracts.decrement(tx.contract_address);
         }
 
