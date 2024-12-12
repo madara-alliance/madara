@@ -1,5 +1,5 @@
 use mc_analytics::register_up_down_counter_metric_instrument;
-use opentelemetry::metrics::{Counter, UpDownCounter};
+use opentelemetry::metrics::UpDownCounter;
 use opentelemetry::{global, KeyValue};
 
 pub struct MempoolMetrics {
