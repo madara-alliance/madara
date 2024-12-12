@@ -2,6 +2,7 @@ use crate::client::EthereumClient;
 use alloy::eips::BlockNumberOrTag;
 use alloy::providers::Provider;
 use anyhow::Context;
+use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::{
     sync::Arc,
@@ -74,6 +75,29 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: &GasPric
     l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
+    // fetch eth/strk price and update
+    if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
+        let (eth_strk_price, decimals) =
+            oracle_provider.fetch_eth_strk_price().await.context("failed to retrieve ETH/STRK price")?;
+        let strk_gas_price = (BigDecimal::new((*eth_gas_price).into(), decimals.into())
+            / BigDecimal::new(eth_strk_price.into(), decimals.into()))
+        .as_bigint_and_exponent();
+        let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
+            / BigDecimal::new(eth_strk_price.into(), decimals.into()))
+        .as_bigint_and_exponent();
+
+        l1_gas_provider.update_strk_l1_gas_price(
+            strk_gas_price.0.to_str_radix(10).parse::<u128>().context("failed to update strk l1 gas price")?,
+        );
+        l1_gas_provider.update_strk_l1_data_gas_price(
+            strk_data_gas_price
+                .0
+                .to_str_radix(10)
+                .parse::<u128>()
+                .context("failed to update strk l1 data gas price")?,
+        );
+    }
+
     l1_gas_provider.update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
@@ -108,7 +132,7 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
+    use crate::client::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use serial_test::serial;
@@ -119,7 +143,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = create_anvil_instance();
+        let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -163,7 +187,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
-        let anvil = create_anvil_instance();
+        let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -182,7 +206,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
-        let anvil = create_anvil_instance();
+        let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
@@ -203,7 +227,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let anvil = create_anvil_instance();
+        let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
@@ -290,7 +314,7 @@ mod eth_client_gas_price_worker_test {
     #[serial]
     #[tokio::test]
     async fn update_gas_price_works() {
-        let anvil = create_anvil_instance();
+        let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
