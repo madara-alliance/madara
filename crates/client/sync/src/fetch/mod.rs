@@ -40,6 +40,8 @@ pub async fn l2_fetch_task(
     if let Some(WarpUpdateConfig {
         warp_update_port_rpc,
         warp_update_port_fgw,
+        warp_update_shutdown_sender,
+        warp_update_shutdown_receiver,
         deferred_service_start,
         deferred_service_stop,
     }) = warp_update
@@ -71,23 +73,29 @@ pub async fn l2_fetch_task(
             SyncStatus::UpTo(next_block) => next_block,
         };
 
-        if client.shutdown().await.is_err() {
-            tracing::error!("❗ Failed to shutdown warp update sender");
-            ctx.cancel_global();
-            return Ok(());
+        if *warp_update_shutdown_sender {
+            if client.shutdown().await.is_err() {
+                tracing::error!("❗ Failed to shutdown warp update sender");
+                ctx.cancel_global();
+                return Ok(());
+            }
+
+            for svc_id in deferred_service_stop {
+                ctx.service_remove(*svc_id);
+            }
+
+            for svc_id in deferred_service_start {
+                ctx.service_add(*svc_id);
+            }
+        }
+
+        if *warp_update_shutdown_receiver {
+            return anyhow::Ok(());
         }
 
         config.n_blocks_to_sync = config.n_blocks_to_sync.map(|n| n - (next_block - first_block));
         config.first_block = next_block;
         config.sync_parallelism = save;
-
-        for svc_id in deferred_service_stop {
-            ctx.service_remove(*svc_id);
-        }
-
-        for svc_id in deferred_service_start {
-            ctx.service_add(*svc_id);
-        }
     }
 
     let mut next_block = match sync_blocks(backend.as_ref(), &provider, &mut ctx, &config).await? {

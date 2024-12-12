@@ -59,6 +59,10 @@ pub struct WarpUpdateConfig {
     pub warp_update_port_rpc: u16,
     /// The port used for nodes to send blocks during a warp update.
     pub warp_update_port_fgw: u16,
+    /// Whether to shutdown the warp update sender once the migration has completed.
+    pub warp_update_shutdown_sender: bool,
+    /// Whether to shut down the warp update receiver once the migration has completed
+    pub warp_update_shutdown_receiver: bool,
     /// A list of services to start once warp update has completed.
     pub deferred_service_start: Vec<MadaraServiceId>,
     /// A list of services to stop one warp update has completed.

@@ -133,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if !run_cmd.l1_sync_params.sync_l1_disabled
+    if !run_cmd.l1_sync_params.l1_sync_disabled
         && l1_gas_setter.is_oracle_needed()
         && l1_gas_setter.oracle_provider.is_none()
     {
@@ -199,6 +199,8 @@ async fn main() -> anyhow::Result<()> {
         Some(WarpUpdateConfig {
             warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
             warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
             deferred_service_start,
             deferred_service_stop,
         })

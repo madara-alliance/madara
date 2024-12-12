@@ -273,6 +273,9 @@ pub async fn sync(
     };
 
     let mut join_set = JoinSet::new();
+    let warp_update_shutdown_sender =
+        config.warp_update.as_ref().map(|w| w.warp_update_shutdown_receiver).unwrap_or(false);
+
     join_set.spawn(l2_fetch_task(
         Arc::clone(&backend),
         Arc::clone(&provider),
@@ -303,7 +306,7 @@ pub async fn sync(
             backup_every_n_blocks: config.backup_every_n_blocks,
             flush_every_n_blocks: config.flush_every_n_blocks,
             flush_every_n_seconds: config.flush_every_n_seconds,
-            stop_on_sync: config.stop_on_sync,
+            stop_on_sync: config.stop_on_sync || warp_update_shutdown_sender,
             telemetry: config.telemetry,
             validation: validation.clone(),
             block_conv_receiver,

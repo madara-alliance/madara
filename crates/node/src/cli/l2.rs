@@ -40,8 +40,16 @@ pub struct L2SyncParams {
     pub warp_update_port_rpc: u16,
 
     /// The port used for nodes to send blocks during a warp update.
-    #[arg(env = "MADARA_WARP_UPDATE_PORT_FGW", long, value_name = "WARP UPDATE FGW", default_value_t = FGW_DEFAULT_PORT)]
+    #[arg(env = "MADARA_WARP_UPDATE_PORT_FGW", long, value_name = "WARP UPDATE PORT FGW", default_value_t = FGW_DEFAULT_PORT)]
     pub warp_update_port_fgw: u16,
+
+    /// Whether to shut down the warp update sender once the migration has completed
+    #[arg(env = "MADARA_WARP_UPDATE_SHUTDOWN_SENDER", long, default_value_t = false)]
+    pub warp_update_shutdown_sender: bool,
+
+    /// Whether to shut down the warp update receiver once the migration has completed
+    #[arg(env = "MADARA_WARP_UPDATE_SHUTDOWN_RECEIVER", long, default_value_t = false)]
+    pub warp_update_shutdown_receiver: bool,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
