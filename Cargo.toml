@@ -116,6 +116,7 @@ mp-receipt = { path = "crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
+mp-oracle = { path = "crates/primitives/oracle", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/client/analytics" }
@@ -164,6 +165,7 @@ alloy = { version = "0.4.0", features = [
 # Other third party dependencies
 paste = "1.0.15"
 anyhow = "1.0"
+bigdecimal = "0.4.5"
 assert_matches = "1.5"
 async-trait = "0.1"
 base64 = "0.22"
