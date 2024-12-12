@@ -1,9 +1,9 @@
-use mc_analytics::register_counter_metric_instrument;
-use opentelemetry::metrics::Counter;
+use mc_analytics::register_up_down_counter_metric_instrument;
+use opentelemetry::metrics::{Counter, UpDownCounter};
 use opentelemetry::{global, KeyValue};
 
 pub struct MempoolMetrics {
-    pub accepted_transaction_counter: Counter<u64>,
+    pub accepted_transaction_counter: UpDownCounter<f64>,
 }
 
 impl MempoolMetrics {
@@ -17,7 +17,7 @@ impl MempoolMetrics {
             Some(common_scope_attributes.clone()),
         );
 
-        let accepted_transaction_counter = register_counter_metric_instrument(
+        let accepted_transaction_counter = register_up_down_counter_metric_instrument(
             &mempool_meter,
             "accepted_transaction_count".to_string(),
             "A counter to show accepted transactions in the mempool".to_string(),

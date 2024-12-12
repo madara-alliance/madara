@@ -185,7 +185,7 @@ impl Mempool {
                 .expect("Poisoned lock")
                 .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?;
 
-            self.metrics.accepted_transaction_counter.add(1, &[]);
+            self.metrics.accepted_transaction_counter.add(1.0, &[]);
         }
 
         Ok(())
