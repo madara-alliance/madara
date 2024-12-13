@@ -25,6 +25,8 @@ pub async fn sync(
     backup_every_n_blocks: Option<u64>,
     telemetry: TelemetryHandle,
     pending_block_poll_interval: Duration,
+    // See [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
+    compute_v0_13_2_hashes: bool,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = starting_block {
         tracing::warn!("Forcing unordered state. This will most probably break your database.");
@@ -61,6 +63,7 @@ pub async fn sync(
             backup_every_n_blocks,
             pending_block_poll_interval,
             ignore_block_order,
+            compute_v0_13_2_hashes,
         },
         backend.chain_config().chain_id.clone(),
         telemetry,

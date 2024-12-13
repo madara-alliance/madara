@@ -64,3 +64,6 @@ tmp/
 
 *.info
 *.profraw
+
+# p2p identity file
+/identity.json

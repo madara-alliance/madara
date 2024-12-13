@@ -4,7 +4,7 @@ use crate::{
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
-use futures::{channel::mpsc::Sender, stream, SinkExt, StreamExt};
+use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
 use mp_block::{header::L1DataAvailabilityMode, MadaraBlockInfo};
 use starknet_core::types::Felt;
 use tokio::pin;
@@ -56,26 +56,25 @@ pub async fn headers_sync(
     mut out: Sender<model::BlockHeadersResponse>,
 ) -> Result<(), sync_handlers::Error> {
     let stream = ctx
-    .app_ctx
-    .backend
-    .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?)
-    .map(|res| res.map(Into::into))
+        .app_ctx
+        .backend
+        .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
     // Add the Fin message
-    .chain(stream::once(async {
-        Ok(model::BlockHeadersResponse {
-            header_message: Some(model::block_headers_response::HeaderMessage::Fin(model::Fin {})),
-        })
-    }));
+    pin!(stream);
 
     tracing::debug!("headers sync!");
 
-    pin!(stream);
     while let Some(res) = stream.next().await {
-        tracing::debug!("new res: {res:?}!");
-        if let Err(_closed) = out.send(res.or_internal_server_error("Error while reading from block stream")?).await {
-            break;
-        }
+        let header = res.or_internal_server_error("Error while reading from block stream")?;
+        let header = header.into();
+        tracing::debug!("send header: {header:?}!");
+        out.send(header).await?;
     }
+
+    out.send(model::BlockHeadersResponse {
+        header_message: Some(model::block_headers_response::HeaderMessage::Fin(model::Fin {})),
+    })
+    .await?;
 
     Ok(())
 }

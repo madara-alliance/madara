@@ -111,7 +111,7 @@ impl L1HandlerTransactionReceipt {
         message_hash: starknet_core::types::Hash256,
     ) -> Self {
         Self {
-            message_hash: message_hash.try_into().unwrap_or_default(),
+            message_hash,
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
             messages_sent: receipt.l2_to_l1_messages.into_iter().map(MsgToL1::from).collect(),

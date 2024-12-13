@@ -237,6 +237,7 @@ libp2p = { version = "0.54.1", features = [
 multiaddr = "0.18"
 tokio-util = "0.7.12"
 futures-bounded = "0.2.1"
+base64 = "0.22.1"
 
 # Instrumentation
 opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }

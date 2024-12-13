@@ -1,14 +1,16 @@
-mod from_blockifier;
-mod from_starknet_provider;
-mod into_starknet_core;
-pub use from_blockifier::from_blockifier_execution_info;
-
 use serde::{Deserialize, Serialize};
 use starknet_core::utils::starknet_keccak;
 use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
 };
+
+mod from_blockifier;
+mod from_starknet_provider;
+mod into_starknet_core;
+
+pub use from_blockifier::from_blockifier_execution_info;
+pub use starknet_core::types::Hash256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionReceipt {
@@ -177,16 +179,33 @@ pub struct InvokeTransactionReceipt {
     pub execution_result: ExecutionResult,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde_with::serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L1HandlerTransactionReceipt {
-    // normally this would be a Hash256, but the serde implementation doesn't work with bincode.
-    pub message_hash: Felt,
+    #[serde_as(as = "mp_convert::hash256_serde::Hash256Serde")]
+    pub message_hash: Hash256,
     pub transaction_hash: Felt,
     pub actual_fee: FeePayment,
     pub messages_sent: Vec<MsgToL1>,
     pub events: Vec<Event>,
     pub execution_resources: ExecutionResources,
     pub execution_result: ExecutionResult,
+}
+
+// TODO: we shouldnt need to have default impls for these types (it's used in tests)
+// Implement default by hand as [`Hash256`] does not impl Default.
+impl Default for L1HandlerTransactionReceipt {
+    fn default() -> Self {
+        Self {
+            message_hash: Hash256::from_bytes(Default::default()),
+            transaction_hash: Default::default(),
+            actual_fee: Default::default(),
+            messages_sent: Default::default(),
+            events: Default::default(),
+            execution_resources: Default::default(),
+            execution_result: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,6 +324,13 @@ pub enum ExecutionResult {
 }
 
 impl ExecutionResult {
+    pub fn revert_reason(&self) -> Option<&str> {
+        match self {
+            Self::Succeeded => None,
+            Self::Reverted { reason } => Some(reason),
+        }
+    }
+
     fn compute_hash(&self) -> Felt {
         match self {
             ExecutionResult::Succeeded => Felt::ZERO,
@@ -493,7 +519,7 @@ mod tests {
 
     pub(crate) fn dummy_l1_handler_receipt() -> L1HandlerTransactionReceipt {
         L1HandlerTransactionReceipt {
-            message_hash: Felt::from(1),
+            message_hash: Hash256::from_hex("0x1").unwrap(),
             transaction_hash: Felt::from(2),
             actual_fee: FeePayment { amount: Felt::from(3), unit: PriceUnit::Wei },
             messages_sent: dummy_messages(),

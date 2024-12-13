@@ -5,18 +5,21 @@ use libp2p::{futures::StreamExt, multiaddr::Protocol, Multiaddr, Swarm};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
 use mp_utils::graceful_shutdown;
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use sync_handlers::DynSyncHandler;
 
 mod behaviour;
 mod events;
 mod handlers_impl;
+mod identity;
+mod model_primitives;
 mod sync_codec;
 mod sync_handlers;
 
 /// Protobuf messages.
 #[allow(clippy::all)]
 pub mod model {
+    pub use crate::model_primitives::*;
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
@@ -25,6 +28,9 @@ pub struct P2pConfig {
     pub port: Option<u16>,
     pub bootstrap_nodes: Vec<Multiaddr>,
     pub status_interval: Duration,
+    /// Peer-to-peer identity.json file. By default, we generate a new one everytime.
+    pub identity_file: Option<PathBuf>,
+    pub save_identity: bool,
 }
 
 #[derive(Clone)]
@@ -42,6 +48,11 @@ pub struct MadaraP2p {
     swarm: Swarm<MadaraP2pBehaviour>,
 
     headers_sync_handler: DynSyncHandler<MadaraP2pContext, model::BlockHeadersRequest, model::BlockHeadersResponse>,
+    classes_sync_handler: DynSyncHandler<MadaraP2pContext, model::ClassesRequest, model::ClassesResponse>,
+    state_diffs_sync_handler: DynSyncHandler<MadaraP2pContext, model::StateDiffsRequest, model::StateDiffsResponse>,
+    transactions_sync_handler:
+        DynSyncHandler<MadaraP2pContext, model::TransactionsRequest, model::TransactionsResponse>,
+    events_sync_handler: DynSyncHandler<MadaraP2pContext, model::EventsRequest, model::EventsResponse>,
 }
 
 impl MadaraP2p {
@@ -51,7 +62,9 @@ impl MadaraP2p {
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
     ) -> anyhow::Result<Self> {
         // we do not need to provide a stable identity except for bootstrap nodes
-        let swarm = libp2p::SwarmBuilder::with_new_identity()
+        let keypair = identity::load_identity(config.identity_file.as_deref(), config.save_identity)?;
+
+        let swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
                 Default::default(),
@@ -76,6 +89,18 @@ impl MadaraP2p {
             swarm,
             headers_sync_handler: DynSyncHandler::new("headers", app_ctx.clone(), |ctx, req, out| {
                 handlers_impl::headers_sync(ctx, req, out).boxed()
+            }),
+            classes_sync_handler: DynSyncHandler::new("classes", app_ctx.clone(), |ctx, req, out| {
+                handlers_impl::classes_sync(ctx, req, out).boxed()
+            }),
+            state_diffs_sync_handler: DynSyncHandler::new("state_diffs", app_ctx.clone(), |ctx, req, out| {
+                handlers_impl::state_diffs_sync(ctx, req, out).boxed()
+            }),
+            transactions_sync_handler: DynSyncHandler::new("transactions", app_ctx.clone(), |ctx, req, out| {
+                handlers_impl::transactions_sync(ctx, req, out).boxed()
+            }),
+            events_sync_handler: DynSyncHandler::new("events", app_ctx.clone(), |ctx, req, out| {
+                handlers_impl::events_sync(ctx, req, out).boxed()
             }),
         })
     }

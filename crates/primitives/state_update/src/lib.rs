@@ -22,11 +22,17 @@ pub struct PendingStateUpdate {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
+    /// Changed storage values. Mapping (contract_address, storage_key) => value.
     pub storage_diffs: Vec<ContractStorageDiffItem>,
+    /// New declared classes. List of class hashes.
     pub deprecated_declared_classes: Vec<Felt>,
+    /// New declared classes. Mapping class_hash => compiled_class_hash.
     pub declared_classes: Vec<DeclaredClassItem>,
+    /// New contract. Mapping contract_address => class_hash.
     pub deployed_contracts: Vec<DeployedContractItem>,
+    /// Contract has changed class. Mapping contract_address => class_hash.
     pub replaced_classes: Vec<ReplacedClassItem>,
+    /// New contract nonce. Mapping contract_address => nonce.
     pub nonces: Vec<NonceUpdate>,
 }
 

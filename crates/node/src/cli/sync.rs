@@ -65,6 +65,13 @@ pub struct SyncParams {
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
+
+    // Documentation needs to be kept in sync with [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
+    /// UNSTABLE: Used for experimental p2p support. When p2p sync will be fully implemented, this field will go away,
+    /// and we will always compute v0.13.2 hashes. However, we can't verify the old pre-v0.13.2 blocks yet during sync,
+    /// so this field bridges the gap. When set, we will always trust the integrity of pre-v0.13.2 blocks during sync.
+    #[clap(long)]
+    pub compute_v0_13_2_hashes: bool,
 }
 
 impl SyncParams {

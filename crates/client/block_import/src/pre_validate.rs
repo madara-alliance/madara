@@ -202,7 +202,7 @@ fn class_conversion(
 fn transaction_hashes(
     receipts: &[TransactionReceipt],
     transactions: &[Transaction],
-    starknet_version: StarknetVersion,
+    mut starknet_version: StarknetVersion,
     validation: &BlockValidationContext,
 ) -> Result<Vec<Felt>, BlockImportError> {
     if receipts.len() != transactions.len() {
@@ -212,9 +212,16 @@ fn transaction_hashes(
         });
     }
 
+    // compute_v0_13_2_hashes mode
+    let compute_v0_13_2_hashes_mode = validation.compute_v0_13_2_hashes && starknet_version < StarknetVersion::V0_13_2;
+    if compute_v0_13_2_hashes_mode {
+        starknet_version = StarknetVersion::V0_13_2;
+    }
+
     // mismatched block hash is allowed for block 1469 on mainnet
     // this block contains a part of transactions computed with the legacy hash function
     // and the other part with the post-legacy hash function
+    // compute_v0_13_2_hashes: we will remove this legacy check once we can verify <0.13.2 hashes.
     let is_special_trusted_case = validation.chain_id == ChainId::Mainnet && starknet_version.is_tx_hash_inconsistent();
 
     if is_special_trusted_case || validation.trust_transaction_hashes {
@@ -227,7 +234,8 @@ fn transaction_hashes(
                 // Panic safety: receipt count was checked earlier
                 let got = receipts[index].transaction_hash();
                 let expected = tx.compute_hash(validation.chain_id.to_felt(), starknet_version, false);
-                if got != expected {
+                // compute_v0_13_2_hashes: do not check tx hash
+                if !compute_v0_13_2_hashes_mode && got != expected {
                     return Err(BlockImportError::TransactionHash { index, got, expected });
                 }
                 Ok(got)
@@ -241,7 +249,13 @@ fn transaction_commitment(
     block: &UnverifiedFullBlock,
     validation: &BlockValidationContext,
 ) -> Result<Felt, BlockImportError> {
-    let starknet_version = block.header.protocol_version;
+    let mut starknet_version = block.header.protocol_version;
+
+    // compute_v0_13_2_hashes mode
+    let compute_v0_13_2_hashes_mode = validation.compute_v0_13_2_hashes && starknet_version < StarknetVersion::V0_13_2;
+    if compute_v0_13_2_hashes_mode {
+        starknet_version = StarknetVersion::V0_13_2;
+    }
 
     let transaction_hashes = transaction_hashes(&block.receipts, &block.transactions, starknet_version, validation)?;
 
@@ -266,8 +280,12 @@ fn transaction_commitment(
         compute_merkle_root::<Poseidon>(&tx_hashes_with_signature)
     };
 
-    if let Some(expected) = block.commitments.transaction_commitment.filter(|&expected| expected != got) {
-        return Err(BlockImportError::TransactionCommitment { got, expected });
+    // compute_v0_13_2_hashes: do not check old commitment
+    if let Some(expected) = block.commitments.transaction_commitment {
+        // compute_v0_13_2_hashes: do not check old commitment
+        if !compute_v0_13_2_hashes_mode && expected != got {
+            return Err(BlockImportError::TransactionCommitment { got, expected });
+        }
     }
 
     Ok(got)
@@ -276,8 +294,15 @@ fn transaction_commitment(
 /// Compute the events commitment for a block.
 fn event_commitment(
     block: &UnverifiedFullBlock,
-    _validation: &BlockValidationContext,
+    validation: &BlockValidationContext,
 ) -> Result<Felt, BlockImportError> {
+    let mut starknet_version = block.header.protocol_version;
+    // compute_v0_13_2_hashes mode
+    let compute_v0_13_2_hashes_mode = validation.compute_v0_13_2_hashes && starknet_version < StarknetVersion::V0_13_2;
+    if compute_v0_13_2_hashes_mode {
+        starknet_version = StarknetVersion::V0_13_2;
+    }
+
     let events_with_tx_hash: Vec<_> = block
         .receipts
         .iter()
@@ -292,7 +317,7 @@ fn event_commitment(
 
     let got = if events_with_tx_hash.is_empty() {
         Felt::ZERO
-    } else if block.header.protocol_version < StarknetVersion::V0_13_2 {
+    } else if starknet_version < StarknetVersion::V0_13_2 {
         let events_hash =
             events_with_tx_hash.into_par_iter().map(|(_, event)| event.compute_hash_pedersen()).collect::<Vec<_>>();
         compute_merkle_root::<Pedersen>(&events_hash)
@@ -305,7 +330,8 @@ fn event_commitment(
     };
 
     if let Some(expected) = block.commitments.event_commitment {
-        if expected != got {
+        // compute_v0_13_2_hashes: do not check old commitment
+        if !compute_v0_13_2_hashes_mode && expected != got {
             return Err(BlockImportError::EventCommitment { got, expected });
         }
     }

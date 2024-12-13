@@ -12,6 +12,10 @@ pub enum Error {
     /// Error is the peer's fault, will only be reported with debug level.
     #[error("Bad request: {0}")]
     BadRequest(Cow<'static, str>),
+
+    /// Sender closed. Do nothing.
+    #[error("Channel closed")]
+    SenderClosed(#[from] futures::channel::mpsc::SendError),
 }
 
 pub struct ReqContext<AppCtx: Clone> {
@@ -73,6 +77,7 @@ where
                             Error::BadRequest(err) => {
                                 tracing::debug!(target: "p2p_errors", "Bad request: {:#}", err);
                             }
+                            Error::SenderClosed(_) => { /* sender closed, do nothing */ }
                         }
                     }
                 });

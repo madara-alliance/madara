@@ -57,6 +57,7 @@ pub fn create_validation_context(ignore_block_order: bool) -> BlockValidationCon
         trust_global_tries: false,
         trust_transaction_hashes: false,
         trust_class_hashes: false,
+        compute_v0_13_2_hashes: false,
     }
 }
 

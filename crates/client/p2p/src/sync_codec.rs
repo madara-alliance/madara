@@ -45,19 +45,19 @@ pub mod codecs {
     pub fn headers() -> Headers {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type StateDiffs = SyncCodec<protocols::Headers, model::BlockHeadersRequest, model::BlockHeadersResponse>;
+    pub type StateDiffs = SyncCodec<protocols::StateDiffs, model::StateDiffsRequest, model::StateDiffsResponse>;
     pub fn state_diffs() -> StateDiffs {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type Classes = SyncCodec<protocols::Headers, model::BlockHeadersRequest, model::BlockHeadersResponse>;
+    pub type Classes = SyncCodec<protocols::Classes, model::ClassesRequest, model::ClassesResponse>;
     pub fn classes() -> Classes {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 4 * MiB })
     }
-    pub type Transactions = SyncCodec<protocols::Headers, model::BlockHeadersRequest, model::BlockHeadersResponse>;
+    pub type Transactions = SyncCodec<protocols::Transactions, model::TransactionsRequest, model::TransactionsResponse>;
     pub fn transactions() -> Transactions {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type Events = SyncCodec<protocols::Headers, model::BlockHeadersRequest, model::BlockHeadersResponse>;
+    pub type Events = SyncCodec<protocols::Events, model::EventsRequest, model::EventsResponse>;
     pub fn events() -> Events {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }

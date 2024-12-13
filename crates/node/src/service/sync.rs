@@ -20,6 +20,8 @@ pub struct SyncService {
     start_params: Option<TelemetryHandle>,
     disabled: bool,
     pending_block_poll_interval: Duration,
+    // See [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
+    compute_v0_13_2_hashes: bool,
 }
 
 impl SyncService {
@@ -43,6 +45,7 @@ impl SyncService {
             start_params: Some(telemetry),
             disabled: config.sync_disabled,
             pending_block_poll_interval: config.pending_block_poll_interval,
+            compute_v0_13_2_hashes: config.compute_v0_13_2_hashes,
         })
     }
 }
@@ -59,6 +62,7 @@ impl Service for SyncService {
             starting_block,
             pending_block_poll_interval,
             block_importer,
+            compute_v0_13_2_hashes,
             ..
         } = self.clone();
         let telemetry = self.start_params.take().context("Service already started")?;
@@ -74,6 +78,7 @@ impl Service for SyncService {
                 backup_every_n_blocks,
                 telemetry,
                 pending_block_poll_interval,
+                compute_v0_13_2_hashes,
             )
             .await
         });

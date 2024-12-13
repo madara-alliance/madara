@@ -84,7 +84,7 @@ impl ConfirmedReceipt {
         let message_hash = message_to_l2.hash();
 
         mp_receipt::L1HandlerTransactionReceipt {
-            message_hash: message_hash.try_into().unwrap_or_default(),
+            message_hash,
             transaction_hash: self.transaction_hash,
             actual_fee: self.actual_fee.into(),
             messages_sent: self.l2_to_l1_messages,

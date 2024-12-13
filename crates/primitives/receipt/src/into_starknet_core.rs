@@ -78,7 +78,7 @@ impl InvokeTransactionReceipt {
 impl From<starknet_core::types::L1HandlerTransactionReceipt> for L1HandlerTransactionReceipt {
     fn from(receipt: starknet_core::types::L1HandlerTransactionReceipt) -> Self {
         Self {
-            message_hash: receipt.message_hash.try_into().unwrap_or_default(),
+            message_hash: receipt.message_hash,
             transaction_hash: receipt.transaction_hash,
             actual_fee: receipt.actual_fee.into(),
             messages_sent: receipt.messages_sent.into_iter().map(MsgToL1::from).collect(),
@@ -95,7 +95,7 @@ impl L1HandlerTransactionReceipt {
         finality_status: starknet_core::types::TransactionFinalityStatus,
     ) -> starknet_core::types::L1HandlerTransactionReceipt {
         starknet_core::types::L1HandlerTransactionReceipt {
-            message_hash: self.message_hash.into(),
+            message_hash: self.message_hash,
             transaction_hash: self.transaction_hash,
             actual_fee: self.actual_fee.into(),
             finality_status,

@@ -46,6 +46,18 @@ impl MadaraP2p {
             SwarmEvent::Behaviour(behaviour::Event::HeadersSync(event)) => {
                 self.headers_sync_handler.handle_event(event);
             }
+            SwarmEvent::Behaviour(behaviour::Event::ClassesSync(event)) => {
+                self.classes_sync_handler.handle_event(event);
+            }
+            SwarmEvent::Behaviour(behaviour::Event::StateDiffsSync(event)) => {
+                self.state_diffs_sync_handler.handle_event(event);
+            }
+            SwarmEvent::Behaviour(behaviour::Event::TransactionsSync(event)) => {
+                self.transactions_sync_handler.handle_event(event);
+            }
+            SwarmEvent::Behaviour(behaviour::Event::EventsSync(event)) => {
+                self.events_sync_handler.handle_event(event);
+            }
             _event => {}
         }
         Ok(())

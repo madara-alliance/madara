@@ -1,8 +1,11 @@
 mod felt;
-pub mod hex_serde;
 mod to_felt;
 
-pub use felt::{felt_to_u128, felt_to_u64, FeltExt};
+pub mod hash256_serde;
+pub mod hex_serde;
+
+pub use primitive_types::{H256, H160};
+pub use felt::{felt_to_u128, felt_to_u32, felt_to_u64, FeltExt};
 pub use to_felt::{DisplayFeltAsHex, FeltHexDisplay, ToFelt};
 
 pub mod test {

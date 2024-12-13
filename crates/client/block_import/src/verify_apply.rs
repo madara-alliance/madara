@@ -8,6 +8,7 @@ use mp_block::{
     header::PendingHeader, BlockId, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
+use mp_chain_config::StarknetVersion;
 use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
@@ -305,8 +306,17 @@ fn block_hash(
     };
     let block_hash = header.compute_hash(validation.chain_id.to_felt());
 
+    let compute_v0_13_2_hashes_mode =
+        validation.compute_v0_13_2_hashes && header.protocol_version < StarknetVersion::V0_13_2;
+
     if let Some(expected) = block.unverified_block_hash {
+        // compute_v0_13_2_hashes: do not check block hash, return the old one.
+        if compute_v0_13_2_hashes_mode {
+            return Ok((expected, header));
+        }
+
         // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
+        // compute_v0_13_2_hashes: we will remove this legacy check once we can verify <0.13.2 hashes.
         let is_special_trusted_case = validation.chain_id == ChainId::Mainnet && (1466..=2242).contains(&block_number);
         if is_special_trusted_case {
             return Ok((expected, header));
@@ -525,6 +535,7 @@ mod verify_apply_tests {
             trust_global_tries,
             trust_transaction_hashes: false,
             trust_class_hashes: false,
+            compute_v0_13_2_hashes: false,
         };
 
         // WHEN: We call update_tries with these parameters
@@ -588,6 +599,7 @@ mod verify_apply_tests {
                 trust_global_tries: false,
                 trust_transaction_hashes: false,
                 trust_class_hashes: false,
+                compute_v0_13_2_hashes: false,
             },
             1466,
             felt!("0x1"),

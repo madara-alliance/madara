@@ -107,6 +107,8 @@ impl ProviderBlock {
             Some(block.info.header.sequencer_address)
         };
 
+        // TODO(compute_v0_13_2_hashes): once `compute_v0_13_2_hashes` becomes the default, we should show all post-v0.13.2 commitments
+        // in the block including receipt and state_diff commitments.
         let (receipt_commitment, state_diff_commitment) =
             if block.info.header.protocol_version >= StarknetVersion::V0_13_2 {
                 (block.info.header.receipt_commitment, block.info.header.state_diff_commitment)

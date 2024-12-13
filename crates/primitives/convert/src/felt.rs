@@ -9,6 +9,8 @@ pub struct MalformatedFelt;
 pub trait FeltExt {
     fn from_slice_be_checked(slice: &[u8]) -> Result<Felt, MalformatedFelt>;
     fn from_bytes_checked(slice: &[u8; 32]) -> Result<Felt, MalformatedFelt>;
+
+    fn slice_be_len(&self) -> usize;
 }
 
 impl FeltExt for Felt {
@@ -48,6 +50,27 @@ impl FeltExt for Felt {
         }
 
         Ok(Felt::from_raw(limbs))
+    }
+
+    fn slice_be_len(&self) -> usize {
+        let bytes = self.to_bytes_be();
+        let mut len = 32;
+        while len > 0 && bytes[32 - len] == 0 {
+            len -= 1;
+        }
+        len
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Felt is too big to convert to u64.")]
+pub struct FeltToU32Error;
+
+pub fn felt_to_u32(felt: &Felt) -> Result<u32, FeltToU64Error> {
+    let digits = felt.to_be_digits();
+    match (digits[0], digits[1], digits[2], digits[3]) {
+        (0, 0, 0, d) => d.try_into().map_err(|_| FeltToU64Error),
+        _ => Err(FeltToU64Error),
     }
 }
 
@@ -102,5 +125,46 @@ mod tests {
         assert_eq!(felt_to_u128(&Felt::from(u128::MAX)).unwrap(), u128::MAX);
         assert_matches!(felt_to_u128(&(Felt::from(u128::MAX) + Felt::ONE)), Err(FeltToU128Error));
         assert_matches!(felt_to_u128(&Felt::MAX), Err(FeltToU128Error));
+    }
+
+    #[test]
+    fn test_felt_to_slice_be() {
+        let to_vec_be = |f: Felt| {
+            let bytes = f.to_bytes_be();
+            let slice_be_len = f.slice_be_len();
+            bytes[32 - slice_be_len..32].to_vec()
+        };
+
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x0")), Vec::<u8>::new());
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x1")), vec![1]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x2")), vec![2]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x3")), vec![3]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x10")), vec![16]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x100")), vec![1, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x1001")), vec![16, 1]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x10000")), vec![1, 0, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x1000000")), vec![1, 0, 0, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x100000000")), vec![1, 0, 0, 0, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x10000000000")), vec![1, 0, 0, 0, 0, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x1000000000000")), vec![1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(to_vec_be(Felt::from_hex_unchecked("0x100000000000000")), vec![1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            to_vec_be(Felt::from_hex_unchecked("0x10000000000000000000000000000")),
+            vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            to_vec_be(Felt::from_hex_unchecked("0x00EC7BAE44AA0E2532DE25874FF8090F5416CD8974D05EB3FD7A62251A0AEFCA")),
+            vec![
+                236, 123, 174, 68, 170, 14, 37, 50, 222, 37, 135, 79, 248, 9, 15, 84, 22, 205, 137, 116, 208, 94, 179,
+                253, 122, 98, 37, 26, 10, 239, 202
+            ]
+        );
+        assert_eq!(
+            to_vec_be(Felt::from_hex_unchecked("0x03EBF191E97EB162CC34B41F74A24D3638072DF3BFC7408CBFF41AAA16FF89E0")),
+            vec![
+                3, 235, 241, 145, 233, 126, 177, 98, 204, 52, 180, 31, 116, 162, 77, 54, 56, 7, 45, 243, 191, 199, 64,
+                140, 191, 244, 26, 170, 22, 255, 137, 224
+            ]
+        );
     }
 }
