@@ -181,7 +181,7 @@ pub mod eth_client_getter_test {
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
     lazy_static::lazy_static! {
-        static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
+        static ref FORK_URL: String = std::env::var("ETH_FORK_URL").unwrap_or("https://eth-mainnet.g.alchemy.com/v2/svwTUdkIFaUU8uh3Uutn-0-UzsM9ee6q".to_string());
     }
 
     const PORT_RANGE: Range<u16> = 19500..20000;

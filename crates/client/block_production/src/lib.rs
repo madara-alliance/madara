@@ -79,6 +79,15 @@ pub enum Error {
     #[error("State diff error when continuing the pending block: {0:#}")]
     PendingStateDiff(#[from] StateDiffToStateMapError),
 }
+
+struct ContinueBlockResult {
+    state_diff: StateDiff,
+    visited_segments: VisitedSegments,
+    bouncer_weights: BouncerWeights,
+    stats: ContinueBlockStats,
+    block_now_full: bool,
+}
+
 /// The block production task consumes transactions from the mempool in batches.
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
@@ -198,10 +207,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn continue_block(
-        &mut self,
-        bouncer_cap: BouncerWeights,
-    ) -> Result<(StateDiff, VisitedSegments, BouncerWeights, ContinueBlockStats, bool), Error> {
+    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<ContinueBlockResult, Error> {
         let mut stats = ContinueBlockStats::default();
         let mut block_now_full = false;
 
@@ -305,7 +311,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok((state_diff, visited_segments, bouncer_weights, stats, block_now_full))
+        Ok(ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full })
     }
 
     /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
@@ -321,7 +327,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let start_time = Instant::now();
 
-        let (state_diff, visited_segments, bouncer_weights, stats, block_now_full) =
+        let ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full } =
             self.continue_block(bouncer_cap)?;
         if stats.n_added_to_block > 0 {
             tracing::info!(
@@ -362,8 +368,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity.
         let start_time = Instant::now();
-        let (mut new_state_diff, visited_segments, _weights, _stats, _block_now_full) =
-            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+        let ContinueBlockResult {
+            state_diff: mut new_state_diff,
+            visited_segments,
+            bouncer_weights: _weights,
+            stats: _stats,
+            block_now_full: _block_now_full,
+        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
         // at address 0x1 with the block number as the key
