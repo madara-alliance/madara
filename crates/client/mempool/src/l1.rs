@@ -1,5 +1,6 @@
 //! TODO: this should be in the backend
 use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_oracle::Oracle;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -18,6 +19,7 @@ pub struct GasPriceProvider {
     data_gas_price_sync_enabled: Arc<AtomicBool>,
     strk_gas_price_sync_enabled: Arc<AtomicBool>,
     strk_data_gas_price_sync_enabled: Arc<AtomicBool>,
+    pub oracle_provider: Option<Arc<dyn Oracle>>,
 }
 
 impl GasPriceProvider {
@@ -29,7 +31,19 @@ impl GasPriceProvider {
             data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
             strk_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
             strk_data_gas_price_sync_enabled: Arc::new(AtomicBool::new(true)),
+            oracle_provider: None,
         }
+    }
+
+    pub fn is_oracle_needed(&self) -> bool {
+        self.gas_price_sync_enabled.load(Ordering::Relaxed)
+            && (self.strk_gas_price_sync_enabled.load(Ordering::Relaxed)
+                || self.strk_data_gas_price_sync_enabled.load(Ordering::Relaxed))
+    }
+
+    pub fn set_oracle_provider(&mut self, oracle_provider: impl Oracle + 'static) -> &mut Self {
+        self.oracle_provider = Some(Arc::new(oracle_provider));
+        self
     }
 
     pub fn set_gas_prices(&self, new_prices: GasPrices) {
