@@ -25,7 +25,7 @@ A few notes on the current design:
   - Launch Worker
   - Send L1->L2 message
   - Assert that event is emitted on L1
-  - Assert that even was caught by the worker with correct data
+  - Assert that event was caught by the worker with correct data
   - Assert the tx hash computed by the worker is correct
   - Assert that the tx has been included in the mempool
   - Assert that DB was correctly updated (last synced block & nonce)
