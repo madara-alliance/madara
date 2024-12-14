@@ -449,7 +449,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 </details>
 
 > [!CAUTION]
-> These methods are exposed on `locahost` by default for obvious security
+> These methods are exposed on `localhost` by default for obvious security
 > reasons. You can always exposes them externally using `--rpc-admin-external`,
 > but be _very careful_ when doing so as you might be compromising your node!
 > Madara does not do **any** authorization checks on the caller of these
@@ -591,7 +591,7 @@ the _source_ of the migration. You can do this with the `--warp-update-sender`
 [preset](#4.-presets):
 
 ```bash
-cargo run --releasae -- \
+cargo run --release -- \
   --name Sender         \
   --full                \ # This also works with other types of nodes
   --network mainnet     \
@@ -602,7 +602,7 @@ You will then need to start a second node to synchronize the state of your
 database:
 
 ```bash
-cargo run --releasae --       \
+cargo run --release --       \
   --name Receiver             \
   --base-path /tmp/madara_new \ # Where you want the new database to be stored
   --full                      \
