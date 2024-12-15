@@ -43,8 +43,7 @@ async fn handle_process_job_request(
             ApiResponse::success(response).into_response()
         }
         Err(e) => {
-            let attributes = [KeyValue::new("operation_type", "process_job")];
-            ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "process_job")]);
             ApiResponse::<JobApiResponse>::error(e.to_string()).into_response()
         }
     }
@@ -69,8 +68,7 @@ async fn handle_verify_job_request(
             ApiResponse::success(response).into_response()
         }
         Err(e) => {
-            let attributes = [KeyValue::new("operation_type", "verify_job")];
-            ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "verify_job")]);
             ApiResponse::<JobApiResponse>::error(e.to_string()).into_response()
         }
     }

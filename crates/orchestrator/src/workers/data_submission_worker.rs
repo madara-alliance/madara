@@ -34,7 +34,7 @@ impl Worker for DataSubmissionWorker {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::DataSubmission)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
                 }
             }
         }
