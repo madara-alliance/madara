@@ -26,6 +26,8 @@ anyhow.workspace = true
 async-trait.workspace = true
 crypto-bigint.workspace = true
 futures.workspace = true
+num-traits.workspace = true
+paste.workspace = true
 rand.workspace = true
 rayon.workspace = true
 serde.workspace = true
@@ -53,6 +55,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 rstest.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [features]
 testing = []

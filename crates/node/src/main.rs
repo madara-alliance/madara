@@ -15,9 +15,10 @@ use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
+use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
-use mp_utils::service::{Service, ServiceGroup};
+use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use std::sync::Arc;
 
@@ -29,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
-    let mut run_cmd: RunCmd = RunCmd::parse().apply_arg_preset();
+    let mut run_cmd = RunCmd::parse().apply_arg_preset();
 
     // Setting up analytics
 
@@ -49,13 +50,25 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
+    // Check if the devnet is running with the correct chain id.
+    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
+        if !run_cmd.block_production_params.override_devnet_chain_id {
+            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
+            panic!();
+        } else {
+            // This log is immediately flooded with devnet accounts and so this can be missed.
+            // Should we add a delay here to make this clearly visisble?
+            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        }
+    }
+
     let node_name = run_cmd.node_name_or_provide().await.to_string();
     let node_version = env!("MADARA_BUILD_VERSION");
 
-    tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
+    tracing::info!("🥷 {} Node", GREET_IMPL_NAME);
     tracing::info!("✌️  Version {}", node_version);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
-    tracing::info!("🏷  Node Name: {}", node_name);
+    tracing::info!("🏷 Node Name: {}", node_name);
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     tracing::info!("👤 Role: {}", role);
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
@@ -64,13 +77,19 @@ async fn main() -> anyhow::Result<()> {
     let sys_info = SysInfo::probe();
     sys_info.show();
 
-    // Services.
+    // ===================================================================== //
+    //                             SERVICES (SETUP)                          //
+    // ===================================================================== //
 
-    let telemetry_service: TelemetryService =
-        TelemetryService::new(run_cmd.telemetry_params.telemetry, run_cmd.telemetry_params.telemetry_endpoints.clone())
+    // Telemetry
+
+    let service_telemetry: TelemetryService =
+        TelemetryService::new(run_cmd.telemetry_params.telemetry_endpoints.clone())
             .context("Initializing telemetry service")?;
 
-    let db_service = DatabaseService::new(
+    // Database
+
+    let service_db = DatabaseService::new(
         &run_cmd.db_params.base_path,
         run_cmd.db_params.backup_dir.clone(),
         run_cmd.db_params.restore_from_latest_backup,
@@ -84,10 +103,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing db service")?;
 
-    let importer = Arc::new(
-        BlockImporter::new(Arc::clone(db_service.backend()), run_cmd.sync_params.unsafe_starting_block)
-            .context("Initializing importer service")?,
-    );
+    // L1 Sync
 
     let mut l1_gas_setter = GasPriceProvider::new();
 
@@ -117,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if !run_cmd.l1_sync_params.sync_l1_disabled
+    if !run_cmd.l1_sync_params.l1_sync_disabled
         && l1_gas_setter.is_oracle_needed()
         && l1_gas_setter.oracle_provider.is_none()
     {
@@ -128,16 +144,16 @@ async fn main() -> anyhow::Result<()> {
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mut mempool = Mempool::new(
-        Arc::clone(db_service.backend()),
+        Arc::clone(service_db.backend()),
         Arc::clone(&l1_data_provider),
         MempoolLimits::new(&chain_config),
     );
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
-    let l1_service = L1SyncService::new(
+    let service_l1_sync = L1SyncService::new(
         &run_cmd.l1_sync_params,
-        &db_service,
+        &service_db,
         l1_gas_setter,
         chain_config.chain_id.clone(),
         chain_config.eth_core_contract_address,
@@ -148,84 +164,178 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing the l1 sync service")?;
 
-    // Block provider startup.
-    // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
-        match run_cmd.is_sequencer() {
-            // Block production service. (authority)
-            true => {
-                let block_production_service = BlockProductionService::new(
-                    &run_cmd.block_production_params,
-                    &db_service,
-                    Arc::clone(&mempool),
-                    importer,
-                    Arc::clone(&l1_data_provider),
-                    run_cmd.devnet,
-                    telemetry_service.new_handle(),
-                )?;
+    // L2 Sync
 
-                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-            }
-            // Block sync service. (full node)
-            false => {
-                // Feeder gateway sync service.
-                let sync_service = L2SyncService::new(
-                    &run_cmd.sync_params,
-                    Arc::clone(&chain_config),
-                    &db_service,
-                    importer,
-                    telemetry_service.new_handle(),
-                    run_cmd.args_preset.warp_update_receiver,
-                )
-                .await
-                .context("Initializing sync service")?;
+    let importer = Arc::new(
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
+    );
 
-                let mut provider =
-                    GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
-                // gateway api key is needed for declare transactions on mainnet
-                if let Some(api_key) = run_cmd.sync_params.gateway_key {
-                    provider.add_header(
-                        HeaderName::from_static("x-throttling-bypass"),
-                        HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
-                    )
-                }
+    let warp_update = if run_cmd.args_preset.warp_update_receiver {
+        let mut deferred_service_start = vec![];
+        let mut deferred_service_stop = vec![];
 
-                (ServiceGroup::default().with(sync_service), Arc::new(ForwardToProvider::new(provider)))
-            }
-        };
-
-    let rpc_service =
-        RpcService::new(run_cmd.rpc_params, Arc::clone(db_service.backend()), Arc::clone(&rpc_add_txs_method_provider));
-
-    let gateway_service = GatewayService::new(run_cmd.gateway_params, &db_service, rpc_add_txs_method_provider)
-        .await
-        .context("Initializing gateway service")?;
-
-    telemetry_service.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
-
-    let app = ServiceGroup::default()
-        .with(db_service)
-        .with(l1_service)
-        .with(block_provider_service)
-        .with(rpc_service)
-        .with(gateway_service)
-        .with(telemetry_service);
-
-    // Check if the devnet is running with the correct chain id.
-    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
-        if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
-            panic!();
-        } else {
-            // This log is immediately flooded with devnet accounts and so this can be missed.
-            // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You are running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+        if !run_cmd.rpc_params.rpc_disable {
+            deferred_service_start.push(MadaraServiceId::RpcUser);
         }
+
+        if run_cmd.rpc_params.rpc_admin {
+            deferred_service_start.push(MadaraServiceId::RpcAdmin);
+        }
+
+        if run_cmd.gateway_params.feeder_gateway_enable {
+            deferred_service_start.push(MadaraServiceId::Gateway);
+        }
+
+        if run_cmd.telemetry_params.telemetry {
+            deferred_service_start.push(MadaraServiceId::Telemetry);
+        }
+
+        if run_cmd.is_sequencer() {
+            deferred_service_start.push(MadaraServiceId::BlockProduction);
+            deferred_service_stop.push(MadaraServiceId::L2Sync);
+        }
+
+        Some(WarpUpdateConfig {
+            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
+            deferred_service_start,
+            deferred_service_stop,
+        })
+    } else {
+        None
+    };
+
+    let service_l2_sync = L2SyncService::new(
+        &run_cmd.l2_sync_params,
+        Arc::clone(&chain_config),
+        &service_db,
+        importer,
+        service_telemetry.new_handle(),
+        warp_update,
+    )
+    .await
+    .context("Initializing sync service")?;
+
+    let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
+
+    // gateway api key is needed for declare transactions on mainnet
+    if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
+        provider.add_header(
+            HeaderName::from_static("x-throttling-bypass"),
+            HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+        )
     }
 
-    app.start_and_drive_to_end().await?;
+    // Block production
+
+    let importer = Arc::new(
+        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
+            .context("Initializing importer service")?,
+    );
+    let service_block_production = BlockProductionService::new(
+        &run_cmd.block_production_params,
+        &service_db,
+        Arc::clone(&mempool),
+        importer,
+        Arc::clone(&l1_data_provider),
+    )?;
+
+    // Add transaction provider
+    let add_tx_provider_l2_sync: Arc<dyn AddTransactionProvider> = Arc::new(ForwardToProvider::new(provider));
+    let add_tx_provider_mempool: Arc<dyn AddTransactionProvider> = Arc::new(MempoolAddTxProvider::new(mempool));
+
+    // User-facing RPC
+
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
+    );
+
+    // Admin-facing RPC (for node operators)
+
+    let service_rpc_admin = RpcService::admin(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
+    );
+
+    // Feeder gateway
+
+    let service_gateway = GatewayService::new(
+        run_cmd.gateway_params.clone(),
+        Arc::clone(service_db.backend()),
+        Arc::clone(&add_tx_provider_l2_sync),
+        Arc::clone(&add_tx_provider_mempool),
+    )
+    .await
+    .context("Initializing gateway service")?;
+
+    service_telemetry.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
+
+    // ===================================================================== //
+    //                             SERVICES (START)                          //
+    // ===================================================================== //
+
+    if run_cmd.is_sequencer() {
+        service_block_production.setup_devnet().await?;
+    }
+
+    let app = ServiceMonitor::default()
+        .with(service_db)?
+        .with(service_l1_sync)?
+        .with(service_l2_sync)?
+        .with(service_block_production)?
+        .with(service_rpc_user)?
+        .with(service_rpc_admin)?
+        .with(service_gateway)?
+        .with(service_telemetry)?;
+
+    // Since the database is not implemented as a proper service, we do not
+    // active it, as it would never be marked as stopped by the existing logic
+    //
+    // app.activate(MadaraService::Database);
+
+    let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
+    let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
+    let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
+
+    if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
+        app.activate(MadaraServiceId::L1Sync);
+    }
+
+    if warp_update_receiver {
+        app.activate(MadaraServiceId::L2Sync);
+    } else if run_cmd.is_sequencer() {
+        app.activate(MadaraServiceId::BlockProduction);
+    } else if !run_cmd.l2_sync_params.l2_sync_disabled {
+        app.activate(MadaraServiceId::L2Sync);
+    }
+
+    if !run_cmd.rpc_params.rpc_disable && !warp_update_receiver {
+        app.activate(MadaraServiceId::RpcUser);
+    }
+
+    if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
+        app.activate(MadaraServiceId::RpcAdmin);
+    }
+
+    if run_cmd.gateway_params.feeder_gateway_enable && !warp_update_receiver {
+        app.activate(MadaraServiceId::Gateway);
+    }
+
+    if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
+        app.activate(MadaraServiceId::Telemetry);
+    }
+
+    app.start().await?;
 
     let _ = analytics.shutdown();
 
-    Ok(())
+    anyhow::Ok(())
 }
