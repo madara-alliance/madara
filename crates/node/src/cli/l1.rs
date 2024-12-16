@@ -8,7 +8,7 @@ use mp_utils::parsers::{parse_duration, parse_url};
 pub struct L1SyncParams {
     /// Disable L1 sync.
     #[clap(env = "MADARA_SYNC_L1_DISABLED", long, alias = "no-l1-sync", conflicts_with = "l1_endpoint")]
-    pub sync_l1_disabled: bool,
+    pub l1_sync_disabled: bool,
 
     /// The L1 rpc endpoint url for state verification.
     #[clap(env = "MADARA_L1_ENDPOINT", long, value_parser = parse_url, value_name = "ETHEREUM RPC URL")]

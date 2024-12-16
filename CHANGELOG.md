@@ -3,6 +3,7 @@
 ## Next release
 
 - fix(block_production): continue pending block now reexecutes the previous transactions
+- feat(services): reworked Madara services for better cancellation control
 - feat: fetch eth/strk price and sync strk gas price
 - feat(block_production): continue pending block on restart
 - feat(mempool): mempool transaction saving on db

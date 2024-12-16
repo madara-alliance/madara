@@ -6,7 +6,7 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
-use mp_utils::service::{MadaraService, Service};
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded, WriteOptions,
@@ -346,9 +346,12 @@ impl DatabaseService {
     }
 }
 
-impl Service for DatabaseService {
-    fn id(&self) -> MadaraService {
-        MadaraService::Database
+impl Service for DatabaseService {}
+
+impl ServiceId for DatabaseService {
+    #[inline(always)]
+    fn svc_id(&self) -> PowerOfTwo {
+        MadaraServiceId::Database.svc_id()
     }
 }
 

@@ -13,8 +13,8 @@ use mp_gateway::block::{ProviderBlock, ProviderBlockPending};
 use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
 use mp_gateway::state_update::ProviderStateUpdateWithBlockPendingMaybe::{self};
 use mp_gateway::state_update::{ProviderStateUpdate, ProviderStateUpdatePending, StateDiff};
-use mp_utils::service::ServiceContext;
-use mp_utils::{stopwatch_end, wait_or_graceful_shutdown, PerfStopwatch};
+use mp_utils::service::MadaraServiceId;
+use mp_utils::{stopwatch_end, PerfStopwatch};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -49,19 +49,30 @@ pub struct FetchConfig {
     pub stop_on_sync: bool,
     /// Number of blocks to fetch in parallel during the sync process
     pub sync_parallelism: u8,
-    /// True if the node is called with `--warp-update-receiver`
-    pub warp_update: bool,
+    /// Warp update configuration
+    pub warp_update: Option<WarpUpdateConfig>,
+}
+
+#[derive(Clone, Debug)]
+pub struct WarpUpdateConfig {
     /// The port used for nodes to make rpc calls during a warp update.
     pub warp_update_port_rpc: u16,
     /// The port used for nodes to send blocks during a warp update.
     pub warp_update_port_fgw: u16,
+    /// Whether to shutdown the warp update sender once the migration has completed.
+    pub warp_update_shutdown_sender: bool,
+    /// Whether to shut down the warp update receiver once the migration has completed
+    pub warp_update_shutdown_receiver: bool,
+    /// A list of services to start once warp update has completed.
+    pub deferred_service_start: Vec<MadaraServiceId>,
+    /// A list of services to stop one warp update has completed.
+    pub deferred_service_stop: Vec<MadaraServiceId>,
 }
 
 pub async fn fetch_pending_block_and_updates(
     parent_block_hash: Felt,
     chain_id: &ChainId,
     provider: &GatewayProvider,
-    ctx: &ServiceContext,
 ) -> Result<Option<UnverifiedPendingFullBlock>, FetchError> {
     let block_id = BlockId::Tag(BlockTag::Pending);
     let sw = PerfStopwatch::new();
@@ -80,7 +91,6 @@ pub async fn fetch_pending_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
-        ctx,
     )
     .await?;
 
@@ -99,7 +109,7 @@ pub async fn fetch_pending_block_and_updates(
         );
         return Ok(None);
     }
-    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider, ctx).await?;
+    let class_update = fetch_class_updates(chain_id, &state_update.state_diff, block_id.clone(), provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_id);
 
@@ -113,7 +123,6 @@ pub async fn fetch_block_and_updates(
     chain_id: &ChainId,
     block_n: u64,
     provider: &GatewayProvider,
-    ctx: &ServiceContext,
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = BlockId::Number(block_n);
 
@@ -127,10 +136,9 @@ pub async fn fetch_block_and_updates(
         },
         MAX_RETRY,
         BASE_DELAY,
-        ctx,
     )
     .await?;
-    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider, ctx).await?;
+    let class_update = fetch_class_updates(chain_id, state_update.state_diff(), block_id, provider).await?;
 
     stopwatch_end!(sw, "fetching {:?}: {:?}", block_n);
 
@@ -143,12 +151,8 @@ pub async fn fetch_block_and_updates(
     Ok(converted)
 }
 
-async fn retry<F, Fut, T>(
-    mut f: F,
-    max_retries: u32,
-    base_delay: Duration,
-    ctx: &ServiceContext,
-) -> Result<T, SequencerError>
+// TODO: should we be checking for cancellation here? This might take a while
+async fn retry<F, Fut, T>(mut f: F, max_retries: u32, base_delay: Duration) -> Result<T, SequencerError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, SequencerError>>,
@@ -173,9 +177,7 @@ where
                     tracing::warn!("The provider has returned an error: {}, retrying in {:?}", err, delay)
                 }
 
-                if wait_or_graceful_shutdown(tokio::time::sleep(delay), ctx).await.is_none() {
-                    return Err(SequencerError::StarknetError(StarknetError::block_not_found()));
-                }
+                tokio::time::sleep(delay).await;
             }
         }
     }
@@ -187,7 +189,6 @@ async fn fetch_class_updates(
     state_diff: &StateDiff,
     block_id: BlockId,
     provider: &GatewayProvider,
-    ctx: &ServiceContext,
 ) -> anyhow::Result<Vec<ClassUpdate>> {
     // for blocks before 2597 on mainnet new classes are not declared in the state update
     // https://github.com/madara-alliance/madara/issues/233
@@ -208,7 +209,7 @@ async fn fetch_class_updates(
         let block_id = block_id.clone();
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY, ctx).await?;
+                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY).await?;
 
             let ContractClass::Legacy(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -225,7 +226,7 @@ async fn fetch_class_updates(
         let block_id = block_id.clone();
         async move {
             let (class_hash, contract_class) =
-                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY, ctx).await?;
+                retry(|| fetch_class(class_hash, block_id.clone(), provider), MAX_RETRY, BASE_DELAY).await?;
 
             let ContractClass::Sierra(contract_class) = contract_class else {
                 return Err(L2SyncError::UnexpectedClassType { class_hash });
@@ -350,7 +351,6 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
-            &ServiceContext::new_for_testing(),
         )
         .await;
 
@@ -436,7 +436,6 @@ mod test_l2_fetchers {
             Felt::from_hex_unchecked("0x1db054847816dbc0098c88915430c44da2c1e3f910fbcb454e14282baba0e75"),
             &ctx.backend.chain_config().chain_id,
             &ctx.provider,
-            &ServiceContext::new_for_testing(),
         )
         .await;
 
@@ -644,15 +643,10 @@ mod test_l2_fetchers {
             .state_update();
         let state_diff = state_update.state_diff();
 
-        let class_updates = fetch_class_updates(
-            &ctx.backend.chain_config().chain_id,
-            state_diff,
-            BlockId::Number(5),
-            &ctx.provider,
-            &ServiceContext::new_for_testing(),
-        )
-        .await
-        .expect("Failed to fetch class updates");
+        let class_updates =
+            fetch_class_updates(&ctx.backend.chain_config().chain_id, state_diff, BlockId::Number(5), &ctx.provider)
+                .await
+                .expect("Failed to fetch class updates");
 
         assert!(!class_updates.is_empty(), "Should have fetched at least one class update");
 
@@ -681,14 +675,9 @@ mod test_l2_fetchers {
         let state_diff = state_update.state_diff();
 
         ctx.mock_class_hash_not_found("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a".to_string());
-        let result = fetch_class_updates(
-            &ctx.backend.chain_config().chain_id,
-            state_diff,
-            BlockId::Number(5),
-            &ctx.provider,
-            &ServiceContext::new_for_testing(),
-        )
-        .await;
+        let result =
+            fetch_class_updates(&ctx.backend.chain_config().chain_id, state_diff, BlockId::Number(5), &ctx.provider)
+                .await;
 
         assert!(matches!(
         result,

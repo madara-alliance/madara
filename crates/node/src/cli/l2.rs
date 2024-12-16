@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mp_chain_config::ChainConfig;
 use starknet_api::core::ChainId;
 
@@ -11,10 +12,10 @@ use super::FGW_DEFAULT_PORT;
 use super::RPC_DEFAULT_PORT_ADMIN;
 
 #[derive(Clone, Debug, clap::Args)]
-pub struct SyncParams {
+pub struct L2SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
-    pub sync_disabled: bool,
+    pub l2_sync_disabled: bool,
 
     /// The block you want to start syncing from. This will most probably break your database.
     #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
@@ -39,8 +40,16 @@ pub struct SyncParams {
     pub warp_update_port_rpc: u16,
 
     /// The port used for nodes to send blocks during a warp update.
-    #[arg(env = "MADARA_WARP_UPDATE_PORT_FGW", long, value_name = "WARP UPDATE FGW", default_value_t = FGW_DEFAULT_PORT)]
+    #[arg(env = "MADARA_WARP_UPDATE_PORT_FGW", long, value_name = "WARP UPDATE PORT FGW", default_value_t = FGW_DEFAULT_PORT)]
     pub warp_update_port_fgw: u16,
+
+    /// Whether to shut down the warp update sender once the migration has completed
+    #[arg(env = "MADARA_WARP_UPDATE_SHUTDOWN_SENDER", long, default_value_t = false)]
+    pub warp_update_shutdown_sender: bool,
+
+    /// Whether to shut down the warp update receiver once the migration has completed
+    #[arg(env = "MADARA_WARP_UPDATE_SHUTDOWN_RECEIVER", long, default_value_t = false)]
+    pub warp_update_shutdown_receiver: bool,
 
     /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
     #[clap(
@@ -137,12 +146,12 @@ pub struct SyncParams {
     pub sync_parallelism: u8,
 }
 
-impl SyncParams {
+impl L2SyncParams {
     pub fn block_fetch_config(
         &self,
         chain_id: ChainId,
         chain_config: Arc<ChainConfig>,
-        warp_update: bool,
+        warp_update: Option<WarpUpdateConfig>,
     ) -> FetchConfig {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
@@ -167,8 +176,6 @@ impl SyncParams {
             stop_on_sync: self.stop_on_sync,
             sync_parallelism: self.sync_parallelism,
             warp_update,
-            warp_update_port_rpc: self.warp_update_port_rpc,
-            warp_update_port_fgw: self.warp_update_port_fgw,
         }
     }
 }

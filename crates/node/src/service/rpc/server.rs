@@ -7,10 +7,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use mp_utils::service::ServiceContext;
-use tokio::task::JoinSet;
 use tower::Service;
-
-use mp_utils::wait_or_graceful_shutdown;
 
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 
@@ -46,11 +43,13 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 }
 
 /// Start RPC server listening on given address.
-pub async fn start_server(
+///
+/// This future will complete once the server has been shutdown.
+pub async fn start_server<'a>(
     config: ServerConfig,
-    join_set: &mut JoinSet<anyhow::Result<()>>,
-    ctx: ServiceContext,
-) -> anyhow::Result<jsonrpsee::server::ServerHandle> {
+    mut ctx: ServiceContext,
+    stop_handle: jsonrpsee::server::StopHandle,
+) -> anyhow::Result<()> {
     let ServerConfig {
         name,
         addr,
@@ -91,7 +90,6 @@ pub async fn start_server(
         .set_http_middleware(http_middleware)
         .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
 
-    let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
     let cfg = PerConnection {
         methods,
         stop_handle: stop_handle.clone(),
@@ -109,6 +107,7 @@ pub async fn start_server(
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
+                let ctx1 = ctx1.clone();
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -122,10 +121,9 @@ pub async fn start_server(
                     .layer(metrics_layer.clone());
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
-                let ctx1 = ctx1.clone();
 
                 async move {
-                    if !ctx1.is_active() {
+                    if ctx1.is_cancelled() {
                         Ok(hyper::Response::builder()
                             .status(hyper::StatusCode::GONE)
                             .body(hyper::Body::from("GONE"))?)
@@ -157,21 +155,18 @@ pub async fn start_server(
         .with_context(|| format!("Creating hyper server at: {addr}"))?
         .serve(make_service);
 
-    join_set.spawn(async move {
-        tracing::info!(
-            "📱 Running {name} server at {} (allowed origins={})",
-            local_addr.to_string(),
-            format_cors(cors.as_ref())
-        );
-        server
-            .with_graceful_shutdown(async {
-                wait_or_graceful_shutdown(stop_handle.shutdown(), &ctx).await;
-            })
-            .await
-            .context("Running rpc server")
-    });
+    tracing::info!(
+        "📱 Running {name} server at {} (allowed origins={})",
+        local_addr.to_string(),
+        format_cors(cors.as_ref())
+    );
 
-    Ok(server_handle)
+    server
+        .with_graceful_shutdown(async {
+            ctx.run_until_cancelled(stop_handle.shutdown()).await;
+        })
+        .await
+        .context("Running rpc server")
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192

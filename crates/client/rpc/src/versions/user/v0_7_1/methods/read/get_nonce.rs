@@ -21,7 +21,6 @@ use crate::Starknet;
 /// count or other contract-specific operations. In case of errors, such as
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
-
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
     // Check if block exists. We have to return a different error in that case.
     let block_exists =
