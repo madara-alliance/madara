@@ -248,7 +248,7 @@ impl MadaraBackend {
             tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
         }
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }
@@ -263,7 +263,7 @@ impl MadaraBackend {
         tx.delete_cf(&col, ROW_PENDING_SEGMENTS);
         tx.delete_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS);
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }
@@ -272,7 +272,7 @@ impl MadaraBackend {
     pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let mut writeopts = WriteOptions::default(); // todo move that in db
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?, &writeopts)?;
         Ok(())
     }
@@ -320,7 +320,7 @@ impl MadaraBackend {
         tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
 
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
         Ok(())
     }

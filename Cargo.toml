@@ -95,7 +95,7 @@ version = "0.7.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-rocksdb = "0.22"
+rocksdb = { git="https://github.com/rust-rocksdb/rust-rocksdb.git", branch="master" }
 librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
@@ -242,8 +242,8 @@ tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
 
 [patch.crates-io]
-rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = { git="https://github.com/rust-rocksdb/rust-rocksdb.git", branch="master" }
+librocksdb-sys = { git="https://github.com/rust-rocksdb/rust-rocksdb.git", branch="master" }
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }

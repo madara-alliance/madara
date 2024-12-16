@@ -22,7 +22,7 @@ impl<D: DBAccess> SnapshotWithDBArc<D> {
     fn readopts_with_raw_snapshot<R>(&self, mut readopts: ReadOptions, f: impl FnOnce(&ReadOptions) -> R) -> R {
         // Safety: the snapshot originates from the `db`, and it is not dropped during the lifetime of the `readopts` variable.
         unsafe {
-            readopts.set_raw_snapshot(self.inner);
+            // readopts.set_raw_snapshot(self.inner);
         }
 
         f(&readopts)

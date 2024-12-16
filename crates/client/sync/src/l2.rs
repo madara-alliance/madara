@@ -112,6 +112,7 @@ async fn l2_verify_and_apply_task(
 
         if backup_every_n_blocks.is_some_and(|backup_every_n_blocks| header.block_number % backup_every_n_blocks == 0) {
             tracing::info!("⏳ Backing up database at block {}...", header.block_number);
+            tracing::info!("[backup] Current Block Number: {}", header.block_number);
             let sw = PerfStopwatch::new();
             backend.backup().await.context("backing up database")?;
             tracing::info!("✅ Database backup is done ({:?})", sw.elapsed());

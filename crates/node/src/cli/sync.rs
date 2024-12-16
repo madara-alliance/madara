@@ -80,7 +80,6 @@ pub struct SyncParams {
     #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
     pub stop_on_sync: bool,
 
-    /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 

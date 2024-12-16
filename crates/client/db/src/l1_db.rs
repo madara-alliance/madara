@@ -104,7 +104,7 @@ impl MadaraBackend {
     ) -> Result<(), DbError> {
         let messaging_column = self.db.get_column(Column::L1Messaging);
         let mut writeopts = WriteOptions::default(); // todo move that in db
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.put_cf_opt(
             &messaging_column,
             LAST_SYNCED_L1_EVENT_BLOCK,
@@ -124,7 +124,7 @@ impl MadaraBackend {
     pub fn set_l1_messaging_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
         let mut writeopts = WriteOptions::default();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ [], &writeopts)?;
         Ok(())
     }

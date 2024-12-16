@@ -38,7 +38,7 @@ pub struct BonsaiDb {
 impl BonsaiDb {
     pub(crate) fn new(db: Arc<DB>, snapshots: Arc<Snapshots>, column_mapping: DatabaseKeyMapping) -> Self {
         let mut write_opt = WriteOptions::default();
-        write_opt.disable_wal(true);
+        // write_opt.disable_wal(true);
         Self { db, column_mapping, write_opt, snapshots }
     }
 }

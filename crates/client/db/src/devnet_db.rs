@@ -36,7 +36,7 @@ impl MadaraBackend {
     pub fn set_devnet_predeployed_keys(&self, devnet_keys: DevnetPredeployedKeys) -> Result<()> {
         let nonce_column = self.db.get_column(Column::Devnet);
         let mut writeopts = WriteOptions::default();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
         self.db.put_cf_opt(&nonce_column, DEVNET_KEYS, bincode::serialize(&devnet_keys)?, &writeopts)?;
         Ok(())
     }

@@ -16,11 +16,15 @@ pub fn rocksdb_global_options() -> Result<Options> {
     let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
     options.increase_parallelism(cores);
     options.set_max_background_jobs(cores);
+    options.set_track_and_verify_wals_in_manifest(true);
 
     options.set_atomic_flush(true);
     options.set_max_subcompactions(cores as _);
+    options.set_wal_recovery_mode(rocksdb::DBRecoveryMode::PointInTime);
+    options.set_wal_ttl_seconds(60 * 60 * 24 * 7); // 1 week
+    options.set_wal_dir("/Users/anukkrit/Desktop/karnot.xyz/codes/madara-alliance/wal_log");
 
-    options.set_max_log_file_size(10 * MiB);
+    options.set_max_log_file_size(10 * GiB);
     options.set_max_open_files(2048);
     options.set_keep_log_file_num(3);
     options.set_log_level(rocksdb::LogLevel::Warn);

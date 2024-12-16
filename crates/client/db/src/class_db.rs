@@ -120,7 +120,7 @@ impl MadaraBackend {
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
 
         converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(col_info),
@@ -200,7 +200,7 @@ impl MadaraBackend {
     #[tracing::instrument(fields(module = "ClassDB"))]
     pub(crate) fn class_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
 
         self.db.delete_range_cf_opt(&self.db.get_column(Column::PendingClassInfo), &[] as _, LAST_KEY, &writeopts)?;
         self.db.delete_range_cf_opt(

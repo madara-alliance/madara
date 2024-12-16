@@ -254,7 +254,7 @@ impl DatabaseExt for DB {
 
 fn make_write_opt_no_wal() -> WriteOptions {
     let mut opts = WriteOptions::new();
-    opts.disable_wal(true);
+    // opts.disable_wal(true);
     opts
 }
 

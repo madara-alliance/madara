@@ -150,7 +150,7 @@ impl MadaraBackend {
         let block_number = u32::try_from(block_number).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
 
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
 
         fn write_chunk(
             db: &DB,
@@ -214,7 +214,7 @@ impl MadaraBackend {
         contract_kv_updates: &[((Felt, Felt), Felt)],
     ) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
 
         // Note: pending has keys in bincode, not bytes
 
@@ -252,7 +252,7 @@ impl MadaraBackend {
     #[tracing::instrument(fields(module = "ContractDB"))]
     pub(crate) fn contract_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
         let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        //writeopts.disable_wal(true);
 
         self.db.delete_range_cf_opt(
             &self.db.get_column(Column::PendingContractToNonces),

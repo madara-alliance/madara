@@ -5295,8 +5295,8 @@ dependencies = [
 
 [[package]]
 name = "librocksdb-sys"
-version = "0.17.0+9.0.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+version = "0.17.1+9.7.4"
+source = "git+https://github.com/rust-rocksdb/rust-rocksdb.git?branch=master#858ce719df19ac440ff6803c620a998e9a2445cc"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -7388,7 +7388,7 @@ dependencies = [
 [[package]]
 name = "rocksdb"
 version = "0.22.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+source = "git+https://github.com/rust-rocksdb/rust-rocksdb.git?branch=master#858ce719df19ac440ff6803c620a998e9a2445cc"
 dependencies = [
  "libc",
  "librocksdb-sys",
