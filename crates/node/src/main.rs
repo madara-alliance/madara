@@ -133,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if !run_cmd.full 
+    if !run_cmd.full
         && !run_cmd.devnet
         && !run_cmd.l1_sync_params.l1_sync_disabled
         && l1_gas_setter.is_oracle_needed()

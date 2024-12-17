@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix: oracle need condition
 - feat(services): reworked Madara services for better cancellation control
 - feat: fetch eth/strk price and sync strk gas price
 - feat(block_production): continue pending block on restart
