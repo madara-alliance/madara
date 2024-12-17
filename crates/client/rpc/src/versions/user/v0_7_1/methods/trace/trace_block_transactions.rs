@@ -1,3 +1,4 @@
+use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_convert::ToFelt;
@@ -8,7 +9,6 @@ use std::sync::Arc;
 
 use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::transaction::to_blockifier_transaction;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -31,6 +31,7 @@ pub async fn trace_block_transactions(
         .zip(block.info.tx_hashes())
         .map(|(tx, hash)| {
             to_blockifier_transaction(starknet.clone_backend(), block_id.clone(), tx, &TransactionHash(*hash))
+                .or_internal_server_error("Failed to convert transaction to blockifier format")
         })
         .collect::<Result<_, _>>()?;
 

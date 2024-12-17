@@ -95,7 +95,13 @@ impl MempoolInner {
     }
 
     /// When `force` is `true`, this function should never return any error.
-    pub fn insert_tx(&mut self, mempool_tx: MempoolTransaction, force: bool) -> Result<(), TxInsersionError> {
+    /// `update_limits` is `false` when the transaction has been removed from the mempool in the past without updating the limits.
+    pub fn insert_tx(
+        &mut self,
+        mempool_tx: MempoolTransaction,
+        force: bool,
+        update_limits: bool,
+    ) -> Result<(), TxInsersionError> {
         // delete age-exceeded txs from the mempool
         // todo(perf): this may want to limit this check once every few seconds to avoid it being in the hot path?
         self.remove_age_exceeded_txs();
@@ -165,7 +171,9 @@ impl MempoolInner {
         }
 
         // Update transaction limits
-        self.limiter.update_tx_limits(&limits_for_tx);
+        if update_limits {
+            self.limiter.update_tx_limits(&limits_for_tx);
+        }
 
         Ok(())
     }
@@ -235,6 +243,7 @@ impl MempoolInner {
                 break mempool_tx;
             }
 
+            // transaction age exceeded, remove the tx from mempool.
             self.limiter.mark_removed(&limits);
         };
 
@@ -258,8 +267,21 @@ impl MempoolInner {
         }
         for tx in txs {
             let force = true;
-            self.insert_tx(tx, force).expect("Force insert tx should not error");
+            self.insert_tx(tx, force, false).expect("Force insert tx should not error");
         }
+    }
+
+    /// This is called by the block production after a batch of transaction is executed.
+    /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
+    pub fn insert_txs(
+        &mut self,
+        txs: impl IntoIterator<Item = MempoolTransaction>,
+        force: bool,
+    ) -> Result<(), TxInsersionError> {
+        for tx in txs {
+            self.insert_tx(tx, force, true)?;
+        }
+        Ok(())
     }
 
     #[cfg(any(test, feature = "testing"))]

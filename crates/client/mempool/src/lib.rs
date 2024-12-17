@@ -14,10 +14,10 @@ use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-use mp_transactions::BroadcastedToBlockifierError;
 use mp_transactions::BroadcastedTransactionExt;
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
+use mp_transactions::ToBlockifierError;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
@@ -53,7 +53,7 @@ pub enum Error {
     #[error(transparent)]
     Exec(#[from] mc_exec::Error),
     #[error("Preprocessing transaction: {0:#}")]
-    BroadcastedToBlockifier(#[from] BroadcastedToBlockifierError),
+    BroadcastedToBlockifier(#[from] ToBlockifierError),
 }
 impl Error {
     pub fn is_internal(&self) -> bool {
@@ -79,14 +79,15 @@ pub trait MempoolProvider: Send + Sync {
     where
         Self: Sized;
     fn take_tx(&self) -> Option<MempoolTransaction>;
-    fn re_add_txs<
-        I: IntoIterator<Item = MempoolTransaction> + 'static,
-        CI: IntoIterator<Item = MempoolTransaction> + 'static,
-    >(
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(
         &self,
         txs: I,
-        consumed_txs: CI,
-    ) where
+        consumed_txs: Vec<MempoolTransaction>,
+    ) -> Result<(), Error>
+    where
+        Self: Sized;
+    fn insert_txs_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), Error>
+    where
         Self: Sized;
     fn chain_id(&self) -> Felt;
 }
@@ -180,10 +181,11 @@ impl Mempool {
 
             // Add it to the inner mempool
             let force = false;
-            self.inner
-                .write()
-                .expect("Poisoned lock")
-                .insert_tx(MempoolTransaction { tx, arrived_at, converted_class }, force)?;
+            self.inner.write().expect("Poisoned lock").insert_tx(
+                MempoolTransaction { tx, arrived_at, converted_class },
+                force,
+                true,
+            )?;
 
             self.metrics.accepted_transaction_counter.add(1.0, &[]);
         }
@@ -305,13 +307,31 @@ impl MempoolProvider for Mempool {
     /// This is called by the block production after a batch of transaction is executed.
     /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
     #[tracing::instrument(skip(self, txs, consumed_txs), fields(module = "Mempool"))]
-    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction>, CI: IntoIterator<Item = MempoolTransaction>>(
+    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction>>(
         &self,
         txs: I,
-        consumed_txs: CI,
-    ) {
+        consumed_txs: Vec<MempoolTransaction>,
+    ) -> Result<(), Error> {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.re_add_txs(txs, consumed_txs)
+        let hashes = consumed_txs.iter().map(|tx| tx.tx_hash()).collect::<Vec<_>>();
+        inner.re_add_txs(txs, consumed_txs);
+        drop(inner);
+        for tx_hash in hashes {
+            self.backend.remove_mempool_transaction(&tx_hash.to_felt())?;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, txs), fields(module = "Mempool"))]
+    fn insert_txs_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), Error> {
+        for tx in &txs {
+            let saved_tx = blockifier_to_saved_tx(&tx.tx, tx.arrived_at);
+            // save to db
+            self.backend.save_mempool_transaction(&saved_tx, tx.tx_hash().to_felt(), &tx.converted_class)?;
+        }
+        let mut inner = self.inner.write().expect("Poisoned lock");
+        inner.insert_txs(txs, force)?;
+        Ok(())
     }
 
     fn chain_id(&self) -> Felt {

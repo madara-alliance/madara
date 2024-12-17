@@ -111,8 +111,8 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        let Some(class_info) =
-            self.backend.get_class_info(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
+        let Some(converted_class) =
+            self.backend.get_converted_class(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
                 tracing::warn!("Failed to retrieve class {class_hash:#}: {err:#}");
                 StateError::StateReadError(format!("Failed to retrieve class {class_hash:#}"))
             })?
@@ -120,31 +120,10 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        match class_info {
-            ClassInfo::Sierra(info) => {
-                let compiled_class = self
-                    .backend
-                    .get_sierra_compiled(&on_top_of_block_id, &info.compiled_class_hash)
-                    .map_err(|err| {
-                        tracing::warn!("Failed to retrieve sierra compiled class {:#x}: {err:#}", class_hash.to_felt());
-                        StateError::StateReadError(format!(
-                            "Failed to retrieve compiled class {:#x}",
-                            class_hash.to_felt()
-                        ))
-                    })?
-                    .ok_or(StateError::StateReadError(format!(
-                        "Inconsistent state: compiled sierra class {:#x} not found",
-                        class_hash.to_felt()
-                    )))?;
-
-                // TODO: convert ClassCompilationError to StateError
-                Ok(compiled_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
-            }
-            ClassInfo::Legacy(info) => {
-                // TODO: convert ClassCompilationError to StateError
-                Ok(info.contract_class.to_blockifier_class().map_err(|e| StateError::StateReadError(e.to_string()))?)
-            }
-        }
+        converted_class.to_blockifier_class().map_err(|err| {
+            tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
+            StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
+        })
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {

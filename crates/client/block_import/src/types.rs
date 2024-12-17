@@ -2,7 +2,7 @@
 //! Step 2. verify_apply: [`PreValidatedBlock`] ====[`crate::verify_apply`]===> [`BlockImportResult`]
 
 use mp_block::{
-    header::{GasPrices, L1DataAvailabilityMode},
+    header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode},
     Header, VisitedSegments,
 };
 use mp_chain_config::StarknetVersion;
@@ -24,7 +24,7 @@ pub struct UnverifiedHeader {
     /// The Starknet address of the sequencer that created this block.
     pub sequencer_address: Felt,
     /// The time the sequencer created this block before executing transactions
-    pub block_timestamp: u64,
+    pub block_timestamp: BlockTimestamp,
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block

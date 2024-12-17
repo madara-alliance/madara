@@ -1,3 +1,10 @@
+use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
+use blockifier::execution::{
+    contract_class::{
+        ContractClass as BContractClass, ContractClassV0 as BContractClassV0, ContractClassV1 as BContractClassV1,
+    },
+    errors::ContractClassError as BContractClassError,
+};
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
 use std::{
@@ -5,10 +12,10 @@ use std::{
     io::{Cursor, Read},
 };
 
-use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
-
 #[derive(Debug, thiserror::Error)]
 pub enum ClassCompilationError {
+    #[error("Error while converting class to blockifier format: {0}")]
+    ContractClassError(#[from] BContractClassError),
     #[error("Failed to decompress program: {0}")]
     DecompressionFailed(#[from] std::io::Error),
     #[error("Failed to parse program JSON: {0}")]
@@ -72,13 +79,9 @@ impl CompressedLegacyContractClass {
         Ok(serde_json::to_string(&json)?)
     }
 
-    pub fn to_blockifier_class(
-        &self,
-    ) -> Result<blockifier::execution::contract_class::ContractClass, ClassCompilationError> {
+    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
         let class_json = self.serialize_to_json()?;
-        Ok(blockifier::execution::contract_class::ContractClass::V0(
-            blockifier::execution::contract_class::ContractClassV0::try_from_json_string(&class_json)?,
-        ))
+        Ok(BContractClass::V0(BContractClassV0::try_from_json_string(&class_json)?))
     }
 }
 
@@ -114,12 +117,8 @@ impl FlattenedSierraClass {
 }
 
 impl CompiledSierra {
-    pub fn to_blockifier_class(
-        &self,
-    ) -> Result<blockifier::execution::contract_class::ContractClass, ClassCompilationError> {
-        Ok(blockifier::execution::contract_class::ContractClass::V1(
-            blockifier::execution::contract_class::ContractClassV1::try_from_json_string(&self.0)?,
-        ))
+    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
+        Ok(BContractClass::V1(BContractClassV1::try_from_json_string(&self.0)?))
     }
 }
 
