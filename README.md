@@ -29,15 +29,17 @@ Madara is a powerful Starknet client written in Rust.
 - ⚙️ [Configuration](#%EF%B8%8F-configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Environment variables](#environment-variables)
-- 🌐 [Interactions](#-interactions)
+    🌐 [Interactions](#-interactions)
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Madara-specific JSON-RPC Methods](#madara-specific-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
+- 📚 [Database Migration](#-database-migration)
+  - [Warp Update](#warp-update)
+  - [Running without `--warp-update-sender`](#running-without---warp-update-sender)
 - ✅ [Supported Features](#-supported-features)
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
-  - [Database Migration](#database-migration)
 - 💬 [Get in touch](#-get-in-touch)
   - [Contributing](#contributing)
   - [Partnerships](#partnerships)
@@ -113,7 +115,7 @@ cargo run --release --        \
   --name Madara               \
   --sequencer                 \
   --base-path /var/lib/madara \
-  --preset test               \
+  --preset sepolia            \
   --l1-endpoint ${ETHEREUM_API_URL}
 ```
 
@@ -126,7 +128,7 @@ cargo run --release --        \
   --name Madara               \
   --devnet                    \
   --base-path /var/lib/madara \
-  --preset test
+  --preset sepolia
 ```
 
 > [!NOTE]
@@ -426,16 +428,11 @@ are exposed on a separate port **9943** unless specified otherwise with
 <details>
   <summary>Status Methods</summary>
 
-| Method               | About                                                |
-| -------------------- | ---------------------------------------------------- |
-| `madara_ping`        | Return the unix time at which this method was called |
-| `madara_shutdown`    | Gracefully stops the running node                    |
-| `madara_rpcDisable`  | Disables user-facing rpc services                    |
-| `madara_rpcEnable`   | Enables user-facing rpc services                     |
-| `madara_rpcRestart`  | Restarts user-facing rpc services                    |
-| `madara_syncDisable` | Disables l1 and l2 sync services                     |
-| `madara_syncEnable`  | Enables l1 and l2 sync services                      |
-| `madara_syncRestart` | Restarts l1 and l2 sync services                     |
+| Method            | About                                                |
+| ----------------- | ---------------------------------------------------- |
+| `madara_ping`     | Return the unix time at which this method was called |
+| `madara_shutdown` | Gracefully stops the running node                    |
+| `madara_service`  | Sets the status of one or more services              |
 
 </details>
 
@@ -544,6 +541,118 @@ into the subscription stream:
 Where `you-subscription-id` corresponds to the value of the `subscription` field
 which is returned with each websocket response.
 
+## 📚 Database Migration
+
+[⬅️ back to top](#-madara-starknet-client)
+
+When migration to a newer version of Madara you might need to update your
+database. Instead of re-synchronizing the entirety of your chain's state from
+genesis, you can use Madara's **warp update** feature. This is essentially a
+form of trusted sync with better performances as it is run from a local source.
+
+### Warp Update
+
+Warp update requires a working database source for the migration. If you do not
+already have one, you can use the following command to generate a sample
+database:
+
+```bash
+cargo run --release --      \
+  --name madara             \
+  --network mainnet         \
+  --full                    \
+  --l1-sync-disabled        `# We disable sync, for testing purposes` \
+  --n-blocks-to-sync 1000   `# Only synchronize the first 1000 blocks` \
+  --stop-on-sync            `# ...and shutdown the node once this is done`
+```
+
+To begin the database migration, you will need to start your node with
+[admin methods](#madara-specific-json-rpc-methods) and
+[feeder gateway](#feeder-gateway-state-synchronization) enabled. This will be
+the _source_ of the migration. You can do this with the `--warp-update-sender`
+[preset](#4-presets):
+
+```bash
+cargo run --release -- \
+  --name Sender        \
+  --full               `# This also works with other types of nodes` \
+  --network mainnet    \
+  --warp-update-sender \
+  --l1-sync-disabled   `# We disable sync, for testing purposes` \
+  --l2-sync-disabled
+```
+
+> [!TIP]
+> Here, we have disabled sync for testing purposes, so the migration only
+> synchronizes the blocks that were already present in the source node's
+> database. In a production usecase, you most likely want the source node to
+> keep synchronizing with an `--l1-endpoint`, that way when the migration is
+> complete the receiver is fully up-to-date with any state that might have been
+> produced by the chain _during the migration_.
+
+You will then need to start a second node to synchronize the state of your
+database:
+
+```bash
+cargo run --release --            \
+  --name Receiver                 \
+  --base-path /tmp/madara_new     `# Where you want the new database to be stored` \
+  --full                          \
+  --network mainnet               \
+  --l1-sync-disabled              `# We disable sync, for testing purposes` \
+  --warp-update-receiver          \
+  --warp-update-shutdown-receiver `# Shuts down the receiver once the migration has completed`
+```
+
+This will start generating a new up-to-date database under `/tmp/madara_new`.
+Once this process is over, the receiver node will automatically shutdown.
+
+> [!TIP]
+> There also exists a `--warp-update--shutdown-sender` option which allows the
+> receiver to take the place of the sender in certain limited circumstances.
+
+### Running without `--warp-update-sender`
+
+Up until now we have had to start a node with `--warp-update-sender` to begin
+a migration, but this is only a [preset](#4-presets). In a production
+environment, you can start your node with the following arguments and achieve
+the same results:
+
+```bash
+cargo run --release --    \
+  --name Sender           \
+  --full                  `# This also works with other types of nodes` \
+  --network mainnet       \
+  --feeder-gateway-enable `# The source of the migration` \
+  --gateway-port 8080     `# Default port, change as required` \
+  --rpc-admin             `# Used to shutdown the sender after the migration` \
+  --rpc-admin-port 9943   `# Default port, change as required` \
+  --l1-sync-disabled      `# We disable sync, for testing purposes` \
+  --l2-sync-disabled
+```
+
+`--warp-update-receiver` doesn't override any cli arguments but is still needed
+on the receiver end to start the migration. Here is an example of using it with
+custom ports:
+
+> [!IMPORTANT]
+> If you have already run a node with `--warp-update-receiver` following the
+> examples above, remember to delete its database with `rm -rf /tmp/madara_new`.
+
+```bash
+cargo run --release --            \
+  --name Receiver                 \
+  --base-path /tmp/madara_new     `# Where you want the new database to be stored` \
+  --full                          \
+  --network mainnet               \
+  --l1-sync-disabled              `# We disable sync, for testing purposes` \
+  --warp-update-port-rpc 9943     `# Same as set with --rpc-admin-port on the sender` \
+  --warp-update-port-fgw 8080     `# Same as set with --gateway-port on the sender` \
+  --feeder-gateway-enable         \
+  --warp-update-receiver          \
+  --warp-update-shutdown-receiver `# Shuts down the receiver once the migration has completed`
+```
+
 ## ✅ Supported Features
 
 [⬅️ back to top](#-madara-starknet-client)
@@ -569,58 +678,10 @@ a regular sync.
 
 ### State Commitment Computation
 
-Madara supports merkelized state verification through its own implementation of
+Madara supports merkelized state commitments through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
 commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
-
-### Database Migration
-
-When migration to a newer version of Madara you might need to update your
-database. Instead of re-synchronizing the entirety of your chain's state from
-genesis, you can use Madara's **warp update** feature.
-
-> [!NOTE]
-> Warp update requires an already synchronized _local_ node with a working
-> database.
-
-To begin the database migration, you will need to start an existing node with
-[admin methods](#madara-specific-json-rpc-methods) and
-[feeder gateway](#feeder-gateway-state-synchronization) enabled. This will be
-the _source_ of the migration. You can do this with the `--warp-update-sender`
-[preset](#4.-presets):
-
-```bash
-cargo run --releasae -- \
-  --name Sender         \
-  --full                \ # This also works with other types of nodes
-  --network mainnet     \
-  --warp-update-sender
-```
-
-You will then need to start a second node to synchronize the state of your
-database:
-
-```bash
-cargo run --releasae --       \
-  --name Receiver             \
-  --base-path /tmp/madara_new \ # Where you want the new database to be stored
-  --full                      \
-  --network mainnet           \
-  --l1-endpoint https://***   \
-  --warp-update-receiver
-```
-
-This will start generating a new up-to-date database under `/tmp/madara_new`.
-Once this process is over, the warp update sender node will automatically
-shutdown while the warp update receiver will take its place.
-
-> [!WARNING]
-> As of now, the warp update receiver has its rpc disabled, even after the
-> migration process has completed. This will be fixed in the future, so that
-> services that would otherwise conflict with the sender node will automatically
-> start after the migration has finished, allowing for migrations with 0
-> downtime.
 
 ## 💬 Get in touch
 
