@@ -147,7 +147,7 @@ impl Mempool {
             .into()
         };
 
-        // If the contract has been deployed for the same block is is invoked, we need to skip validations.
+        // If the contract has been deployed for the same block is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
         //  may appear during that time - but it is not a problem.
         let deploy_account_tx_hash = if let Transaction::AccountTransaction(AccountTransaction::Invoke(tx)) = &tx {
