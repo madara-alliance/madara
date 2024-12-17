@@ -25,7 +25,7 @@ use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 use url::Url;
 
-use mp_utils::serde::{deserialize_duration, deserialize_private_key};
+use mp_utils::serde::{deserialize_duration, deserialize_optional_duration, deserialize_private_key};
 
 use crate::StarknetVersion;
 
@@ -136,8 +136,8 @@ pub struct ChainConfig {
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_declare_tx_limit: usize,
     /// Max age of a transaction in the mempool.
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub mempool_tx_max_age: Duration,
+    #[serde(deserialize_with = "deserialize_optional_duration")]
+    pub mempool_tx_max_age: Option<Duration>,
 }
 
 impl ChainConfig {
@@ -247,7 +247,7 @@ impl ChainConfig {
 
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
-            mempool_tx_max_age: Duration::from_secs(60 * 60), // an hour?
+            mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
         }
     }
 

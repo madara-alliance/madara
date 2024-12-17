@@ -19,25 +19,23 @@ use crate::close_block::close_block;
 use crate::metrics::BlockProductionMetrics;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
 use blockifier::bouncer::{BouncerWeights, BuiltinCount};
-use blockifier::state::state_api::UpdatableState;
 use blockifier::transaction::errors::TransactionExecutionError;
-use finalize_execution_state::{state_diff_to_state_map, StateDiffToStateMapError};
+use finalize_execution_state::StateDiffToStateMapError;
 use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlockInfo, MadaraPendingBlock, VisitedSegments};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock, VisitedSegments};
 use mp_class::compile::ClassCompilationError;
-use mp_class::{ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
+use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
-use starknet_api::core::ClassHash;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -48,6 +46,7 @@ use std::time::Instant;
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
+mod re_add_finalized_to_blockifier;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -103,6 +102,29 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
+    /// Continue the pending block state by re-adding all of its transactions back into the mempool.
+    /// This function will always clear the pending block in db, even if the transactions could not be added to the mempool.
+    pub fn re_add_pending_block_txs_to_mempool(
+        backend: &MadaraBackend,
+        mempool: &Mempool,
+    ) -> Result<(), Cow<'static, str>> {
+        let Some(current_pending_block) =
+            backend.get_block(&DbBlockId::Pending).map_err(|err| format!("Getting pending block: {err:#}"))?
+        else {
+            // No pending block
+            return Ok(());
+        };
+        backend.clear_pending_block().map_err(|err| format!("Clearing pending block: {err:#}"))?;
+
+        let n_txs = re_add_finalized_to_blockifier::re_add_txs_to_mempool(current_pending_block, mempool, backend)
+            .map_err(|err| format!("Re-adding transactions to mempool: {err:#}"))?;
+
+        if n_txs > 0 {
+            tracing::info!("🔁 Re-added {n_txs} transactions from the pending block back into the mempool");
+        }
+        Ok(())
+    }
+
     pub fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
@@ -110,78 +132,24 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        let (pending_block, state_diff, pcs) = match backend.get_block(&DbBlockId::Pending)? {
-            Some(pending) => {
-                let MadaraMaybePendingBlockInfo::Pending(info) = pending.info else {
-                    return Err(Error::Unexpected("Get a pending block".into()));
-                };
-                let pending_state_update = backend.get_pending_block_state_update()?;
-                (MadaraPendingBlock { info, inner: pending.inner }, pending_state_update, Default::default())
-            }
-            None => {
-                let parent_block_hash = backend
-                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
-                    .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
+        if let Err(err) = Self::re_add_pending_block_txs_to_mempool(&backend, &mempool) {
+            // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
+            // a fresh one.
+            tracing::error!("Failed to continue the pending block state: {err:#}");
+        }
 
-                (
-                    MadaraPendingBlock::new_empty(make_pending_header(
-                        parent_block_hash,
-                        backend.chain_config(),
-                        l1_data_provider.as_ref(),
-                    )),
-                    StateDiff::default(),
-                    Default::default(),
-                )
-            }
-        };
+        let parent_block_hash = backend
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
+            .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
 
-        let declared_classes: Vec<ConvertedClass> = state_diff
-            .declared_classes
-            .iter()
-            .map(|item| {
-                let class_info = backend.get_class_info(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
-                    Error::Unexpected(format!("No class info for declared class {:#x}", item.class_hash).into())
-                })?;
-                let converted_class = match class_info {
-                    mp_class::ClassInfo::Sierra(info) => {
-                        let compiled =
-                            backend.get_sierra_compiled(&DbBlockId::Pending, &item.class_hash)?.ok_or_else(|| {
-                                Error::Unexpected(
-                                    format!("No compiled class for declared class {:#x}", item.class_hash).into(),
-                                )
-                            })?;
-                        let compiled = Arc::new(compiled);
-                        ConvertedClass::Sierra(SierraConvertedClass { class_hash: item.class_hash, info, compiled })
-                    }
-                    mp_class::ClassInfo::Legacy(info) => {
-                        ConvertedClass::Legacy(LegacyConvertedClass { class_hash: item.class_hash, info })
-                    }
-                };
+        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
+            parent_block_hash,
+            backend.chain_config(),
+            l1_data_provider.as_ref(),
+        ));
 
-                Ok(converted_class)
-            })
-            .collect::<Result<_, Error>>()?;
-
-        let class_hash_to_class = declared_classes
-            .iter()
-            .map(|c| {
-                Ok((
-                    ClassHash(c.class_hash()),
-                    match c {
-                        ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
-                        ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
-                    },
-                ))
-            })
-            .collect::<Result<_, Error>>()?;
-
-        let mut executor =
+        let executor =
             ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
-        let block_state =
-            executor.block_state.as_mut().expect("Block state can not be None unless we take ownership of it");
-
-        // Apply pending state
-        block_state.apply_writes(&state_diff_to_state_map(state_diff)?, &class_hash_to_class, &pcs);
 
         Ok(Self {
             importer,
@@ -190,7 +158,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             executor,
             current_pending_tick: 0,
             block: pending_block,
-            declared_classes,
+            declared_classes: Default::default(),
             l1_data_provider,
             metrics,
         })
@@ -294,7 +262,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Add back the unexecuted transactions to the mempool.
         stats.n_re_added_to_mempool = txs_to_process.len();
-        self.mempool.re_add_txs(txs_to_process, executed_txs);
+        self.mempool
+            .re_add_txs(txs_to_process, executed_txs)
+            .map_err(|err| Error::Unexpected(format!("Mempool error: {err:#}").into()))?;
 
         tracing::debug!(
             "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",

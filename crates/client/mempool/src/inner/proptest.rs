@@ -210,7 +210,7 @@ impl MempoolInvariantsProblem {
                 Operation::Insert(insert) => {
                     let force = insert.1;
                     tracing::trace!("Insert {:?}", insert);
-                    let res = mempool.insert_tx(insert.0.clone(), insert.1);
+                    let res = mempool.insert_tx(insert.0.clone(), insert.1, true);
 
                     let expected = if !force
                         && inserted_contract_nonce_pairs.contains(&(insert.0.nonce(), insert.0.contract_address()))

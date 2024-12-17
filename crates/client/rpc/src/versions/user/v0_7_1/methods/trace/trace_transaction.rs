@@ -1,9 +1,9 @@
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
-use crate::utils::transaction::to_blockifier_transaction;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 use mc_exec::execution_result_to_tx_trace;
+use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::ExecutionContext;
 use mp_chain_config::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
@@ -33,6 +33,7 @@ pub async fn trace_transaction(
     let mut block_txs =
         Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes()).map(|(tx, hash)| {
             to_blockifier_transaction(starknet.clone_backend(), block.info.as_block_id(), tx, &TransactionHash(*hash))
+                .or_internal_server_error("Failed to convert transaction to blockifier format")
         });
 
     // takes up until not including last tx

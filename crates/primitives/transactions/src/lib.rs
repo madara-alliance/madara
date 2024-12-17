@@ -6,18 +6,18 @@ use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 use std::sync::Arc;
 
-mod broadcasted_to_blockifier;
 mod from_blockifier;
 mod from_broadcasted_transaction;
 mod from_starknet_types;
 mod into_starknet_api;
+mod to_blockifier;
 mod to_starknet_types;
 
 // pub mod broadcasted;
 pub mod compute_hash;
 pub mod utils;
 
-pub use broadcasted_to_blockifier::{BroadcastedToBlockifierError, BroadcastedTransactionExt};
+pub use to_blockifier::{BroadcastedTransactionExt, ToBlockifierError};
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -218,6 +218,37 @@ impl Transaction {
             blockifier::transaction::objects::FeeType::Strk
         }
     }
+
+    pub fn as_invoke(&self) -> Option<&InvokeTransaction> {
+        match self {
+            Transaction::Invoke(tx) => Some(tx),
+            _ => None,
+        }
+    }
+    pub fn as_declare(&self) -> Option<&DeclareTransaction> {
+        match self {
+            Transaction::Declare(tx) => Some(tx),
+            _ => None,
+        }
+    }
+    pub fn as_l1_handler(&self) -> Option<&L1HandlerTransaction> {
+        match self {
+            Transaction::L1Handler(tx) => Some(tx),
+            _ => None,
+        }
+    }
+    pub fn as_deploy(&self) -> Option<&DeployTransaction> {
+        match self {
+            Transaction::Deploy(tx) => Some(tx),
+            _ => None,
+        }
+    }
+    pub fn as_deploy_account(&self) -> Option<&DeployAccountTransaction> {
+        match self {
+            Transaction::DeployAccount(tx) => Some(tx),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -416,6 +447,14 @@ impl DeclareTransaction {
             DeclareTransaction::V1(tx) => &tx.sender_address,
             DeclareTransaction::V2(tx) => &tx.sender_address,
             DeclareTransaction::V3(tx) => &tx.sender_address,
+        }
+    }
+    pub fn class_hash(&self) -> &Felt {
+        match self {
+            DeclareTransaction::V0(tx) => &tx.class_hash,
+            DeclareTransaction::V1(tx) => &tx.class_hash,
+            DeclareTransaction::V2(tx) => &tx.class_hash,
+            DeclareTransaction::V3(tx) => &tx.class_hash,
         }
     }
     pub fn signature(&self) -> &[Felt] {

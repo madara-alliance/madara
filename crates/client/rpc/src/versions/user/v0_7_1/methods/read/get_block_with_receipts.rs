@@ -37,7 +37,7 @@ pub fn get_block_with_receipts(
                 transactions: transactions_with_receipts,
                 pending_block_header: PendingBlockHeader {
                     parent_hash: block.header.parent_block_hash,
-                    timestamp: block.header.block_timestamp,
+                    timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
                     l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
@@ -56,7 +56,7 @@ pub fn get_block_with_receipts(
                     parent_hash: block.header.parent_block_hash,
                     block_number: block.header.block_number,
                     new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp,
+                    timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
                     l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
@@ -76,7 +76,10 @@ mod tests {
         test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mc_db::MadaraBackend;
-    use mp_block::{header::GasPrices, BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock};
+    use mp_block::{
+        header::{BlockTimestamp, GasPrices},
+        BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+    };
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
@@ -209,7 +212,7 @@ mod tests {
                             transaction_count: 1,
                             global_state_root: Felt::from_hex_unchecked("0x88912"),
                             sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                            block_timestamp: 43,
+                            block_timestamp: BlockTimestamp(43),
                             transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
                             event_count: 0,
                             event_commitment: Felt::from_hex_unchecked("0xb"),
