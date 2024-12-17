@@ -13,6 +13,27 @@ where
     parse_duration(&s).map_err(serde::de::Error::custom)
 }
 
+pub fn deserialize_optional_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(s) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    parse_duration(&s).map_err(serde::de::Error::custom).map(Some)
+}
+
+pub fn serialize_optional_duration<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if let Some(duration) = duration {
+        serialize_duration(duration, serializer)
+    } else {
+        serializer.serialize_none()
+    }
+}
+
 pub fn serialize_duration<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,

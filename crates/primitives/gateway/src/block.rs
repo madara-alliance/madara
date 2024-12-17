@@ -1,5 +1,5 @@
 use anyhow::Context;
-use mp_block::header::L1DataAvailabilityMode;
+use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
 use mp_chain_config::StarknetVersion;
 use mp_convert::hex_serde::U128AsHex;
 use serde::{Deserialize, Serialize};
@@ -121,7 +121,7 @@ impl ProviderBlock {
             block_hash: block.info.block_hash,
             block_number: block.info.header.block_number,
             parent_block_hash: block.info.header.parent_block_hash,
-            timestamp: block.info.header.block_timestamp,
+            timestamp: block.info.header.block_timestamp.0,
             sequencer_address,
             state_root: block.info.header.global_state_root,
             transaction_commitment: block.info.header.transaction_commitment,
@@ -149,7 +149,7 @@ impl ProviderBlock {
         Ok(mc_block_import::UnverifiedHeader {
             parent_block_hash: Some(self.parent_block_hash),
             sequencer_address: self.sequencer_address.unwrap_or_default(),
-            block_timestamp: self.timestamp,
+            block_timestamp: BlockTimestamp(self.timestamp),
             protocol_version: self
                 .starknet_version
                 .as_deref()
@@ -217,7 +217,7 @@ impl ProviderBlockPending {
                 price_in_fri: block.info.header.l1_gas_price.strk_l1_data_gas_price,
             },
             transactions,
-            timestamp: block.info.header.block_timestamp,
+            timestamp: block.info.header.block_timestamp.0,
             sequencer_address: block.info.header.sequencer_address,
             transaction_receipts,
             starknet_version,
@@ -228,7 +228,7 @@ impl ProviderBlockPending {
         Ok(mc_block_import::UnverifiedHeader {
             parent_block_hash: Some(self.parent_block_hash),
             sequencer_address: self.sequencer_address,
-            block_timestamp: self.timestamp,
+            block_timestamp: BlockTimestamp(self.timestamp),
             protocol_version: self
                 .starknet_version
                 .as_deref()

@@ -1,4 +1,6 @@
-use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
+use std::sync::Arc;
+
+use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
 use starknet_types_core::felt::Felt;
@@ -108,6 +110,44 @@ impl MadaraBackend {
         };
 
         Ok(Some(compiled))
+    }
+
+    /// Get class info + sierra compiled when it's a sierra class.
+    // Note/TODO: "ConvertedClass" is the name of the type that has info + sierra compiled, and it is used for blockifier
+    // convertion & storage. We should rename it, as this feels like undecipherable madara-specific jargon at this point.
+    #[tracing::instrument(skip(self, id), fields(module = "ClassDB"))]
+    pub fn get_converted_class(
+        &self,
+        id: &impl DbBlockIdResolvable,
+        class_hash: &Felt,
+    ) -> Result<Option<ConvertedClass>, MadaraStorageError> {
+        let Some(id) = id.resolve_db_block_id(self)? else {
+            // Block not found
+            return Ok(None);
+        };
+
+        let Some(class_info) = self.get_class_info(&id, class_hash)? else {
+            // No class found.
+            return Ok(None);
+        };
+
+        match class_info {
+            ClassInfo::Sierra(info) => {
+                let compiled_class_hash = info.compiled_class_hash;
+                let compiled_class = self
+                    .get_sierra_compiled(&id, &info.compiled_class_hash)?
+                    .ok_or(MadaraStorageError::MissingCompiledClass { class_hash: *class_hash, compiled_class_hash })?;
+                Ok(Some(ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: *class_hash,
+                    info,
+                    // TODO(perf): we should do global memoization for these Arcs.
+                    compiled: Arc::new(compiled_class),
+                })))
+            }
+            ClassInfo::Legacy(info) => {
+                Ok(Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info })))
+            }
+        }
     }
 
     /// NB: This functions needs to run on the rayon thread pool
