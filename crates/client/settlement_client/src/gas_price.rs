@@ -69,13 +69,13 @@ pub async fn gas_price_worker_once<C, P>(
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
 
-    let last_update_timestemp =
+    let last_update_timestamp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
     if duration_since_last_update > 10 * gas_price_poll_ms {
         anyhow::bail!(
             "Gas prices have not been updated for {} ms. Last update was at {}",
             duration_since_last_update.as_micros(),
-            last_update_timestemp
+            last_update_timestamp
         );
     }
 
@@ -111,7 +111,7 @@ async fn update_gas_price<C, P>(
     if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
         let (eth_strk_price, decimals) =
             oracle_provider.fetch_eth_strk_price().await.context("failed to retrieve ETH/STRK price")?;
-        let strk_gas_price = (BigDecimal::new((eth_gas_price).into(), decimals.into())
+        let strk_gas_price = (BigDecimal::new(eth_gas_price.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
         .as_bigint_and_exponent();
         let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
