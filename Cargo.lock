@@ -5377,11 +5377,11 @@ dependencies = [
  "mc-block-production",
  "mc-db",
  "mc-devnet",
- "mc-eth",
  "mc-gateway-client",
  "mc-gateway-server",
  "mc-mempool",
  "mc-rpc",
+ "mc-settlement-client",
  "mc-sync",
  "mc-telemetry",
  "mp-block",
@@ -5400,6 +5400,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "starknet-core",
+ "starknet-providers",
  "starknet_api",
  "thiserror 2.0.3",
  "tokio",
@@ -5643,51 +5645,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-eth"
-version = "0.7.0"
-dependencies = [
- "alloy",
- "anyhow",
- "bigdecimal",
- "bitvec",
- "dotenv",
- "futures",
- "httpmock",
- "lazy_static",
- "mc-analytics",
- "mc-db",
- "mc-mempool",
- "mp-chain-config",
- "mp-convert",
- "mp-transactions",
- "mp-utils",
- "once_cell",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "regex",
- "rstest 0.18.2",
- "serde",
- "serde_json",
- "serial_test",
- "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
- "starknet_api",
- "tempfile",
- "thiserror 2.0.3",
- "time",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "tracing-test",
- "url",
-]
-
-[[package]]
 name = "mc-exec"
 version = "0.7.0"
 dependencies = [
@@ -5852,6 +5809,54 @@ dependencies = [
  "thiserror 2.0.3",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "mc-settlement-client"
+version = "0.7.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "bigdecimal",
+ "bitvec",
+ "dotenv",
+ "futures",
+ "httpmock",
+ "lazy_static",
+ "mc-analytics",
+ "mc-db",
+ "mc-mempool",
+ "mp-chain-config",
+ "mp-convert",
+ "mp-transactions",
+ "mp-utils",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "regex",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "starknet-core",
+ "starknet-providers",
+ "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "starknet_api",
+ "tempfile",
+ "thiserror 2.0.3",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "tracing-test",
+ "url",
 ]
 
 [[package]]

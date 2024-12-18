@@ -1,23 +1,67 @@
-use crate::client::EthereumClient;
-use alloy::eips::BlockNumberOrTag;
-use alloy::providers::Provider;
+use crate::client::ClientTrait;
 use anyhow::Context;
 use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
-use std::{
-    sync::Arc,
-    time::{Duration, UNIX_EPOCH},
-};
+use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
 
+use mc_analytics::register_gauge_metric_instrument;
 use mp_utils::service::ServiceContext;
+use opentelemetry::global::Error;
+use opentelemetry::metrics::Gauge;
+use opentelemetry::{global, KeyValue};
 use std::time::SystemTime;
 
-pub async fn gas_price_worker_once(
-    eth_client: &EthereumClient,
+#[derive(Clone, Debug)]
+pub struct L1BlockMetrics {
+    // L1 network metrics
+    pub l1_block_number: Gauge<u64>,
+    // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
+    pub l1_gas_price_wei: Gauge<u64>,
+    pub l1_gas_price_strk: Gauge<f64>,
+}
+
+impl L1BlockMetrics {
+    pub fn register() -> Result<Self, Error> {
+        let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
+        let eth_meter = global::meter_with_version(
+            "crates.l1block.opentelemetry",
+            Some("0.17"),
+            Some("https://opentelemetry.io/schemas/1.2.0"),
+            Some(common_scope_attributes.clone()),
+        );
+
+        let l1_block_number = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_block_number".to_string(),
+            "Gauge for madara L1 block number".to_string(),
+            "".to_string(),
+        );
+
+        let l1_gas_price_wei = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_gas_price_wei".to_string(),
+            "Gauge for madara L1 gas price in wei".to_string(),
+            "".to_string(),
+        );
+
+        let l1_gas_price_strk = register_gauge_metric_instrument(
+            &eth_meter,
+            "l1_gas_price_strk".to_string(),
+            "Gauge for madara L1 gas price in strk".to_string(),
+            "".to_string(),
+        );
+
+        Ok(Self { l1_block_number, l1_gas_price_wei, l1_gas_price_strk })
+    }
+}
+
+pub async fn gas_price_worker_once<C, P>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
 ) -> anyhow::Result<()> {
-    match update_gas_price(eth_client, l1_gas_provider).await {
+    match update_gas_price(settlement_client, l1_gas_provider).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
         Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
     }
@@ -37,8 +81,8 @@ pub async fn gas_price_worker_once(
 
     anyhow::Ok(())
 }
-pub async fn gas_price_worker(
-    eth_client: Arc<EthereumClient>,
+pub async fn gas_price_worker<C, P>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -48,38 +92,26 @@ pub async fn gas_price_worker(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
-        gas_price_worker_once(&eth_client, &l1_gas_provider, gas_price_poll_ms).await?;
+        gas_price_worker_once(Arc::clone(&settlement_client), &l1_gas_provider, gas_price_poll_ms).await?;
     }
 
     anyhow::Ok(())
 }
 
-async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: &GasPriceProvider) -> anyhow::Result<()> {
-    let block_number = eth_client.get_latest_block_number().await?;
-    let fee_history = eth_client.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
+async fn update_gas_price<C, P>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
+    l1_gas_provider: &GasPriceProvider,
+) -> anyhow::Result<()> {
+    let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_eth_gas_prices().await?;
 
-    // The RPC responds with 301 elements for some reason. It's also just safer to manually
-    // take the last 300. We choose 300 to get average gas caprice for last one hour (300 * 12 sec block
-    // time).
-    let (_, blob_fee_history_one_hour) =
-        fee_history.base_fee_per_blob_gas.split_at(fee_history.base_fee_per_blob_gas.len().max(300) - 300);
-
-    let avg_blob_base_fee = if !blob_fee_history_one_hour.is_empty() {
-        blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128
-    } else {
-        0 // in case blob_fee_history_one_hour has 0 length
-    };
-
-    let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
-
-    l1_gas_provider.update_eth_l1_gas_price(*eth_gas_price);
+    l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
     // fetch eth/strk price and update
     if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
         let (eth_strk_price, decimals) =
             oracle_provider.fetch_eth_strk_price().await.context("failed to retrieve ETH/STRK price")?;
-        let strk_gas_price = (BigDecimal::new((*eth_gas_price).into(), decimals.into())
+        let strk_gas_price = (BigDecimal::new((eth_gas_price).into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
         .as_bigint_and_exponent();
         let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
@@ -101,18 +133,21 @@ async fn update_gas_price(eth_client: &EthereumClient, l1_gas_provider: &GasPric
     l1_gas_provider.update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
-    update_l1_block_metrics(eth_client, l1_gas_provider).await?;
+    update_l1_block_metrics(
+        settlement_client.get_latest_block_number().await?,
+        settlement_client.get_l1_block_metrics(),
+        l1_gas_provider,
+    )
+    .await?;
 
     Ok(())
 }
 
 async fn update_l1_block_metrics(
-    eth_client: &EthereumClient,
+    block_number: u64,
+    l1_block_metrics: &L1BlockMetrics,
     l1_gas_provider: &GasPriceProvider,
 ) -> anyhow::Result<()> {
-    // Get the latest block number
-    let latest_block_number = eth_client.get_latest_block_number().await?;
-
     // Get the current gas price
     let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
@@ -121,8 +156,8 @@ async fn update_l1_block_metrics(
 
     // Update the metrics
 
-    eth_client.l1_block_metrics.l1_block_number.record(latest_block_number, &[]);
-    eth_client.l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
+    l1_block_metrics.l1_block_number.record(block_number, &[]);
+    l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
 
     // We're ignoring l1_gas_price_strk
 
@@ -132,7 +167,10 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
+    use crate::eth::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
+    use crate::eth::EthereumClientConfig;
+    use alloy::providers::RootProvider;
+    use alloy::transports::http::{Client, Http};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use serial_test::serial;
@@ -152,8 +190,8 @@ mod eth_client_gas_price_worker_test {
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker(
-                    Arc::new(eth_client),
+                gas_price_worker::<EthereumClientConfig, RootProvider<Http<Client>>>(
+                    Arc::new(Box::new(eth_client)),
                     l1_gas_provider,
                     Duration::from_millis(200),
                     ServiceContext::new_for_testing(),
@@ -192,7 +230,11 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, RootProvider<Http<Client>>>(
+            Arc::new(Box::new(eth_client)),
+            &l1_gas_provider,
+            Duration::from_millis(200),
+        );
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -213,7 +255,11 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, RootProvider<Http<Client>>>(
+            Arc::new(Box::new(eth_client)),
+            &l1_gas_provider,
+            Duration::from_millis(200),
+        );
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -234,7 +280,11 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(&eth_client, &l1_gas_provider, Duration::from_millis(200));
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, RootProvider<Http<Client>>>(
+            Arc::new(Box::new(eth_client)),
+            &l1_gas_provider,
+            Duration::from_millis(200),
+        );
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -284,8 +334,8 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            gas_price_worker(
-                Arc::new(eth_client),
+            gas_price_worker::<EthereumClientConfig, RootProvider<Http<Client>>>(
+                Arc::new(Box::new(eth_client)),
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
                 ServiceContext::new_for_testing(),
@@ -321,7 +371,12 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.update_last_update_timestamp();
 
         // Update gas prices
-        update_gas_price(&eth_client, &l1_gas_provider).await.expect("Failed to update gas prices");
+        update_gas_price::<EthereumClientConfig, RootProvider<Http<Client>>>(
+            Arc::new(Box::new(eth_client)),
+            &l1_gas_provider,
+        )
+        .await
+        .expect("Failed to update gas prices");
 
         // Access the updated gas prices
         let updated_prices = l1_gas_provider.get_gas_prices();

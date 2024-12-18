@@ -114,7 +114,7 @@ pub struct ChainConfig {
     pub sequencer_address: ContractAddress,
 
     /// The Starknet core contract address for the L1 watcher.
-    pub eth_core_contract_address: H160,
+    pub eth_core_contract_address: String,
 
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
@@ -550,10 +550,7 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(
-            chain_config.eth_core_contract_address,
-            H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
-        );
+        assert_eq!(chain_config.eth_core_contract_address, "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4");
     }
 
     #[rstest]

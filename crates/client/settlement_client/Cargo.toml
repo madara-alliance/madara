@@ -1,6 +1,6 @@
 [package]
 description = "This crate is responsible to handle l1 communication"
-name = "mc-eth"
+name = "mc-settlement-client"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -42,6 +42,8 @@ futures = { workspace = true, default-features = true }
 regex = "1.10.5"
 serde = { workspace = true, default-features = true }
 serde_json = "1"
+starknet-providers = { workspace = true }
+starknet-core = { workspace = true }
 thiserror.workspace = true
 time = "0.3.36"
 tokio = { workspace = true, features = [
@@ -68,6 +70,7 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+async-trait = { workspace = true }
 
 
 [features]

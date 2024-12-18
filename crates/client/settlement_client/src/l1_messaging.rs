@@ -1,5 +1,5 @@
-use crate::client::StarknetCoreContract::LogMessageToL2;
-use crate::client::{EthereumClient, StarknetCoreContract};
+use crate::client::ClientTrait;
+use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::utils::u256_to_felt;
 use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, FixedBytes, U256};
@@ -14,30 +14,9 @@ use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersi
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-impl EthereumClient {
-    /// Get cancellation status of an L1 to L2 message
-    ///
-    /// This function query the core contract to know if a L1->L2 message has been cancelled
-    /// # Arguments
-    ///
-    /// - msg_hash : Hash of L1 to L2 message
-    ///
-    /// # Return
-    ///
-    /// - A felt representing a timestamp :
-    ///     - 0 if the message has not been cancelled
-    ///     - timestamp of the cancellation if it has been cancelled
-    /// - An Error if the call fail
-    pub async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<Felt> {
-        //l1ToL2MessageCancellations
-        let cancellation_timestamp = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
-        u256_to_felt(cancellation_timestamp._0)
-    }
-}
-
-pub async fn sync(
+pub async fn sync<C, P>(
     backend: Arc<MadaraBackend>,
-    client: Arc<EthereumClient>,
+    client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
     chain_id: ChainId,
     mempool: Arc<Mempool>,
     mut ctx: ServiceContext,
@@ -54,9 +33,11 @@ pub async fn sync(
             return Err(e.into());
         }
     };
-    let event_filter = client.l1_core_contract.event_filter::<StarknetCoreContract::LogMessageToL2>();
 
-    let mut event_stream = event_filter
+    let contract_instance = client.get_core_contract_instance();
+    let event_filter = contract_instance.event_filter::<LogMessageToL2>();
+
+    let mut event_stream = event_filter?
         .from_block(last_synced_event_block.block_number)
         .to_block(BlockNumberOrTag::Finalized)
         .watch()
@@ -216,15 +197,12 @@ mod l1_messaging_tests {
 
     use std::{sync::Arc, time::Duration};
 
+    use self::DummyContract::DummyContractInstance;
+    use crate::eth::StarknetCoreContract::LogMessageToL2;
+    use crate::eth::{EthereumClient, StarknetCoreContract};
+    use crate::gas_price::L1BlockMetrics;
     use crate::l1_messaging::sync;
-    use crate::{
-        client::{
-            EthereumClient, L1BlockMetrics,
-            StarknetCoreContract::{self, LogMessageToL2},
-        },
-        l1_messaging::get_l1_to_l2_msg_hash,
-        utils::felt_to_u256,
-    };
+    use crate::{l1_messaging::get_l1_to_l2_msg_hash, utils::felt_to_u256};
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -243,8 +221,6 @@ mod l1_messaging_tests {
     use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
-
-    use self::DummyContract::DummyContractInstance;
 
     struct TestRunner {
         #[allow(dead_code)]
@@ -409,7 +385,7 @@ mod l1_messaging_tests {
             tokio::spawn(async move {
                 sync(
                     Arc::clone(db.backend()),
-                    Arc::new(eth_client),
+                    Arc::new(Box::new(eth_client)),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
@@ -470,7 +446,7 @@ mod l1_messaging_tests {
             tokio::spawn(async move {
                 sync(
                     Arc::clone(db.backend()),
-                    Arc::new(eth_client),
+                    Arc::new(Box::new(eth_client)),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
@@ -526,7 +502,7 @@ mod l1_messaging_tests {
             tokio::spawn(async move {
                 sync(
                     Arc::clone(db.backend()),
-                    Arc::new(eth_client),
+                    Arc::new(Box::new(eth_client)),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),

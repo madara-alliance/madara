@@ -46,7 +46,7 @@ pub struct ChainConfigOverridesInner {
     #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
-    pub eth_core_contract_address: H160,
+    pub eth_core_contract_address: String,
     pub eth_gps_statement_verifier: H160,
     #[serde(default)]
     #[serde(skip_serializing)]
