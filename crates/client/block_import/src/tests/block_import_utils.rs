@@ -1,4 +1,4 @@
-use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_block::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode};
 use mp_block::Header;
 use mp_chain_config::StarknetVersion;
 use mp_state_update::StateDiff;
@@ -18,7 +18,7 @@ pub fn create_dummy_unverified_header() -> UnverifiedHeader {
     UnverifiedHeader {
         parent_block_hash: Some(felt!("0x1")),
         sequencer_address: felt!("0x2"),
-        block_timestamp: 12345,
+        block_timestamp: BlockTimestamp(12345),
         protocol_version: StarknetVersion::new(0, 13, 2, 0),
         l1_gas_price: GasPrices {
             eth_l1_gas_price: 14,
@@ -77,7 +77,7 @@ pub fn create_dummy_header() -> Header {
         state_diff_length: Some(0),
         state_diff_commitment: Some(felt!("0x0")),
         receipt_commitment: Some(felt!("0x0")),
-        block_timestamp: 12345,
+        block_timestamp: BlockTimestamp(12345),
         protocol_version: StarknetVersion::new(0, 13, 2, 0),
         l1_gas_price: GasPrices {
             eth_l1_gas_price: 14,
@@ -117,7 +117,7 @@ pub fn create_dummy_unverified_full_block() -> UnverifiedFullBlock {
         header: UnverifiedHeader {
             parent_block_hash: Some(Felt::ZERO),
             sequencer_address: Felt::ZERO,
-            block_timestamp: 0,
+            block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::default(),
             l1_gas_price: GasPrices::default(),
             l1_da_mode: L1DataAvailabilityMode::Blob,
@@ -139,7 +139,7 @@ pub fn create_dummy_pending_block() -> PreValidatedPendingBlock {
         header: UnverifiedHeader {
             parent_block_hash: Some(felt!("0x1")),
             sequencer_address: felt!("0x2"),
-            block_timestamp: 12345,
+            block_timestamp: BlockTimestamp(12345),
             protocol_version: StarknetVersion::new(0, 13, 2, 0),
             l1_gas_price: GasPrices {
                 eth_l1_gas_price: 14,

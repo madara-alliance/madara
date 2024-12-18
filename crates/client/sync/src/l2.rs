@@ -1,5 +1,6 @@
 //! Contains the code required to sync data from the feeder efficiently.
 use crate::fetch::fetchers::fetch_pending_block_and_updates;
+use crate::fetch::fetchers::WarpUpdateConfig;
 use crate::fetch::l2_fetch_task;
 use crate::fetch::L2FetchConfig;
 use crate::utils::trim_hash;
@@ -16,7 +17,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_gateway::error::SequencerError;
 use mp_utils::service::ServiceContext;
-use mp_utils::{channel_wait_or_graceful_shutdown, wait_or_graceful_shutdown, PerfStopwatch};
+use mp_utils::PerfStopwatch;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use std::pin::pin;
@@ -52,7 +53,7 @@ pub struct L2VerifyApplyConfig {
     flush_every_n_blocks: u64,
     flush_every_n_seconds: u64,
     stop_on_sync: bool,
-    telemetry: TelemetryHandle,
+    telemetry: Arc<TelemetryHandle>,
     validation: BlockValidationContext,
     block_conv_receiver: mpsc::Receiver<PreValidatedBlock>,
 }
@@ -60,7 +61,7 @@ pub struct L2VerifyApplyConfig {
 #[tracing::instrument(skip(backend, ctx, config), fields(module = "Sync"))]
 async fn l2_verify_and_apply_task(
     backend: Arc<MadaraBackend>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     config: L2VerifyApplyConfig,
 ) -> anyhow::Result<()> {
     let L2VerifyApplyConfig {
@@ -78,7 +79,7 @@ async fn l2_verify_and_apply_task(
     let mut instant = std::time::Instant::now();
     let target_duration = std::time::Duration::from_secs(flush_every_n_seconds);
 
-    while let Some(block) = channel_wait_or_graceful_shutdown(pin!(block_conv_receiver.recv()), &ctx).await {
+    while let Some(Some(block)) = ctx.run_until_cancelled(pin!(block_conv_receiver.recv())).await {
         let BlockImportResult { header, block_hash } = block_import.verify_apply(block, validation.clone()).await?;
 
         if header.block_number - last_block_n >= flush_every_n_blocks || instant.elapsed() >= target_duration {
@@ -122,7 +123,7 @@ async fn l2_verify_and_apply_task(
         ctx.cancel_global()
     }
 
-    Ok(())
+    anyhow::Ok(())
 }
 
 async fn l2_block_conversion_task(
@@ -130,14 +131,14 @@ async fn l2_block_conversion_task(
     output: mpsc::Sender<PreValidatedBlock>,
     block_import: Arc<BlockImporter>,
     validation: BlockValidationContext,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Items of this stream are futures that resolve to blocks, which becomes a regular stream of blocks
     // using futures buffered.
     let conversion_stream = stream::unfold(
         (updates_receiver, block_import, validation.clone(), ctx.clone()),
         |(mut updates_recv, block_import, validation, ctx)| async move {
-            channel_wait_or_graceful_shutdown(updates_recv.recv(), &ctx).await.map(|block| {
+            updates_recv.recv().await.map(|block| {
                 let block_import_ = Arc::clone(&block_import);
                 let validation_ = validation.clone();
                 (
@@ -149,13 +150,14 @@ async fn l2_block_conversion_task(
     );
 
     let mut stream = pin!(conversion_stream.buffered(10));
-    while let Some(block) = channel_wait_or_graceful_shutdown(stream.next(), &ctx).await {
+    while let Some(Some(block)) = ctx.run_until_cancelled(stream.next()).await {
         if output.send(block?).await.is_err() {
             // channel closed
             break;
         }
     }
-    Ok(())
+
+    anyhow::Ok(())
 }
 
 struct L2PendingBlockConfig {
@@ -168,7 +170,7 @@ struct L2PendingBlockConfig {
 async fn l2_pending_block_task(
     backend: Arc<MadaraBackend>,
     provider: Arc<GatewayProvider>,
-    ctx: ServiceContext,
+    mut ctx: ServiceContext,
     config: L2PendingBlockConfig,
 ) -> anyhow::Result<()> {
     let L2PendingBlockConfig { block_import, once_caught_up_receiver, pending_block_poll_interval, validation } =
@@ -190,17 +192,18 @@ async fn l2_pending_block_task(
 
     let mut interval = tokio::time::interval(pending_block_poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    while wait_or_graceful_shutdown(interval.tick(), &ctx).await.is_some() {
+    while ctx.run_until_cancelled(interval.tick()).await.is_some() {
         tracing::debug!("Getting pending block...");
 
         let current_block_hash = backend
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))
             .context("Getting latest block hash")?
             .unwrap_or(/* genesis parent block hash */ Felt::ZERO);
-        let Some(block) =
-            fetch_pending_block_and_updates(current_block_hash, &backend.chain_config().chain_id, &provider, &ctx)
-                .await
-                .context("Getting pending block from FGW")?
+
+        let chain_id = &backend.chain_config().chain_id;
+        let Some(block) = fetch_pending_block_and_updates(current_block_hash, chain_id, &provider)
+            .await
+            .context("Getting pending block from FGW")?
         else {
             continue;
         };
@@ -214,7 +217,7 @@ async fn l2_pending_block_task(
         };
 
         if let Err(err) = import_block().await {
-            tracing::debug!("Error while importing pending block: {err:#}");
+            tracing::debug!("Failed to import pending block: {err:#}");
         }
     }
 
@@ -233,18 +236,16 @@ pub struct L2SyncConfig {
     pub flush_every_n_seconds: u64,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
-    pub warp_update: bool,
-    pub warp_update_port_rpc: u16,
-    pub warp_update_port_fgw: u16,
     pub chain_id: ChainId,
-    pub telemetry: TelemetryHandle,
+    pub telemetry: Arc<TelemetryHandle>,
     pub block_importer: Arc<BlockImporter>,
+    pub warp_update: Option<WarpUpdateConfig>,
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
 #[tracing::instrument(skip(backend, provider, ctx, config), fields(module = "Sync"))]
 pub async fn sync(
-    backend: &Arc<MadaraBackend>,
+    backend: Arc<MadaraBackend>,
     provider: GatewayProvider,
     ctx: ServiceContext,
     config: L2SyncConfig,
@@ -272,8 +273,11 @@ pub async fn sync(
     };
 
     let mut join_set = JoinSet::new();
+    let warp_update_shutdown_sender =
+        config.warp_update.as_ref().map(|w| w.warp_update_shutdown_receiver).unwrap_or(false);
+
     join_set.spawn(l2_fetch_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         Arc::clone(&provider),
         ctx.clone(),
         L2FetchConfig {
@@ -285,8 +289,6 @@ pub async fn sync(
             stop_on_sync: config.stop_on_sync,
             sync_parallelism: config.sync_parallelism as usize,
             warp_update: config.warp_update,
-            warp_update_port_rpc: config.warp_update_port_rpc,
-            warp_update_port_fgw: config.warp_update_port_fgw,
         },
     ));
     join_set.spawn(l2_block_conversion_task(
@@ -297,21 +299,21 @@ pub async fn sync(
         ctx.clone(),
     ));
     join_set.spawn(l2_verify_and_apply_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         ctx.clone(),
         L2VerifyApplyConfig {
             block_import: Arc::clone(&config.block_importer),
             backup_every_n_blocks: config.backup_every_n_blocks,
             flush_every_n_blocks: config.flush_every_n_blocks,
             flush_every_n_seconds: config.flush_every_n_seconds,
-            stop_on_sync: config.stop_on_sync,
+            stop_on_sync: config.stop_on_sync || warp_update_shutdown_sender,
             telemetry: config.telemetry,
             validation: validation.clone(),
             block_conv_receiver,
         },
     ));
     join_set.spawn(l2_pending_block_task(
-        Arc::clone(backend),
+        Arc::clone(&backend),
         provider,
         ctx.clone(),
         L2PendingBlockConfig {
@@ -370,7 +372,7 @@ mod tests {
         let (block_conv_sender, block_conv_receiver) = mpsc::channel(100);
         let block_import = Arc::new(BlockImporter::new(backend.clone(), None).unwrap());
         let validation = BlockValidationContext::new(backend.chain_config().chain_id.clone());
-        let telemetry = TelemetryService::new(true, vec![]).unwrap().new_handle();
+        let telemetry = Arc::new(TelemetryService::new(vec![]).unwrap().new_handle());
 
         let mock_block = create_dummy_unverified_full_block();
 
@@ -405,7 +407,7 @@ mod tests {
         let applied_block = MadaraBlock::try_from(applied_block.unwrap()).unwrap();
 
         assert_eq!(applied_block.info.header.block_number, 0, "Block number does not match");
-        assert_eq!(applied_block.info.header.block_timestamp, 0, "Block timestamp does not match");
+        assert_eq!(applied_block.info.header.block_timestamp.0, 0, "Block timestamp does not match");
         assert_eq!(applied_block.info.header.parent_block_hash, Felt::ZERO, "Parent block hash does not match");
         assert!(applied_block.inner.transactions.is_empty(), "Block should not contain any transactions");
         assert_eq!(

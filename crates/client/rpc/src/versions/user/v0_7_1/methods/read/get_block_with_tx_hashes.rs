@@ -20,7 +20,6 @@ use crate::Starknet;
 /// Returns block information with transaction hashes. This includes either a confirmed block or
 /// a pending block with transaction hashes, depending on the state of the requested block.
 /// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
-
 pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,
@@ -35,7 +34,7 @@ pub fn get_block_with_tx_hashes(
                 transactions: block_txs_hashes,
                 pending_block_header: PendingBlockHeader {
                     parent_hash: block.header.parent_block_hash,
-                    timestamp: block.header.block_timestamp,
+                    timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
                     l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
@@ -58,7 +57,7 @@ pub fn get_block_with_tx_hashes(
                     parent_hash: block.header.parent_block_hash,
                     block_number: block.header.block_number,
                     new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp,
+                    timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
                     l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
