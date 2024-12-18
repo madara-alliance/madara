@@ -83,7 +83,7 @@ async fn gateway_router(
     path: &str,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Result<Response<String>, Infallible> {
-    match (req.method(), req.uri().path()) {
+    match (req.method(), path) {
         (&Method::POST, "gateway/add_transaction") => {
             Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))
         }
