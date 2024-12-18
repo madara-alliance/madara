@@ -247,8 +247,7 @@ mod l1_messaging_tests {
     use self::DummyContract::DummyContractInstance;
 
     struct TestRunner {
-        #[allow(dead_code)]
-        anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
+        _anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
         chain_config: Arc<ChainConfig>,
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
@@ -381,7 +380,7 @@ mod l1_messaging_tests {
             l1_block_metrics: l1_block_metrics.clone(),
         };
 
-        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
+        TestRunner { _anvil: anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -400,7 +399,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, mempool, .. } =
             setup_test_env.await;
 
         // Start worker
@@ -461,7 +460,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, mempool, .. } =
             setup_test_env.await;
 
         // Start worker
@@ -517,7 +516,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, mempool, .. } =
             setup_test_env.await;
 
         // Start worker
