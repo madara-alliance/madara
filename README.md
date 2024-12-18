@@ -469,7 +469,7 @@ For more detailed information on how to call each method, please refer to the
 | Curl       | Latest  | `sudo apt install curl` |
 
 Here is an example of how to call a JSON-RPC method using Madara. Before running
-the bellow code, make sure you have a node running with rpc enabled on port 9944
+the below code, make sure you have a node running with rpc enabled on port 9944
 (this is the default configuration).
 
 > [!IMPORTANT]
@@ -538,7 +538,7 @@ into the subscription stream:
 { "jsonrpc": "2.0", "method": "starknet_unsubscribe", "params": ["your-subscription-id"], "id": 1 }
 ```
 
-Where `you-subscription-id` corresponds to the value of the `subscription` field
+Where `your-subscription-id` corresponds to the value of the `subscription` field
 which is returned with each websocket response.
 
 ## 📚 Database Migration
