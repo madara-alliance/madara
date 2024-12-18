@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(docs): Updated typos in documentation 
 - fix: oracle need condition
 - fix(block_production): continue pending block now reexecutes the previous transactions
 - feat(services): reworked Madara services for better cancellation control
