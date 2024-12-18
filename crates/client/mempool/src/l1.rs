@@ -7,8 +7,14 @@ use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct GasPriceProvider {
+    /// Gas prices protected by a mutex
     gas_prices: Arc<Mutex<GasPrices>>,
     last_update: Arc<Mutex<SystemTime>>,
+    /// Using Relaxed ordering for atomic operations since:
+    /// 1. Gas prices are updated frequently (every few ms)
+    /// 2. Slight inconsistencies in gas price visibility between threads are acceptable
+    /// 3. Operations are independent and don't require synchronization with other memory operations
+    /// 4. Provides minimal performance overhead compared to stricter ordering options
     gas_price_sync_enabled: Arc<AtomicBool>,
     data_gas_price_sync_enabled: Arc<AtomicBool>,
     strk_gas_price_sync_enabled: Arc<AtomicBool>,

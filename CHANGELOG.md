@@ -2,6 +2,8 @@
 
 ## Next release
 
+- feat: block resource cap removed from the pending tick
+- fix: replace class hash issue resolved + gas fees issue resolved
 - fix(block_production): continue pending block now reexecutes the previous transactions
 - feat(services): reworked Madara services for better cancellation control
 - feat: fetch eth/strk price and sync strk gas price
