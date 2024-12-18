@@ -446,7 +446,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 </details>
 
 > [!CAUTION]
-> These methods are exposed on `locahost` by default for obvious security
+> These methods are exposed on `localhost` by default for obvious security
 > reasons. You can always exposes them externally using `--rpc-admin-external`,
 > but be _very careful_ when doing so as you might be compromising your node!
 > Madara does not do **any** authorization checks on the caller of these
