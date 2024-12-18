@@ -19,7 +19,6 @@ use crate::close_block::close_block;
 use crate::metrics::BlockProductionMetrics;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
 use blockifier::bouncer::BouncerWeights;
-use blockifier::state::state_api::UpdatableState;
 use blockifier::transaction::errors::TransactionExecutionError;
 use finalize_execution_state::StateDiffToStateMapError;
 use mc_block_import::{BlockImportError, BlockImporter};
