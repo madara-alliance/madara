@@ -196,10 +196,6 @@ impl From<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
             contract_class: transaction.contract_class.into(),
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
-            version: match transaction.is_query {
-                true => starknet_types_rpc::Version::X100000000000000000000000000000003,
-                false => starknet_types_rpc::Version::X3,
-            },
         }
     }
 }
