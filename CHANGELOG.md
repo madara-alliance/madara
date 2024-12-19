@@ -3,6 +3,7 @@
 ## Next release
 
 - fix: instrumentation code
+- fix: oracle need condition
 - fix(block_production): continue pending block now reexecutes the previous transactions
 - feat(services): reworked Madara services for better cancellation control
 - feat: fetch eth/strk price and sync strk gas price
