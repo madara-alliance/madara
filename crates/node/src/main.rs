@@ -284,7 +284,7 @@ async fn main() -> anyhow::Result<()> {
     //                             SERVICES (START)                          //
     // ===================================================================== //
 
-    if run_cmd.is_sequencer() {
+    if run_cmd.is_devnet() {
         service_block_production.setup_devnet().await?;
     }
 
