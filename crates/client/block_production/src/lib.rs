@@ -78,11 +78,25 @@ pub enum Error {
     PendingStateDiff(#[from] StateDiffToStateMapError),
 }
 
+/// Result of a block continuation operation, containing the updated state and execution statistics.
+/// This is returned by [`BlockProductionTask::continue_block`] when processing a batch of transactions.
 struct ContinueBlockResult {
+    /// The accumulated state changes from executing transactions in this continuation
     state_diff: StateDiff,
+
+    /// Tracks which segments of Cairo program code were accessed during transaction execution,
+    /// organized by class hash. This information is used as input for SNOS (Starknet OS)
+    /// when generating proofs of execution.
     visited_segments: VisitedSegments,
+
+    /// The current state of resource consumption tracked by the bouncer
     bouncer_weights: BouncerWeights,
+
+    /// Statistics about transaction processing during this continuation
     stats: ContinueBlockStats,
+
+    /// Indicates whether the block reached its resource limits during this continuation.
+    /// When true, no more transactions can be added to the current block.
     block_now_full: bool,
 }
 
