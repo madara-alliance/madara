@@ -1,5 +1,5 @@
 use ::time::UtcOffset;
-use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -193,24 +193,6 @@ pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
     desc: String,
     unit: String,
 ) -> Counter<T> {
-    T::register_counter(crate_meter, instrument_name, desc, unit)
-}
-
-pub trait UpDownCounterType<T> {
-    fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> UpDownCounter<T>;
-}
-
-impl UpDownCounterType<f64> for f64 {
-    fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> UpDownCounter<f64> {
-        meter.f64_up_down_counter(name).with_description(description).with_unit(unit).init()
-    }
-}
-pub fn register_up_down_counter_metric_instrument<T: UpDownCounterType<T> + Display>(
-    crate_meter: &Meter,
-    instrument_name: String,
-    desc: String,
-    unit: String,
-) -> UpDownCounter<T> {
     T::register_counter(crate_meter, instrument_name, desc, unit)
 }
 

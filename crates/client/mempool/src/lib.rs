@@ -187,7 +187,7 @@ impl Mempool {
                 true,
             )?;
 
-            self.metrics.accepted_transaction_counter.add(1.0, &[]);
+            self.metrics.accepted_transaction_counter.add(1, &[]);
         }
 
         Ok(())
