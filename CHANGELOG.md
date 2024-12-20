@@ -2,6 +2,8 @@
 
 ## Next release
 
+- refactor(gateway): remove query-only support from user transactions
+- fix(gateway): serialize tip as hex in UserTransaction
 - fix(block_production): dynamic block closing now adds special address with prev block hash
 - fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
 - fix(compilation): crate-level compilation

@@ -1,3 +1,36 @@
+//! User transactions type for the gateway.
+//!
+//! This module handles user transactions that are sent to or received by the gateway.
+//! It defines the structure and conversion logic for different types of user transactions.
+//!
+//! //! # Important Note
+//!
+//! Query-only transactions are intentionally not supported in this module. This is because
+//! UserTransactions are specifically designed for transactions that are meant to be added
+//! to the sequencer's mempool via the gateway. Query transactions, which are executed
+//! without affecting the chain state, are handled through different pathways.
+//!
+//! # Transaction Types
+//!
+//! The module supports three main types of transactions:
+//! - [`UserDeclareTransaction`] - For declaring new contracts
+//! - [`UserInvokeFunctionTransaction`] - For invoking functions on existing contracts
+//! - [`UserDeployAccountTransaction`] - For deploying new account contracts
+//!
+//! # Features
+//!
+//! - Conversion between user and broadcasted transaction formats
+//! - Serialization/deserialization using serde
+//! - Error handling for invalid transaction types
+//!
+//! # Error Handling
+//!
+//! The module defines [`UserTransactionConversionError`] for handling conversion failures:
+//!
+//! - `UnsupportedQueryTransaction`: When attempting to convert a query-only transaction
+//! - `ContractClassDecodeError`: When contract class decoding fails
+//!
+
 use mp_class::{CompressedLegacyContractClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
@@ -9,6 +42,14 @@ use starknet_types_rpc::{
     BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, DeployAccountTxnV1, DeployAccountTxnV3,
     InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };
+
+#[derive(Debug, thiserror::Error)]
+pub enum UserTransactionConversionError {
+    #[error("User transaction can't be a query only transaction")]
+    UnsupportedQueryTransaction,
+    #[error("Error while decoding the contract class: {0}")]
+    ContractClassDecodeError(#[from] base64::DecodeError),
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -30,13 +71,13 @@ impl From<UserTransaction> for BroadcastedTxn<Felt> {
 }
 
 impl TryFrom<BroadcastedTxn<Felt>> for UserTransaction {
-    type Error = base64::DecodeError;
+    type Error = UserTransactionConversionError;
 
     fn try_from(transaction: BroadcastedTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedTxn::Declare(tx) => Ok(UserTransaction::Declare(tx.try_into()?)),
-            BroadcastedTxn::Invoke(tx) => Ok(UserTransaction::InvokeFunction(tx.into())),
-            BroadcastedTxn::DeployAccount(tx) => Ok(UserTransaction::DeployAccount(tx.into())),
+            BroadcastedTxn::Invoke(tx) => Ok(UserTransaction::InvokeFunction(tx.try_into()?)),
+            BroadcastedTxn::DeployAccount(tx) => Ok(UserTransaction::DeployAccount(tx.try_into()?)),
         }
     }
 }
@@ -55,39 +96,24 @@ pub enum UserDeclareTransaction {
 impl From<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
     fn from(transaction: UserDeclareTransaction) -> Self {
         match transaction {
-            UserDeclareTransaction::V1(tx) if tx.is_query => BroadcastedDeclareTxn::QueryV1(tx.into()),
             UserDeclareTransaction::V1(tx) => BroadcastedDeclareTxn::V1(tx.into()),
-            UserDeclareTransaction::V2(tx) if tx.is_query => BroadcastedDeclareTxn::QueryV2(tx.into()),
             UserDeclareTransaction::V2(tx) => BroadcastedDeclareTxn::V2(tx.into()),
-            UserDeclareTransaction::V3(tx) if tx.is_query => BroadcastedDeclareTxn::QueryV3(tx.into()),
             UserDeclareTransaction::V3(tx) => BroadcastedDeclareTxn::V3(tx.into()),
         }
     }
 }
 
 impl TryFrom<BroadcastedDeclareTxn<Felt>> for UserDeclareTransaction {
-    type Error = base64::DecodeError;
+    type Error = UserTransactionConversionError;
 
     fn try_from(transaction: BroadcastedDeclareTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
-            BroadcastedDeclareTxn::V1(tx) => {
-                Ok(UserDeclareTransaction::V1(UserDeclareV1Transaction::try_from_broadcasted(tx, false)?))
-            }
-            BroadcastedDeclareTxn::QueryV1(tx) => {
-                Ok(UserDeclareTransaction::V1(UserDeclareV1Transaction::try_from_broadcasted(tx, true)?))
-            }
-            BroadcastedDeclareTxn::V2(tx) => {
-                Ok(UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, false)))
-            }
-            BroadcastedDeclareTxn::QueryV2(tx) => {
-                Ok(UserDeclareTransaction::V2(UserDeclareV2Transaction::from_broadcasted(tx, true)))
-            }
-            BroadcastedDeclareTxn::V3(tx) => {
-                Ok(UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, false)))
-            }
-            BroadcastedDeclareTxn::QueryV3(tx) => {
-                Ok(UserDeclareTransaction::V3(UserDeclareV3Transaction::from_broadcasted(tx, true)))
-            }
+            BroadcastedDeclareTxn::V1(tx) => Ok(UserDeclareTransaction::V1(tx.try_into()?)),
+            BroadcastedDeclareTxn::V2(tx) => Ok(UserDeclareTransaction::V2(tx.into())),
+            BroadcastedDeclareTxn::V3(tx) => Ok(UserDeclareTransaction::V3(tx.into())),
+            BroadcastedDeclareTxn::QueryV1(_)
+            | BroadcastedDeclareTxn::QueryV2(_)
+            | BroadcastedDeclareTxn::QueryV3(_) => Err(UserTransactionConversionError::UnsupportedQueryTransaction),
         }
     }
 }
@@ -99,7 +125,6 @@ pub struct UserDeclareV1Transaction {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
-    pub is_query: bool,
 }
 
 impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
@@ -114,18 +139,16 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
     }
 }
 
-impl UserDeclareV1Transaction {
-    fn try_from_broadcasted(
-        transaction: BroadcastedDeclareTxnV1<Felt>,
-        is_query: bool,
-    ) -> Result<Self, base64::DecodeError> {
+impl TryFrom<BroadcastedDeclareTxnV1<Felt>> for UserDeclareV1Transaction {
+    type Error = base64::DecodeError;
+
+    fn try_from(transaction: BroadcastedDeclareTxnV1<Felt>) -> Result<Self, Self::Error> {
         Ok(Self {
             sender_address: transaction.sender_address,
             max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
             contract_class: transaction.contract_class.try_into()?,
-            is_query,
         })
     }
 }
@@ -138,7 +161,6 @@ pub struct UserDeclareV2Transaction {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
-    pub is_query: bool,
 }
 
 impl From<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
@@ -154,16 +176,15 @@ impl From<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
     }
 }
 
-impl UserDeclareV2Transaction {
-    fn from_broadcasted(transaction: BroadcastedDeclareTxnV2<Felt>, is_query: bool) -> Self {
+impl From<BroadcastedDeclareTxnV2<Felt>> for UserDeclareV2Transaction {
+    fn from(transaction: BroadcastedDeclareTxnV2<Felt>) -> Self {
         Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
+            max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
             contract_class: transaction.contract_class.into(),
-            max_fee: transaction.max_fee,
-            is_query,
         }
     }
 }
@@ -183,7 +204,6 @@ pub struct UserDeclareV3Transaction {
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
-    pub is_query: bool,
 }
 
 impl From<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
@@ -204,8 +224,8 @@ impl From<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
     }
 }
 
-impl UserDeclareV3Transaction {
-    fn from_broadcasted(transaction: BroadcastedDeclareTxnV3<Felt>, is_query: bool) -> Self {
+impl From<BroadcastedDeclareTxnV3<Felt>> for UserDeclareV3Transaction {
+    fn from(transaction: BroadcastedDeclareTxnV3<Felt>) -> Self {
         Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
@@ -218,7 +238,6 @@ impl UserDeclareV3Transaction {
             contract_class: transaction.contract_class.into(),
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
-            is_query,
         }
     }
 }
@@ -237,36 +256,23 @@ pub enum UserInvokeFunctionTransaction {
 impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxn<Felt> {
     fn from(transaction: UserInvokeFunctionTransaction) -> Self {
         match transaction {
-            UserInvokeFunctionTransaction::V0(tx) if tx.is_query => BroadcastedInvokeTxn::QueryV0(tx.into()),
             UserInvokeFunctionTransaction::V0(tx) => BroadcastedInvokeTxn::V0(tx.into()),
-            UserInvokeFunctionTransaction::V1(tx) if tx.is_query => BroadcastedInvokeTxn::QueryV1(tx.into()),
             UserInvokeFunctionTransaction::V1(tx) => BroadcastedInvokeTxn::V1(tx.into()),
-            UserInvokeFunctionTransaction::V3(tx) if tx.is_query => BroadcastedInvokeTxn::QueryV3(tx.into()),
             UserInvokeFunctionTransaction::V3(tx) => BroadcastedInvokeTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<BroadcastedInvokeTxn<Felt>> for UserInvokeFunctionTransaction {
-    fn from(transaction: BroadcastedInvokeTxn<Felt>) -> Self {
+impl TryFrom<BroadcastedInvokeTxn<Felt>> for UserInvokeFunctionTransaction {
+    type Error = UserTransactionConversionError;
+
+    fn try_from(transaction: BroadcastedInvokeTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
-            BroadcastedInvokeTxn::V0(tx) => {
-                UserInvokeFunctionTransaction::V0(UserInvokeFunctionV0Transaction::from_broadcasted(tx, false))
-            }
-            BroadcastedInvokeTxn::QueryV0(tx) => {
-                UserInvokeFunctionTransaction::V0(UserInvokeFunctionV0Transaction::from_broadcasted(tx, true))
-            }
-            BroadcastedInvokeTxn::V1(tx) => {
-                UserInvokeFunctionTransaction::V1(UserInvokeFunctionV1Transaction::from_broadcasted(tx, false))
-            }
-            BroadcastedInvokeTxn::QueryV1(tx) => {
-                UserInvokeFunctionTransaction::V1(UserInvokeFunctionV1Transaction::from_broadcasted(tx, true))
-            }
-            BroadcastedInvokeTxn::V3(tx) => {
-                UserInvokeFunctionTransaction::V3(UserInvokeFunctionV3Transaction::from_broadcasted(tx, false))
-            }
-            BroadcastedInvokeTxn::QueryV3(tx) => {
-                UserInvokeFunctionTransaction::V3(UserInvokeFunctionV3Transaction::from_broadcasted(tx, true))
+            BroadcastedInvokeTxn::V0(tx) => Ok(UserInvokeFunctionTransaction::V0(tx.into())),
+            BroadcastedInvokeTxn::V1(tx) => Ok(UserInvokeFunctionTransaction::V1(tx.into())),
+            BroadcastedInvokeTxn::V3(tx) => Ok(UserInvokeFunctionTransaction::V3(tx.into())),
+            BroadcastedInvokeTxn::QueryV0(_) | BroadcastedInvokeTxn::QueryV1(_) | BroadcastedInvokeTxn::QueryV3(_) => {
+                Err(UserTransactionConversionError::UnsupportedQueryTransaction)
             }
         }
     }
@@ -279,7 +285,6 @@ pub struct UserInvokeFunctionV0Transaction {
     pub calldata: Vec<Felt>,
     pub signature: Vec<Felt>,
     pub max_fee: Felt,
-    pub is_query: bool,
 }
 
 impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0<Felt> {
@@ -294,15 +299,14 @@ impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0<Felt> {
     }
 }
 
-impl UserInvokeFunctionV0Transaction {
-    fn from_broadcasted(transaction: InvokeTxnV0<Felt>, is_query: bool) -> Self {
+impl From<InvokeTxnV0<Felt>> for UserInvokeFunctionV0Transaction {
+    fn from(transaction: InvokeTxnV0<Felt>) -> Self {
         Self {
             sender_address: transaction.contract_address,
             entry_point_selector: transaction.entry_point_selector,
             calldata: transaction.calldata,
             signature: transaction.signature,
             max_fee: transaction.max_fee,
-            is_query,
         }
     }
 }
@@ -314,7 +318,6 @@ pub struct UserInvokeFunctionV1Transaction {
     pub signature: Vec<Felt>,
     pub max_fee: Felt,
     pub nonce: Felt,
-    pub is_query: bool,
 }
 
 impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1<Felt> {
@@ -329,15 +332,14 @@ impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1<Felt> {
     }
 }
 
-impl UserInvokeFunctionV1Transaction {
-    fn from_broadcasted(transaction: InvokeTxnV1<Felt>, is_query: bool) -> Self {
+impl From<InvokeTxnV1<Felt>> for UserInvokeFunctionV1Transaction {
+    fn from(transaction: InvokeTxnV1<Felt>) -> Self {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
             signature: transaction.signature,
             max_fee: transaction.max_fee,
             nonce: transaction.nonce,
-            is_query,
         }
     }
 }
@@ -356,7 +358,6 @@ pub struct UserInvokeFunctionV3Transaction {
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
-    pub is_query: bool,
 }
 
 impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3<Felt> {
@@ -376,8 +377,8 @@ impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3<Felt> {
     }
 }
 
-impl UserInvokeFunctionV3Transaction {
-    fn from_broadcasted(transaction: InvokeTxnV3<Felt>, is_query: bool) -> Self {
+impl From<InvokeTxnV3<Felt>> for UserInvokeFunctionV3Transaction {
+    fn from(transaction: InvokeTxnV3<Felt>) -> Self {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
@@ -389,7 +390,6 @@ impl UserInvokeFunctionV3Transaction {
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
-            is_query,
         }
     }
 }
@@ -406,27 +406,21 @@ pub enum UserDeployAccountTransaction {
 impl From<UserDeployAccountTransaction> for BroadcastedDeployAccountTxn<Felt> {
     fn from(transaction: UserDeployAccountTransaction) -> Self {
         match transaction {
-            UserDeployAccountTransaction::V1(tx) if tx.is_query => BroadcastedDeployAccountTxn::QueryV1(tx.into()),
             UserDeployAccountTransaction::V1(tx) => BroadcastedDeployAccountTxn::V1(tx.into()),
-            UserDeployAccountTransaction::V3(tx) => BroadcastedDeployAccountTxn::QueryV3(tx.into()),
+            UserDeployAccountTransaction::V3(tx) => BroadcastedDeployAccountTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<BroadcastedDeployAccountTxn<Felt>> for UserDeployAccountTransaction {
-    fn from(transaction: BroadcastedDeployAccountTxn<Felt>) -> Self {
+impl TryFrom<BroadcastedDeployAccountTxn<Felt>> for UserDeployAccountTransaction {
+    type Error = UserTransactionConversionError;
+
+    fn try_from(transaction: BroadcastedDeployAccountTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
-            BroadcastedDeployAccountTxn::V1(tx) => {
-                UserDeployAccountTransaction::V1(UserDeployAccountV1Transaction::from_broadcasted(tx, false))
-            }
-            BroadcastedDeployAccountTxn::V3(tx) => {
-                UserDeployAccountTransaction::V3(UserDeployAccountV3Transaction::from_broadcasted(tx, false))
-            }
-            BroadcastedDeployAccountTxn::QueryV1(tx) => {
-                UserDeployAccountTransaction::V1(UserDeployAccountV1Transaction::from_broadcasted(tx, true))
-            }
-            BroadcastedDeployAccountTxn::QueryV3(tx) => {
-                UserDeployAccountTransaction::V3(UserDeployAccountV3Transaction::from_broadcasted(tx, true))
+            BroadcastedDeployAccountTxn::V1(tx) => Ok(UserDeployAccountTransaction::V1(tx.into())),
+            BroadcastedDeployAccountTxn::V3(tx) => Ok(UserDeployAccountTransaction::V3(tx.into())),
+            BroadcastedDeployAccountTxn::QueryV1(_) | BroadcastedDeployAccountTxn::QueryV3(_) => {
+                Err(UserTransactionConversionError::UnsupportedQueryTransaction)
             }
         }
     }
@@ -440,7 +434,6 @@ pub struct UserDeployAccountV1Transaction {
     pub max_fee: Felt,
     pub signature: Vec<Felt>,
     pub nonce: Felt,
-    pub is_query: bool,
 }
 
 impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1<Felt> {
@@ -456,8 +449,8 @@ impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1<Felt> {
     }
 }
 
-impl UserDeployAccountV1Transaction {
-    fn from_broadcasted(transaction: DeployAccountTxnV1<Felt>, is_query: bool) -> Self {
+impl From<DeployAccountTxnV1<Felt>> for UserDeployAccountV1Transaction {
+    fn from(transaction: DeployAccountTxnV1<Felt>) -> Self {
         Self {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
@@ -465,7 +458,6 @@ impl UserDeployAccountV1Transaction {
             max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
-            is_query,
         }
     }
 }
@@ -484,7 +476,6 @@ pub struct UserDeployAccountV3Transaction {
     #[serde_as(as = "U64AsHex")]
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
-    pub is_query: bool,
 }
 
 impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3<Felt> {
@@ -504,8 +495,8 @@ impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3<Felt> {
     }
 }
 
-impl UserDeployAccountV3Transaction {
-    fn from_broadcasted(transaction: DeployAccountTxnV3<Felt>, is_query: bool) -> Self {
+impl From<DeployAccountTxnV3<Felt>> for UserDeployAccountV3Transaction {
+    fn from(transaction: DeployAccountTxnV3<Felt>) -> Self {
         Self {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
@@ -517,7 +508,6 @@ impl UserDeployAccountV3Transaction {
             resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
-            is_query,
         }
     }
 }
