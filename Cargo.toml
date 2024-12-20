@@ -3,7 +3,7 @@ members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
-  "crates/client/eth",
+  "crates/client/settlement_client",
   "crates/client/rpc",
   "crates/client/gateway/client",
   "crates/client/gateway/server",
@@ -33,7 +33,7 @@ default-members = [
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
-  "crates/client/eth",
+  "crates/client/settlement_client",
   "crates/client/gateway/client",
   "crates/client/gateway/server",
   "crates/client/rpc",
@@ -127,7 +127,7 @@ mc-rpc = { path = "crates/client/rpc" }
 mc-gateway-client = { path = "crates/client/gateway/client" }
 mc-gateway-server = { path = "crates/client/gateway/server" }
 mc-sync = { path = "crates/client/sync" }
-mc-eth = { path = "crates/client/eth" }
+mc-settlement-client = { path = "crates/client/settlement_client" }
 mc-mempool = { path = "crates/client/mempool" }
 mc-block-production = { path = "crates/client/block_production" }
 mc-block-import = { path = "crates/client/block_import" }

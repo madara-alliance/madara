@@ -1,66 +1,23 @@
-use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
-use crate::utils::u256_to_felt;
-use alloy::sol_types::SolEvent;
-use alloy::{
-    primitives::Address,
-    providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider},
-    rpc::types::Filter,
-    sol,
-    transports::http::{Client, Http},
-};
-use mc_analytics::register_gauge_metric_instrument;
-use opentelemetry::{global, KeyValue};
-use opentelemetry::{global::Error, metrics::Gauge};
-
+use crate::client::{ClientTrait, ClientType, CoreContractInstance};
+use crate::eth::StarknetCoreContract::StarknetCoreContractInstance;
+use crate::gas_price::L1BlockMetrics;
+use crate::state_update::{update_l1, StateUpdate};
+use crate::utils::{convert_log_state_update, u256_to_felt};
+use alloy::eips::BlockNumberOrTag;
+use alloy::primitives::{Address, FixedBytes};
+use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
+use alloy::rpc::types::Filter;
+use alloy::sol;
+use alloy::transports::http::{Client, Http};
 use anyhow::{bail, Context};
+use async_trait::async_trait;
 use bitvec::macros::internal::funty::Fundamental;
+use futures::StreamExt;
+use mc_db::MadaraBackend;
+use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
-
-#[derive(Clone, Debug)]
-pub struct L1BlockMetrics {
-    // L1 network metrics
-    pub l1_block_number: Gauge<u64>,
-    // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
-    pub l1_gas_price_wei: Gauge<u64>,
-    pub l1_gas_price_strk: Gauge<f64>,
-}
-
-impl L1BlockMetrics {
-    pub fn register() -> Result<Self, Error> {
-        let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
-        let eth_meter = global::meter_with_version(
-            "crates.l1block.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
-        );
-
-        let l1_block_number = register_gauge_metric_instrument(
-            &eth_meter,
-            "l1_block_number".to_string(),
-            "Gauge for madara L1 block number".to_string(),
-            "".to_string(),
-        );
-
-        let l1_gas_price_wei = register_gauge_metric_instrument(
-            &eth_meter,
-            "l1_gas_price_wei".to_string(),
-            "Gauge for madara L1 gas price in wei".to_string(),
-            "".to_string(),
-        );
-
-        let l1_gas_price_strk = register_gauge_metric_instrument(
-            &eth_meter,
-            "l1_gas_price_strk".to_string(),
-            "Gauge for madara L1 gas price in strk".to_string(),
-            "".to_string(),
-        );
-
-        Ok(Self { l1_block_number, l1_gas_price_wei, l1_gas_price_strk })
-    }
-}
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -68,12 +25,22 @@ sol!(
     #[sol(rpc)]
     #[derive(Debug)]
     StarknetCoreContract,
-    "src/abis/starknet_core.json"
+    "src/eth/starknet_core.json"
 );
+
+const ERR_ARCHIVE: &str =
+    "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node";
 
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+    pub l1_block_metrics: L1BlockMetrics,
+}
+
+#[derive(Clone)]
+pub struct EthereumClientConfig {
+    pub url: Url,
+    pub l1_core_address: Address,
     pub l1_block_metrics: L1BlockMetrics,
 }
 
@@ -87,38 +54,47 @@ impl Clone for EthereumClient {
     }
 }
 
-impl EthereumClient {
-    /// Create a new EthereumClient instance with the given RPC URL
-    pub async fn new(url: Url, l1_core_address: Address, l1_block_metrics: L1BlockMetrics) -> anyhow::Result<Self> {
-        let provider = ProviderBuilder::new().on_http(url);
+#[async_trait]
+impl ClientTrait for EthereumClient {
+    type Provider = RootProvider<Http<Client>>;
+    type Config = EthereumClientConfig;
 
-        EthereumClient::assert_core_contract_exists(&provider, l1_core_address).await?;
-
-        let core_contract = StarknetCoreContract::new(l1_core_address, provider.clone());
-
-        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract, l1_block_metrics })
+    fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
+        &self.l1_block_metrics
     }
 
-    /// Assert that L1 Core contract exists by checking its bytecode.
-    async fn assert_core_contract_exists(
-        provider: &RootProvider<Http<Client>>,
-        l1_core_address: Address,
-    ) -> anyhow::Result<()> {
-        let l1_core_contract_bytecode = provider.get_code_at(l1_core_address).await?;
+    fn get_core_contract_instance(&self) -> CoreContractInstance {
+        CoreContractInstance::Ethereum(self.l1_core_contract.clone())
+    }
+
+    fn get_client_type(&self) -> ClientType {
+        ClientType::ETH
+    }
+
+    /// Create a new EthereumClient instance with the given RPC URL
+    async fn new(config: EthereumClientConfig) -> anyhow::Result<Self> {
+        let provider = ProviderBuilder::new().on_http(config.url);
+        // Checking if core contract exists on l1
+        let l1_core_contract_bytecode = provider.get_code_at(config.l1_core_address).await?;
         if l1_core_contract_bytecode.is_empty() {
             bail!("The L1 Core Contract could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
         }
-        Ok(())
+        let core_contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
+        Ok(Self {
+            provider: Arc::new(provider),
+            l1_core_contract: core_contract,
+            l1_block_metrics: config.l1_block_metrics,
+        })
     }
 
     /// Retrieves the latest Ethereum block number
-    pub async fn get_latest_block_number(&self) -> anyhow::Result<u64> {
+    async fn get_latest_block_number(&self) -> anyhow::Result<u64> {
         let block_number = self.provider.get_block_number().await?.as_u64();
         Ok(block_number)
     }
 
     /// Get the block number of the last occurrence of a given event.
-    pub async fn get_last_event_block_number<T: SolEvent>(&self) -> anyhow::Result<u64> {
+    async fn get_last_event_block_number(&self) -> anyhow::Result<u64> {
         let latest_block: u64 = self.get_latest_block_number().await?;
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
@@ -129,7 +105,10 @@ impl EthereumClient {
 
         let logs = self.provider.get_logs(&filter).await?;
 
-        let filtered_logs = logs.into_iter().filter_map(|log| log.log_decode::<T>().ok()).collect::<Vec<_>>();
+        let filtered_logs = logs
+            .into_iter()
+            .filter_map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>().ok())
+            .collect::<Vec<_>>();
 
         if let Some(last_log) = filtered_logs.last() {
             let last_block: u64 = last_log.block_number.context("no block number in log")?;
@@ -140,22 +119,93 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet block number verified on L1
-    pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
+    async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
         let block_number = self.l1_core_contract.stateBlockNumber().call().await?;
         let last_block_number: u64 = (block_number._0).as_u64();
         Ok(last_block_number)
     }
 
     /// Get the last Starknet state root verified on L1
-    pub async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
+    async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
         let state_root = self.l1_core_contract.stateRoot().call().await?;
         u256_to_felt(state_root._0)
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
+    async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
         u256_to_felt(block_hash._0)
+    }
+
+    async fn get_initial_state(&self) -> anyhow::Result<StateUpdate> {
+        let block_number = self.get_last_verified_block_number().await?;
+        let block_hash = self.get_last_verified_block_hash().await?;
+        let global_root = self.get_last_state_root().await?;
+
+        Ok(StateUpdate { global_root, block_number, block_hash })
+    }
+
+    async fn listen_for_update_state_events(
+        &self,
+        backend: Arc<MadaraBackend>,
+        mut ctx: ServiceContext,
+    ) -> anyhow::Result<()> {
+        // Listen to LogStateUpdate (0x77552641) update and send changes continuously
+        let contract_instance = self.get_core_contract_instance();
+        let event_filter = contract_instance.event_filter::<StarknetCoreContract::LogStateUpdate>();
+
+        let mut event_stream = match ctx.run_until_cancelled(event_filter?.watch()).await {
+            Some(res) => res.context(ERR_ARCHIVE)?.into_stream(),
+            None => return anyhow::Ok(()),
+        };
+
+        while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
+            let log = event_result.context("listening for events")?;
+            let format_event: StateUpdate =
+                convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
+            update_l1(&backend, format_event, self.get_l1_block_metrics())?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_eth_gas_prices(&self) -> anyhow::Result<(u128, u128)> {
+        let block_number = self.get_latest_block_number().await?;
+        let fee_history = self.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
+
+        // The RPC responds with 301 elements for some reason. It's also just safer to manually
+        // take the last 300. We choose 300 to get average gas caprice for last one hour (300 * 12 sec block
+        // time).
+        let (_, blob_fee_history_one_hour) =
+            fee_history.base_fee_per_blob_gas.split_at(fee_history.base_fee_per_blob_gas.len().max(300) - 300);
+
+        let avg_blob_base_fee = if !blob_fee_history_one_hour.is_empty() {
+            blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128
+        } else {
+            0 // in case blob_fee_history_one_hour has 0 length
+        };
+
+        let eth_gas_price = fee_history.base_fee_per_gas.last().context("Getting eth gas price")?;
+        Ok((*eth_gas_price, avg_blob_base_fee))
+    }
+
+    /// Get cancellation status of an L1 to L2 message
+    ///
+    /// This function query the core contract to know if a L1->L2 message has been cancelled
+    /// # Arguments
+    ///
+    /// - msg_hash : Hash of L1 to L2 message
+    ///
+    /// # Return
+    ///
+    /// - A felt representing a timestamp :
+    ///     - 0 if the message has not been cancelled
+    ///     - timestamp of the cancellation if it has been cancelled
+    /// - An Error if the call fail
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<Felt> {
+        //l1ToL2MessageCancellations
+        let cancellation_timestamp = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
+        u256_to_felt(cancellation_timestamp._0)
     }
 }
 
@@ -167,6 +217,7 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
 
+    use crate::gas_price::L1BlockMetrics;
     use serial_test::serial;
     use std::ops::Range;
     use std::sync::Mutex;
@@ -257,7 +308,10 @@ pub mod eth_client_getter_test {
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
-        let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
+        let ethereum_client_config =
+            EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address, l1_block_metrics };
+
+        let new_client_result = EthereumClient::new(ethereum_client_config).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
@@ -277,7 +331,7 @@ pub mod eth_client_getter_test {
         let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client
-            .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
+            .get_last_event_block_number()
             .await
             .expect("issue while getting the last block number with given event");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");

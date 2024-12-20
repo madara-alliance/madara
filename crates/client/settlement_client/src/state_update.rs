@@ -1,39 +1,24 @@
 use std::sync::Arc;
 
-use crate::client::{L1BlockMetrics, StarknetCoreContract};
-use crate::{
-    client::EthereumClient,
-    utils::{convert_log_state_update, trim_hash},
-};
+use crate::client::ClientTrait;
+use crate::gas_price::L1BlockMetrics;
+use crate::utils::trim_hash;
 use anyhow::Context;
-use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 
-const ERR_ARCHIVE: &str =
-    "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node";
-
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct L1StateUpdate {
+pub struct StateUpdate {
     pub block_number: u64,
     pub global_root: Felt,
     pub block_hash: Felt,
 }
 
-/// Get the last Starknet state update verified on the L1
-pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
-    let block_number = client.get_last_verified_block_number().await?;
-    let block_hash = client.get_last_verified_block_hash().await?;
-    let global_root = client.get_last_state_root().await?;
-
-    Ok(L1StateUpdate { global_root, block_number, block_hash })
-}
-
 pub fn update_l1(
     backend: &MadaraBackend,
-    state_update: L1StateUpdate,
+    state_update: StateUpdate,
     block_metrics: &L1BlockMetrics,
 ) -> anyhow::Result<()> {
     tracing::info!(
@@ -51,10 +36,10 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn state_update_worker(
+pub async fn state_update_worker<C, P>(
     backend: Arc<MadaraBackend>,
-    eth_client: Arc<EthereumClient>,
-    mut ctx: ServiceContext,
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -64,25 +49,11 @@ pub async fn state_update_worker(
     // This does not seem to play well with anvil
     #[cfg(not(test))]
     {
-        let initial_state = get_initial_state(&eth_client).await.context("Getting initial ethereum state")?;
-        update_l1(&backend, initial_state, &eth_client.l1_block_metrics)?;
+        let initial_state = settlement_client.get_initial_state().await.context("Getting initial ethereum state")?;
+        update_l1(&backend, initial_state, settlement_client.get_l1_block_metrics())?;
     }
 
-    // Listen to LogStateUpdate (0x77552641) update and send changes continuously
-    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
-
-    let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
-        Some(res) => res.context(ERR_ARCHIVE)?.into_stream(),
-        None => return anyhow::Ok(()),
-    };
-
-    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
-        let log = event_result.context("listening for events")?;
-        let format_event: L1StateUpdate =
-            convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(&backend, format_event, &eth_client.l1_block_metrics)?;
-    }
-
+    settlement_client.listen_for_update_state_events(backend, ctx).await?;
     anyhow::Ok(())
 }
 
@@ -91,6 +62,9 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
+    use crate::eth::{EthereumClient, EthereumClientConfig, StarknetCoreContract};
+    use alloy::providers::RootProvider;
+    use alloy::transports::http::{Client, Http};
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use mc_db::DatabaseService;
     use mp_chain_config::ChainConfig;
@@ -169,9 +143,13 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker(Arc::clone(db.backend()), Arc::new(eth_client), ServiceContext::new_for_testing())
-                    .await
-                    .unwrap()
+                state_update_worker::<EthereumClientConfig, RootProvider<Http<Client>>>(
+                    Arc::clone(db.backend()),
+                    Arc::new(Box::new(eth_client)),
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+                .unwrap()
             })
         };
 
@@ -187,5 +165,100 @@ mod eth_client_event_subscription_test {
         // Explicitly cancel the listen task, else it would be running in the background
         listen_handle.abort();
         assert_eq!(block_in_db, Some(L2_BLOCK_NUMBER), "Block in DB does not match expected L2 block number");
+    }
+}
+
+#[cfg(test)]
+mod starknet_client_event_subscription_test {
+    use crate::client::ClientTrait;
+    use crate::gas_price::L1BlockMetrics;
+    use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
+    use crate::starknet::{StarknetClient, StarknetClientConfig};
+    use crate::state_update::{state_update_worker, StateUpdate};
+    use mc_db::DatabaseService;
+    use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
+    use rstest::rstest;
+    use starknet_providers::jsonrpc::HttpTransport;
+    use starknet_providers::JsonRpcClient;
+    use starknet_types_core::felt::Felt;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use url::Url;
+
+    #[rstest]
+    #[tokio::test]
+    async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
+        // Setting up the DB and l1 block metrics
+        // ================================================
+
+        let chain_info = Arc::new(ChainConfig::madara_test());
+
+        // Set up database paths
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
+
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
+                .await
+                .expect("Failed to create database service"),
+        );
+
+        // Set up metrics service
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
+
+        // Making Starknet client and start worker
+        // ================================================
+        // Here we need to have madara variable otherwise it will
+        // get dropped and will kill the madara.
+        #[allow(unused_variables)]
+        let (account, deployed_address, madara) = prepare_starknet_client_test().await?;
+
+        let starknet_client = StarknetClient::new(StarknetClientConfig {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            l2_contract_address: deployed_address,
+            l1_block_metrics,
+        })
+        .await?;
+
+        let listen_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                state_update_worker::<StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>>(
+                    Arc::clone(db.backend()),
+                    Arc::new(Box::new(starknet_client)),
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+                .expect("Failed to init state update worker.")
+            })
+        };
+
+        // Firing the state update event
+        send_state_update(
+            &account,
+            deployed_address,
+            StateUpdate {
+                block_number: 100,
+                global_root: Felt::from_str("0xbeef")?,
+                block_hash: Felt::from_str("0xbeef")?,
+            },
+        )
+        .await?;
+
+        // Wait for this update to be registered in the DB. Approx 10 secs
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Verify the block number
+        let block_in_db =
+            db.backend().get_l1_last_confirmed_block().expect("Failed to get L2 last confirmed block number");
+
+        listen_handle.abort();
+        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
+        Ok(())
     }
 }
