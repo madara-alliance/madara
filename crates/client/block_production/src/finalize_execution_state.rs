@@ -70,7 +70,10 @@ pub(crate) fn state_map_to_state_diff(
     let mut replaced_classes = Vec::new();
     for (contract_address, new_class_hash) in diff.class_hashes {
         let replaced = if let Some(on_top_of) = on_top_of {
-            backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())?.is_some()
+            match backend.get_contract_class_hash_at(on_top_of, &contract_address.to_felt())? {
+                Some(class_hash) => class_hash != new_class_hash.to_felt(),
+                None => false,
+            }
         } else {
             // Executing genesis block: nothing being redefined here
             false
