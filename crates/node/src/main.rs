@@ -141,7 +141,9 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if !run_cmd.l1_sync_params.l1_sync_disabled
+    if !run_cmd.full
+        && !run_cmd.devnet
+        && !run_cmd.l1_sync_params.l1_sync_disabled
         && l1_gas_setter.is_oracle_needed()
         && l1_gas_setter.oracle_provider.is_none()
     {
@@ -306,7 +308,7 @@ async fn main() -> anyhow::Result<()> {
     //                             SERVICES (START)                          //
     // ===================================================================== //
 
-    if run_cmd.is_sequencer() {
+    if run_cmd.is_devnet() {
         service_block_production.setup_devnet().await?;
     }
 

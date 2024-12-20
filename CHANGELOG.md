@@ -3,6 +3,9 @@
 ## Next release
 
 - feat : l3 support
+- fix: devnet accounts getting deployed in sequencer mode
+- fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
+- fix: oracle need condition
 - fix(block_production): continue pending block now reexecutes the previous transactions
 - feat(services): reworked Madara services for better cancellation control
 - feat: fetch eth/strk price and sync strk gas price
