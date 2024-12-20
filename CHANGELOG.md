@@ -501,6 +501,7 @@
 
 ## v0.4.0
 
+- fix(gateway): serialize `tip` as hex in UserTransaction
 - chore: release v0.4.0
 - feat: better management of custom configurations for genesis assets
 - feat: use actual vm resource costs

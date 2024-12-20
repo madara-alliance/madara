@@ -1,6 +1,8 @@
 use mp_class::{CompressedLegacyContractClass, FlattenedSierraClass};
+use mp_convert::hex_serde::U64AsHex;
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
@@ -166,6 +168,7 @@ impl UserDeclareV2Transaction {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeclareV3Transaction {
     pub contract_class: FlattenedSierraClass,
@@ -176,6 +179,7 @@ pub struct UserDeclareV3Transaction {
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
     pub resource_bounds: ResourceBoundsMapping,
+    #[serde_as(as = "U64AsHex")]
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
@@ -338,6 +342,7 @@ impl UserInvokeFunctionV1Transaction {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserInvokeFunctionV3Transaction {
     pub sender_address: Felt,
@@ -347,6 +352,7 @@ pub struct UserInvokeFunctionV3Transaction {
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
     pub resource_bounds: ResourceBoundsMapping,
+    #[serde_as(as = "U64AsHex")]
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
@@ -464,6 +470,7 @@ impl UserDeployAccountV1Transaction {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeployAccountV3Transaction {
     pub class_hash: Felt,
@@ -474,6 +481,7 @@ pub struct UserDeployAccountV3Transaction {
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
     pub resource_bounds: ResourceBoundsMapping,
+    #[serde_as(as = "U64AsHex")]
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub is_query: bool,
