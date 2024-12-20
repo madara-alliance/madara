@@ -2,6 +2,8 @@
 
 ## Next release
 
+- refactor(gateway): remove query-only support from user transactions
+- fix(gateway): serialize tip as hex in UserTransaction
 - fix: devnet accounts getting deployed in sequencer mode
 - fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
 - fix: oracle need condition
@@ -491,6 +493,7 @@
 
 ## v0.4.0
 
+- fix(gateway): serialize `tip` as hex in UserTransaction
 - chore: release v0.4.0
 - feat: better management of custom configurations for genesis assets
 - feat: use actual vm resource costs

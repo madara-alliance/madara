@@ -1,6 +1,7 @@
 use crate::utils::display_internal_server_error;
 use mc_db::MadaraStorageError;
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
+use mp_gateway::user_transaction::UserTransactionConversionError;
 use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
@@ -225,6 +226,15 @@ impl From<MadaraStorageError> for StarknetRpcApiError {
 impl From<StarknetApiError> for StarknetRpcApiError {
     fn from(err: StarknetApiError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { data: err.to_string() }
+    }
+}
+
+impl From<UserTransactionConversionError> for StarknetRpcApiError {
+    fn from(err: UserTransactionConversionError) -> Self {
+        match err {
+            UserTransactionConversionError::ContractClassDecodeError(_) => StarknetRpcApiError::InvalidContractClass,
+            UserTransactionConversionError::UnsupportedQueryTransaction => StarknetRpcApiError::UnsupportedTxnVersion,
+        }
     }
 }
 
