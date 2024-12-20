@@ -376,7 +376,6 @@ mod tests {
             account_deployment_data: vec![],
             nonce_data_availability_mode: DaMode::L1,
             fee_data_availability_mode: DaMode::L1,
-            version: starknet_types_rpc::Version::X3,
         });
 
         let res = chain.sign_and_add_declare_tx(declare_txn, sender_address).unwrap();
