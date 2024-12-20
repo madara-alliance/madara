@@ -34,6 +34,9 @@ pub fn felt_to_u256(felt: Felt) -> U256 {
 
 pub fn trim_hash(hash: &Felt) -> String {
     let hash_str = format!("{:#x}", hash);
+    if hash_str.len() <= 8 {
+        return hash_str;
+    }
     let hash_len = hash_str.len();
     let prefix = &hash_str[..6 + 2];
     let suffix = &hash_str[hash_len - 6..];
@@ -88,6 +91,7 @@ mod eth_client_conversion_tests {
     }
 
     #[rstest]
+    #[case(0, "0x0")]
     #[case(30000000000000, "0x1b48eb...57e000")]
     #[case(12345678123456789, "0x2bdc54...0f5915")]
     fn trim_hash_works(#[case] input: u128, #[case] expected: &str) {
