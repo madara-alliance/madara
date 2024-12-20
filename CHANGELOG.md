@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: remove redundant dead_code attribute
 - fix: devnet accounts getting deployed in sequencer mode
 - fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
 - fix: oracle need condition
