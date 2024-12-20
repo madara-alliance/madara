@@ -167,3 +167,98 @@ mod eth_client_event_subscription_test {
         assert_eq!(block_in_db, Some(L2_BLOCK_NUMBER), "Block in DB does not match expected L2 block number");
     }
 }
+
+#[cfg(test)]
+mod starknet_client_event_subscription_test {
+    use crate::client::ClientTrait;
+    use crate::gas_price::L1BlockMetrics;
+    use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
+    use crate::starknet::{StarknetClient, StarknetClientConfig};
+    use crate::state_update::{state_update_worker, StateUpdate};
+    use mc_db::DatabaseService;
+    use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
+    use rstest::rstest;
+    use starknet_providers::jsonrpc::HttpTransport;
+    use starknet_providers::JsonRpcClient;
+    use starknet_types_core::felt::Felt;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use url::Url;
+
+    #[rstest]
+    #[tokio::test]
+    async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
+        // Setting up the DB and l1 block metrics
+        // ================================================
+
+        let chain_info = Arc::new(ChainConfig::madara_test());
+
+        // Set up database paths
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
+
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
+                .await
+                .expect("Failed to create database service"),
+        );
+
+        // Set up metrics service
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
+
+        // Making Starknet client and start worker
+        // ================================================
+        // Here we need to have madara variable otherwise it will
+        // get dropped and will kill the madara.
+        #[allow(unused_variables)]
+        let (account, deployed_address, madara) = prepare_starknet_client_test().await?;
+
+        let starknet_client = StarknetClient::new(StarknetClientConfig {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            l2_contract_address: deployed_address,
+            l1_block_metrics,
+        })
+        .await?;
+
+        let listen_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                state_update_worker::<StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>>(
+                    Arc::clone(db.backend()),
+                    Arc::new(Box::new(starknet_client)),
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+                .expect("Failed to init state update worker.")
+            })
+        };
+
+        // Firing the state update event
+        send_state_update(
+            &account,
+            deployed_address,
+            StateUpdate {
+                block_number: 100,
+                global_root: Felt::from_str("0xbeef")?,
+                block_hash: Felt::from_str("0xbeef")?,
+            },
+        )
+        .await?;
+
+        // Wait for this update to be registered in the DB. Approx 10 secs
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Verify the block number
+        let block_in_db =
+            db.backend().get_l1_last_confirmed_block().expect("Failed to get L2 last confirmed block number");
+
+        listen_handle.abort();
+        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
+        Ok(())
+    }
+}

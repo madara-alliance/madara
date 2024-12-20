@@ -19,7 +19,7 @@ use tracing::{error, trace};
 use url::Url;
 
 #[cfg(test)]
-mod utils;
+pub mod utils;
 
 #[derive(Debug)]
 pub struct StarknetClient {
