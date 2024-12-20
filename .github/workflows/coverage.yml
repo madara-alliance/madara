@@ -39,6 +39,11 @@ jobs:
         with:
           version: nightly
 
+      - name: Download madara binary for l2 client testing
+        run: |
+          curl -L https://madara-test-binary.s3.us-west-1.amazonaws.com/madara -o ./test-artifacts/madara
+          chmod +x ./test-artifacts/madara
+
       - name: Build and run tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}

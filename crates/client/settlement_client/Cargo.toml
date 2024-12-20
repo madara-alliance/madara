@@ -33,9 +33,9 @@ starknet_api.workspace = true
 
 
 # Other
-assert_matches = "1.5.0"
 alloy.workspace = true
 anyhow.workspace = true
+assert_matches = "1.5.0"
 bigdecimal.workspace = true
 bitvec.workspace = true
 futures = { workspace = true, default-features = true }
@@ -43,11 +43,11 @@ futures = { workspace = true, default-features = true }
 regex = "1.10.5"
 serde = { workspace = true, default-features = true }
 serde_json = "1"
-starknet-providers = { workspace = true }
-starknet-core = { workspace = true }
 starknet-accounts = "0.11.0"
-starknet-signers = { workspace = true }
 starknet-contract = "0.11.0"
+starknet-core = { workspace = true }
+starknet-providers = { workspace = true }
+starknet-signers = { workspace = true }
 thiserror.workspace = true
 time = "0.3.36"
 tokio = { workspace = true, features = [
@@ -60,6 +60,7 @@ url.workspace = true
 
 
 #Instrumentation
+async-trait = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -74,7 +75,6 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-async-trait = { workspace = true }
 
 
 [features]
