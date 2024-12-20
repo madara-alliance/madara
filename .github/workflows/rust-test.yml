@@ -30,6 +30,10 @@ jobs:
           while ! nc -z localhost 8545; do
             sleep 1
           done
+      - name: Download madara binary for l2 client testing
+        run: |
+          curl -L https://madara-test-binary.s3.us-west-1.amazonaws.com/madara -o ./test-artifacts/madara
+          chmod +x ./test-artifacts/madara
 
       - name: Run unit tests
         run: |
