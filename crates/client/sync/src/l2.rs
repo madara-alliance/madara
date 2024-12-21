@@ -3,7 +3,6 @@ use crate::fetch::fetchers::fetch_pending_block_and_updates;
 use crate::fetch::fetchers::WarpUpdateConfig;
 use crate::fetch::l2_fetch_task;
 use crate::fetch::L2FetchConfig;
-use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::{stream, StreamExt};
 use mc_block_import::{
@@ -17,6 +16,7 @@ use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_gateway::error::SequencerError;
 use mp_utils::service::ServiceContext;
+use mp_utils::trim_hash;
 use mp_utils::PerfStopwatch;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;

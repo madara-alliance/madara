@@ -15,7 +15,6 @@ pub mod l2;
 pub mod metrics;
 #[cfg(test)]
 pub mod tests;
-pub mod utils;
 
 pub struct SyncConfig {
     pub block_importer: Arc<BlockImporter>,
