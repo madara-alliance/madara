@@ -116,7 +116,7 @@ impl RpcMetrics {
         let millis = now.elapsed().as_millis();
         tracing::debug!(
             target: "rpc_metrics",
-            "[{transport_label}] {} call took {} ms",
+            "[{transport_label}] {} call took {:?}",
             req.method_name(),
             millis,
         );
