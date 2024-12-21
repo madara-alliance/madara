@@ -1,11 +1,13 @@
 #![allow(clippy::new_without_default)]
 
 pub mod crypto;
+pub mod hash;
 pub mod parsers;
 pub mod serde;
 pub mod service;
-
 use std::time::{Duration, Instant};
+
+pub use hash::trim_hash;
 
 use tokio::sync::oneshot;
 
