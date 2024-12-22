@@ -30,8 +30,8 @@ mod tests {
 
     #[rstest]
     #[case(0, "0x0")]
-    #[case(30000000000000, "0x1b48eb...57e000")]
-    #[case(12345678123456789, "0x2bdc54...0f5915")]
+    #[case(30000000000000, "0x1b48...57e000")]
+    #[case(12345678123456789, "0x2bdc...0f5915")]
     fn trim_hash_works(#[case] input: u128, #[case] expected: &str) {
         let trimmed = trim_hash(&Felt::from(input));
         assert_eq!(trimmed, expected);
