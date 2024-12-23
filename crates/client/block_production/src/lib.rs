@@ -494,6 +494,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             if block_closed {
                                 interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                                 interval_block_time.reset_at(instant + interval_block_time.period());
+                                self.current_pending_tick = 0;
                             } else {
                                 self.current_pending_tick += 1;
                             }
