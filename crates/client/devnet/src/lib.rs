@@ -384,8 +384,11 @@ mod tests {
 
         assert_eq!(res.class_hash, calculated_class_hash);
 
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            chain.block_production.set_current_pending_tick(1);
+            chain.block_production.on_pending_time_tick().await.unwrap();
+        });
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -453,8 +456,11 @@ mod tests {
             .unwrap();
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
-        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
+            chain.block_production.on_pending_time_tick().await.unwrap();
+        });
 
         // =====================================================================================
 
@@ -485,8 +491,11 @@ mod tests {
 
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
 
-        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
+            chain.block_production.on_pending_time_tick().await.unwrap();
+        });
 
         assert_eq!(res.contract_address, account.address);
 
@@ -546,8 +555,11 @@ mod tests {
 
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            chain.block_production.set_current_pending_tick(1);
+            chain.block_production.on_pending_time_tick().await.unwrap();
+        });
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -752,8 +764,11 @@ mod tests {
             .unwrap();
 
         std::thread::sleep(max_age); // max age reached
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            chain.block_production.set_current_pending_tick(1);
+            chain.block_production.on_pending_time_tick().await.unwrap();
+        });
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
