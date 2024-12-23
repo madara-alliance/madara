@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use crate::client::{L1BlockMetrics, StarknetCoreContract};
-use crate::{
-    client::EthereumClient,
-    utils::{convert_log_state_update, trim_hash},
-};
+use crate::{client::EthereumClient, utils::convert_log_state_update};
 use anyhow::Context;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
+use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 
