@@ -21,13 +21,14 @@
             openssl
             pkg-config
             protobuf
+            nodePackages.prettier
+            taplo-cli
           ];
 
           buildInputs = with pkgs; [
             rustToolchain
             clang
             rocksdb
-            alsaLib
           ] ++ lib.optionals stdenv.isDarwin [
             darwin.apple_sdk.frameworks.Security
           ];
