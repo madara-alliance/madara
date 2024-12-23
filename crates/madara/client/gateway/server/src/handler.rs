@@ -23,7 +23,7 @@ use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::TraceBlockTransactionsResult;
+use starknet_types_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
@@ -349,7 +349,9 @@ async fn declare_transaction(
     tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    match add_transaction_provider.add_declare_transaction(tx.into()).await {
+    let tx: BroadcastedDeclareTxn<Felt> = tx.try_into().unwrap();
+
+    match add_transaction_provider.add_declare_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }

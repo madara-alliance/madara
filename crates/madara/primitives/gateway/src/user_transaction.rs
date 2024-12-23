@@ -31,7 +31,7 @@
 //! - `ContractClassDecodeError`: When contract class decoding fails
 //!
 
-use mp_class::{CompressedLegacyContractClass, FlattenedSierraClass};
+use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ pub enum UserTransactionConversionError {
     #[error("User transaction can't be a query only transaction")]
     UnsupportedQueryTransaction,
     #[error("Error while decoding the contract class: {0}")]
-    ContractClassDecodeError(#[from] base64::DecodeError),
+    ContractClassDecodeError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,12 +60,14 @@ pub enum UserTransaction {
     DeployAccount(UserDeployAccountTransaction),
 }
 
-impl From<UserTransaction> for BroadcastedTxn<Felt> {
-    fn from(transaction: UserTransaction) -> Self {
+impl TryFrom<UserTransaction> for BroadcastedTxn<Felt> {
+    type Error = UserTransactionConversionError;
+
+    fn try_from(transaction: UserTransaction) -> Result<Self, Self::Error> {
         match transaction {
-            UserTransaction::Declare(tx) => BroadcastedTxn::Declare(tx.into()),
-            UserTransaction::InvokeFunction(tx) => BroadcastedTxn::Invoke(tx.into()),
-            UserTransaction::DeployAccount(tx) => BroadcastedTxn::DeployAccount(tx.into()),
+            UserTransaction::Declare(tx) => Ok(BroadcastedTxn::Declare(tx.try_into()?)),
+            UserTransaction::InvokeFunction(tx) => Ok(BroadcastedTxn::Invoke(tx.into())),
+            UserTransaction::DeployAccount(tx) => Ok(BroadcastedTxn::DeployAccount(tx.into())),
         }
     }
 }
@@ -93,12 +95,14 @@ pub enum UserDeclareTransaction {
     V3(UserDeclareV3Transaction),
 }
 
-impl From<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
-    fn from(transaction: UserDeclareTransaction) -> Self {
+impl TryFrom<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
+    type Error = UserTransactionConversionError;
+
+    fn try_from(transaction: UserDeclareTransaction) -> Result<Self, Self::Error> {
         match transaction {
-            UserDeclareTransaction::V1(tx) => BroadcastedDeclareTxn::V1(tx.into()),
-            UserDeclareTransaction::V2(tx) => BroadcastedDeclareTxn::V2(tx.into()),
-            UserDeclareTransaction::V3(tx) => BroadcastedDeclareTxn::V3(tx.into()),
+            UserDeclareTransaction::V1(tx) => Ok(BroadcastedDeclareTxn::V1(tx.into())),
+            UserDeclareTransaction::V2(tx) => Ok(BroadcastedDeclareTxn::V2(tx.try_into()?)),
+            UserDeclareTransaction::V3(tx) => Ok(BroadcastedDeclareTxn::V3(tx.try_into()?)),
         }
     }
 }
@@ -109,8 +113,8 @@ impl TryFrom<BroadcastedDeclareTxn<Felt>> for UserDeclareTransaction {
     fn try_from(transaction: BroadcastedDeclareTxn<Felt>) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedDeclareTxn::V1(tx) => Ok(UserDeclareTransaction::V1(tx.try_into()?)),
-            BroadcastedDeclareTxn::V2(tx) => Ok(UserDeclareTransaction::V2(tx.into())),
-            BroadcastedDeclareTxn::V3(tx) => Ok(UserDeclareTransaction::V3(tx.into())),
+            BroadcastedDeclareTxn::V2(tx) => Ok(UserDeclareTransaction::V2(tx.try_into()?)),
+            BroadcastedDeclareTxn::V3(tx) => Ok(UserDeclareTransaction::V3(tx.try_into()?)),
             BroadcastedDeclareTxn::QueryV1(_)
             | BroadcastedDeclareTxn::QueryV2(_)
             | BroadcastedDeclareTxn::QueryV3(_) => Err(UserTransactionConversionError::UnsupportedQueryTransaction),
@@ -140,7 +144,7 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
 }
 
 impl TryFrom<BroadcastedDeclareTxnV1<Felt>> for UserDeclareV1Transaction {
-    type Error = base64::DecodeError;
+    type Error = std::io::Error;
 
     fn try_from(transaction: BroadcastedDeclareTxnV1<Felt>) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -155,7 +159,7 @@ impl TryFrom<BroadcastedDeclareTxnV1<Felt>> for UserDeclareV1Transaction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeclareV2Transaction {
-    pub contract_class: FlattenedSierraClass,
+    pub contract_class: CompressedSierraClass,
     pub compiled_class_hash: Felt,
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -163,36 +167,44 @@ pub struct UserDeclareV2Transaction {
     pub nonce: Felt,
 }
 
-impl From<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
-    fn from(transaction: UserDeclareV2Transaction) -> Self {
-        Self {
+impl TryFrom<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
+    type Error = std::io::Error;
+
+    fn try_from(transaction: UserDeclareV2Transaction) -> Result<Self, Self::Error> {
+        let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.try_into()?;
+
+        Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
-            contract_class: transaction.contract_class.into(),
-        }
+            contract_class: flattened_sierra_class.into(),
+        })
     }
 }
 
-impl From<BroadcastedDeclareTxnV2<Felt>> for UserDeclareV2Transaction {
-    fn from(transaction: BroadcastedDeclareTxnV2<Felt>) -> Self {
-        Self {
+impl TryFrom<BroadcastedDeclareTxnV2<Felt>> for UserDeclareV2Transaction {
+    type Error = std::io::Error;
+
+    fn try_from(transaction: BroadcastedDeclareTxnV2<Felt>) -> Result<Self, Self::Error> {
+        let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.into();
+
+        Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             max_fee: transaction.max_fee,
             signature: transaction.signature,
             nonce: transaction.nonce,
-            contract_class: transaction.contract_class.into(),
-        }
+            contract_class: flattened_sierra_class.try_into()?,
+        })
     }
 }
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserDeclareV3Transaction {
-    pub contract_class: FlattenedSierraClass,
+    pub contract_class: CompressedSierraClass,
     pub compiled_class_hash: Felt,
     pub sender_address: Felt,
     pub signature: Vec<Felt>,
@@ -206,9 +218,13 @@ pub struct UserDeclareV3Transaction {
     pub account_deployment_data: Vec<Felt>,
 }
 
-impl From<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
-    fn from(transaction: UserDeclareV3Transaction) -> Self {
-        Self {
+impl TryFrom<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
+    type Error = std::io::Error;
+
+    fn try_from(transaction: UserDeclareV3Transaction) -> Result<Self, Self::Error> {
+        let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.try_into()?;
+
+        Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             signature: transaction.signature,
@@ -217,16 +233,20 @@ impl From<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
             resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
-            contract_class: transaction.contract_class.into(),
+            contract_class: flattened_sierra_class.into(),
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
-        }
+        })
     }
 }
 
-impl From<BroadcastedDeclareTxnV3<Felt>> for UserDeclareV3Transaction {
-    fn from(transaction: BroadcastedDeclareTxnV3<Felt>) -> Self {
-        Self {
+impl TryFrom<BroadcastedDeclareTxnV3<Felt>> for UserDeclareV3Transaction {
+    type Error = std::io::Error;
+
+    fn try_from(transaction: BroadcastedDeclareTxnV3<Felt>) -> Result<Self, Self::Error> {
+        let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.into();
+
+        Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             signature: transaction.signature,
@@ -235,10 +255,10 @@ impl From<BroadcastedDeclareTxnV3<Felt>> for UserDeclareV3Transaction {
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
             resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
-            contract_class: transaction.contract_class.into(),
+            contract_class: flattened_sierra_class.try_into()?,
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
-        }
+        })
     }
 }
 
