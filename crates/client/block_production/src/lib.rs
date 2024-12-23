@@ -297,12 +297,72 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full })
     }
 
-    /// Each "tick" of the block time updates the pending block but only with the appropriate fraction of the total bouncer capacity.
+    /// Closes the current block and prepares for the next one
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub async fn on_pending_time_tick(&mut self) -> Result<(), Error> {
+    async fn close_and_prepare_next_block(
+        &mut self,
+        state_diff: StateDiff,
+        visited_segments: VisitedSegments,
+        start_time: Instant,
+    ) -> Result<(), Error> {
+        let block_n = self.block_n();
+        // Convert the pending block to a closed block and save to db
+        let parent_block_hash = Felt::ZERO; // temp parent block hash
+        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
+            parent_block_hash,
+            self.backend.chain_config(),
+            self.l1_data_provider.as_ref(),
+        ));
+
+        let block_to_close = mem::replace(&mut self.block, new_empty_block);
+        let declared_classes = mem::take(&mut self.declared_classes);
+
+        let n_txs = block_to_close.inner.transactions.len();
+
+        // Close and import the block
+        let import_result = close_block(
+            &self.importer,
+            block_to_close,
+            &state_diff,
+            self.backend.chain_config().chain_id.clone(),
+            block_n,
+            declared_classes,
+            visited_segments,
+        )
+        .await?;
+
+        // Flush changes to disk
+        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+
+        // Update parent hash for new pending block
+        self.block.info.header.parent_block_hash = import_result.block_hash;
+
+        // Prepare executor for next block
+        self.executor =
+            ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
+        self.current_pending_tick = 0;
+
+        let end_time = start_time.elapsed();
+        tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
+
+        // Record metrics
+        let attributes = [
+            KeyValue::new("transactions_added", n_txs.to_string()),
+            KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
+        ];
+
+        self.metrics.block_counter.add(1, &[]);
+        self.metrics.block_gauge.record(block_n, &attributes);
+        self.metrics.transaction_counter.add(n_txs as u64, &[]);
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
+    pub async fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
         let current_pending_tick = self.current_pending_tick;
         if current_pending_tick == 0 {
-            return Ok(());
+            return Ok(false);
         }
 
         // Use full bouncer capacity
@@ -312,6 +372,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full } =
             self.continue_block(bouncer_cap)?;
+
         if stats.n_added_to_block > 0 {
             tracing::info!(
                 "🧮 Executed and added {} transaction(s) to the pending block at height {} - {:?}",
@@ -324,8 +385,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // Check if block is full
         if block_now_full {
             tracing::info!("Resource limits reached, closing block early");
-            self.on_block_time().await?;
-            return Ok(());
+            self.close_and_prepare_next_block(state_diff, visited_segments, start_time).await?;
+            return Ok(true);
         }
 
         // Store pending block
@@ -340,7 +401,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // do not forget to flush :)
         self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
 
-        Ok(())
+        Ok(false)
     }
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
@@ -349,7 +410,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let block_n = self.block_n();
         tracing::debug!("closing block #{}", block_n);
 
-        // Complete the block with full bouncer capacity.
+        // Complete the block with full bouncer capacity
         let start_time = Instant::now();
         let ContinueBlockResult {
             state_diff: mut new_state_diff,
@@ -374,62 +435,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 .ok_or_else(|| {
                     Error::Unexpected(format!("No block hash found for block number {prev_block_number}").into())
                 })?;
-            let address = Felt::ONE;
+
             new_state_diff.storage_diffs.push(ContractStorageDiffItem {
-                address,
+                address: Felt::ONE,
                 storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
             });
         }
 
-        // Convert the pending block to a closed block and save to db.
-
-        let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
-            parent_block_hash,
-            self.backend.chain_config(),
-            self.l1_data_provider.as_ref(),
-        ));
-
-        let block_to_close = mem::replace(&mut self.block, new_empty_block);
-        let declared_classes = mem::take(&mut self.declared_classes);
-
-        let n_txs = block_to_close.inner.transactions.len();
-
-        // This is compute heavy as it does the commitments and trie computations.
-        let import_result = close_block(
-            &self.importer,
-            block_to_close,
-            &new_state_diff,
-            self.backend.chain_config().chain_id.clone(),
-            block_n,
-            declared_classes,
-            visited_segments,
-        )
-        .await?;
-        // do not forget to flush :)
-        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
-
-        // fix temp parent block hash for new pending :)
-        self.block.info.header.parent_block_hash = import_result.block_hash;
-
-        // Prepare for next block.
-        self.executor =
-            ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
-        self.current_pending_tick = 0;
-
-        let end_time = start_time.elapsed();
-        tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
-
-        let attributes = [
-            KeyValue::new("transactions_added", n_txs.to_string()),
-            KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
-        ];
-
-        self.metrics.block_counter.add(1, &[]);
-        self.metrics.block_gauge.record(block_n, &attributes);
-        self.metrics.transaction_counter.add(n_txs as u64, &[]);
-
-        Ok(())
+        self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
@@ -466,7 +479,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     // ensure the pending block tick and block time match up
                     interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
                 },
-                _ = interval_pending_block_update.tick() => {
+                instant = interval_pending_block_update.tick() => {
                     let n_pending_ticks_per_block = self.backend.chain_config().n_pending_ticks_per_block();
 
                     if self.current_pending_tick == 0 || self.current_pending_tick >= n_pending_ticks_per_block {
@@ -476,10 +489,19 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         continue
                     }
 
-                    if let Err(err) = self.on_pending_time_tick().await {
-                        tracing::error!("Pending block update task has errored: {err:#}");
+                    match self.on_pending_time_tick().await {
+                        Ok(block_closed) => {
+                            if block_closed {
+                                interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
+                                interval_block_time.reset_at(instant + interval_block_time.period());
+                            }
+                            self.current_pending_tick += 1;
+                        }
+                        Err(err) => {
+                            tracing::error!("Pending block update task has errored: {err:#}");
+                            self.current_pending_tick += 1;
+                        }
                     }
-                    self.current_pending_tick += 1;
                 },
                 _ = ctx.cancelled() => break,
             }
