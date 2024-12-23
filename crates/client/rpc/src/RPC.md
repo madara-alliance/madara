@@ -5,7 +5,7 @@ of Madara, as its structure can be quite confusing at first._
 
 ## Properties
 
-Madara RPC has the folliwing properties:
+Madara RPC has the following properties:
 
 **Each RPC category is independent** and decoupled from the rest, so `trace`
 methods exist in isolation from `read` methods for example.
