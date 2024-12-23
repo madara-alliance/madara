@@ -4,6 +4,7 @@
 
 - feat: block resource cap removed from the pending tick
 - fix: replace class hash issue resolved + gas fees issue resolved
+- fix: trim hash of eth state was failing with 0x0
 - fix: devnet accounts getting deployed in sequencer mode
 - fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
 - fix: oracle need condition
