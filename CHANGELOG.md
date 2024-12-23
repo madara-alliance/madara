@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
 - fix: trim hash of eth state was failing with 0x0
 - fix: devnet accounts getting deployed in sequencer mode
 - fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc

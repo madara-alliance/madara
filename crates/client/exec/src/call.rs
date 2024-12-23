@@ -24,7 +24,8 @@ impl ExecutionContext {
 
         // We don't need a tx_executor here
 
-        let make_err = |err| CallContractError { block_n: self.db_id, contract: *contract_address, err };
+        let make_err =
+            |err| CallContractError { block_n: self.latest_visible_block.into(), contract: *contract_address, err };
 
         let storage_address =
             (*contract_address).try_into().map_err(TransactionExecutionError::StarknetApiError).map_err(make_err)?;

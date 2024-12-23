@@ -1,3 +1,5 @@
+use core::fmt;
+
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{
@@ -22,6 +24,22 @@ pub use block_context::ExecutionContext;
 pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use trace::execution_result_to_tx_trace;
 
+#[derive(Debug)]
+struct OnTopOf(Option<DbBlockId>);
+impl fmt::Display for OnTopOf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(id) => write!(f, "{:#}", id),
+            None => write!(f, "<none>"),
+        }
+    }
+}
+impl From<Option<DbBlockId>> for OnTopOf {
+    fn from(value: Option<DbBlockId>) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error(transparent)]
@@ -43,7 +61,7 @@ pub enum Error {
 #[derive(thiserror::Error, Debug)]
 #[error("Executing tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
 pub struct TxExecError {
-    block_n: DbBlockId,
+    block_n: OnTopOf,
     hash: TransactionHash,
     index: usize,
     #[source]
@@ -53,7 +71,7 @@ pub struct TxExecError {
 #[derive(thiserror::Error, Debug)]
 #[error("Estimating fee for tx index {index} on top of {block_n}: {err:#}")]
 pub struct TxFeeEstimationError {
-    block_n: DbBlockId,
+    block_n: OnTopOf,
     index: usize,
     #[source]
     err: TransactionExecutionError,
@@ -62,15 +80,15 @@ pub struct TxFeeEstimationError {
 #[derive(thiserror::Error, Debug)]
 #[error("Estimating message fee on top of {block_n}: {err:#}")]
 pub struct MessageFeeEstimationError {
-    block_n: DbBlockId,
+    block_n: OnTopOf,
     #[source]
     err: TransactionExecutionError,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Calling contract {contract:#x} on top of {block_n:#}: {err:#}")]
+#[error("Calling contract {contract:#x} on top of {block_n}: {err:#}")]
 pub struct CallContractError {
-    block_n: DbBlockId,
+    block_n: OnTopOf,
     contract: Felt,
     #[source]
     err: TransactionExecutionError,

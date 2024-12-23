@@ -166,7 +166,7 @@ impl Mempool {
         tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
         // Perform validations
-        let exec_context = ExecutionContext::new_in_block(Arc::clone(&self.backend), &pending_block_info)?;
+        let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
 
         if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {

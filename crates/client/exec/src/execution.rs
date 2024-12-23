@@ -28,7 +28,7 @@ impl ExecutionContext {
             let hash = tx.tx_hash();
             tracing::debug!("executing {hash:#}");
             tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxExecError {
-                block_n: self.db_id,
+                block_n: self.latest_visible_block.into(),
                 hash,
                 index,
                 err,
@@ -50,13 +50,21 @@ impl ExecutionContext {
                     Transaction::AccountTransaction(tx) => Some(
                         estimate_minimal_gas_vector(&self.block_context, tx)
                             .map_err(TransactionExecutionError::TransactionPreValidationError)
-                            .map_err(|err| TxFeeEstimationError { block_n: self.db_id, index, err })?,
+                            .map_err(|err| TxFeeEstimationError {
+                                block_n: self.latest_visible_block.into(),
+                                index,
+                                err,
+                            })?,
                     ),
                     Transaction::L1HandlerTransaction(_) => None, // There is no minimal_l1_gas field for L1 handler transactions.
                 };
 
-                let make_reexec_error =
-                    |err| TxExecError { block_n: self.db_id, hash, index: executed_prev + index, err };
+                let make_reexec_error = |err| TxExecError {
+                    block_n: self.latest_visible_block.into(),
+                    hash,
+                    index: executed_prev + index,
+                    err,
+                };
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut cached_state);
                 let execution_flags = ExecutionFlags { charge_fee, validate, concurrency_mode: false };

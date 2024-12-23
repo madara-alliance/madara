@@ -7,7 +7,7 @@ use starknet_types_core::felt::Felt;
 use starknet_types_rpc::TraceBlockTransactionsResult;
 use std::sync::Arc;
 
-use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
@@ -18,11 +18,11 @@ pub async fn trace_block_transactions(
 ) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult<Felt>>> {
     let block = starknet.get_block(&block_id)?;
 
-    if block.info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block.info)?;
+    let exec_context = ExecutionContext::new_at_block_start(Arc::clone(&starknet.backend), &block.info)?;
 
     let transactions: Vec<_> = block
         .inner
