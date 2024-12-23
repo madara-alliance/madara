@@ -32,14 +32,6 @@ pub fn felt_to_u256(felt: Felt) -> U256 {
     U256::from_be_bytes(felt.to_bytes_be())
 }
 
-pub fn trim_hash(hash: &Felt) -> String {
-    let hash_str = format!("{:#x}", hash);
-    let hash_len = hash_str.len();
-    let prefix = &hash_str[..6 + 2];
-    let suffix = &hash_str[hash_len - 6..];
-    format!("{}...{}", prefix, suffix)
-}
-
 #[cfg(test)]
 mod eth_client_conversion_tests {
     use super::*;
@@ -85,13 +77,5 @@ mod eth_client_conversion_tests {
         let result = u256_to_felt(u256_value).expect("u256_to_felt failed");
 
         assert_eq!(result, expected, "u256_to_felt failed for input: {}", input);
-    }
-
-    #[rstest]
-    #[case(30000000000000, "0x1b48eb...57e000")]
-    #[case(12345678123456789, "0x2bdc54...0f5915")]
-    fn trim_hash_works(#[case] input: u128, #[case] expected: &str) {
-        let trimmed = trim_hash(&Felt::from(input));
-        assert_eq!(trimmed, expected);
     }
 }
