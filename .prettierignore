@@ -7,3 +7,4 @@ pathfinder/
 orchestrator_venv/
 build/
 node_modules/
+scripts/

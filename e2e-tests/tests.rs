@@ -4,8 +4,6 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target};
-use aws_sdk_sqs::types::QueueAttributeName;
 use chrono::{SubsecRound, Utc};
 use e2e_tests::anvil::AnvilSetup;
 use e2e_tests::mock_server::MockResponseBodyType;
@@ -15,7 +13,6 @@ use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
 use orchestrator::cli::database::DatabaseValidatedArgs;
-use orchestrator::cron::{get_worker_trigger_message, WORKER_TRIGGERS};
 use orchestrator::data_storage::DataStorage;
 use orchestrator::database::mongodb::MongoDBValidatedArgs;
 use orchestrator::jobs::constants::{JOB_METADATA_SNOS_BLOCK, JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY};
@@ -170,15 +167,6 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     println!("✅ Orchestrator setup completed.");
 
-    let trigger_rule_name = &get_env_var_or_panic("MADARA_ORCHESTRATOR_EVENT_BRIDGE_TRIGGER_RULE_NAME");
-    let target_queue_name = &get_env_var_or_panic("MADARA_ORCHESTRATOR_EVENT_BRIDGE_TARGET_QUEUE_NAME");
-
-    // Setup eventbridge rules
-    create_event_bridge_rule(trigger_rule_name, target_queue_name).await.expect(
-        "Unable to create
-    event bridge rule",
-    );
-
     // Run orchestrator
     let mut orchestrator =
         Orchestrator::new(OrchestratorMode::Run, setup_config.envs()).expect("Failed to start orchestrator");
@@ -235,58 +223,6 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     )
     .await;
     assert!(test_result.is_ok(), "After Update State Job state DB state assertion failed.");
-}
-
-/// Function that adds rules to tests for localstack
-/// This can be removed after https://github.com/localstack/localstack/issues/9861 is closed
-async fn create_event_bridge_rule(trigger_rule_name: &String, target_queue_name: &String) -> color_eyre::Result<()> {
-    let aws_config = &aws_config::from_env().load().await;
-
-    let queue_client = aws_sdk_sqs::Client::new(aws_config);
-
-    let event_bridge_client = aws_sdk_eventbridge::Client::new(aws_config);
-
-    let queue_url = queue_client.get_queue_url().queue_name(target_queue_name).send().await?;
-
-    let queue_attributes = queue_client
-        .get_queue_attributes()
-        .queue_url(queue_url.queue_url.unwrap())
-        .attribute_names(QueueAttributeName::QueueArn)
-        .send()
-        .await?;
-    let queue_arn = queue_attributes.attributes().unwrap().get(&QueueAttributeName::QueueArn).unwrap();
-
-    // Create the EventBridge target with the input transformer
-
-    for trigger in WORKER_TRIGGERS.iter() {
-        let message = get_worker_trigger_message(trigger.clone())?;
-        let input_transformer =
-            InputTransformer::builder().input_paths_map("time", "$.time").input_template(message).build()?;
-
-        let trigger_name = format!("{}-{}", trigger_rule_name, trigger);
-        event_bridge_client
-            .put_rule()
-            .name(trigger_name.clone())
-            .schedule_expression("rate(1 minute)")
-            .state(RuleState::Enabled)
-            .send()
-            .await?;
-
-        event_bridge_client
-            .put_targets()
-            .rule(trigger_name.clone())
-            .targets(
-                Target::builder()
-                    .id(uuid::Uuid::new_v4().to_string())
-                    .arn(queue_arn)
-                    .input_transformer(input_transformer.clone())
-                    .build()?,
-            )
-            .send()
-            .await?;
-    }
-
-    Ok(())
 }
 
 /// Function to check db for expected state continuously

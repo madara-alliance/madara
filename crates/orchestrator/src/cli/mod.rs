@@ -404,7 +404,10 @@ pub mod validate_params {
         aws_config_args: &AWSConfigCliArgs,
     ) -> Result<CronValidatedArgs, String> {
         if aws_event_bridge_args.aws_event_bridge && aws_config_args.aws {
+            let cron_type = aws_event_bridge_args.event_bridge_type.clone().expect("Event Bridge type is required");
+
             Ok(CronValidatedArgs::AWSEventBridge(AWSEventBridgeValidatedArgs {
+                cron_type,
                 target_queue_name: aws_event_bridge_args
                     .target_queue_name
                     .clone()
@@ -421,12 +424,10 @@ pub mod validate_params {
                     .trigger_rule_name
                     .clone()
                     .expect("Trigger rule name is required"),
-
                 trigger_role_name: aws_event_bridge_args
                     .trigger_role_name
                     .clone()
                     .expect("Trigger role name is required"),
-
                 trigger_policy_name: aws_event_bridge_args
                     .trigger_policy_name
                     .clone()
@@ -645,6 +646,7 @@ pub mod validate_params {
             validate_server_params, validate_service_params, validate_settlement_params, validate_snos_params,
             validate_storage_params,
         };
+        use crate::cron::event_bridge::EventBridgeType;
 
         #[rstest]
         #[case(true)]
@@ -842,6 +844,7 @@ pub mod validate_params {
         fn test_validate_cron_params(#[case] is_aws: bool) {
             let aws_event_bridge_args: AWSEventBridgeCliArgs = AWSEventBridgeCliArgs {
                 aws_event_bridge: is_aws,
+                event_bridge_type: Some(EventBridgeType::Rule),
                 target_queue_name: Some(String::from("test")),
                 cron_time: Some(String::from("12")),
                 trigger_rule_name: Some(String::from("test")),
