@@ -19,6 +19,12 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/changelog.yml
 
+  update_db_version:
+    name: Update DB Version
+    if: contains(github.event.pull_request.labels.*.name, 'bump_db') && github.event.pull_request.draft == false
+    uses: ./.github/workflows/db-version.yml
+    needs: changelog
+
   linters:
     name: Run linters
     if: github.event.pull_request.draft == false

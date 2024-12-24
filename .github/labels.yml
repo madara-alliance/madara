@@ -2,6 +2,9 @@
 - name: "breaking-change"
   color: ee0701
   description: "A change that changes the API or breaks backward compatibility for users."
+- name: "bump_db"
+  color: ee0701
+  description: "Changes requiring a database version increment."
 - name: "bugfix"
   color: ee0701
   description:
