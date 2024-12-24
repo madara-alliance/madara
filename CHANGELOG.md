@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: remove redundant dead_code attribute
 - fix: instrumentation code
 - feat: block resource cap removed from the pending tick
 - fix: replace class hash issue resolved + gas fees issue resolved
