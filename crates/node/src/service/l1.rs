@@ -1,32 +1,29 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
 use alloy::primitives::Address;
-use alloy::providers::RootProvider;
-use alloy::transports::http::Http;
 use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mc_settlement_client::client::ClientTrait;
+use mc_settlement_client::eth::StarknetCoreContract::LogMessageToL2;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
+use mc_settlement_client::messaging::MessageSent;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-use reqwest::Client;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct L1SyncService<C: 'static, P: 'static>
+pub struct L1SyncService<C: 'static, E: 'static>
 where
     C: Clone,
-    P: Clone,
+    E: Clone,
 {
     db_backend: Arc<MadaraBackend>,
-    settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>>,
+    settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -34,9 +31,9 @@ where
     mempool: Arc<Mempool>,
 }
 
-pub type EthereumSyncService = L1SyncService<EthereumClientConfig, RootProvider<Http<Client>>>;
+pub type EthereumSyncService = L1SyncService<EthereumClientConfig, LogMessageToL2>;
 
-pub type StarknetSyncService = L1SyncService<StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>>;
+pub type StarknetSyncService = L1SyncService<StarknetClientConfig, MessageSent>;
 
 // Implementation for Ethereum
 impl EthereumSyncService {
@@ -64,7 +61,7 @@ impl EthereumSyncService {
                 .context("Creating ethereum client")?;
 
                 let client_converted: Box<
-                    dyn ClientTrait<Config = EthereumClientConfig, Provider = RootProvider<Http<Client>>>,
+                    dyn ClientTrait<Config = EthereumClientConfig, EventStruct = LogMessageToL2>,
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
@@ -107,7 +104,7 @@ impl StarknetSyncService {
 
                 // StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>, Felt
                 let client_converted: Box<
-                    dyn ClientTrait<Config = StarknetClientConfig, Provider = Arc<JsonRpcClient<HttpTransport>>>,
+                    dyn ClientTrait<Config = StarknetClientConfig, EventStruct = MessageSent>,
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
@@ -124,12 +121,12 @@ impl StarknetSyncService {
 }
 
 // Shared implementation for both services
-impl<C: Clone, P: Clone> L1SyncService<C, P> {
+impl<C: Clone, E: Clone> L1SyncService<C, E> {
     #[allow(clippy::too_many_arguments)]
     async fn create_service(
         config: &L1SyncParams,
         db: &DatabaseService,
-        settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>>,
+        settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>>,
         l1_gas_provider: GasPriceProvider,
         chain_id: ChainId,
         authority: bool,
@@ -204,10 +201,10 @@ impl<C: Clone, P: Clone> L1SyncService<C, P> {
 }
 
 #[async_trait::async_trait]
-impl<C, P> Service for L1SyncService<C, P>
+impl<C, E> Service for L1SyncService<C, E>
 where
     C: Clone,
-    P: Clone,
+    E: Clone,
 {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let L1SyncService {
@@ -244,10 +241,10 @@ where
     }
 }
 
-impl<C, P> ServiceId for L1SyncService<C, P>
+impl<C, E> ServiceId for L1SyncService<C, E>
 where
     C: Clone,
-    P: Clone,
+    E: Clone,
 {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {

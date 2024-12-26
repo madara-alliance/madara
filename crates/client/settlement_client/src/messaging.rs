@@ -1,25 +1,29 @@
 use crate::client::ClientTrait;
-use crate::eth::StarknetCoreContract::LogMessageToL2;
-use crate::utils::u256_to_felt;
-use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{keccak256, FixedBytes, U256};
-use alloy::sol_types::SolValue;
-use anyhow::Context;
-use futures::StreamExt;
-use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
-use mc_mempool::{Mempool, MempoolProvider};
+use mc_db::MadaraBackend;
+use mc_mempool::Mempool;
 use mp_utils::service::ServiceContext;
-use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
+use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-pub async fn sync<C, P>(
+// L2 (Starknet) <-> L3 messaging format
+// GitHub Ref : https://github.com/cartridge-gg/piltover/blob/saya/src/messaging/component.cairo#L85
+#[derive(Clone)]
+pub struct MessageSent {
+    pub message_hash: Felt,
+    pub from: Felt,
+    pub to: Felt,
+    pub selector: Felt,
+    pub nonce: Felt,
+    pub payload: Vec<Felt>,
+}
+
+pub async fn sync<C, E>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
     backend: Arc<MadaraBackend>,
-    client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
     chain_id: ChainId,
     mempool: Arc<Mempool>,
-    mut ctx: ServiceContext,
+    ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
@@ -34,162 +38,272 @@ pub async fn sync<C, P>(
         }
     };
 
-    let contract_instance = client.get_core_contract_instance();
-    let event_filter = contract_instance.event_filter::<LogMessageToL2>();
-
-    let mut event_stream = event_filter?
-        .from_block(last_synced_event_block.block_number)
-        .to_block(BlockNumberOrTag::Finalized)
-        .watch()
-        .await
-        .context(
-            "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
-        )?
-        .into_stream();
-
-    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
-        if let Ok((event, meta)) = event_result {
-            tracing::info!(
-                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
-                meta.block_number,
-                meta.transaction_hash,
-                meta.log_index,
-                event.fromAddress
-            );
-
-            // Check if cancellation was initiated
-            let event_hash = get_l1_to_l2_msg_hash(&event)?;
-            tracing::info!("⟠ Checking for cancelation, event hash : {:?}", event_hash);
-            let cancellation_timestamp = client.get_l1_to_l2_message_cancellations(event_hash).await?;
-            if cancellation_timestamp != Felt::ZERO {
-                tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
-                let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
-                // cancelled message nonce should be inserted to avoid reprocessing
-                match backend.has_l1_messaging_nonce(tx_nonce) {
-                    Ok(false) => {
-                        backend.set_l1_messaging_nonce(tx_nonce)?;
-                    }
-                    Ok(true) => {}
-                    Err(e) => {
-                        tracing::error!("⟠ Unexpected DB error: {:?}", e);
-                        return Err(e.into());
-                    }
-                };
-                continue;
-            }
-
-            match process_l1_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
-                .await
-            {
-                Ok(Some(tx_hash)) => {
-                    tracing::info!(
-                        "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
-                        transaction hash on L2: {:?}",
-                        meta.block_number,
-                        meta.transaction_hash,
-                        meta.log_index,
-                        tx_hash
-                    );
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::error!(
-                        "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
-                    log_index: {:?}, error: {:?}",
-                        meta.block_number,
-                        meta.transaction_hash,
-                        meta.log_index,
-                        e
-                    )
-                }
-            }
-        }
-    }
+    settlement_client.listen_for_messaging_events(backend, ctx, last_synced_event_block, chain_id, mempool).await?;
 
     Ok(())
 }
 
-async fn process_l1_message(
-    backend: &MadaraBackend,
-    event: &LogMessageToL2,
-    l1_block_number: &Option<u64>,
-    event_index: &Option<u64>,
-    _chain_id: &ChainId,
-    mempool: Arc<Mempool>,
-) -> anyhow::Result<Option<Felt>> {
-    let transaction = parse_handle_l1_message_transaction(event)?;
-    let tx_nonce = transaction.nonce;
-    let fees: u128 = event.fee.try_into()?;
-
-    // Ensure that L1 message has not been executed
-    match backend.has_l1_messaging_nonce(tx_nonce) {
-        Ok(false) => {
-            backend.set_l1_messaging_nonce(tx_nonce)?;
-        }
-        Ok(true) => {
-            tracing::debug!("⟠ Event already processed: {:?}", transaction);
-            return Ok(None);
-        }
-        Err(e) => {
-            tracing::error!("⟠ Unexpected DB error: {:?}", e);
-            return Err(e.into());
-        }
+#[cfg(test)]
+mod l2_messaging_test {
+    use crate::client::ClientTrait;
+    use crate::gas_price::L1BlockMetrics;
+    use crate::messaging::sync;
+    use crate::starknet::utils::{
+        cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
+        StarknetAccount, MADARA_PORT,
     };
+    use crate::starknet::{StarknetClient, StarknetClientConfig};
+    use mc_db::DatabaseService;
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
+    use rstest::{fixture, rstest};
+    use starknet_api::core::Nonce;
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use tracing_test::traced_test;
+    use url::Url;
 
-    let res = mempool.accept_l1_handler_tx(transaction.into(), fees)?;
+    struct TestRunnerStarknet {
+        #[allow(dead_code)]
+        madara: MadaraProcess, // Not used but needs to stay in scope otherwise it will be dropped
+        account: StarknetAccount,
+        chain_config: Arc<ChainConfig>,
+        db_service: Arc<DatabaseService>,
+        deployed_address: Felt,
+        starknet_client: StarknetClient,
+        mempool: Arc<Mempool>,
+    }
 
-    // TODO: remove unwraps
-    // Ques: shall it panic if no block number of event_index?
-    let block_sent = LastSyncedEventBlock::new(l1_block_number.unwrap(), event_index.unwrap());
-    backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
+    #[fixture]
+    async fn setup_test_env_starknet() -> TestRunnerStarknet {
+        let (account, deployed_contract_address, madara) = prepare_starknet_client_messaging_test().await.unwrap();
 
-    Ok(Some(res.transaction_hash))
-}
+        // Set up chain info
+        let chain_config = Arc::new(ChainConfig::madara_test());
 
-pub fn parse_handle_l1_message_transaction(event: &LogMessageToL2) -> anyhow::Result<L1HandlerTransaction> {
-    // L1 from address.
-    let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
+        // Set up database paths
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
 
-    // L2 contract to call.
-    let contract_address = u256_to_felt(event.toAddress)?;
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
+                .await
+                .expect("Failed to create database service"),
+        );
 
-    // Function of the contract to call.
-    let entry_point_selector = u256_to_felt(event.selector)?;
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
+        let starknet_client = StarknetClient::new(StarknetClientConfig {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str()).unwrap(),
+            l2_contract_address: deployed_contract_address,
+            l1_block_metrics,
+        })
+        .await
+        .unwrap();
 
-    // L1 message nonce.
-    let nonce = u256_to_felt(event.nonce)?;
+        let l1_gas_setter = GasPriceProvider::new();
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-    let event_payload = event.payload.clone().into_iter().map(u256_to_felt).collect::<anyhow::Result<Vec<_>>>()?;
+        let mempool = Arc::new(Mempool::new(
+            Arc::clone(db.backend()),
+            Arc::clone(&l1_data_provider),
+            MempoolLimits::for_testing(),
+        ));
 
-    let calldata: Calldata = {
-        let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
-        calldata.push(from_address);
-        calldata.extend(event_payload);
+        TestRunnerStarknet {
+            madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        }
+    }
 
-        Calldata(Arc::new(calldata))
-    };
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_basic_workflow_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
 
-    Ok(L1HandlerTransaction {
-        nonce: Nonce(nonce),
-        contract_address: ContractAddress(contract_address.try_into()?),
-        entry_point_selector: EntryPointSelector(entry_point_selector),
-        calldata,
-        version: TransactionVersion(Felt::ZERO),
-    })
-}
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
 
-/// Computes the message hashed with the given event data
-fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32>> {
-    let data = (
-        [0u8; 12],
-        event.fromAddress.0 .0,
-        event.toAddress,
-        event.nonce,
-        event.selector,
-        U256::from(event.payload.len()),
-        event.payload.clone(),
-    );
-    Ok(keccak256(data.abi_encode_packed()))
+        // Firing the event
+        let fire_event_block_number = fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Log asserts
+        // ===========
+        assert!(logs_contain("fromAddress: 0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493"));
+        // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
+        // expecting the same in logs
+        assert!(logs_contain("event hash : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+
+        // Assert that the event is well stored in db
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, fire_event_block_number);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert!(db.backend().has_l1_messaging_nonce(nonce)?);
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
+
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_already_processed_event_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
+
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
+
+        // Firing the event
+        let fire_event_block_number = fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Log asserts
+        // ===========
+        assert!(logs_contain("fromAddress: 0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493"));
+        // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
+        // expecting the same in logs
+        assert!(logs_contain("event hash : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+
+        // Assert that the event is well stored in db
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, fire_event_block_number);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert!(db.backend().has_l1_messaging_nonce(nonce)?);
+
+        // Firing the event second time
+        fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        // Assert that the event processed was in last block only not in the latest block.
+        assert_eq!(
+            last_block.block_number,
+            db.backend()
+                .messaging_last_synced_l1_block_with_event()
+                .expect("failed to retrieve block")
+                .unwrap()
+                .block_number
+        );
+        assert!(logs_contain("Event already processed"));
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
+
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_message_canceled_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
+
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
+
+        cancel_messaging_event(&account, deployed_contract_address).await?;
+        // Firing cancelled event
+        fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, 0);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        // cancelled message nonce should be inserted to avoid reprocessing
+        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
+        assert!(logs_contain("L2 Message was cancelled in block at timestamp : 0x66b4f105"));
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -198,11 +312,12 @@ mod l1_messaging_tests {
     use std::{sync::Arc, time::Duration};
 
     use self::DummyContract::DummyContractInstance;
+    use crate::client::ClientTrait;
     use crate::eth::StarknetCoreContract::LogMessageToL2;
     use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::gas_price::L1BlockMetrics;
-    use crate::l1_messaging::sync;
-    use crate::{l1_messaging::get_l1_to_l2_msg_hash, utils::felt_to_u256};
+    use crate::messaging::sync;
+    use crate::utils::felt_to_u256;
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -384,8 +499,8 @@ mod l1_messaging_tests {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 sync(
-                    Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
+                    Arc::clone(db.backend()),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
@@ -445,8 +560,8 @@ mod l1_messaging_tests {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 sync(
-                    Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
+                    Arc::clone(db.backend()),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
@@ -501,8 +616,8 @@ mod l1_messaging_tests {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 sync(
-                    Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
+                    Arc::clone(db.backend()),
                     chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
@@ -528,31 +643,42 @@ mod l1_messaging_tests {
 
     /// Test taken from starknet.rs to ensure consistency
     /// https://github.com/xJonathanLEI/starknet-rs/blob/2ddc69479d326ed154df438d22f2d720fbba746e/starknet-core/src/types/msg.rs#L96
-    #[test]
-    fn test_msg_to_l2_hash() {
-        let msg = get_l1_to_l2_msg_hash(&LogMessageToL2 {
-            fromAddress: Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap(),
-            toAddress: felt_to_u256(
-                Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82").unwrap(),
-            ),
-            selector: felt_to_u256(
-                Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5").unwrap(),
-            ),
-            payload: vec![
-                felt_to_u256(
-                    Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7").unwrap(),
+    #[rstest]
+    #[tokio::test]
+    async fn test_msg_to_l2_hash() {
+        let TestRunner {
+            chain_config: _chain_config,
+            db_service: _db,
+            dummy_contract: _contract,
+            eth_client,
+            anvil: _anvil,
+            mempool: _mempool,
+        } = setup_test_env().await;
+
+        let msg = eth_client
+            .get_messaging_hash(&LogMessageToL2 {
+                fromAddress: Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap(),
+                toAddress: felt_to_u256(
+                    Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82").unwrap(),
                 ),
-                felt_to_u256(Felt::from_hex("0x2c68af0bb140000").unwrap()),
-                felt_to_u256(Felt::from_hex("0x0").unwrap()),
-            ],
-            nonce: U256::from(775628),
-            fee: U256::ZERO,
-        })
-        .expect("Failed to compute l1 to l2 msg hash");
+                selector: felt_to_u256(
+                    Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5").unwrap(),
+                ),
+                payload: vec![
+                    felt_to_u256(
+                        Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7").unwrap(),
+                    ),
+                    felt_to_u256(Felt::from_hex("0x2c68af0bb140000").unwrap()),
+                    felt_to_u256(Felt::from_hex("0x0").unwrap()),
+                ],
+                nonce: U256::from(775628),
+                fee: U256::ZERO,
+            })
+            .expect("Failed to compute l1 to l2 msg hash");
 
         let expected_hash =
             <[u8; 32]>::from_hex("c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3").unwrap();
 
-        assert_eq!(msg.0, expected_hash);
+        assert_eq!(msg, expected_hash);
     }
 }

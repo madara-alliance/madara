@@ -1,20 +1,25 @@
-use crate::client::{ClientTrait, ClientType, CoreContractInstance};
-use crate::eth::StarknetCoreContract::StarknetCoreContractInstance;
+use crate::client::{ClientTrait, CoreContractInstance};
+use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
 use crate::state_update::{update_l1, StateUpdate};
 use crate::utils::{convert_log_state_update, u256_to_felt};
 use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{Address, FixedBytes};
+use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::Filter;
 use alloy::sol;
+use alloy::sol_types::SolValue;
 use alloy::transports::http::{Client, Http};
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use bitvec::macros::internal::funty::Fundamental;
 use futures::StreamExt;
+use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
+use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
+use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -56,8 +61,8 @@ impl Clone for EthereumClient {
 
 #[async_trait]
 impl ClientTrait for EthereumClient {
-    type Provider = RootProvider<Http<Client>>;
     type Config = EthereumClientConfig;
+    type EventStruct = LogMessageToL2;
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
@@ -65,10 +70,6 @@ impl ClientTrait for EthereumClient {
 
     fn get_core_contract_instance(&self) -> CoreContractInstance {
         CoreContractInstance::Ethereum(self.l1_core_contract.clone())
-    }
-
-    fn get_client_type(&self) -> ClientType {
-        ClientType::ETH
     }
 
     /// Create a new EthereumClient instance with the given RPC URL
@@ -169,7 +170,94 @@ impl ClientTrait for EthereumClient {
         Ok(())
     }
 
-    async fn get_eth_gas_prices(&self) -> anyhow::Result<(u128, u128)> {
+    async fn listen_for_messaging_events(
+        &self,
+        backend: Arc<MadaraBackend>,
+        mut ctx: ServiceContext,
+        last_synced_event_block: LastSyncedEventBlock,
+        chain_id: ChainId,
+        mempool: Arc<Mempool>,
+    ) -> anyhow::Result<()> {
+        let contract_instance = self.get_core_contract_instance();
+        let event_filter = contract_instance.event_filter::<LogMessageToL2>();
+
+        let mut event_stream = event_filter?
+            .from_block(last_synced_event_block.block_number)
+            .to_block(BlockNumberOrTag::Finalized)
+            .watch()
+            .await
+            .context(
+                "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
+            )?
+            .into_stream();
+
+        while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
+            if let Ok((event, meta)) = event_result {
+                tracing::info!(
+                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
+                meta.block_number,
+                meta.transaction_hash,
+                meta.log_index,
+                event.fromAddress
+            );
+
+                // Check if cancellation was initiated
+                let event_hash = self.get_messaging_hash(&event)?;
+                tracing::info!(
+                    "⟠ Checking for cancelation, event hash : {:?}",
+                    Felt::from_bytes_be_slice(event_hash.as_slice())
+                );
+                let cancellation_timestamp = self.get_l1_to_l2_message_cancellations(event_hash.to_vec()).await?;
+                if cancellation_timestamp != Felt::ZERO {
+                    tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
+                    let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
+                    // cancelled message nonce should be inserted to avoid reprocessing
+                    match backend.has_l1_messaging_nonce(tx_nonce) {
+                        Ok(false) => {
+                            backend.set_l1_messaging_nonce(tx_nonce)?;
+                        }
+                        Ok(true) => {}
+                        Err(e) => {
+                            tracing::error!("⟠ Unexpected DB error: {:?}", e);
+                            return Err(e.into());
+                        }
+                    };
+                    continue;
+                }
+
+                match self
+                    .process_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
+                    .await
+                {
+                    Ok(Some(tx_hash)) => {
+                        tracing::info!(
+                            "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
+                        transaction hash on L2: {:?}",
+                            meta.block_number,
+                            meta.transaction_hash,
+                            meta.log_index,
+                            tx_hash
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::error!(
+                            "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
+                    log_index: {:?}, error: {:?}",
+                            meta.block_number,
+                            meta.transaction_hash,
+                            meta.log_index,
+                            e
+                        )
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_gas_prices(&self) -> anyhow::Result<(u128, u128)> {
         let block_number = self.get_latest_block_number().await?;
         let fee_history = self.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
 
@@ -189,6 +277,89 @@ impl ClientTrait for EthereumClient {
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
+    fn get_messaging_hash(&self, event: &Self::EventStruct) -> anyhow::Result<Vec<u8>> {
+        let data = (
+            [0u8; 12],
+            event.fromAddress.0 .0,
+            event.toAddress,
+            event.nonce,
+            event.selector,
+            U256::from(event.payload.len()),
+            event.payload.clone(),
+        );
+        Ok(keccak256(data.abi_encode_packed()).as_slice().to_vec())
+    }
+
+    async fn process_message(
+        &self,
+        backend: &MadaraBackend,
+        event: &Self::EventStruct,
+        settlement_layer_block_number: &Option<u64>,
+        event_index: &Option<u64>,
+        _chain_id: &ChainId,
+        mempool: Arc<Mempool>,
+    ) -> anyhow::Result<Option<Felt>> {
+        let transaction = self.parse_handle_message_transaction(event)?;
+        let tx_nonce = transaction.nonce;
+        let fees: u128 = event.fee.try_into()?;
+
+        // Ensure that L1 message has not been executed
+        match backend.has_l1_messaging_nonce(tx_nonce) {
+            Ok(false) => {
+                backend.set_l1_messaging_nonce(tx_nonce)?;
+            }
+            Ok(true) => {
+                tracing::debug!("⟠ Event already processed: {:?}", transaction);
+                return Ok(None);
+            }
+            Err(e) => {
+                tracing::error!("⟠ Unexpected DB error: {:?}", e);
+                return Err(e.into());
+            }
+        };
+
+        let res = mempool.accept_l1_handler_tx(transaction.into(), fees)?;
+
+        // TODO: remove unwraps
+        // Ques: shall it panic if no block number of event_index?
+        let block_sent = LastSyncedEventBlock::new(settlement_layer_block_number.unwrap(), event_index.unwrap());
+        backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
+
+        Ok(Some(res.transaction_hash))
+    }
+
+    fn parse_handle_message_transaction(&self, event: &Self::EventStruct) -> anyhow::Result<L1HandlerTransaction> {
+        // L1 from address.
+        let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
+
+        // L2 contract to call.
+        let contract_address = u256_to_felt(event.toAddress)?;
+
+        // Function of the contract to call.
+        let entry_point_selector = u256_to_felt(event.selector)?;
+
+        // L1 message nonce.
+        let nonce = u256_to_felt(event.nonce)?;
+
+        let event_payload = event.payload.clone().into_iter().map(u256_to_felt).collect::<anyhow::Result<Vec<_>>>()?;
+
+        let calldata: Calldata = {
+            let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
+            calldata.push(from_address);
+            calldata.extend(event_payload);
+
+            Calldata(Arc::new(calldata))
+        };
+
+        Ok(L1HandlerTransaction {
+            nonce: Nonce(nonce),
+            contract_address: ContractAddress(contract_address.try_into()?),
+            entry_point_selector: EntryPointSelector(entry_point_selector),
+            calldata,
+            version: TransactionVersion(Felt::ZERO),
+        })
+    }
+
     /// Get cancellation status of an L1 to L2 message
     ///
     /// This function query the core contract to know if a L1->L2 message has been cancelled
@@ -202,9 +373,10 @@ impl ClientTrait for EthereumClient {
     ///     - 0 if the message has not been cancelled
     ///     - timestamp of the cancellation if it has been cancelled
     /// - An Error if the call fail
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: FixedBytes<32>) -> anyhow::Result<Felt> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> anyhow::Result<Felt> {
         //l1ToL2MessageCancellations
-        let cancellation_timestamp = self.l1_core_contract.l1ToL2MessageCancellations(msg_hash).call().await?;
+        let cancellation_timestamp =
+            self.l1_core_contract.l1ToL2MessageCancellations(B256::from_slice(msg_hash.as_slice())).call().await?;
         u256_to_felt(cancellation_timestamp._0)
     }
 }

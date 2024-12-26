@@ -36,9 +36,9 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn state_update_worker<C, P>(
+pub async fn state_update_worker<C, E>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, Provider = P>>>,
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
     ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
@@ -62,9 +62,8 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
+    use crate::eth::StarknetCoreContract::LogMessageToL2;
     use crate::eth::{EthereumClient, EthereumClientConfig, StarknetCoreContract};
-    use alloy::providers::RootProvider;
-    use alloy::transports::http::{Client, Http};
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use mc_db::DatabaseService;
     use mp_chain_config::ChainConfig;
@@ -143,7 +142,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker::<EthereumClientConfig, RootProvider<Http<Client>>>(
+                state_update_worker::<EthereumClientConfig, LogMessageToL2>(
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
                     ServiceContext::new_for_testing(),
@@ -172,6 +171,7 @@ mod eth_client_event_subscription_test {
 mod starknet_client_event_subscription_test {
     use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
+    use crate::messaging::MessageSent;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
@@ -179,8 +179,6 @@ mod starknet_client_event_subscription_test {
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::rstest;
-    use starknet_providers::jsonrpc::HttpTransport;
-    use starknet_providers::JsonRpcClient;
     use starknet_types_core::felt::Felt;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -213,10 +211,7 @@ mod starknet_client_event_subscription_test {
 
         // Making Starknet client and start worker
         // ================================================
-        // Here we need to have madara variable otherwise it will
-        // get dropped and will kill the madara.
-        #[allow(unused_variables)]
-        let (account, deployed_address, madara) = prepare_starknet_client_test().await?;
+        let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
@@ -228,7 +223,7 @@ mod starknet_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker::<StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>>(
+                state_update_worker::<StarknetClientConfig, MessageSent>(
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(starknet_client)),
                     ServiceContext::new_for_testing(),

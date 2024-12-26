@@ -26,9 +26,12 @@ pub const MADARA_PORT: &str = "19944";
 pub const MADARA_BINARY_PATH: &str = "../../../test-artifacts/madara";
 pub const MADARA_CONFIG_PATH: &str = "../../../test-artifacts/devnet.yaml";
 pub const APPCHAIN_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/appchain_test.sierra.json";
+pub const MESSAGING_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/messaging_test.sierra.json";
 
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
 pub const APPCHAIN_CONTRACT_CASM_HASH: &str = "0x07f36e830605ddeb7c4c094639b628de297cbf61f45385b1fc3231029922b30b";
+// starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/messaging_test.casm.json
+pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x0267b5e87ff42dacc469c25ec0c2e3f8eb798a7d6723ad0aa1c68cbd3f9d8586";
 
 pub type StarknetAccount = SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>;
 pub type TransactionReceiptResult = Result<TransactionReceiptWithBlockInfo, ProviderError>;
@@ -82,7 +85,16 @@ impl Drop for MadaraProcess {
 pub async fn prepare_starknet_client_test() -> anyhow::Result<(StarknetAccount, Felt, MadaraProcess)> {
     let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
     let account = starknet_account()?;
-    let deployed_appchain_contract_address = deploy_contract(&account).await?;
+    let deployed_appchain_contract_address =
+        deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA_PATH, APPCHAIN_CONTRACT_CASM_HASH).await?;
+    Ok((account, deployed_appchain_contract_address, madara))
+}
+
+pub async fn prepare_starknet_client_messaging_test() -> anyhow::Result<(StarknetAccount, Felt, MadaraProcess)> {
+    let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
+    let account = starknet_account()?;
+    let deployed_appchain_contract_address =
+        deploy_contract(&account, MESSAGING_CONTRACT_SIERRA_PATH, MESSAGING_CONTRACT_CASM_HASH).await?;
     Ok((account, deployed_appchain_contract_address, madara))
 }
 
@@ -96,6 +108,44 @@ pub async fn send_state_update(
             to: appchain_contract_address,
             selector: get_selector_from_name("update_state")?,
             calldata: vec![Felt::from(update.block_number), update.global_root, update.block_hash],
+        }])
+        .send()
+        .await?;
+    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await?;
+
+    let latest_block_number_recorded = account.provider().block_number().await?;
+
+    match receipt.block.block_number() {
+        Some(block_number) => Ok(block_number),
+        None => Ok(latest_block_number_recorded + 1),
+    }
+}
+
+pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
+    let call = account
+        .execute_v1(vec![Call {
+            to: appchain_contract_address,
+            selector: get_selector_from_name("fire_event")?,
+            calldata: vec![],
+        }])
+        .send()
+        .await?;
+    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await?;
+
+    let latest_block_number_recorded = account.provider().block_number().await?;
+
+    match receipt.block.block_number() {
+        Some(block_number) => Ok(block_number),
+        None => Ok(latest_block_number_recorded + 1),
+    }
+}
+
+pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
+    let call = account
+        .execute_v1(vec![Call {
+            to: appchain_contract_address,
+            selector: get_selector_from_name("set_is_canceled")?,
+            calldata: vec![Felt::ONE],
         }])
         .send()
         .await?;
@@ -125,11 +175,10 @@ pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
     Ok(account)
 }
 
-pub async fn deploy_contract(account: &StarknetAccount) -> anyhow::Result<Felt> {
-    let contract_artifact: SierraClass = serde_json::from_reader(std::fs::File::open(APPCHAIN_CONTRACT_SIERRA_PATH)?)?;
+pub async fn deploy_contract(account: &StarknetAccount, sierra_path: &str, casm_hash: &str) -> anyhow::Result<Felt> {
+    let contract_artifact: SierraClass = serde_json::from_reader(std::fs::File::open(sierra_path)?)?;
     let flattened_class = contract_artifact.flatten()?;
-    let result =
-        account.declare_v2(Arc::new(flattened_class), Felt::from_str(APPCHAIN_CONTRACT_CASM_HASH)?).send().await?;
+    let result = account.declare_v2(Arc::new(flattened_class), Felt::from_str(casm_hash)?).send().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     let deployment = account
         .execute_v3(vec![Call {
@@ -164,7 +213,7 @@ pub async fn get_transaction_receipt(
     transaction_hash: Felt,
 ) -> TransactionReceiptResult {
     // there is a delay between the transaction being available at the client
-    // and the sealing of the block, hence sleeping for 500ms
+    // and the pending tick of the block, hence sleeping for 500ms
     assert_poll(|| async { rpc.get_transaction_receipt(transaction_hash).await.is_ok() }, 500, 20).await;
     rpc.get_transaction_receipt(transaction_hash).await
 }

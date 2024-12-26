@@ -2,7 +2,7 @@ pub mod client;
 pub mod error;
 pub mod eth;
 pub mod gas_price;
-pub mod l1_messaging;
+pub mod messaging;
 pub mod starknet;
 pub mod state_update;
 pub mod sync;
