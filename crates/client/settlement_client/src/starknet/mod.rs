@@ -205,6 +205,7 @@ impl ClientTrait for StarknetClient {
             } else {
                 latest_block_number - 100
             };
+            assert!(starting_block <= latest_block_number); // safety check
             let events_response = ctx.run_until_cancelled(self.get_events(
                 BlockId::Number(starting_block),
                 BlockId::Number(latest_block_number),
