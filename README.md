@@ -212,7 +212,7 @@ simplify this process.
 | Gnu Make       | Latest  | `sudo apt install make`                                           |
 
 Once you have all the dependencies installed, start by saving your rpc key
-to a `.secrets` forlder:
+to a `.secrets` folder:
 
 ```bash
 mkdir .secrets
