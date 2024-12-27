@@ -1,10 +1,5 @@
-use crate::eth::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::gas_price::L1BlockMetrics;
 use crate::state_update::StateUpdate;
-use alloy::contract::Event;
-use alloy::providers::RootProvider;
-use alloy::sol_types::SolEvent;
-use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
@@ -15,21 +10,6 @@ use starknet_api::transaction::L1HandlerTransaction;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-pub enum CoreContractInstance {
-    Ethereum(StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>),
-    Starknet(Felt),
-}
-
-impl CoreContractInstance {
-    #[allow(clippy::type_complexity)]
-    pub fn event_filter<T: SolEvent>(&self) -> anyhow::Result<Event<Http<Client>, &RootProvider<Http<Client>>, T>> {
-        match self {
-            CoreContractInstance::Ethereum(contract) => Ok(contract.event_filter()),
-            CoreContractInstance::Starknet(_) => Err(anyhow::anyhow!("Starknet doesn't support event filters")),
-        }
-    }
-}
-
 #[async_trait]
 pub trait ClientTrait: Send + Sync {
     // Configuration type used for initialization
@@ -39,7 +19,6 @@ pub trait ClientTrait: Send + Sync {
 
     // Basic getter functions
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics;
-    fn get_core_contract_instance(&self) -> CoreContractInstance;
 
     // Create a new instance of the client
     async fn new(config: Self::Config) -> anyhow::Result<Self>

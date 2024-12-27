@@ -103,9 +103,8 @@ impl StarknetSyncService {
                 .context("Creating starknet client")?;
 
                 // StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>, Felt
-                let client_converted: Box<
-                    dyn ClientTrait<Config = StarknetClientConfig, EventStruct = MessageSent>,
-                > = Box::new(client);
+                let client_converted: Box<dyn ClientTrait<Config = StarknetClientConfig, EventStruct = MessageSent>> =
+                    Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
                 anyhow::bail!(

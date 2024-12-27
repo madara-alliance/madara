@@ -171,20 +171,18 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
         .context("Initializing the l1 sync service")?,
-        MadaraSettlementLayer::Starknet => {
-            L1SyncService::<StarknetClientConfig, MessageSent>::create(
-                &run_cmd.l1_sync_params,
-                &service_db,
-                l1_gas_setter,
-                chain_config.chain_id.clone(),
-                chain_config.eth_core_contract_address.clone(),
-                run_cmd.is_sequencer(),
-                run_cmd.is_devnet(),
-                Arc::clone(&mempool),
-            )
-            .await
-            .context("Initializing the l1 sync service")?
-        }
+        MadaraSettlementLayer::Starknet => L1SyncService::<StarknetClientConfig, MessageSent>::create(
+            &run_cmd.l1_sync_params,
+            &service_db,
+            l1_gas_setter,
+            chain_config.chain_id.clone(),
+            chain_config.eth_core_contract_address.clone(),
+            run_cmd.is_sequencer(),
+            run_cmd.is_devnet(),
+            Arc::clone(&mempool),
+        )
+        .await
+        .context("Initializing the l1 sync service")?,
     };
 
     // L2 Sync

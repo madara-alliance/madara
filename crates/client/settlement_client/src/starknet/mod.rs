@@ -1,4 +1,4 @@
-use crate::client::{ClientTrait, CoreContractInstance};
+use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::MessageSent;
 use crate::state_update::{update_l1, StateUpdate};
@@ -60,10 +60,6 @@ impl ClientTrait for StarknetClient {
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
-    }
-
-    fn get_core_contract_instance(&self) -> CoreContractInstance {
-        CoreContractInstance::Starknet(self.l2_core_contract)
     }
 
     async fn new(config: Self::Config) -> anyhow::Result<Self>
@@ -201,13 +197,17 @@ impl ClientTrait for StarknetClient {
         let mut sync_flag = false;
 
         loop {
+            let latest_block_number = self.get_latest_block_number().await?;
+            let starting_block = if !sync_flag {
+                last_synced_event_block.block_number
+            } else if latest_block_number < 100 {
+                0
+            } else {
+                latest_block_number - 100
+            };
             let events_response = ctx.run_until_cancelled(self.get_events(
-                BlockId::Number(if !sync_flag {
-                    last_synced_event_block.block_number
-                } else {
-                    self.get_latest_block_number().await?
-                }),
-                BlockId::Number(self.get_latest_block_number().await?),
+                BlockId::Number(starting_block),
+                BlockId::Number(latest_block_number),
                 self.l2_core_contract,
                 vec![get_selector_from_name("MessageSent")?],
             ));
@@ -218,6 +218,11 @@ impl ClientTrait for StarknetClient {
             match events_response.await {
                 Some(Ok(emitted_events)) => {
                     for event in emitted_events {
+                        // Check if the message is already processed, if yes then skip that message
+                        if backend.has_l1_messaging_nonce(Nonce(event.data[4]))? {
+                            continue;
+                        }
+
                         tracing::info!(
                             "🔵 Processing L2 Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
                             event.block_number,
@@ -482,6 +487,12 @@ pub mod starknet_client_tests {
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
     use serial_test::serial;
+    use starknet_accounts::ConnectedAccount;
+    use starknet_core::types::BlockId;
+    use starknet_core::types::MaybePendingBlockWithTxHashes::{Block, PendingBlock};
+    use starknet_providers::jsonrpc::HttpTransport;
+    use starknet_providers::ProviderError::StarknetError;
+    use starknet_providers::{JsonRpcClient, Provider};
     use starknet_types_core::felt::Felt;
     use std::str::FromStr;
     use std::time::Duration;
@@ -552,8 +563,7 @@ pub mod starknet_client_tests {
         )
         .await?;
 
-        // It takes time on madara for events to be stored
-        sleep(Duration::from_secs(10)).await;
+        poll_on_block_completion(last_event_block_number, account.provider(), 100).await?;
 
         let latest_event_block_number = starknet_client.get_last_event_block_number().await?;
         assert_eq!(latest_event_block_number, last_event_block_number, "Latest event should have block number 100");
@@ -574,13 +584,13 @@ pub mod starknet_client_tests {
 
         // sending state updates :
         let data_felt = Felt::from_hex("0xdeadbeef")?;
-        send_state_update(
+        let block_number = send_state_update(
             &account,
             deployed_address,
             StateUpdate { block_number: 100, global_root: data_felt, block_hash: data_felt },
         )
         .await?;
-        sleep(Duration::from_secs(5)).await;
+        poll_on_block_completion(block_number, account.provider(), 100).await?;
 
         let last_verified_block_hash = starknet_client.get_last_verified_block_hash().await?;
         assert_eq!(last_verified_block_hash, data_felt, "Block hash should match");
@@ -602,13 +612,13 @@ pub mod starknet_client_tests {
 
         // sending state updates :
         let data_felt = Felt::from_hex("0xdeadbeef")?;
-        send_state_update(
+        let block_number = send_state_update(
             &account,
             deployed_address,
             StateUpdate { block_number: 100, global_root: data_felt, block_hash: data_felt },
         )
         .await?;
-        sleep(Duration::from_secs(5)).await;
+        poll_on_block_completion(block_number, account.provider(), 100).await?;
 
         let last_verified_state_root = starknet_client.get_last_state_root().await?;
         assert_eq!(last_verified_state_root, data_felt, "Last state root should match");
@@ -631,17 +641,45 @@ pub mod starknet_client_tests {
         // sending state updates :
         let data_felt = Felt::from_hex("0xdeadbeef")?;
         let block_number = 100;
-        send_state_update(
+        let event_block_number = send_state_update(
             &account,
             deployed_address,
             StateUpdate { block_number, global_root: data_felt, block_hash: data_felt },
         )
         .await?;
-        sleep(Duration::from_secs(5)).await;
+        poll_on_block_completion(event_block_number, account.provider(), 100).await?;
 
         let last_verified_block_number = starknet_client.get_last_verified_block_number().await?;
         assert_eq!(last_verified_block_number, block_number, "Last verified block should match");
 
         Ok(())
+    }
+
+    const RETRY_DELAY: Duration = Duration::from_millis(100);
+
+    pub async fn poll_on_block_completion(
+        block_number: u64,
+        provider: &JsonRpcClient<HttpTransport>,
+        max_retries: u64,
+    ) -> anyhow::Result<()> {
+        for try_count in 0..=max_retries {
+            match provider.get_block_with_tx_hashes(BlockId::Number(block_number)).await {
+                Ok(Block(_)) => {
+                    return Ok(());
+                }
+                Ok(PendingBlock(_)) | Err(StarknetError(starknet_core::types::StarknetError::BlockNotFound)) => {
+                    if try_count == max_retries {
+                        return Err(anyhow::anyhow!("Max retries reached while polling for block {}", block_number));
+                    }
+                    sleep(RETRY_DELAY).await;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Provider error while polling block {}: {}", block_number, e));
+                }
+            }
+        }
+
+        // This line should never be reached due to the return in the loop
+        Err(anyhow::anyhow!("Max retries reached while polling for block {}", block_number))
     }
 }

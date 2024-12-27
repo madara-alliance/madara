@@ -1,4 +1,4 @@
-use crate::client::{ClientTrait, CoreContractInstance};
+use crate::client::ClientTrait;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
 use crate::state_update::{update_l1, StateUpdate};
@@ -66,10 +66,6 @@ impl ClientTrait for EthereumClient {
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
-    }
-
-    fn get_core_contract_instance(&self) -> CoreContractInstance {
-        CoreContractInstance::Ethereum(self.l1_core_contract.clone())
     }
 
     /// Create a new EthereumClient instance with the given RPC URL
@@ -152,10 +148,9 @@ impl ClientTrait for EthereumClient {
         mut ctx: ServiceContext,
     ) -> anyhow::Result<()> {
         // Listen to LogStateUpdate (0x77552641) update and send changes continuously
-        let contract_instance = self.get_core_contract_instance();
-        let event_filter = contract_instance.event_filter::<StarknetCoreContract::LogStateUpdate>();
+        let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-        let mut event_stream = match ctx.run_until_cancelled(event_filter?.watch()).await {
+        let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
             Some(res) => res.context(ERR_ARCHIVE)?.into_stream(),
             None => return anyhow::Ok(()),
         };
@@ -178,10 +173,9 @@ impl ClientTrait for EthereumClient {
         chain_id: ChainId,
         mempool: Arc<Mempool>,
     ) -> anyhow::Result<()> {
-        let contract_instance = self.get_core_contract_instance();
-        let event_filter = contract_instance.event_filter::<LogMessageToL2>();
+        let event_filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
 
-        let mut event_stream = event_filter?
+        let mut event_stream = event_filter
             .from_block(last_synced_event_block.block_number)
             .to_block(BlockNumberOrTag::Finalized)
             .watch()
