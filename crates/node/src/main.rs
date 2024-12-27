@@ -18,7 +18,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_settlement_client::eth::EthereumClientConfig;
 use mc_settlement_client::eth::StarknetCoreContract::LogMessageToL2;
-use mc_settlement_client::messaging::MessageSent;
+use mc_settlement_client::messaging::sync::MessageSent;
 use mc_settlement_client::starknet::StarknetClientConfig;
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};

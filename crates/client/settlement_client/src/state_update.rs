@@ -171,7 +171,7 @@ mod eth_client_event_subscription_test {
 mod starknet_client_event_subscription_test {
     use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::MessageSent;
+    use crate::messaging::sync::MessageSent;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};

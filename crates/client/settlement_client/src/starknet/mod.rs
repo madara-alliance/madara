@@ -1,6 +1,7 @@
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::MessageSent;
+use crate::messaging::sync::MessageSent;
+use crate::messaging::MessageProcessingExt;
 use crate::state_update::{update_l1, StateUpdate};
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
@@ -85,7 +86,7 @@ impl ClientTrait for StarknetClient {
     async fn get_last_event_block_number(&self) -> anyhow::Result<u64> {
         let latest_block = self.get_latest_block_number().await?;
         // If block on l2 is not greater than or equal to 6000 we will consider the last block to 0.
-        let last_block = if latest_block <= 6000 { 0 } else { 6000 };
+        let last_block = if latest_block <= 6000 { 0 } else { latest_block - 6000 };
         let last_events = self
             .get_events(
                 BlockId::Number(last_block),
@@ -193,7 +194,7 @@ impl ClientTrait for StarknetClient {
         chain_id: ChainId,
         mempool: Arc<Mempool>,
     ) -> anyhow::Result<()> {
-        // This is for checking if initial events are synced.
+        let processor = self.message_processor(backend.clone(), chain_id, mempool.clone());
         let mut sync_flag = false;
 
         loop {
@@ -205,7 +206,9 @@ impl ClientTrait for StarknetClient {
             } else {
                 latest_block_number - 100
             };
-            assert!(starting_block <= latest_block_number); // safety check
+
+            assert!(starting_block <= latest_block_number);
+
             let events_response = ctx.run_until_cancelled(self.get_events(
                 BlockId::Number(starting_block),
                 BlockId::Number(latest_block_number),
@@ -213,26 +216,11 @@ impl ClientTrait for StarknetClient {
                 vec![get_selector_from_name("MessageSent")?],
             ));
 
-            // set synced flag as true.
             sync_flag = true;
 
             match events_response.await {
                 Some(Ok(emitted_events)) => {
                     for event in emitted_events {
-                        // Check if the message is already processed, if yes then skip that message
-                        if backend.has_l1_messaging_nonce(Nonce(event.data[4]))? {
-                            continue;
-                        }
-
-                        tracing::info!(
-                            "🔵 Processing L2 Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
-                            event.block_number,
-                            event.transaction_hash,
-                            event.data[1]
-                        );
-
-                        // For payload in data :
-                        // 6th element is the payload array length.
                         let mut payload_array = vec![];
                         event.data.iter().skip(6).for_each(|data| {
                             payload_array.push(*data);
@@ -247,65 +235,17 @@ impl ClientTrait for StarknetClient {
                             payload: payload_array,
                         };
 
-                        let event_hash = self.get_messaging_hash(&formatted_event)?;
-                        tracing::info!(
-                            "🔵 Checking for cancelation, event hash : {:?}",
-                            Felt::from_bytes_be_slice(event_hash.as_slice())
-                        );
-                        let cancellation_timestamp = self.get_l1_to_l2_message_cancellations(event_hash).await?;
-                        if cancellation_timestamp != Felt::ZERO {
-                            tracing::info!(
-                                "🔵 L2 Message was cancelled in block at timestamp : {:?}",
-                                cancellation_timestamp
-                            );
-                            let tx_nonce = Nonce(event.data[4]);
-                            match backend.has_l1_messaging_nonce(tx_nonce) {
-                                Ok(false) => {
-                                    backend.set_l1_messaging_nonce(tx_nonce)?;
-                                }
-                                Ok(true) => {}
-                                Err(e) => {
-                                    tracing::error!("🔵 Unexpected DB error: {:?}", e);
-                                    return Err(e.into());
-                                }
-                            };
-                            continue;
-                        }
-
-                        // TODO : need to figure out what to pass instead of event index.
-                        // In case of eth we are passing that and using that for indexing the events.
-                        // This value is also stored in db in order to track the events.
-                        // This is also crucial in case which node is killed while executing the messages.
-                        match self
-                            .process_message(
-                                &backend,
+                        if let Err(e) = processor
+                            .process_event(
                                 &formatted_event,
-                                &event.block_number,
-                                &Some(0),
-                                &chain_id,
-                                mempool.clone(),
+                                event.block_number,
+                                Some(0),
+                                Some(event.transaction_hash.to_hex_string()),
+                                Some(formatted_event.from.to_hex_string()),
                             )
                             .await
                         {
-                            Ok(Some(tx_hash)) => {
-                                tracing::info!(
-                                    "🔵 L2 Message from block: {:?}, transaction_hash: {:?} submitted, \
-                                transaction hash on L2: {:?}",
-                                    event.block_number,
-                                    event.transaction_hash,
-                                    tx_hash
-                                );
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                tracing::error!(
-                                    "🔵 Unexpected error while processing L2 Message from block: {:?}, transaction_hash: {:?}, \
-                                    error: {:?}",
-                                    event.block_number,
-                                    event.transaction_hash,
-                                    e
-                                )
-                            }
+                            error!("Error processing event: {:?}", e);
                         }
                     }
                 }
@@ -313,15 +253,13 @@ impl ClientTrait for StarknetClient {
                     error!("Error processing event: {:?}", e);
                 }
                 None => {
-                    trace!("Starknet Client : No event found");
+                    trace!("No events found");
                 }
             }
 
-            // TODO : take this as a block time of L2
             sleep(Duration::from_secs(5)).await;
         }
     }
-
     // We are returning here (0,0) because we are assuming that
     // the L3s will have zero gas prices. for any transaction.
     // So that's why we will keep the prices as 0 returning from

@@ -7,7 +7,7 @@ use mc_settlement_client::client::ClientTrait;
 use mc_settlement_client::eth::StarknetCoreContract::LogMessageToL2;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::messaging::MessageSent;
+use mc_settlement_client::messaging::sync::MessageSent;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_api::core::ChainId;

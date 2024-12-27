@@ -1,6 +1,7 @@
 use crate::client::ClientTrait;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
+use crate::messaging::MessageProcessingExt;
 use crate::state_update::{update_l1, StateUpdate};
 use crate::utils::{convert_log_state_update, u256_to_felt};
 use alloy::eips::BlockNumberOrTag;
@@ -22,6 +23,7 @@ use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+use tracing::error;
 use url::Url;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
@@ -173,6 +175,7 @@ impl ClientTrait for EthereumClient {
         chain_id: ChainId,
         mempool: Arc<Mempool>,
     ) -> anyhow::Result<()> {
+        let processor = self.message_processor(backend.clone(), chain_id, mempool.clone());
         let event_filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
 
         let mut event_stream = event_filter
@@ -180,70 +183,22 @@ impl ClientTrait for EthereumClient {
             .to_block(BlockNumberOrTag::Finalized)
             .watch()
             .await
-            .context(
-                "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node",
-            )?
+            .context(ERR_ARCHIVE)?
             .into_stream();
 
         while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
             if let Ok((event, meta)) = event_result {
-                tracing::info!(
-                "⟠ Processing L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?}, fromAddress: {:?}",
-                meta.block_number,
-                meta.transaction_hash,
-                meta.log_index,
-                event.fromAddress
-            );
-
-                // Check if cancellation was initiated
-                let event_hash = self.get_messaging_hash(&event)?;
-                tracing::info!(
-                    "⟠ Checking for cancelation, event hash : {:?}",
-                    Felt::from_bytes_be_slice(event_hash.as_slice())
-                );
-                let cancellation_timestamp = self.get_l1_to_l2_message_cancellations(event_hash.to_vec()).await?;
-                if cancellation_timestamp != Felt::ZERO {
-                    tracing::info!("⟠ L1 Message was cancelled in block at timestamp : {:?}", cancellation_timestamp);
-                    let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
-                    // cancelled message nonce should be inserted to avoid reprocessing
-                    match backend.has_l1_messaging_nonce(tx_nonce) {
-                        Ok(false) => {
-                            backend.set_l1_messaging_nonce(tx_nonce)?;
-                        }
-                        Ok(true) => {}
-                        Err(e) => {
-                            tracing::error!("⟠ Unexpected DB error: {:?}", e);
-                            return Err(e.into());
-                        }
-                    };
-                    continue;
-                }
-
-                match self
-                    .process_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
+                if let Err(e) = processor
+                    .process_event(
+                        &event,
+                        meta.block_number,
+                        meta.log_index,
+                        Some(meta.transaction_hash.unwrap().to_string()),
+                        Some(event.fromAddress.to_string()),
+                    )
                     .await
                 {
-                    Ok(Some(tx_hash)) => {
-                        tracing::info!(
-                            "⟠ L1 Message from block: {:?}, transaction_hash: {:?}, log_index: {:?} submitted, \
-                        transaction hash on L2: {:?}",
-                            meta.block_number,
-                            meta.transaction_hash,
-                            meta.log_index,
-                            tx_hash
-                        );
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        tracing::error!(
-                            "⟠ Unexpected error while processing L1 Message from block: {:?}, transaction_hash: {:?}, \
-                    log_index: {:?}, error: {:?}",
-                            meta.block_number,
-                            meta.transaction_hash,
-                            meta.log_index,
-                            e
-                        )
-                    }
+                    error!("Error processing event: {:?}", e);
                 }
             }
         }

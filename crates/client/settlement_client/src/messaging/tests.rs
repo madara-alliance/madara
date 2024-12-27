@@ -1,53 +1,8 @@
-use crate::client::ClientTrait;
-use mc_db::MadaraBackend;
-use mc_mempool::Mempool;
-use mp_utils::service::ServiceContext;
-use starknet_api::core::ChainId;
-use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-
-// L2 (Starknet) <-> L3 messaging format
-// GitHub Ref : https://github.com/cartridge-gg/piltover/blob/saya/src/messaging/component.cairo#L85
-#[derive(Clone)]
-pub struct MessageSent {
-    pub message_hash: Felt,
-    pub from: Felt,
-    pub to: Felt,
-    pub selector: Felt,
-    pub nonce: Felt,
-    pub payload: Vec<Felt>,
-}
-
-pub async fn sync<C, E>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
-    backend: Arc<MadaraBackend>,
-    chain_id: ChainId,
-    mempool: Arc<Mempool>,
-    ctx: ServiceContext,
-) -> anyhow::Result<()> {
-    tracing::info!("⟠ Starting L1 Messages Syncing...");
-
-    let last_synced_event_block = match backend.messaging_last_synced_l1_block_with_event() {
-        Ok(Some(blk)) => blk,
-        Ok(None) => {
-            unreachable!("Should never be None")
-        }
-        Err(e) => {
-            tracing::error!("⟠ Madara Messaging DB unavailable: {:?}", e);
-            return Err(e.into());
-        }
-    };
-
-    settlement_client.listen_for_messaging_events(backend, ctx, last_synced_event_block, chain_id, mempool).await?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod l2_messaging_test {
     use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync;
+    use crate::messaging::sync::sync;
     use crate::starknet::utils::{
         cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
         StarknetAccount, MADARA_PORT,
@@ -165,10 +120,10 @@ mod l2_messaging_test {
 
         // Log asserts
         // ===========
-        assert!(logs_contain("fromAddress: 0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493"));
+        assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
         // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
         // expecting the same in logs
-        assert!(logs_contain("event hash : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+        assert!(logs_contain("event hash: 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
 
         // Assert that the event is well stored in db
         let last_block =
@@ -222,10 +177,10 @@ mod l2_messaging_test {
 
         // Log asserts
         // ===========
-        assert!(logs_contain("fromAddress: 0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493"));
+        assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
         // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
         // expecting the same in logs
-        assert!(logs_contain("event hash : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+        assert!(logs_contain("event hash: 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
 
         // Assert that the event is well stored in db
         let last_block =
@@ -298,7 +253,7 @@ mod l2_messaging_test {
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
-        assert!(logs_contain("L2 Message was cancelled in block at timestamp : 0x66b4f105"));
+        assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
 
         // Cancelling worker
         worker_handle.abort();
@@ -316,7 +271,7 @@ mod l1_messaging_tests {
     use crate::eth::StarknetCoreContract::LogMessageToL2;
     use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync;
+    use crate::messaging::sync::sync;
     use crate::utils::felt_to_u256;
     use alloy::{
         hex::FromHex,
