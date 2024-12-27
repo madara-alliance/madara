@@ -297,7 +297,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
         JobError::Other(OtherError(e))
     })?;
 
-    let attributes = [
+    let attributes = vec![
         KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
         KeyValue::new("operation_type", "process_job"),
     ];
@@ -305,8 +305,8 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     tracing::info!(log_type = "completed", category = "general", function_type = "process_job", block_no = %internal_id, "General process job completed for block");
     let duration = start.elapsed();
     ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
-    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
     ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
+    register_block_gauge(&job, &attributes)?;
     Ok(())
 }
 
@@ -476,7 +476,7 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let duration = start.elapsed();
     ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
     ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-    ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&job.internal_id)?, &attributes);
+    register_block_gauge(&job, &attributes)?;
     Ok(())
 }
 
@@ -495,6 +495,21 @@ pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), Job
     let status = job.status.clone().to_string();
     move_job_to_failed(&job, config.clone(), format!("Received failure queue message for job with status: {}", status))
         .await
+}
+
+fn register_block_gauge(job: &JobItem, attributes: &[KeyValue]) -> Result<(), JobError> {
+    let block_number = if let JobType::StateTransition = job.job_type {
+        parse_string(
+            job.external_id
+                .unwrap_string()
+                .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
+        )
+    } else {
+        parse_string(&job.internal_id)
+    }?;
+
+    ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
+    Ok(())
 }
 
 async fn move_job_to_failed(job: &JobItem, config: Arc<Config>, reason: String) -> Result<(), JobError> {
