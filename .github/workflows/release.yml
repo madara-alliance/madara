@@ -23,8 +23,8 @@ jobs:
         id: generate_notes
         uses: conventional-changelog/releaser-action@v1
         with:
-          preset: 'angular'
-          
+          preset: "angular"
+
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
