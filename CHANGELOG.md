@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: Move crates under a madara subdir
 - fix: Gateway path fix
 - fix: instrumentation code
 - feat: block resource cap removed from the pending tick
