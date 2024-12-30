@@ -464,7 +464,7 @@ mod tests {
     #[rstest]
     fn test_mainnet_from_yaml() {
         // Change the current directory
-        std::env::set_current_dir("../../../").expect("Failed to change directory");
+        std::env::set_current_dir("../../").expect("Failed to change directory");
         let chain_config: ChainConfig =
             ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
