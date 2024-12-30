@@ -50,15 +50,32 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
+    // If block time is inferior to the tick time, then only empty blocks will
+    // be produced as we will never update the pending block before storing it.
+    if run_cmd.is_sequencer() && chain_config.block_time < chain_config.pending_block_update_time {
+        tracing::error!(
+            "Block time ({}s) cannot be less than the pending block update time ({}s), as this will yield only empty blocks",
+            chain_config.block_time.as_secs(),
+            chain_config.pending_block_update_time.as_secs()
+        );
+        anyhow::bail!("Block time");
+    }
+
     // Check if the devnet is running with the correct chain id.
     if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
         if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
-            panic!();
+            tracing::error!(
+                "You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`",
+                chain_config.chain_name
+            );
+            anyhow::bail!("devnet");
         } else {
             // This log is immediately flooded with devnet accounts and so this can be missed.
             // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
+            tracing::warn!(
+                "You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.",
+                run_cmd.network
+            );
         }
     }
 

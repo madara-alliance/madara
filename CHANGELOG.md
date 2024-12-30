@@ -2,8 +2,7 @@
 
 ## Next release
 
-- chore: Move crates under a madara subdir
-- chore(nix): resolve flake and direnv compatibility issues
+- fix(block_time): block time can no longer be less than pending block update time
 - fix: Gateway path fix
 - fix: instrumentation code
 - feat: block resource cap removed from the pending tick

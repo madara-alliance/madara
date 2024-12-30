@@ -200,7 +200,7 @@ pub struct RunCmd {
     #[clap(env = "MADARA_PRESET", long, value_name = "PRESET NAME", group = "chain_config")]
     pub preset: Option<ChainPreset>,
 
-    /// Overrides parameters from the Chain Config.
+    #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
 }
