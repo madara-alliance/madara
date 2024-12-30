@@ -13,7 +13,7 @@ use mp_transactions::{
 use starknet_api::felt;
 use starknet_types_core::felt::Felt;
 
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod temp_db {
     use crate::DatabaseService;
     use mp_chain_config::ChainConfig;
