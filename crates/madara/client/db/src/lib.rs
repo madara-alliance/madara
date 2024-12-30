@@ -282,7 +282,7 @@ pub struct MadaraBackend {
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     write_opt_no_wal: WriteOptions,
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 }
 
@@ -373,7 +373,7 @@ impl MadaraBackend {
         &self.chain_config
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref()).unwrap();
@@ -446,7 +446,7 @@ impl MadaraBackend {
             trie_log_config,
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             write_opt_no_wal: make_write_opt_no_wal(),
-            #[cfg(feature = "testing")]
+            #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         });
         backend.check_configuration()?;
