@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(compilation): crate-level compilation
 - fix: Gateway path fix
 - fix: instrumentation code
 - feat: block resource cap removed from the pending tick

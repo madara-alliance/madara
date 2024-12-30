@@ -2,6 +2,7 @@ use std::fmt;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use mp_utils::serde::{deserialize_url, serialize_url};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +12,11 @@ pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PragmaOracle {
-    #[serde(default = "default_oracle_api_url")]
+    #[serde(
+        default = "default_oracle_api_url",
+        serialize_with = "serialize_url",
+        deserialize_with = "deserialize_url"
+    )]
     pub api_url: Url,
     #[serde(default)]
     pub api_key: String,
