@@ -24,6 +24,10 @@ use url::Url;
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
 #[derive(Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
+    /// Overrides parameters from the chain config.
+    ///
+    /// Use the following syntax:
+    /// --chain-config-override=block_time=30s,pending_block_update_time=2s...
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
 }
