@@ -94,6 +94,10 @@ You can choose between different build modes:
 
 Start the Madara client with a basic set of arguments depending on your chosen mode:
 
+> [!NOTE]
+> Head to the [Configuration](#%EF%B8%8F-configuration) section to learn more about
+> customizing your node.
+
 #### Full Node
 
 Synchronizes the state of the chain from genesis.
@@ -125,16 +129,16 @@ cargo run --release --        \
 A node in a private local network.
 
 ```bash
-cargo run --release --        \
-  --name Madara               \
-  --devnet                    \
-  --base-path /var/lib/madara \
-  --preset sepolia
+ cargo run --release --    \
+  --name Madara            \
+  --devnet                 \
+  --base-path ../madara_db \
+  --chain-config-override=chain_id=MY_CUSTOM_DEVNET
 ```
 
-> [!NOTE]
-> Head to the [Configuration](#%EF%B8%8F-configuration) section to learn more about
-> customizing your node.
+> [!CAUTION]
+> Make sure to use a unique `chain_id` for your devnet to avoid potential replay
+> attacks in other chains with the same chain id!
 
 #### 4. Presets
 
