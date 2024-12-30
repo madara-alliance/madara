@@ -16,7 +16,6 @@ pub use db::*;
 pub use gateway::*;
 pub use l2::*;
 pub use rpc::*;
-use starknet_api::core::ChainId;
 use std::str::FromStr;
 pub use telemetry::*;
 
@@ -311,17 +310,6 @@ pub enum NetworkType {
     /// A devnet for local testing
     #[value(alias("devnet"))]
     Devnet,
-}
-
-impl NetworkType {
-    pub fn chain_id(&self) -> ChainId {
-        match self {
-            NetworkType::Main => ChainId::Mainnet,
-            NetworkType::Test => ChainId::Sepolia,
-            NetworkType::Integration => ChainId::IntegrationSepolia,
-            NetworkType::Devnet => ChainId::Other("MADARA_DEVNET".to_string()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
