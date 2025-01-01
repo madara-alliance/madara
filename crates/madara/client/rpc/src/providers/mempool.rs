@@ -22,24 +22,24 @@ impl MempoolAddTxProvider {
     }
 }
 
-impl From<mc_mempool::Error> for StarknetRpcApiError {
-    fn from(value: mc_mempool::Error) -> Self {
+impl From<mc_mempool::MempoolError> for StarknetRpcApiError {
+    fn from(value: mc_mempool::MempoolError) -> Self {
         match value {
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
                 StarknetRpcApiError::DuplicateTxn
             }
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(limit)) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::Limit(limit)) => {
                 StarknetRpcApiError::FailedToReceiveTxn { err: Some(format!("{}", limit).into()) }
             }
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
                 StarknetRpcApiError::FailedToReceiveTxn {
                     err: Some("A transaction with this nonce and sender address already exists".into()),
                 }
             }
-            mc_mempool::Error::Validation(err) => {
+            mc_mempool::MempoolError::Validation(err) => {
                 StarknetRpcApiError::ValidationFailure { error: format!("{err:#}").into() }
             }
-            mc_mempool::Error::Exec(err) => {
+            mc_mempool::MempoolError::Exec(err) => {
                 StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") }
             }
             err => {

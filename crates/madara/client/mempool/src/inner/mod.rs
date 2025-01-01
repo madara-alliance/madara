@@ -7,7 +7,6 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use deployed_contracts::DeployedContracts;
 use mp_convert::ToFelt;
-use nonce_chain::{InsertedPosition, NonceChain, NonceChainNewState, ReplacedState};
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::{
@@ -22,22 +21,35 @@ mod proptest;
 mod tx;
 
 pub use limits::*;
+pub use nonce_chain::*;
 pub use tx::*;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct AccountOrderedByTimestamp {
+#[derive(Clone, Debug)]
+struct AccountOrderedByReadiness {
     contract_addr: Felt,
     timestamp: ArrivedAtTimestamp,
+    readiness: NonceReadiness,
 }
 
-impl Ord for AccountOrderedByTimestamp {
+impl PartialEq for AccountOrderedByReadiness {
+    fn eq(&self, other: &Self) -> bool {
+        self.contract_addr == other.contract_addr && self.timestamp == other.timestamp
+    }
+}
+
+impl Eq for AccountOrderedByReadiness {}
+
+impl Ord for AccountOrderedByReadiness {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         // Important: Fallback on contract addr here.
         // There can be timestamp collisions.
-        self.timestamp.cmp(&other.timestamp).then_with(|| self.contract_addr.cmp(&other.contract_addr))
+        self.readiness
+            .cmp(&other.readiness)
+            .then_with(|| self.timestamp.cmp(&other.timestamp))
+            .then_with(|| self.contract_addr.cmp(&other.contract_addr))
     }
 }
-impl PartialOrd for AccountOrderedByTimestamp {
+impl PartialOrd for AccountOrderedByReadiness {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -45,14 +57,14 @@ impl PartialOrd for AccountOrderedByTimestamp {
 
 #[derive(Debug)]
 /// Invariants:
-/// - Every nonce chain in `nonce_chains` should have a one to one match with `tx_queue`.
+// - Every nonce chain in `nonce_chains` should have a one to one match with `tx_queue`.
 /// - Every [`AccountTransaction::DeployAccount`] transaction should have a one to one match with `deployed_contracts`.
 /// - See [`NonceChain`] invariants.
 pub(crate) struct MempoolInner {
     /// We have one nonce chain per contract address.
     nonce_chains: HashMap<Felt, NonceChain>,
     /// FCFS queue.
-    tx_queue: BTreeSet<AccountOrderedByTimestamp>,
+    tx_queue: BTreeSet<AccountOrderedByReadiness>,
     deployed_contracts: DeployedContracts,
     limiter: MempoolLimiter,
 }
@@ -82,8 +94,15 @@ impl MempoolInner {
         self.nonce_chains.values().for_each(NonceChain::check_invariants);
         let mut tx_queue = self.tx_queue.clone();
         for (k, v) in &self.nonce_chains {
-            assert!(tx_queue.remove(&AccountOrderedByTimestamp { contract_addr: *k, timestamp: v.front_arrived_at }))
+            // Readiness does not count for equality
+            let pop_ready = tx_queue.remove(&AccountOrderedByReadiness {
+                contract_addr: *k,
+                timestamp: v.front_arrived_at,
+                readiness: NonceReadiness::Ready,
+            });
+            assert!(pop_ready);
         }
+
         assert_eq!(tx_queue, Default::default());
         let mut deployed_contracts = self.deployed_contracts.clone();
         for (contract, _) in self.nonce_chains.values().flat_map(|chain| &chain.transactions) {
@@ -101,6 +120,7 @@ impl MempoolInner {
         mempool_tx: MempoolTransaction,
         force: bool,
         update_limits: bool,
+        readiness: NonceReadiness,
     ) -> Result<(), TxInsersionError> {
         // delete age-exceeded txs from the mempool
         // todo(perf): this may want to limit this check once every few seconds to avoid it being in the hot path?
@@ -128,20 +148,26 @@ impl MempoolInner {
                 let (position, is_replaced) = match chain.insert(mempool_tx, force) {
                     Ok(position) => position,
                     Err(nonce_collision_or_duplicate_hash) => {
-                        debug_assert!(!force); // "Force add should never error
+                        debug_assert!(!force); // Force add should never error
                         return Err(nonce_collision_or_duplicate_hash);
                     }
                 };
 
                 match position {
                     InsertedPosition::Front { former_head_arrived_at } => {
-                        // If we inserted at the front, it has invalidated the tx queue. Update the tx queue.
-                        let removed = self
-                            .tx_queue
-                            .remove(&AccountOrderedByTimestamp { contract_addr, timestamp: former_head_arrived_at });
+                        // If we inserted at the front, it has invalidated the
+                        // tx queue. Update the tx queue.
+                        let removed = self.tx_queue.remove(&AccountOrderedByReadiness {
+                            contract_addr,
+                            timestamp: former_head_arrived_at,
+                            readiness: NonceReadiness::Ready,
+                        });
                         debug_assert!(removed);
-                        let inserted =
-                            self.tx_queue.insert(AccountOrderedByTimestamp { contract_addr, timestamp: arrived_at });
+                        let inserted = self.tx_queue.insert(AccountOrderedByReadiness {
+                            contract_addr,
+                            timestamp: arrived_at,
+                            readiness,
+                        });
                         debug_assert!(inserted);
                     }
                     InsertedPosition::Other => {
@@ -156,7 +182,8 @@ impl MempoolInner {
                 entry.insert(nonce_chain);
 
                 // Also update the tx queue.
-                let inserted = self.tx_queue.insert(AccountOrderedByTimestamp { contract_addr, timestamp: arrived_at });
+                let inserted =
+                    self.tx_queue.insert(AccountOrderedByReadiness { contract_addr, timestamp: arrived_at, readiness });
                 debug_assert!(inserted);
 
                 ReplacedState::NotReplaced
@@ -182,10 +209,15 @@ impl MempoolInner {
         self.deployed_contracts.contains(addr)
     }
 
-    fn pop_tx_queue_account(&mut self, tx_queue_account: &AccountOrderedByTimestamp) -> MempoolTransaction {
+    /// This function should only be called if [AccountOrderedByReadiness] is
+    /// [NonceReadiness::Ready].
+    fn pop_tx_queue_account(&mut self, tx_queue_account: &AccountOrderedByReadiness) -> MempoolTransaction {
+        debug_assert!(tx_queue_account.readiness == NonceReadiness::Ready);
+
         // Update nonce chain.
         let nonce_chain =
             self.nonce_chains.get_mut(&tx_queue_account.contract_addr).expect("Nonce chain does not match tx queue");
+
         let (mempool_tx, nonce_chain_new_state) = nonce_chain.pop();
         match nonce_chain_new_state {
             NonceChainNewState::Empty => {
@@ -195,9 +227,11 @@ impl MempoolInner {
             }
             NonceChainNewState::NotEmpty => {
                 // Re-add to tx queue.
-                let inserted = self.tx_queue.insert(AccountOrderedByTimestamp {
+                let inserted = self.tx_queue.insert(AccountOrderedByReadiness {
                     contract_addr: tx_queue_account.contract_addr,
                     timestamp: nonce_chain.front_arrived_at,
+                    // This function should only be called on ready transactions
+                    readiness: NonceReadiness::Ready,
                 });
                 debug_assert!(inserted);
             }
@@ -235,7 +269,20 @@ impl MempoolInner {
     pub fn pop_next(&mut self) -> Option<MempoolTransaction> {
         // Pop tx queue.
         let mempool_tx = loop {
-            let tx_queue_account = self.tx_queue.pop_first()?; // Bubble up None if the mempool is empty.
+            // Bubble up None if the mempool is empty.
+            let tx_queue_account = self.tx_queue.pop_first()?;
+
+            if tx_queue_account.readiness == NonceReadiness::Pending {
+                // It is fine not to check the age limit of a pending
+                // transaction as we will add it back to the tx_queue anyway
+                // (removal will be handled by remove_age_exceeded_txs)
+                self.tx_queue.insert(tx_queue_account);
+
+                // Since tx_queue is sorted by readiness, we know all following
+                // transactions are not ready
+                return None;
+            }
+
             let mempool_tx = self.pop_tx_queue_account(&tx_queue_account);
 
             let limits = TransactionCheckedLimits::limits_for(&mempool_tx);
@@ -267,19 +314,23 @@ impl MempoolInner {
         }
         for tx in txs {
             let force = true;
-            self.insert_tx(tx, force, false).expect("Force insert tx should not error");
+            // Since this is re-adding a transaction which was already popped
+            // from the mempool, we can be sure it is ready
+            self.insert_tx(tx, force, false, NonceReadiness::Ready).expect("Force insert tx should not error");
         }
     }
 
-    /// This is called by the block production after a batch of transaction is executed.
-    /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
+    // This is called by the block production when loading the pending block
+    // from db
     pub fn insert_txs(
         &mut self,
         txs: impl IntoIterator<Item = MempoolTransaction>,
         force: bool,
     ) -> Result<(), TxInsersionError> {
         for tx in txs {
-            self.insert_tx(tx, force, true)?;
+            // Transactions are marked as ready as they were already included
+            // into the pending block
+            self.insert_tx(tx, force, true, NonceReadiness::Ready)?;
         }
         Ok(())
     }

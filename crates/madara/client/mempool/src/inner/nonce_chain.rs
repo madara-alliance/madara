@@ -24,6 +24,13 @@ impl PartialOrd for OrderMempoolTransactionByNonce {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum NonceReadiness {
+    #[default]
+    Ready,
+    Pending,
+}
+
 /// Invariants:
 /// - front_nonce, front_arrived_at and front_tx_hash must match the front transaction timestamp.
 /// - No nonce chain should ever be empty in the mempool.
