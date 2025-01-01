@@ -219,7 +219,7 @@ mod tests {
             &self,
             mut tx: BroadcastedInvokeTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::Error> {
+        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -245,7 +245,7 @@ mod tests {
             &self,
             mut tx: BroadcastedDeclareTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::Error> {
+        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -269,7 +269,7 @@ mod tests {
             &self,
             mut tx: BroadcastedDeployAccountTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::Error> {
+        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -716,7 +716,7 @@ mod tests {
 
         assert_matches!(
             result,
-            Err(mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(
+            Err(mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::Limit(
                 mc_mempool::MempoolLimitReached::MaxTransactions { max: 5 }
             )))
         )
