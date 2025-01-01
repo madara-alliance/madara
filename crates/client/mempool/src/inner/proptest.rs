@@ -69,6 +69,8 @@ impl Arbitrary for Insert {
             .prop_map(|(ty, arrived_at, contract_address, nonce, force)| {
                 let arrived_at = *NOW + Duration::from_millis(arrived_at.into());
                 let contract_addr = ContractAddress::try_from(Felt::from(contract_address)).unwrap();
+                // TODO: include nonce checks and pending transactions into the
+                // proptest
                 let nonce = Nonce(Felt::from(nonce));
 
                 let resource_bounds = ResourceBoundsMapping(
@@ -210,7 +212,7 @@ impl MempoolInvariantsProblem {
                 Operation::Insert(insert) => {
                     let force = insert.1;
                     tracing::trace!("Insert {:?}", insert);
-                    let res = mempool.insert_tx(insert.0.clone(), insert.1, true);
+                    let res = mempool.insert_tx(insert.0.clone(), insert.1, true, NonceReadiness::Ready);
 
                     let expected = if !force
                         && inserted_contract_nonce_pairs.contains(&(insert.0.nonce(), insert.0.contract_address()))
