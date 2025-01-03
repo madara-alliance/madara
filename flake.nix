@@ -23,6 +23,7 @@
             protobuf
             nodePackages.prettier
             taplo-cli
+            yq
           ];
 
           buildInputs = with pkgs; [

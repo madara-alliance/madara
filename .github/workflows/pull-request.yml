@@ -14,9 +14,15 @@ permissions:
   pull-requests: write
 
 jobs:
+  update_db_version:
+    name: Update DB Version
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/db-version.yml
+
   linters:
     name: Run linters
-    if: github.event.pull_request.draft == false
+    needs: update_db_version
+    if: ${{ always() }}
     uses: ./.github/workflows/linters.yml
 
   rust_check:
@@ -26,21 +32,24 @@ jobs:
 
   linters_cargo:
     name: Run Cargo linters
-    if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/linters-cargo.yml
     needs: rust_check
+    uses: ./.github/workflows/linters-cargo.yml
 
   coverage:
     name: Run Coverage
-    if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/coverage.yml
+    needs: update_db_version
+    if: ${{ always() }}
     secrets: inherit
+    uses: ./.github/workflows/coverage.yml
 
   build:
     name: Build Madara
+    needs: update_db_version
+    if: ${{ always() }}
     uses: ./.github/workflows/build.yml
 
   js_test:
     name: Run JS Tests
-    uses: ./.github/workflows/starknet-js-test.yml
     needs: build
+    if: ${{ always() }}
+    uses: ./.github/workflows/starknet-js-test.yml

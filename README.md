@@ -34,6 +34,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Madara-specific JSON-RPC Methods](#madara-specific-json-rpc-methods)
   - [Example of Calling a JSON-RPC Method](#example-of-calling-a-json-rpc-method)
 - 📚 [Database Migration](#-database-migration)
+  - [Database Version Management](#database-version-management)
   - [Warp Update](#warp-update)
   - [Running without `--warp-update-sender`](#running-without---warp-update-sender)
 - ✅ [Supported Features](#-supported-features)
@@ -545,10 +546,36 @@ which is returned with each websocket response.
 
 [⬅️ back to top](#-madara-starknet-client)
 
-When migration to a newer version of Madara you might need to update your
-database. Instead of re-synchronizing the entirety of your chain's state from
-genesis, you can use Madara's **warp update** feature. This is essentially a
-form of trusted sync with better performances as it is run from a local source.
+### Database Version Management
+
+The database version management system ensures compatibility between Madara's
+binary and database versions.
+When you encounter a version mismatch error, it means your database schema needs
+to be updated to match your current binary version.
+
+When you see:
+
+```console
+Error: Database version 41 is not compatible with current binary. Expected version 42
+```
+
+This error indicates that:
+
+1. Your current binary requires database version 42
+2. Your database is still at version 41
+3. Migration is required before you can continue
+
+> [!IMPORTANT]
+> Don't panic! Your data is safe, but you need to migrate it before continuing.
+
+To migrate your database, you have two options:
+
+1. Use Madara's **warp update** feature (recommended)
+2. Re-synchronize from genesis (not recommended)
+
+The warp update feature provides a trusted sync from a local source, offering
+better performance than re-synchronizing the entirety of your chain's state
+from genesis.
 
 ### Warp Update
 
