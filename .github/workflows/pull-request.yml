@@ -14,22 +14,15 @@ permissions:
   pull-requests: write
 
 jobs:
-  changelog:
-    name: Enforce CHANGELOG
-    if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/changelog.yml
-
   linters:
     name: Run linters
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/linters.yml
-    needs: changelog
 
   rust_check:
     name: Run check
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/rust-check.yml
-    needs: changelog
 
   linters_cargo:
     name: Run Cargo linters
@@ -41,13 +34,11 @@ jobs:
     name: Run Coverage
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/coverage.yml
-    needs: changelog
     secrets: inherit
 
   build:
     name: Build Madara
     uses: ./.github/workflows/build.yml
-    needs: changelog
 
   js_test:
     name: Run JS Tests
