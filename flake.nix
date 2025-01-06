@@ -7,14 +7,24 @@
   outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
+        overlays = [ 
+          (import rust-overlay)
+          (final: prev: {
+            scarb = final.callPackage (./. + "/tools/scarb.nix") {};
+          })
+        ];
+
         pkgs = import nixpkgs {
           inherit system overlays;
         };
 
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+
       in
       {
+        # Export the scarb package
+        packages.scarb = pkgs.scarb;
+        packages.default = pkgs.scarb;
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
@@ -24,6 +34,7 @@
             nodePackages.prettier
             taplo-cli
             yq
+            scarb
           ];
 
           buildInputs = with pkgs; [
