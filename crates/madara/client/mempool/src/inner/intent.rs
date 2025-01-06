@@ -19,6 +19,7 @@
 //! [NonceTxMapping]: super::NonceTxMapping
 //! [Mempool]: super::super::Mempool
 
+use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 use std::{cmp, time::SystemTime};
 
@@ -54,11 +55,11 @@ pub(crate) struct TransactionIntentReady {
     pub(crate) timestamp: ArrivedAtTimestamp,
     /// The nonce of the transaction associated to this intent. We use this for
     /// retrieval purposes later on.
-    pub(crate) nonce: Felt,
+    pub(crate) nonce: Nonce,
     /// This is the nonce of the transaction right after this one. We precompute
     /// this to avoid making calculations on a [Felt] in the hot loop, as this
     /// can be expensive.
-    pub(crate) nonce_next: Felt,
+    pub(crate) nonce_next: Nonce,
 }
 
 impl TransactionIntentReady {
@@ -76,7 +77,7 @@ impl TransactionIntentReady {
             timestamp: SystemTime::UNIX_EPOCH,
             nonce: self.nonce_next,
             // Same for nonce_next
-            nonce_next: Felt::ZERO,
+            nonce_next: Nonce(Felt::ZERO),
         }
     }
 }
@@ -84,7 +85,7 @@ impl TransactionIntentReady {
 #[cfg(test)]
 impl CheckInvariants for TransactionIntentReady {
     fn check_invariants(&self) {
-        assert!(self.nonce_next == self.nonce + Felt::ONE);
+        assert_eq!(self.nonce_next, self.nonce.try_increment().unwrap());
     }
 }
 
@@ -141,11 +142,11 @@ pub(crate) struct TransactionIntentPending {
     pub(crate) timestamp: ArrivedAtTimestamp,
     /// The nonce of the transaction associated to this intent. We use this for
     /// retrieval purposes later on.
-    pub(crate) nonce: Felt,
+    pub(crate) nonce: Nonce,
     /// This is the nonce of the transaction right after this one. We precompute
     /// this to avoid making calculations on a [Felt] in the hot loop, as this
     /// can be expensive.
-    pub(crate) nonce_next: Felt,
+    pub(crate) nonce_next: Nonce,
 }
 
 impl TransactionIntentPending {
@@ -167,7 +168,7 @@ impl TransactionIntentPending {
 #[cfg(test)]
 impl CheckInvariants for TransactionIntentPending {
     fn check_invariants(&self) {
-        assert!(self.nonce_next == self.nonce + Felt::ONE);
+        assert_eq!(self.nonce_next, self.nonce.try_increment().unwrap());
     }
 }
 

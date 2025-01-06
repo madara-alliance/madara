@@ -3,63 +3,54 @@ use crate::{Column, MadaraBackend, MadaraStorageError};
 use mp_class::ConvertedClass;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
+use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
-/// A struct representing the readiness of a transaction.
+/// A nonce is deemed ready when it directly follows the previous nonce in db
+/// for a contract  address. This guarantees that dependent transactions are not
+/// executed out of order by the mempool.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub enum NonceStatus {
+    #[default]
+    Ready,
+    Pending,
+}
+
+/// Information used to assess the [readiness] of a transaction.
 ///
 /// A transaction is deemed ready when its nonce directly follows the previous
-/// nonce store in db for that contract address. This guarantees that dependent
-/// transactions are not executed out of order by the mempool.
+/// nonce store in db for that contract address.
 ///
-/// [nonce] and [nonce_next] are precomputed and stored inside [NonceReadiness]
-/// to avoid having to operate on a [Felt] inside the hot loop of the mempool.
+/// [nonce] and [nonce_next] are precomputed to avoid operating on a [Felt]
+/// inside the hot path in the mempool.
 ///
+/// [readiness]: NonceStatus
 /// [nonce]: Self::nonce
 /// [nonce_next]: Self::nonce_next
-#[must_use]
 #[derive(Debug, Serialize, Deserialize)]
-// TODO: separate the nonces from the readiness state to avoid unnecessary
-// checks when retrieving the nonce
-pub enum NonceReadiness {
-    Ready { nonce: Felt, nonce_next: Felt },
-    Pending { nonce: Felt, nonce_next: Felt },
+pub struct NonceInfo {
+    pub readiness: NonceStatus,
+    pub nonce: Nonce,
+    pub nonce_next: Nonce,
 }
 
-impl NonceReadiness {
-    #[inline(always)]
-    pub fn ready(nonce: Felt, nonce_next: Felt) -> Self {
-        debug_assert!(nonce + Felt::ONE == nonce_next);
-        Self::Ready { nonce, nonce_next }
+impl NonceInfo {
+    pub fn ready(nonce: Nonce, nonce_next: Nonce) -> Self {
+        debug_assert_eq!(nonce_next, nonce.try_increment().unwrap());
+        Self { readiness: NonceStatus::Ready, nonce, nonce_next }
     }
 
-    #[inline(always)]
-    pub fn pending(nonce: Felt, nonce_next: Felt) -> Self {
-        debug_assert!(nonce + Felt::ONE == nonce_next);
-        Self::Pending { nonce, nonce_next }
-    }
-
-    #[inline(always)]
-    pub fn nonce(&self) -> Felt {
-        match self {
-            Self::Ready { nonce, nonce_next: _ } => *nonce,
-            Self::Pending { nonce, nonce_next: _ } => *nonce,
-        }
-    }
-
-    #[inline(always)]
-    pub fn nonce_next(&self) -> Felt {
-        match self {
-            Self::Ready { nonce: _, nonce_next } => *nonce_next,
-            Self::Pending { nonce: _, nonce_next } => *nonce_next,
-        }
+    pub fn pending(nonce: Nonce, nonce_next: Nonce) -> Self {
+        debug_assert_eq!(nonce_next, nonce.try_increment().unwrap());
+        Self { readiness: NonceStatus::Pending, nonce, nonce_next }
     }
 }
 
-impl Default for NonceReadiness {
+impl Default for NonceInfo {
     fn default() -> Self {
-        Self::Ready { nonce: Felt::ZERO, nonce_next: Felt::ONE }
+        Self::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE))
     }
 }
 
@@ -78,7 +69,7 @@ pub struct SavedTransaction {
 struct DbMempoolTxInfoEncoder<'a> {
     saved_tx: &'a SavedTransaction,
     converted_class: &'a Option<ConvertedClass>,
-    nonce_readiness: &'a NonceReadiness,
+    nonce_info: &'a NonceInfo,
 }
 
 #[derive(Deserialize)]
@@ -87,7 +78,7 @@ struct DbMempoolTxInfoEncoder<'a> {
 pub struct DbMempoolTxInfoDecoder {
     pub saved_tx: SavedTransaction,
     pub converted_class: Option<ConvertedClass>,
-    pub nonce_readiness: NonceReadiness,
+    pub nonce_readiness: NonceInfo,
 }
 
 impl MadaraBackend {
@@ -121,13 +112,13 @@ impl MadaraBackend {
         saved_tx: &SavedTransaction,
         tx_hash: Felt,
         converted_class: &Option<ConvertedClass>,
-        nonce_readiness: &NonceReadiness,
+        nonce_info: &NonceInfo,
     ) -> Result<()> {
         // Note: WAL is used here
         // This is because we want it to be saved even if the node crashes before the next flush
 
         let col = self.db.get_column(Column::MempoolTransactions);
-        let tx_with_class = DbMempoolTxInfoEncoder { saved_tx, converted_class, nonce_readiness };
+        let tx_with_class = DbMempoolTxInfoEncoder { saved_tx, converted_class, nonce_info };
         self.db.put_cf(&col, bincode::serialize(&tx_hash)?, bincode::serialize(&tx_with_class)?)?;
         tracing::debug!("save_mempool_tx {:?}", tx_hash);
         Ok(())

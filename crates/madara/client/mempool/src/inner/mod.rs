@@ -6,9 +6,9 @@
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
 use deployed_contracts::DeployedContracts;
-use mc_db::mempool_db::NonceReadiness;
+use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mp_convert::ToFelt;
-use starknet_api::core::{ContractAddress, Nonce};
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap};
 
@@ -141,11 +141,10 @@ impl CheckInvariants for MempoolInner {
                 .get(&intent.contract_address)
                 .unwrap_or_else(|| panic!("Missing nonce mapping for contract address {}", &intent.contract_address));
 
-            let mempool_tx =
-                nonce_mapping.transactions.get(&Nonce(intent.nonce)).expect("Missing nonce mapping for intent");
+            let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).expect("Missing nonce mapping for intent");
 
-            assert_eq!(mempool_tx.nonce, Nonce(intent.nonce));
-            assert_eq!(mempool_tx.nonce_next, Nonce(intent.nonce_next));
+            assert_eq!(mempool_tx.nonce, intent.nonce);
+            assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
             assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
             if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
@@ -176,16 +175,16 @@ impl CheckInvariants for MempoolInner {
                 .get(&intent.contract_address)
                 .unwrap_or_else(|| panic!("Missing nonce mapping for contract address {}", &intent.contract_address));
 
-            let mempool_tx = nonce_mapping.transactions.get(&Nonce(intent.nonce)).unwrap_or_else(|| {
+            let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).unwrap_or_else(|| {
                 panic!(
-                    "Missing nonce mapping for intent: required {}, available {:?}",
+                    "Missing nonce mapping for intent: required {:?}, available {:?}",
                     intent.nonce,
                     nonce_mapping.transactions.keys()
                 )
             });
 
-            assert_eq!(mempool_tx.nonce, Nonce(intent.nonce));
-            assert_eq!(mempool_tx.nonce_next, Nonce(intent.nonce_next));
+            assert_eq!(mempool_tx.nonce, intent.nonce);
+            assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
             assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
             if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
@@ -242,7 +241,7 @@ impl MempoolInner {
         mempool_tx: MempoolTransaction,
         force: bool,
         update_limits: bool,
-        readiness: NonceReadiness,
+        nonce_info: NonceInfo,
     ) -> Result<(), TxInsersionError> {
         // delete age-exceeded txs from the mempool
         // todo(perf): this may want to limit this check once every few seconds
@@ -270,9 +269,7 @@ impl MempoolInner {
             hash_map::Entry::Occupied(mut entry) => {
                 // Handle nonce collision.
                 let nonce_tx_mapping = entry.get_mut();
-                // TODO: reword nonces to be of the Nonce type and decouple
-                // nonce storage from the readiness state
-                let replaced = match nonce_tx_mapping.insert(mempool_tx, Nonce(readiness.nonce()), force) {
+                let replaced = match nonce_tx_mapping.insert(mempool_tx, nonce_info.nonce, force) {
                     Ok(replaced) => replaced,
                     Err(nonce_collision_or_duplicate_hash) => {
                         debug_assert!(!force); // Force add should never error
@@ -281,15 +278,15 @@ impl MempoolInner {
                 };
 
                 // Update the tx queues.
-                match readiness {
-                    NonceReadiness::Ready { nonce, nonce_next } => {
+                match nonce_info.readiness {
+                    NonceStatus::Ready => {
                         // Remove old value (if collision and force == true)
                         if let ReplacedState::Replaced { previous } = replaced {
                             let removed = self.tx_intent_queue_ready.remove(&TransactionIntentReady {
                                 contract_address,
                                 timestamp: previous.arrived_at,
-                                nonce,
-                                nonce_next,
+                                nonce: nonce_info.nonce,
+                                nonce_next: nonce_info.nonce_next,
                             });
                             debug_assert!(removed);
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
@@ -304,12 +301,12 @@ impl MempoolInner {
                         let insert = self.tx_intent_queue_ready.insert(TransactionIntentReady {
                             contract_address,
                             timestamp: arrived_at,
-                            nonce,
-                            nonce_next,
+                            nonce: nonce_info.nonce,
+                            nonce_next: nonce_info.nonce_next,
                         });
                         debug_assert!(insert);
                     }
-                    NonceReadiness::Pending { nonce, nonce_next } => {
+                    NonceStatus::Pending => {
                         // Insert new value. This takes advantage of the fact
                         // that `timestamp` is not considered in the
                         // implementation of Eq for TransactionIntentPending to
@@ -318,7 +315,12 @@ impl MempoolInner {
                         let insert_or_replace = self
                             .tx_intent_queue_pending
                             .insert(
-                                TransactionIntentPending { contract_address, timestamp: arrived_at, nonce, nonce_next },
+                                TransactionIntentPending {
+                                    contract_address,
+                                    timestamp: arrived_at,
+                                    nonce: nonce_info.nonce,
+                                    nonce_next: nonce_info.nonce_next,
+                                },
                                 (),
                             )
                             .is_none();
@@ -343,18 +345,26 @@ impl MempoolInner {
             }
             hash_map::Entry::Vacant(entry) => {
                 // Insert the new nonce tx mapping
-                let nonce_tx_mapping = NonceTxMapping::new_with_first_tx(mempool_tx, Nonce(readiness.nonce()));
+                let nonce_tx_mapping = NonceTxMapping::new_with_first_tx(mempool_tx, nonce_info.nonce);
                 entry.insert(nonce_tx_mapping);
 
                 // Update the tx queues.
-                let inserted = match readiness {
-                    NonceReadiness::Ready { nonce, nonce_next } => self
-                        .tx_intent_queue_ready
-                        .insert(TransactionIntentReady { contract_address, timestamp: arrived_at, nonce, nonce_next }),
-                    NonceReadiness::Pending { nonce, nonce_next } => self
+                let inserted = match nonce_info.readiness {
+                    NonceStatus::Ready => self.tx_intent_queue_ready.insert(TransactionIntentReady {
+                        contract_address,
+                        timestamp: arrived_at,
+                        nonce: nonce_info.nonce,
+                        nonce_next: nonce_info.nonce_next,
+                    }),
+                    NonceStatus::Pending => self
                         .tx_intent_queue_pending
                         .insert(
-                            TransactionIntentPending { contract_address, timestamp: arrived_at, nonce, nonce_next },
+                            TransactionIntentPending {
+                                contract_address,
+                                timestamp: arrived_at,
+                                nonce: nonce_info.nonce,
+                                nonce_next: nonce_info.nonce_next,
+                            },
                             (),
                         )
                         .is_none(),
@@ -398,7 +408,7 @@ impl MempoolInner {
                 .get_mut(&tx_intent.contract_address)
                 .expect("Nonce chain does not match tx queue")
                 .transactions
-                .get(&Nonce(tx_intent.nonce))
+                .get(&tx_intent.nonce)
                 .expect("Nonce chain without a tx");
 
             let limits = TransactionCheckedLimits::limits_for(tx);
@@ -507,9 +517,9 @@ impl MempoolInner {
             let force = true;
             // Since this is re-adding a transaction which was already popped
             // from the mempool, we can be sure it is ready
-            let nonce = *tx.nonce;
-            let nonce_next = *tx.nonce_next;
-            self.insert_tx(tx, force, false, NonceReadiness::Ready { nonce, nonce_next })
+            let nonce = tx.nonce;
+            let nonce_next = tx.nonce_next;
+            self.insert_tx(tx, force, false, NonceInfo::ready(nonce, nonce_next))
                 .expect("Force insert tx should not error");
         }
     }
@@ -524,9 +534,9 @@ impl MempoolInner {
         for tx in txs {
             // Transactions are marked as ready as they were already included
             // into the pending block
-            let nonce = *tx.nonce;
-            let nonce_next = *tx.nonce_next;
-            self.insert_tx(tx, force, true, NonceReadiness::Ready { nonce, nonce_next })?;
+            let nonce = tx.nonce;
+            let nonce_next = tx.nonce_next;
+            self.insert_tx(tx, force, true, NonceInfo::ready(nonce, nonce_next))?;
         }
         Ok(())
     }

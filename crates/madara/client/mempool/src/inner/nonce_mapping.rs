@@ -6,7 +6,6 @@ use std::iter;
 
 /// A wrapper around a [BTreeMap] which provides a mapping from a [Nonce] to the
 /// associated transaction.
-/// TODO: replace all uses of [Nonce] in the Mempool with [Felt], or vice-versa
 #[derive(Debug)]
 pub struct NonceTxMapping {
     /// An ordered mapping of the transactions to come from an account, accessed
