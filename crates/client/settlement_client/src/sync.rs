@@ -1,7 +1,8 @@
 use crate::client::ClientTrait;
 use crate::gas_price::gas_price_worker;
-use crate::messaging::sync::sync;
+use crate::messaging::sync::{sync, CommonMessagingEventData};
 use crate::state_update::state_update_worker;
+use futures::Stream;
 use mc_db::MadaraBackend;
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_utils::service::ServiceContext;
@@ -10,16 +11,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[allow(clippy::too_many_arguments)]
-pub async fn sync_worker<C: 'static, E: 'static>(
+pub async fn sync_worker<C: 'static, S: 'static>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     chain_id: ChainId,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,
     gas_price_poll_ms: Duration,
     mempool: Arc<Mempool>,
     ctx: ServiceContext,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+{
     let mut join_set = tokio::task::JoinSet::new();
 
     join_set.spawn(state_update_worker(Arc::clone(&backend), settlement_client.clone(), ctx.clone()));

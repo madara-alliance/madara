@@ -5,6 +5,8 @@ use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use crate::messaging::sync::CommonMessagingEventData;
+use futures::Stream;
 use mc_analytics::register_gauge_metric_instrument;
 use mp_utils::service::ServiceContext;
 use opentelemetry::global::Error;
@@ -56,11 +58,14 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker_once<C, E>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
+pub async fn gas_price_worker_once<C, S>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+{
     match update_gas_price(settlement_client, l1_gas_provider).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
         Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
@@ -81,12 +86,15 @@ pub async fn gas_price_worker_once<C, E>(
 
     anyhow::Ok(())
 }
-pub async fn gas_price_worker<C, E>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
+pub async fn gas_price_worker<C, S>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+{
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -98,10 +106,13 @@ pub async fn gas_price_worker<C, E>(
     anyhow::Ok(())
 }
 
-async fn update_gas_price<C, E>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
+async fn update_gas_price<C, S>(
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+{
     let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await?;
 
     l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);

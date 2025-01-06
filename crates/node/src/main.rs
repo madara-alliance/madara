@@ -17,8 +17,6 @@ use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_settlement_client::eth::EthereumClientConfig;
-use mc_settlement_client::eth::StarknetCoreContract::LogMessageToL2;
-use mc_settlement_client::messaging::sync::MessageSent;
 use mc_settlement_client::starknet::StarknetClientConfig;
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
@@ -26,6 +24,8 @@ use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use std::sync::Arc;
+use mc_settlement_client::eth::event::EthereumEventStream;
+use mc_settlement_client::starknet::event::StarknetEventStream;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -159,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
     let mempool = Arc::new(mempool);
 
     let service_l1_sync = match &run_cmd.l1_sync_params.settlement_layer {
-        MadaraSettlementLayer::Eth => L1SyncService::<EthereumClientConfig, LogMessageToL2>::create(
+        MadaraSettlementLayer::Eth => L1SyncService::<EthereumClientConfig, EthereumEventStream>::create(
             &run_cmd.l1_sync_params,
             &service_db,
             l1_gas_setter,
@@ -171,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
         .context("Initializing the l1 sync service")?,
-        MadaraSettlementLayer::Starknet => L1SyncService::<StarknetClientConfig, MessageSent>::create(
+        MadaraSettlementLayer::Starknet => L1SyncService::<StarknetClientConfig, StarknetEventStream>::create(
             &run_cmd.l1_sync_params,
             &service_db,
             l1_gas_setter,

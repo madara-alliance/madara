@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
+use crate::messaging::sync::CommonMessagingEventData;
 use crate::utils::trim_hash;
 use anyhow::Context;
+use futures::Stream;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use serde::Deserialize;
@@ -36,11 +38,14 @@ pub fn update_l1(
     Ok(())
 }
 
-pub async fn state_update_worker<C, E>(
+pub async fn state_update_worker<C, S>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>,
+    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     ctx: ServiceContext,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+{
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     tracing::debug!("update_l1: cleared confirmed block number");

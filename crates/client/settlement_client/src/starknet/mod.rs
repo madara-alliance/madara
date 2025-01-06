@@ -1,17 +1,14 @@
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::sync::MessageSent;
-use crate::messaging::MessageProcessingExt;
+use crate::messaging::sync::CommonMessagingEventData;
+use crate::starknet::event::StarknetEventStream;
 use crate::state_update::{update_l1, StateUpdate};
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use bigdecimal::ToPrimitive;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
-use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
-use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall};
 use starknet_core::utils::get_selector_from_name;
 use starknet_crypto::poseidon_hash_many;
@@ -24,6 +21,7 @@ use tokio::time::sleep;
 use tracing::{error, trace};
 use url::Url;
 
+pub mod event;
 #[cfg(test)]
 pub mod utils;
 
@@ -57,7 +55,6 @@ impl Clone for StarknetClient {
 #[async_trait]
 impl ClientTrait for StarknetClient {
     type Config = StarknetClientConfig;
-    type EventStruct = MessageSent;
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
@@ -186,80 +183,6 @@ impl ClientTrait for StarknetClient {
         }
     }
 
-    async fn listen_for_messaging_events(
-        &self,
-        backend: Arc<MadaraBackend>,
-        mut ctx: ServiceContext,
-        last_synced_event_block: LastSyncedEventBlock,
-        chain_id: ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<()> {
-        let processor = self.message_processor(backend.clone(), chain_id, mempool.clone());
-        let mut sync_flag = false;
-
-        loop {
-            let latest_block_number = self.get_latest_block_number().await?;
-            let starting_block = if !sync_flag {
-                last_synced_event_block.block_number
-            } else if latest_block_number < 100 {
-                0
-            } else {
-                latest_block_number - 100
-            };
-
-            assert!(starting_block <= latest_block_number);
-
-            let events_response = ctx.run_until_cancelled(self.get_events(
-                BlockId::Number(starting_block),
-                BlockId::Number(latest_block_number),
-                self.l2_core_contract,
-                vec![get_selector_from_name("MessageSent")?],
-            ));
-
-            sync_flag = true;
-
-            match events_response.await {
-                Some(Ok(emitted_events)) => {
-                    for event in emitted_events {
-                        let mut payload_array = vec![];
-                        event.data.iter().skip(6).for_each(|data| {
-                            payload_array.push(*data);
-                        });
-
-                        let formatted_event = MessageSent {
-                            message_hash: event.data[0],
-                            from: event.data[1],
-                            to: event.data[2],
-                            selector: event.data[3],
-                            nonce: event.data[4],
-                            payload: payload_array,
-                        };
-
-                        if let Err(e) = processor
-                            .process_event(
-                                &formatted_event,
-                                event.block_number,
-                                Some(0),
-                                Some(event.transaction_hash.to_hex_string()),
-                                Some(formatted_event.from.to_hex_string()),
-                            )
-                            .await
-                        {
-                            error!("Error processing event: {:?}", e);
-                        }
-                    }
-                }
-                Some(Err(e)) => {
-                    error!("Error processing event: {:?}", e);
-                }
-                None => {
-                    trace!("No events found");
-                }
-            }
-
-            sleep(Duration::from_secs(5)).await;
-        }
-    }
     // We are returning here (0,0) because we are assuming that
     // the L3s will have zero gas prices. for any transaction.
     // So that's why we will keep the prices as 0 returning from
@@ -268,62 +191,8 @@ impl ClientTrait for StarknetClient {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &Self::EventStruct) -> anyhow::Result<Vec<u8>> {
+    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> anyhow::Result<Vec<u8>> {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
-    }
-
-    async fn process_message(
-        &self,
-        backend: &MadaraBackend,
-        event: &Self::EventStruct,
-        settlement_layer_block_number: &Option<u64>,
-        event_index: &Option<u64>,
-        _chain_id: &ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<Option<Felt>> {
-        let transaction = self.parse_handle_message_transaction(event)?;
-        let tx_nonce = transaction.nonce;
-
-        // Ensure that L2 message has not been executed
-        match backend.has_l1_messaging_nonce(tx_nonce) {
-            Ok(false) => {
-                backend.set_l1_messaging_nonce(tx_nonce)?;
-            }
-            Ok(true) => {
-                tracing::debug!("🔵 Event already processed: {:?}", transaction);
-                return Ok(None);
-            }
-            Err(e) => {
-                tracing::error!("🔵 Unexpected DB error: {:?}", e);
-                return Err(e.into());
-            }
-        };
-
-        let res = mempool.accept_l1_handler_tx(transaction.into(), 0);
-
-        // TODO: remove unwraps
-        // Ques: shall it panic if no block number of event_index?
-        let block_sent = LastSyncedEventBlock::new(settlement_layer_block_number.unwrap(), event_index.unwrap());
-        backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
-
-        Ok(Some(res?.transaction_hash))
-    }
-
-    fn parse_handle_message_transaction(&self, event: &Self::EventStruct) -> anyhow::Result<L1HandlerTransaction> {
-        let calldata: Calldata = {
-            let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
-            calldata.push(event.from);
-            calldata.extend(event.payload.clone());
-            Calldata(Arc::new(calldata))
-        };
-
-        Ok(L1HandlerTransaction {
-            nonce: Nonce(event.nonce),
-            contract_address: ContractAddress(event.from.try_into()?),
-            entry_point_selector: EntryPointSelector(event.selector),
-            calldata,
-            version: TransactionVersion(Felt::ZERO),
-        })
     }
 
     async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> anyhow::Result<Felt> {
@@ -342,6 +211,23 @@ impl ClientTrait for StarknetClient {
         // Ensure correct read call : u256 (0, 0)
         assert_eq!(call_res.len(), 2, "l1_to_l2_message_cancellations should return only 2 values");
         Ok(call_res[0])
+    }
+
+    // ============================================================
+    // Stream Implementations :
+    // ============================================================
+    type StreamType = StarknetEventStream;
+    async fn get_event_stream(
+        &self,
+        last_synced_event_block: LastSyncedEventBlock,
+    ) -> anyhow::Result<StarknetEventStream> {
+        let filter = EventFilter {
+            from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
+            to_block: None,
+            address: Some(self.l2_core_contract),
+            keys: Some(vec![vec![get_selector_from_name("MessageSent")?]]),
+        };
+        Ok(StarknetEventStream::new(self.provider.clone(), filter))
     }
 }
 
@@ -383,18 +269,21 @@ impl StarknetClient {
         Ok(event_vec)
     }
 
-    fn event_to_felt_array(&self, event: &MessageSent) -> Vec<Felt> {
-        let mut felt_vec = vec![event.from, event.to, event.selector, event.nonce];
+    fn event_to_felt_array(&self, event: &CommonMessagingEventData) -> Vec<Felt> {
+        let mut felt_vec = vec![
+            Felt::from_bytes_be_slice(event.from.as_slice()),
+            Felt::from_bytes_be_slice(event.to.as_slice()),
+            Felt::from_bytes_be_slice(event.selector.as_slice()),
+            Felt::from_bytes_be_slice(event.nonce.as_slice()),
+        ];
         felt_vec.push(Felt::from(event.payload.len()));
         event.payload.clone().into_iter().for_each(|felt| {
-            felt_vec.push(felt);
+            felt_vec.push(Felt::from_bytes_be_slice(felt.as_slice()));
         });
 
         felt_vec
     }
-}
 
-impl StarknetClient {
     pub async fn get_state_call(&self) -> anyhow::Result<Vec<Felt>> {
         let call_res = self
             .provider

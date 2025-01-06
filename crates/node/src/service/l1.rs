@@ -4,10 +4,11 @@ use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mc_settlement_client::client::ClientTrait;
-use mc_settlement_client::eth::StarknetCoreContract::LogMessageToL2;
+use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::messaging::sync::MessageSent;
+use mc_settlement_client::messaging::sync::{CommonMessagingEventData};
+use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_api::core::ChainId;
@@ -15,15 +16,15 @@ use starknet_core::types::Felt;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use futures::Stream;
 
-#[derive(Clone)]
-pub struct L1SyncService<C: 'static, E: 'static>
+pub struct L1SyncService<C: 'static, S: 'static>
 where
     C: Clone,
-    E: Clone,
+    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
 {
     db_backend: Arc<MadaraBackend>,
-    settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>>,
+    settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -31,9 +32,8 @@ where
     mempool: Arc<Mempool>,
 }
 
-pub type EthereumSyncService = L1SyncService<EthereumClientConfig, LogMessageToL2>;
-
-pub type StarknetSyncService = L1SyncService<StarknetClientConfig, MessageSent>;
+pub type EthereumSyncService = L1SyncService<EthereumClientConfig, EthereumEventStream>;
+pub type StarknetSyncService = L1SyncService<StarknetClientConfig, StarknetEventStream>;
 
 // Implementation for Ethereum
 impl EthereumSyncService {
@@ -61,7 +61,7 @@ impl EthereumSyncService {
                 .context("Creating ethereum client")?;
 
                 let client_converted: Box<
-                    dyn ClientTrait<Config = EthereumClientConfig, EventStruct = LogMessageToL2>,
+                    dyn ClientTrait<Config = EthereumClientConfig, StreamType = EthereumEventStream>,
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
@@ -103,8 +103,9 @@ impl StarknetSyncService {
                 .context("Creating starknet client")?;
 
                 // StarknetClientConfig, Arc<JsonRpcClient<HttpTransport>>, Felt
-                let client_converted: Box<dyn ClientTrait<Config = StarknetClientConfig, EventStruct = MessageSent>> =
-                    Box::new(client);
+                let client_converted: Box<
+                    dyn ClientTrait<Config = StarknetClientConfig, StreamType = StarknetEventStream>,
+                > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
                 anyhow::bail!(
@@ -120,12 +121,16 @@ impl StarknetSyncService {
 }
 
 // Shared implementation for both services
-impl<C: Clone, E: Clone> L1SyncService<C, E> {
+impl<C: Clone, S> L1SyncService<C, S>
+where
+    C: Clone + 'static,
+    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + 'static,
+{
     #[allow(clippy::too_many_arguments)]
     async fn create_service(
         config: &L1SyncParams,
         db: &DatabaseService,
-        settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, EventStruct = E>>>>,
+        settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>>,
         l1_gas_provider: GasPriceProvider,
         chain_id: ChainId,
         authority: bool,
@@ -200,26 +205,21 @@ impl<C: Clone, E: Clone> L1SyncService<C, E> {
 }
 
 #[async_trait::async_trait]
-impl<C, E> Service for L1SyncService<C, E>
+impl<C, S> Service for L1SyncService<C, S>
 where
     C: Clone,
-    E: Clone,
+    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
 {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let L1SyncService {
-            db_backend,
-            l1_gas_provider,
-            chain_id,
-            gas_price_sync_disabled,
-            gas_price_poll,
-            mempool,
-            ..
-        } = self.clone();
-
         if let Some(settlement_client) = &self.settlement_client {
-            // enabled
-
+            let db_backend = Arc::clone(&self.db_backend);
             let settlement_client = Arc::clone(settlement_client);
+            let chain_id = self.chain_id.clone();
+            let l1_gas_provider = self.l1_gas_provider.clone();
+            let gas_price_sync_disabled = self.gas_price_sync_disabled;
+            let gas_price_poll = self.gas_price_poll;
+            let mempool = Arc::clone(&self.mempool);
+
             runner.service_loop(move |ctx| {
                 mc_settlement_client::sync::sync_worker(
                     db_backend,
@@ -240,10 +240,10 @@ where
     }
 }
 
-impl<C, E> ServiceId for L1SyncService<C, E>
+impl<C, S> ServiceId for L1SyncService<C, S>
 where
     C: Clone,
-    E: Clone,
+    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
 {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {

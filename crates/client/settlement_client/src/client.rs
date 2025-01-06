@@ -1,12 +1,11 @@
 use crate::gas_price::L1BlockMetrics;
+use crate::messaging::sync::CommonMessagingEventData;
 use crate::state_update::StateUpdate;
 use async_trait::async_trait;
+use futures::Stream;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
-use mc_mempool::Mempool;
 use mp_utils::service::ServiceContext;
-use starknet_api::core::ChainId;
-use starknet_api::transaction::L1HandlerTransaction;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -14,8 +13,6 @@ use std::sync::Arc;
 pub trait ClientTrait: Send + Sync {
     // Configuration type used for initialization
     type Config;
-    // Event struct type
-    type EventStruct;
 
     // Basic getter functions
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics;
@@ -52,35 +49,11 @@ pub trait ClientTrait: Send + Sync {
         ctx: ServiceContext,
     ) -> anyhow::Result<()>;
 
-    // Listen for messaging events
-    async fn listen_for_messaging_events(
-        &self,
-        backend: Arc<MadaraBackend>,
-        ctx: ServiceContext,
-        last_synced_event_block: LastSyncedEventBlock,
-        chain_id: ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<()>;
-
     // get gas prices
     async fn get_gas_prices(&self) -> anyhow::Result<(u128, u128)>;
 
     // Get message hash from event
-    fn get_messaging_hash(&self, event: &Self::EventStruct) -> anyhow::Result<Vec<u8>>;
-
-    // Process message received from event
-    async fn process_message(
-        &self,
-        backend: &MadaraBackend,
-        event: &Self::EventStruct,
-        settlement_layer_block_number: &Option<u64>,
-        event_index: &Option<u64>,
-        chain_id: &ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<Option<Felt>>;
-
-    // Parse the message into madara l1 handler transaction
-    fn parse_handle_message_transaction(&self, event: &Self::EventStruct) -> anyhow::Result<L1HandlerTransaction>;
+    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> anyhow::Result<Vec<u8>>;
 
     /// Get cancellation status of an L1 to L2 message
     ///
@@ -96,4 +69,11 @@ pub trait ClientTrait: Send + Sync {
     ///     - timestamp of the cancellation if it has been cancelled
     /// - An Error if the call fail
     async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> anyhow::Result<Felt>;
+
+    // ============================================================
+    // Stream Implementations :
+    // ============================================================
+    type StreamType: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>;
+    async fn get_event_stream(&self, last_synced_event_block: LastSyncedEventBlock)
+        -> anyhow::Result<Self::StreamType>;
 }

@@ -1,7 +1,10 @@
+pub mod event;
+
 use crate::client::ClientTrait;
+use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::MessageProcessingExt;
+use crate::messaging::sync::CommonMessagingEventData;
 use crate::state_update::{update_l1, StateUpdate};
 use crate::utils::{convert_log_state_update, u256_to_felt};
 use alloy::eips::BlockNumberOrTag;
@@ -17,13 +20,9 @@ use bitvec::macros::internal::funty::Fundamental;
 use futures::StreamExt;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
-use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
-use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use tracing::error;
 use url::Url;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
@@ -64,7 +63,6 @@ impl Clone for EthereumClient {
 #[async_trait]
 impl ClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
-    type EventStruct = LogMessageToL2;
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
@@ -167,45 +165,6 @@ impl ClientTrait for EthereumClient {
         Ok(())
     }
 
-    async fn listen_for_messaging_events(
-        &self,
-        backend: Arc<MadaraBackend>,
-        mut ctx: ServiceContext,
-        last_synced_event_block: LastSyncedEventBlock,
-        chain_id: ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<()> {
-        let processor = self.message_processor(backend.clone(), chain_id, mempool.clone());
-        let event_filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-
-        let mut event_stream = event_filter
-            .from_block(last_synced_event_block.block_number)
-            .to_block(BlockNumberOrTag::Finalized)
-            .watch()
-            .await
-            .context(ERR_ARCHIVE)?
-            .into_stream();
-
-        while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
-            if let Ok((event, meta)) = event_result {
-                if let Err(e) = processor
-                    .process_event(
-                        &event,
-                        meta.block_number,
-                        meta.log_index,
-                        Some(meta.transaction_hash.unwrap().to_string()),
-                        Some(event.fromAddress.to_string()),
-                    )
-                    .await
-                {
-                    error!("Error processing event: {:?}", e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     async fn get_gas_prices(&self) -> anyhow::Result<(u128, u128)> {
         let block_number = self.get_latest_block_number().await?;
         let fee_history = self.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await?;
@@ -226,87 +185,17 @@ impl ClientTrait for EthereumClient {
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
-    fn get_messaging_hash(&self, event: &Self::EventStruct) -> anyhow::Result<Vec<u8>> {
+    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> anyhow::Result<Vec<u8>> {
         let data = (
             [0u8; 12],
-            event.fromAddress.0 .0,
-            event.toAddress,
-            event.nonce,
-            event.selector,
+            event.from.clone(),
+            event.to.clone(),
+            event.nonce.clone(),
+            event.selector.clone(),
             U256::from(event.payload.len()),
             event.payload.clone(),
         );
         Ok(keccak256(data.abi_encode_packed()).as_slice().to_vec())
-    }
-
-    async fn process_message(
-        &self,
-        backend: &MadaraBackend,
-        event: &Self::EventStruct,
-        settlement_layer_block_number: &Option<u64>,
-        event_index: &Option<u64>,
-        _chain_id: &ChainId,
-        mempool: Arc<Mempool>,
-    ) -> anyhow::Result<Option<Felt>> {
-        let transaction = self.parse_handle_message_transaction(event)?;
-        let tx_nonce = transaction.nonce;
-        let fees: u128 = event.fee.try_into()?;
-
-        // Ensure that L1 message has not been executed
-        match backend.has_l1_messaging_nonce(tx_nonce) {
-            Ok(false) => {
-                backend.set_l1_messaging_nonce(tx_nonce)?;
-            }
-            Ok(true) => {
-                tracing::debug!("⟠ Event already processed: {:?}", transaction);
-                return Ok(None);
-            }
-            Err(e) => {
-                tracing::error!("⟠ Unexpected DB error: {:?}", e);
-                return Err(e.into());
-            }
-        };
-
-        let res = mempool.accept_l1_handler_tx(transaction.into(), fees)?;
-
-        // TODO: remove unwraps
-        // Ques: shall it panic if no block number of event_index?
-        let block_sent = LastSyncedEventBlock::new(settlement_layer_block_number.unwrap(), event_index.unwrap());
-        backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
-
-        Ok(Some(res.transaction_hash))
-    }
-
-    fn parse_handle_message_transaction(&self, event: &Self::EventStruct) -> anyhow::Result<L1HandlerTransaction> {
-        // L1 from address.
-        let from_address = u256_to_felt(event.fromAddress.into_word().into())?;
-
-        // L2 contract to call.
-        let contract_address = u256_to_felt(event.toAddress)?;
-
-        // Function of the contract to call.
-        let entry_point_selector = u256_to_felt(event.selector)?;
-
-        // L1 message nonce.
-        let nonce = u256_to_felt(event.nonce)?;
-
-        let event_payload = event.payload.clone().into_iter().map(u256_to_felt).collect::<anyhow::Result<Vec<_>>>()?;
-
-        let calldata: Calldata = {
-            let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
-            calldata.push(from_address);
-            calldata.extend(event_payload);
-
-            Calldata(Arc::new(calldata))
-        };
-
-        Ok(L1HandlerTransaction {
-            nonce: Nonce(nonce),
-            contract_address: ContractAddress(contract_address.try_into()?),
-            entry_point_selector: EntryPointSelector(entry_point_selector),
-            calldata,
-            version: TransactionVersion(Felt::ZERO),
-        })
     }
 
     /// Get cancellation status of an L1 to L2 message
@@ -327,6 +216,23 @@ impl ClientTrait for EthereumClient {
         let cancellation_timestamp =
             self.l1_core_contract.l1ToL2MessageCancellations(B256::from_slice(msg_hash.as_slice())).call().await?;
         u256_to_felt(cancellation_timestamp._0)
+    }
+
+    // ============================================================
+    // Stream Implementations :
+    // ============================================================
+    type StreamType = EthereumEventStream;
+    async fn get_event_stream(
+        &self,
+        last_synced_event_block: LastSyncedEventBlock,
+    ) -> anyhow::Result<Self::StreamType> {
+        let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
+        let event_stream = filter
+            .from_block(last_synced_event_block.block_number)
+            .to_block(BlockNumberOrTag::Finalized)
+            .watch()
+            .await?;
+        Ok(EthereumEventStream::new(event_stream))
     }
 }
 
