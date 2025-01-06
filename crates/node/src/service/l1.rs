@@ -1,13 +1,14 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
 use alloy::primitives::Address;
 use anyhow::Context;
+use futures::Stream;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mc_settlement_client::client::ClientTrait;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::messaging::sync::{CommonMessagingEventData};
+use mc_settlement_client::messaging::sync::CommonMessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -16,7 +17,6 @@ use starknet_core::types::Felt;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use futures::Stream;
 
 pub struct L1SyncService<C: 'static, S: 'static>
 where

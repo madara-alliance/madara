@@ -179,8 +179,8 @@ async fn update_l1_block_metrics(
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::eth::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
+    use crate::eth::event::EthereumEventStream;
     use crate::eth::EthereumClientConfig;
-    use crate::eth::StarknetCoreContract::LogMessageToL2;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use serial_test::serial;
@@ -200,7 +200,7 @@ mod eth_client_gas_price_worker_test {
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker::<EthereumClientConfig, LogMessageToL2>(
+                gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
                     Arc::new(Box::new(eth_client)),
                     l1_gas_provider,
                     Duration::from_millis(200),
@@ -240,7 +240,7 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, LogMessageToL2>(
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -265,7 +265,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, LogMessageToL2>(
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -290,7 +290,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, LogMessageToL2>(
+        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -344,7 +344,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            gas_price_worker::<EthereumClientConfig, LogMessageToL2>(
+            gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
                 Arc::new(Box::new(eth_client)),
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
@@ -381,7 +381,7 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.update_last_update_timestamp();
 
         // Update gas prices
-        update_gas_price::<EthereumClientConfig, LogMessageToL2>(Arc::new(Box::new(eth_client)), &l1_gas_provider)
+        update_gas_price::<EthereumClientConfig, EthereumEventStream>(Arc::new(Box::new(eth_client)), &l1_gas_provider)
             .await
             .expect("Failed to update gas prices");
 

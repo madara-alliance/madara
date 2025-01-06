@@ -67,7 +67,7 @@ mod eth_client_event_subscription_test {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    use crate::eth::StarknetCoreContract::LogMessageToL2;
+    use crate::eth::event::EthereumEventStream;
     use crate::eth::{EthereumClient, EthereumClientConfig, StarknetCoreContract};
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
     use mc_db::DatabaseService;
@@ -147,7 +147,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker::<EthereumClientConfig, LogMessageToL2>(
+                state_update_worker::<EthereumClientConfig, EthereumEventStream>(
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
                     ServiceContext::new_for_testing(),
@@ -176,7 +176,7 @@ mod eth_client_event_subscription_test {
 mod starknet_client_event_subscription_test {
     use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync::MessageSent;
+    use crate::starknet::event::StarknetEventStream;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
@@ -228,7 +228,7 @@ mod starknet_client_event_subscription_test {
         let listen_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                state_update_worker::<StarknetClientConfig, MessageSent>(
+                state_update_worker::<StarknetClientConfig, StarknetEventStream>(
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(starknet_client)),
                     ServiceContext::new_for_testing(),

@@ -268,11 +268,9 @@ mod l1_messaging_tests {
 
     use self::DummyContract::DummyContractInstance;
     use crate::client::ClientTrait;
-    use crate::eth::StarknetCoreContract::LogMessageToL2;
     use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync::sync;
-    use crate::utils::felt_to_u256;
+    use crate::messaging::sync::{sync, CommonMessagingEventData};
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -611,23 +609,30 @@ mod l1_messaging_tests {
         } = setup_test_env().await;
 
         let msg = eth_client
-            .get_messaging_hash(&LogMessageToL2 {
-                fromAddress: Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap(),
-                toAddress: felt_to_u256(
-                    Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82").unwrap(),
-                ),
-                selector: felt_to_u256(
-                    Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5").unwrap(),
-                ),
+            .get_messaging_hash(&CommonMessagingEventData {
+                from: Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap().0 .0.to_vec(),
+                to: Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82")
+                    .unwrap()
+                    .to_bytes_be()
+                    .to_vec(),
+                selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5")
+                    .unwrap()
+                    .to_bytes_be()
+                    .to_vec(),
                 payload: vec![
-                    felt_to_u256(
-                        Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7").unwrap(),
-                    ),
-                    felt_to_u256(Felt::from_hex("0x2c68af0bb140000").unwrap()),
-                    felt_to_u256(Felt::from_hex("0x0").unwrap()),
+                    Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7")
+                        .unwrap()
+                        .to_bytes_be()
+                        .to_vec(),
+                    Felt::from_hex("0x2c68af0bb140000").unwrap().to_bytes_be().to_vec(),
+                    Felt::from_hex("0x0").unwrap().to_bytes_be().to_vec(),
                 ],
-                nonce: U256::from(775628),
-                fee: U256::ZERO,
+                nonce: U256::from(775628).to_be_bytes_vec(),
+                fee: Some(U256::ZERO.to_be_bytes_vec()),
+                transaction_hash: None,
+                message_hash: None,
+                block_number: None,
+                event_index: None,
             })
             .expect("Failed to compute l1 to l2 msg hash");
 
