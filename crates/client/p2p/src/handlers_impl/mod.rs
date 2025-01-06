@@ -4,8 +4,9 @@ use mc_db::{
     stream::{BlockStreamConfig, Direction},
     MadaraBackend,
 };
-use mp_block::BlockId;
-use std::num::NonZeroU64;
+use mp_block::{BlockId, Header};
+use starknet_core::types::Felt;
+use std::{borrow::Cow, num::NonZeroU64};
 
 mod classes;
 mod error;
@@ -14,18 +15,30 @@ mod headers;
 mod state_diffs;
 mod transactions;
 
-pub use classes::classes_sync;
-pub use events::events_sync;
-pub use headers::headers_sync;
-pub use state_diffs::state_diffs_sync;
-pub use transactions::transactions_sync;
+pub use classes::*;
+pub use events::*;
+pub use headers::*;
+pub use state_diffs::*;
+pub use transactions::*;
 
-impl From<u128> for model::Uint128 {
-    fn from(value: u128) -> Self {
-        let b = value.to_le_bytes();
-        let low = u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
-        let high = u64::from_le_bytes([b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]]);
-        Self { low, high }
+#[derive(thiserror::Error, Debug)]
+pub enum FromModelError {
+    #[error("Missing field: {0}")]
+    MissingField(Cow<'static, str>),
+    #[error("Invalid field: {0}")]
+    InvalidField(Cow<'static, str>),
+    #[error("Invalid enum variant for {ty}: {value}")]
+    InvalidEnumVariant { ty: Cow<'static, str>, value: i32 },
+}
+impl FromModelError {
+    pub fn missing_field(s: impl Into<Cow<'static, str>>) -> Self {
+        Self::MissingField(s.into())
+    }
+    pub fn invalid_field(s: impl Into<Cow<'static, str>>) -> Self {
+        Self::InvalidField(s.into())
+    }
+    pub fn invalid_enum_variant(ty: impl Into<Cow<'static, str>>, value: i32) -> Self {
+        Self::InvalidEnumVariant { ty: ty.into(), value }
     }
 }
 
@@ -56,4 +69,19 @@ pub fn block_stream_config(
         step: value.step.try_into().unwrap_or(NonZeroU64::MIN),
         limit: if value.limit == 0 { None } else { Some(value.limit) },
     })
+}
+
+impl From<BlockStreamConfig> for model::Iteration {
+    fn from(value: BlockStreamConfig) -> Self {
+        Self {
+            direction: match value.direction {
+                Direction::Forward => model::iteration::Direction::Forward,
+                Direction::Backward => model::iteration::Direction::Backward,
+            }
+            .into(),
+            limit: value.limit.unwrap_or_default(),
+            step: value.step.get(),
+            start: Some(model::iteration::Start::BlockNumber(value.start)),
+        }
+    }
 }

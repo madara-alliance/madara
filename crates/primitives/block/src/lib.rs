@@ -14,6 +14,19 @@ use starknet_types_core::felt::Felt;
 
 use crate::header::GasPrices;
 
+#[derive(Debug, Clone)]
+pub struct ConsensusSignature {
+    pub r: Felt,
+    pub s: Felt,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockHeaderWithSignatures {
+    pub header: Header,
+    pub block_hash: Felt,
+    pub consensus_signatures: Vec<ConsensusSignature>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum MadaraMaybePendingBlockInfo {

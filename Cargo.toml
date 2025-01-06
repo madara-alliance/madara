@@ -26,6 +26,8 @@ members = [
   "crates/proc-macros",
   "crates/tests",
   "crates/cairo-test-contracts",
+  "crates/primitives/legacy-hashes",
+  "crates/client/sync2",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -54,6 +56,7 @@ default-members = [
   "crates/primitives/chain_config",
   "crates/primitives/utils",
   "crates/proc-macros",
+  "crates/primitives/legacy-hashes",
 ]
 
 [workspace.lints.rust]

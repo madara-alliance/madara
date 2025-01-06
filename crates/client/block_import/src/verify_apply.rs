@@ -304,7 +304,7 @@ fn block_hash(
         l1_gas_price,
         l1_da_mode,
     };
-    let block_hash = header.compute_hash(validation.chain_id.to_felt());
+    let block_hash = header.compute_hash(validation.chain_id.to_felt(), false);
 
     let compute_v0_13_2_hashes_mode =
         validation.compute_v0_13_2_hashes && header.protocol_version < StarknetVersion::V0_13_2;

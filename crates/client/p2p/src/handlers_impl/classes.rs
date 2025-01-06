@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use super::FromModelError;
 use crate::{
     handlers_impl::{
         block_stream_config,
@@ -13,9 +12,41 @@ use base64::prelude::*;
 use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
 use mc_db::db_block_id::DbBlockId;
 use mp_class::{
-    ClassInfo, EntryPointsByType, LegacyClassInfo, LegacyContractEntryPoint, SierraClassInfo, SierraEntryPoint,
+    ClassInfo, EntryPointsByType, FlattenedSierraClass, LegacyClassInfo, LegacyContractEntryPoint, SierraClassInfo,
+    SierraEntryPoint,
 };
+use std::sync::Arc;
 use tokio::pin;
+
+// impl TryFrom<model::class::Class> for ClassInfo {
+//     type Error = FromModelError;
+//     fn try_from(value: model::class::Class) -> Result<Self, Self::Error> {
+//         use model::class::Class;
+//         Ok(match value {
+//             Class::Cairo0(tx) => Self::Legacy(tx.try_into()?),
+//             Class::Cairo1(tx) => Self::Sierra(tx.try_into()?),
+//         })
+//     }
+// }
+
+// impl ToBlockifier
+
+// impl TryFrom<model::Cairo1Class> for SierraClassInfo {
+//     type Error = FromModelError;
+//     fn try_from(value: model::Cairo1Class) -> Result<Self, Self::Error> {
+//         Ok(
+//             Self {
+//                 contract_class: Arc::new(FlattenedSierraClass {
+//                     sierra_program: value.program.into_iter().map(Into::into).collect(),
+//                     contract_class_version: value.contract_class_version,
+//                     entry_points_by_type: value.entry_points.unwrap_or_default().try_into(),
+//                     abi: value.abi,
+//                 }),
+//                 compiled_class_hash: value.,
+//             }
+//         )
+//     }
+// }
 
 impl From<ClassInfo> for model::class::Class {
     fn from(value: ClassInfo) -> Self {

@@ -1,5 +1,6 @@
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
+use mp_block::BlockHeaderWithSignatures;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_state_update::{
@@ -7,6 +8,13 @@ use mp_state_update::{
 };
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
+
+impl MadaraBackend {
+    pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
+        // self.
+        todo!()
+    }
+}
 
 impl MadaraBackend {
     /// NB: This functions needs to run on the rayon thread pool

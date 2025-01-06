@@ -1,5 +1,8 @@
+use futures::channel::mpsc;
 use futures::{channel::mpsc::Sender, future::BoxFuture, pin_mut, Future};
-use p2p_stream::InboundRequestId;
+use futures::{SinkExt, Stream, StreamExt};
+use libp2p::PeerId;
+use p2p_stream::{InboundRequestId, OutboundRequestId};
 use std::borrow::Cow;
 use std::{collections::HashMap, fmt, marker::PhantomData};
 use tokio::task::{AbortHandle, JoinSet};
@@ -15,7 +18,13 @@ pub enum Error {
 
     /// Sender closed. Do nothing.
     #[error("Channel closed")]
-    SenderClosed(#[from] futures::channel::mpsc::SendError),
+    SenderClosed,
+}
+
+impl From<futures::channel::mpsc::SendError> for Error {
+    fn from(_: futures::channel::mpsc::SendError) -> Self {
+        Self::SenderClosed
+    }
 }
 
 pub struct ReqContext<AppCtx: Clone> {
@@ -36,6 +45,8 @@ pub struct StreamHandler<AppCtx, Req, Res, F, Fut> {
     handler: F,
     join_set: JoinSet<()>,
     current_inbound: HashMap<InboundRequestId, AbortHandle>,
+    pending_outbounds_channels: HashMap<OutboundRequestId, mpsc::Sender<Res>>,
+    current_outbound: HashMap<OutboundRequestId, AbortHandle>,
     _boo: PhantomData<(Req, Res, Fut)>,
 }
 
@@ -51,6 +62,8 @@ where
             app_ctx,
             join_set: Default::default(),
             current_inbound: Default::default(),
+            pending_outbounds_channels: Default::default(),
+            current_outbound: Default::default(),
             _boo: PhantomData,
         }
     }
@@ -65,6 +78,7 @@ where
 
                 let fut = (self.handler)(ctx, request, channel);
 
+                let debug_name = self.debug_name;
                 let abort_handle = self.join_set.spawn(async move {
                     let fut = fut;
                     pin_mut!(fut);
@@ -72,12 +86,12 @@ where
                     if let Err(err) = fut.await {
                         match err {
                             Error::Internal(err) => {
-                                tracing::error!(target: "p2p_errors", "Internal Server Error: {:#}", err);
+                                tracing::error!(target: "p2p_errors", "Internal Server Error in stream {} [peer_id {peer}]: {err:#}", debug_name);
                             }
                             Error::BadRequest(err) => {
-                                tracing::debug!(target: "p2p_errors", "Bad request: {:#}", err);
+                                tracing::debug!(target: "p2p_errors", "Bad Request in stream {} [peer_id {peer}]: {err:#}", debug_name);
                             }
-                            Error::SenderClosed(_) => { /* sender closed, do nothing */ }
+                            Error::SenderClosed => { /* sender closed, do nothing */ }
                         }
                     }
                 });
@@ -97,10 +111,71 @@ where
                 }
             }
             /* === US => OTHER PEER === */
-            p2p_stream::Event::OutboundRequestSentAwaitingResponses { .. } => todo!(),
-            p2p_stream::Event::OutboundFailure { .. } => todo!(),
-            p2p_stream::Event::InboundResponseStreamClosed { .. } => todo!(),
+            p2p_stream::Event::OutboundRequestSentAwaitingResponses { peer, request_id, mut channel } => {
+                if let Some(mut snd) = self.pending_outbounds_channels.remove(&request_id) {
+                    let debug_name = self.debug_name;
+                    let abort_handle = self.join_set.spawn(async move {
+                        loop {
+                            let Some(el) = channel.next().await else {
+                                break; // channel closed
+                            };
+                            let res = match el {
+                                Ok(res) => res,
+                                Err(err) => {
+                                    tracing::debug!(target: "p2p_errors", "I/O error in stream {} [peer_id {peer}]: {err:#}", debug_name);
+                                    break;
+                                }
+                            };
+                            if snd.send(res).await.is_err() {
+                                break; // channel closed
+                            }
+                        }
+                    });
+                    self.current_outbound.insert(request_id, abort_handle);
+                }
+            }
+            p2p_stream::Event::OutboundFailure { peer, request_id, error } => {
+                tracing::debug!("Outbounds failure in stream {} [peer_id {}]: {:#}", self.debug_name, peer, error);
+                self.pending_outbounds_channels.remove(&request_id);
+                if let Some(v) = self.current_outbound.remove(&request_id) {
+                    v.abort();
+                }
+            }
+            p2p_stream::Event::InboundResponseStreamClosed { peer, request_id } => {
+                tracing::debug!("End of outbound stream {} [peer_id {}]", self.debug_name, peer);
+                self.pending_outbounds_channels.remove(&request_id);
+                if let Some(v) = self.current_outbound.remove(&request_id) {
+                    v.abort();
+                }
+            }
         }
+    }
+
+    pub fn add_outbound(&mut self, id: OutboundRequestId, stream: mpsc::Sender<Res>) {
+        self.pending_outbounds_channels.insert(id, stream);
+    }
+
+    pub fn make_stream<'a, T>(
+        &mut self,
+        peer: PeerId,
+        request_id: OutboundRequestId,
+        map_header_response: impl Fn(Res) -> Result<T, Error> + 'a,
+    ) -> impl Stream<Item = T> + 'a {
+        let (snd, recv) = mpsc::channel(3);
+        self.add_outbound(request_id, snd);
+        let debug_name = self.debug_name;
+        tokio_stream::StreamExt::map_while(recv, move |res| match map_header_response(res) {
+            Ok(res) => Some(res),
+            Err(Error::Internal(err)) => {
+                tracing::error!(target: "p2p_errors", "Internal server error in stream {debug_name} [peer_id {peer}]: {err:#}");
+                None
+            }
+            Err(Error::BadRequest(err)) => {
+                tracing::debug!(target: "p2p_errors", "Bad request in stream {debug_name} [peer_id {peer}]: {err:#}");
+                None
+            }
+            Err(Error::SenderClosed) => None,
+        })
     }
 }
 

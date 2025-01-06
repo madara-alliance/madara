@@ -23,6 +23,7 @@ tokio-util.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 unsigned-varint.workspace = true
+futures-bounded.workspace = true
 
 mc-db.workspace = true
 mc-rpc.workspace = true

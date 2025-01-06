@@ -1,6 +1,6 @@
 use anyhow::Context;
 use behaviour::MadaraP2pBehaviour;
-use futures::FutureExt;
+use futures::{channel::mpsc, FutureExt};
 use libp2p::{futures::StreamExt, multiaddr::Protocol, Multiaddr, Swarm};
 use mc_db::MadaraBackend;
 use mc_rpc::providers::AddTransactionProvider;
@@ -9,12 +9,17 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use sync_handlers::DynSyncHandler;
 
 mod behaviour;
+mod commands;
 mod events;
 mod handlers_impl;
 mod identity;
 mod model_primitives;
 mod sync_codec;
+mod sync_controller;
 mod sync_handlers;
+
+pub use commands::*;
+pub use libp2p::PeerId;
 
 /// Protobuf messages.
 #[allow(clippy::all)]
@@ -45,6 +50,8 @@ pub struct MadaraP2p {
     #[allow(unused)]
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 
+    commands: P2pCommands,
+    commands_receiver: Option<mpsc::Receiver<Command>>,
     swarm: Swarm<MadaraP2pBehaviour>,
 
     headers_sync_handler: DynSyncHandler<MadaraP2pContext, model::BlockHeadersRequest, model::BlockHeadersResponse>,
@@ -82,11 +89,15 @@ impl MadaraP2p {
 
         let app_ctx = MadaraP2pContext { backend: Arc::clone(&db) };
 
+        let (commands, commands_receiver) = mpsc::channel(100);
+
         Ok(Self {
             config,
             db,
             add_transaction_provider,
             swarm,
+            commands: P2pCommands(commands),
+            commands_receiver: Some(commands_receiver),
             headers_sync_handler: DynSyncHandler::new("headers", app_ctx.clone(), |ctx, req, out| {
                 handlers_impl::headers_sync(ctx, req, out).boxed()
             }),
@@ -105,6 +116,10 @@ impl MadaraP2p {
         })
     }
 
+    pub fn commands(&self) -> P2pCommands {
+        self.commands.clone()
+    }
+
     /// Main loop of the p2p service.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let multi_addr = "/ip4/0.0.0.0".parse::<Multiaddr>()?.with(Protocol::Tcp(self.config.port.unwrap_or(0)));
@@ -117,6 +132,7 @@ impl MadaraP2p {
         }
 
         let mut status_interval = tokio::time::interval(self.config.status_interval);
+        let mut commands_recv = self.commands_receiver.take().context("Service already started")?;
 
         loop {
             tokio::select! {
@@ -147,13 +163,15 @@ impl MadaraP2p {
                     tracing::info!("DHT {dht:?}");
                 }
 
-                // Handle incoming service commands
-                // _ =
-
                 // Make progress on the swarm and handle the events it yields
                 event = self.swarm.next() => match event {
                     Some(event) => self.handle_event(event).context("Handling p2p event")?,
                     None => break,
+                },
+
+                // Handle incoming service commands
+                Some(command) = commands_recv.next() => {
+                    self.handle_command(command);
                 }
             }
         }
