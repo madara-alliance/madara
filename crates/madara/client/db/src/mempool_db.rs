@@ -7,6 +7,62 @@ use starknet_types_core::felt::Felt;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
+/// A struct representing the readiness of a transaction.
+///
+/// A transaction is deemed ready when its nonce directly follows the previous
+/// nonce store in db for that contract address. This guarantees that dependent
+/// transactions are not executed out of order by the mempool.
+///
+/// [nonce] and [nonce_next] are precomputed and stored inside [NonceReadiness]
+/// to avoid having to operate on a [Felt] inside the hot loop of the mempool.
+///
+/// [nonce]: Self::nonce
+/// [nonce_next]: Self::nonce_next
+#[must_use]
+#[derive(Debug, Serialize, Deserialize)]
+// TODO: separate the nonces from the readiness state to avoid unnecessary
+// checks when retrieving the nonce
+pub enum NonceReadiness {
+    Ready { nonce: Felt, nonce_next: Felt },
+    Pending { nonce: Felt, nonce_next: Felt },
+}
+
+impl NonceReadiness {
+    #[inline(always)]
+    pub fn ready(nonce: Felt, nonce_next: Felt) -> Self {
+        debug_assert!(nonce + Felt::ONE == nonce_next);
+        Self::Ready { nonce, nonce_next }
+    }
+
+    #[inline(always)]
+    pub fn pending(nonce: Felt, nonce_next: Felt) -> Self {
+        debug_assert!(nonce + Felt::ONE == nonce_next);
+        Self::Pending { nonce, nonce_next }
+    }
+
+    #[inline(always)]
+    pub fn nonce(&self) -> Felt {
+        match self {
+            Self::Ready { nonce, nonce_next: _ } => *nonce,
+            Self::Pending { nonce, nonce_next: _ } => *nonce,
+        }
+    }
+
+    #[inline(always)]
+    pub fn nonce_next(&self) -> Felt {
+        match self {
+            Self::Ready { nonce: _, nonce_next } => *nonce_next,
+            Self::Pending { nonce: _, nonce_next } => *nonce_next,
+        }
+    }
+}
+
+impl Default for NonceReadiness {
+    fn default() -> Self {
+        Self::Ready { nonce: Felt::ZERO, nonce_next: Felt::ONE }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct SavedTransaction {
     pub tx: mp_transactions::Transaction,
@@ -22,7 +78,7 @@ pub struct SavedTransaction {
 struct DbMempoolTxInfoEncoder<'a> {
     saved_tx: &'a SavedTransaction,
     converted_class: &'a Option<ConvertedClass>,
-    nonce_readiness: bool,
+    nonce_readiness: &'a NonceReadiness,
 }
 
 #[derive(Deserialize)]
@@ -31,7 +87,7 @@ struct DbMempoolTxInfoEncoder<'a> {
 pub struct DbMempoolTxInfoDecoder {
     pub saved_tx: SavedTransaction,
     pub converted_class: Option<ConvertedClass>,
-    pub nonce_readiness: bool,
+    pub nonce_readiness: NonceReadiness,
 }
 
 impl MadaraBackend {
@@ -65,7 +121,7 @@ impl MadaraBackend {
         saved_tx: &SavedTransaction,
         tx_hash: Felt,
         converted_class: &Option<ConvertedClass>,
-        nonce_readiness: bool,
+        nonce_readiness: &NonceReadiness,
     ) -> Result<()> {
         // Note: WAL is used here
         // This is because we want it to be saved even if the node crashes before the next flush

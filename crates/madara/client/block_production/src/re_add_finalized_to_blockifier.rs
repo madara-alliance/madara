@@ -4,6 +4,7 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_mempool::{MempoolProvider, MempoolTransaction};
 use mp_block::{header::BlockTimestamp, BlockId, BlockTag, MadaraMaybePendingBlock};
 use mp_transactions::{ToBlockifierError, TransactionWithHash};
+use starknet_api::StarknetApiError;
 use starknet_core::types::Felt;
 
 #[derive(Debug, thiserror::Error)]
@@ -17,6 +18,9 @@ pub enum ReAddTxsToMempoolError {
 
     #[error("Converting transaction with hash {tx_hash:#x}: Blockifier conversion error: {err:#}")]
     ToBlockifierError { tx_hash: Felt, err: ToBlockifierError },
+
+    #[error("Error converting to a MempoolTransaction: {0:#}")]
+    ConvertToMempoolError(#[from] StarknetApiError),
 
     /// This error should never happen unless we are running on a platform where SystemTime cannot represent the timestamp we are making.
     #[error("Converting transaction with hash {tx_hash:#x}: Could not create arrived_at timestamp with block_timestamp={block_timestamp} and tx_index={tx_index}")]
@@ -68,7 +72,12 @@ pub fn re_add_txs_to_mempool(
             let arrived_at = make_arrived_at(block_timestamp, tx_index).ok_or_else(|| {
                 ReAddTxsToMempoolError::MakingArrivedAtTimestamp { tx_hash, block_timestamp, tx_index }
             })?;
-            Ok(MempoolTransaction { tx, arrived_at, converted_class })
+
+            Ok::<_, ReAddTxsToMempoolError>(MempoolTransaction::new_from_blockifier_tx(
+                tx,
+                arrived_at,
+                converted_class,
+            )?)
         })
         .collect::<Result<_, _>>()?;
 

@@ -162,7 +162,8 @@ impl Arbitrary for Insert {
                 let tx = Transaction::from_api(tx, tx_hash, Some(DUMMY_CLASS.clone()), l1_gas_paid, deployed, false)
                     .unwrap();
 
-                Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
+                // Insert(MempoolTransaction { tx, arrived_at, converted_class: None }, force)
+                todo!("handled nonce checks in proptest")
             })
             .boxed()
     }
@@ -212,7 +213,8 @@ impl MempoolInvariantsProblem {
                 Operation::Insert(insert) => {
                     let force = insert.1;
                     tracing::trace!("Insert {:?}", insert);
-                    let res = mempool.insert_tx(insert.0.clone(), insert.1, true, NonceReadiness::Ready);
+                    // let res = mempool.insert_tx(insert.0.clone(), insert.1, true, NonceReadiness::Ready);
+                    todo!("handle nonces in proptest");
 
                     let expected = if !force
                         && inserted_contract_nonce_pairs.contains(&(insert.0.nonce(), insert.0.contract_address()))
@@ -226,17 +228,17 @@ impl MempoolInvariantsProblem {
                         Ok(())
                     };
 
-                    assert_eq!(expected, res);
-
-                    if expected.is_ok() {
-                        if insert.0.tx.tx_type() == TransactionType::DeployAccount {
-                            new_contracts.insert(insert.0.contract_address());
-                        }
-                        inserted.insert(insert.0.tx_hash());
-                        inserted_contract_nonce_pairs.insert((insert.0.nonce(), insert.0.contract_address()));
-                    }
-
-                    tracing::trace!("Result {:?}", res);
+                    // assert_eq!(expected, res);
+                    //
+                    // if expected.is_ok() {
+                    //     if insert.0.tx.tx_type() == TransactionType::DeployAccount {
+                    //         new_contracts.insert(insert.0.contract_address());
+                    //     }
+                    //     inserted.insert(insert.0.tx_hash());
+                    //     inserted_contract_nonce_pairs.insert((insert.0.nonce(), insert.0.contract_address()));
+                    // }
+                    //
+                    // tracing::trace!("Result {:?}", res);
                 }
                 Operation::Pop => {
                     tracing::trace!("Pop");

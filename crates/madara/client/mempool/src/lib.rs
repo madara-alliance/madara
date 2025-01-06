@@ -7,7 +7,7 @@ use blockifier::transaction::transactions::{
 };
 use header::make_pending_header;
 use mc_db::db_block_id::DbBlockId;
-use mc_db::mempool_db::DbMempoolTxInfoDecoder;
+use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceReadiness};
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::ExecutionContext;
 use metrics::MempoolMetrics;
@@ -60,6 +60,14 @@ impl MempoolError {
     pub fn is_internal(&self) -> bool {
         matches!(self, MempoolError::StorageError(_) | MempoolError::BroadcastedToBlockifier(_))
     }
+}
+
+#[cfg(test)]
+pub(crate) trait CheckInvariants {
+    /// Validates the invariants of this struct.
+    ///
+    /// This method should cause a panic if these invariants are not met.
+    fn check_invariants(&self);
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -119,7 +127,6 @@ impl Mempool {
                 res.context("Getting mempool transactions")?;
             let (tx, arrived_at) = saved_to_blockifier_tx(saved_tx, tx_hash, &converted_class)
                 .context("Converting saved tx to blockifier")?;
-            let nonce_readiness = if nonce_readiness { NonceReadiness::Ready } else { NonceReadiness::Pending };
 
             if let Err(err) = self.accept_tx(tx, converted_class, arrived_at, nonce_readiness) {
                 match err {
@@ -137,7 +144,7 @@ impl Mempool {
         tx: Transaction,
         converted_class: Option<ConvertedClass>,
         arrived_at: SystemTime,
-        nonce_readiness: NonceReadiness,
+        readiness: NonceReadiness,
     ) -> Result<(), MempoolError> {
         // Get pending block.
         let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
@@ -185,20 +192,18 @@ impl Mempool {
             // Add to db
             let saved_tx = blockifier_to_saved_tx(&tx, arrived_at);
 
-            self.backend.save_mempool_transaction(
-                &saved_tx,
-                tx_hash,
-                &converted_class,
-                nonce_readiness == NonceReadiness::Ready,
-            )?;
+            self.backend.save_mempool_transaction(&saved_tx, tx_hash, &converted_class, &readiness)?;
 
             // Add it to the inner mempool
             let force = false;
+            // TODO: should directly store a Nonce in db
+            let nonce = Nonce(readiness.nonce());
+            let nonce_next = Nonce(readiness.nonce_next());
             self.inner.write().expect("Poisoned lock").insert_tx(
-                MempoolTransaction { tx, arrived_at, converted_class },
+                MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
                 force,
                 true,
-                nonce_readiness,
+                readiness,
             )?;
 
             self.metrics.accepted_transaction_counter.add(1, &[]);
@@ -218,11 +223,12 @@ impl Mempool {
             .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &sender_address)?
             .map(|nonce| nonce + Felt::ONE)
             .unwrap_or(nonce);
+        let nonce_next = nonce + Felt::ONE;
 
         if nonce != nonce_target {
-            Ok(NonceReadiness::Pending)
+            Ok(NonceReadiness::pending(nonce, nonce_next))
         } else {
-            Ok(NonceReadiness::Ready)
+            Ok(NonceReadiness::ready(nonce, nonce_next))
         }
     }
 }
@@ -258,19 +264,19 @@ impl MempoolProvider for Mempool {
         &self,
         tx: BroadcastedInvokeTxn<Felt>,
     ) -> Result<AddInvokeTransactionResult<Felt>, MempoolError> {
-        let nonce_readiness = match &tx {
-            &BroadcastedInvokeTxn::V1(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
-            &BroadcastedInvokeTxn::V3(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
-            &BroadcastedInvokeTxn::QueryV1(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
-            &BroadcastedInvokeTxn::QueryV3(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
-            &BroadcastedInvokeTxn::V0(_) | &BroadcastedInvokeTxn::QueryV0(_) => NonceReadiness::Ready,
+        let readiness = match &tx {
+            BroadcastedInvokeTxn::V1(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
+            BroadcastedInvokeTxn::V3(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
+            BroadcastedInvokeTxn::QueryV1(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
+            BroadcastedInvokeTxn::QueryV3(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
+            BroadcastedInvokeTxn::V0(_) | &BroadcastedInvokeTxn::QueryV0(_) => NonceReadiness::default(),
         };
 
         let tx = BroadcastedTxn::Invoke(tx);
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&btx) };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_readiness)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), readiness)?;
         Ok(res)
     }
 
@@ -282,7 +288,8 @@ impl MempoolProvider for Mempool {
             transaction_hash: transaction_hash(&btx),
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceReadiness::Ready)?;
+
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceReadiness::default())?;
         Ok(res)
     }
 
@@ -292,17 +299,36 @@ impl MempoolProvider for Mempool {
         tx: L1HandlerTransaction,
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError> {
+        let nonce = Felt::from(tx.nonce);
         let (btx, class) =
             tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
 
+        // L1 Handler nonces represent the ordering of L1 transactions sent by
+        // the core L1 contract. In principle this is a bit strange, as there
+        // currently is only 1 core L1 contract, so all transactions should be
+        // ordered by default. Moreover, these transaction are infrequent, so
+        // the risk that two transactions are emitted at very short intervals
+        // seems unlikely. Still, who knows?
+        //
+        // INFO: L1 nonce are stored differently in the db because of this, which is
+        // why we do not use `retrieve_nonce_readiness`.
+        let nonce_target =
+            self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| *nonce + Felt::ZERO).unwrap_or(nonce);
+        let nonce_next = nonce + Felt::ONE;
+        let readiness = if nonce != nonce_target {
+            NonceReadiness::pending(nonce, nonce_next)
+        } else {
+            NonceReadiness::ready(nonce, nonce_next)
+        };
+
         let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&btx) };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceReadiness::Ready)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), readiness)?;
         Ok(res)
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
-        let nonce_readiness = match &tx {
+        let readiness = match &tx {
             BroadcastedDeclareTxn::V1(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
             BroadcastedDeclareTxn::V2(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
             BroadcastedDeclareTxn::V3(ref tx) => self.retrieve_nonce_readiness(tx.sender_address, tx.nonce)?,
@@ -318,7 +344,7 @@ impl MempoolProvider for Mempool {
             transaction_hash: transaction_hash(&btx),
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_readiness)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), readiness)?;
         Ok(res)
     }
 
@@ -334,7 +360,7 @@ impl MempoolProvider for Mempool {
             transaction_hash: transaction_hash(&btx),
             contract_address: deployed_contract_address(&btx).expect("Created transaction should be deploy account"),
         };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceReadiness::Ready)?;
+        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceReadiness::default())?;
         Ok(res)
     }
 
@@ -380,7 +406,13 @@ impl MempoolProvider for Mempool {
             let saved_tx = blockifier_to_saved_tx(&tx.tx, tx.arrived_at);
             // Save to db. Transactions are marked as ready since they were
             // already previously included into the pending block
-            self.backend.save_mempool_transaction(&saved_tx, tx.tx_hash().to_felt(), &tx.converted_class, true)?;
+            let readiness = NonceReadiness::ready(*tx.nonce, *tx.nonce_next);
+            self.backend.save_mempool_transaction(
+                &saved_tx,
+                tx.tx_hash().to_felt(),
+                &tx.converted_class,
+                &readiness,
+            )?;
         }
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.insert_txs(txs, force)?;
@@ -496,8 +528,8 @@ mod test {
                     tx: starknet_api::transaction::InvokeTransaction::V0(
                         starknet_api::transaction::InvokeTransactionV0::default(),
                     ),
-                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
-                    only_query: true,
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    only_query: false,
                 },
             ),
         )
@@ -511,7 +543,7 @@ mod test {
                     tx: starknet_api::transaction::InvokeTransaction::V1(
                         starknet_api::transaction::InvokeTransactionV1::default(),
                     ),
-                    tx_hash: starknet_api::transaction::TransactionHash(Felt::default()),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
                     only_query: true,
                 },
             ),
@@ -525,8 +557,10 @@ mod test {
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
-        let result = mempool.accept_tx(tx_account_v0_valid, None, ArrivedAtTimestamp::now(), NonceReadiness::Ready);
+        let result = mempool.accept_tx(tx_account_v0_valid, None, ArrivedAtTimestamp::now(), NonceReadiness::default());
         assert_matches::assert_matches!(result, Ok(()));
+
+        mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
     #[rstest::rstest]
@@ -536,7 +570,123 @@ mod test {
         tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
-        let result = mempool.accept_tx(tx_account_v1_invalid, None, ArrivedAtTimestamp::now(), NonceReadiness::Ready);
+        let result =
+            mempool.accept_tx(tx_account_v1_invalid, None, ArrivedAtTimestamp::now(), NonceReadiness::default());
         assert_matches::assert_matches!(result, Err(crate::MempoolError::Validation(_)));
+
+        mempool.inner.read().expect("Poisoned lock").check_invariants();
+    }
+
+    #[rstest::rstest]
+    fn mempool_take_tx_pass(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let timestamp = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceReadiness::default());
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let mempool_tx = mempool.take_tx().expect("Mempool should contain a transaction");
+        assert_eq!(mempool_tx.arrived_at, timestamp);
+
+        mempool.inner.read().expect("Poisoned lock").check_invariants();
+    }
+
+    #[rstest::rstest]
+    fn mempool_readiness_check(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        // Insert pending transaction
+
+        let readiness = NonceReadiness::pending(Felt::ONE, Felt::TWO);
+        let timestamp_pending = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_pending, None, timestamp_pending, readiness);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+        inner
+            .tx_intent_queue_pending
+            .get(&TransactionIntentPending {
+                contract_address: Felt::ZERO,
+                timestamp: timestamp_pending,
+                nonce: Felt::ONE,
+                nonce_next: Felt::TWO,
+            })
+            .expect("Mempool should contain pending transaction");
+
+        assert_eq!(inner.tx_intent_queue_pending.len(), 1);
+
+        drop(inner);
+
+        // Insert ready transaction
+
+        let readiness = NonceReadiness::ready(Felt::ZERO, Felt::ONE);
+        let timestamp_ready = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_ready, None, timestamp_ready, readiness);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+        inner
+            .tx_intent_queue_ready
+            .get(&TransactionIntentReady {
+                contract_address: Felt::ZERO,
+                timestamp: timestamp_ready,
+                nonce: Felt::ZERO,
+                nonce_next: Felt::ZERO,
+            })
+            .expect("Mempool should receive ready transaction");
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 1);
+
+        drop(inner);
+
+        // Take the next transaction. The pending transaction was received first
+        // but this should return the ready transaction instead.
+
+        let mempool_tx = mempool.take_tx().expect("Mempool contains a ready transaction!");
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+        inner
+            .tx_intent_queue_ready
+            .get(&TransactionIntentReady {
+                contract_address: Felt::ZERO,
+                timestamp: timestamp_pending,
+                nonce: Felt::ONE,
+                nonce_next: Felt::TWO,
+            })
+            .expect("Mempool should have converted pending transaction to ready");
+
+        // Taking the ready transaction should mark the pending transaction as
+        // ready
+
+        assert_eq!(mempool_tx.arrived_at, timestamp_ready);
+        assert_eq!(inner.tx_intent_queue_ready.len(), 1);
+        assert!(inner.tx_intent_queue_pending.is_empty());
+
+        drop(inner);
+
+        // Take the next transaction. The pending transaction has been marked as
+        // ready and should be returned here
+
+        let mempool_tx = mempool.take_tx().expect("Mempool contains a ready transaction!");
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+
+        // No more transactions left
+
+        assert_eq!(mempool_tx.arrived_at, timestamp_pending);
+        assert!(inner.tx_intent_queue_ready.is_empty());
+        assert!(inner.tx_intent_queue_pending.is_empty());
     }
 }

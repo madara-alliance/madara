@@ -88,6 +88,10 @@ impl TransactionCheckedLimits {
             },
         }
     }
+
+    pub fn checks_age(&self) -> bool {
+        self.check_age
+    }
 }
 
 impl MempoolLimiter {

@@ -6,6 +6,7 @@ use starknet_api::core::ContractAddress;
 /// When force inserting transaction, it may happen that we run into a duplicate deploy_account transaction. Keep a count for that purpose.
 #[derive(Debug, Clone, Default)]
 pub struct DeployedContracts(HashMap<ContractAddress, u64>);
+
 impl DeployedContracts {
     pub fn decrement(&mut self, address: ContractAddress) {
         match self.0.entry(address) {
@@ -19,13 +20,11 @@ impl DeployedContracts {
             hash_map::Entry::Vacant(_) => unreachable!("invariant violated"),
         }
     }
+
     pub fn increment(&mut self, address: ContractAddress) {
         *self.0.entry(address).or_insert(0) += 1
     }
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
+
     pub fn contains(&self, address: &ContractAddress) -> bool {
         self.0.contains_key(address)
     }
