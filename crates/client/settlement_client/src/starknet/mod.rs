@@ -223,11 +223,11 @@ impl ClientTrait for StarknetClient {
     ) -> anyhow::Result<StarknetEventStream> {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
-            to_block: None,
+            to_block: Some(BlockId::Number(self.get_latest_block_number().await?)),
             address: Some(self.l2_core_contract),
             keys: Some(vec![vec![get_selector_from_name("MessageSent")?]]),
         };
-        Ok(StarknetEventStream::new(self.provider.clone(), filter))
+        Ok(StarknetEventStream::new(self.provider.clone(), filter, Duration::from_secs(1)))
     }
 }
 

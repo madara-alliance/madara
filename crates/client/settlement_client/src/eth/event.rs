@@ -38,10 +38,12 @@ impl Stream for EthereumEventStream {
                                 payload_vec
                             },
                             fee: Some(event.data.fee.to_be_bytes_vec()),
-                            transaction_hash: None,
+                            transaction_hash: Some(
+                                log.transaction_hash.expect("Unable to get transaction hash from event log.").to_vec(),
+                            ),
                             message_hash: None,
-                            block_number: None,
-                            event_index: None,
+                            block_number: Some(log.block_number.expect("Unable to get block number from event log.")),
+                            event_index: Some(log.log_index.expect("Unable to get log index from event log.")),
                         })))),
                         Err(e) => Poll::Ready(Some(Some(Err(Error::from(e))))),
                     }

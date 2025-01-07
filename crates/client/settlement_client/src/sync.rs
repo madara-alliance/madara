@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[allow(clippy::too_many_arguments)]
-pub async fn sync_worker<C: 'static, S: 'static>(
+pub async fn sync_worker<C: 'static, S>(
     backend: Arc<MadaraBackend>,
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     chain_id: ChainId,

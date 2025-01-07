@@ -5823,6 +5823,7 @@ dependencies = [
  "bitvec",
  "dotenv",
  "futures",
+ "hex",
  "httpmock",
  "lazy_static",
  "mc-analytics",

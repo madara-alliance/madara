@@ -63,68 +63,67 @@ where
     let mut event_stream = Box::pin(stream);
 
     while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
-        match event_result {
-            Some(event) => {
-                let event_data = event?;
-                let tx = parse_handle_message_transaction(&event_data)?;
-                let tx_nonce = tx.nonce;
+        if let Some(event) = event_result {
+            let event_data = event?;
+            let tx = parse_handle_message_transaction(&event_data)?;
+            let tx_nonce = tx.nonce;
 
-                // Skip if already processed
-                if backend.has_l1_messaging_nonce(tx_nonce)? {
-                    info!("Event already processed");
-                    return Ok(());
-                }
+            // Skip if already processed
+            if backend.has_l1_messaging_nonce(tx_nonce)? {
+                info!("Event already processed");
+                return Ok(());
+            }
 
-                info!(
-                    "Processing Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
-                    event_data.block_number, event_data.transaction_hash, event_data.from,
-                );
+            info!(
+                "Processing Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
+                event_data.block_number,
+                to_hex_string(event_data.transaction_hash.clone().unwrap_or(vec![0]).as_slice()),
+                to_hex_string(event_data.from.as_slice()),
+            );
 
-                // Check message hash and cancellation
-                let event_hash = settlement_client.get_messaging_hash(&event_data)?;
-                info!("Checking for cancellation, event hash: {:?}", Felt::from_bytes_be_slice(event_hash.as_slice()));
+            // Check message hash and cancellation
+            let event_hash = settlement_client.get_messaging_hash(&event_data)?;
+            info!("Checking for cancellation, event hash: {:?}", Felt::from_bytes_be_slice(event_hash.as_slice()));
 
-                let cancellation_timestamp = settlement_client.get_l1_to_l2_message_cancellations(event_hash).await?;
-                if cancellation_timestamp != Felt::ZERO {
-                    info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
-                    handle_cancelled_message(backend, tx_nonce)?;
-                    return Ok(());
-                }
+            let cancellation_timestamp = settlement_client.get_l1_to_l2_message_cancellations(event_hash).await?;
+            if cancellation_timestamp != Felt::ZERO {
+                info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
+                handle_cancelled_message(backend, tx_nonce)?;
+                return Ok(());
+            }
 
-                // Process message
-                match process_message(
-                    &backend,
-                    &event_data,
-                    &event_data.block_number,
-                    &event_data.event_index,
-                    &chain_id,
-                    mempool.clone(),
-                )
-                .await
-                {
-                    Ok(Some(tx_hash)) => {
-                        info!(
-                            "Message from block: {:?} submitted, transaction hash: {:?}",
-                            event_data.block_number, tx_hash
-                        );
+            // Process message
+            match process_message(
+                &backend,
+                &event_data,
+                &event_data.block_number,
+                &event_data.event_index,
+                &chain_id,
+                mempool.clone(),
+            )
+            .await
+            {
+                Ok(Some(tx_hash)) => {
+                    info!(
+                        "Message from block: {:?} submitted, transaction hash: {:?}",
+                        event_data.block_number, tx_hash
+                    );
 
-                        // Update last synced block if available
-                        if let (Some(block_num), Some(evt_idx)) = (event_data.block_number, event_data.event_index) {
-                            let block_sent = LastSyncedEventBlock::new(block_num, evt_idx);
-                            backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
-                        }
+                    // Update last synced block if available
+                    if let (Some(block_num), Some(evt_idx)) = (event_data.block_number, event_data.event_index) {
+                        let block_sent = LastSyncedEventBlock::new(block_num, evt_idx);
+                        backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
                     }
-                    Ok(None) => {}
-                    Err(e) => {
-                        error!(
-                            "Unexpected error while processing Message from block: {:?}, error: {:?}",
-                            event_data.block_number, e
-                        );
-                        return Err(e);
-                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!(
+                        "Unexpected error while processing Message from block: {:?}, error: {:?}",
+                        event_data.block_number, e
+                    );
+                    return Err(e);
                 }
             }
-            None => {}
         }
     }
     Ok(())
@@ -186,7 +185,7 @@ async fn process_message(
 ) -> anyhow::Result<Option<Felt>> {
     let transaction = parse_handle_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
-    let fees = vec_to_u128_be(event.fee.clone().unwrap());
+    let fees = vec_to_u128_be(event.fee.clone().unwrap_or(vec![0]));
 
     // Ensure that L1 message has not been executed
     match backend.has_l1_messaging_nonce(tx_nonce) {
@@ -207,7 +206,7 @@ async fn process_message(
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?
-    let block_sent = LastSyncedEventBlock::new(settlement_layer_block_number.unwrap(), event_index.unwrap());
+    let block_sent = LastSyncedEventBlock::new(settlement_layer_block_number.unwrap(), event_index.unwrap_or(0));
     backend.messaging_update_last_synced_l1_block_with_event(block_sent)?;
 
     Ok(Some(res.transaction_hash))
@@ -221,4 +220,10 @@ fn vec_to_u128_be(bytes: Vec<u8>) -> Option<u128> {
     let mut padded = vec![0u8; 16];
     padded[16 - bytes.len()..].copy_from_slice(&bytes);
     Some(u128::from_be_bytes(padded.try_into().unwrap()))
+}
+
+fn to_hex_string(bytes: &[u8]) -> String {
+    let hex = hex::encode(bytes);
+    let trimmed = if hex.starts_with('0') { hex.trim_start_matches('0').to_string() } else { hex };
+    format!("0x{}", trimmed)
 }

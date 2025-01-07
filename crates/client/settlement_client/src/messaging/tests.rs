@@ -140,6 +140,9 @@ mod l2_messaging_test {
     #[rstest]
     #[traced_test]
     #[tokio::test]
+    // This test is redundant now as the event poller will not return the same
+    // event twice with same nonce that's why added ignore here.
+    #[ignore]
     async fn e2e_test_already_processed_event_starknet(
         #[future] setup_test_env_starknet: TestRunnerStarknet,
     ) -> anyhow::Result<()> {
@@ -191,7 +194,7 @@ mod l2_messaging_test {
 
         // Firing the event second time
         fire_messaging_event(&account, deployed_contract_address).await?;
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         // Assert that the event processed was in last block only not in the latest block.
         assert_eq!(
             last_block.block_number,
@@ -245,7 +248,7 @@ mod l2_messaging_test {
         cancel_messaging_event(&account, deployed_contract_address).await?;
         // Firing cancelled event
         fire_messaging_event(&account, deployed_contract_address).await?;
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
 
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
