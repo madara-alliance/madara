@@ -18,7 +18,7 @@ use proving_job::ProvingError;
 use snos_job::error::FactError;
 use snos_job::SnosError;
 use state_update_job::StateUpdateError;
-use types::JobItemUpdates;
+use types::{ExternalId, JobItemUpdates};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -275,7 +275,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
             JobItemUpdates::new()
                 .update_status(JobStatus::PendingVerification)
                 .update_metadata(metadata)
-                .update_external_id(external_id.into())
+                .update_external_id(external_id.clone().into())
                 .build(),
         )
         .await
@@ -306,7 +306,8 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
     let duration = start.elapsed();
     ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
     ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-    register_block_gauge(&job, &attributes)?;
+    //  job_type, internal_id, external_id
+    register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
     Ok(())
 }
 
@@ -476,7 +477,8 @@ pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
     let duration = start.elapsed();
     ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
     ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-    register_block_gauge(&job, &attributes)?;
+    // job_type, internal_id, external_id
+    register_block_gauge(job.job_type, &job.internal_id, job.external_id, &attributes)?;
     Ok(())
 }
 
@@ -497,15 +499,20 @@ pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), Job
         .await
 }
 
-fn register_block_gauge(job: &JobItem, attributes: &[KeyValue]) -> Result<(), JobError> {
-    let block_number = if let JobType::StateTransition = job.job_type {
+fn register_block_gauge(
+    job_type: JobType,
+    internal_id: &str,
+    external_id: ExternalId,
+    attributes: &[KeyValue],
+) -> Result<(), JobError> {
+    let block_number = if let JobType::StateTransition = job_type {
         parse_string(
-            job.external_id
+            external_id
                 .unwrap_string()
                 .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
         )
     } else {
-        parse_string(&job.internal_id)
+        parse_string(internal_id)
     }?;
 
     ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
