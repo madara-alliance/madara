@@ -1,3 +1,4 @@
+---
 name: Feature Request
 description: Submit your requests and suggestions to improve!
 labels: [I5-enhancement]
@@ -6,7 +7,10 @@ body:
     id: existing
     attributes:
       label: Is there an existing issue?
-      description: Please search to see if an issue already exists and leave a comment that you also experienced this issue or add your specifics that are related to an existing issue.
+      description:
+        Please search to see if an issue already exists and leave a comment
+        that you also experienced this issue or add your specifics that are related
+        to an existing issue.
       options:
         - label: I have searched the existing issues
           required: true
@@ -39,9 +43,6 @@ body:
     attributes:
       label: Are you willing to help with this request?
       multiple: true
-      options:
-        - Yes!
-        - No.
-        - Maybe (please elaborate above)
+      options: [Yes!, No., Maybe (please elaborate above)]
     validations:
       required: true

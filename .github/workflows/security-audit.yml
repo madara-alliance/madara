@@ -1,10 +1,8 @@
 ---
 name: Task - Security Audit
-
-on:
+"on":
   workflow_dispatch:
   workflow_call:
-
 jobs:
   security_audit:
     name: Security audit

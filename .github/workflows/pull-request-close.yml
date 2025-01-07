@@ -1,11 +1,8 @@
 ---
 name: Workflow - Pull Request (on Close)
-
-on:
+"on":
   pull_request:
-    types:
-      - closed
-
+    types: [closed]
 jobs:
   cleanup:
     runs-on: ubuntu-latest

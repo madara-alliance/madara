@@ -1,7 +1,8 @@
+---
 version: 2
 updates:
-  - package-ecosystem: "cargo"
-    directory: "/"
+  - package-ecosystem: cargo
+    directory: /
     schedule:
-      interval: "weekly" # can be `daily` or `monthly` also
+      interval: weekly # can be `daily` or `monthly` also
     open-pull-requests-limit: 10

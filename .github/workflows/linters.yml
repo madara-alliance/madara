@@ -1,12 +1,11 @@
 ---
 name: Task - Linters
-
-on:
+"on":
   workflow_dispatch:
   workflow_call:
-
 jobs:
-  prettier:
+  # Check code formatting using Prettier
+  prettier-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,20 +13,48 @@ jobs:
         run: |-
           npx prettier --check .
 
-  markdown-lint:
+  # Validate Markdown files against style rules
+  markdown-style:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: avto-dev/markdown-lint@v1
         with:
-          config: "./.markdownlint.json"
-          args: "."
-          ignore: "./target"
+          config: ./.markdownlint.json
+          args: .
+          ignore: ./target
 
-  toml-lint:
+  # Verify TOML files formatting
+  toml-format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout toml files
         uses: actions/checkout@v4
       - name: Run toml check
         run: npx @taplo/cli@0.5.2 fmt --config ./taplo/taplo.toml --check
+
+  # Validate YAML files formatting and structure
+  yaml-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install linting tools
+        run: |
+          pip install yamllint
+      - name: Check YAML files
+        run: |
+          yamllint -c .yamllint.yml -s .
+
+  # Validate Nix files formatting using Alejandra
+  nix-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Install Alejandra
+        run: |
+          nix-env -f '<nixpkgs>' -iA alejandra
+      - name: Check formatting
+        run: alejandra --check .

@@ -1,5 +1,5 @@
+---
 version: "3.8"
-
 services:
   madara:
     build:
@@ -7,47 +7,34 @@ services:
       dockerfile: Dockerfile
     container_name: madara
     restart: unless-stopped
-    ports:
-      - "9944:9944"
-      - "9615:9615"
-    volumes:
-      - /var/lib/madara:/var/lib/madara
+    ports: [9944:9944, 9615:9615]
+    volumes: [/var/lib/madara:/var/lib/madara]
     command:
-      [
-        "--madara",
-        "--rpc-port",
-        "9944",
-        "--network",
-        "main",
-        "--rpc-external",
-        "--rpc-cors",
-        "*",
-        "--rpc-methods",
-        "Safe",
-        "--l1-endpoint",
-        "${DEOXYS_ETHEREUM_API_URL}",
-        "--rpc-max-connections",
-        "100",
-        "--base-path",
-        "/var/lib/madara",
-        "--prometheus-external",
-      ]
-
+      - --madara
+      - --rpc-port
+      - "9944"
+      - --network
+      - main
+      - --rpc-external
+      - --rpc-cors
+      - "*"
+      - --rpc-methods
+      - Safe
+      - --l1-endpoint
+      - ${DEOXYS_ETHEREUM_API_URL}
+      - --rpc-max-connections
+      - "100"
+      - --base-path
+      - /var/lib/madara
+      - --prometheus-external
   prometheus:
     container_name: prometheus
     image: prom/prometheus:latest
     restart: unless-stopped
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    links:
-      - cadvisor:cadvisor
-      - influxdb:influxdb
-    depends_on:
-      - cadvisor
-      - influxdb
-
+    volumes: [./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml]
+    ports: [9090:9090]
+    links: [cadvisor:cadvisor, influxdb:influxdb]
+    depends_on: [cadvisor, influxdb]
   node-exporter:
     image: quay.io/prometheus/node-exporter:latest
     restart: unless-stopped
@@ -57,42 +44,35 @@ services:
       - /:/rootfs:ro
       - /:/host:ro,rslave
     command:
-      - "--path.rootfs=/host"
-      - "--path.procfs=/host/proc"
-      - "--path.sysfs=/host/sys"
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
       - --collector.filesystem.ignored-mount-points
-      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
-    ports:
-      - "9100:9100"
-
+      - ^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)
+    ports: [9100:9100]
   cadvisor:
     container_name: cadvisor
     image: gcr.io/cadvisor/cadvisor:latest
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    ports: [8080:8080]
     volumes:
-      - "/:/rootfs"
-      - "/var/run:/var/run"
-      - "/sys:/sys"
-      - "/var/lib/docker/:/var/lib/docker"
-      - "/dev/disk/:/dev/disk"
+      - /:/rootfs
+      - /var/run:/var/run
+      - /sys:/sys
+      - /var/lib/docker/:/var/lib/docker
+      - /dev/disk/:/dev/disk
     privileged: true
-    devices:
-      - "/dev/kmsg"
-
+    devices: [/dev/kmsg]
   grafana:
     image: grafana/grafana
     user: "472"
     container_name: grafana
-    ports:
-      - 3001:3000
+    ports: [3001:3000]
     restart: unless-stopped
     volumes:
       - ./grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/main.yml
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/main.yml
-
 networks:
   loki-net:
     external: true

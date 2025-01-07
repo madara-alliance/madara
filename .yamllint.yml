@@ -1,0 +1,60 @@
+---
+# This file configures yamllint, a linter for YAML files
+# See https://yamllint.readthedocs.io/ for detailed documentation
+
+extends: default
+
+# Custom rules configuration
+rules:
+  # Maximum line length - increased from default 80
+  line-length:
+    max: 120
+    level: warning
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  # Enforce document start marker (---)
+  document-start:
+    present: true
+    level: warning
+
+  # Indentation rules
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false
+
+  # Enforce spacing between keys and values
+  colons:
+    max-spaces-before: 0
+    max-spaces-after: 1
+
+  # Comments formatting
+  comments:
+    require-starting-space: true
+    min-spaces-from-content: 1
+
+  # Enforce consistent empty lines
+  empty-lines:
+    max: 1
+    max-start: 0
+    max-end: 0
+
+  # Key ordering is not required
+  key-ordering: disable
+
+  # Trailing spaces not allowed
+  trailing-spaces: enable
+
+  # New line at end of file
+  new-line-at-end-of-file: enable
+
+  # Enforce truthy values
+  truthy:
+    level: warning
+    allowed-values: ["true", "false", "yes", "no"]
+
+# Files to ignore during linting
+ignore: |
+  .git
+  .db-versions.yml

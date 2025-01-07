@@ -1,20 +1,16 @@
 ---
 name: DB Version Management
-
-on:
+"on":
   workflow_dispatch:
   workflow_call:
-
 jobs:
   update-db-version:
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.labels.*.name, 'bump_db')
     steps:
       - uses: actions/checkout@v3
-
       - name: Install yq
         run: sudo apt-get install -y yq
-
       - name: Check if PR already bumped
         id: check_bump
         run: |
@@ -24,21 +20,18 @@ jobs:
           else
             echo "already_bumped=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Configure Git
         if: steps.check_bump.outputs.already_bumped == 'false'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-
       - name: Update DB Version
         if: steps.check_bump.outputs.already_bumped == 'false'
         run: |
           ./scripts/update-db-version.sh "${{ github.event.pull_request.number }}"
-
       - name: Commit and Push
         if: steps.check_bump.outputs.already_bumped == 'false'
-        run: |
+        run: |-
           if [[ -n "$(git status --porcelain)" ]]; then
             git add .db-versions.toml
             git commit -m "chore: bump db version"

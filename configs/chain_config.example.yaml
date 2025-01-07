@@ -1,45 +1,42 @@
+---
 # Human readable chain name, for displaying to the console.
-chain_name: "Starknet Mainnet"
-
-chain_id: "SN_MAIN"
+chain_name: Starknet Mainnet
+chain_id: SN_MAIN
 
 # The URL of the gateway and Feeder Gateway your nodes should sync from.
-feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
-gateway_url: "http://localhost:8080/gateway/"
+feeder_gateway_url: http://localhost:8080/feeder_gateway/
+gateway_url: http://localhost:8080/gateway/
 
 # For starknet, this is the STRK ERC-20 contract on starknet.
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 
 # For starknet, this is the ETH ERC-20 contract on starknet.
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-
 # Paths to JSON files containing blockifier's constants for different versions
 versioned_constants_path:
-  "0.13.0": "crates/primitives/chain_config/resources/versioned_constants_13_0.json"
-  "0.13.1": "crates/primitives/chain_config/resources/versioned_constants_13_1.json"
-  "0.13.1.1": "crates/primitives/chain_config/resources/versioned_constants_13_1_1.json"
-  "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
-
+  0.13.0: crates/primitives/chain_config/resources/versioned_constants_13_0.json
+  0.13.1: crates/primitives/chain_config/resources/versioned_constants_13_1.json
+  0.13.1.1: crates/primitives/chain_config/resources/versioned_constants_13_1_1.json
+  0.13.2: crates/primitives/chain_config/resources/versioned_constants_13_2.json
 # The Starknet core contract address for the L1 watcher.
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 
 # Most recent Starknet version supported
-latest_protocol_version: "0.13.2"
+latest_protocol_version: 0.13.2
 
 # /!\ Only used for block production.
 # Target time interval between blocks, in seconds
-block_time: "30s"
+block_time: 30s
 
 # /!\ Only used for block production.
 # Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
-pending_block_update_time: "2s"
+pending_block_update_time: 2s
 
 # /!\ Only used for block production.
 # Block production is handled in batches; each batch will pop this number of transactions from the mempool. This is
 # primarily useful for optimistic parallelization.
 # A value too high may have a performance impact - you will need some testing to find the best value for your network.
 execution_batch_size: 16
-
 # /!\ Only used for block production.
 # The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
 bouncer_config:
@@ -65,7 +62,6 @@ bouncer_config:
     n_events: 18446744073709551615
     # Maximum size of state differences per block
     state_diff_size: 131072
-
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
 sequencer_address: "0x0"
@@ -76,4 +72,4 @@ mempool_tx_limit: 10000
 mempool_declare_tx_limit: 20
 # Max age of a transaction in the mempool. Null for no age limit.
 # mempool_tx_max_age: "5h"
-mempool_tx_max_age: null
+mempool_tx_max_age:

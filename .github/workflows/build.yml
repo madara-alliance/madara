@@ -1,5 +1,6 @@
+---
 name: Task - Build Madara
-on:
+"on":
   workflow_dispatch:
   workflow_call:
 jobs:
@@ -7,7 +8,6 @@ jobs:
     permissions:
       pull-requests: write
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
         with:
@@ -23,7 +23,7 @@ jobs:
       - uses: rui314/setup-mold@v1
       - uses: software-mansion/setup-scarb@v1
         with:
-          scarb-version: "2.8.2"
+          scarb-version: 2.8.2
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly

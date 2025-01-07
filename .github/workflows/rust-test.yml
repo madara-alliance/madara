@@ -1,10 +1,8 @@
 ---
 name: Task - Run Cargo tests
-
-on:
+"on":
   workflow_dispatch:
   workflow_call:
-
 jobs:
   rust_test:
     runs-on: ubuntu-latest
@@ -12,11 +10,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "cache"
+          shared-key: cache
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.81
-
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
