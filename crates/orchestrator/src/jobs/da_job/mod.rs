@@ -125,7 +125,11 @@ impl Job for DaJob {
         let blob_data_biguint = convert_to_biguint(blob_data.clone());
         tracing::trace!(job_id = ?job.id, "Converted blob data to BigUint");
 
-        let transformed_data = fft_transformation(blob_data_biguint);
+        let transformed_data =
+            fft_transformation(blob_data_biguint).wrap_err("Failed to apply FFT transformation").map_err(|e| {
+                tracing::error!(job_id = ?job.id, error = ?e, "Failed to apply FFT transformation");
+                JobError::Other(OtherError(e))
+            })?;
         // data transformation on the data
         tracing::trace!(job_id = ?job.id, "Applied FFT transformation");
 
@@ -204,17 +208,18 @@ impl Job for DaJob {
 }
 
 #[tracing::instrument(skip(elements))]
-pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
+pub fn fft_transformation(elements: Vec<BigUint>) -> Result<Vec<BigUint>, JobError> {
     let xs: Vec<BigUint> = (0..*BLOB_LEN)
         .map(|i| {
             let bin = format!("{:012b}", i);
             let bin_rev = bin.chars().rev().collect::<String>();
-            GENERATOR.modpow(
-                &BigUint::from_str_radix(&bin_rev, 2).expect("Not able to convert the parameters into exponent."),
-                &BLS_MODULUS,
-            )
+            let exponent = BigUint::from_str_radix(&bin_rev, 2)
+                .wrap_err("Failed to convert binary string to exponent")
+                .map_err(|e| JobError::Other(OtherError(e)))?;
+            Ok(GENERATOR.modpow(&exponent, &BLS_MODULUS))
         })
-        .collect();
+        .collect::<Result<Vec<BigUint>, JobError>>()?;
+
     let n = elements.len();
     let mut transform: Vec<BigUint> = vec![BigUint::zero(); n];
 
@@ -223,7 +228,7 @@ pub fn fft_transformation(elements: Vec<BigUint>) -> Vec<BigUint> {
             transform[i] = (transform[i].clone().mul(&xs[i]).add(&elements[j])).rem(&*BLS_MODULUS);
         }
     }
-    transform
+    Ok(transform)
 }
 
 pub fn convert_to_biguint(elements: Vec<Felt>) -> Vec<BigUint> {
@@ -310,7 +315,7 @@ pub async fn state_update_to_blob_data(
 
             nonce = Some(get_current_nonce_result);
         }
-        let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64);
+        let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64)?;
         blob_data.push(address);
         blob_data.push(da_word);
 
@@ -355,7 +360,7 @@ async fn store_blob_data(blob_data: Vec<BigUint>, block_number: u64, config: Arc
 /// DA word encoding:
 /// |---padding---|---class flag---|---new nonce---|---num changes---|
 ///     127 bits        1 bit           64 bits          64 bits
-fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Felt {
+fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Result<Felt, JobError> {
     // padding of 127 bits
     let mut binary_string = "0".repeat(127);
 
@@ -367,13 +372,8 @@ fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Fe
     }
 
     // checking for nonce here
-    if let Some(_new_nonce) = nonce_change {
-        let bytes: [u8; 32] = nonce_change
-            .expect(
-                "Not able to convert the nonce_change var into [u8; 32] type. Possible Error : Improper parameter \
-                 length.",
-            )
-            .to_bytes_be();
+    if let Some(new_nonce) = nonce_change {
+        let bytes: [u8; 32] = new_nonce.to_bytes_be();
         let biguint = BigUint::from_bytes_be(&bytes);
         let binary_string_local = format!("{:b}", biguint);
         let padded_binary_string = format!("{:0>64}", binary_string_local);
@@ -387,12 +387,16 @@ fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Fe
     let padded_binary_string = format!("{:0>64}", binary_representation);
     binary_string += &padded_binary_string;
 
-    let biguint = BigUint::from_str_radix(binary_string.as_str(), 2).expect("Invalid binary string");
+    let biguint = BigUint::from_str_radix(binary_string.as_str(), 2)
+        .wrap_err("Failed to convert binary string to BigUint")
+        .map_err(|e| JobError::Other(OtherError(e)))?;
 
     // Now convert the BigUint to a decimal string
     let decimal_string = biguint.to_str_radix(10);
 
-    Felt::from_dec_str(&decimal_string).expect("issue while converting to fieldElement")
+    Felt::from_dec_str(&decimal_string)
+        .wrap_err("Failed to convert decimal string to FieldElement")
+        .map_err(|e| JobError::Other(OtherError(e)))
 }
 
 fn refactor_state_update(state_update: &mut StateDiff) {
@@ -453,7 +457,7 @@ pub mod test {
         #[case] expected: String,
     ) {
         let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
-        let da_word = da_word(class_flag, new_nonce, num_changes);
+        let da_word = da_word(class_flag, new_nonce, num_changes).expect("Failed to create DA word");
         let expected = Felt::from_dec_str(expected.as_str()).unwrap();
         assert_eq!(da_word, expected);
     }
@@ -562,7 +566,7 @@ pub mod test {
         // converting the data to its original format
         let ifft_blob_data = blob::recover(original_blob_data.clone());
         // applying the fft function again on the original format
-        let fft_blob_data = fft_transformation(ifft_blob_data);
+        let fft_blob_data = fft_transformation(ifft_blob_data).expect("FFT transformation failed during test");
 
         // ideally the data after fft transformation and the data before ifft should be same.
         assert_eq!(fft_blob_data, original_blob_data);

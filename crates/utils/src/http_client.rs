@@ -34,13 +34,14 @@
 //! ```
 
 use std::collections::HashMap;
+use std::io;
 use std::path::Path;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::{Form, Part};
 use reqwest::{Certificate, Client, ClientBuilder, Identity, Method, Response, Result};
 use serde::Serialize;
-use url::Url;
+use url::{ParseError, Url};
 
 /// Main HTTP client with default configurations.
 ///
@@ -76,14 +77,8 @@ pub struct HttpClientBuilder {
 
 impl HttpClient {
     /// Creates a new builder for constructing an HttpClient.
-    ///
-    /// # Arguments
-    /// * `base_url` - The base URL for all requests made through this client
-    ///
-    /// # Panics
-    /// Panics if the provided base URL is invalid
-    pub fn builder(base_url: &str) -> HttpClientBuilder {
-        HttpClientBuilder::new(Url::parse(base_url).expect("Invalid base URL"))
+    pub fn builder(base_url: &str) -> std::result::Result<HttpClientBuilder, ParseError> {
+        Ok(HttpClientBuilder::new(Url::parse(base_url)?))
     }
 
     /// Creates a new request builder for making HTTP requests.
@@ -280,10 +275,9 @@ impl<'a> RequestBuilder<'a> {
     ///     .method(Method::POST)
     ///     .body(json!({ "key": "value" }));
     /// ```
-    pub fn body<T: Serialize>(mut self, body: T) -> Self {
-        let body_string = serde_json::to_string(&body).expect("Failed to serialize body");
-        self.body = Some(body_string);
-        self
+    pub fn body<T: Serialize>(mut self, body: T) -> std::result::Result<Self, serde_json::Error> {
+        self.body = Some(serde_json::to_string(&body)?);
+        Ok(self)
     }
 
     /// Adds a text part to the multipart form.
@@ -297,11 +291,9 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a file part to the multipart form.
-    pub fn form_file(mut self, key: &str, file_path: &Path, file_name: &str) -> Self {
-        let file_bytes = std::fs::read(file_path).expect("Failed to read file");
-        // Convert file_name to owned String
+    pub fn form_file(mut self, key: &str, file_path: &Path, file_name: &str) -> io::Result<Self> {
+        let file_bytes = std::fs::read(file_path)?;
         let file_name = file_name.to_string();
-
         let part = Part::bytes(file_bytes).file_name(file_name);
 
         let form = match self.form.take() {
@@ -309,7 +301,7 @@ impl<'a> RequestBuilder<'a> {
             None => Form::new().part(key.to_string(), part),
         };
         self.form = Some(form);
-        self
+        Ok(self)
     }
     /// Sends the request with all configured parameters.
     pub async fn send(self) -> Result<Response> {
@@ -334,7 +326,8 @@ mod http_client_tests {
     /// and all default values are properly initialized
     #[test]
     fn test_builder_basic_initialization() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
 
         assert_eq!(client.base_url.as_str(), format!("{}/", TEST_URL));
         assert!(client.default_headers.is_empty());
@@ -346,9 +339,14 @@ mod http_client_tests {
     /// Ensures the builder properly panics when provided with an invalid URL
     /// Cases: malformed URLs, invalid schemes, empty URLs
     #[test]
-    #[should_panic(expected = "Invalid base URL")]
     fn test_builder_invalid_url() {
-        HttpClient::builder("not a url");
+        let result = HttpClient::builder("not a url");
+        assert!(result.is_err());
+
+        match result {
+            Err(e) => assert!(e.to_string().contains("relative URL without a base")),
+            Ok(_) => panic!("Expected error for invalid URL"),
+        }
     }
 
     /// Verifies that default headers set during builder phase are:
@@ -360,8 +358,11 @@ mod http_client_tests {
         let header_name = HeaderName::from_static("x-test");
         let header_value = HeaderValue::from_static("test-value");
 
-        let client =
-            HttpClient::builder(TEST_URL).default_header(header_name.clone(), header_value.clone()).build().unwrap();
+        let client = HttpClient::builder(TEST_URL)
+            .expect("Failed to create builder")
+            .default_header(header_name.clone(), header_value.clone())
+            .build()
+            .expect("Failed to build client");
 
         assert!(client.default_headers.contains_key(&header_name));
         assert_eq!(client.default_headers.get(&header_name).unwrap(), &header_value);
@@ -374,10 +375,11 @@ mod http_client_tests {
     #[test]
     fn test_builder_default_query_params() {
         let client = HttpClient::builder(TEST_URL)
+            .expect("Failed to create builder")
             .default_query_param("key1", "value1")
             .default_query_param("key2", "value 2")
             .build()
-            .unwrap();
+            .expect("Failed to build client");
 
         assert_eq!(client.default_query_params.len(), 2);
         assert_eq!(client.default_query_params.get("key1").unwrap(), "value1");
@@ -390,7 +392,8 @@ mod http_client_tests {
     /// can be correctly set and are properly sent in requests
     #[test]
     fn test_request_builder_method_setting() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
 
         let request = client.request().method(Method::GET);
         assert_eq!(request.method, Method::GET);
@@ -413,7 +416,8 @@ mod http_client_tests {
     /// - Unicode paths
     #[test]
     fn test_request_builder_path_handling() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
 
         // Test absolute path
         let request = client.request().path("/absolute/path");
@@ -446,7 +450,11 @@ mod http_client_tests {
     /// - Later parameters override earlier ones
     #[test]
     fn test_request_builder_query_params() {
-        let client = HttpClient::builder(TEST_URL).default_query_param("default", "value").build().unwrap();
+        let client = HttpClient::builder(TEST_URL)
+            .expect("Failed to create builder")
+            .default_query_param("default", "value")
+            .build()
+            .expect("Failed to build client");
 
         let request = client.request().query_param("test", "value").query_param("another", "param");
 
@@ -463,7 +471,11 @@ mod http_client_tests {
     fn test_request_builder_headers() {
         let header_name = HeaderName::from_static("x-test");
         let header_value = HeaderValue::from_static("default-value");
-        let client = HttpClient::builder(TEST_URL).default_header(header_name.clone(), header_value).build().unwrap();
+        let client = HttpClient::builder(TEST_URL)
+            .expect("Failed to create builder")
+            .default_header(header_name.clone(), header_value)
+            .build()
+            .expect("Failed to build client");
 
         let new_value = HeaderValue::from_static("new-value");
         let request = client.request().header(header_name.clone(), new_value.clone());
@@ -480,7 +492,8 @@ mod http_client_tests {
     /// - Form builder chaining
     #[test]
     fn test_multipart_form_text() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
 
         // Test initial state
         let request = client.request();
@@ -502,14 +515,16 @@ mod http_client_tests {
     /// - Non-existent file handling
     #[test]
     fn test_multipart_form_file() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
         let file_path: PathBuf = "../orchestrator/src/tests/artifacts/fibonacci.zip".parse().unwrap();
 
         // Test initial state
         let request = client.request();
         assert!(request.form.is_none());
 
-        let request = client.request().form_file("file", &file_path, "fibonacci.zip");
+        let request =
+            client.request().form_file("file", &file_path, "fibonacci.zip").expect("Failed to add file to form");
 
         assert!(request.form.is_some());
     }
@@ -520,14 +535,15 @@ mod http_client_tests {
     /// - Array/Vector serialization
     #[test]
     fn test_request_builder_body_serialization() {
-        let client = HttpClient::builder(TEST_URL).build().unwrap();
+        let client =
+            HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
 
         // Test string body
-        let request = client.request().body("test string");
+        let request = client.request().body("test string").expect("Failed to serialize string body");
         assert_eq!(request.body.unwrap(), r#""test string""#);
 
         // Test number body
-        let request = client.request().body(42);
+        let request = client.request().body(42).expect("Failed to serialize number body");
         assert_eq!(request.body.unwrap(), "42");
 
         // Test struct body
@@ -539,12 +555,12 @@ mod http_client_tests {
 
         let test_struct = TestStruct { field1: "test".to_string(), field2: 123 };
 
-        let request = client.request().body(test_struct);
+        let request = client.request().body(test_struct).expect("Failed to serialize struct body");
         assert_eq!(request.body.unwrap(), r#"{"field1":"test","field2":123}"#);
 
         // Test array/vec body
         let vec_data = vec![1, 2, 3];
-        let request = client.request().body(vec_data);
+        let request = client.request().body(vec_data).expect("Failed to serialize vector body");
         assert_eq!(request.body.unwrap(), "[1,2,3]");
     }
 
@@ -572,8 +588,12 @@ mod http_client_tests {
             Identity::from_pkcs8_pem(&cert, &key).expect("Failed to build the identity from certificate and key");
         let certificate = Certificate::from_pem(server_cert.as_slice()).expect("Failed to add root certificate");
 
-        let client =
-            HttpClient::builder(TEST_URL).identity(identity).add_root_certificate(certificate).build().unwrap();
+        let client = HttpClient::builder(TEST_URL)
+            .expect("Failed to create builder")
+            .identity(identity)
+            .add_root_certificate(certificate)
+            .build()
+            .expect("Failed to build client");
 
         // Since we can't check the certificates directly, we'll just verify the client was built
         assert_eq!(client.base_url.as_str(), (TEST_URL.to_owned() + "/"));
@@ -587,11 +607,13 @@ mod http_client_tests {
     async fn test_large_payload_handling() {
         let mock_server = httpmock::MockServer::start();
 
-        let client = HttpClient::builder(&mock_server.base_url()).build().unwrap();
+        let client = HttpClient::builder(&mock_server.base_url())
+            .expect("Failed to create builder")
+            .build()
+            .expect("Failed to build client");
 
-        // Create a large body string
         let large_body = "x".repeat(1024 * 1024); // 1MB string
-        let request = client.request().method(Method::POST).body(&large_body);
+        let request = client.request().method(Method::POST).body(&large_body).expect("Failed to serialize large body");
 
         assert!(request.body.is_some());
         assert_eq!(request.body.unwrap().len(), (1024 * 1024) + 2);
@@ -621,10 +643,11 @@ mod http_client_tests {
         });
 
         let client = HttpClient::builder(&mock_server.base_url())
+            .expect("Failed to create builder")
             .default_header(HeaderName::from_static("authorization"), HeaderValue::from_static("Bearer token"))
             .default_query_param("version", "v1")
             .build()
-            .unwrap();
+            .expect("Failed to build client");
 
         #[derive(Serialize)]
         struct RequestBody {
@@ -637,9 +660,10 @@ mod http_client_tests {
             .path("/api/data")
             .query_param("id", "123")
             .body(RequestBody { name: "test".to_string() })
+            .expect("Failed to serialize body")
             .send()
             .await
-            .unwrap();
+            .expect("Failed to send request");
 
         assert_eq!(response.status(), 200);
         mock.assert();

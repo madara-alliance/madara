@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- refactor: expect removed and added error wraps
 - refactor: Readme and .env.example
 - refactor: http_mock version updated
 - refactor: prover-services renamed to prover-clients

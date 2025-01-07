@@ -59,7 +59,7 @@ pub fn bytes_to_vec_u8(bytes: &[u8]) -> color_eyre::Result<Vec<[u8; 32]>> {
         let trimmed = line.trim();
         assert!(!trimmed.is_empty());
 
-        let result = U256::from_str(trimmed).expect("Unable to convert line");
+        let result = U256::from_str(trimmed)?;
         let res_vec = result.to_be_bytes_vec();
         let hex = to_padded_hex(res_vec.as_slice());
         let vec_hex = hex_string_to_u8_vec(&hex)

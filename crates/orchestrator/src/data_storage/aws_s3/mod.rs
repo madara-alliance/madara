@@ -6,6 +6,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
 use aws_sdk_s3::Client;
 use bytes::Bytes;
+use color_eyre::eyre::Context;
 use color_eyre::Result;
 
 use crate::data_storage::DataStorage;
@@ -50,8 +51,20 @@ impl AWSS3 {
 impl DataStorage for AWSS3 {
     /// Function to get the data from S3 bucket by Key.
     async fn get_data(&self, key: &str) -> Result<Bytes> {
-        let response = self.client.get_object().bucket(&self.bucket).key(key).send().await?;
-        let data_stream = response.body.collect().await.expect("Failed to convert body into AggregatedBytes.");
+        let response = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .context(format!("Failed to get object from bucket: {}, key: {}", self.bucket, key))?;
+
+        let data_stream = response.body.collect().await.context(format!(
+            "Failed to collect body into AggregatedBytes for bucket: {}, key: {}",
+            self.bucket, key
+        ))?;
+
         tracing::debug!("DataStorage: Collected response body into data stream from {}, key={}", self.bucket, key);
         let data_bytes = data_stream.into_bytes();
         tracing::debug!(
@@ -74,7 +87,8 @@ impl DataStorage for AWSS3 {
             .body(ByteStream::from(data))
             .content_type("application/json")
             .send()
-            .await?;
+            .await
+            .context(format!("Failed to put object in bucket: {}, key: {}", self.bucket, key))?;
 
         tracing::debug!(
             log_type = "DataStorage",
@@ -88,7 +102,12 @@ impl DataStorage for AWSS3 {
 
     async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
         if self.bucket_location_constraint.as_str() == "us-east-1" {
-            self.client.create_bucket().bucket(bucket_name).send().await?;
+            self.client
+                .create_bucket()
+                .bucket(bucket_name)
+                .send()
+                .await
+                .context(format!("Failed to create bucket: {} in us-east-1", bucket_name))?;
             return Ok(());
         }
 
@@ -101,7 +120,12 @@ impl DataStorage for AWSS3 {
             .bucket(bucket_name)
             .set_create_bucket_configuration(bucket_configuration)
             .send()
-            .await?;
+            .await
+            .context(format!(
+                "Failed to create bucket: {} in region: {}",
+                bucket_name,
+                self.bucket_location_constraint.as_str()
+            ))?;
 
         Ok(())
     }

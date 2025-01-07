@@ -131,7 +131,7 @@ impl Job for StateUpdateJob {
         for block_no in block_numbers.iter() {
             tracing::debug!(job_id = %job.internal_id, block_no = %block_no, "Processing block");
 
-            let snos = self.fetch_snos_for_block(*block_no, config.clone()).await;
+            let snos = self.fetch_snos_for_block(*block_no, config.clone()).await?;
             let txn_hash = self
                 .update_state_for_block(config.clone(), *block_no, snos, nonce)
                 .await
@@ -320,7 +320,7 @@ impl StateUpdateJob {
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?;
 
-            let program_output = self.fetch_program_output_for_block(block_no, config.clone()).await;
+            let program_output = self.fetch_program_output_for_block(block_no, config.clone()).await?;
 
             // TODO :
             // Fetching nonce before the transaction is run
@@ -336,21 +336,30 @@ impl StateUpdateJob {
     }
 
     /// Retrieves the SNOS output for the corresponding block.
-    async fn fetch_snos_for_block(&self, block_no: u64, config: Arc<Config>) -> StarknetOsOutput {
+    async fn fetch_snos_for_block(&self, block_no: u64, config: Arc<Config>) -> Result<StarknetOsOutput, JobError> {
         let storage_client = config.storage();
         let key = block_no.to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
-        let snos_output_bytes = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");
-        serde_json::from_slice(snos_output_bytes.iter().as_slice())
-            .expect("Unable to convert the data into snos output")
+
+        let snos_output_bytes = storage_client.get_data(&key).await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+        serde_json::from_slice(snos_output_bytes.iter().as_slice()).map_err(|e| {
+            JobError::Other(OtherError(eyre!("Failed to deserialize SNOS output for block {}: {}", block_no, e)))
+        })
     }
 
-    async fn fetch_program_output_for_block(&self, block_number: u64, config: Arc<Config>) -> Vec<[u8; 32]> {
+    async fn fetch_program_output_for_block(
+        &self,
+        block_number: u64,
+        config: Arc<Config>,
+    ) -> Result<Vec<[u8; 32]>, JobError> {
         let storage_client = config.storage();
         let key = block_number.to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
-        let program_output = storage_client.get_data(&key).await.expect("Unable to fetch snos output for block");
-        let decode_data: Vec<[u8; 32]> =
-            bincode::deserialize(&program_output).expect("Unable to decode the fetched data from storage provider.");
-        decode_data
+
+        let program_output = storage_client.get_data(&key).await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+        bincode::deserialize(&program_output).map_err(|e| {
+            JobError::Other(OtherError(eyre!("Failed to deserialize program output for block {}: {}", block_number, e)))
+        })
     }
 
     /// Insert the tx hashes into the the metadata for the attempt number - will be used later by

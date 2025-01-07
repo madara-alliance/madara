@@ -6,20 +6,31 @@ use reqwest::StatusCode;
 pub enum SharpError {
     #[error("Failed to to add SHARP job: {0}")]
     AddJobFailure(#[source] reqwest::Error),
+
     #[error("Failed to to get status of a SHARP job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
+
     #[error("SHARP service returned an error {0}")]
     SharpService(StatusCode),
+
     #[error("Failed to parse job key: {0}")]
     JobKeyParse(uuid::Error),
+
     #[error("Failed to parse fact: {0}")]
     FactParse(FromHexError),
+
     #[error("Failed to split task id into job key and fact")]
     TaskIdSplit,
+
     #[error("Failed to encode PIE")]
     PieEncode(#[source] starknet_os::error::SnOsError),
+
     #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
     PathSegmentMutFailOnUrl,
+
+    #[error("Failed to serialize body")]
+    SerializationError(#[source] std::io::Error),
+
     #[error("Other error: {0}")]
     Other(#[from] color_eyre::eyre::Error),
 }

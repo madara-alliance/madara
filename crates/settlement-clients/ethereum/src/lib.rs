@@ -19,7 +19,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Bytes;
 use async_trait::async_trait;
 use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::{bail, eyre, Ok};
+use color_eyre::eyre::{bail, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
@@ -36,6 +36,7 @@ pub mod tests;
 pub mod types;
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
+use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
@@ -164,7 +165,10 @@ impl EthereumSettlementClient {
             &KZG_SETTINGS,
         )?;
 
-        if !eval { Err(eyre!("ERROR : Assertion failed, not able to verify the proof.")) } else { Ok(kzg_proof) }
+        if !eval {
+            bail!("ERROR : Assertion failed, not able to verify the proof.");
+        }
+        Ok(kzg_proof)
     }
 }
 
@@ -238,14 +242,10 @@ impl SettlementClient for EthereumSettlementClient {
 
         // x_0_value : program_output[10]
         // Updated with starknet 0.13.2 spec
-        let kzg_proof = Self::build_proof(
-            state_diff,
-            Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
-                .expect("Not able to get x_0 point params."),
-            y_0,
-        )
-        .expect("Unable to build KZG proof for given params.")
-        .to_owned();
+        let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
+            .wrap_err("Failed to get x_0 point params")?;
+
+        let kzg_proof = Self::build_proof(state_diff, x_0_point, y_0).wrap_err("Failed to build KZG proof")?.to_owned();
 
         let input_bytes = get_input_data_for_eip_4844(program_output, kzg_proof)?;
 

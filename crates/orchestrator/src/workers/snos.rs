@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use color_eyre::eyre::WrapErr;
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 
@@ -35,10 +36,13 @@ impl Worker for SnosWorker {
 
         let latest_job_in_db = config.database().get_latest_job_by_type(JobType::SnosRun).await?;
 
-        let latest_job_id = match latest_job_in_db {
-            Some(job) => job.internal_id.parse::<u64>().expect("Failed to parse job internal ID to u64"),
-            None => "0".to_string().parse::<u64>().expect("Failed to parse '0' to u64"),
-        };
+        let latest_job_id = latest_job_in_db
+            .map(|job| {
+                job.internal_id
+                    .parse::<u64>()
+                    .wrap_err_with(|| format!("Failed to parse job internal ID: {}", job.internal_id))
+            })
+            .unwrap_or(Ok(0))?;
 
         // To be used when testing in specific block range
         let block_start = if let Some(min_block_to_process) = config.service_config().min_block_to_process {

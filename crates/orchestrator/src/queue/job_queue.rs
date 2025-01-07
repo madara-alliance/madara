@@ -58,8 +58,14 @@ pub struct WorkerTriggerMessage {
     pub worker: WorkerTriggerType,
 }
 
+#[derive(Error, Debug)]
+pub enum WorkerTriggerTypeError {
+    #[error("Unknown WorkerTriggerType: {0}")]
+    UnknownType(String),
+}
+
 impl FromStr for WorkerTriggerType {
-    type Err = String;
+    type Err = WorkerTriggerTypeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -68,7 +74,7 @@ impl FromStr for WorkerTriggerType {
             "ProofRegistration" => Ok(WorkerTriggerType::ProofRegistration),
             "DataSubmission" => Ok(WorkerTriggerType::DataSubmission),
             "UpdateState" => Ok(WorkerTriggerType::UpdateState),
-            _ => Err(format!("Unknown WorkerTriggerType: {}", s)),
+            _ => Err(WorkerTriggerTypeError::UnknownType(s.to_string())),
         }
     }
 }
@@ -231,7 +237,9 @@ fn parse_worker_message(message: &Delivery) -> Result<Option<WorkerTriggerMessag
         .borrow_payload()
         .ok_or_else(|| ConsumptionError::Other(OtherError::from("Empty payload".to_string())))?;
     let message_string = String::from_utf8_lossy(payload).to_string().trim_matches('\"').to_string();
-    let trigger_type = WorkerTriggerType::from_str(message_string.as_str()).expect("trigger type unwrapping failed");
+    let trigger_type = WorkerTriggerType::from_str(message_string.as_str())
+        .wrap_err("Failed to parse worker trigger type from message")
+        .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
     Ok(Some(WorkerTriggerMessage { worker: trigger_type }))
 }
 

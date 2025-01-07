@@ -8,7 +8,7 @@ use std::sync::Arc;
 use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::Result;
 use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
@@ -250,7 +250,7 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
 
-        Ok(u64_from_felt(block_number[0]).expect("Failed to convert to u64"))
+        u64_from_felt(block_number[0]).wrap_err("Failed to convert block number from Felt to u64")
     }
 
     /// Returns the nonce for the wallet in use.

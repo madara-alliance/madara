@@ -28,7 +28,6 @@ impl SharpClient {
     /// `cat <file_name> | base64`
     pub fn new_with_args(url: Url, sharp_params: &SharpValidatedArgs) -> Self {
         // Getting the cert files from the .env and then decoding it from base64
-
         let cert = general_purpose::STANDARD
             .decode(sharp_params.sharp_user_crt.clone())
             .expect("Failed to decode certificate");
@@ -46,11 +45,12 @@ impl SharpClient {
         let certificate = Certificate::from_pem(server_cert.as_slice()).expect("Failed to add root certificate");
 
         let client = HttpClient::builder(url.as_str())
+            .expect("Failed to create HTTP client builder")
             .identity(identity)
             .add_root_certificate(certificate)
             .default_query_param("customer_id", customer_id.as_str())
             .build()
-            .expect("Failed to build the http client");
+            .expect("Failed to build HTTP client");
 
         Self { client }
     }
@@ -76,6 +76,7 @@ impl SharpClient {
             .query_param("offchain_proof", "true")
             .query_param("proof_layout", proof_layout)
             .body(encoded_pie)
+            .map_err(|e| SharpError::SerializationError(e.into()))?
             .send()
             .await
             .map_err(SharpError::AddJobFailure)?;
