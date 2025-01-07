@@ -1,6 +1,4 @@
-{ pkgs }:
-
-let
+{pkgs}: let
   # Define versions and their hashes
   versions = {
     "2.8.2" = {
@@ -30,78 +28,86 @@ let
   # Get current system platform
   currentSystem = pkgs.stdenv.hostPlatform.system;
   platform = systemMap.${currentSystem} or (throw "Unsupported system: ${currentSystem}");
-  
+
   # Get extension based on platform
-  extension = if platform == "x86_64-pc-windows-msvc" then "zip" else "tar.gz";
+  extension =
+    if platform == "x86_64-pc-windows-msvc"
+    then "zip"
+    else "tar.gz";
 
   # Get version data
   version = "2.8.2";
   versionData = versions.${version} or (throw "Version ${version} not found");
   sha256 = versionData.hashes.${platform} or (throw "Hash not found for ${platform} in version ${version}");
-
 in
-pkgs.stdenv.mkDerivation {
-  pname = "scarb";
-  inherit version;
+  pkgs.stdenv.mkDerivation {
+    pname = "scarb";
+    inherit version;
 
-  src = pkgs.fetchurl {
-    url = "https://github.com/software-mansion/scarb/releases/download/v${version}/scarb-v${version}-${platform}.${extension}";
-    inherit sha256;
-  };
+    src = pkgs.fetchurl {
+      url = "https://github.com/software-mansion/scarb/releases/download/v${version}/scarb-v${version}-${platform}.${extension}";
+      inherit sha256;
+    };
 
-  # Add meta information
-  meta = with pkgs.lib; {
-    description = "Scarb package manager for Cairo/Starknet development";
-    homepage = "https://github.com/software-mansion/scarb";
-    license = licenses.mit;
-    platforms = builtins.attrNames systemMap;
-    maintainers = with maintainers; [ ];
-  };
+    # Add meta information
+    meta = with pkgs.lib; {
+      description = "Scarb package manager for Cairo/Starknet development";
+      homepage = "https://github.com/software-mansion/scarb";
+      license = licenses.mit;
+      platforms = builtins.attrNames systemMap;
+      maintainers = with maintainers; [];
+    };
 
-  # Installation phase
-  installPhase = ''
-    mkdir -p $out/{bin,doc}
+    # Installation phase
+    installPhase = ''
+      mkdir -p $out/{bin,doc}
 
-    ${if extension == "zip" then ''
-      unzip $src
-      cd scarb-v${version}-${platform}
-    '' else ''
-      tar xf $src
-      cd scarb-v${version}-${platform}
-    ''}
+      ${
+        if extension == "zip"
+        then ''
+          unzip $src
+          cd scarb-v${version}-${platform}
+        ''
+        else ''
+          tar xf $src
+          cd scarb-v${version}-${platform}
+        ''
+      }
 
-    # Install binaries
-    mv bin/* $out/bin/
-    
-    # Install documentation
-    mv doc/* $out/doc/
+      # Install binaries
+      mv bin/* $out/bin/
 
-    # Make all binaries executable
-    chmod +x $out/bin/*
+      # Install documentation
+      mv doc/* $out/doc/
 
-    # Verify installation of all required binaries
-    required_bins=(
-      scarb
-      scarb-cairo-language-server
-      scarb-cairo-run
-      scarb-cairo-test
-      scarb-doc
-      scarb-snforge-test-collector
-    )
+      # Make all binaries executable
+      chmod +x $out/bin/*
 
-    for bin in "''${required_bins[@]}"; do
-      if [ ! -x "$out/bin/$bin" ]; then
-        echo "Error: Required binary $bin not found or not executable"
-        exit 1
-      fi
-    done
-  '';
+      # Verify installation of all required binaries
+      required_bins=(
+        scarb
+        scarb-cairo-language-server
+        scarb-cairo-run
+        scarb-cairo-test
+        scarb-doc
+        scarb-snforge-test-collector
+      )
 
-  # Add required build inputs
-  nativeBuildInputs = with pkgs; [
-    gnutar
-    gzip
-  ] ++ pkgs.lib.optionals (extension == "zip") [
-    unzip
-  ];
-}
+      for bin in "''${required_bins[@]}"; do
+        if [ ! -x "$out/bin/$bin" ]; then
+          echo "Error: Required binary $bin not found or not executable"
+          exit 1
+        fi
+      done
+    '';
+
+    # Add required build inputs
+    nativeBuildInputs = with pkgs;
+      [
+        gnutar
+        gzip
+      ]
+      ++ pkgs.lib.optionals (extension == "zip") [
+        unzip
+      ];
+  }
