@@ -10,7 +10,7 @@ use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mp_convert::ToFelt;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
-use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap};
+use std::collections::{hash_map, BTreeSet, HashMap};
 
 mod deployed_contracts;
 mod intent;
@@ -33,19 +33,33 @@ use crate::CheckInvariants;
 ///
 /// # Intent Queues:
 ///
-/// FCFS queues. We use a [BTreeSet] to maintain logarithmic complexity and high
-/// performance with low reordering of the memory even in the case of very high
-/// transaction throughput.
-///
 /// These do not actually store transactions but the *intent* and the *order* of
 /// these transaction being added to the [Mempool]. We *intend* to execute a
 /// transaction from a given contract address, stored in each queue, based on
 /// its readiness and order of arrival. A transaction is deemed ready if its
 /// [Nonce] directly follows the previous [Nonce] used by that contract. This is
-/// retrieved from the database before the transaction is added to the [Mempool].
-/// This means that transactions which are not ready (these are [pending]
-/// transactions) will stay waiting for the required transactions to  be
-/// processed before they are marked as [ready] themselves.
+/// retrieved from the database before the transaction is added to the inner
+/// mempool. This means that transactions which are not ready (these are
+/// [pending] transactions) will remain waiting for the required transactions to
+/// be processed before they are marked as [ready] themselves.
+///
+/// ## [Ready]
+///
+/// FCFS queue. We use a [BTreeSet] to maintain logarithmic complexity and high
+/// performance with low reordering of the memory even in the case of very high
+/// transaction throughput.
+///
+/// ## [Pending]
+///
+/// FIFO queue. The queue is distributed across all current contract addresses
+/// in the mempool, with each contract address having a [BTreeSet] queue mapped
+/// to it. Pending intents are popped at the front. It should actually be
+/// slightly more performant to replace this with a [BTreeMap] to have access to
+/// [BTreeMap::entry] which would avoid a double lookup in [pop_next] when
+/// moving pending intents to the ready queue.
+///
+/// > This optimizes for inserting pending intents and moving them to ready, but
+/// > can be a bit slow when removing aged transactions.
 ///
 /// # Updating Transaction Intent
 ///
@@ -58,12 +72,11 @@ use crate::CheckInvariants;
 ///   [MempoolTransaction] associated with it, which is stored inside a
 ///   [NonceTxMapping], inside [nonce_mapping].
 ///
-/// - Once this is done, [MempoolInner] will try and pop the [pending] intent
-///   with the next nonce at the same contract address. This will then be
-///   converted into a [ready] intent and added to the relevant queue. Note that
-///   it is not possible for this to result in a nonce conflict with the intent
-///   read queue as those are checked when inserting transactions with
-///   [insert_tx] and [NonceTxMapping::insert].
+/// - Once this is done, we retrieve the pending queue for that contract address
+///   in [tx_intent_queue_pending] and check if the next [pending] intent has
+///   the right nonce. If so, we pop it, convert it to [ready] and add it to
+///   [tx_intent_queue_ready]. If this was the last element in that queue, we
+///   remove the mapping for that contract address in [tx_intent_queue_pending].
 ///
 /// # Invariants
 ///
@@ -86,7 +99,12 @@ use crate::CheckInvariants;
 /// These invariants can be checked by calling [check_invariants] in a test
 /// environment.
 ///
+/// [Nonce]: starknet_api::core::Nonce
+/// [BTreeMap]: std::collections::BTreeMap
+/// [BTreeMap::entry]: std::collections::BTreeMap::entry
 /// [readiness]: intent
+/// [Ready]: Self::tx_intent_queue_ready
+/// [Pending]: Self::tx_intent_queue_ready
 /// [Mempool]: super::Mempool
 /// [pending]: TransactionIntentPending
 /// [ready]: TransactionIntentReady
@@ -100,6 +118,8 @@ use crate::CheckInvariants;
 pub(crate) struct MempoolInner {
     /// We have one [Nonce] to  [MempoolTransaction] mapping per contract
     /// address.
+    ///
+    /// [Nonce]: starknet_api::core::Nonce
     pub(crate) nonce_mapping: HashMap<Felt, NonceTxMapping>,
     /// FCFS queue of all [ready] intents.
     ///
@@ -108,7 +128,7 @@ pub(crate) struct MempoolInner {
     /// FCFS queue of all [pending] intents.
     ///
     /// [pending]: TransactionIntentPending
-    pub(crate) tx_intent_queue_pending: BTreeMap<TransactionIntentPending, ()>,
+    pub(crate) tx_intent_queue_pending: HashMap<Felt, BTreeSet<TransactionIntentPending>>,
     /// A count of all deployed contract declared so far.
     deployed_contracts: DeployedContracts,
     /// Constraints on the number of transactions allowed in the [Mempool]
@@ -155,52 +175,40 @@ impl CheckInvariants for MempoolInner {
                 );
             }
 
-            match tx_counts.entry(intent.contract_address) {
-                hash_map::Entry::Occupied(mut entry) => {
-                    *entry.get_mut() += 1;
-                }
-                hash_map::Entry::Vacant(entry) => {
-                    entry.insert(1);
-                }
-            }
+            *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
         }
 
-        for (intent, _) in self.tx_intent_queue_pending.iter() {
-            // TODO: check the nonce against the db to make sure this intent is
-            // really pending
-            intent.check_invariants();
+        for (contract_address, queue) in self.tx_intent_queue_pending.iter() {
+            for intent in queue.iter() {
+                // TODO: check the nonce against the db to make sure this intent is
+                // really pending
+                intent.check_invariants();
+                assert_eq!(&intent.contract_address, contract_address);
 
-            let nonce_mapping = self
-                .nonce_mapping
-                .get(&intent.contract_address)
-                .unwrap_or_else(|| panic!("Missing nonce mapping for contract address {}", &intent.contract_address));
+                let nonce_mapping = self.nonce_mapping.get(&intent.contract_address).unwrap_or_else(|| {
+                    panic!("Missing nonce mapping for contract address {}", &intent.contract_address)
+                });
 
-            let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).unwrap_or_else(|| {
-                panic!(
-                    "Missing nonce mapping for intent: required {:?}, available {:?}",
-                    intent.nonce,
-                    nonce_mapping.transactions.keys()
-                )
-            });
+                let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).unwrap_or_else(|| {
+                    panic!(
+                        "Missing nonce mapping for intent: required {:?}, available {:?}",
+                        intent.nonce,
+                        nonce_mapping.transactions.keys()
+                    )
+                });
 
-            assert_eq!(mempool_tx.nonce, intent.nonce);
-            assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
-            assert_eq!(mempool_tx.arrived_at, intent.timestamp);
+                assert_eq!(mempool_tx.nonce, intent.nonce);
+                assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
+                assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-            if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
-                assert!(
-                    self.has_deployed_contract(&mempool_tx.contract_address()),
-                    "Deploy account tx is not part of deployed contacts"
-                );
-            }
-
-            match tx_counts.entry(intent.contract_address) {
-                hash_map::Entry::Occupied(mut entry) => {
-                    *entry.get_mut() += 1;
+                if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
+                    assert!(
+                        self.has_deployed_contract(&mempool_tx.contract_address()),
+                        "Deploy account tx is not part of deployed contacts"
+                    );
                 }
-                hash_map::Entry::Vacant(entry) => {
-                    entry.insert(1);
-                }
+
+                *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
             }
         }
 
@@ -287,6 +295,7 @@ impl MempoolInner {
                                 timestamp: previous.arrived_at,
                                 nonce: nonce_info.nonce,
                                 nonce_next: nonce_info.nonce_next,
+                                phantom: Default::default(),
                             });
                             debug_assert!(removed);
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
@@ -294,52 +303,47 @@ impl MempoolInner {
                             self.deployed_contracts.increment(*contract_address)
                         }
 
-                        // Insert new value. Here, we need two lookups: one for
-                        // removal and one for insertion because
-                        // TransactionIntentReady considers `timestamp` in its
-                        // implementation of Eq.
+                        // Insert new value
                         let insert = self.tx_intent_queue_ready.insert(TransactionIntentReady {
                             contract_address,
                             timestamp: arrived_at,
                             nonce: nonce_info.nonce,
                             nonce_next: nonce_info.nonce_next,
+                            phantom: Default::default(),
                         });
                         debug_assert!(insert);
                     }
                     NonceStatus::Pending => {
-                        // Insert new value. This takes advantage of the fact
-                        // that `timestamp` is not considered in the
-                        // implementation of Eq for TransactionIntentPending to
-                        // avoid a double lookup.
-                        #[allow(unused)]
-                        let insert_or_replace = self
-                            .tx_intent_queue_pending
-                            .insert(
-                                TransactionIntentPending {
-                                    contract_address,
-                                    timestamp: arrived_at,
-                                    nonce: nonce_info.nonce,
-                                    nonce_next: nonce_info.nonce_next,
-                                },
-                                (),
-                            )
-                            .is_none();
-
-                        #[cfg(debug_assertions)]
-                        {
-                            if matches!(replaced, ReplacedState::Replaced { .. }) {
-                                debug_assert!(!insert_or_replace);
-                            } else {
-                                debug_assert!(insert_or_replace);
-                            }
-                        }
+                        // The pending queue works a little bit differently as
+                        // it is split into individual sub-queues for each
+                        // contract address
+                        let queue =
+                            self.tx_intent_queue_pending.entry(contract_address).or_insert_with(|| BTreeSet::default());
 
                         // Remove old value (if collision and force == true)
                         if let ReplacedState::Replaced { previous } = replaced {
+                            let removed = queue.remove(&TransactionIntentPending {
+                                contract_address,
+                                timestamp: previous.arrived_at,
+                                nonce: nonce_info.nonce,
+                                nonce_next: nonce_info.nonce_next,
+                                phantom: Default::default(),
+                            });
+                            debug_assert!(removed);
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
                         } else if let Some(contract_address) = &deployed_contract_address {
                             self.deployed_contracts.increment(*contract_address);
                         }
+
+                        // Insert new value
+                        let inserted = queue.insert(TransactionIntentPending {
+                            contract_address,
+                            timestamp: arrived_at,
+                            nonce: nonce_info.nonce,
+                            nonce_next: nonce_info.nonce_next,
+                            phantom: Default::default(),
+                        });
+                        debug_assert!(inserted);
                     }
                 };
             }
@@ -355,19 +359,19 @@ impl MempoolInner {
                         timestamp: arrived_at,
                         nonce: nonce_info.nonce,
                         nonce_next: nonce_info.nonce_next,
+                        phantom: Default::default(),
                     }),
                     NonceStatus::Pending => self
                         .tx_intent_queue_pending
-                        .insert(
-                            TransactionIntentPending {
-                                contract_address,
-                                timestamp: arrived_at,
-                                nonce: nonce_info.nonce,
-                                nonce_next: nonce_info.nonce_next,
-                            },
-                            (),
-                        )
-                        .is_none(),
+                        .entry(contract_address)
+                        .or_insert_with(|| BTreeSet::default())
+                        .insert(TransactionIntentPending {
+                            contract_address,
+                            timestamp: arrived_at,
+                            nonce: nonce_info.nonce,
+                            nonce_next: nonce_info.nonce_next,
+                            phantom: Default::default(),
+                        }),
                 };
                 debug_assert!(inserted);
 
@@ -402,13 +406,13 @@ impl MempoolInner {
         // it would be handled by pop_next anyway. This should help with
         // maximizing the number of removals and keeping the mempool from being
         // congested.
-        while let Some(tx_intent) = self.tx_intent_queue_ready.last() {
+        while let Some(intent) = self.tx_intent_queue_ready.last() {
             let tx = self
                 .nonce_mapping
-                .get_mut(&tx_intent.contract_address)
+                .get_mut(&intent.contract_address)
                 .expect("Nonce chain does not match tx queue")
                 .transactions
-                .get(&tx_intent.nonce)
+                .get(&intent.nonce)
                 .expect("Nonce chain without a tx");
 
             let limits = TransactionCheckedLimits::limits_for(tx);
@@ -420,42 +424,55 @@ impl MempoolInner {
             }
         }
 
-        // TODO: need to re-think how we remove pending intents since they
-        // cannot be ordered by timestamp to allow for retrieval by the
-        // previous ready intent (which cannot know the timestamp of the
-        // pending transaction directly following it). Perhaps we need something
-        // similar to `nonce_mapping` for pending intents, and have THOSE sorted
-        // by timestamp?
+        // The complexity of this is not great if we mostly have ready
+        // transactions. Any ideas on how to improve the performance of this are
+        // welcome. Lets recap the problem:
         //
-        // while let Some((tx_intent, _)) = self.tx_intent_queue_pending.last_key_value() {
-        //     let tx = self
-        //         .nonce_mapping
-        //         .get_mut(&tx_intent.contract_address)
-        //         .expect("Nonce chain does not match tx queue")
-        //         .transactions
-        //         .get(&Nonce(tx_intent.nonce))
-        //         .expect("Nonce chain without a tx");
+        // 1. We need to store pending intents separate from ready intents, for
+        //    obvious reasons.
         //
-        //     let limits = TransactionCheckedLimits::limits_for(tx);
+        // 2. Pending intents might be added back into the ready queue and so
+        //    they need to store at least as much information as a ready intent.
         //
-        //     if self.limiter.tx_age_exceeded(&limits) {
-        //         self.tx_intent_queue_ready.pop_last();
-        //     } else if limits.checks_age() {
-        //         break;
-        //     }
-        // }
+        // 3. A ready intent must be able to look for the next pending intent to
+        //    add it to the ready queue.
+        //
+        // 4. Pending intents need to be sorted by time or else the complexity
+        //    of removing aged transactions collapses.
+        //
+        // How do we reconcile (3.) and (4.)? We need a queue wich is sometimes
+        // sorted by account, and sometimes sorted by timestamp!
+        for queue in self.tx_intent_queue_pending.values_mut() {
+            while let Some(intent) = queue.last() {
+                let tx = self
+                    .nonce_mapping
+                    .get_mut(&intent.contract_address)
+                    .expect("Nonce chain does not match tx queue")
+                    .transactions
+                    .get(&intent.nonce)
+                    .expect("Nonce chain without a tx");
+
+                let limits = TransactionCheckedLimits::limits_for(tx);
+
+                if self.limiter.tx_age_exceeded(&limits) {
+                    queue.pop_last();
+                } else if limits.checks_age() {
+                    break;
+                }
+            }
+        }
     }
 
     pub fn pop_next(&mut self) -> Option<MempoolTransaction> {
         // Pop tx queue.
-        let (tx_mempool, tx_next) = loop {
+        let (tx_mempool, contract_address, nonce_next) = loop {
             // Bubble up None if the mempool is empty.
             let tx_intent = self.tx_intent_queue_ready.pop_first()?;
             let tx_mempool = self.pop_tx_from_intent(&tx_intent);
 
             let limits = TransactionCheckedLimits::limits_for(&tx_mempool);
             if !self.limiter.tx_age_exceeded(&limits) {
-                break (tx_mempool, tx_intent.tx_next_for_lookup());
+                break (tx_mempool, tx_intent.contract_address, tx_intent.nonce_next);
             }
 
             // transaction age exceeded, remove the tx from mempool.
@@ -464,14 +481,28 @@ impl MempoolInner {
 
         // Looks for the next transaction from the same account in the pending
         // queue and marks it as ready if found.
-        // TODO: maybe this can be simplified by storing a mapping
-        // contract_address -> pending intent queue, then we just need to
-        // compare the nonce on the first entry and perhaps pop it. Seems like
-        // a good idea.
-        if let btree_map::Entry::Occupied(entry) = self.tx_intent_queue_pending.entry(tx_next) {
-            let tx_ready = entry.key().ready();
-            entry.remove();
-            self.tx_intent_queue_ready.insert(tx_ready);
+        'pending: {
+            if let hash_map::Entry::Occupied(mut entry) = self.tx_intent_queue_pending.entry(contract_address) {
+                let queue = entry.get_mut();
+                let nonce = queue.first().expect("Intent queue cannot be empty").nonce;
+
+                if nonce != nonce_next {
+                    break 'pending;
+                }
+
+                // PERF: we could avoid the double lookup by using a BTreeMap
+                // instead
+                let intent_pending = queue.pop_first().expect("Intent queue cannot be empty");
+                let intent_ready = intent_pending.ready();
+
+                // This works like a NonceMapping: if a pending intent queue is
+                // empty, we remove the mapping.
+                if queue.is_empty() {
+                    entry.remove();
+                }
+
+                self.tx_intent_queue_ready.insert(intent_ready);
+            }
         }
 
         // do not update mempool limits, block prod will update it with re-add txs.

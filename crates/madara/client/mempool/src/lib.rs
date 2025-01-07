@@ -615,11 +615,14 @@ mod test {
         inner.check_invariants();
         inner
             .tx_intent_queue_pending
+            .get(&Felt::ZERO)
+            .expect("Mempool should have a pending queue for contract address ZERO")
             .get(&TransactionIntentPending {
                 contract_address: Felt::ZERO,
                 timestamp: timestamp_pending,
                 nonce: Nonce(Felt::ONE),
                 nonce_next: Nonce(Felt::TWO),
+                phantom: Default::default(),
             })
             .expect("Mempool should contain pending transaction");
 
@@ -643,6 +646,7 @@ mod test {
                 timestamp: timestamp_ready,
                 nonce: Nonce(Felt::ZERO),
                 nonce_next: Nonce(Felt::ONE),
+                phantom: Default::default(),
             })
             .expect("Mempool should receive ready transaction");
 
@@ -664,6 +668,7 @@ mod test {
                 timestamp: timestamp_pending,
                 nonce: Nonce(Felt::ONE),
                 nonce_next: Nonce(Felt::TWO),
+                phantom: Default::default(),
             })
             .expect("Mempool should have converted pending transaction to ready");
 

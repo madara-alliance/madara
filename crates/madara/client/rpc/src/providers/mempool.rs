@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.
 pub struct MempoolAddTxProvider {
+    // PERF: this can go as we are always wrapping MempoolAddTxProvider inside
+    // Arc<dyn AddMempoolProvider>
     mempool: Arc<Mempool>,
 }
 
