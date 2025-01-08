@@ -4,7 +4,7 @@
 # Database version management script
 #
 # This script updates the database version tracking file when schema changes occur.
-# It's typically called by CI when a PR with the 'bump_db' label is merged.
+# It's typically called by CI when a PR with the 'db-migration' label is merged.
 #
 # Requirements: yq (https://github.com/mikefarah/yq/)
 #
