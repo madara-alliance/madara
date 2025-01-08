@@ -53,12 +53,11 @@ async fn main() -> anyhow::Result<()> {
     // If block time is inferior to the tick time, then only empty blocks will
     // be produced as we will never update the pending block before storing it.
     if run_cmd.is_sequencer() && chain_config.block_time < chain_config.pending_block_update_time {
-        tracing::error!(
+        anyhow::bail!(
             "Block time ({}s) cannot be less than the pending block update time ({}s), as this will yield only empty blocks",
             chain_config.block_time.as_secs(),
             chain_config.pending_block_update_time.as_secs()
         );
-        anyhow::bail!("Block time");
     }
 
     // Check if the devnet is running with the correct chain id.
