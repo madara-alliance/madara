@@ -1,7 +1,7 @@
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::ResultExt;
-use crate::versions::user::v0_7_1::methods::trace::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::Starknet;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
@@ -26,14 +26,15 @@ pub async fn estimate_fee(
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate<Felt>>> {
+    tracing::debug!("estimate fee on block_id {block_id:?}");
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 
-    if starknet_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if starknet_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
+    let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
     let transactions = request
         .into_iter()

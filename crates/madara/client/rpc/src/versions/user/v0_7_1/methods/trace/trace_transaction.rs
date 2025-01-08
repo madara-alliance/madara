@@ -11,8 +11,8 @@ use starknet_types_core::felt::Felt;
 use starknet_types_rpc::TraceBlockTransactionsResult;
 use std::sync::Arc;
 
-// For now, we fallback to the sequencer - that is what pathfinder and juno do too, but this is temporary
-pub const FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW: StarknetVersion = StarknetVersion::V0_13_0;
+/// Blockifier does not support execution for versions earlier than that.
+pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 pub async fn trace_transaction(
     starknet: &Starknet,
@@ -24,11 +24,11 @@ pub async fn trace_transaction(
         .or_internal_server_error("Error while getting block from tx hash")?
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    if block.info.protocol_version() < &FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
 
-    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block.info)?;
+    let exec_context = ExecutionContext::new_at_block_start(Arc::clone(&starknet.backend), &block.info)?;
 
     let mut block_txs =
         Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes()).map(|(tx, hash)| {
