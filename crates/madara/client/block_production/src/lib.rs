@@ -358,7 +358,28 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(())
     }
 
-    fn maybe_add_prev_block_hash(&self, state_diff: &mut StateDiff, block_n: u64) -> Result<(), Error> {
+    /// Updates the state diff to store a block hash at the special address 0x1, which serves as
+    /// Starknet's block hash registry.
+    ///
+    /// # Purpose
+    /// Address 0x1 in Starknet is a special contract address that maintains a mapping of block numbers
+    /// to their corresponding block hashes. This storage is used by the `get_block_hash` system call
+    /// and is essential for block hash verification within the Starknet protocol.
+    ///
+    /// # Storage Structure at Address 0x1
+    /// - Keys: Block numbers
+    /// - Values: Corresponding block hashes
+    /// - Default: 0 for all other block numbers
+    ///
+    /// # Implementation Details
+    /// For each block N ≥ 10, this function stores the hash of block (N-10) at address 0x1
+    /// with the block number as the key.
+    ///
+    /// For more details, see the [official Starknet documentation on special addresses]
+    /// (https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1)
+    ///
+    /// It is also required by SNOS for PIEs creation of the block.
+    fn update_block_hash_registry(&self, state_diff: &mut StateDiff, block_n: u64) -> Result<(), Error> {
         if block_n >= 10 {
             let prev_block_number = block_n - 10;
             let prev_block_hash = self
@@ -374,7 +395,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 })?;
 
             state_diff.storage_diffs.push(ContractStorageDiffItem {
-                address: Felt::ONE,
+                address: Felt::ONE, // Address 0x1
                 storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
             });
         }
@@ -410,7 +431,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // Check if block is full
         if block_now_full {
             let block_n = self.block_n();
-            self.maybe_add_prev_block_hash(&mut new_state_diff, block_n)?;
+            self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
             tracing::info!("Resource limits reached, closing block early");
             self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await?;
@@ -448,7 +469,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             block_now_full: _block_now_full,
         } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
-        self.maybe_add_prev_block_hash(&mut new_state_diff, block_n)?;
+        self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
         self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await
     }
