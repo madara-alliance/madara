@@ -47,6 +47,7 @@ pub enum MempoolLimitReached {
     Age { max: Duration },
 }
 
+#[derive(Debug)]
 pub(crate) struct TransactionCheckedLimits {
     check_tx_limit: bool,
     check_declare_limit: bool,

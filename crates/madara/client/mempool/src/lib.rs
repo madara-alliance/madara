@@ -436,6 +436,7 @@ impl MempoolProvider for Mempool {
         }
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.insert_txs(txs, force)?;
+
         Ok(())
     }
     fn chain_id(&self) -> Felt {
@@ -519,6 +520,8 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use super::*;
 
     #[rstest::fixture]
@@ -541,12 +544,17 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx_account_v0_valid() -> blockifier::transaction::transaction_execution::Transaction {
+    fn tx_account_v0_valid(
+        #[default(Felt::ZERO)] contract_address: Felt,
+    ) -> blockifier::transaction::transaction_execution::Transaction {
         blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
             blockifier::transaction::account_transaction::AccountTransaction::Invoke(
                 blockifier::transaction::transactions::InvokeTransaction {
                     tx: starknet_api::transaction::InvokeTransaction::V0(
-                        starknet_api::transaction::InvokeTransactionV0::default(),
+                        starknet_api::transaction::InvokeTransactionV0 {
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                            ..Default::default()
+                        },
                     ),
                     tx_hash: starknet_api::transaction::TransactionHash::default(),
                     only_query: false,
@@ -613,17 +621,396 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
+    /// This test makes sure that old transactions are removed from the mempool,
+    /// whether they be represented by ready or pending intents.
+    ///
+    /// # Setup
+    ///
+    /// - We assume `tx_*_n `are from the same contract but with increasing
+    ///   nonces.
+    ///
+    /// - `tx_new` are transactions which _should not_ be removed from the
+    ///   mempool, `tx_old` are transactions which _should_ be removed from the
+    ///   mempool
+    ///
+    /// - `tx_new_3`, `tx_old_3` and `tx_new_2_bis` and `tx_old_4` are in the
+    ///   pending queue, all other transactions are in the ready queue.
     #[rstest::rstest]
     fn mempool_remove_aged_tx_pass(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
-        #[from(tx_account_v0_valid)] tx_new_1: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_new_2: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_old_1: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_old_2: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_old_3: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] // We are reusing the tx_account_v0_valid fixture...
+        #[with(Felt::ZERO)] // ...with different arguments
+        tx_new_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::ONE)]
+        tx_new_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::ONE)]
+        tx_new_3: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::ZERO)]
+        tx_old_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::ONE)]
+        tx_old_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::TWO)]
+        tx_old_3: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::THREE)]
+        tx_old_4: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        todo!()
+        let mempool = Mempool::new(
+            backend,
+            l1_data_provider,
+            MempoolLimits { max_age: Some(Duration::from_secs(3600)), ..MempoolLimits::for_testing() },
+        );
+
+        // ================================================================== //
+        //                                STEP 1                              //
+        // ================================================================== //
+
+        // First, we begin by inserting all our transactions and making sure
+        // they are in the ready as well as the pending intent queues.
+        let arrived_at = ArrivedAtTimestamp::now();
+        let tx_new_1_mempool = MempoolTransaction {
+            tx: tx_new_1,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ZERO),
+            nonce_next: Nonce(Felt::ONE),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_new_1_mempool.clone(),
+            true,
+            false,
+            NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_new_1_mempool.contract_address(),
+                timestamp: tx_new_1_mempool.arrived_at,
+                nonce: tx_new_1_mempool.nonce,
+                nonce_next: tx_new_1_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::now();
+        let tx_new_2_mempool = MempoolTransaction {
+            tx: tx_new_2,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ZERO),
+            nonce_next: Nonce(Felt::ONE),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_new_2_mempool.clone(),
+            true,
+            false,
+            NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_new_2_mempool.contract_address(),
+                timestamp: tx_new_2_mempool.arrived_at,
+                nonce: tx_new_2_mempool.nonce,
+                nonce_next: tx_new_2_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::now();
+        let tx_new_3_mempool = MempoolTransaction {
+            tx: tx_new_3,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ONE),
+            nonce_next: Nonce(Felt::TWO),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_new_3_mempool.clone(),
+            true,
+            false,
+            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_new_3_mempool.contract_address())
+                .expect("Missing nonce mapping for tx_new_3")
+                .contains(&TransactionIntentPending {
+                    contract_address: **tx_new_3_mempool.contract_address(),
+                    timestamp: tx_new_3_mempool.arrived_at,
+                    nonce: tx_new_3_mempool.nonce,
+                    nonce_next: tx_new_3_mempool.nonce_next,
+                    phantom: std::marker::PhantomData
+                }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let tx_old_1_mempool = MempoolTransaction {
+            tx: tx_old_1,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ONE),
+            nonce_next: Nonce(Felt::TWO),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_old_1_mempool.clone(),
+            true,
+            false,
+            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_old_1_mempool.contract_address(),
+                timestamp: tx_old_1_mempool.arrived_at,
+                nonce: tx_old_1_mempool.nonce,
+                nonce_next: tx_old_1_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let tx_old_2_mempool = MempoolTransaction {
+            tx: tx_old_2,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ONE),
+            nonce_next: Nonce(Felt::TWO),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_old_2_mempool.clone(),
+            true,
+            false,
+            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_old_2_mempool.contract_address(),
+                timestamp: tx_old_2_mempool.arrived_at,
+                nonce: tx_old_2_mempool.nonce,
+                nonce_next: tx_old_2_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let tx_old_3_mempool = MempoolTransaction {
+            tx: tx_old_3,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::TWO),
+            nonce_next: Nonce(Felt::THREE),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_old_3_mempool.clone(),
+            true,
+            false,
+            NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_old_3_mempool.contract_address())
+                .expect("Missing nonce mapping for tx_old_3")
+                .contains(&TransactionIntentPending {
+                    contract_address: **tx_old_3_mempool.contract_address(),
+                    timestamp: tx_old_3_mempool.arrived_at,
+                    nonce: tx_old_3_mempool.nonce,
+                    nonce_next: tx_old_3_mempool.nonce_next,
+                    phantom: std::marker::PhantomData
+                }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let tx_old_4_mempool = MempoolTransaction {
+            tx: tx_old_4,
+            arrived_at,
+            converted_class: None,
+            nonce: Nonce(Felt::ONE),
+            nonce_next: Nonce(Felt::TWO),
+        };
+        let res = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_old_4_mempool.clone(),
+            true,
+            false,
+            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+        );
+        assert!(res.is_ok());
+        assert!(
+            mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_old_4_mempool.contract_address())
+                .expect("Missing nonce_mapping for tx_old_4")
+                .contains(&TransactionIntentPending {
+                    contract_address: **tx_old_4_mempool.contract_address(),
+                    timestamp: tx_old_4_mempool.arrived_at,
+                    nonce: tx_old_4_mempool.nonce,
+                    nonce_next: tx_old_4_mempool.nonce_next,
+                    phantom: std::marker::PhantomData
+                }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        // Make sure we have not entered an invalid state.
+        mempool.inner.read().expect("Poisoned lock").check_invariants();
+
+        // ================================================================== //
+        //                                STEP 2                              //
+        // ================================================================== //
+
+        // Now we actually remove the transactions. All the old transactions
+        // should be removed.
+        mempool.inner.write().expect("Poisoned lock").remove_age_exceeded_txs();
+
+        // tx_new_1 and tx_new_2 should still be in the mempool
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_new_1_mempool.contract_address(),
+                timestamp: tx_new_1_mempool.arrived_at,
+                nonce: tx_new_1_mempool.nonce,
+                nonce_next: tx_new_1_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+        assert!(
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_new_2_mempool.contract_address(),
+                timestamp: tx_new_2_mempool.arrived_at,
+                nonce: tx_new_2_mempool.nonce,
+                nonce_next: tx_new_2_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        // tx_old_1 and tx_old_2 should no longer be in the ready queue
+        assert!(
+            !mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_old_1_mempool.contract_address(),
+                timestamp: tx_old_1_mempool.arrived_at,
+                nonce: tx_old_1_mempool.nonce,
+                nonce_next: tx_old_1_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+        assert!(
+            !mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
+                contract_address: **tx_old_2_mempool.contract_address(),
+                timestamp: tx_old_2_mempool.arrived_at,
+                nonce: tx_old_2_mempool.nonce,
+                nonce_next: tx_old_2_mempool.nonce_next,
+                phantom: std::marker::PhantomData
+            }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        // tx_new_3 should still be in the pending queue but tx_old_3 should not
+        assert!(
+            mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_new_3_mempool.contract_address())
+                .expect("Missing nonce mapping for tx_new_3")
+                .contains(&TransactionIntentPending {
+                    contract_address: **tx_new_3_mempool.contract_address(),
+                    timestamp: tx_new_3_mempool.arrived_at,
+                    nonce: tx_new_3_mempool.nonce,
+                    nonce_next: tx_new_3_mempool.nonce_next,
+                    phantom: std::marker::PhantomData
+                }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+        assert!(
+            !mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_old_3_mempool.contract_address())
+                .expect("Missing nonce mapping for tx_old_3")
+                .contains(&TransactionIntentPending {
+                    contract_address: **tx_old_3_mempool.contract_address(),
+                    timestamp: tx_old_3_mempool.arrived_at,
+                    nonce: tx_old_3_mempool.nonce,
+                    nonce_next: tx_old_3_mempool.nonce_next,
+                    phantom: std::marker::PhantomData
+                }),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        // tx_old_4 should no longer be in the pending queue and since it was
+        // the only transaction for that contract address, that pending queue
+        // should have been emptied
+        assert!(
+            mempool
+                .inner
+                .read()
+                .expect("Poisoned lock")
+                .tx_intent_queue_pending
+                .get(&**tx_old_4_mempool.contract_address())
+                .is_none(),
+            "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        // Make sure we have not entered an invalid state.
+        mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
     #[rstest::rstest]
