@@ -171,8 +171,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             l1_data_provider.as_ref(),
         ));
 
-        let executor =
-            ExecutionContext::new_in_block(Arc::clone(&backend), &pending_block.info.clone().into())?.tx_executor();
+        let executor = ExecutionContext::new_at_block_start(Arc::clone(&backend), &pending_block.info.clone().into())?
+            .tx_executor();
 
         Ok(Self {
             importer,
@@ -339,7 +339,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Prepare executor for next block
         self.executor =
-            ExecutionContext::new_in_block(Arc::clone(&self.backend), &self.block.info.clone().into())?.tx_executor();
+            ExecutionContext::new_at_block_start(Arc::clone(&self.backend), &self.block.info.clone().into())?
+                .tx_executor();
         self.current_pending_tick = 0;
 
         let end_time = start_time.elapsed();
