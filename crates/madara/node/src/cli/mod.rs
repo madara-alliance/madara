@@ -187,6 +187,10 @@ pub struct RunCmd {
     #[arg(env = "MADARA_DEVNET", long, group = "mode")]
     pub devnet: bool,
 
+    /// Allows a devnet to have SN_MAIN or SN_SEPOLIA as its chain ID.
+    #[arg(env = "MADARA_DEVNET_UNSAFE", long, requires = "devnet")]
+    pub devnet_unsafe: bool,
+
     /// The network chain configuration.
     #[clap(env = "MADARA_NETWORK", long, short, group = "full_mode_config")]
     pub network: Option<NetworkType>,

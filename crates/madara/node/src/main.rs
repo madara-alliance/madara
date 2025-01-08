@@ -55,9 +55,11 @@ async fn main() -> anyhow::Result<()> {
     // to avoid accidental setups which would allow for replay attacks. This is
     // possible if the devnet has the same chain id as another popular chain,
     // allowing txs which occur on it to also be replayed on that other chain.
-    if run_cmd.devnet && (chain_config.chain_id == ChainId::Mainnet || chain_config.chain_id == ChainId::Sepolia) {
-        tracing::error!("You're running a devnet with the network config of {0}. This means that devnet transactions can be replayed on the actual {0} network. Use `--network=devnet` instead.", chain_config.chain_name);
-        anyhow::bail!("Devnet")
+    if run_cmd.devnet
+        && (chain_config.chain_id == ChainId::Mainnet || chain_config.chain_id == ChainId::Sepolia)
+        && !run_cmd.devnet_unsafe
+    {
+        anyhow::bail!("You're running a devnet with the network config of {0}. This means that devnet transactions can be replayed on the actual {0} network. Use `--network=devnet` instead or force this configuration with `--devnet-unsafe`.", chain_config.chain_name);
     }
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
