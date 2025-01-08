@@ -51,7 +51,7 @@ pub enum MempoolError {
     #[error("Validation error: {0:#}")]
     Validation(#[from] StatefulValidatorError),
     #[error(transparent)]
-    InnerMempool(#[from] TxInsersionError),
+    InnerMempool(#[from] TxInsertionError),
     #[error(transparent)]
     Exec(#[from] mc_exec::Error),
     #[error(transparent)]
@@ -133,7 +133,7 @@ impl Mempool {
 
             if let Err(err) = self.accept_tx(tx, converted_class, arrived_at, nonce_readiness) {
                 match err {
-                    MempoolError::InnerMempool(TxInsersionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
+                    MempoolError::InnerMempool(TxInsertionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
                 }
             }
@@ -227,8 +227,26 @@ impl Mempool {
             .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &sender_address)?
             .map(|nonce| Nonce(nonce).try_increment())
             .unwrap_or(Ok(nonce))?;
+
         if nonce != nonce_target {
-            Ok(NonceInfo::pending(nonce, nonce_next))
+            // We don't need an underflow check as the default value for
+            // nonce_target in db is 0. Since nonce != nonce_target, we already
+            // know that nonce != 0.
+            let nonce_prev = Nonce(nonce.0 - Felt::ONE);
+            let nonce_prev_ready = self.inner.read().expect("Poisoned lock").nonce_is_ready(sender_address, nonce_prev);
+
+            // If the mempool has the transaction before this one ready, then
+            // this transaction is ready too. Even if the db has not been
+            // updated yet, this transaction will always be polled and executed
+            // afterwards.
+            if nonce_prev_ready {
+                Ok(NonceInfo::ready(nonce, nonce_next))
+            } else {
+                // BUG: what if a transaction is received AFTER the previous tx
+                // has been polled from the mempool, but BEFORE the db has been
+                // updated? It will never be moved to ready!
+                Ok(NonceInfo::pending(nonce, nonce_next))
+            }
         } else {
             Ok(NonceInfo::ready(nonce, nonce_next))
         }
@@ -593,6 +611,19 @@ mod test {
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
         mempool.inner.read().expect("Poisoned lock").check_invariants();
+    }
+
+    #[rstest::rstest]
+    fn mempool_remove_aged_tx_pass(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        #[from(tx_account_v0_valid)] tx_new_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_new_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_old_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_old_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_old_3: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        todo!()
     }
 
     #[rstest::rstest]

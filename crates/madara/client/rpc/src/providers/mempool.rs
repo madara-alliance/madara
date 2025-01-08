@@ -27,13 +27,13 @@ impl MempoolAddTxProvider {
 impl From<mc_mempool::MempoolError> for StarknetRpcApiError {
     fn from(value: mc_mempool::MempoolError) -> Self {
         match value {
-            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::DuplicateTxn) => {
                 StarknetRpcApiError::DuplicateTxn
             }
-            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::Limit(limit)) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::Limit(limit)) => {
                 StarknetRpcApiError::FailedToReceiveTxn { err: Some(format!("{}", limit).into()) }
             }
-            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::NonceConflict) => {
                 StarknetRpcApiError::FailedToReceiveTxn {
                     err: Some("A transaction with this nonce and sender address already exists".into()),
                 }

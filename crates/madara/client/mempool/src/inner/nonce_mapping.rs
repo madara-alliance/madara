@@ -1,5 +1,5 @@
 use super::tx::MempoolTransaction;
-use crate::TxInsersionError;
+use crate::TxInsertionError;
 use starknet_api::core::Nonce;
 use std::collections::{btree_map, BTreeMap};
 use std::iter;
@@ -37,7 +37,7 @@ impl NonceTxMapping {
         mempool_tx: MempoolTransaction,
         nonce: Nonce,
         force: bool,
-    ) -> Result<ReplacedState, TxInsersionError> {
+    ) -> Result<ReplacedState, TxInsertionError> {
         let replaced = if force {
             match self.transactions.entry(nonce) {
                 btree_map::Entry::Vacant(entry) => {
@@ -55,9 +55,9 @@ impl NonceTxMapping {
                     // duplicate nonce, either it's because the hash is
                     // duplicated or nonce conflict with another tx.
                     if entry.get().tx_hash() == mempool_tx.tx_hash() {
-                        return Err(TxInsersionError::DuplicateTxn);
+                        return Err(TxInsertionError::DuplicateTxn);
                     } else {
-                        return Err(TxInsersionError::NonceConflict);
+                        return Err(TxInsertionError::NonceConflict);
                     }
                 }
                 btree_map::Entry::Vacant(entry) => {

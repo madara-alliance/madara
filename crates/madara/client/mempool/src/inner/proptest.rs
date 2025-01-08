@@ -220,9 +220,9 @@ impl MempoolInvariantsProblem {
                         && inserted_contract_nonce_pairs.contains(&(insert.0.nonce(), insert.0.contract_address()))
                     {
                         if inserted.contains(&insert.0.tx_hash()) {
-                            Err(TxInsersionError::DuplicateTxn)
+                            Err(TxInsertionError::DuplicateTxn)
                         } else {
-                            Err(TxInsersionError::NonceConflict)
+                            Err(TxInsertionError::NonceConflict)
                         }
                     } else {
                         Ok(())

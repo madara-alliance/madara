@@ -716,7 +716,7 @@ mod tests {
 
         assert_matches!(
             result,
-            Err(mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsersionError::Limit(
+            Err(mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::Limit(
                 mc_mempool::MempoolLimitReached::MaxTransactions { max: 5 }
             )))
         )

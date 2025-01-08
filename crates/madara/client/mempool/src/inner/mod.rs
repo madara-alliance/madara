@@ -8,7 +8,10 @@ use blockifier::transaction::transaction_execution::Transaction;
 use deployed_contracts::DeployedContracts;
 use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mp_convert::ToFelt;
-use starknet_api::core::ContractAddress;
+use starknet_api::{
+    core::{ContractAddress, Nonce},
+    StarknetApiError,
+};
 use starknet_types_core::felt::Felt;
 use std::collections::{hash_map, BTreeSet, HashMap};
 
@@ -78,6 +81,22 @@ use crate::CheckInvariants;
 ///   [tx_intent_queue_ready]. If this was the last element in that queue, we
 ///   remove the mapping for that contract address in [tx_intent_queue_pending].
 ///
+/// # Emptying the [Mempool]
+///
+/// Currently, the mempool is emptied on each call to [insert_tx] based on the
+/// age of a transaction. There are several issues with that.
+///
+/// 1. First of all, we might want to limit this check to once every few seconds
+///    for performance reasons.
+///
+/// 2. We currently do not empty the mempool in case of congestion. This is
+///    complicated because we would need to be able to differentiate between
+///    declare and non-declare transactions in the mempool (declare txs have
+///    their own congestion limit). This can be done by adding another readiness
+///    and pending queue which are both reserved to declare transactions, but I
+///    am done with refactoring for the moment and I don't even know if this
+///    would be a good idea. FIXME
+///
 /// # Invariants
 ///
 /// The inner mempool adheres to the following invariants:
@@ -137,8 +156,8 @@ pub(crate) struct MempoolInner {
     limiter: MempoolLimiter,
 }
 
-#[derive(thiserror::Error, Debug, PartialEq, Eq)]
-pub enum TxInsersionError {
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum TxInsertionError {
     #[error("A transaction with this nonce already exists in the transaction pool")]
     NonceConflict,
     #[error("A transaction with this hash already exists in the transaction pool")]
@@ -150,6 +169,7 @@ pub enum TxInsersionError {
 #[cfg(test)]
 impl CheckInvariants for MempoolInner {
     fn check_invariants(&self) {
+        // tx_intent_queue_ready can only contain one tx of every contract
         let mut tx_counts = HashMap::<Felt, usize>::default();
         for intent in self.tx_intent_queue_ready.iter() {
             // TODO: check the nonce against the db to make sure this intent is
@@ -250,7 +270,7 @@ impl MempoolInner {
         force: bool,
         update_limits: bool,
         nonce_info: NonceInfo,
-    ) -> Result<(), TxInsersionError> {
+    ) -> Result<(), TxInsertionError> {
         // delete age-exceeded txs from the mempool
         // todo(perf): this may want to limit this check once every few seconds
         // to avoid it being in the hot path?
@@ -561,7 +581,7 @@ impl MempoolInner {
         &mut self,
         txs: impl IntoIterator<Item = MempoolTransaction>,
         force: bool,
-    ) -> Result<(), TxInsersionError> {
+    ) -> Result<(), TxInsertionError> {
         for tx in txs {
             // Transactions are marked as ready as they were already included
             // into the pending block
@@ -570,6 +590,23 @@ impl MempoolInner {
             self.insert_tx(tx, force, true, NonceInfo::ready(nonce, nonce_next))?;
         }
         Ok(())
+    }
+
+    /// Returns true if [MempoolInner] has the transaction at a contract address
+    /// and nonce in the ready queue.
+    pub fn nonce_is_ready(&self, sender_address: Felt, nonce: Nonce) -> bool {
+        let mempool_tx = self.nonce_mapping.get(&sender_address).map(|mapping| mapping.transactions.get(&nonce));
+        let Some(Some(mempool_tx)) = mempool_tx else {
+            return false;
+        };
+
+        self.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: sender_address,
+            timestamp: mempool_tx.arrived_at,
+            nonce,
+            nonce_next: mempool_tx.nonce_next,
+            phantom: std::marker::PhantomData,
+        })
     }
 
     #[cfg(any(test, feature = "testing"))]
