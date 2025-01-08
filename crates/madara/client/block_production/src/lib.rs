@@ -358,6 +358,29 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(())
     }
 
+    fn maybe_add_prev_block_hash(&self, state_diff: &mut StateDiff, block_n: u64) -> Result<(), Error> {
+        if block_n >= 10 {
+            let prev_block_number = block_n - 10;
+            let prev_block_hash = self
+                .backend
+                .get_block_hash(&BlockId::Number(prev_block_number))
+                .map_err(|err| {
+                    Error::Unexpected(
+                        format!("Error fetching block hash for block {prev_block_number}: {err:#}").into(),
+                    )
+                })?
+                .ok_or_else(|| {
+                    Error::Unexpected(format!("No block hash found for block number {prev_block_number}").into())
+                })?;
+
+            state_diff.storage_diffs.push(ContractStorageDiffItem {
+                address: Felt::ONE,
+                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
+            });
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
     pub async fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
         let current_pending_tick = self.current_pending_tick;
@@ -365,13 +388,15 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             return Ok(false);
         }
 
-        // Use full bouncer capacity
-        let bouncer_cap = self.backend.chain_config().bouncer_config.block_max_capacity;
-
         let start_time = Instant::now();
 
-        let ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full } =
-            self.continue_block(bouncer_cap)?;
+        let ContinueBlockResult {
+            state_diff: mut new_state_diff,
+            visited_segments,
+            bouncer_weights,
+            stats,
+            block_now_full,
+        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         if stats.n_added_to_block > 0 {
             tracing::info!(
@@ -384,8 +409,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Check if block is full
         if block_now_full {
+            let block_n = self.block_n();
+            self.maybe_add_prev_block_hash(&mut new_state_diff, block_n)?;
+
             tracing::info!("Resource limits reached, closing block early");
-            self.close_and_prepare_next_block(state_diff, visited_segments, start_time).await?;
+            self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await?;
             return Ok(true);
         }
 
@@ -393,7 +421,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // todo, prefer using the block import pipeline?
         self.backend.store_block(
             self.block.clone().into(),
-            state_diff,
+            new_state_diff,
             self.declared_classes.clone(),
             Some(visited_segments),
             Some(bouncer_weights),
@@ -420,27 +448,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             block_now_full: _block_now_full,
         } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
-        // SNOS requirement: For blocks >= 10, the hash of the block 10 blocks prior
-        // at address 0x1 with the block number as the key
-        if block_n >= 10 {
-            let prev_block_number = block_n - 10;
-            let prev_block_hash = self
-                .backend
-                .get_block_hash(&BlockId::Number(prev_block_number))
-                .map_err(|err| {
-                    Error::Unexpected(
-                        format!("Error fetching block hash for block {prev_block_number}: {err:#}").into(),
-                    )
-                })?
-                .ok_or_else(|| {
-                    Error::Unexpected(format!("No block hash found for block number {prev_block_number}").into())
-                })?;
-
-            new_state_diff.storage_diffs.push(ContractStorageDiffItem {
-                address: Felt::ONE,
-                storage_entries: vec![StorageEntry { key: Felt::from(prev_block_number), value: prev_block_hash }],
-            });
-        }
+        self.maybe_add_prev_block_hash(&mut new_state_diff, block_n)?;
 
         self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await
     }
