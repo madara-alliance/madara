@@ -2,7 +2,8 @@
 
 ## Next release
 
-- fix(devnet): loosened devnet chain id restrictions
+- fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
+- fix(compilation): crate-level compilation
 - chore: Move crates under a madara subdir
 - chore(nix): resolve flake and direnv compatibility issues
 - fix: Gateway path fix
