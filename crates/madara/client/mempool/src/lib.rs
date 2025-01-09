@@ -522,6 +522,8 @@ pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
 mod test {
     use std::time::Duration;
 
+    use mc_db::mempool_db::NonceStatus;
+
     use super::*;
 
     #[rstest::fixture]
@@ -649,7 +651,7 @@ mod test {
         #[with(Felt::ONE)]
         tx_new_2: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)]
-        #[with(Felt::ONE)]
+        #[with(Felt::TWO)]
         tx_new_3: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)]
         #[with(Felt::ZERO)]
@@ -1174,7 +1176,8 @@ mod test {
             nonce_next: Nonce(Felt::ONE),
             phantom: Default::default(),
         });
-        assert!(contains,
+        assert!(
+            contains,
             "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
@@ -1203,12 +1206,265 @@ mod test {
             nonce_next: Nonce(Felt::TWO),
             phantom: Default::default(),
         });
-        assert!(contains,
+        assert!(
+            contains,
             "Mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
+    }
+
+    /// This test makes sure that retrieve nonce_info has proper error handling
+    /// and returns correct values based on the state of the db.
+    #[rstest::rstest]
+    fn mempool_retrieve_nonce_info(backend: Arc<mc_db::MadaraBackend>, l1_data_provider: Arc<MockL1DataProvider>) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        // Transactions which meet the nonce in db should be marked as ready...
+        assert_eq!(
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).unwrap(),
+            NonceInfo { readiness: NonceStatus::Ready, nonce: Nonce(Felt::ZERO), nonce_next: Nonce(Felt::ONE) }
+        );
+
+        // ...otherwise they should be marked as pending
+        assert_eq!(
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ONE).unwrap(),
+            NonceInfo { readiness: NonceStatus::Pending, nonce: Nonce(Felt::ONE), nonce_next: Nonce(Felt::TWO) }
+        );
+
+        // We need to compute the next nonce inside retrieve nonce_info, so
+        // passing Felt::MAX is not allowed.
+        assert_matches::assert_matches!(
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::MAX),
+            Err(MempoolError::StarknetApi(StarknetApiError::OutOfRange { .. }))
+        );
+    }
+
+    /// This test check the replacement logic for the [mempool] in case of force
+    /// inserts.
+    ///
+    /// # Setup:
+    ///
+    /// - `tx_1` and `tx_2` are from the same account, `tx_3` is not.
+    ///
+    /// - `tx_1` and `tx_2` share the same nonce but a different timestamp.
+    ///
+    /// [mempool]: inner::MempoolInner
+    #[rstest::rstest]
+    fn mempool_replace_pass(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)]
+        #[with(Felt::ONE)]
+        tx_3: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        // Insert the first transaction
+
+        let force = true;
+        let update_tx_limits = true;
+
+        let arrived_at = ArrivedAtTimestamp::now();
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let tx_1_mempool = MempoolTransaction {
+            tx: tx_1,
+            arrived_at,
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let result = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_1_mempool.clone(),
+            force,
+            update_tx_limits,
+            nonce_info,
+        );
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_1_mempool.contract_address(),
+            timestamp: tx_1_mempool.arrived_at,
+            nonce: tx_1_mempool.nonce,
+            nonce_next: tx_1_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 1);
+
+        inner.check_invariants();
+
+        drop(inner);
+
+        // Inserts the second transaction with the same nonce as the first once.
+        // This should replace the first transaction.
+
+        let force = true;
+        let update_tx_limits = true;
+
+        let arrived_at = ArrivedAtTimestamp::now();
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let tx_2_mempool = MempoolTransaction {
+            tx: tx_2,
+            arrived_at,
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let result = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_2_mempool.clone(),
+            force,
+            update_tx_limits,
+            nonce_info,
+        );
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_2_mempool.contract_address(),
+            timestamp: tx_2_mempool.arrived_at,
+            nonce: tx_2_mempool.nonce,
+            nonce_next: tx_2_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+        );
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_1_mempool.contract_address(),
+            timestamp: tx_1_mempool.arrived_at,
+            nonce: tx_1_mempool.nonce,
+            nonce_next: tx_1_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            !contains,
+            "Mempool should not contain transaction 1 after it has been replaced, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 1);
+
+        inner.check_invariants();
+
+        drop(inner);
+
+        // Inserts the third transaction. This should not trigger a replacement
+        // since it has a different contract address
+
+        let force = true;
+        let update_tx_limits = true;
+
+        let arrived_at = ArrivedAtTimestamp::now();
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let tx_3_mempool = MempoolTransaction {
+            tx: tx_3,
+            arrived_at,
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let result = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_3_mempool.clone(),
+            force,
+            update_tx_limits,
+            nonce_info.clone(),
+        );
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_3_mempool.contract_address(),
+            timestamp: tx_3_mempool.arrived_at,
+            nonce: tx_3_mempool.nonce,
+            nonce_next: tx_3_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_2_mempool.contract_address(),
+            timestamp: tx_2_mempool.arrived_at,
+            nonce: tx_2_mempool.nonce,
+            nonce_next: tx_2_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 2);
+
+        inner.check_invariants();
+
+        drop(inner);
+
+        // Inserting a transaction again should fail if force if false. This
+        // should not change the state of the mempool whatsoever!
+
+        let force = false;
+        let update_tx_limits = true;
+
+        let result = mempool.inner.write().expect("Poisoned lock").insert_tx(
+            tx_3_mempool.clone(),
+            force,
+            update_tx_limits,
+            nonce_info,
+        );
+        assert_eq!(result, Err(TxInsertionError::DuplicateTxn));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_3_mempool.contract_address(),
+            timestamp: tx_3_mempool.arrived_at,
+            nonce: tx_3_mempool.nonce,
+            nonce_next: tx_3_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: **tx_2_mempool.contract_address(),
+            timestamp: tx_2_mempool.arrived_at,
+            nonce: tx_2_mempool.nonce,
+            nonce_next: tx_2_mempool.nonce_next,
+            phantom: std::marker::PhantomData,
+        });
+        assert!(
+            contains,
+            "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 2);
+
+        inner.check_invariants();
     }
 }

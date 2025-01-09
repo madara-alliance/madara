@@ -11,7 +11,7 @@ type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 /// A nonce is deemed ready when it directly follows the previous nonce in db
 /// for a contract  address. This guarantees that dependent transactions are not
 /// executed out of order by the mempool.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NonceStatus {
     #[default]
     Ready,
@@ -29,7 +29,7 @@ pub enum NonceStatus {
 /// [readiness]: NonceStatus
 /// [nonce]: Self::nonce
 /// [nonce_next]: Self::nonce_next
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NonceInfo {
     pub readiness: NonceStatus,
     pub nonce: Nonce,
