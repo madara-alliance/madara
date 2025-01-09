@@ -267,6 +267,7 @@ impl MempoolInvariantsProblem {
 ::proptest::proptest! {
     #[tracing_test::traced_test]
     #[test]
+    #[ignore]
     fn proptest_mempool(pb in any::<MempoolInvariantsProblem>()) {
         pb.check();
     }

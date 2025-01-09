@@ -225,13 +225,17 @@ impl Mempool {
         let nonce_target = self
             .backend
             .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &sender_address)?
-            .map(|nonce| Nonce(nonce).try_increment())
-            .unwrap_or(Ok(nonce))?;
+            .map(Nonce)
+            .unwrap_or_default(); // Defaults to Felt::ZERO if non nonce in db
 
         if nonce != nonce_target {
-            // We don't need an underflow check as the default value for
-            // nonce_target in db is 0. Since nonce != nonce_target, we already
-            // know that nonce != 0.
+            if nonce < nonce_target {
+                return Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce));
+            }
+
+            // We don't need an underflow check here as nonces are incremental
+            // and non negative, so there is no nonce s.t nonce != nonce_target,
+            // nonce < nonce_target & nonce = 0
             let nonce_prev = Nonce(nonce.0 - Felt::ONE);
             let nonce_prev_ready = self.inner.read().expect("Poisoned lock").nonce_is_ready(sender_address, nonce_prev);
 
@@ -523,6 +527,8 @@ mod test {
     use std::time::Duration;
 
     use mc_db::mempool_db::NonceStatus;
+    use mp_block::{MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+    use mp_state_update::{NonceUpdate, StateDiff};
 
     use super::*;
 
@@ -1220,18 +1226,68 @@ mod test {
     /// and returns correct values based on the state of the db.
     #[rstest::rstest]
     fn mempool_retrieve_nonce_info(backend: Arc<mc_db::MadaraBackend>, l1_data_provider: Arc<MockL1DataProvider>) {
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(Arc::clone(&backend), l1_data_provider, MempoolLimits::for_testing());
+
+        backend
+            .store_block(
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo::default()),
+                    inner: MadaraBlockInner::default(),
+                },
+                StateDiff {
+                    nonces: vec![NonceUpdate { contract_address: Felt::ZERO, nonce: Felt::ZERO }],
+                    ..Default::default()
+                },
+                vec![],
+                None,
+                None,
+            )
+            .expect("Failed to store block");
 
         // Transactions which meet the nonce in db should be marked as ready...
+
         assert_eq!(
             mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).unwrap(),
             NonceInfo { readiness: NonceStatus::Ready, nonce: Nonce(Felt::ZERO), nonce_next: Nonce(Felt::ONE) }
         );
 
         // ...otherwise they should be marked as pending
+
         assert_eq!(
             mempool.retrieve_nonce_info(Felt::ZERO, Felt::ONE).unwrap(),
             NonceInfo { readiness: NonceStatus::Pending, nonce: Nonce(Felt::ONE), nonce_next: Nonce(Felt::TWO) }
+        );
+
+        // Contract addresses which do not yet have a nonce store in db should
+        // should not fail during nonce info retrieval
+
+        assert_eq!(
+            mempool.retrieve_nonce_info(Felt::ONE, Felt::ZERO).unwrap(),
+            NonceInfo { readiness: NonceStatus::Ready, nonce: Nonce(Felt::ZERO), nonce_next: Nonce(Felt::ONE) }
+        );
+
+        // Transactions with a nonce less than that in db should fail during
+        // nonce info retrieval
+
+        backend
+            .store_block(
+                MadaraMaybePendingBlock {
+                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo::default()),
+                    inner: MadaraBlockInner::default(),
+                },
+                StateDiff {
+                    nonces: vec![NonceUpdate { contract_address: Felt::ZERO, nonce: Felt::ONE }],
+                    ..Default::default()
+                },
+                vec![],
+                None,
+                None,
+            )
+            .expect("Failed to store block");
+
+        assert_matches::assert_matches!(
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO),
+            Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
         );
 
         // We need to compute the next nonce inside retrieve nonce_info, so
