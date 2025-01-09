@@ -204,6 +204,7 @@ pub struct RunCmd {
     pub preset: Option<ChainPreset>,
 
     /// Overrides parameters from the Chain Config.
+    #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
 }

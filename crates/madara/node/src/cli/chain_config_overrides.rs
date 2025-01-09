@@ -24,6 +24,61 @@ use url::Url;
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
 #[derive(Parser, Clone, Debug)]
 pub struct ChainConfigOverrideParams {
+    /// Overrides parameters from the chain config.
+    ///
+    /// Use the following syntax:
+    /// --chain-config-override=block_time=30s,pending_block_update_time=2s...
+    ///
+    /// Parameters:
+    ///
+    ///   * chain_name: the name of the chain.
+    ///
+    ///   * chain_id: unique identifier for the chain, for example 'SN_MAIN'.
+    ///
+    ///   * feeder_gateway_url: default fgw for this chain.
+    ///
+    ///   * gateway url: default gw for this chain.
+    ///
+    ///   * native_fee_token_address: on-chain address of this chain's native
+    ///     token
+    ///
+    ///   * parent_fee_token_address: on-chain address of the native token of
+    ///     this chain's settlement layer.
+    ///
+    ///   * latest_protocol_version: latest version of the chain, update on new
+    ///     method release, consensus change, etc...
+    ///
+    ///   * block_time: time it takes to close a block.
+    ///
+    ///   * pending_block_update_time: time interval at which the pending block
+    ///     is updated. This is also referred to internally as a 'tick'. The
+    ///     block update time should always be inferior to the block time.
+    ///
+    ///   * execution_batch_size: number of transaction to process in a single
+    ///     tick.
+    ///
+    ///   * bouncer_config: execution limits per block. This has to be
+    ///     yaml-encoded following the format in yaml chain config files.
+    ///
+    ///   * sequencer_address: the address of this chain's sequencer.
+    ///
+    ///   * eth_core_contract_address: address of the core contract on the
+    ///     settlement layer.
+    ///
+    ///   * eth_gps_statement_verifier: address of the verifier contract on the
+    ///     settlement layer.
+    ///
+    ///   * private_key: private key used by the node in sequencer mode to sign
+    ///     the blocks it provides. This is zeroed.
+    ///
+    ///   * mempool_tx_limit: max number of transactions allowed in the mempool
+    ///     in sequencer mode.
+    ///
+    ///   * mempool_declare_tx_limit: max number of declare transactions allowed
+    ///     in sequencer mode.
+    ///
+    ///   * mempool_tx_max_age: max age of transactions in the mempool.
+    ///     Transactions which are too old will be removed.
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
 }

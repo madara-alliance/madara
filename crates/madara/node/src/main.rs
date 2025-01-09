@@ -51,6 +51,16 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
+    // If block time is inferior to the tick time, then only empty blocks will
+    // be produced as we will never update the pending block before storing it.
+    if run_cmd.is_sequencer() && chain_config.block_time < chain_config.pending_block_update_time {
+        anyhow::bail!(
+            "Block time ({}s) cannot be less than the pending block update time ({}s), as this will yield only empty blocks",
+            chain_config.block_time.as_secs(),
+            chain_config.pending_block_update_time.as_secs()
+        );
+    }
+
     // Check if the devnet is running with the correct chain id. This is purely
     // to avoid accidental setups which would allow for replay attacks. This is
     // possible if the devnet has the same chain id as another popular chain,
