@@ -8,7 +8,7 @@ on:
 jobs:
   update-db-version:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'bump_db')
+    if: contains(github.event.pull_request.labels.*.name, 'db-migration')
     steps:
       - uses: actions/checkout@v3
 
