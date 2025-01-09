@@ -621,10 +621,10 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
-    /// This test makes sure that old transactions are removed from the mempool,
-    /// whether they be represented by ready or pending intents.
+    /// This test makes sure that old transactions are removed from the
+    /// [mempool], whether they be represented by ready or pending intents.
     ///
-    /// # Setup
+    /// # Setup:
     ///
     /// - We assume `tx_*_n `are from the same contract but with increasing
     ///   nonces.
@@ -635,7 +635,10 @@ mod test {
     ///
     /// - `tx_new_3`, `tx_old_3` and `tx_new_2_bis` and `tx_old_4` are in the
     ///   pending queue, all other transactions are in the ready queue.
+    ///
+    /// [mempool]: inner::MempoolInner
     #[rstest::rstest]
+    #[allow(clippy::too_many_arguments)]
     fn mempool_remove_aged_tx_pass(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -997,13 +1000,12 @@ mod test {
         // the only transaction for that contract address, that pending queue
         // should have been emptied
         assert!(
-            mempool
+            !mempool
                 .inner
                 .read()
                 .expect("Poisoned lock")
                 .tx_intent_queue_pending
-                .get(&**tx_old_4_mempool.contract_address())
-                .is_none(),
+                .contains_key(&**tx_old_4_mempool.contract_address()),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
@@ -1013,6 +1015,19 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
+    /// This tests makes sure that if a transaction is inserted as [pending],
+    /// and the transaction before it is polled, then that transaction becomes
+    /// [ready].
+    ///
+    /// # Setup:
+    ///
+    /// - We assume `tx_ready` and `tx_pending` are from the same contract.
+    ///
+    /// - `tx_ready` has the correct nonce while `tx_pending` has the nonce
+    ///   right after that.
+    ///
+    /// [ready]: inner::TransactionIntentReady;
+    /// [pending]: inner::TransactionInentPending;
     #[rstest::rstest]
     fn mempool_readiness_check(
         backend: Arc<mc_db::MadaraBackend>,
@@ -1112,5 +1127,88 @@ mod test {
         assert_eq!(mempool_tx.arrived_at, timestamp_pending);
         assert!(inner.tx_intent_queue_ready.is_empty());
         assert!(inner.tx_intent_queue_pending.is_empty());
+    }
+
+    /// This tests makes sure that if a transaction is inserted into the
+    /// [mempool], and its nonce does not match what is expected by the db BUT
+    /// the transaction with the nonce preceding it is already marked as
+    /// [ready], then it is marked as ready as well.
+    ///
+    /// This handles the case where the database has not yet been updated to
+    /// reflect the state of the mempool, which should happen often since nonces
+    /// are not updated until transaction execution. This way we limit the
+    /// number of transactions we have in the [pending] queue.
+    ///
+    /// # Setup:
+    ///
+    /// - We assume `tx_1` and `tx_2` are from the same contract.
+    ///
+    /// - `tx_1` has the correct nonce while `tx_2` has the nonce right after
+    ///   that.
+    ///
+    /// [mempool]: inner::MempoolInner
+    /// [ready]: inner::TransactionIntentReady;
+    /// [pending]: inner::TransactionInentPending;
+    #[rstest::rstest]
+    fn mempool_readiness_check_against_db(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        // Insert the first transaction
+
+        let nonce_info = mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).expect("Failed to retrieve nonce info");
+        let timestamp_1 = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_1, None, timestamp_1, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: Felt::ZERO,
+            timestamp: timestamp_1,
+            nonce: Nonce(Felt::ZERO),
+            nonce_next: Nonce(Felt::ONE),
+            phantom: Default::default(),
+        });
+        assert!(contains,
+            "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 1);
+
+        drop(inner);
+
+        // Insert the next transaction. It should be marked as ready even if it
+        // does not have the correct nonce compared to the db (the test db
+        // defaults to nonce 0 for all contracts) since the transaction before
+        // it has already been marked as ready in the mempool.
+
+        let nonce_info = mempool.retrieve_nonce_info(Felt::ZERO, Felt::ONE).expect("Failed to retrieve nonce info");
+        let timestamp_2 = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_2, None, timestamp_2, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+        let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: Felt::ZERO,
+            timestamp: timestamp_2,
+            nonce: Nonce(Felt::ONE),
+            nonce_next: Nonce(Felt::TWO),
+            phantom: Default::default(),
+        });
+        assert!(contains,
+            "Mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+        );
+
+        assert_eq!(inner.tx_intent_queue_ready.len(), 2);
     }
 }

@@ -334,8 +334,7 @@ impl MempoolInner {
                         // The pending queue works a little bit differently as
                         // it is split into individual sub-queues for each
                         // contract address
-                        let queue =
-                            self.tx_intent_queue_pending.entry(contract_address).or_insert_with(BTreeSet::default);
+                        let queue = self.tx_intent_queue_pending.entry(contract_address).or_default();
 
                         // Remove old value (if collision and force == true)
                         if let ReplacedState::Replaced { previous } = replaced {
@@ -378,17 +377,15 @@ impl MempoolInner {
                         nonce_next: nonce_info.nonce_next,
                         phantom: Default::default(),
                     }),
-                    NonceStatus::Pending => {
-                        self.tx_intent_queue_pending.entry(contract_address).or_insert_with(BTreeSet::default).insert(
-                            TransactionIntentPending {
-                                contract_address,
-                                timestamp: arrived_at,
-                                nonce: nonce_info.nonce,
-                                nonce_next: nonce_info.nonce_next,
-                                phantom: Default::default(),
-                            },
-                        )
-                    }
+                    NonceStatus::Pending => self.tx_intent_queue_pending.entry(contract_address).or_default().insert(
+                        TransactionIntentPending {
+                            contract_address,
+                            timestamp: arrived_at,
+                            nonce: nonce_info.nonce,
+                            nonce_next: nonce_info.nonce_next,
+                            phantom: Default::default(),
+                        },
+                    ),
                 };
                 debug_assert!(inserted);
 
