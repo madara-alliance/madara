@@ -3,7 +3,7 @@
 //! This module handles user transactions that are sent to or received by the gateway.
 //! It defines the structure and conversion logic for different types of user transactions.
 //!
-//! //! # Important Note
+//! # Important Note
 //!
 //! Query-only transactions are intentionally not supported in this module. This is because
 //! UserTransactions are specifically designed for transactions that are meant to be added
@@ -27,9 +27,11 @@
 //!
 //! The module defines [`UserTransactionConversionError`] for handling conversion failures:
 //!
-//! - `UnsupportedQueryTransaction`: When attempting to convert a query-only transaction
-//! - `ContractClassDecodeError`: When contract class decoding fails
+//! - [`UnsupportedQueryTransaction`]: When attempting to convert a query-only transaction
+//! - [`ContractClassDecodeError`]: When contract class decoding fails
 //!
+//! [`UnsupportedQueryTransaction`]: UserTransactionConversionError::UnsupportedQueryTransaction
+//! [`ContractClassDecodeError`]: UserTransactionConversionError::ContractClassDecodeError
 
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;

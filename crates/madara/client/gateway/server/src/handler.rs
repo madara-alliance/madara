@@ -11,7 +11,7 @@ use mc_rpc::{
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
-use mp_gateway::error::StarknetError;
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
     UserTransaction,
@@ -350,7 +350,13 @@ async fn declare_transaction(
     tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    let tx: BroadcastedDeclareTxn<Felt> = tx.try_into().unwrap();
+    let tx: BroadcastedDeclareTxn<Felt> = match tx.try_into() {
+        Ok(tx) => tx,
+        Err(e) => {
+            let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());
+            return create_json_response(hyper::StatusCode::OK, &error);
+        }
+    };
 
     match add_transaction_provider.add_declare_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
