@@ -38,10 +38,51 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
-    BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
-    BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, DeployAccountTxnV1, DeployAccountTxnV3,
-    InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
+    BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn,
+    ClassAndTxnHash as AddDeclareTransactionResult, ContractAndTxnHash as AddDeployAccountTransactionResult,
+    DeployAccountTxnV1, DeployAccountTxnV3, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };
+
+/// Gateway response when a transaction is successfully added to the mempool.
+/// Generic type T represents the specific transaction result type
+/// (Invoke, Declare, or DeployAccount).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AddTransactionResult<T> {
+    /// Status code indicating the transaction was received successfully
+    code: AddTransactionCode,
+    /// The transaction result
+    #[serde(flatten)]
+    result: T,
+}
+
+/// Marker trait to restrict which types can be used as transaction results.
+/// Only valid Starknet transaction responses implement this trait.
+pub trait ValidTransactionResult {}
+
+// Implement the marker trait for the three valid transaction result types
+impl<T> ValidTransactionResult for AddInvokeTransactionResult<T> {}
+impl<T> ValidTransactionResult for AddDeclareTransactionResult<T> {}
+impl<T> ValidTransactionResult for AddDeployAccountTransactionResult<T> {}
+
+// Conversion from a valid transaction result into a gateway response.
+/// This ensures the response can only be created from permitted transaction types.
+impl<R> From<R> for AddTransactionResult<R>
+where
+    R: ValidTransactionResult,
+{
+    fn from(result: R) -> Self {
+        Self { code: AddTransactionCode::TransactionReceived, result }
+    }
+}
+
+/// Status code used in the gateway response.
+/// Currently only indicates successful addition to mempool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AddTransactionCode {
+    TransactionReceived,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserTransactionConversionError {
