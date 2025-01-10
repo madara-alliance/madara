@@ -187,8 +187,10 @@ impl TryFrom<FlattenedSierraClass> for CompressedSierraClass {
         serde_json::to_writer(&mut gzip_encoder, &flattened_sierra_class.sierra_program)?;
         gzip_encoder.try_finish()?;
         drop(gzip_encoder);
-        base64_encoder.finish().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "base64 encoding error"))?;
-        let sierra_program = String::from_utf8(base64_encoder.into_inner())
+        let encoded_data = base64_encoder
+            .finish()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "base64 encoding error"))?;
+        let sierra_program = String::from_utf8(encoded_data)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "base64 encoding error: invalid utf8"))?;
 
         Ok(Self {
