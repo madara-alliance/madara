@@ -9,15 +9,35 @@
 //!
 //! Intents are categorized by readiness. A transaction intent is marked as
 //! [TransactionIntentReady] if its nonce directly follows that of the contract
-//! sending the transaction, else it is [TransactionIntentPending].
+//! sending the transaction, else it marked as pending.
 //!
-//! Pending intents remain pending until the transaction preceding them has been
-//! polled from the [Mempool], at which point they are converted to a ready
-//! intent with [TransactionIntentPending::ready].
+//! # Pending intents
+//!
+//! There are two types of pending intents [TransactionIntentPendingByNonce] and
+//! [TransactionIntentPendingByTimestamp]. Each pending intent contains the same
+//! data but with slightly different ordering rules. This is because the
+//! [MempoolInner] holds two ordered queues for pending intents:
+//!
+//! - One is ordered by timestamp to facilitate the removal of age-exceeded
+//!   pending intents.
+//!
+//! - The other is ordered by nonces to be able to easily retrieve the
+//!   transaction with the next nonce for a specific contract.
+//!
+//! > You can convert from one pending intent type to another with [by_timestamp]
+//! > and [by_nonce].
+//!
+//! Both pending intents remain pending until the transaction preceding them has
+//! been polled from the [Mempool], at which point [TransactionIntentPendingByNonce]
+//! is converted to a ready intent with [TransactionIntentPendingByNonce::ready],
+//! while any [TransactionIntentPendingByTimestamp] are removed from the queue.
 //!
 //! [MempoolTransaction]: super::MempoolTransaction
 //! [NonceTxMapping]: super::NonceTxMapping
+//! [MempoolInner]: super::MempoolInner
 //! [Mempool]: super::super::Mempool
+//! [by_timestamp]: TransactionIntentPendingByNonce::by_timestamp
+//! [by_nonce]: TransactionIntentPendingByTimestamp::by_nonce
 
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
@@ -32,21 +52,41 @@ use super::ArrivedAtTimestamp;
 pub(crate) struct MarkerReady;
 
 #[derive(Debug)]
-pub(crate) struct MarkerPending;
+pub(crate) struct MarkerPendingByNonce;
+
+#[derive(Debug)]
+pub(crate) struct MarkerPendingByTimestamp;
 
 /// A [transaction intent] which is ready to be consumed.
 ///
-/// [transaction intent]: IntentInner
+/// [transaction intent]: TransactionIntent
 pub(crate) type TransactionIntentReady = TransactionIntent<MarkerReady>;
+
+impl Ord for TransactionIntentReady {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        // Important: Fallback on contract addr here.
+        // There can be timestamp collisions.
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then_with(|| self.contract_address.cmp(&other.contract_address))
+            .then_with(|| self.nonce.cmp(&other.nonce))
+    }
+}
+
+impl PartialOrd for TransactionIntentReady {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 /// A [transaction intent] which is waiting for the [Nonce] before it to be
 /// consumed by the [Mempool]. It cannot be polled until then.
 ///
 /// [transaction intent]: TransactionIntent
 /// [Mempool]: super::super::Mempool
-pub(crate) type TransactionIntentPending = TransactionIntent<MarkerPending>;
+pub(crate) type TransactionIntentPendingByNonce = TransactionIntent<MarkerPendingByNonce>;
 
-impl TransactionIntentPending {
+impl TransactionIntentPendingByNonce {
     /// Converts this [intent] to a [TransactionIntentReady] to be added to the
     /// ready intent queue in the [MempoolInner]
     ///
@@ -58,23 +98,91 @@ impl TransactionIntentPending {
             timestamp: self.timestamp,
             nonce: self.nonce,
             nonce_next: self.nonce_next,
-            phantom: Default::default(),
+            phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Converts this [intent] to a [TransactionIntentPendingByTimestamp] to be
+    /// used to remove aged pending transactions from the [MempoolInner].
+    ///
+    /// [intent]: self
+    /// [MempoolInner]: super::MempoolInner
+    pub(crate) fn by_timestamp(&self) -> TransactionIntentPendingByTimestamp {
+        TransactionIntentPendingByTimestamp {
+            contract_address: self.contract_address,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            nonce_next: self.nonce_next,
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Ord for TransactionIntentPendingByNonce {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        // Pending transactions are simply ordered by nonce
+        self.nonce
+            .cmp(&other.nonce)
+            .then_with(|| self.timestamp.cmp(&other.timestamp))
+            .then_with(|| self.contract_address.cmp(&other.contract_address))
+    }
+}
+
+impl PartialOrd for TransactionIntentPendingByNonce {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// A [pending transaction intent] which is ordered by timestamp. This is
+/// necessary to be able to remove pending transactions which have grown too old
+/// in the [Mempool].
+///
+/// [pending transaction intent]: TransactionIntentPendingByNonce
+/// [Mempool]: super::super::Mempool
+pub(crate) type TransactionIntentPendingByTimestamp = TransactionIntent<MarkerPendingByTimestamp>;
+
+impl TransactionIntentPendingByTimestamp {
+    pub(crate) fn by_nonce(self) -> TransactionIntentPendingByNonce {
+        TransactionIntentPendingByNonce {
+            contract_address: self.contract_address,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            nonce_next: self.nonce_next,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl Ord for TransactionIntentPendingByTimestamp {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        // Important: Fallback on contract addr here.
+        // There can be timestamp collisions.
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then_with(|| self.contract_address.cmp(&other.contract_address))
+            .then_with(|| self.nonce.cmp(&other.nonce))
+    }
+}
+
+impl PartialOrd for TransactionIntentPendingByTimestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 /// An [intent] to be consumed by the [Mempool].
 ///
-/// This struct has the same logic applied for its implementations of [Eq] and
-/// [Ord] and will check [timestamp], [contract_address] and [nonce] (in that
-/// oreder) for both. [nonce_next] is not considered as it should directly
-/// follow from [nonce] and therefore its equality and order is implied.
+/// This data struct will check [timestamp], [contract_address] and [nonce]
+/// (in that oreder) for equality. [nonce_next] is not considered as it should
+/// directly follow from [nonce] and therefore its equality and order is implied.
 ///
 /// # Type Safety
 ///
-/// This struct is statically wrapped by [TransactionIntentReady] and
-/// [TransactionIntentPending] to provide type safety between intent types while
-/// avoiding too much code duplication.
+/// This struct is statically wrapped by [TransactionIntentReady],
+/// [TransactionIntentPendingByNonce] and [TransactionIntentPendingByTimestamp]
+/// to provide type safety between intent types while avoiding too much code
+/// duplication.
 ///
 /// # [Invariants]
 ///
@@ -119,20 +227,3 @@ impl<K> PartialEq for TransactionIntent<K> {
 }
 
 impl<K> Eq for TransactionIntent<K> {}
-
-impl<K> Ord for TransactionIntent<K> {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        // Important: Fallback on contract addr here.
-        // There can be timestamp collisions.
-        self.timestamp
-            .cmp(&other.timestamp)
-            .then_with(|| self.contract_address.cmp(&other.contract_address))
-            .then_with(|| self.nonce.cmp(&other.nonce))
-    }
-}
-
-impl<K> PartialOrd for TransactionIntent<K> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}

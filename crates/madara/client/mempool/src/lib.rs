@@ -709,7 +709,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::now();
@@ -737,7 +737,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::now();
@@ -760,10 +760,10 @@ mod test {
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .get(&**tx_new_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_new_3")
-                .contains(&TransactionIntentPending {
+                .contains_key(&TransactionIntentPendingByNonce {
                     contract_address: **tx_new_3_mempool.contract_address(),
                     timestamp: tx_new_3_mempool.arrived_at,
                     nonce: tx_new_3_mempool.nonce,
@@ -772,7 +772,7 @@ mod test {
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
@@ -800,7 +800,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
@@ -828,7 +828,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
@@ -851,10 +851,10 @@ mod test {
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_old_3")
-                .contains(&TransactionIntentPending {
+                .contains_key(&TransactionIntentPendingByNonce {
                     contract_address: **tx_old_3_mempool.contract_address(),
                     timestamp: tx_old_3_mempool.arrived_at,
                     nonce: tx_old_3_mempool.nonce,
@@ -863,7 +863,7 @@ mod test {
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
@@ -886,10 +886,10 @@ mod test {
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_4_mempool.contract_address())
                 .expect("Missing nonce_mapping for tx_old_4")
-                .contains(&TransactionIntentPending {
+                .contains_key(&TransactionIntentPendingByNonce {
                     contract_address: **tx_old_4_mempool.contract_address(),
                     timestamp: tx_old_4_mempool.arrived_at,
                     nonce: tx_old_4_mempool.nonce,
@@ -898,7 +898,7 @@ mod test {
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         // Make sure we have not entered an invalid state.
@@ -923,7 +923,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
         assert!(
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
@@ -935,7 +935,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         // tx_old_1 and tx_old_2 should no longer be in the ready queue
@@ -949,7 +949,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
         assert!(
             !mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready.contains(&TransactionIntentReady {
@@ -961,7 +961,7 @@ mod test {
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         // tx_new_3 should still be in the pending queue but tx_old_3 should not
@@ -970,10 +970,10 @@ mod test {
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .get(&**tx_new_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_new_3")
-                .contains(&TransactionIntentPending {
+                .contains_key(&TransactionIntentPendingByNonce {
                     contract_address: **tx_new_3_mempool.contract_address(),
                     timestamp: tx_new_3_mempool.arrived_at,
                     nonce: tx_new_3_mempool.nonce,
@@ -982,17 +982,17 @@ mod test {
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
         assert!(
             !mempool
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_old_3")
-                .contains(&TransactionIntentPending {
+                .contains_key(&TransactionIntentPendingByNonce {
                     contract_address: **tx_old_3_mempool.contract_address(),
                     timestamp: tx_old_3_mempool.arrived_at,
                     nonce: tx_old_3_mempool.nonce,
@@ -1001,7 +1001,7 @@ mod test {
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         // tx_old_4 should no longer be in the pending queue and since it was
@@ -1012,11 +1012,11 @@ mod test {
                 .inner
                 .read()
                 .expect("Poisoned lock")
-                .tx_intent_queue_pending
+                .tx_intent_queue_pending_by_nonce
                 .contains_key(&**tx_old_4_mempool.contract_address()),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         // Make sure we have not entered an invalid state.
@@ -1055,10 +1055,10 @@ mod test {
         let inner = mempool.inner.read().expect("Poisoned lock");
         inner.check_invariants();
         inner
-            .tx_intent_queue_pending
+            .tx_intent_queue_pending_by_nonce
             .get(&Felt::ZERO)
             .expect("Mempool should have a pending queue for contract address ZERO")
-            .get(&TransactionIntentPending {
+            .get(&TransactionIntentPendingByNonce {
                 contract_address: Felt::ZERO,
                 timestamp: timestamp_pending,
                 nonce: Nonce(Felt::ONE),
@@ -1067,7 +1067,7 @@ mod test {
             })
             .expect("Mempool should contain pending transaction");
 
-        assert_eq!(inner.tx_intent_queue_pending.len(), 1);
+        assert_eq!(inner.tx_intent_queue_pending_by_nonce.len(), 1);
 
         drop(inner);
 
@@ -1118,7 +1118,7 @@ mod test {
 
         assert_eq!(mempool_tx.arrived_at, timestamp_ready);
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
-        assert!(inner.tx_intent_queue_pending.is_empty());
+        assert!(inner.tx_intent_queue_pending_by_nonce.is_empty());
 
         drop(inner);
 
@@ -1134,7 +1134,7 @@ mod test {
 
         assert_eq!(mempool_tx.arrived_at, timestamp_pending);
         assert!(inner.tx_intent_queue_ready.is_empty());
-        assert!(inner.tx_intent_queue_pending.is_empty());
+        assert!(inner.tx_intent_queue_pending_by_nonce.is_empty());
     }
 
     /// This tests makes sure that if a transaction is inserted into the
@@ -1186,7 +1186,7 @@ mod test {
             contains,
             "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1216,7 +1216,7 @@ mod test {
             contains,
             "Mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
@@ -1354,7 +1354,7 @@ mod test {
             contains,
             "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1398,7 +1398,7 @@ mod test {
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_1_mempool.contract_address(),
@@ -1411,7 +1411,7 @@ mod test {
             !contains,
             "Mempool should not contain transaction 1 after it has been replaced, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1455,7 +1455,7 @@ mod test {
             contains,
             "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_2_mempool.contract_address(),
@@ -1468,7 +1468,7 @@ mod test {
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
@@ -1503,7 +1503,7 @@ mod test {
             contains,
             "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_2_mempool.contract_address(),
@@ -1516,7 +1516,7 @@ mod test {
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
             mempool.inner.read().expect("poisoned lock").tx_intent_queue_ready,
-            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending
+            mempool.inner.read().expect("poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
