@@ -10,7 +10,12 @@ export ETH_FORK_URL=https://eth.merkle.io
 
 # Build the binary
 cargo build --bin madara --profile dev
-export BINARY_PATH=$(realpath target/debug/madara)
+export COVERAGE_BIN=$(realpath target/debug/madara)
 
 # Run the tests
-cargo test --profile dev "${@:-"--workspace"}"
+if cargo test --profile dev "${@:-"--workspace"}"; then
+  echo "✅ All tests passed successfully!"
+else
+  echo "❌ Some tests failed."
+  exit 1
+fi
