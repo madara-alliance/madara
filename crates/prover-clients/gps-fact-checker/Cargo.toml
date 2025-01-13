@@ -1,0 +1,45 @@
+[package]
+name = "gps-fact-checker"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy = { workspace = true, features = [
+  "sol-types",
+  "json",
+  "contract",
+  "providers",
+  "rpc-client",
+  "transport-http",
+  "reqwest",
+] }
+async-trait.workspace = true
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
+bincode = { workspace = true }
+cairo-vm.workspace = true
+dotenvy.workspace = true
+itertools.workspace = true
+log.workspace = true
+num-bigint.workspace = true
+serde.workspace = true
+starknet.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+utils.workspace = true
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
