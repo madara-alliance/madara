@@ -1,24 +1,65 @@
 //! Handle incomming p2p events
+use std::collections::hash_map;
+
 use crate::{
     behaviour::{self},
     MadaraP2p,
 };
-use libp2p::swarm::SwarmEvent;
+use futures::channel::mpsc;
+use libp2p::{kad::QueryResult, swarm::SwarmEvent};
 
 impl MadaraP2p {
     pub fn handle_event(&mut self, event: SwarmEvent<behaviour::Event>) -> anyhow::Result<()> {
-        tracing::info!("event: {event:?}");
+        // tracing::info!("event: {event:?}");
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 let listen_address = address.with_p2p(*self.swarm.local_peer_id()).expect("Making multiaddr");
                 tracing::info!("📡 Peer-to-peer listening on address {listen_address:?}");
             }
+
+            // Pending get closest peer queries.
+            SwarmEvent::Behaviour(behaviour::Event::Kad(libp2p::kad::Event::OutboundQueryProgressed {
+                id,
+                result,
+                stats: _stats,
+                step,
+            })) => {
+                if let hash_map::Entry::Occupied(mut entry) = self.pending_get_closest_peers.entry(id) {
+                    let QueryResult::GetClosestPeers(res) = result else {
+                        anyhow::bail!("pending_get_closest_peers entry {id} has the wrong result type: {result:?}")
+                    };
+
+                    match res {
+                        Ok(res) => {
+                            let send_all = || {
+                                for el in res.peers {
+                                    entry.get_mut().unbounded_send(el.peer_id)?;
+                                }
+                                Ok::<_, mpsc::TrySendError<_>>(())
+                            };
+
+                            if let Err(err) = send_all() {
+                                tracing::debug!("Channel closed for kad query {id}: {err:#}");
+                                entry.remove();
+                                return Ok(());
+                            }
+                        }
+                        Err(err) => tracing::debug!("Failed get_closest_peer request: {err:#}"),
+                    }
+
+                    if step.last {
+                        // query is finished
+                        entry.remove();
+                    }
+                }
+            }
+
             SwarmEvent::Behaviour(behaviour::Event::Identify(libp2p::identify::Event::Received {
                 peer_id,
                 info,
                 connection_id: _,
             })) => {
-                tracing::info!("identify: {info:?}");
+                tracing::trace!("identify: {info:?}");
                 // TODO: we may want to tell the local node about the info.observed_addr - but we probably need to check that address first
                 // maybe we do want to trust the address if it comes from the relay..?
                 // https://github.com/libp2p/rust-libp2p/blob/master/protocols/identify/CHANGELOG.md#0430

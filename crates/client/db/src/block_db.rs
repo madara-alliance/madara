@@ -111,10 +111,11 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
-        let res = bincode::deserialize(&res)?;
-        Ok(Some(res))
+        // let col = self.db.get_column(Column::BlockStorageMeta);
+        // let Some(res) = self.db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
+        // let res = bincode::deserialize(&res)?;
+        // Ok(Some(res))
+        Ok(self.head_status().latest_full_block_n())
     }
 
     // Pending block quirk: We should act as if there is always a pending block in db, to match

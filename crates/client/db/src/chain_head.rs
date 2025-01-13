@@ -2,43 +2,40 @@ use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
 use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
+#[serde(transparent)]
+pub struct BlockNStatus(AtomicU64);
+
+impl BlockNStatus {
+    pub fn get(&self) -> Option<u64> {
+        self.0.load(SeqCst).checked_sub(1)
+    }
+    pub fn set(&self, block_n: Option<u64>) {
+        self.0.store(block_n.map(|block_n| block_n + 1).unwrap_or(0), SeqCst)
+    }
+}
+
+impl Clone for BlockNStatus {
+    fn clone(&self) -> Self {
+        Self(self.0.load(SeqCst).into())
+    }
+}
+
 /// Counter of the latest block currently in the database.
 /// We have multiple counters because the sync pipeline is split in sub-pipelines.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub struct ChainHead {
-    headers: AtomicU64,
-    state_diffs: AtomicU64,
-    classes: AtomicU64,
-    transactions: AtomicU64,
-    l1_head: AtomicU64,
+    pub headers: BlockNStatus,
+    pub state_diffs: BlockNStatus,
+    pub classes: BlockNStatus,
+    pub transactions: BlockNStatus,
+    pub l1_head: BlockNStatus,
 }
 
 impl ChainHead {
-    pub fn latest_full_block_n(&self) -> u64 {
-        let state_diffs = self.state_diffs.load(SeqCst);
-        let classes = self.classes.load(SeqCst);
-        let transactions = self.transactions.load(SeqCst);
-        state_diffs.min(classes).min(transactions)
-    }
-
-    pub fn latest_block_n_on_l1(&self) -> u64 {
-        self.l1_head.load(SeqCst)
-    }
-
-    pub fn set_latest_header(&self, block_n: u64) {
-        self.headers.store(block_n, SeqCst)
-    }
-    pub fn set_latest_state_diff(&self, block_n: u64) {
-        self.state_diffs.store(block_n, SeqCst)
-    }
-    pub fn set_latest_class(&self, block_n: u64) {
-        self.classes.store(block_n, SeqCst)
-    }
-    pub fn set_latest_transaction(&self, block_n: u64) {
-        self.transactions.store(block_n, SeqCst)
-    }
-    pub fn set_l1_head(&self, block_n: u64) {
-        self.l1_head.store(block_n, SeqCst)
+    pub fn latest_full_block_n(&self) -> Option<u64> {
+        let transactions = self.transactions.get();
+        transactions
     }
 }
 

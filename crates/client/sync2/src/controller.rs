@@ -1,9 +1,9 @@
 use std::{collections::VecDeque, ops::Range, sync::Arc};
 
 use futures::{
-    future::{LocalBoxFuture, OptionFuture},
+    future::{BoxFuture, OptionFuture},
     stream::FuturesOrdered,
-    FutureExt, StreamExt,
+    Future, FutureExt, StreamExt,
 };
 
 struct RetryInput<I> {
@@ -11,6 +11,7 @@ struct RetryInput<I> {
     input: Vec<I>,
 }
 
+#[derive(Debug)]
 pub enum ApplyOutcome<Output> {
     Success(Output),
     Retry,
@@ -21,16 +22,16 @@ pub trait PipelineSteps: Sync + Send + 'static {
     type SequentialStepInput: Send + Sync;
     type Output: Send + Sync + Clone;
 
-    async fn parallel_step(
+    fn parallel_step(
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
-    ) -> anyhow::Result<Self::SequentialStepInput>;
-    async fn sequential_step(
+    ) -> impl Future<Output = anyhow::Result<Self::SequentialStepInput>> + Send;
+    fn sequential_step(
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
-    ) -> anyhow::Result<ApplyOutcome<Self::Output>>;
+    ) -> impl Future<Output = anyhow::Result<ApplyOutcome<Self::Output>>> + Send;
 }
 
 pub struct PipelineController<S: PipelineSteps> {
@@ -43,11 +44,11 @@ pub struct PipelineController<S: PipelineSteps> {
     next_input_block_n: u64,
 }
 
-type ParallelStepFuture<S> = LocalBoxFuture<
+type ParallelStepFuture<S> = BoxFuture<
     'static,
     anyhow::Result<(<S as PipelineSteps>::SequentialStepInput, RetryInput<<S as PipelineSteps>::InputItem>)>,
 >;
-type SequentialStepFuture<S> = LocalBoxFuture<
+type SequentialStepFuture<S> = BoxFuture<
     'static,
     anyhow::Result<(ApplyOutcome<<S as PipelineSteps>::Output>, RetryInput<<S as PipelineSteps>::InputItem>)>,
 >;
@@ -72,7 +73,7 @@ impl<S: PipelineSteps> PipelineController<S> {
     fn make_parallel_step_future(&self, input: RetryInput<S::InputItem>) -> ParallelStepFuture<S> {
         let steps = Arc::clone(&self.steps);
         async move { steps.parallel_step(input.block_range.clone(), input.input.clone()).await.map(|el| (el, input)) }
-            .boxed_local()
+            .boxed()
     }
     fn make_sequential_step_future(
         &self,
@@ -81,7 +82,7 @@ impl<S: PipelineSteps> PipelineController<S> {
     ) -> SequentialStepFuture<S> {
         let steps = Arc::clone(&self.steps);
         async move { steps.sequential_step(retry_input.block_range.clone(), input).await.map(|el| (el, retry_input)) }
-            .boxed_local()
+            .boxed()
     }
 
     fn schedule_new_batch(&mut self) {
@@ -89,7 +90,7 @@ impl<S: PipelineSteps> PipelineController<S> {
         let new_next_input_block_n = self.next_input_block_n + self.batch_size as u64;
         let block_range = self.next_input_block_n..new_next_input_block_n;
         self.next_input_block_n = new_next_input_block_n;
-        let input = self.next_inputs.drain(0..self.batch_size).collect();
+        let input = self.next_inputs.drain(0..usize::min(self.batch_size, self.next_inputs.len())).collect();
         self.queue.push_back(self.make_parallel_step_future(RetryInput { block_range, input }));
     }
 
@@ -104,16 +105,21 @@ impl<S: PipelineSteps> PipelineController<S> {
         loop {
             tokio::select! {
                 Some(res) = OptionFuture::from(self.applying.as_mut()) => {
+                    self.applying = None;
+                    tracing::debug!("applying res: {:?}", res.as_ref().map(|(r, o)| (match r {
+                        ApplyOutcome::Success(_out) => format!("succ"),
+                        ApplyOutcome::Retry => format!("retry"),
+                    }, o.block_range.clone())));
                     match res {
                         Err(err) => return Some(Err(err)),
                         Ok((ApplyOutcome::Success(out), retry_input)) => {
-                            self.applying = None;
                             return Some(Ok((retry_input.block_range, out)));
                         }
                         Ok((ApplyOutcome::Retry, retry_input)) => self.queue.push_front(self.make_parallel_step_future(retry_input)),
                     }
                 }
-                Some(res) = self.queue.next() => {
+                Some(res) = self.queue.next(), if self.applying.is_none() => {
+                    tracing::debug!("set applying: {:?}", res.as_ref().map(|(_, r)| r.block_range.clone()));
                     match res {
                         Ok((input, retry_input)) => {
                             self.applying = Some(self.make_sequential_step_future(input, retry_input));

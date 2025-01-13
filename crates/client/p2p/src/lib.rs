@@ -1,11 +1,10 @@
 use anyhow::Context;
 use behaviour::MadaraP2pBehaviour;
 use futures::{channel::mpsc, FutureExt};
-use libp2p::{futures::StreamExt, multiaddr::Protocol, Multiaddr, Swarm};
+use libp2p::{futures::StreamExt, identity::Keypair, multiaddr::Protocol, Multiaddr, Swarm};
 use mc_db::MadaraBackend;
-use mc_rpc::providers::AddTransactionProvider;
 use mp_utils::graceful_shutdown;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use sync_handlers::DynSyncHandler;
 
 mod behaviour;
@@ -43,33 +42,36 @@ struct MadaraP2pContext {
     backend: Arc<MadaraBackend>,
 }
 
-pub struct MadaraP2p {
-    config: P2pConfig,
-    #[allow(unused)]
-    db: Arc<MadaraBackend>,
-    #[allow(unused)]
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
-
+pub struct MadaraP2pBuilder {
     commands: P2pCommands,
-    commands_receiver: Option<mpsc::Receiver<Command>>,
-    swarm: Swarm<MadaraP2pBehaviour>,
-
-    headers_sync_handler: DynSyncHandler<MadaraP2pContext, model::BlockHeadersRequest, model::BlockHeadersResponse>,
-    classes_sync_handler: DynSyncHandler<MadaraP2pContext, model::ClassesRequest, model::ClassesResponse>,
-    state_diffs_sync_handler: DynSyncHandler<MadaraP2pContext, model::StateDiffsRequest, model::StateDiffsResponse>,
-    transactions_sync_handler:
-        DynSyncHandler<MadaraP2pContext, model::TransactionsRequest, model::TransactionsResponse>,
-    events_sync_handler: DynSyncHandler<MadaraP2pContext, model::EventsRequest, model::EventsResponse>,
+    commands_receiver: mpsc::Receiver<Command>,
+    config: P2pConfig,
+    db: Arc<MadaraBackend>,
+    keypair: Keypair,
 }
 
-impl MadaraP2p {
-    pub fn new(
-        config: P2pConfig,
-        db: Arc<MadaraBackend>,
-        add_transaction_provider: Arc<dyn AddTransactionProvider>,
-    ) -> anyhow::Result<Self> {
+impl MadaraP2pBuilder {
+    pub fn new(config: P2pConfig, db: Arc<MadaraBackend>) -> anyhow::Result<Self> {
+        let (commands, commands_receiver) = mpsc::channel(100);
+
         // we do not need to provide a stable identity except for bootstrap nodes
         let keypair = identity::load_identity(config.identity_file.as_deref(), config.save_identity)?;
+
+        Ok(Self {
+            commands: P2pCommands { inner: commands, peer_id: keypair.public().to_peer_id() },
+            commands_receiver,
+            config,
+            db,
+            keypair,
+        })
+    }
+
+    pub fn commands(&self) -> P2pCommands {
+        self.commands.clone()
+    }
+
+    pub fn build(self) -> anyhow::Result<MadaraP2p> {
+        let MadaraP2pBuilder { commands: _, commands_receiver, config, db, keypair } = self;
 
         let swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
@@ -89,15 +91,13 @@ impl MadaraP2p {
 
         let app_ctx = MadaraP2pContext { backend: Arc::clone(&db) };
 
-        let (commands, commands_receiver) = mpsc::channel(100);
-
-        Ok(Self {
+        Ok(MadaraP2p {
             config,
             db,
-            add_transaction_provider,
+            // add_transaction_provider,
             swarm,
-            commands: P2pCommands(commands),
             commands_receiver: Some(commands_receiver),
+            pending_get_closest_peers: Default::default(),
             headers_sync_handler: DynSyncHandler::new("headers", app_ctx.clone(), |ctx, req, out| {
                 handlers_impl::headers_sync(ctx, req, out).boxed()
             }),
@@ -115,11 +115,28 @@ impl MadaraP2p {
             }),
         })
     }
+}
 
-    pub fn commands(&self) -> P2pCommands {
-        self.commands.clone()
-    }
+pub struct MadaraP2p {
+    config: P2pConfig,
+    #[allow(unused)]
+    db: Arc<MadaraBackend>,
+    // #[allow(unused)]
+    // add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    commands_receiver: Option<mpsc::Receiver<Command>>,
+    swarm: Swarm<MadaraP2pBehaviour>,
 
+    pending_get_closest_peers: HashMap<libp2p::kad::QueryId, mpsc::UnboundedSender<PeerId>>,
+
+    headers_sync_handler: DynSyncHandler<MadaraP2pContext, model::BlockHeadersRequest, model::BlockHeadersResponse>,
+    classes_sync_handler: DynSyncHandler<MadaraP2pContext, model::ClassesRequest, model::ClassesResponse>,
+    state_diffs_sync_handler: DynSyncHandler<MadaraP2pContext, model::StateDiffsRequest, model::StateDiffsResponse>,
+    transactions_sync_handler:
+        DynSyncHandler<MadaraP2pContext, model::TransactionsRequest, model::TransactionsResponse>,
+    events_sync_handler: DynSyncHandler<MadaraP2pContext, model::EventsRequest, model::EventsResponse>,
+}
+
+impl MadaraP2p {
     /// Main loop of the p2p service.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let multi_addr = "/ip4/0.0.0.0".parse::<Multiaddr>()?.with(Protocol::Tcp(self.config.port.unwrap_or(0)));

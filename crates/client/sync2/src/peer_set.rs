@@ -1,6 +1,6 @@
 use mc_p2p::{P2pCommands, PeerId};
 use std::cmp;
-use std::collections::{hash_map, BTreeSet, HashMap};
+use std::collections::{hash_map, BTreeSet, HashMap, HashSet};
 use std::num::Saturating;
 use tokio::time::{Duration, Instant};
 
@@ -136,7 +136,7 @@ impl GetPeersInner {
         Self { commands, wait_until: None }
     }
 
-    pub async fn get_new_peers(&mut self) -> Vec<PeerId> {
+    pub async fn get_new_peers(&mut self) -> HashSet<PeerId> {
         let now = Instant::now();
 
         if let Some(inst) = self.wait_until {
@@ -146,11 +146,15 @@ impl GetPeersInner {
         }
         self.wait_until = Some(now + Self::GET_RANDOM_PEERS_DELAY);
 
-        self.commands.get_random_peers().await
+        let mut res = self.commands.get_random_peers().await;
+        tracing::debug!("Got get_random_peers answer: {res:?}");
+        res.remove(&self.commands.peer_id()); // remove ourselves from the response, in case we find ourselves
+        res
     }
 }
 
 // TODO: eviction ban list? if we evicted a peer from the set, we may want to block it for some delay.
+// TODO: we may want to invalidate the peer list over time
 // Mutex order: to statically ensure deadlocks are not possible, inner should always be locked after get_peers_mutex, if the two need to be taken at once.
 pub struct PeerSet {
     // Tokio mutex: when the peer set is empty, we want to .await to get new peers
@@ -211,6 +215,7 @@ impl PeerSet {
     /// Signal that the peer did not follow the protocol correctly, sent bad data or timed out.
     /// We may want to avoid this peer in the future.
     pub fn peer_operation_error(&self, peer_id: PeerId) {
+        tracing::debug!("peer_operation_error: {peer_id:?}");
         let mut inner = self.inner.lock().expect("Poisoned lock");
         inner.update_stats(peer_id, |stats| {
             stats.decrement_in_use();
@@ -222,6 +227,7 @@ impl PeerSet {
     ///
     // TODO: add a bandwidth argument to allow the peer set to score and avoid being drip-fed.
     pub fn peer_operation_success(&self, peer_id: PeerId) {
+        tracing::debug!("peer_operation_success: {peer_id:?}");
         let mut inner = self.inner.lock().expect("Poisoned lock");
         inner.update_stats(peer_id, |stats| {
             stats.decrement_in_use();

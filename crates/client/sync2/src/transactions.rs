@@ -40,6 +40,7 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
+        tracing::debug!("p2p transactions parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands
             .clone()
@@ -56,6 +57,8 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
 
             // compute merkle root for transactions tree.
 
+            tracing::debug!("storing transactions for {block_n:?}, peer_id: {peer_id}");
+
             self.backend.store_transactions(block_n, transactions).context("Storing transactions to database")?;
         }
 
@@ -64,12 +67,13 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
 
     async fn p2p_sequential_step(
         self: Arc<Self>,
-        _peer_id: PeerId,
+        peer_id: PeerId,
         block_range: Range<u64>,
         _input: Self::SequentialStepInput,
     ) -> Result<Self::Output, P2pError> {
+        tracing::debug!("p2p transactions sequential step: {block_range:?}, peer_id: {peer_id}");
         if let Some(block_n) = block_range.last() {
-            self.backend.head_status().set_latest_transaction(block_n);
+            self.backend.head_status().transactions.set(Some(block_n));
         }
         Ok(())
     }

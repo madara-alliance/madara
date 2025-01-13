@@ -47,11 +47,11 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            headers_parallelization: 200,
-            headers_batch_size: 16,
-            transactions_parallelization: 200,
+            headers_parallelization: 2,
+            headers_batch_size: 4,
+            transactions_parallelization: 3,
             transactions_batch_size: 2,
-            state_diffs_parallelization: 200,
+            state_diffs_parallelization: 3,
             state_diffs_batch_size: 2,
         }
     }

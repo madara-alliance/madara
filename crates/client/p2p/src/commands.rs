@@ -1,23 +1,33 @@
+use std::collections::HashSet;
+
 use crate::{
     handlers_impl::{self},
     model, sync_handlers, MadaraP2p,
 };
-use futures::{
-    channel::{mpsc, oneshot},
-    SinkExt, Stream,
-};
+use futures::{channel::mpsc, SinkExt, Stream, StreamExt};
 use libp2p::PeerId;
 use mc_db::stream::BlockStreamConfig;
 use mp_block::{BlockHeaderWithSignatures, TransactionWithReceipt};
 
 #[derive(Debug, Clone)]
-pub struct P2pCommands(pub(crate) mpsc::Sender<Command>);
+pub struct P2pCommands {
+    pub(crate) inner: mpsc::Sender<Command>,
+    pub(crate) peer_id: PeerId,
+}
+
 impl P2pCommands {
-    pub async fn get_random_peers(&mut self) -> Vec<PeerId> {
-        let (callback, recv) = oneshot::channel();
-        let _res = self.0.send(Command::GetRandomPeers { callback }).await;
-        recv.await.unwrap_or(vec![])
+    pub async fn get_random_peers(&mut self) -> HashSet<PeerId> {
+        let (callback, recv) = mpsc::unbounded();
+        let _res = self.inner.send(Command::GetRandomPeers { callback }).await;
+        recv.collect().await
     }
+
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
+
+    /// Errors are handled by the receiver task instead of the p2p task.
+    /// TODO: bubble up error, so that peer set can punish peers during sync.
     fn make_stream<'a, T: 'static, R>(
         &self,
         debug_name: &'static str,
@@ -38,6 +48,7 @@ impl P2pCommands {
             Err(sync_handlers::Error::SenderClosed) => None,
         })
     }
+
     pub async fn make_headers_stream(
         &mut self,
         peer: PeerId,
@@ -45,9 +56,11 @@ impl P2pCommands {
     ) -> impl Stream<Item = BlockHeaderWithSignatures> + 'static {
         let (callback, recv) = mpsc::channel(3);
         let req = model::BlockHeadersRequest { iteration: Some(config.into()) };
-        let _res = self.0.send(Command::SyncHeaders { peer, req, callback }).await;
+        tracing::debug!("Req is {req:?}");
+        let _res = self.inner.send(Command::SyncHeaders { peer, req, callback }).await;
         self.make_stream("headers", peer, recv, handlers_impl::map_header_response)
     }
+
     /// Note: The events in the transaction receipt will not be filled in. Use [`Self::make_events_stream`] to get them.
     pub async fn make_transactions_stream(
         &mut self,
@@ -56,14 +69,18 @@ impl P2pCommands {
     ) -> impl Stream<Item = TransactionWithReceipt> + 'static {
         let (callback, recv) = mpsc::channel(3);
         let req = model::TransactionsRequest { iteration: Some(config.into()) };
-        let _res = self.0.send(Command::SyncTransactions { peer, req, callback }).await;
-        self.make_stream("headers", peer, recv, handlers_impl::map_transaction_response)
+        let _res = self.inner.send(Command::SyncTransactions { peer, req, callback }).await;
+        self.make_stream("transactions", peer, recv, handlers_impl::map_transaction_response)
     }
 }
 
-pub enum Command {
+#[derive(Debug)]
+pub(crate) enum Command {
     GetRandomPeers {
-        callback: oneshot::Sender<Vec<PeerId>>,
+        /// Channel is unbounded because we do not want the receiver to be able to block the p2p task.
+        /// This is not an issue for the sync commands as their respective handlers are spawned as new tasks - thus handling
+        /// backpressure.
+        callback: mpsc::UnboundedSender<PeerId>,
     },
     SyncHeaders {
         peer: PeerId,
@@ -93,9 +110,14 @@ pub enum Command {
 }
 
 impl MadaraP2p {
-    pub fn handle_command(&mut self, command: Command) {
+    pub(crate) fn handle_command(&mut self, command: Command) {
+        tracing::trace!("Handle command: {command:?}");
         match command {
-            Command::GetRandomPeers { callback } => callback.send(vec![]).unwrap_or_default(),
+            Command::GetRandomPeers { callback } => {
+                let query_id = self.swarm.behaviour_mut().kad.get_closest_peers(PeerId::random());
+                tracing::debug!("Started get random peers query: {query_id}");
+                self.pending_get_closest_peers.insert(query_id, callback);
+            }
             Command::SyncHeaders { peer, req, callback } => {
                 let request_id = self.swarm.behaviour_mut().headers_sync.send_request(&peer, req);
                 self.headers_sync_handler.add_outbound(request_id, callback);

@@ -84,18 +84,19 @@ impl<S: P2pPipelineSteps + Send + Sync + 'static> PipelineSteps for P2pPipelineC
         block_range: Range<u64>,
         (peer_id, input): Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        AbortOnDrop::spawn(async move {match self.steps.clone().p2p_sequential_step(peer_id, block_range.clone(), input).await {
-            Ok(output) => {
-                self.peer_set.peer_operation_success(peer_id);
-                Ok(ApplyOutcome::Success(output))
+        AbortOnDrop::spawn(async move {
+            match self.steps.clone().p2p_sequential_step(peer_id, block_range.clone(), input).await {
+                Ok(output) => {
+                    self.peer_set.peer_operation_success(peer_id);
+                    Ok(ApplyOutcome::Success(output))
+                }
+                Err(P2pError::Peer(err)) => {
+                    tracing::debug!("Retrying pipeline for block (block_n={block_range:?}) due to peer error during sequential step: {err} [peer_id={peer_id}]");
+                    self.peer_set.peer_operation_error(peer_id);
+                    Ok(ApplyOutcome::Retry)
+                }
+                Err(P2pError::Internal(err)) => Err(err.context("Peer to peer pipeline sequential step")),
             }
-            Err(P2pError::Peer(err)) => {
-                tracing::debug!("Retrying pipeline for block (block_n={block_range:?}) due to peer error during sequential step: {err} [peer_id={peer_id}]");
-                self.peer_set.peer_operation_error(peer_id);
-                Ok(ApplyOutcome::Retry)
-            }
-            Err(P2pError::Internal(err)) => Err(err.context("Peer to peer pipeline sequential step")),
-        }
-    }).await
+        }).await
     }
 }

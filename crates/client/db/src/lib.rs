@@ -272,7 +272,7 @@ pub struct MadaraBackend {
 impl fmt::Debug for MadaraBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("MadaraBackend");
-        let mut s = s
+        s
             .field("backup_handle", &self.backup_handle)
             .field("db", &self.db)
             .field("last_flush_time", &self.last_flush_time)
@@ -282,7 +282,7 @@ impl fmt::Debug for MadaraBackend {
 
         #[cfg(any(test, feature = "testing"))]
         {
-            s = s.field("_temp_dir", &self._temp_dir);
+            s.field("_temp_dir", &self._temp_dir);
         }
         s.finish()
     }

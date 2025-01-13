@@ -22,8 +22,8 @@ fn resolve_range(range: impl RangeBounds<u64>) -> (u64, Option<u64>) {
         },
         Bound::Unbounded => 0,
     };
-    let limit = match range.start_bound() {
-        Bound::Included(end) => Some(end.saturating_sub(start).saturating_add(1)),
+    let limit = match range.end_bound() {
+        Bound::Included(end) => Some(end.saturating_add(1).saturating_sub(start)),
         Bound::Excluded(end) => Some(end.saturating_sub(start)),
         Bound::Unbounded => None,
     };
@@ -205,7 +205,7 @@ impl MadaraBackend {
                 Ok(Some(block_info.clone()))
             }
 
-            async fn next(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+            async fn try_next(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
                 if self.iteration.limit.is_some_and(|limit| self.num_blocks_returned >= limit) {
                     return Ok(None);
                 }
@@ -232,7 +232,7 @@ impl MadaraBackend {
                 backend: Arc::clone(self),
                 subscription: None,
             },
-            |mut s| async { s.next().await.transpose().map(|el| (el, s)) },
+            |mut s| async { s.try_next().await.transpose().map(|el| (el, s)) },
         )
     }
 }
@@ -260,7 +260,7 @@ mod tests {
     use mp_chain_config::ChainConfig;
     use starknet_core::types::Felt;
     use std::time::Duration;
-    use stream::StreamExt;
+    use stream::{StreamExt, TryStreamExt};
     use tokio::{pin, time::timeout};
 
     fn block_info(block_number: u64) -> MadaraBlockInfo {
@@ -304,16 +304,16 @@ mod tests {
         let stream = test_chain.block_info_stream(BlockStreamConfig::default());
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(1)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(1)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
 
         store_block(&test_chain, 5);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(5)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(5)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
     }
 
@@ -325,7 +325,7 @@ mod tests {
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
 
         store_block(&empty_chain, 0);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
     }
 
@@ -335,13 +335,13 @@ mod tests {
         let stream = test_chain.block_info_stream(BlockStreamConfig { start: 3, ..Default::default() });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
 
         store_block(&test_chain, 5);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(5)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(5)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
     }
 
@@ -358,10 +358,10 @@ mod tests {
         store_block(&empty_chain, 2);
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&empty_chain, 3);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&empty_chain, 4);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
     }
 
@@ -373,19 +373,19 @@ mod tests {
 
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&empty_chain, 0);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&empty_chain, 1);
         store_block(&empty_chain, 2);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(1)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(1)));
         store_block(&empty_chain, 3);
         store_block(&empty_chain, 4);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&empty_chain, 5);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(5)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(5)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
     }
 
@@ -399,11 +399,11 @@ mod tests {
         });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(1)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(1)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -416,7 +416,7 @@ mod tests {
         });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -429,12 +429,12 @@ mod tests {
         });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(1)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(1)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -444,9 +444,9 @@ mod tests {
             test_chain.block_info_stream(BlockStreamConfig { step: 2.try_into().unwrap(), ..Default::default() });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
 
@@ -454,7 +454,7 @@ mod tests {
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
 
         store_block(&test_chain, 6);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(6)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(6)));
     }
 
     #[rstest::rstest]
@@ -468,10 +468,10 @@ mod tests {
         });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -480,10 +480,10 @@ mod tests {
         let stream = test_chain.block_info_stream(BlockStreamConfig { limit: Some(3), ..Default::default() });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(0)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(1)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(0)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(1)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -492,14 +492,14 @@ mod tests {
         let stream = test_chain.block_info_stream(BlockStreamConfig { limit: Some(3), start: 4, ..Default::default() });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&test_chain, 5);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(5)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(5)));
         assert!(timeout(Duration::from_millis(50), stream.next()).await.is_err());
         store_block(&test_chain, 6);
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(6)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(6)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
     }
 
     #[rstest::rstest]
@@ -513,9 +513,30 @@ mod tests {
         });
         pin!(stream);
 
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(4)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(3)));
-        assert_eq!(stream.next().await.transpose().unwrap(), Some(block_info(2)));
-        assert_eq!(stream.next().await.transpose().unwrap(), None);
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(4)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(3)));
+        assert_eq!(stream.try_next().await.unwrap(), Some(block_info(2)));
+        assert_eq!(stream.try_next().await.unwrap(), None);
+    }
+
+    #[test]
+    fn test_resolve_range() {
+        assert_eq!(resolve_range(0..), (0, None));
+        assert_eq!(resolve_range(..), (0, None));
+        assert_eq!(resolve_range(0..5), (0, Some(5)));
+        assert_eq!(resolve_range(..5), (0, Some(5)));
+        assert_eq!(resolve_range(0..=5), (0, Some(6)));
+        assert_eq!(resolve_range(..=5), (0, Some(6)));
+        assert_eq!(resolve_range(10..5), (10, Some(0)));
+        assert_eq!(resolve_range(10..=5), (10, Some(0)));
+        assert_eq!(resolve_range(10..10), (10, Some(0)));
+        assert_eq!(resolve_range(10..=10), (10, Some(1)));
+        assert_eq!(resolve_range(10..11), (10, Some(1)));
+        assert_eq!(resolve_range(10..=11), (10, Some(2)));
+        assert_eq!(resolve_range(10..9), (10, Some(0)));
+        assert_eq!(resolve_range(10..=9), (10, Some(0)));
+        assert_eq!(resolve_range(10..), (10, None));
+        assert_eq!(resolve_range(10..15), (10, Some(5)));
+        assert_eq!(resolve_range(10..=15), (10, Some(6)));
     }
 }
