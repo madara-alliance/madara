@@ -1,4 +1,3 @@
-use super::FromModelError;
 use crate::{
     handlers_impl::{
         block_stream_config,
@@ -12,8 +11,7 @@ use base64::prelude::*;
 use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
 use mc_db::db_block_id::DbBlockId;
 use mp_class::{
-    ClassInfo, EntryPointsByType, FlattenedSierraClass, LegacyClassInfo, LegacyContractEntryPoint, SierraClassInfo,
-    SierraEntryPoint,
+    ClassInfo, EntryPointsByType, LegacyClassInfo, LegacyContractEntryPoint, SierraClassInfo, SierraEntryPoint,
 };
 use std::sync::Arc;
 use tokio::pin;

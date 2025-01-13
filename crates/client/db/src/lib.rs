@@ -4,11 +4,14 @@ use anyhow::{Context, Result};
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::id::BasicId;
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::Service;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
-use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded};
+use rocksdb::{
+    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded, WriteOptions,
+};
 use rocksdb_options::rocksdb_global_options;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
@@ -19,6 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 
 pub mod block_db;
 pub mod bonsai_db;
+mod chain_head;
 pub mod class_db;
 pub mod contract_db;
 pub mod db_block_id;
@@ -251,7 +255,6 @@ impl DatabaseExt for DB {
 }
 
 /// Madara client database backend singleton.
-#[derive(Debug)]
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -259,8 +262,30 @@ pub struct MadaraBackend {
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
+    /// WriteOptions with wal disabled.
+    writeopts_no_wal: WriteOptions,
+    head_status: ChainHead,
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
+}
+
+impl fmt::Debug for MadaraBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = f.debug_struct("MadaraBackend");
+        let mut s = s
+            .field("backup_handle", &self.backup_handle)
+            .field("db", &self.db)
+            .field("last_flush_time", &self.last_flush_time)
+            .field("chain_config", &self.chain_config)
+            .field("db_metrics", &self.db_metrics)
+            .field("sender_block_info", &self.sender_block_info);
+
+        #[cfg(any(test, feature = "testing"))]
+        {
+            s = s.field("_temp_dir", &self._temp_dir);
+        }
+        s.finish()
+    }
 }
 
 pub struct DatabaseService {
@@ -325,18 +350,34 @@ impl MadaraBackend {
         &self.chain_config
     }
 
+    fn new(
+        backup_handle: Option<mpsc::Sender<BackupRequest>>,
+        db: Arc<DB>,
+        chain_config: Arc<ChainConfig>,
+    ) -> anyhow::Result<Self> {
+        let mut writeopts_no_wal = WriteOptions::new();
+        writeopts_no_wal.disable_wal(true);
+        Ok(Self {
+            writeopts_no_wal,
+            db_metrics: DbMetrics::register().context("Registering db metrics")?,
+            backup_handle,
+            db,
+            last_flush_time: Default::default(),
+            chain_config,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
+            head_status: ChainHead::default(),
+            #[cfg(any(test, feature = "testing"))]
+            _temp_dir: None,
+        })
+    }
+
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        Arc::new(Self {
-            backup_handle: None,
-            db: open_rocksdb(temp_dir.as_ref()).unwrap(),
-            last_flush_time: Default::default(),
-            chain_config,
-            db_metrics: DbMetrics::register().unwrap(),
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            _temp_dir: Some(temp_dir),
-        })
+        let db = open_rocksdb(temp_dir.as_ref()).unwrap();
+        let mut backend = Self::new(None, db, chain_config).unwrap();
+        backend._temp_dir = Some(temp_dir);
+        Arc::new(backend)
     }
 
     /// Open the db.
@@ -371,18 +412,10 @@ impl MadaraBackend {
 
         let db = open_rocksdb(&db_path)?;
 
-        let backend = Arc::new(Self {
-            db_metrics: DbMetrics::register().context("Registering db metrics")?,
-            backup_handle,
-            db,
-            last_flush_time: Default::default(),
-            chain_config: Arc::clone(&chain_config),
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            #[cfg(any(test, feature = "testing"))]
-            _temp_dir: None,
-        });
+        let mut backend = Self::new(backup_handle, db, chain_config)?;
+        backend.load_head_status_from_db()?;
         backend.check_configuration()?;
-        Ok(backend)
+        Ok(Arc::new(backend))
     }
 
     pub fn maybe_flush(&self, force: bool) -> Result<bool> {

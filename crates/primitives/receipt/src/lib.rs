@@ -263,6 +263,14 @@ pub struct MsgToL1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct EventWithTransactionHash {
+    pub transaction_hash: Felt,
+    #[serde(flatten)]
+    pub event: Event,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Event {
     pub from_address: Felt,
     pub keys: Vec<Felt>,

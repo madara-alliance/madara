@@ -4,8 +4,7 @@ use mc_db::{
     stream::{BlockStreamConfig, Direction},
     MadaraBackend,
 };
-use mp_block::{BlockId, Header};
-use starknet_core::types::Felt;
+use mp_block::BlockId;
 use std::{borrow::Cow, num::NonZeroU64};
 
 mod classes;

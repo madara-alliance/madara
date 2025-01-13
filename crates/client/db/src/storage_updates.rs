@@ -1,18 +1,72 @@
+use crate::contract_db::ContractDbBlockUpdate;
+use crate::Column;
+use crate::DatabaseExt;
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
+use crate::WriteBatchWithTransaction;
 use mp_block::BlockHeaderWithSignatures;
+use mp_block::MadaraBlockInfo;
+use mp_block::MadaraBlockInner;
+use mp_block::TransactionWithReceipt;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ConvertedClass;
-use mp_state_update::{
-    ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
-};
-use starknet_types_core::felt::Felt;
-use std::collections::HashMap;
+use mp_state_update::StateDiff;
 
 impl MadaraBackend {
     pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
-        // self.
-        todo!()
+        let mut tx = WriteBatchWithTransaction::default();
+        let block_n = header.header.block_number;
+
+        let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+
+        let info = MadaraBlockInfo { header: header.header, block_hash: header.block_hash, tx_hashes: vec![] };
+
+        let block_n_encoded = bincode::serialize(&block_n)?;
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&info)?);
+        tx.put_cf(&block_hash_to_block_n, &bincode::serialize(&header.block_hash)?, &block_n_encoded);
+
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
+        Ok(())
+    }
+
+    pub fn store_transactions(
+        &self,
+        block_n: u64,
+        value: Vec<TransactionWithReceipt>,
+    ) -> Result<(), MadaraStorageError> {
+        let mut tx = WriteBatchWithTransaction::default();
+
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+
+        let block_n_encoded = bincode::serialize(&block_n)?;
+
+        // update block info tx hashes (we should get rid of this field at some point IMO)
+        let mut block_info: MadaraBlockInfo =
+            bincode::deserialize(&self.db.get_cf(&block_n_to_block, &block_n_encoded)?.unwrap_or_default())?;
+        block_info.tx_hashes = value.iter().map(|tx_with_receipt| tx_with_receipt.receipt.transaction_hash()).collect();
+        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block_info)?);
+
+        let (transactions, receipts) = value.into_iter().map(|t| (t.transaction, t.receipt)).unzip();
+        let block_inner = MadaraBlockInner { transactions, receipts };
+        tx.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&block_inner)?);
+
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
+        Ok(())
+    }
+
+    pub fn store_state_diff(&self, block_n: u64, value: StateDiff) -> Result<(), MadaraStorageError> {
+        let mut batch = WriteBatchWithTransaction::default();
+
+        let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
+        let block_n_encoded = bincode::serialize(&block_n)?;
+        batch.put_cf(&block_n_to_state_diff, &block_n_encoded, &bincode::serialize(&value)?);
+
+        self.contract_db_store_block_no_rayon(block_n, ContractDbBlockUpdate::from_state_diff(value), &mut batch)?;
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        Ok(())
     }
 }
 
@@ -40,42 +94,11 @@ impl MadaraBackend {
         };
 
         let task_contract_db = || {
-            // let nonces_from_deployed =
-            //     state_diff.deployed_contracts.iter().map(|&DeployedContractItem { address, .. }| (address, Felt::ZERO));
-
-            let nonces_from_updates =
-                state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
-
-            // let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect(); // set nonce to zero when contract deployed
-            let nonce_map: HashMap<Felt, Felt> = nonces_from_updates.collect();
-
-            let contract_class_updates_replaced = state_diff
-                .replaced_classes
-                .into_iter()
-                .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash));
-
-            let contract_class_updates_deployed = state_diff
-                .deployed_contracts
-                .into_iter()
-                .map(|DeployedContractItem { address, class_hash }| (address, class_hash));
-
-            let contract_class_updates =
-                contract_class_updates_replaced.chain(contract_class_updates_deployed).collect::<Vec<_>>();
-            let nonces_updates = nonce_map.into_iter().collect::<Vec<_>>();
-
-            let storage_kv_updates = state_diff
-                .storage_diffs
-                .into_iter()
-                .flat_map(|ContractStorageDiffItem { address, storage_entries }| {
-                    storage_entries.into_iter().map(move |StorageEntry { key, value }| ((address, key), value))
-                })
-                .collect::<Vec<_>>();
+            let update = ContractDbBlockUpdate::from_state_diff(state_diff);
 
             match block_n {
-                None => self.contract_db_store_pending(&contract_class_updates, &nonces_updates, &storage_kv_updates),
-                Some(block_n) => {
-                    self.contract_db_store_block(block_n, &contract_class_updates, &nonces_updates, &storage_kv_updates)
-                }
+                None => self.contract_db_store_pending(update),
+                Some(block_n) => self.contract_db_store_block(block_n, update),
             }
         };
 

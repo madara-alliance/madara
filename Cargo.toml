@@ -123,6 +123,7 @@ mc-exec = { path = "crates/client/exec" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-gateway = { path = "crates/client/gateway" }
 mc-sync = { path = "crates/client/sync" }
+mc-sync2 = { path = "crates/client/sync2" }
 mc-eth = { path = "crates/client/eth" }
 mc-p2p = { path = "crates/client/p2p" }
 mc-mempool = { path = "crates/client/mempool" }

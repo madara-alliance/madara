@@ -30,8 +30,8 @@ mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway.workspace = true
-mc-telemetry.workspace = true
 mc-p2p.workspace = true
+mc-telemetry.workspace = true
 
 mp-block.workspace = true
 mp-chain-config.workspace = true
@@ -64,6 +64,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 futures = { workspace = true, default-features = true }
 hyper.workspace = true
 log.workspace = true
@@ -76,4 +77,3 @@ tokio = { workspace = true, features = [
   "signal",
 ] }
 url.workspace = true
-async-trait.workspace = true

@@ -12,6 +12,7 @@ use crate::{
 };
 use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
 use mc_db::db_block_id::DbBlockId;
+use mp_block::TransactionWithReceipt;
 use mp_convert::{felt_to_u128, felt_to_u32, felt_to_u64};
 use mp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, ExecutionResources,
@@ -26,11 +27,6 @@ use mp_transactions::{
 };
 use starknet_core::types::Felt;
 use tokio::pin;
-
-pub struct TransactionWithReceipt {
-    pub transaction: Transaction,
-    pub receipt: TransactionReceipt,
-}
 
 impl From<TransactionWithReceipt> for model::TransactionWithReceipt {
     fn from(value: TransactionWithReceipt) -> Self {

@@ -1,7 +1,6 @@
 use futures::channel::mpsc;
 use futures::{channel::mpsc::Sender, future::BoxFuture, pin_mut, Future};
-use futures::{SinkExt, Stream, StreamExt};
-use libp2p::PeerId;
+use futures::{SinkExt, StreamExt};
 use p2p_stream::{InboundRequestId, OutboundRequestId};
 use std::borrow::Cow;
 use std::{collections::HashMap, fmt, marker::PhantomData};
@@ -153,29 +152,6 @@ where
 
     pub fn add_outbound(&mut self, id: OutboundRequestId, stream: mpsc::Sender<Res>) {
         self.pending_outbounds_channels.insert(id, stream);
-    }
-
-    pub fn make_stream<'a, T>(
-        &mut self,
-        peer: PeerId,
-        request_id: OutboundRequestId,
-        map_header_response: impl Fn(Res) -> Result<T, Error> + 'a,
-    ) -> impl Stream<Item = T> + 'a {
-        let (snd, recv) = mpsc::channel(3);
-        self.add_outbound(request_id, snd);
-        let debug_name = self.debug_name;
-        tokio_stream::StreamExt::map_while(recv, move |res| match map_header_response(res) {
-            Ok(res) => Some(res),
-            Err(Error::Internal(err)) => {
-                tracing::error!(target: "p2p_errors", "Internal server error in stream {debug_name} [peer_id {peer}]: {err:#}");
-                None
-            }
-            Err(Error::BadRequest(err)) => {
-                tracing::debug!(target: "p2p_errors", "Bad request in stream {debug_name} [peer_id {peer}]: {err:#}");
-                None
-            }
-            Err(Error::SenderClosed) => None,
-        })
     }
 }
 

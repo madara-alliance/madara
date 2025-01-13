@@ -1,10 +1,35 @@
-use std::{num::NonZeroU64, sync::Arc};
-
+use crate::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
 use futures::{stream, Stream};
 use mp_block::MadaraBlockInfo;
+use std::{
+    num::NonZeroU64,
+    ops::{Bound, RangeBounds},
+    sync::Arc,
+};
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 
-use crate::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
+/// Returns (inclusive start, optional limit).
+/// When the start is unbounded, we start at 0.
+fn resolve_range(range: impl RangeBounds<u64>) -> (u64, Option<u64>) {
+    let start = match range.start_bound() {
+        Bound::Included(start) => *start,
+        Bound::Excluded(start) => match start.checked_add(1) {
+            Some(start) => start,
+            None => {
+                // start is u64::max, excluded. Return an empty range.
+                return (u64::MAX, Some(0));
+            }
+        },
+        Bound::Unbounded => 0,
+    };
+    let limit = match range.start_bound() {
+        Bound::Included(end) => Some(end.saturating_sub(start).saturating_add(1)),
+        Bound::Excluded(end) => Some(end.saturating_sub(start)),
+        Bound::Unbounded => None,
+    };
+
+    (start, limit)
+}
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Direction {
@@ -20,6 +45,30 @@ pub struct BlockStreamConfig {
     pub start: u64,
     pub step: NonZeroU64,
     pub limit: Option<u64>,
+}
+
+impl BlockStreamConfig {
+    pub fn backward(mut self) -> Self {
+        self.direction = Direction::Backward;
+        self
+    }
+
+    pub fn forward(mut self) -> Self {
+        self.direction = Direction::Forward;
+        self
+    }
+
+    pub fn with_block_range(mut self, range: impl RangeBounds<u64>) -> Self {
+        let (start, limit) = resolve_range(range);
+        self.start = start;
+        self.limit = limit;
+        self
+    }
+
+    pub fn with_limit(mut self, limit: impl Into<Option<u64>>) -> Self {
+        self.limit = limit.into();
+        self
+    }
 }
 
 impl Default for BlockStreamConfig {

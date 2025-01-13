@@ -1,7 +1,5 @@
-use std::collections::HashSet;
-
 use crate::{
-    handlers_impl::{self, TransactionWithReceipt},
+    handlers_impl::{self},
     model, sync_handlers, MadaraP2p,
 };
 use futures::{
@@ -10,7 +8,7 @@ use futures::{
 };
 use libp2p::PeerId;
 use mc_db::stream::BlockStreamConfig;
-use mp_block::BlockHeaderWithSignatures;
+use mp_block::{BlockHeaderWithSignatures, TransactionWithReceipt};
 
 #[derive(Debug, Clone)]
 pub struct P2pCommands(pub(crate) mpsc::Sender<Command>);
@@ -47,7 +45,7 @@ impl P2pCommands {
     ) -> impl Stream<Item = BlockHeaderWithSignatures> + 'static {
         let (callback, recv) = mpsc::channel(3);
         let req = model::BlockHeadersRequest { iteration: Some(config.into()) };
-        let _res = self.0.send(Command::SyncHeaders { peer: peer.clone(), req, callback }).await;
+        let _res = self.0.send(Command::SyncHeaders { peer, req, callback }).await;
         self.make_stream("headers", peer, recv, handlers_impl::map_header_response)
     }
     /// Note: The events in the transaction receipt will not be filled in. Use [`Self::make_events_stream`] to get them.
@@ -58,7 +56,7 @@ impl P2pCommands {
     ) -> impl Stream<Item = TransactionWithReceipt> + 'static {
         let (callback, recv) = mpsc::channel(3);
         let req = model::TransactionsRequest { iteration: Some(config.into()) };
-        let _res = self.0.send(Command::SyncTransactions { peer: peer.clone(), req, callback }).await;
+        let _res = self.0.send(Command::SyncTransactions { peer, req, callback }).await;
         self.make_stream("headers", peer, recv, handlers_impl::map_transaction_response)
     }
 }

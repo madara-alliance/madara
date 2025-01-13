@@ -6,13 +6,12 @@ use super::{
 use crate::{
     model::{self},
     sync_handlers::{self, ReqContext},
-    MadaraP2p, MadaraP2pContext,
+    MadaraP2pContext,
 };
-use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
-use libp2p::PeerId;
-use mc_db::stream::BlockStreamConfig;
+use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
 use mp_block::{
-    header::{GasPrices, L1DataAvailabilityMode}, BlockHeaderWithSignatures, ConsensusSignature, Header
+    header::{GasPrices, L1DataAvailabilityMode},
+    BlockHeaderWithSignatures, ConsensusSignature, Header,
 };
 use starknet_core::types::Felt;
 use tokio::pin;

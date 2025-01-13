@@ -6587,6 +6587,7 @@ dependencies = [
  "mc-p2p",
  "mc-rpc",
  "mc-sync",
+ "mc-sync2",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",
