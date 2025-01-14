@@ -40,7 +40,8 @@ impl fmt::Debug for MempoolTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MempoolTransaction")
             .field("tx_hash", &self.tx_hash().hex_display())
-            .field("nonce", &self.nonce().hex_display())
+            .field("nonce", &self.nonce.hex_display())
+            .field("nonce_next", &self.nonce_next.hex_display())
             .field("contract_address", &self.contract_address().hex_display())
             .field("tx_type", &self.tx.tx_type())
             .field("arrived_at", &self.arrived_at)

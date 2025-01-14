@@ -65,7 +65,7 @@ impl MempoolError {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) trait CheckInvariants {
     /// Validates the invariants of this struct.
     ///
@@ -195,6 +195,8 @@ impl Mempool {
             // Add to db
             let saved_tx = blockifier_to_saved_tx(&tx, arrived_at);
 
+            // TODO: should we update this to store only if the mempool accepts
+            // this transaction?
             self.backend.save_mempool_transaction(&saved_tx, tx_hash, &converted_class, &nonce_info)?;
 
             // Add it to the inner mempool
@@ -586,7 +588,42 @@ mod test {
         )
     }
 
+    #[rstest::fixture]
+    fn tx_deploy_v1_valid(
+        #[default(Felt::ZERO)] contract_address: Felt,
+    ) -> blockifier::transaction::transaction_execution::Transaction {
+        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
+            blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
+                blockifier::transaction::transactions::DeployAccountTransaction {
+                    tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                        starknet_api::transaction::DeployAccountTransactionV1::default(),
+                    ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                    only_query: false,
+                },
+            ),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_l1_handler_valid(
+        #[default(Felt::ZERO)] contract_address: Felt,
+    ) -> blockifier::transaction::transaction_execution::Transaction {
+        blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(
+            blockifier::transaction::transactions::L1HandlerTransaction {
+                tx: starknet_api::transaction::L1HandlerTransaction {
+                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                    ..Default::default()
+                },
+                tx_hash: starknet_api::transaction::TransactionHash::default(),
+                paid_fee_on_l1: starknet_api::transaction::Fee::default(),
+            },
+        )
+    }
+
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_accept_tx_pass(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -599,7 +636,39 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
+    /// This test checks if a ready transaction is indeed inserted into the
+    /// ready queue.
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_accept_tx_ready(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let sender_address = Felt::ZERO;
+        let nonce = Nonce(Felt::ZERO);
+
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let arrived_at = ArrivedAtTimestamp::now();
+        let result = mempool.accept_tx(tx_account_v0_valid, None, arrived_at, NonceInfo::default());
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        inner.check_invariants();
+
+        assert!(inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
+            contract_address: Felt::ZERO,
+            timestamp: arrived_at,
+            nonce: Nonce(Felt::ZERO),
+            nonce_next: Nonce(Felt::ONE),
+            phantom: std::marker::PhantomData,
+        }));
+
+        assert!(inner.nonce_is_ready(sender_address, nonce));
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_accept_tx_fail_validate(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -612,7 +681,10 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
+    /// This test makes sure that taking a transaction from the mempool works as
+    /// intended.
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_take_tx_pass(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -626,7 +698,105 @@ mod test {
         let mempool_tx = mempool.take_tx().expect("Mempool should contain a transaction");
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
+        assert!(mempool.take_tx().is_none(), "It should not be possible to take a transaction from an empty mempool");
+
         mempool.inner.read().expect("Poisoned lock").check_invariants();
+    }
+
+    /// This test makes sure that all deploy account transactions inserted into
+    /// [MempoolInner] are accounted for. Replacements are not taken into
+    /// account.
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_take_tx_deploy(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_deploy_v1_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        let force = true;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+    }
+
+    /// This test makes sure that all deploy account transactions inserted into
+    /// [MempoolInner] are accounted for, even after a non-deploy transaction
+    /// has been replaced.
+    ///
+    /// > This bug was originally detected through proptesting.
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_take_tx_deploy_replace(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_account_v0_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        // We hack our way into the inner mempool to avoid having to generate a
+        // valid deploy transaction since the outer mempool checks this
+        let force = false;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        // We insert a first non-deploy tx. This should not update the count of
+        // deploy transactions.
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(!inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+        drop(inner);
+
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_deploy_v1_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        // Now we replace the previous transaction with a deploy account tx
+        let force = true;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        // This should have updated the count of deploy transactions.
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
     }
 
     /// This test makes sure that old transactions are removed from the
@@ -646,6 +816,7 @@ mod test {
     ///
     /// [mempool]: inner::MempoolInner
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     #[allow(clippy::too_many_arguments)]
     fn mempool_remove_aged_tx_pass(
         backend: Arc<mc_db::MadaraBackend>,
@@ -1023,6 +1194,50 @@ mod test {
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
+    /// This test makes sure that adding an l1 handler to [MempoolInner] does
+    /// not cause an infinite loop when trying to remove age exceeded
+    /// transactions.
+    ///
+    /// This is important as age is not checked on l1 handlers, and so if they
+    /// are not handled properly they cam cause an infinite loop.
+    ///
+    /// > This bug was originally detected through proptesting.
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_remove_aged_tx_pass_l1_handler(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_l1_handler_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_l1_handler_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+
+        let force = false;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.nonce_is_ready(Felt::ZERO, Nonce(Felt::ZERO)));
+        inner.check_invariants();
+        drop(inner);
+
+        // This should not loop!
+        mempool.inner.write().expect("Poisoned lock").remove_age_exceeded_txs();
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.nonce_is_ready(Felt::ZERO, Nonce(Felt::ZERO)));
+        inner.check_invariants();
+    }
+
     /// This tests makes sure that if a transaction is inserted as [pending],
     /// and the transaction before it is polled, then that transaction becomes
     /// [ready].
@@ -1037,6 +1252,7 @@ mod test {
     /// [ready]: inner::TransactionIntentReady;
     /// [pending]: inner::TransactionInentPending;
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_readiness_check(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -1158,6 +1374,7 @@ mod test {
     /// [ready]: inner::TransactionIntentReady;
     /// [pending]: inner::TransactionInentPending;
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_readiness_check_against_db(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
@@ -1225,6 +1442,7 @@ mod test {
     /// This test makes sure that retrieve nonce_info has proper error handling
     /// and returns correct values based on the state of the db.
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_retrieve_nonce_info(backend: Arc<mc_db::MadaraBackend>, l1_data_provider: Arc<MockL1DataProvider>) {
         let mempool = Mempool::new(Arc::clone(&backend), l1_data_provider, MempoolLimits::for_testing());
 
@@ -1309,6 +1527,7 @@ mod test {
     ///
     /// [mempool]: inner::MempoolInner
     #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
     fn mempool_replace_pass(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,

@@ -43,18 +43,21 @@ use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 use std::{cmp, marker::PhantomData};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use crate::CheckInvariants;
 
 use super::ArrivedAtTimestamp;
 
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MarkerReady;
 
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MarkerPendingByNonce;
 
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MarkerPendingByTimestamp;
 
 /// A [transaction intent] which is ready to be consumed.
@@ -196,6 +199,7 @@ impl PartialOrd for TransactionIntentPendingByTimestamp {
 /// [nonce_next]: Self::nonce_next
 /// [Invariants]: CheckInvariants
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct TransactionIntent<K> {
     /// The contract responsible for sending the transaction.
     pub(crate) contract_address: Felt,
@@ -211,7 +215,7 @@ pub(crate) struct TransactionIntent<K> {
     pub(crate) phantom: PhantomData<K>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 impl<K> CheckInvariants for TransactionIntent<K> {
     fn check_invariants(&self) {
         assert_eq!(self.nonce_next, self.nonce.try_increment().unwrap());

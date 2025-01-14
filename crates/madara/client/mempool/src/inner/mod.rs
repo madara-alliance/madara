@@ -3,10 +3,11 @@
 //! Insertion and popping should be O(log n).
 //! We also really don't want to poison the lock by panicking.
 
-use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
+use blockifier::transaction::{account_transaction::AccountTransaction, transaction_types::TransactionType};
 use deployed_contracts::DeployedContracts;
 use mc_db::mempool_db::{NonceInfo, NonceStatus};
+use mc_exec::execution::TxInfo;
 use mp_convert::ToFelt;
 use starknet_api::core::{ContractAddress, Nonce};
 use starknet_types_core::felt::Felt;
@@ -24,10 +25,12 @@ pub use limits::*;
 pub use nonce_mapping::*;
 pub use tx::*;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use crate::CheckInvariants;
 
-#[derive(Debug)]
+#[cfg(any(test, feature = "testing"))]
+use starknet_api::transaction::TransactionHash;
+
 /// A struct responsible for the rapid ordering and disposal of transactions by
 /// their [readiness] and time of arrival.
 ///
@@ -141,12 +144,15 @@ use crate::CheckInvariants;
 /// [deployed_contracts]: Self::deployed_contracts
 /// [check_invariants]: Self::check_invariants
 /// [separate ordering]: Self::tx_intent_queue_pending_by_timestamp
-pub(crate) struct MempoolInner {
+#[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
+pub struct MempoolInner {
     /// We have one [Nonce] to  [MempoolTransaction] mapping per contract
     /// address.
     ///
     /// [Nonce]: starknet_api::core::Nonce
-    pub(crate) nonce_mapping: HashMap<Felt, NonceTxMapping>,
+    // TODO: this can be replace with a hasmap with a tupple key
+    pub nonce_mapping: HashMap<Felt, NonceTxMapping>,
     /// FIFO queue of all [ready] intents.
     ///
     /// [ready]: TransactionIntentReady
@@ -154,6 +160,7 @@ pub(crate) struct MempoolInner {
     /// FIFO queue of all [pending] intents, sorted by their [Nonce].
     ///
     /// [pending]: TransactionIntentPendingByNonce
+    // TODO: can remove contract_address from TransactionIntentPendingByNonce
     pub(crate) tx_intent_queue_pending_by_nonce: HashMap<Felt, BTreeMap<TransactionIntentPendingByNonce, ()>>,
     /// FIFO queue of all [pending] intents, sorted by their time of arrival.
     ///
@@ -164,13 +171,19 @@ pub(crate) struct MempoolInner {
     /// [pending]: TransactionIntentPendingByTimestamp
     /// [remove_age_exceeded_txs]: Self::remove_age_exceeded_txs
     /// [tx_intent_queue_pending_by_nonce]: Self::tx_intent_queue_pending_by_nonce
+    // TODO: can remove nonce_next from TransactionIntentPendingByTimestamp
     pub(crate) tx_intent_queue_pending_by_timestamp: BTreeSet<TransactionIntentPendingByTimestamp>,
     /// A count of all deployed contract declared so far.
-    deployed_contracts: DeployedContracts,
+    pub(crate) deployed_contracts: DeployedContracts,
     /// Constraints on the number of transactions allowed in the [Mempool]
     ///
     /// [Mempool]: super::Mempool
     limiter: MempoolLimiter,
+
+    /// This is just a helper field to use during tests to get the current nonce
+    /// of a contract as known by the [MempoolInner].
+    #[cfg(any(test, feature = "testing"))]
+    nonce_by_account: HashMap<ContractAddress, Nonce>,
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -183,7 +196,7 @@ pub enum TxInsertionError {
     Limit(#[from] MempoolLimitReached),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 impl CheckInvariants for MempoolInner {
     fn check_invariants(&self) {
         // tx_intent_queue_ready can only contain one tx of every contract
@@ -196,17 +209,18 @@ impl CheckInvariants for MempoolInner {
                 .get(&intent.contract_address)
                 .unwrap_or_else(|| panic!("Missing nonce mapping for contract address {}", &intent.contract_address));
 
-            let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).expect("Missing nonce mapping for intent");
+            let mempool_tx =
+                nonce_mapping.transactions.get(&intent.nonce).expect("Missing nonce mapping for ready intent");
 
             assert_eq!(mempool_tx.nonce, intent.nonce);
             assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
             assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-            if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
-                // TODO: make sure the deploy contract count is good?
+            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                let contract_address = tx.contract_address;
                 assert!(
-                    self.has_deployed_contract(&mempool_tx.contract_address()),
-                    "Deploy account tx is not part of deployed contacts"
+                    self.has_deployed_contract(&contract_address),
+                    "Ready deploy account tx from sender {contract_address:x?} is not part of deployed contacts"
                 );
             }
 
@@ -236,7 +250,7 @@ impl CheckInvariants for MempoolInner {
 
                 let mempool_tx = nonce_mapping.transactions.get(&intent.nonce).unwrap_or_else(|| {
                     panic!(
-                        "Missing nonce mapping for intent: required {:?}, available {:?}",
+                        "Missing nonce mapping for pending intent: required {:?}, available {:?}",
                         intent.nonce,
                         nonce_mapping.transactions.keys()
                     )
@@ -246,10 +260,11 @@ impl CheckInvariants for MempoolInner {
                 assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
                 assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-                if matches!(mempool_tx.tx, Transaction::AccountTransaction(AccountTransaction::DeployAccount(_))) {
+                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                    let contract_address = tx.contract_address;
                     assert!(
-                        self.has_deployed_contract(&mempool_tx.contract_address()),
-                        "Deploy account tx is not part of deployed contacts"
+                        self.has_deployed_contract(&contract_address),
+                        "Pending deploy account tx from sender {contract_address:x?} is not part of deployed contacts",
                     );
                 }
 
@@ -291,6 +306,8 @@ impl MempoolInner {
             tx_intent_queue_pending_by_timestamp: Default::default(),
             deployed_contracts: Default::default(),
             limiter: MempoolLimiter::new(limits_config),
+            #[cfg(any(test, feature = "testing"))]
+            nonce_by_account: Default::default(),
         }
     }
 
@@ -350,6 +367,12 @@ impl MempoolInner {
                             });
                             debug_assert!(removed);
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
+
+                            if let Some(contract_address) = &deployed_contract_address {
+                                if previous.tx.tx_type() != TransactionType::DeployAccount {
+                                    self.deployed_contracts.increment(*contract_address);
+                                }
+                            }
                         } else if let Some(contract_address) = &deployed_contract_address {
                             self.deployed_contracts.increment(*contract_address)
                         }
@@ -393,6 +416,12 @@ impl MempoolInner {
                             debug_assert!(removed);
 
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
+
+                            if let Some(contract_address) = &deployed_contract_address {
+                                if previous.tx.tx_type() != TransactionType::DeployAccount {
+                                    self.deployed_contracts.increment(*contract_address);
+                                }
+                            }
                         } else if let Some(contract_address) = &deployed_contract_address {
                             self.deployed_contracts.increment(*contract_address);
                         }
@@ -486,6 +515,8 @@ impl MempoolInner {
     }
 
     pub fn remove_age_exceeded_txs(&mut self) {
+        let mut ready_no_age_check = vec![];
+
         // We take advantage of the fact that TransactionIntentReady is
         // ordered by timestamp, so as soon as we find a transaction which has
         // not exceeded its max age (and that transaction supports age limits)
@@ -510,8 +541,27 @@ impl MempoolInner {
                 self.tx_intent_queue_ready.pop_first();
             } else if limits.checks_age() {
                 break;
+            } else {
+                // Some intents are not checked for age. Right now this is only
+                // the case for l1 handler intents. If we run into one of those,
+                // we still need to check if the intents after it have timed
+                // out, so we pop it to get the next. We will then add back the
+                // intents which were popped in a separate loop outside this
+                // one.
+                //
+                // In practice this is ok as l1 handler transactions are few and
+                // far between. Note that removing this check will result in an
+                // infinite loop if ever an l1 transaction is encountered.
+                ready_no_age_check.push(self.tx_intent_queue_ready.pop_first().expect("Already inside loop"));
             }
         }
+
+        // Adding back ready transactions with no age check to them
+        for intent in ready_no_age_check {
+            self.tx_intent_queue_ready.insert(intent);
+        }
+
+        let mut pending_no_age_check = vec![];
 
         // The code for removing age-exceeded pending transactions is similar,
         // but with the added complexity that we need to keep
@@ -519,7 +569,6 @@ impl MempoolInner {
         // sync. This means removals need to take place across both queues.
         while let Some(intent) = self.tx_intent_queue_pending_by_timestamp.first() {
             // Set 1: look for a pending transaction which is too old
-
             let hash_map::Entry::Occupied(mut entry) = self.nonce_mapping.entry(intent.contract_address) else {
                 unreachable!("Nonce chain does not match tx queue");
             };
@@ -568,7 +617,14 @@ impl MempoolInner {
                 }
             } else if limits.checks_age() {
                 break;
+            } else {
+                pending_no_age_check
+                    .push(self.tx_intent_queue_pending_by_timestamp.pop_first().expect("Already inside loop"));
             }
+        }
+
+        for intent in pending_no_age_check {
+            self.tx_intent_queue_pending_by_timestamp.insert(intent);
         }
     }
 
@@ -619,6 +675,9 @@ impl MempoolInner {
                 self.tx_intent_queue_ready.insert(intent_ready);
             }
         }
+
+        #[cfg(any(test, feature = "testing"))]
+        self.nonce_by_account.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
 
         // do not update mempool limits, block prod will update it with re-add txs.
         Some(tx_mempool)
@@ -688,7 +747,7 @@ impl MempoolInner {
     }
 
     /// Returns true if [MempoolInner] has the transaction at a contract address
-    /// and nonce in the ready queue.
+    /// and [Nonce] in the ready queue.
     pub fn nonce_is_ready(&self, sender_address: Felt, nonce: Nonce) -> bool {
         let mempool_tx = self.nonce_mapping.get(&sender_address).map(|mapping| mapping.transactions.get(&nonce));
         let Some(Some(mempool_tx)) = mempool_tx else {
@@ -702,6 +761,66 @@ impl MempoolInner {
             nonce_next: mempool_tx.nonce_next,
             phantom: std::marker::PhantomData,
         })
+    }
+
+    /// Returns true if [MempoolInner] has a transaction from a contract address
+    /// with a specific [Nonce] in _both_ pending queues.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn nonce_is_pending(&self, sender_address: Felt, nonce: Nonce) -> bool {
+        let mempool_tx = self.nonce_mapping.get(&sender_address).map(|mapping| mapping.transactions.get(&nonce));
+        let Some(Some(mempool_tx)) = mempool_tx else {
+            return false;
+        };
+
+        let queue = self
+            .tx_intent_queue_pending_by_nonce
+            .get(&sender_address)
+            .unwrap_or_else(|| panic!("Missing mapping for pending contract address {sender_address:x?}"));
+
+        let contains_by_nonce = || {
+            queue.contains_key(&TransactionIntentPendingByNonce {
+                contract_address: sender_address,
+                timestamp: mempool_tx.arrived_at,
+                nonce,
+                nonce_next: mempool_tx.nonce_next,
+                phantom: std::marker::PhantomData,
+            })
+        };
+
+        let contains_by_timestamp = || {
+            self.tx_intent_queue_pending_by_timestamp.contains(&TransactionIntentPendingByTimestamp {
+                contract_address: sender_address,
+                timestamp: mempool_tx.arrived_at,
+                nonce,
+                nonce_next: mempool_tx.nonce_next,
+                phantom: std::marker::PhantomData,
+            })
+        };
+
+        contains_by_nonce() && contains_by_timestamp()
+    }
+
+    /// Returns true if [MempoolInner] contains a transaction with a specific
+    /// [Nonce] from a given contract address.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn nonce_exists(&self, sender_address: Felt, nonce: Nonce) -> bool {
+        self.nonce_mapping
+            .get(&sender_address)
+            .map(|mapping| mapping.transactions.contains_key(&nonce))
+            .unwrap_or(false)
+    }
+
+    /// Returns true if [MempoolInner] contains a transaction with a specific
+    /// hash which was emitted by a given contract address.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn tx_hash_exists(&self, sender_address: Felt, nonce: Nonce, tx_hash: TransactionHash) -> bool {
+        let mempool_tx = self.nonce_mapping.get(&sender_address).map(|mapping| mapping.transactions.get(&nonce));
+
+        let Some(Some(mempool_tx)) = mempool_tx else {
+            return false;
+        };
+
+        mempool_tx.tx_hash() == tx_hash
     }
 
     #[cfg(any(test, feature = "testing"))]

@@ -7,6 +7,7 @@ use std::iter;
 /// A wrapper around a [BTreeMap] which provides a mapping from a [Nonce] to the
 /// associated transaction.
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub struct NonceTxMapping {
     /// An ordered mapping of the transactions to come from an account, accessed
     /// by [Nonce].
