@@ -31,7 +31,7 @@ pub const MESSAGING_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/me
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
 pub const APPCHAIN_CONTRACT_CASM_HASH: &str = "0x07f36e830605ddeb7c4c094639b628de297cbf61f45385b1fc3231029922b30b";
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/messaging_test.casm.json
-pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x0267b5e87ff42dacc469c25ec0c2e3f8eb798a7d6723ad0aa1c68cbd3f9d8586";
+pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x077de37b708f9abe01c1a797856398c5e1e5dfde8213f884668fa37b13d77e30";
 
 pub type StarknetAccount = SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>;
 pub type TransactionReceiptResult = Result<TransactionReceiptWithBlockInfo, ProviderError>;

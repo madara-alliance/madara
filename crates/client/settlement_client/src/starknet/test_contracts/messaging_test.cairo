@@ -48,8 +48,11 @@ mod MessagingContract {
 
     #[derive(Drop, starknet::Event)]
     struct MessageSent {
+        #[key]
         message_hash: felt252,
+        #[key]
         from_address: ContractAddress,
+        #[key]
         to_address: felt252,
         selector: felt252,
         nonce: felt252,

@@ -110,20 +110,20 @@ impl Stream for StarknetEventStream {
                         self.processed_events.insert(event.data[4]);
 
                         Poll::Ready(Some(Some(Ok(CommonMessagingEventData {
-                            from: event.data[1].to_bytes_be().to_vec(),
-                            to: event.data[2].to_bytes_be().to_vec(),
-                            selector: event.data[3].to_bytes_be().to_vec(),
-                            nonce: event.data[4].to_bytes_be().to_vec(),
+                            from: event.keys[2].to_bytes_be().to_vec(),
+                            to: event.keys[3].to_bytes_be().to_vec(),
+                            selector: event.data[0].to_bytes_be().to_vec(),
+                            nonce: event.data[1].to_bytes_be().to_vec(),
                             payload: {
                                 let mut payload_array = vec![];
-                                event.data.iter().skip(6).for_each(|data| {
+                                event.data.iter().skip(3).for_each(|data| {
                                     payload_array.push(data.to_bytes_be().to_vec());
                                 });
                                 payload_array
                             },
                             fee: None,
                             transaction_hash: event.transaction_hash.to_bytes_be().to_vec(),
-                            message_hash: Some(event.data[0].to_bytes_be().to_vec()),
+                            message_hash: Some(event.keys[1].to_bytes_be().to_vec()),
                             block_number: event.block_number.expect("Unable to get block number from event."),
                             event_index: None,
                         }))))
