@@ -24,7 +24,7 @@ pub const DEPLOYER_PRIVATE_KEY: &str = "0x077e56c6dc32d40a67f6f7e6625c8dc5e570ab
 pub const UDC_ADDRESS: &str = "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf";
 pub const MADARA_PORT: &str = "19944";
 pub const MADARA_BINARY_PATH: &str = "../../../test-artifacts/madara";
-pub const MADARA_CONFIG_PATH: &str = "../../../test-artifacts/devnet.yaml";
+pub const MADARA_CONFIG_PATH: &str = "../../../configs/presets/devnet.yaml";
 pub const APPCHAIN_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/appchain_test.sierra.json";
 pub const MESSAGING_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/messaging_test.sierra.json";
 
@@ -63,6 +63,7 @@ impl MadaraProcess {
             .arg("--gateway-port")
             .arg("8080")
             .arg("--no-l1-sync")
+            .arg("--chain-config-override=block_time=5s,pending_block_update_time=1s")
             .spawn()?;
 
         wait_for_port(MADARA_PORT.parse().unwrap(), 2, 10);
