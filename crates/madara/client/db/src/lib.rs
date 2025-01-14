@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
 
+mod db_version;
 mod error;
 mod rocksdb_options;
 mod rocksdb_snapshot;
@@ -281,7 +282,7 @@ pub struct MadaraBackend {
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     write_opt_no_wal: WriteOptions,
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 }
 
@@ -372,7 +373,7 @@ impl MadaraBackend {
         &self.chain_config
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref()).unwrap();
@@ -398,6 +399,12 @@ impl MadaraBackend {
         chain_config: Arc<ChainConfig>,
         trie_log_config: TrieLogConfig,
     ) -> anyhow::Result<Arc<MadaraBackend>> {
+        // check if the db version is compatible with the current binary
+        tracing::debug!("checking db version");
+        if let Some(db_version) = db_version::check_db_version(&db_config_dir).context("Checking database version")? {
+            tracing::debug!("version of existing db is {db_version}");
+        }
+
         let db_path = db_config_dir.join("db");
 
         // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
@@ -439,7 +446,7 @@ impl MadaraBackend {
             trie_log_config,
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             write_opt_no_wal: make_write_opt_no_wal(),
-            #[cfg(feature = "testing")]
+            #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         });
         backend.check_configuration()?;

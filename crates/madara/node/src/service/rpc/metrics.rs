@@ -91,12 +91,12 @@ impl RpcMetrics {
     }
 
     pub(crate) fn ws_disconnect(&self, now: Instant) {
-        let micros = now.elapsed().as_secs();
+        let millis = now.elapsed().as_millis();
 
         if let Some(counter) = self.ws_sessions_closed.as_ref() {
             counter.add(1, &[]);
         }
-        self.ws_sessions_time.record(micros as f64, &[]);
+        self.ws_sessions_time.record(millis as f64, &[]);
     }
 
     pub(crate) fn on_call(&self, req: &Request, transport_label: &'static str) {
@@ -113,15 +113,15 @@ impl RpcMetrics {
         tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
         tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
 
-        let micros = now.elapsed().as_micros();
+        let millis = now.elapsed().as_millis();
         tracing::debug!(
             target: "rpc_metrics",
-            "[{transport_label}] {} call took {} μs",
+            "[{transport_label}] {} call took {:?}",
             req.method_name(),
-            micros,
+            millis,
         );
 
-        self.calls_time.record(micros as f64, &[KeyValue::new("method", req.method_name().to_string())]);
+        self.calls_time.record(millis as f64, &[KeyValue::new("method", req.method_name().to_string())]);
 
         self.calls_finished.add(
             1,

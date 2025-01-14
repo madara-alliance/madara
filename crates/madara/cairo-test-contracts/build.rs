@@ -1,5 +1,5 @@
 fn main() {
-    let cairo_project_dir = "../../cairo";
+    let cairo_project_dir = "../../../cairo";
     println!("cargo::rerun-if-changed={cairo_project_dir}/src");
     println!("cargo::rerun-if-changed={cairo_project_dir}/Scarb.toml");
     // Note: scarb build updates the Scarb.lock file, and there is no `--locked` arg to avoid

@@ -8,7 +8,7 @@ mod util;
 use crate::cli::l1::MadaraSettlementLayer;
 use anyhow::{bail, Context};
 use clap::Parser;
-use cli::{NetworkType, RunCmd};
+use cli::RunCmd;
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
@@ -25,6 +25,7 @@ use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
+use starknet_api::core::ChainId;
 use std::sync::Arc;
 
 const GREET_IMPL_NAME: &str = "Madara";
@@ -55,16 +56,25 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
-    // Check if the devnet is running with the correct chain id.
-    if run_cmd.devnet && chain_config.chain_id != NetworkType::Devnet.chain_id() {
-        if !run_cmd.block_production_params.override_devnet_chain_id {
-            tracing::error!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network. Use `--network=devnet` instead. Or if this is the expected behavior please pass `--override-devnet-chain-id`", chain_config.chain_name);
-            panic!();
-        } else {
-            // This log is immediately flooded with devnet accounts and so this can be missed.
-            // Should we add a delay here to make this clearly visisble?
-            tracing::warn!("You're running a devnet with the network config of {:?}. This means that devnet transactions can be replayed on the actual network.", run_cmd.network);
-        }
+    // If block time is inferior to the tick time, then only empty blocks will
+    // be produced as we will never update the pending block before storing it.
+    if run_cmd.is_sequencer() && chain_config.block_time < chain_config.pending_block_update_time {
+        anyhow::bail!(
+            "Block time ({}s) cannot be less than the pending block update time ({}s), as this will yield only empty blocks",
+            chain_config.block_time.as_secs(),
+            chain_config.pending_block_update_time.as_secs()
+        );
+    }
+
+    // Check if the devnet is running with the correct chain id. This is purely
+    // to avoid accidental setups which would allow for replay attacks. This is
+    // possible if the devnet has the same chain id as another popular chain,
+    // allowing txs which occur on it to also be replayed on that other chain.
+    if run_cmd.devnet
+        && (chain_config.chain_id == ChainId::Mainnet || chain_config.chain_id == ChainId::Sepolia)
+        && !run_cmd.devnet_unsafe
+    {
+        anyhow::bail!("You're running a devnet with the network config of {0}. This means that devnet transactions can be replayed on the actual {0} network. Use `--network=devnet` instead or force this configuration with `--devnet-unsafe`.", chain_config.chain_name);
     }
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();

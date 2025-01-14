@@ -16,7 +16,6 @@ pub use db::*;
 pub use gateway::*;
 pub use l2::*;
 pub use rpc::*;
-use starknet_api::core::ChainId;
 use std::str::FromStr;
 pub use telemetry::*;
 
@@ -188,6 +187,10 @@ pub struct RunCmd {
     #[arg(env = "MADARA_DEVNET", long, group = "mode")]
     pub devnet: bool,
 
+    /// Allows a devnet to have SN_MAIN or SN_SEPOLIA as its chain ID.
+    #[arg(env = "MADARA_DEVNET_UNSAFE", long, requires = "devnet")]
+    pub devnet_unsafe: bool,
+
     /// The network chain configuration.
     #[clap(env = "MADARA_NETWORK", long, short, group = "full_mode_config")]
     pub network: Option<NetworkType>,
@@ -201,6 +204,7 @@ pub struct RunCmd {
     pub preset: Option<ChainPreset>,
 
     /// Overrides parameters from the Chain Config.
+    #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
 }
@@ -311,17 +315,6 @@ pub enum NetworkType {
     /// A devnet for local testing
     #[value(alias("devnet"))]
     Devnet,
-}
-
-impl NetworkType {
-    pub fn chain_id(&self) -> ChainId {
-        match self {
-            NetworkType::Main => ChainId::Mainnet,
-            NetworkType::Test => ChainId::Sepolia,
-            NetworkType::Integration => ChainId::IntegrationSepolia,
-            NetworkType::Devnet => ChainId::Other("MADARA_DEVNET".to_string()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]

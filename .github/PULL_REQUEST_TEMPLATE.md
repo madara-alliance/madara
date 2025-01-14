@@ -1,6 +1,6 @@
 <!--- Please provide a general summary of your changes in the title above -->
 
-# Pull Request type
+## Pull Request type
 
 <!-- Please try to limit your pull request to one type; submit multiple pull requests if needed. -->
 
@@ -33,6 +33,11 @@ Resolves: #NA
 
 <!-- Yes or No -->
 <!-- If this does introduce a breaking change, please describe the impact and migration path for existing applications below. -->
+<!-- If you modify database schema, ensure you:
+     1. Add the 'db-migration label to the PR
+     2. Document the schema changes
+     3. Provide migration instructions if needed
+-->
 
 ## Other information
 

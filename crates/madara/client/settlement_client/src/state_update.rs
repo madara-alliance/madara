@@ -1,13 +1,19 @@
 use std::sync::Arc;
 
+<<<<<<<< HEAD:crates/madara/client/settlement_client/src/state_update.rs
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
 use crate::utils::trim_hash;
+========
+use crate::client::{L1BlockMetrics, StarknetCoreContract};
+use crate::{client::EthereumClient, utils::convert_log_state_update};
+>>>>>>>> 4d1c4b376e1dd2019397a9ee2828f98cda0e41dc:crates/madara/client/eth/src/state_update.rs
 use anyhow::Context;
 use futures::Stream;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
+use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 

@@ -1,4 +1,4 @@
-use super::trace_transaction::FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW;
+use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
@@ -18,10 +18,10 @@ pub async fn simulate_transactions(
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 
-    if starknet_version < FALLBACK_TO_SEQUENCER_WHEN_VERSION_BELOW {
+    if starknet_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::UnsupportedTxnVersion);
     }
-    let exec_context = ExecutionContext::new_in_block(Arc::clone(&starknet.backend), &block_info)?;
+    let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
     let charge_fee = !simulation_flags.contains(&SimulationFlag::SkipFeeCharge);
     let validate = !simulation_flags.contains(&SimulationFlag::SkipValidate);

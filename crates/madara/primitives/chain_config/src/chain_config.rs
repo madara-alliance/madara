@@ -18,6 +18,7 @@ use blockifier::bouncer::{BouncerWeights, BuiltinCount};
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
+use primitive_types::H160;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
@@ -113,11 +114,11 @@ pub struct ChainConfig {
     pub sequencer_address: ContractAddress,
 
     /// The Starknet core contract address for the L1 watcher.
-    pub eth_core_contract_address: String,
+    pub eth_core_contract_address: H160,
 
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
-    pub eth_gps_statement_verifier: String,
+    pub eth_gps_statement_verifier: H160,
 
     /// Private key used by the node to sign blocks provided through the
     /// feeder gateway. This serves as a proof of origin and in the future
@@ -463,10 +464,9 @@ mod tests {
     #[rstest]
     fn test_mainnet_from_yaml() {
         // Change the current directory
-        std::env::set_current_dir("../../../").expect("Failed to change directory");
+        std::env::set_current_dir("../../../../").expect("Failed to change directory");
         let chain_config: ChainConfig =
-            ChainConfig::from_yaml(Path::new("../../../../../configs/presets/mainnet.yaml"))
-                .expect("failed to get cfg");
+            ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("failed to get cfg");
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
@@ -481,7 +481,8 @@ mod tests {
         // Check versioned constants
         // Load and parse the JSON file
         let json_content =
-            fs::read_to_string("../resources/versioned_constants_13_0.json").expect("Failed to read JSON file");
+            fs::read_to_string("crates/madara/primitives/chain_config/resources/versioned_constants_13_0.json")
+                .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 
         // Get the VersionedConstants for version 0.13.0
@@ -550,7 +551,10 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(chain_config.eth_core_contract_address, "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4");
+        assert_eq!(
+            chain_config.eth_core_contract_address,
+            H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
+        );
     }
 
     #[rstest]
