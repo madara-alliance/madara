@@ -6,7 +6,7 @@ else
   exit 1
 fi
 
-tini -- ./madara           \
+exec tini -- ./madara        \
 	--name madara            \
 	--network mainnet        \
 	--rpc-external           \
