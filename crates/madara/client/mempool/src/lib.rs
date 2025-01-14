@@ -67,6 +67,7 @@ impl MempoolError {
 }
 
 #[cfg(any(test, feature = "testing"))]
+#[allow(unused)]
 pub(crate) trait CheckInvariants {
     /// Validates the invariants of this struct.
     ///
