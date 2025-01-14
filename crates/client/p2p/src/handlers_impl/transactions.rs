@@ -10,7 +10,7 @@ use crate::{
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
-use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
+use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mc_db::db_block_id::DbBlockId;
 use mp_block::TransactionWithReceipt;
 use mp_convert::{felt_to_u128, felt_to_u32, felt_to_u64};
@@ -44,10 +44,7 @@ impl TryFrom<model::TransactionWithReceipt> for TransactionWithReceipt {
     type Error = FromModelError;
     fn try_from(value: model::TransactionWithReceipt) -> Result<Self, Self::Error> {
         let tx = TransactionWithHash::try_from(value.transaction.unwrap_or_default())?;
-        Ok(Self {
-            transaction: tx.transaction,
-            receipt: value.receipt.unwrap_or_default().try_into_with_tx_hash(tx.hash)?,
-        })
+        Ok(Self { transaction: tx.transaction, receipt: value.receipt.unwrap_or_default().parse_model(tx.hash)? })
     }
 }
 
@@ -305,21 +302,21 @@ fn execution_result(revert_reason: Option<String>) -> ExecutionResult {
 }
 
 impl model::Receipt {
-    pub fn try_into_with_tx_hash(self, transaction_hash: Felt) -> Result<TransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<TransactionReceipt, FromModelError> {
         use model::receipt::Type;
 
         Ok(match self.r#type.ok_or(FromModelError::missing_field("Receipt::type"))? {
-            Type::Invoke(tx) => TransactionReceipt::Invoke(tx.try_into_with_tx_hash(transaction_hash)?),
-            Type::L1Handler(tx) => TransactionReceipt::L1Handler(tx.try_into_with_tx_hash(transaction_hash)?),
-            Type::Declare(tx) => TransactionReceipt::Declare(tx.try_into_with_tx_hash(transaction_hash)?),
-            Type::DeprecatedDeploy(tx) => TransactionReceipt::Deploy(tx.try_into_with_tx_hash(transaction_hash)?),
-            Type::DeployAccount(tx) => TransactionReceipt::DeployAccount(tx.try_into_with_tx_hash(transaction_hash)?),
+            Type::Invoke(tx) => TransactionReceipt::Invoke(tx.parse_model(transaction_hash)?),
+            Type::L1Handler(tx) => TransactionReceipt::L1Handler(tx.parse_model(transaction_hash)?),
+            Type::Declare(tx) => TransactionReceipt::Declare(tx.parse_model(transaction_hash)?),
+            Type::DeprecatedDeploy(tx) => TransactionReceipt::Deploy(tx.parse_model(transaction_hash)?),
+            Type::DeployAccount(tx) => TransactionReceipt::DeployAccount(tx.parse_model(transaction_hash)?),
         })
     }
 }
 
 impl model::receipt::Invoke {
-    pub fn try_into_with_tx_hash(self, transaction_hash: Felt) -> Result<InvokeTransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<InvokeTransactionReceipt, FromModelError> {
         let common = self.common.unwrap_or_default();
         Ok(InvokeTransactionReceipt {
             transaction_hash,
@@ -336,7 +333,7 @@ impl model::receipt::Invoke {
 }
 
 impl model::receipt::L1Handler {
-    pub fn try_into_with_tx_hash(self, transaction_hash: Felt) -> Result<L1HandlerTransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<L1HandlerTransactionReceipt, FromModelError> {
         let common = self.common.unwrap_or_default();
         Ok(L1HandlerTransactionReceipt {
             transaction_hash,
@@ -354,7 +351,7 @@ impl model::receipt::L1Handler {
 }
 
 impl model::receipt::Declare {
-    pub fn try_into_with_tx_hash(self, transaction_hash: Felt) -> Result<DeclareTransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<DeclareTransactionReceipt, FromModelError> {
         let common = self.common.unwrap_or_default();
         Ok(DeclareTransactionReceipt {
             transaction_hash,
@@ -371,7 +368,7 @@ impl model::receipt::Declare {
 }
 
 impl model::receipt::Deploy {
-    pub fn try_into_with_tx_hash(self, transaction_hash: Felt) -> Result<DeployTransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<DeployTransactionReceipt, FromModelError> {
         let common = self.common.unwrap_or_default();
         Ok(DeployTransactionReceipt {
             transaction_hash,
@@ -389,10 +386,7 @@ impl model::receipt::Deploy {
 }
 
 impl model::receipt::DeployAccount {
-    pub fn try_into_with_tx_hash(
-        self,
-        transaction_hash: Felt,
-    ) -> Result<DeployAccountTransactionReceipt, FromModelError> {
+    pub fn parse_model(self, transaction_hash: Felt) -> Result<DeployAccountTransactionReceipt, FromModelError> {
         let common = self.common.unwrap_or_default();
         Ok(DeployAccountTransactionReceipt {
             transaction_hash,
@@ -885,14 +879,33 @@ pub async fn transactions_sync(
 
 /// Used by [`crate::commands::P2pCommands::make_transactions_stream`] to send a transactions stream request.
 /// Note that the events in the transaction receipt will not be filled in, as it needs to be fetched using the events stream request.
-pub fn map_transaction_response(
-    res: model::TransactionsResponse,
-) -> Result<TransactionWithReceipt, sync_handlers::Error> {
-    let val = match res.transaction_message.ok_or_bad_request("No message")? {
-        model::transactions_response::TransactionMessage::TransactionWithReceipt(message) => message,
-        model::transactions_response::TransactionMessage::Fin(_) => {
-            return Err(sync_handlers::Error::SenderClosed);
-        }
-    };
-    TransactionWithReceipt::try_from(val).or_bad_request("Converting header")
+pub async fn read_transactions_stream(
+    res: impl Stream<Item = model::TransactionsResponse>,
+    transactions_count: usize,
+) -> Result<Vec<TransactionWithReceipt>, sync_handlers::Error> {
+    pin!(res);
+
+    let mut vec = Vec::with_capacity(transactions_count);
+    for i in 0..transactions_count {
+        let handle_fin = || {
+            if i == 0 {
+                sync_handlers::Error::EndOfStream
+            } else {
+                sync_handlers::Error::bad_request(format!(
+                    "Expected {} messages in stream, got {}",
+                    transactions_count, i
+                ))
+            }
+        };
+
+        let Some(res) = res.next().await else { return Err(handle_fin()) };
+        let val = match res.transaction_message.ok_or_bad_request("No message")? {
+            model::transactions_response::TransactionMessage::TransactionWithReceipt(message) => message,
+            model::transactions_response::TransactionMessage::Fin(_) => return Err(handle_fin()),
+        };
+        let res = TransactionWithReceipt::try_from(val).or_bad_request("Converting transaction with receipt")?;
+        vec.push(res);
+    }
+
+    Ok(vec)
 }

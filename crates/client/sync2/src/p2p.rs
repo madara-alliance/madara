@@ -6,6 +6,7 @@ use crate::{
 use anyhow::Context;
 use futures::Future;
 use mc_p2p::PeerId;
+use mc_p2p::SyncHandlerError;
 use std::{borrow::Cow, ops::Range, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +15,16 @@ pub enum P2pError {
     Internal(#[from] anyhow::Error),
     #[error("Peer error: {0}")]
     Peer(Cow<'static, str>),
+}
+
+impl From<SyncHandlerError> for P2pError {
+    fn from(value: SyncHandlerError) -> Self {
+        match value {
+            SyncHandlerError::Internal(err) => Self::Internal(err),
+            SyncHandlerError::BadRequest(err) => Self::Peer(err),
+            SyncHandlerError::EndOfStream => Self::peer_error("Stream ended unexpectedly"),
+        }
+    }
 }
 
 impl P2pError {
@@ -40,6 +51,8 @@ pub trait P2pPipelineSteps: Send + Sync + 'static {
         block_n_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> impl Future<Output = Result<Self::Output, P2pError>> + Send;
+
+    fn starting_block_n(&self) -> Option<u64>;
 }
 
 pub struct P2pPipelineController<S: P2pPipelineSteps> {
@@ -98,5 +111,9 @@ impl<S: P2pPipelineSteps + Send + Sync + 'static> PipelineSteps for P2pPipelineC
                 Err(P2pError::Internal(err)) => Err(err.context("Peer to peer pipeline sequential step")),
             }
         }).await
+    }
+
+    fn starting_block_n(&self) -> Option<u64> {
+        self.steps.starting_block_n()
     }
 }

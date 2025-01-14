@@ -8,7 +8,7 @@ use crate::{
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
-use futures::{channel::mpsc::Sender, SinkExt, StreamExt};
+use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
     BlockHeaderWithSignatures, ConsensusSignature, Header,
@@ -160,13 +160,16 @@ pub async fn headers_sync(
     Ok(())
 }
 
-pub fn map_header_response(
-    res: model::BlockHeadersResponse,
+pub async fn read_headers_stream(
+    res: impl Stream<Item = model::BlockHeadersResponse>,
 ) -> Result<BlockHeaderWithSignatures, sync_handlers::Error> {
+    pin!(res);
+
+    let Some(res) = res.next().await else { return Err(sync_handlers::Error::EndOfStream) };
     let header = match res.header_message.ok_or_bad_request("No message")? {
         model::block_headers_response::HeaderMessage::Header(message) => message,
         model::block_headers_response::HeaderMessage::Fin(_) => {
-            return Err(sync_handlers::Error::SenderClosed);
+            return Err(sync_handlers::Error::EndOfStream);
         }
     };
     BlockHeaderWithSignatures::try_from(header).or_bad_request("Converting header")

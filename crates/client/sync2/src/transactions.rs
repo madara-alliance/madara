@@ -4,10 +4,14 @@ use crate::{
     peer_set::PeerSet,
 };
 use anyhow::Context;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
-use mp_block::BlockHeaderWithSignatures;
+use mp_block::{
+    commitments::{compute_receipt_commitment, compute_transaction_commitment},
+    BlockHeaderWithSignatures,
+};
+use mp_chain_config::StarknetVersion;
 use std::{ops::Range, sync::Arc};
 
 pub type TransactionsSync = PipelineController<P2pPipelineController<TransactionsSyncSteps>>;
@@ -44,18 +48,43 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
         let strm = self
             .p2p_commands
             .clone()
-            .make_transactions_stream(peer_id, BlockStreamConfig::default().with_block_range(block_range.clone()))
+            .make_transactions_stream(
+                peer_id,
+                BlockStreamConfig::default().with_block_range(block_range.clone()),
+                input.iter().map(|input| input.header.transaction_count as _).collect::<Vec<_>>(),
+            )
             .await;
         tokio::pin!(strm);
 
         for (block_n, signed_header) in block_range.zip(input) {
-            let mut transactions = Vec::with_capacity(signed_header.header.transaction_count as _);
-            for _index in 0..signed_header.header.transaction_count {
-                let received = strm.next().await.ok_or(P2pError::peer_error("Expected to receive item"))?;
-                transactions.push(received);
+            // Override pre-v0.13.2 transaction hash computation
+            let starknet_version =
+                StarknetVersion::min(signed_header.header.protocol_version, StarknetVersion::V0_13_2);
+
+            let transactions = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
+
+            // Transaction commitment
+            let tx_commitment = compute_transaction_commitment(
+                transactions.iter().map(|tx| &tx.transaction),
+                transactions.iter().map(|tx| tx.receipt.transaction_hash()),
+                starknet_version,
+            );
+            if tx_commitment != signed_header.header.transaction_commitment {
+                return Err(P2pError::peer_error(format!(
+                    "Transaction hash mismatch with receipt: on block_n={block_n} expected {tx_commitment:#x}, got {:#x}",
+                    signed_header.header.transaction_commitment
+                )));
             }
 
-            // compute merkle root for transactions tree.
+            // Receipt commitment
+            let receipt_commitment =
+                compute_receipt_commitment(transactions.iter().map(|tx| &tx.receipt), starknet_version);
+            if receipt_commitment != signed_header.header.receipt_commitment.unwrap_or_default() {
+                return Err(P2pError::peer_error(format!(
+                    "Transaction hash mismatch with receipt: on block_n={block_n} expected {receipt_commitment:#x}, got {:#x}",
+                    signed_header.header.receipt_commitment.unwrap_or_default()
+                )));
+            }
 
             tracing::debug!("storing transactions for {block_n:?}, peer_id: {peer_id}");
 
@@ -76,5 +105,9 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
             self.backend.head_status().transactions.set(Some(block_n));
         }
         Ok(())
+    }
+
+    fn starting_block_n(&self) -> Option<u64> {
+        self.backend.head_status().transactions.get()
     }
 }

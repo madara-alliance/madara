@@ -32,6 +32,8 @@ pub trait PipelineSteps: Sync + Send + 'static {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> impl Future<Output = anyhow::Result<ApplyOutcome<Self::Output>>> + Send;
+
+    fn starting_block_n(&self) -> Option<u64>;
 }
 
 pub struct PipelineController<S: PipelineSteps> {
@@ -55,6 +57,8 @@ type SequentialStepFuture<S> = BoxFuture<
 
 impl<S: PipelineSteps> PipelineController<S> {
     pub fn new(steps: S, parallelization: usize, batch_size: usize) -> Self {
+        let next_input_block_n =
+            steps.starting_block_n().map(|block_n| block_n + 1).unwrap_or(/* next is genesis */ 0);
         Self {
             steps: Arc::new(steps),
             queue: Default::default(),
@@ -62,7 +66,7 @@ impl<S: PipelineSteps> PipelineController<S> {
             batch_size,
             applying: None,
             next_inputs: VecDeque::with_capacity(2 * batch_size),
-            next_input_block_n: 0,
+            next_input_block_n,
         }
     }
 
@@ -107,8 +111,8 @@ impl<S: PipelineSteps> PipelineController<S> {
                 Some(res) = OptionFuture::from(self.applying.as_mut()) => {
                     self.applying = None;
                     tracing::debug!("applying res: {:?}", res.as_ref().map(|(r, o)| (match r {
-                        ApplyOutcome::Success(_out) => format!("succ"),
-                        ApplyOutcome::Retry => format!("retry"),
+                        ApplyOutcome::Success(_out) => "succ".to_string(),
+                        ApplyOutcome::Retry => "retry".to_string(),
                     }, o.block_range.clone())));
                     match res {
                         Err(err) => return Some(Err(err)),

@@ -1,5 +1,6 @@
 //! Starknet block primitives.
 
+pub mod commitments;
 pub mod header;
 
 use std::fmt::Display;

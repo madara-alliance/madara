@@ -34,8 +34,7 @@ pub struct ChainHead {
 
 impl ChainHead {
     pub fn latest_full_block_n(&self) -> Option<u64> {
-        let transactions = self.transactions.get();
-        transactions
+        self.transactions.get()
     }
 }
 

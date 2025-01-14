@@ -14,11 +14,11 @@ mod handlers_impl;
 mod identity;
 mod model_primitives;
 mod sync_codec;
-mod sync_controller;
 mod sync_handlers;
 
 pub use commands::*;
 pub use libp2p::PeerId;
+pub use sync_handlers::Error as SyncHandlerError;
 
 /// Protobuf messages.
 #[allow(clippy::all)]

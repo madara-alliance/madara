@@ -1,6 +1,8 @@
 mod from_provider;
 mod into_starknet_core;
 
+use std::collections::HashMap;
+
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
@@ -18,6 +20,12 @@ pub struct StateUpdate {
 pub struct PendingStateUpdate {
     pub old_root: Felt,
     pub state_diff: StateDiff,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DeclaredClassCompiledClass {
+    Sierra(/* compiled_class_hash */ Felt),
+    Legacy,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -146,6 +154,18 @@ impl StateDiff {
             .collect();
 
         Poseidon::hash_array(&elements)
+    }
+
+    pub fn all_declared_classes(&self) -> HashMap<Felt, DeclaredClassCompiledClass> {
+        self.declared_classes
+            .iter()
+            .map(|class| (class.class_hash, DeclaredClassCompiledClass::Sierra(class.compiled_class_hash)))
+            .chain(
+                self.deprecated_declared_classes
+                    .iter()
+                    .map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
+            )
+            .collect()
     }
 }
 

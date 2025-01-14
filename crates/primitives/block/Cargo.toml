@@ -17,6 +17,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+bitvec = { workspace = true }
+bonsai-trie = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }

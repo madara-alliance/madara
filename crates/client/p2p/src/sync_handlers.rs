@@ -10,19 +10,25 @@ use tokio::task::{AbortHandle, JoinSet};
 pub enum Error {
     /// Error is internal and will be reported with error level.
     #[error("Internal server error: {0:#}")]
-    Internal(anyhow::Error),
+    Internal(#[from] anyhow::Error),
     /// Error is the peer's fault, will only be reported with debug level.
     #[error("Bad request: {0}")]
     BadRequest(Cow<'static, str>),
 
     /// Sender closed. Do nothing.
-    #[error("Channel closed")]
-    SenderClosed,
+    #[error("End of stream.")]
+    EndOfStream,
+}
+
+impl Error {
+    pub fn bad_request(s: impl Into<Cow<'static, str>>) -> Self {
+        Self::BadRequest(s.into())
+    }
 }
 
 impl From<futures::channel::mpsc::SendError> for Error {
     fn from(_: futures::channel::mpsc::SendError) -> Self {
-        Self::SenderClosed
+        Self::EndOfStream
     }
 }
 
@@ -90,7 +96,7 @@ where
                             Error::BadRequest(err) => {
                                 tracing::debug!(target: "p2p_errors", "Bad Request in stream {} [peer_id {peer}]: {err:#}", debug_name);
                             }
-                            Error::SenderClosed => { /* sender closed, do nothing */ }
+                            Error::EndOfStream => { /* sender closed, do nothing */ }
                         }
                     }
                 });

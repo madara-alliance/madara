@@ -520,6 +520,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::reversed_empty_ranges)]
     fn test_resolve_range() {
         assert_eq!(resolve_range(0..), (0, None));
         assert_eq!(resolve_range(..), (0, None));

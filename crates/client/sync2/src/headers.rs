@@ -56,6 +56,7 @@ impl P2pPipelineSteps for HeadersSyncSteps {
             .await
             .take(limit as _)
             .map(move |signed_header| {
+                let signed_header = signed_header?;
                 // TODO: verify signatures
 
                 // verify parent hash for batch
@@ -141,5 +142,9 @@ impl P2pPipelineSteps for HeadersSyncSteps {
         self.backend.head_status().headers.set(block_range.last());
 
         Ok(input)
+    }
+
+    fn starting_block_n(&self) -> Option<u64> {
+        self.backend.head_status().headers.get()
     }
 }

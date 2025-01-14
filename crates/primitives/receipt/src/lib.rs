@@ -261,6 +261,7 @@ pub struct MsgToL1 {
     pub payload: Vec<Felt>,
 }
 
+/// Event with transaction hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventWithTransactionHash {

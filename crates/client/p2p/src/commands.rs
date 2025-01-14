@@ -1,13 +1,17 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     handlers_impl::{self},
     model, sync_handlers, MadaraP2p,
 };
-use futures::{channel::mpsc, SinkExt, Stream, StreamExt};
+use futures::{channel::mpsc, stream, SinkExt, Stream, StreamExt};
 use libp2p::PeerId;
 use mc_db::stream::BlockStreamConfig;
 use mp_block::{BlockHeaderWithSignatures, TransactionWithReceipt};
+use mp_class::ClassInfo;
+use mp_receipt::EventWithTransactionHash;
+use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
+use starknet_core::types::Felt;
 
 #[derive(Debug, Clone)]
 pub struct P2pCommands {
@@ -26,51 +30,101 @@ impl P2pCommands {
         self.peer_id
     }
 
-    /// Errors are handled by the receiver task instead of the p2p task.
-    /// TODO: bubble up error, so that peer set can punish peers during sync.
-    fn make_stream<'a, T: 'static, R>(
-        &self,
-        debug_name: &'static str,
-        peer: PeerId,
-        recv: mpsc::Receiver<T>,
-        f: impl Fn(T) -> Result<R, sync_handlers::Error> + 'a,
-    ) -> impl Stream<Item = R> + 'a {
-        tokio_stream::StreamExt::map_while(recv, move |res| match f(res) {
-            Ok(res) => Some(res),
-            Err(sync_handlers::Error::Internal(err)) => {
-                tracing::error!(target: "p2p_errors", "Internal server error in stream {debug_name} [peer_id {peer}]: {err:#}");
-                None
-            }
-            Err(sync_handlers::Error::BadRequest(err)) => {
-                tracing::debug!(target: "p2p_errors", "Bad request in stream {debug_name} [peer_id {peer}]: {err:#}");
-                None
-            }
-            Err(sync_handlers::Error::SenderClosed) => None,
-        })
-    }
-
     pub async fn make_headers_stream(
         &mut self,
         peer: PeerId,
         config: BlockStreamConfig,
-    ) -> impl Stream<Item = BlockHeaderWithSignatures> + 'static {
-        let (callback, recv) = mpsc::channel(3);
+    ) -> impl Stream<Item = Result<BlockHeaderWithSignatures, sync_handlers::Error>> + 'static {
         let req = model::BlockHeadersRequest { iteration: Some(config.into()) };
-        tracing::debug!("Req is {req:?}");
+        let (callback, recv) = mpsc::channel(3);
         let _res = self.inner.send(Command::SyncHeaders { peer, req, callback }).await;
-        self.make_stream("headers", peer, recv, handlers_impl::map_header_response)
+
+        stream::unfold(recv, |mut recv| async move {
+            let res = handlers_impl::read_headers_stream(recv.by_ref()).await;
+            if matches!(res, Err(sync_handlers::Error::EndOfStream)) {
+                return None;
+            }
+            Some((res, recv))
+        })
     }
 
     /// Note: The events in the transaction receipt will not be filled in. Use [`Self::make_events_stream`] to get them.
-    pub async fn make_transactions_stream(
+    pub async fn make_transactions_stream<'a>(
         &mut self,
         peer: PeerId,
         config: BlockStreamConfig,
-    ) -> impl Stream<Item = TransactionWithReceipt> + 'static {
-        let (callback, recv) = mpsc::channel(3);
+        transactions_count: impl IntoIterator<Item = usize> + 'a,
+    ) -> impl Stream<Item = Result<Vec<TransactionWithReceipt>, sync_handlers::Error>> + 'a {
         let req = model::TransactionsRequest { iteration: Some(config.into()) };
+        let (callback, recv) = mpsc::channel(3);
         let _res = self.inner.send(Command::SyncTransactions { peer, req, callback }).await;
-        self.make_stream("transactions", peer, recv, handlers_impl::map_transaction_response)
+
+        stream::unfold((recv, transactions_count.into_iter()), |(mut recv, mut transactions_count)| async move {
+            let res = handlers_impl::read_transactions_stream(recv.by_ref(), transactions_count.next()?).await;
+            if matches!(res, Err(sync_handlers::Error::EndOfStream)) {
+                return None;
+            }
+            Some((res, (recv, transactions_count)))
+        })
+    }
+
+    /// Note: The declared_contracts field of the state diff will be empty. Its content will be instead in the replaced class field.
+    pub async fn make_state_diffs_stream<'a>(
+        &mut self,
+        peer: PeerId,
+        config: BlockStreamConfig,
+        state_diffs_length: impl IntoIterator<Item = usize> + 'a,
+    ) -> impl Stream<Item = Result<StateDiff, sync_handlers::Error>> + 'a {
+        let req = model::StateDiffsRequest { iteration: Some(config.into()) };
+        let (callback, recv) = mpsc::channel(3);
+        let _res = self.inner.send(Command::SyncStateDiffs { peer, req, callback }).await;
+
+        stream::unfold((recv, state_diffs_length.into_iter()), |(mut recv, mut state_diffs_length)| async move {
+            let res = handlers_impl::read_state_diffs_stream(recv.by_ref(), state_diffs_length.next()?).await;
+            if matches!(res, Err(sync_handlers::Error::EndOfStream)) {
+                return None;
+            }
+            Some((res, (recv, state_diffs_length)))
+        })
+    }
+
+    pub async fn make_events_stream<'a>(
+        &mut self,
+        peer: PeerId,
+        config: BlockStreamConfig,
+        events_count: impl IntoIterator<Item = usize> + 'a,
+    ) -> impl Stream<Item = Result<Vec<EventWithTransactionHash>, sync_handlers::Error>> + 'a {
+        let req = model::EventsRequest { iteration: Some(config.into()) };
+        let (callback, recv) = mpsc::channel(3);
+        let _res = self.inner.send(Command::SyncEvents { peer, req, callback }).await;
+
+        stream::unfold((recv, events_count.into_iter()), |(mut recv, mut events_count)| async move {
+            let res = handlers_impl::read_events_stream(recv.by_ref(), events_count.next()?).await;
+            if matches!(res, Err(sync_handlers::Error::EndOfStream)) {
+                return None;
+            }
+            Some((res, (recv, events_count)))
+        })
+    }
+
+    /// Note: you need to get the `declared_classes` from the `StateDiff`s beforehand.
+    pub async fn make_classes_stream<'a>(
+        &mut self,
+        peer: PeerId,
+        config: BlockStreamConfig,
+        declared_classes: impl IntoIterator<Item = HashMap<Felt, DeclaredClassCompiledClass>> + 'a,
+    ) -> impl Stream<Item = Result<Vec<ClassInfo>, sync_handlers::Error>> + 'a {
+        let req = model::ClassesRequest { iteration: Some(config.into()) };
+        let (callback, recv) = mpsc::channel(3);
+        let _res = self.inner.send(Command::SyncClasses { peer, req, callback }).await;
+
+        stream::unfold((recv, declared_classes.into_iter()), |(mut recv, mut declared_classes)| async move {
+            let res = handlers_impl::read_classes_stream(recv.by_ref(), declared_classes.next()?).await;
+            if matches!(res, Err(sync_handlers::Error::EndOfStream)) {
+                return None;
+            }
+            Some((res, (recv, declared_classes)))
+        })
     }
 }
 
