@@ -97,46 +97,52 @@ impl Stream for StarknetEventStream {
             self.future = Some(Box::pin(future));
         }
 
-        // Poll the future
-        let fut = self.future.as_mut().unwrap();
-        match fut.as_mut().poll(cx) {
-            Poll::Ready(result) => {
-                self.future = None;
-                match result {
-                    Ok((Some(event), updated_filter)) => {
-                        // Update the filter
-                        self.filter = updated_filter;
-                        // Insert the event nonce before returning
-                        self.processed_events.insert(event.data[4]);
+        match self.future.as_mut() {
+            Some(fut) => match fut.as_mut().poll(cx) {
+                Poll::Ready(result) => {
+                    self.future = None;
+                    match result {
+                        Ok((Some(event), updated_filter)) => {
+                            // Update the filter
+                            self.filter = updated_filter;
+                            // Insert the event nonce before returning
+                            self.processed_events.insert(event.data[4]);
 
-                        Poll::Ready(Some(Some(Ok(CommonMessagingEventData {
-                            from: event.keys[2].to_bytes_be().to_vec(),
-                            to: event.keys[3].to_bytes_be().to_vec(),
-                            selector: event.data[0].to_bytes_be().to_vec(),
-                            nonce: event.data[1].to_bytes_be().to_vec(),
-                            payload: {
-                                let mut payload_array = vec![];
-                                event.data.iter().skip(3).for_each(|data| {
-                                    payload_array.push(data.to_bytes_be().to_vec());
+                            let event_data = event
+                                .block_number
+                                .ok_or_else(|| anyhow::anyhow!("Unable to get block number from event"))
+                                .map(|block_number| CommonMessagingEventData {
+                                    from: event.keys[2].to_bytes_be().to_vec(),
+                                    to: event.keys[3].to_bytes_be().to_vec(),
+                                    selector: event.data[0].to_bytes_be().to_vec(),
+                                    nonce: event.data[1].to_bytes_be().to_vec(),
+                                    payload: {
+                                        let mut payload_array = vec![];
+                                        event.data.iter().skip(3).for_each(|data| {
+                                            payload_array.push(data.to_bytes_be().to_vec());
+                                        });
+                                        payload_array
+                                    },
+                                    fee: None,
+                                    transaction_hash: event.transaction_hash.to_bytes_be().to_vec(),
+                                    message_hash: Some(event.keys[1].to_bytes_be().to_vec()),
+                                    block_number,
+                                    event_index: None,
                                 });
-                                payload_array
-                            },
-                            fee: None,
-                            transaction_hash: event.transaction_hash.to_bytes_be().to_vec(),
-                            message_hash: Some(event.keys[1].to_bytes_be().to_vec()),
-                            block_number: event.block_number.expect("Unable to get block number from event."),
-                            event_index: None,
-                        }))))
+
+                            Poll::Ready(Some(Some(event_data)))
+                        }
+                        Ok((None, updated_filter)) => {
+                            // Update the filter even when no events are found
+                            self.filter = updated_filter;
+                            Poll::Ready(Some(None))
+                        }
+                        Err(e) => Poll::Ready(Some(Some(Err(e)))),
                     }
-                    Ok((None, updated_filter)) => {
-                        // Update the filter even when no events are found
-                        self.filter = updated_filter;
-                        Poll::Ready(Some(None))
-                    }
-                    Err(e) => Poll::Ready(Some(Some(Err(e)))),
                 }
-            }
-            Poll::Pending => Poll::Pending,
+                Poll::Pending => Poll::Pending,
+            },
+            None => Poll::Ready(Some(None)), // Handle the case where future is None
         }
     }
 }

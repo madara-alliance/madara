@@ -28,22 +28,31 @@ impl Stream for EthereumEventStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(result)) => match result {
-                Ok((event, log)) => Poll::Ready(Some(Some(Ok(CommonMessagingEventData {
-                    from: event.fromAddress.as_slice().into(),
-                    to: event.toAddress.to_be_bytes_vec(),
-                    selector: event.selector.to_be_bytes_vec(),
-                    nonce: event.nonce.to_be_bytes_vec(),
-                    payload: {
-                        let mut payload_vec = vec![];
-                        event.payload.iter().for_each(|ele| payload_vec.push(ele.to_be_bytes_vec()));
-                        payload_vec
-                    },
-                    fee: Some(event.fee.to_be_bytes_vec()),
-                    transaction_hash: log.transaction_hash.expect("Missing transaction hash").to_vec(),
-                    message_hash: None,
-                    block_number: log.block_number.expect("Missing block number"),
-                    event_index: Some(log.log_index.expect("Missing log index")),
-                })))),
+                Ok((event, log)) => {
+                    let event_data = (|| -> anyhow::Result<CommonMessagingEventData> {
+                        Ok(CommonMessagingEventData {
+                            from: event.fromAddress.as_slice().into(),
+                            to: event.toAddress.to_be_bytes_vec(),
+                            selector: event.selector.to_be_bytes_vec(),
+                            nonce: event.nonce.to_be_bytes_vec(),
+                            payload: {
+                                let mut payload_vec = vec![];
+                                event.payload.iter().for_each(|ele| payload_vec.push(ele.to_be_bytes_vec()));
+                                payload_vec
+                            },
+                            fee: Some(event.fee.to_be_bytes_vec()),
+                            transaction_hash: log
+                                .transaction_hash
+                                .ok_or_else(|| anyhow::anyhow!("Missing transaction hash"))?
+                                .to_vec(),
+                            message_hash: None,
+                            block_number: log.block_number.ok_or_else(|| anyhow::anyhow!("Missing block number"))?,
+                            event_index: Some(log.log_index.ok_or_else(|| anyhow::anyhow!("Missing log index"))?),
+                        })
+                    })();
+
+                    Poll::Ready(Some(Some(event_data)))
+                }
                 Err(e) => Poll::Ready(Some(Some(Err(Error::from(e))))),
             },
             Poll::Ready(None) => Poll::Ready(Some(None)),
