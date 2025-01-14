@@ -84,7 +84,7 @@ pub fn re_add_txs_to_mempool(
     let n = txs_to_reexec.len();
 
     mempool
-        .insert_txs_no_validation(txs_to_reexec, /* force insertion */ true)
+        .txs_insert_no_validation(txs_to_reexec, /* force insertion */ true)
         .expect("Mempool force insertion should never fail");
 
     Ok(n)

@@ -238,7 +238,7 @@ mod tests {
 
             tracing::debug!("tx: {:?}", tx);
 
-            self.mempool.accept_invoke_tx(tx)
+            self.mempool.tx_accept_invoke(tx)
         }
 
         pub fn sign_and_add_declare_tx(
@@ -262,7 +262,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_declare_tx(tx)
+            self.mempool.tx_accept_declare(tx)
         }
 
         pub fn sign_and_add_deploy_account_tx(
@@ -285,7 +285,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_deploy_account_tx(tx)
+            self.mempool.tx_accept_deploy_account(tx)
         }
 
         /// (STRK in FRI, ETH in WEI)

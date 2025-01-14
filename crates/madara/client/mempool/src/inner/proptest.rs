@@ -192,13 +192,13 @@ prop_compose! {
         mut tx in mempool_transaction(contract_address),
         force in any::<bool>(),
     ) -> MempoolTransition {
-        let target = mempool.nonce_by_account.get(&tx.contract_address()).copied().unwrap_or(Nonce(Felt::ZERO));
+        let target = mempool.nonce_cache_inner.get(&tx.contract_address()).copied().unwrap_or(Nonce(Felt::ZERO));
 
-        // We fiddle with the generated nonce to make sure it is always greater
-        // than any previously popped transactions for that account. Normally
-        // this would be checked by the outer mempool, so we can be sure that
-        // transactions with an invalid nonce would not be inserted into the
-        // inner mempool anyway.
+        // IMPORTANT: we fiddle with the generated nonce to make sure it is
+        // always greater than any previously popped transactions for that
+        // account. Normally this would be checked by the outer mempool, so we
+        // can be sure that transactions with an invalid nonce would not be
+        // inserted into the inner mempool anyway.
         if tx.nonce < target {
             tx.nonce = Nonce(*target + *tx.nonce);
             tx.nonce_next = tx.nonce.try_increment().unwrap();

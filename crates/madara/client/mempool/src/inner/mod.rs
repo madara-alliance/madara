@@ -183,7 +183,7 @@ pub struct MempoolInner {
     /// This is just a helper field to use during tests to get the current nonce
     /// of a contract as known by the [MempoolInner].
     #[cfg(any(test, feature = "testing"))]
-    nonce_by_account: HashMap<ContractAddress, Nonce>,
+    nonce_cache_inner: HashMap<ContractAddress, Nonce>,
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -307,7 +307,7 @@ impl MempoolInner {
             deployed_contracts: Default::default(),
             limiter: MempoolLimiter::new(limits_config),
             #[cfg(any(test, feature = "testing"))]
-            nonce_by_account: Default::default(),
+            nonce_cache_inner: Default::default(),
         }
     }
 
@@ -677,7 +677,7 @@ impl MempoolInner {
         }
 
         #[cfg(any(test, feature = "testing"))]
-        self.nonce_by_account.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
+        self.nonce_cache_inner.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
 
         // do not update mempool limits, block prod will update it with re-add txs.
         Some(tx_mempool)

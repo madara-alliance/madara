@@ -27,6 +27,7 @@ use starknet_types_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use tx::blockifier_to_saved_tx;
@@ -75,33 +76,32 @@ pub(crate) trait CheckInvariants {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
-    fn accept_invoke_tx(
+    fn tx_accept_invoke(
         &self,
         tx: BroadcastedInvokeTxn<Felt>,
     ) -> Result<AddInvokeTransactionResult<Felt>, MempoolError>;
-    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
-    fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
-    fn accept_deploy_account_tx(
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
+    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
+    fn tx_accept_deploy_account(
         &self,
         tx: BroadcastedDeployAccountTxn<Felt>,
     ) -> Result<ContractAndTxnHash<Felt>, MempoolError>;
-    fn accept_l1_handler_tx(
+    fn tx_accept_l1_handler(
         &self,
         tx: L1HandlerTransaction,
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError>;
-    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize)
-    where
-        Self: Sized;
-    fn take_tx(&self) -> Option<MempoolTransaction>;
-    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction> + 'static>(
+    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
+    fn tx_take(&mut self) -> Option<MempoolTransaction>;
+    fn tx_mark_included(&self, contract_address: &Felt);
+    fn txs_re_add<I: IntoIterator<Item = MempoolTransaction> + 'static>(
         &self,
         txs: I,
         consumed_txs: Vec<MempoolTransaction>,
     ) -> Result<(), MempoolError>
     where
         Self: Sized;
-    fn insert_txs_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError>
+    fn txs_insert_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError>
     where
         Self: Sized;
     fn chain_id(&self) -> Felt;
@@ -112,6 +112,7 @@ pub struct Mempool {
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
     metrics: MempoolMetrics,
+    nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
 }
 
 impl Mempool {
@@ -121,6 +122,7 @@ impl Mempool {
             l1_data_provider,
             inner: RwLock::new(MempoolInner::new(limits)),
             metrics: MempoolMetrics::register(),
+            nonce_cache: RwLock::new(BTreeMap::new()),
         }
     }
 
@@ -221,20 +223,20 @@ impl Mempool {
         self.inner.read().expect("Poisoned lock").is_empty()
     }
 
+    /// Determines the status of a transaction based on the address of the
+    /// contract sending it and its nonce.
+    ///
+    /// Several mechanisms are used to keep the latest nonce for a contract in
+    /// sync with the state of the node, even if the db is not being updated
+    /// fast enough. These include keeping a mapping of the latest nonce for
+    /// contracts to be included in the upcoming block as well as checking the
+    /// state of the mempool to see if previous transactions are marked as
+    /// ready.
     fn retrieve_nonce_info(&self, sender_address: Felt, nonce: Felt) -> Result<NonceInfo, MempoolError> {
         let nonce = Nonce(nonce);
         let nonce_next = nonce.try_increment()?;
-        let nonce_target = self
-            .backend
-            .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &sender_address)?
-            .map(Nonce)
-            .unwrap_or_default(); // Defaults to Felt::ZERO if non nonce in db
 
-        if nonce != nonce_target {
-            if nonce < nonce_target {
-                return Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce));
-            }
-
+        let nonce_prev_check = || {
             // We don't need an underflow check here as nonces are incremental
             // and non negative, so there is no nonce s.t nonce != nonce_target,
             // nonce < nonce_target & nonce = 0
@@ -246,15 +248,39 @@ impl Mempool {
             // updated yet, this transaction will always be polled and executed
             // afterwards.
             if nonce_prev_ready {
-                Ok(NonceInfo::ready(nonce, nonce_next))
+                Ok::<_, MempoolError>(NonceInfo::ready(nonce, nonce_next))
             } else {
-                // BUG: what if a transaction is received AFTER the previous tx
-                // has been polled from the mempool, but BEFORE the db has been
-                // updated? It will never be moved to ready!
-                Ok(NonceInfo::pending(nonce, nonce_next))
+                Ok::<_, MempoolError>(NonceInfo::pending(nonce, nonce_next))
+            }
+        };
+
+        // It is possible for a transaction to be polled, and the
+        // transaction right after it to be added into the mempoool, before
+        // the db is updated. For this reason, nonce_cache keeps track of
+        // the nonces of contracts which have not yet been included in the
+        // block but are scheduled to.
+        let nonce_cached = self.nonce_cache.read().expect("Poisoned lock").get(&sender_address).cloned();
+
+        if let Some(nonce_cached) = nonce_cached {
+            match nonce.cmp(&nonce_cached) {
+                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
+                std::cmp::Ordering::Greater => nonce_prev_check(),
             }
         } else {
-            Ok(NonceInfo::ready(nonce, nonce_next))
+            // The nonce cache avoids us a db lookup if the previous transaction
+            // is already scheduled for inclusion in this block.
+            let nonce_target = self
+                .backend
+                .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), &sender_address)?
+                .map(Nonce)
+                .unwrap_or_default(); // Defaults to Felt::ZERO if no nonce in db
+
+            match nonce.cmp(&nonce_target) {
+                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
+                std::cmp::Ordering::Greater => nonce_prev_check(),
+            }
         }
     }
 }
@@ -286,7 +312,7 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 
 impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_invoke_tx(
+    fn tx_accept_invoke(
         &self,
         tx: BroadcastedInvokeTxn<Felt>,
     ) -> Result<AddInvokeTransactionResult<Felt>, MempoolError> {
@@ -307,7 +333,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_declare_v0_tx(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = ClassAndTxnHash {
@@ -320,7 +346,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_l1_handler_tx(
+    fn tx_accept_l1_handler(
         &self,
         tx: L1HandlerTransaction,
         paid_fees_on_l1: u128,
@@ -353,7 +379,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_declare_tx(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
+    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
         let nonce_info = match &tx {
             BroadcastedDeclareTxn::V1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
             BroadcastedDeclareTxn::V2(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
@@ -375,7 +401,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_deploy_account_tx(
+    fn tx_accept_deploy_account(
         &self,
         tx: BroadcastedDeployAccountTxn<Felt>,
     ) -> Result<ContractAndTxnHash<Felt>, MempoolError> {
@@ -392,15 +418,35 @@ impl MempoolProvider for Mempool {
 
     /// Warning: A lock is held while a user-supplied function (extend) is run - Callers should be careful
     #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
-    fn take_txs_chunk<I: Extend<MempoolTransaction> + 'static>(&self, dest: &mut I, n: usize) {
+    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.pop_next_chunk(dest, n)
+        let from = dest.len();
+        inner.pop_next_chunk(dest, n);
+
+        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+        for mempool_tx in dest.iter().skip(from) {
+            let contract_address = mempool_tx.contract_address().to_felt();
+            let nonce_next = mempool_tx.nonce_next;
+            nonce_cache.insert(contract_address, nonce_next);
+        }
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn take_tx(&self) -> Option<MempoolTransaction> {
-        let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.pop_next()
+    fn tx_take(&mut self) -> Option<MempoolTransaction> {
+        if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
+            let contract_address = mempool_tx.contract_address().to_felt();
+            self.nonce_cache.write().expect("Poisoned lock").insert(contract_address, mempool_tx.nonce_next);
+
+            Some(mempool_tx)
+        } else {
+            None
+        }
+    }
+
+    #[tracing::instrument(skip(self, contract_address), fields(module = "Mempool"))]
+    fn tx_mark_included(&self, contract_address: &Felt) {
+        let removed = self.nonce_cache.write().expect("Poisoned lock").remove(contract_address);
+        debug_assert!(removed.is_some());
     }
 
     /// Warning: A lock is taken while a user-supplied function (iterator stuff)
@@ -409,30 +455,56 @@ impl MempoolProvider for Mempool {
     /// txs as consumed, and re-add the transactions that are not consumed in
     /// the mempool.
     #[tracing::instrument(skip(self, txs, consumed_txs), fields(module = "Mempool"))]
-    fn re_add_txs<I: IntoIterator<Item = MempoolTransaction>>(
+    fn txs_re_add<I: IntoIterator<Item = MempoolTransaction>>(
         &self,
         txs: I,
         consumed_txs: Vec<MempoolTransaction>,
     ) -> Result<(), MempoolError> {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        let hashes = consumed_txs.iter().map(|tx| tx.tx_hash()).collect::<Vec<_>>();
+        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
+        let hashes = consumed_txs
+            .iter()
+            .map(|tx| {
+                // Nonce cache is invalidated upon re-insertion into the mempool
+                // as it is currently possible for these transactions to be
+                // removed if their age exceeds the limit. In the future, we
+                // might want to update this if we make it so only pending
+                // transactions can be removed this way.
+                let removed = nonce_cache.remove(&**tx.contract_address());
+                debug_assert!(removed.is_some());
+
+                tx.tx_hash()
+            })
+            .collect::<Vec<_>>();
         inner.re_add_txs(txs, consumed_txs);
         drop(inner);
+
         for tx_hash in hashes {
             self.backend.remove_mempool_transaction(&tx_hash.to_felt())?;
         }
+
         Ok(())
     }
 
     /// This is called by the block production task to re-add transaction from
     /// the pending block back into the mempool
     #[tracing::instrument(skip(self, txs), fields(module = "Mempool"))]
-    fn insert_txs_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError> {
+    fn txs_insert_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError> {
+        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
         for tx in &txs {
-            let saved_tx = blockifier_to_saved_tx(&tx.tx, tx.arrived_at);
+            // Theoretically we should not have to invalidate the nonce cache
+            // here as this function should ONLY be called when adding the
+            // pending block back into the mempool from the db. However I am
+            // afraid someone will end up using this incorrectly so I am adding
+            // this here.
+            nonce_cache.remove(&tx.contract_address());
+
             // Save to db. Transactions are marked as ready since they were
             // already previously included into the pending block
             let nonce_info = NonceInfo::ready(tx.nonce, tx.nonce_next);
+            let saved_tx = blockifier_to_saved_tx(&tx.tx, tx.arrived_at);
             self.backend.save_mempool_transaction(
                 &saved_tx,
                 tx.tx_hash().to_felt(),
@@ -440,6 +512,7 @@ impl MempoolProvider for Mempool {
                 &nonce_info,
             )?;
         }
+
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.insert_txs(txs, force)?;
 
@@ -690,15 +763,15 @@ mod test {
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
         let timestamp = ArrivedAtTimestamp::now();
         let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
 
-        let mempool_tx = mempool.take_tx().expect("Mempool should contain a transaction");
+        let mempool_tx = mempool.tx_take().expect("Mempool should contain a transaction");
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
-        assert!(mempool.take_tx().is_none(), "It should not be possible to take a transaction from an empty mempool");
+        assert!(mempool.tx_take().is_none(), "It should not be possible to take a transaction from an empty mempool");
 
         mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
@@ -1259,7 +1332,7 @@ mod test {
         #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
 
         // Insert pending transaction
 
@@ -1314,7 +1387,7 @@ mod test {
         // Take the next transaction. The pending transaction was received first
         // but this should return the ready transaction instead.
 
-        let mempool_tx = mempool.take_tx().expect("Mempool contains a ready transaction!");
+        let mempool_tx = mempool.tx_take().expect("Mempool contains a ready transaction!");
 
         let inner = mempool.inner.read().expect("Poisoned lock");
         inner.check_invariants();
@@ -1341,7 +1414,7 @@ mod test {
         // Take the next transaction. The pending transaction has been marked as
         // ready and should be returned here
 
-        let mempool_tx = mempool.take_tx().expect("Mempool contains a ready transaction!");
+        let mempool_tx = mempool.tx_take().expect("Mempool contains a ready transaction!");
 
         let inner = mempool.inner.read().expect("Poisoned lock");
         inner.check_invariants();
@@ -1437,6 +1510,47 @@ mod test {
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
+    }
+
+    /// This tests makes sure that a transaction is marked as [ready] if its
+    /// [Nonce] is in the nonce cache for that contract address.
+    ///
+    /// This is used to check the readiness of transactions before committing
+    /// the changes to db.
+    ///
+    /// # Setup:
+    ///
+    /// - We assume `tx_ready` and `tx_pending` are from the same contract.
+    ///
+    /// - `tx_ready` has the correct nonce while `tx_pending` has the nonce
+    ///   right after that.
+    ///
+    /// [ready]: inner::TransactionIntentReady;
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_readiness_check_agains_nonce_cache(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        let contract_address = Felt::ZERO;
+        let nonce = Nonce(Felt::ONE);
+        let nonce_next = nonce.try_increment().unwrap();
+        mempool.nonce_cache.write().expect("Poisoned lock").insert(contract_address, nonce);
+
+        // Despite the tx nonce being Felt::ONE, it should be marked as ready
+        // since it is present in the nonce cache
+        assert_eq!(mempool.retrieve_nonce_info(contract_address, *nonce).unwrap(), NonceInfo::ready(nonce, nonce_next));
+
+        // We remove the nonce cache at that address
+        mempool.tx_mark_included(&contract_address);
+
+        // Now the nonce should be marked as pending
+        assert_eq!(
+            mempool.retrieve_nonce_info(contract_address, *nonce).unwrap(),
+            NonceInfo::pending(nonce, nonce_next)
+        );
     }
 
     /// This test makes sure that retrieve nonce_info has proper error handling
