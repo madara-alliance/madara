@@ -27,6 +27,20 @@ members = [
   "crates/madara/tests",
   "crates/madara/cairo-test-contracts",
   "crates/madara/client/block_production",
+
+  # orchestrator
+  "crates/orchestrator/orchestrator", # TODO: rename
+  "crates/orchestrator/da-clients/da-client-interface",
+  "crates/orchestrator/da-clients/ethereum",
+  "crates/orchestrator/prover-clients/prover-client-interface",
+  "crates/orchestrator/prover-clients/gps-fact-checker",
+  "crates/orchestrator/prover-clients/sharp-service",
+  "crates/orchestrator/prover-clients/atlantic-service",
+  "crates/orchestrator/utils", # TODO: rename
+  "crates/orchestrator/settlement-clients/settlement-client-interface",
+  "crates/orchestrator/settlement-clients/ethereum",
+  "crates/orchestrator/settlement-clients/starknet",
+  # "e2e-tests", # TODO: rename / merge with existing tests
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -156,7 +170,7 @@ starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
-alloy = { version = "0.4.0", features = [
+alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
   "provider-http",
@@ -199,7 +213,14 @@ indoc = "2"
 proc-macro2 = "1.0.86"
 quote = "1.0.26"
 syn = { version = "2.0.39", features = ["full"] }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.12.7", features = [
+  "blocking",
+  "rustls-tls",
+  "native-tls",
+  "json",
+  "multipart",
+  "stream",
+] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_with = { version = "3.11", default-features = false, features = [
@@ -248,6 +269,59 @@ tracing-subscriber = { version = "0.3.18", features = [
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
 
+# Orchestrator
+num = { version = "0.4.1" }
+alloy-primitives = { version = "0.8.3", default-features = false }
+alloy-sol-types = "0.8.3"
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-eventbridge = { version = "1.41.0", features = [
+  "behavior-version-latest",
+] }
+aws-sdk-iam = "1.52.0"
+aws-sdk-scheduler = "1.49.0"
+aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
+aws-credential-types = { version = "1.2.1", features = [
+  "hardcoded-credentials",
+] }
+aws-sdk-sqs = "1.36.0"
+axum = { version = "0.7.4" }
+axum-macros = "0.4.1"
+color-eyre = "0.6.2"
+chrono = "0.4.0"
+c-kzg = "1.0.3"
+dotenvy = "0.15.7"
+log = "0.4.21"
+mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
+omniqueue = { version = "0.2.0" }
+tokio-stream = "0.1.15"
+uuid = { version = "1.7.0", features = ["v4", "serde"] }
+stark_evm_adapter = "0.1.1"
+hex = "0.4"
+mockall_double = "0.3.1"
+testcontainers = "0.18.0"
+appchain-core-contract-client = { git = "https://github.com/byteZorvin/zaun", branch = "type-update" }
+env_logger = "0.11.5"
+strum_macros = "0.26.4"
+strum = "0.26.3"
+async-std = { version = "1.13.0", features = ["attributes"] }
+majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
+majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
+prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
+
+da-client-interface = { path = "crates/orchestrator/da-clients/da-client-interface" }
+ethereum-da-client = { path = "crates/orchestrator/da-clients/ethereum" }
+settlement-client-interface = { path = "crates/orchestrator/settlement-clients/settlement-client-interface" }
+ethereum-settlement-client = { path = "crates/orchestrator/settlement-clients/ethereum" }
+starknet-settlement-client = { path = "crates/orchestrator/settlement-clients/starknet" }
+utils = { path = "crates/orchestrator/utils" }
+prover-client-interface = { path = "crates/orchestrator/prover-clients/prover-client-interface" }
+gps-fact-checker = { path = "crates/orchestrator/prover-clients/gps-fact-checker" }
+sharp-service = { path = "crates/orchestrator/prover-clients/sharp-service" }
+atlantic-service = { path = "crates/orchestrator/prover-clients/atlantic-service" }
+orchestrator = { path = "crates/orchestrator/orchestrator" }
+
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -256,3 +330,7 @@ starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branc
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+
+[patch."https://github.com/keep-starknet-strange/snos"]
+starknet-os = { path = "../snos/crates/starknet-os" }
+prove_block = { path = "../snos/crates/bin/prove_block" }
