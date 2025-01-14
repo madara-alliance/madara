@@ -94,13 +94,11 @@ pub trait MempoolProvider: Send + Sync {
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
-    fn txs_re_add<I: IntoIterator<Item = MempoolTransaction> + 'static>(
+    fn txs_re_add(
         &self,
-        txs: I,
+        txs: VecDeque<MempoolTransaction>,
         consumed_txs: Vec<MempoolTransaction>,
-    ) -> Result<(), MempoolError>
-    where
-        Self: Sized;
+    ) -> Result<(), MempoolError>;
     fn txs_insert_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError>
     where
         Self: Sized;
@@ -420,10 +418,11 @@ impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
+        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
         let from = dest.len();
         inner.pop_next_chunk(dest, n);
 
-        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
         for mempool_tx in dest.iter().skip(from) {
             let contract_address = mempool_tx.contract_address().to_felt();
             let nonce_next = mempool_tx.nonce_next;
@@ -435,7 +434,8 @@ impl MempoolProvider for Mempool {
     fn tx_take(&mut self) -> Option<MempoolTransaction> {
         if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
             let contract_address = mempool_tx.contract_address().to_felt();
-            self.nonce_cache.write().expect("Poisoned lock").insert(contract_address, mempool_tx.nonce_next);
+            let nonce_next = mempool_tx.nonce_next;
+            self.nonce_cache.write().expect("Poisoned lock").insert(contract_address, nonce_next);
 
             Some(mempool_tx)
         } else {
@@ -455,28 +455,26 @@ impl MempoolProvider for Mempool {
     /// txs as consumed, and re-add the transactions that are not consumed in
     /// the mempool.
     #[tracing::instrument(skip(self, txs, consumed_txs), fields(module = "Mempool"))]
-    fn txs_re_add<I: IntoIterator<Item = MempoolTransaction>>(
+    fn txs_re_add(
         &self,
-        txs: I,
+        txs: VecDeque<MempoolTransaction>,
         consumed_txs: Vec<MempoolTransaction>,
     ) -> Result<(), MempoolError> {
         let mut inner = self.inner.write().expect("Poisoned lock");
         let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
 
-        let hashes = consumed_txs
-            .iter()
-            .map(|tx| {
-                // Nonce cache is invalidated upon re-insertion into the mempool
-                // as it is currently possible for these transactions to be
-                // removed if their age exceeds the limit. In the future, we
-                // might want to update this if we make it so only pending
-                // transactions can be removed this way.
-                let removed = nonce_cache.remove(&**tx.contract_address());
-                debug_assert!(removed.is_some());
+        for tx in txs.iter() {
+            // Nonce cache is invalidated upon re-insertion into the mempool
+            // as it is currently possible for these transactions to be
+            // removed if their age exceeds the limit. In the future, we
+            // might want to update this if we make it so only pending
+            // transactions can be removed this way.
+            let contract_address = **tx.contract_address();
+            let removed = nonce_cache.remove(&contract_address);
+            debug_assert!(removed.is_some());
+        }
 
-                tx.tx_hash()
-            })
-            .collect::<Vec<_>>();
+        let hashes = consumed_txs.iter().map(|tx| tx.tx_hash()).collect::<Vec<_>>();
         inner.re_add_txs(txs, consumed_txs);
         drop(inner);
 
