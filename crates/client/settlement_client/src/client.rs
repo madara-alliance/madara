@@ -1,5 +1,5 @@
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use crate::state_update::StateUpdate;
 use async_trait::async_trait;
 use futures::Stream;
@@ -9,10 +9,18 @@ use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
+pub enum ClientType {
+    ETH,
+    STARKNET,
+}
+
 #[async_trait]
 pub trait ClientTrait: Send + Sync {
     // Configuration type used for initialization
     type Config;
+
+    // Get client type
+    fn get_client_type(&self) -> ClientType;
 
     // Basic getter functions
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics;
@@ -34,7 +42,7 @@ pub trait ClientTrait: Send + Sync {
     // Get the last state root
     // - change this to Felt in implementation
     // - write tests for conversion to Felt from <native-type>
-    async fn get_last_state_root(&self) -> anyhow::Result<Felt>;
+    async fn get_last_verified_state_root(&self) -> anyhow::Result<Felt>;
 
     // Get the last verified block hash
     async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt>;

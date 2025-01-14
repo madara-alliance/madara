@@ -1,6 +1,6 @@
-use crate::client::ClientTrait;
+use crate::client::{ClientTrait, ClientType};
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use crate::starknet::event::StarknetEventStream;
 use crate::state_update::{update_l1, StateUpdate};
 use anyhow::{anyhow, bail};
@@ -55,6 +55,10 @@ impl Clone for StarknetClient {
 #[async_trait]
 impl ClientTrait for StarknetClient {
     type Config = StarknetClientConfig;
+
+    fn get_client_type(&self) -> ClientType {
+        ClientType::STARKNET
+    }
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
@@ -128,7 +132,7 @@ impl ClientTrait for StarknetClient {
         Ok(u64::try_from(self.get_state_call().await?[1])?)
     }
 
-    async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
+    async fn get_last_verified_state_root(&self) -> anyhow::Result<Felt> {
         // State Root index in call response : 0
         Ok(self.get_state_call().await?[0])
     }
@@ -141,7 +145,7 @@ impl ClientTrait for StarknetClient {
     async fn get_initial_state(&self) -> anyhow::Result<StateUpdate> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
-        let global_root = self.get_last_state_root().await?;
+        let global_root = self.get_last_verified_state_root().await?;
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
@@ -411,17 +415,18 @@ pub mod starknet_client_tests {
         .await?;
 
         // sending state updates :
-        let data_felt = Felt::from_hex("0xdeadbeef")?;
+        let block_hash_event = Felt::from_hex("0xdeadbeef")?;
+        let global_root_event = Felt::from_hex("0xdeadbeef")?;
         let block_number = send_state_update(
             &account,
             deployed_address,
-            StateUpdate { block_number: 100, global_root: data_felt, block_hash: data_felt },
+            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
         poll_on_block_completion(block_number, account.provider(), 100).await?;
 
         let last_verified_block_hash = starknet_client.get_last_verified_block_hash().await?;
-        assert_eq!(last_verified_block_hash, data_felt, "Block hash should match");
+        assert_eq!(last_verified_block_hash, block_hash_event, "Block hash should match");
 
         Ok(())
     }
@@ -439,17 +444,18 @@ pub mod starknet_client_tests {
         .await?;
 
         // sending state updates :
-        let data_felt = Felt::from_hex("0xdeadbeef")?;
+        let block_hash_event = Felt::from_hex("0xdeadbeef")?;
+        let global_root_event = Felt::from_hex("0xdeadbeef")?;
         let block_number = send_state_update(
             &account,
             deployed_address,
-            StateUpdate { block_number: 100, global_root: data_felt, block_hash: data_felt },
+            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
         poll_on_block_completion(block_number, account.provider(), 100).await?;
 
-        let last_verified_state_root = starknet_client.get_last_state_root().await?;
-        assert_eq!(last_verified_state_root, data_felt, "Last state root should match");
+        let last_verified_state_root = starknet_client.get_last_verified_state_root().await?;
+        assert_eq!(last_verified_state_root, global_root_event, "Last state root should match");
 
         Ok(())
     }

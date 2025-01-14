@@ -1,6 +1,6 @@
 use crate::client::ClientTrait;
 use crate::gas_price::gas_price_worker;
-use crate::messaging::sync::{sync, CommonMessagingEventData};
+use crate::messaging::{sync, CommonMessagingEventData};
 use crate::state_update::state_update_worker;
 use futures::Stream;
 use mc_db::MadaraBackend;

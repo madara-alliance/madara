@@ -5,7 +5,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
 use mc_analytics::register_gauge_metric_instrument;
 use mp_utils::service::ServiceContext;

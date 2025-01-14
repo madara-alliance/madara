@@ -8,7 +8,7 @@ use mc_settlement_client::client::ClientTrait;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::messaging::sync::CommonMessagingEventData;
+use mc_settlement_client::messaging::CommonMessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};

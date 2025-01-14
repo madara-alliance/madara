@@ -1,10 +1,10 @@
 pub mod event;
 
-use crate::client::ClientTrait;
+use crate::client::{ClientTrait, ClientType};
 use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use crate::state_update::{update_l1, StateUpdate};
 use crate::utils::{convert_log_state_update, u256_to_felt};
 use alloy::eips::BlockNumberOrTag;
@@ -63,6 +63,10 @@ impl Clone for EthereumClient {
 #[async_trait]
 impl ClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
+
+    fn get_client_type(&self) -> ClientType {
+        ClientType::ETH
+    }
 
     fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
         &self.l1_block_metrics
@@ -123,7 +127,7 @@ impl ClientTrait for EthereumClient {
     }
 
     /// Get the last Starknet state root verified on L1
-    async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
+    async fn get_last_verified_state_root(&self) -> anyhow::Result<Felt> {
         let state_root = self.l1_core_contract.stateRoot().call().await?;
         u256_to_felt(state_root._0)
     }
@@ -137,7 +141,7 @@ impl ClientTrait for EthereumClient {
     async fn get_initial_state(&self) -> anyhow::Result<StateUpdate> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
-        let global_root = self.get_last_state_root().await?;
+        let global_root = self.get_last_verified_state_root().await?;
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
@@ -380,7 +384,7 @@ pub mod eth_client_getter_test {
     async fn get_last_state_root_works() {
         let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
-        let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
+        let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use crate::utils::trim_hash;
 use anyhow::Context;
 use futures::Stream;

@@ -2,7 +2,7 @@
 mod l2_messaging_test {
     use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync::sync;
+    use crate::messaging::sync;
     use crate::starknet::utils::{
         cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
         StarknetAccount, MADARA_PORT,
@@ -120,10 +120,10 @@ mod l2_messaging_test {
 
         // Log asserts
         // ===========
-        assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
+        assert!(logs_contain("fromAddress: \"0x07484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
         // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
         // expecting the same in logs
-        assert!(logs_contain("event hash: 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+        assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
 
         // Assert that the event is well stored in db
         let last_block =
@@ -180,10 +180,10 @@ mod l2_messaging_test {
 
         // Log asserts
         // ===========
-        assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
+        assert!(logs_contain("fromAddress: \"0x07484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
         // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
         // expecting the same in logs
-        assert!(logs_contain("event hash: 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0"));
+        assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
 
         // Assert that the event is well stored in db
         let last_block =
@@ -273,7 +273,7 @@ mod l1_messaging_tests {
     use crate::client::ClientTrait;
     use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::gas_price::L1BlockMetrics;
-    use crate::messaging::sync::{sync, CommonMessagingEventData};
+    use crate::messaging::{sync, CommonMessagingEventData};
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -472,13 +472,11 @@ mod l1_messaging_tests {
 
         // Assert that event was caught by the worker with correct data
         // TODO: Maybe add some more assert
-        assert!(logs_contain("fromAddress: 0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419"));
+        assert!(logs_contain("fromAddress: \"0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419\""));
 
         // Assert the tx hash computed by the worker is correct
-        assert!(logs_contain(
-            format!("event hash : {:?}", contract.getL1ToL2MsgHash().call().await.expect("failed to get hash")._0)
-                .as_str()
-        ));
+        let event_hash = contract.getL1ToL2MsgHash().call().await.expect("failed to get hash")._0.to_string();
+        assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
         // TODO : Assert that the tx has been included in the mempool
 
@@ -592,7 +590,7 @@ mod l1_messaging_tests {
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
-        assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
+        assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
 
         worker_handle.abort();
     }
@@ -632,9 +630,9 @@ mod l1_messaging_tests {
                 ],
                 nonce: U256::from(775628).to_be_bytes_vec(),
                 fee: Some(U256::ZERO.to_be_bytes_vec()),
-                transaction_hash: None,
+                transaction_hash: vec![0],
                 message_hash: None,
-                block_number: None,
+                block_number: 0,
                 event_index: None,
             })
             .expect("Failed to compute l1 to l2 msg hash");

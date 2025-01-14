@@ -1,4 +1,4 @@
-use crate::messaging::sync::CommonMessagingEventData;
+use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
 use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
 use starknet_providers::jsonrpc::HttpTransport;
@@ -73,6 +73,8 @@ impl Stream for StarknetEventStream {
                     }
                 }
 
+                let latest_block = provider.block_number().await?;
+
                 for event in event_vec.clone() {
                     let event_nonce = event.data[4];
                     if !processed_events.contains(&event_nonce) {
@@ -80,7 +82,6 @@ impl Stream for StarknetEventStream {
                     }
                 }
 
-                let latest_block = provider.block_number().await?;
                 filter.from_block = filter.to_block;
                 filter.to_block = Some(BlockId::Number(latest_block));
 
@@ -121,9 +122,9 @@ impl Stream for StarknetEventStream {
                                 payload_array
                             },
                             fee: None,
-                            transaction_hash: Some(event.transaction_hash.to_bytes_be().to_vec()),
+                            transaction_hash: event.transaction_hash.to_bytes_be().to_vec(),
                             message_hash: Some(event.data[0].to_bytes_be().to_vec()),
-                            block_number: Some(event.block_number.expect("Unable to get block number from event.")),
+                            block_number: event.block_number.expect("Unable to get block number from event."),
                             event_index: None,
                         }))))
                     }
@@ -137,5 +138,180 @@ impl Stream for StarknetEventStream {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[cfg(test)]
+mod starknet_event_stream_tests {
+    use super::*;
+    use futures::StreamExt;
+    use httpmock::prelude::*;
+    use httpmock::Mock;
+    use rstest::rstest;
+    use serde_json::json;
+    use std::str::FromStr;
+    use url::Url;
+
+    struct MockStarknetServer {
+        server: MockServer,
+    }
+
+    impl MockStarknetServer {
+        fn new() -> Self {
+            Self { server: MockServer::start() }
+        }
+
+        fn url(&self) -> String {
+            self.server.base_url()
+        }
+
+        fn mock_get_events(&self, events: Vec<EmittedEvent>, continuation_token: Option<&str>) -> Mock {
+            self.server.mock(|when, then| {
+                when.method(POST).path("/").header("Content-Type", "application/json").matches(|req| {
+                    let body = req.body.clone().unwrap();
+                    let body_str = std::str::from_utf8(body.as_slice()).unwrap_or_default();
+                    body_str.contains("starknet_getEvents")
+                });
+
+                then.status(200).json_body(json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "events": events,
+                        "continuation_token": continuation_token
+                    }
+                }));
+            })
+        }
+
+        fn mock_block_number(&self, block_number: u64) -> Mock {
+            self.server.mock(|when, then| {
+                when.method(POST).path("/").matches(|req| {
+                    let body = req.body.clone().unwrap();
+                    let body_str = std::str::from_utf8(body.as_slice()).unwrap_or_default();
+                    body_str.contains("starknet_blockNumber")
+                });
+
+                then.status(200).json_body(json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": block_number
+                }));
+            })
+        }
+
+        fn mock_error_response(&self, error_code: i64, error_message: &str) -> Mock {
+            self.server.mock(|when, then| {
+                when.method(POST).path("/");
+
+                then.status(200).json_body(json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {
+                        "code": error_code,
+                        "message": error_message
+                    }
+                }));
+            })
+        }
+    }
+
+    fn create_test_event(nonce: u64, block_number: u64) -> EmittedEvent {
+        EmittedEvent {
+            from_address: Default::default(),
+            transaction_hash: Felt::from_hex("0x1234").unwrap(),
+            block_number: Some(block_number),
+            block_hash: Some(Felt::from_hex("0x5678").unwrap()),
+            data: vec![
+                Felt::from_hex("0x0001").unwrap(),                  // message_hash
+                Felt::from_hex("0x1111").unwrap(),                  // from
+                Felt::from_hex("0x2222").unwrap(),                  // to
+                Felt::from_hex("0x3333").unwrap(),                  // selector
+                Felt::from_hex(&format!("0x{:x}", nonce)).unwrap(), // nonce
+                Felt::from_hex("0x5555").unwrap(),                  // len
+                Felt::from_hex("0x6666").unwrap(),                  // payload[0]
+                Felt::from_hex("0x7777").unwrap(),                  // payload[1]
+            ],
+            keys: vec![],
+        }
+    }
+
+    fn setup_stream(mock_server: &MockStarknetServer) -> StarknetEventStream {
+        let provider = JsonRpcClient::new(HttpTransport::new(Url::from_str(&mock_server.url()).unwrap()));
+
+        StarknetEventStream::new(
+            Arc::new(provider),
+            EventFilter {
+                from_block: Some(BlockId::Number(0)),
+                to_block: Some(BlockId::Number(100)),
+                address: Some(Felt::from_hex("0x1").unwrap()),
+                keys: Some(vec![]),
+            },
+            Duration::from_secs(1),
+        )
+    }
+
+    #[tokio::test]
+    #[rstest]
+    async fn test_single_event() {
+        let mock_server = MockStarknetServer::new();
+
+        // Setup mocks
+        let test_event = create_test_event(1, 100);
+        let events_mock = mock_server.mock_get_events(vec![test_event], None);
+        let block_mock = mock_server.mock_block_number(101);
+
+        let mut stream = Box::pin(setup_stream(&mock_server));
+
+        if let Some(Some(Ok(event_data))) = stream.next().await {
+            assert_eq!(event_data.block_number, 100);
+            assert!(event_data.message_hash.is_some());
+            assert_eq!(event_data.payload.len(), 2);
+        } else {
+            panic!("Expected successful event");
+        }
+
+        // Verify mocks were called
+        events_mock.assert();
+        events_mock.assert();
+        block_mock.assert();
+    }
+
+    #[tokio::test]
+    #[rstest]
+    async fn test_error_handling() {
+        let mock_server = MockStarknetServer::new();
+
+        let error_mock = mock_server.mock_error_response(-32000, "Internal error");
+
+        let mut stream = Box::pin(setup_stream(&mock_server));
+
+        match stream.next().await {
+            Some(Some(Err(e))) => {
+                assert!(e.to_string().contains("Internal error"));
+            }
+            _ => panic!("Expected error"),
+        }
+
+        error_mock.assert();
+    }
+
+    #[tokio::test]
+    #[rstest]
+    async fn test_empty_events() {
+        let mock_server = MockStarknetServer::new();
+
+        let events_mock = mock_server.mock_get_events(vec![], None);
+        let block_mock = mock_server.mock_block_number(100);
+
+        let mut stream = Box::pin(setup_stream(&mock_server));
+
+        match stream.next().await {
+            Some(None) => { /* Expected */ }
+            _ => panic!("Expected None for empty events"),
+        }
+
+        events_mock.assert();
+        block_mock.assert();
     }
 }

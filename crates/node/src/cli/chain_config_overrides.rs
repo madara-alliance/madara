@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
 
-use mp_block::H160;
 use mp_chain_config::{
     deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
     ChainConfig, StarknetVersion,
@@ -47,7 +46,7 @@ pub struct ChainConfigOverridesInner {
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,
-    pub eth_gps_statement_verifier: H160,
+    pub eth_gps_statement_verifier: String,
     #[serde(default)]
     #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_private_key")]
