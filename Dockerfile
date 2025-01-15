@@ -12,6 +12,7 @@ WORKDIR /usr/src/madara/
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY cairo-artifacts cairo-artifacts
+COPY .db-versions.yml ./
 
 # Install runtime dependencies
 RUN apt-get -y update && \
