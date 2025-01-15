@@ -29,23 +29,17 @@ pub mod utils;
 pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
     pub l2_core_contract: Felt,
-    pub l1_block_metrics: L1BlockMetrics,
 }
 
 #[derive(Clone)]
 pub struct StarknetClientConfig {
     pub url: Url,
     pub l2_contract_address: Felt,
-    pub l1_block_metrics: L1BlockMetrics,
 }
 
 impl Clone for StarknetClient {
     fn clone(&self) -> Self {
-        StarknetClient {
-            provider: Arc::clone(&self.provider),
-            l2_core_contract: self.l2_core_contract,
-            l1_block_metrics: self.l1_block_metrics.clone(),
-        }
+        StarknetClient { provider: Arc::clone(&self.provider), l2_core_contract: self.l2_core_contract }
     }
 }
 
@@ -60,10 +54,6 @@ impl ClientTrait for StarknetClient {
         ClientType::STARKNET
     }
 
-    fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
-        &self.l1_block_metrics
-    }
-
     async fn new(config: Self::Config) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -72,11 +62,7 @@ impl ClientTrait for StarknetClient {
         // Check if l2 contract exists :
         // If contract is not there this will error out.
         provider.get_class_at(BlockId::Tag(BlockTag::Latest), config.l2_contract_address).await?;
-        Ok(Self {
-            provider: Arc::new(provider),
-            l2_core_contract: config.l2_contract_address,
-            l1_block_metrics: config.l1_block_metrics,
-        })
+        Ok(Self { provider: Arc::new(provider), l2_core_contract: config.l2_contract_address })
     }
 
     async fn get_latest_block_number(&self) -> anyhow::Result<u64> {
@@ -154,6 +140,7 @@ impl ClientTrait for StarknetClient {
         &self,
         backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
+        l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()> {
         loop {
             let events_response = ctx.run_until_cancelled(self.get_events(
@@ -168,11 +155,11 @@ impl ClientTrait for StarknetClient {
                     if let Some(event) = emitted_events.last() {
                         let data = event; // Create a longer-lived binding
                         let formatted_event = StateUpdate {
-                            block_number: data.data[1].to_u64().expect("Unable to parse Felt result into u64"),
+                            block_number: data.data[1].to_u64().ok_or(anyhow!("Block number conversion failed"))?,
                             global_root: data.data[0],
                             block_hash: data.data[2],
                         };
-                        update_l1(&backend, formatted_event, self.get_l1_block_metrics())?;
+                        update_l1(&backend, formatted_event, l1_block_metrics.clone())?;
                     }
                 }
                 Some(Err(e)) => {
@@ -213,7 +200,11 @@ impl ClientTrait for StarknetClient {
             )
             .await?;
         // Ensure correct read call : u256 (0, 0)
-        assert_eq!(call_res.len(), 2, "l1_to_l2_message_cancellations should return only 2 values");
+        if call_res.len() != 2 {
+            return Err(anyhow!(
+                "Call response invalid : l1_to_l2_message_cancellations should return only 2 values !!"
+            ));
+        }
         Ok(call_res[0])
     }
 
@@ -314,7 +305,6 @@ impl StarknetClient {
 #[cfg(test)]
 pub mod starknet_client_tests {
     use crate::client::ClientTrait;
-    use crate::gas_price::L1BlockMetrics;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
@@ -335,11 +325,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn fail_create_new_client_contract_does_not_exists() -> anyhow::Result<()> {
         prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: Felt::from_str("0xdeadbeef")?,
-            l1_block_metrics,
         })
         .await;
         assert!(starknet_client.is_err(), "Should fail to create a new client");
@@ -350,11 +338,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn create_new_client_contract_exists_starknet_client() -> anyhow::Result<()> {
         let (_, deployed_address, _madara) = prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await;
         assert!(starknet_client.is_ok(), "Should not fail to create a new client");
@@ -365,11 +351,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn get_last_event_block_number_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await?;
 
@@ -406,11 +390,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn get_last_verified_block_hash_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await?;
 
@@ -435,11 +417,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn get_last_state_root_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await?;
 
@@ -464,11 +444,9 @@ pub mod starknet_client_tests {
     #[tokio::test]
     async fn get_last_verified_block_number_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
-        let l1_block_metrics = L1BlockMetrics::register()?;
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await?;
 

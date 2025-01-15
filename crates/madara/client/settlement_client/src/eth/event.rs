@@ -129,7 +129,6 @@ mod eth_event_stream_tests {
             Ok(event_data) => {
                 assert_eq!(event_data.block_number, 100);
                 assert_eq!(event_data.event_index, Some(0u64));
-                // Add more assertions as needed
             }
             _ => panic!("Expected successful event"),
         }

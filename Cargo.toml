@@ -24,7 +24,7 @@ members = [
   "crates/madara/primitives/utils",
   "crates/madara/proc-macros",
   "crates/madara/tests",
-    "crates/madara/cairo-test-contracts",
+  "crates/madara/cairo-test-contracts",
   "crates/madara/client/block_production",
 ]
 resolver = "2"

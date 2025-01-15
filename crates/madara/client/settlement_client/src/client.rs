@@ -22,9 +22,6 @@ pub trait ClientTrait: Send + Sync {
     // Get client type
     fn get_client_type(&self) -> ClientType;
 
-    // Basic getter functions
-    fn get_l1_block_metrics(&self) -> &L1BlockMetrics;
-
     // Create a new instance of the client
     async fn new(config: Self::Config) -> anyhow::Result<Self>
     where
@@ -33,7 +30,7 @@ pub trait ClientTrait: Send + Sync {
     // Get the latest block number
     async fn get_latest_block_number(&self) -> anyhow::Result<u64>;
 
-    // Get the block number of the last occurrence of a specific event
+    // Get the block number of the last occurrence of the state update event
     async fn get_last_event_block_number(&self) -> anyhow::Result<u64>;
 
     // Get the last verified block number
@@ -55,6 +52,7 @@ pub trait ClientTrait: Send + Sync {
         &self,
         backend: Arc<MadaraBackend>,
         ctx: ServiceContext,
+        l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()>;
 
     // get gas prices

@@ -62,11 +62,12 @@ pub async fn gas_price_worker_once<C, S>(
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
+    l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
 {
-    match update_gas_price(settlement_client, l1_gas_provider).await {
+    match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
         Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
     }
@@ -91,6 +92,7 @@ pub async fn gas_price_worker<C, S>(
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
+    l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
@@ -100,7 +102,13 @@ where
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
-        gas_price_worker_once(Arc::clone(&settlement_client), &l1_gas_provider, gas_price_poll_ms).await?;
+        gas_price_worker_once(
+            Arc::clone(&settlement_client),
+            &l1_gas_provider,
+            gas_price_poll_ms,
+            l1_block_metrics.clone(),
+        )
+        .await?;
     }
 
     anyhow::Ok(())
@@ -109,6 +117,7 @@ where
 async fn update_gas_price<C, S>(
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
+    l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
@@ -144,19 +153,15 @@ where
     l1_gas_provider.update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
-    update_l1_block_metrics(
-        settlement_client.get_latest_block_number().await?,
-        settlement_client.get_l1_block_metrics(),
-        l1_gas_provider,
-    )
-    .await?;
+    update_l1_block_metrics(settlement_client.get_latest_block_number().await?, l1_block_metrics, l1_gas_provider)
+        .await?;
 
     Ok(())
 }
 
 async fn update_l1_block_metrics(
     block_number: u64,
-    l1_block_metrics: &L1BlockMetrics,
+    l1_block_metrics: Arc<L1BlockMetrics>,
     l1_gas_provider: &GasPriceProvider,
 ) -> anyhow::Result<()> {
     // Get the current gas price
@@ -195,6 +200,8 @@ mod eth_client_gas_price_worker_test {
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+
         // Spawn the gas_price_worker in a separate task
         let worker_handle: JoinHandle<anyhow::Result<()>> = tokio::spawn({
             let eth_client = eth_client.clone();
@@ -205,6 +212,7 @@ mod eth_client_gas_price_worker_test {
                     l1_gas_provider,
                     Duration::from_millis(200),
                     ServiceContext::new_for_testing(),
+                    Arc::new(l1_block_metrics),
                 )
                 .await
             }
@@ -239,11 +247,14 @@ mod eth_client_gas_price_worker_test {
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
+            Arc::new(l1_block_metrics),
         );
 
         // Wait for the worker to complete
@@ -264,11 +275,14 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.update_eth_l1_gas_price(20);
         l1_gas_provider.set_gas_price_sync_enabled(false);
 
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
+            Arc::new(l1_block_metrics),
         );
 
         // Wait for the worker to complete
@@ -289,11 +303,14 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.update_eth_l1_data_gas_price(20);
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
 
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
             Arc::new(Box::new(eth_client)),
             &l1_gas_provider,
             Duration::from_millis(200),
+            Arc::new(l1_block_metrics),
         );
 
         // Wait for the worker to complete
@@ -311,6 +328,7 @@ mod eth_client_gas_price_worker_test {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
         let eth_client = create_ethereum_client(Some(&addr));
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         let mock = mock_server.mock(|when, then| {
             when.method("POST").path("/").json_body_obj(&serde_json::json!({
@@ -349,6 +367,7 @@ mod eth_client_gas_price_worker_test {
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
                 ServiceContext::new_for_testing(),
+                Arc::new(l1_block_metrics),
             ),
         )
         .await;
@@ -379,11 +398,16 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         l1_gas_provider.update_last_update_timestamp();
+        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Update gas prices
-        update_gas_price::<EthereumClientConfig, EthereumEventStream>(Arc::new(Box::new(eth_client)), &l1_gas_provider)
-            .await
-            .expect("Failed to update gas prices");
+        update_gas_price::<EthereumClientConfig, EthereumEventStream>(
+            Arc::new(Box::new(eth_client)),
+            &l1_gas_provider,
+            Arc::new(l1_block_metrics),
+        )
+        .await
+        .expect("Failed to update gas prices");
 
         // Access the updated gas prices
         let updated_prices = l1_gas_provider.get_gas_prices();

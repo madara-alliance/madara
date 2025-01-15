@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod l2_messaging_test {
     use crate::client::ClientTrait;
-    use crate::gas_price::L1BlockMetrics;
     use crate::messaging::sync;
     use crate::starknet::utils::{
         cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
@@ -51,11 +50,9 @@ mod l2_messaging_test {
                 .expect("Failed to create database service"),
         );
 
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str()).unwrap(),
             l2_contract_address: deployed_contract_address,
-            l1_block_metrics,
         })
         .await
         .unwrap();
@@ -272,7 +269,6 @@ mod l1_messaging_tests {
     use self::DummyContract::DummyContractInstance;
     use crate::client::ClientTrait;
     use crate::eth::{EthereumClient, StarknetCoreContract};
-    use crate::gas_price::L1BlockMetrics;
     use crate::messaging::{sync, CommonMessagingEventData};
     use alloy::{
         hex::FromHex,
@@ -410,9 +406,6 @@ mod l1_messaging_tests {
             MempoolLimits::for_testing(),
         ));
 
-        // Set up metrics service
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
-
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
@@ -422,11 +415,8 @@ mod l1_messaging_tests {
 
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client = EthereumClient {
-            provider: Arc::new(provider.clone()),
-            l1_core_contract: core_contract.clone(),
-            l1_block_metrics: l1_block_metrics.clone(),
-        };
+        let eth_client =
+            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
 
         TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
     }

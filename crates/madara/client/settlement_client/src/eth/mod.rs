@@ -40,23 +40,17 @@ const ERR_ARCHIVE: &str =
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
     pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
-    pub l1_block_metrics: L1BlockMetrics,
 }
 
 #[derive(Clone)]
 pub struct EthereumClientConfig {
     pub url: Url,
     pub l1_core_address: Address,
-    pub l1_block_metrics: L1BlockMetrics,
 }
 
 impl Clone for EthereumClient {
     fn clone(&self) -> Self {
-        EthereumClient {
-            provider: Arc::clone(&self.provider),
-            l1_core_contract: self.l1_core_contract.clone(),
-            l1_block_metrics: self.l1_block_metrics.clone(),
-        }
+        EthereumClient { provider: Arc::clone(&self.provider), l1_core_contract: self.l1_core_contract.clone() }
     }
 }
 
@@ -68,10 +62,6 @@ impl ClientTrait for EthereumClient {
         ClientType::ETH
     }
 
-    fn get_l1_block_metrics(&self) -> &L1BlockMetrics {
-        &self.l1_block_metrics
-    }
-
     /// Create a new EthereumClient instance with the given RPC URL
     async fn new(config: EthereumClientConfig) -> anyhow::Result<Self> {
         let provider = ProviderBuilder::new().on_http(config.url);
@@ -81,11 +71,7 @@ impl ClientTrait for EthereumClient {
             bail!("The L1 Core Contract could not be found. Check that the L2 chain matches the L1 RPC endpoint.");
         }
         let core_contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
-        Ok(Self {
-            provider: Arc::new(provider),
-            l1_core_contract: core_contract,
-            l1_block_metrics: config.l1_block_metrics,
-        })
+        Ok(Self { provider: Arc::new(provider), l1_core_contract: core_contract })
     }
 
     /// Retrieves the latest Ethereum block number
@@ -150,6 +136,7 @@ impl ClientTrait for EthereumClient {
         &self,
         backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
+        l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()> {
         // Listen to LogStateUpdate (0x77552641) update and send changes continuously
         let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
@@ -163,7 +150,7 @@ impl ClientTrait for EthereumClient {
             let log = event_result.context("listening for events")?;
             let format_event: StateUpdate =
                 convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-            update_l1(&backend, format_event, self.get_l1_block_metrics())?;
+            update_l1(&backend, format_event, l1_block_metrics.clone())?;
         }
 
         Ok(())
@@ -248,7 +235,6 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
 
-    use crate::gas_price::L1BlockMetrics;
     use serial_test::serial;
     use std::ops::Range;
     use std::sync::Mutex;
@@ -322,9 +308,7 @@ pub mod eth_client_getter_test {
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
 
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
-
-        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
+        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone() }
     }
 
     #[serial]
@@ -337,10 +321,8 @@ pub mod eth_client_getter_test {
         let rpc_url: Url = anvil.endpoint_url();
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
-        let ethereum_client_config =
-            EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address, l1_block_metrics };
+        let ethereum_client_config = EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address };
 
         let new_client_result = EthereumClient::new(ethereum_client_config).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");

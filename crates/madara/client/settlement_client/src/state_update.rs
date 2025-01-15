@@ -1,14 +1,8 @@
 use std::sync::Arc;
 
-<<<<<<<< HEAD:crates/madara/client/settlement_client/src/state_update.rs
 use crate::client::ClientTrait;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
-use crate::utils::trim_hash;
-========
-use crate::client::{L1BlockMetrics, StarknetCoreContract};
-use crate::{client::EthereumClient, utils::convert_log_state_update};
->>>>>>>> 4d1c4b376e1dd2019397a9ee2828f98cda0e41dc:crates/madara/client/eth/src/state_update.rs
 use anyhow::Context;
 use futures::Stream;
 use mc_db::MadaraBackend;
@@ -27,7 +21,7 @@ pub struct StateUpdate {
 pub fn update_l1(
     backend: &MadaraBackend,
     state_update: StateUpdate,
-    block_metrics: &L1BlockMetrics,
+    block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()> {
     tracing::info!(
         "🔄 Updated L1 head #{} ({}) with state root ({})",
@@ -48,6 +42,7 @@ pub async fn state_update_worker<C, S>(
     backend: Arc<MadaraBackend>,
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     ctx: ServiceContext,
+    l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
     S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
@@ -61,10 +56,10 @@ where
     #[cfg(not(test))]
     {
         let initial_state = settlement_client.get_initial_state().await.context("Getting initial ethereum state")?;
-        update_l1(&backend, initial_state, settlement_client.get_l1_block_metrics())?;
+        update_l1(&backend, initial_state, l1_block_metrics.clone())?;
     }
 
-    settlement_client.listen_for_update_state_events(backend, ctx).await?;
+    settlement_client.listen_for_update_state_events(backend, ctx, l1_block_metrics.clone()).await?;
     anyhow::Ok(())
 }
 
@@ -137,17 +132,14 @@ mod eth_client_event_subscription_test {
                 .expect("Failed to create database service"),
         );
 
-        // Set up metrics service
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
-
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
+        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone() };
+        let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         // Start listening for state updates
         let listen_handle = {
@@ -157,6 +149,7 @@ mod eth_client_event_subscription_test {
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(eth_client)),
                     ServiceContext::new_for_testing(),
+                    Arc::new(l1_block_metrics),
                 )
                 .await
                 .unwrap()
@@ -217,9 +210,6 @@ mod starknet_client_event_subscription_test {
                 .expect("Failed to create database service"),
         );
 
-        // Set up metrics service
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
-
         // Making Starknet client and start worker
         // ================================================
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
@@ -227,9 +217,10 @@ mod starknet_client_event_subscription_test {
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
             l2_contract_address: deployed_address,
-            l1_block_metrics,
         })
         .await?;
+
+        let l1_block_metrics = L1BlockMetrics::register()?;
 
         let listen_handle = {
             let db = Arc::clone(&db);
@@ -238,6 +229,7 @@ mod starknet_client_event_subscription_test {
                     Arc::clone(db.backend()),
                     Arc::new(Box::new(starknet_client)),
                     ServiceContext::new_for_testing(),
+                    Arc::new(l1_block_metrics),
                 )
                 .await
                 .expect("Failed to init state update worker.")
