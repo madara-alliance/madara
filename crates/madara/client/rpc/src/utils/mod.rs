@@ -1,5 +1,8 @@
 use std::fmt;
 
+use starknet_types_core::felt::Felt;
+use starknet_types_rpc::Event;
+
 use crate::StarknetRpcApiError;
 
 pub fn display_internal_server_error(err: impl fmt::Display) {
@@ -108,5 +111,123 @@ impl<T> OptionExt<T> for Option<T> {
                 Err(StarknetRpcApiError::InternalServerError)
             }
         }
+    }
+}
+
+/// Filters events based on the provided address and keys.
+///
+/// This function checks if an event matches the given address and keys.
+/// If an address is provided, the event must originate from that address.
+/// The event's keys must match the provided keys pattern.
+///
+/// # Arguments
+///
+/// * `event` - A reference to the event to be filtered.
+/// * `address` - An optional address that the event must originate from.
+/// * `keys` - An optional slice of key patterns that the event's keys must match.
+///
+/// # Returns
+///
+/// * `true` if the event matches the address and keys pattern.
+/// * `false` otherwise.
+#[inline]
+pub fn event_match_filter(event: &Event<Felt>, address: Option<Felt>, keys: &Option<Vec<Vec<Felt>>>) -> bool {
+    // Check if the event's address matches the provided address, if any.
+    if let Some(addr) = address {
+        if addr != event.from_address {
+            return false;
+        }
+    }
+
+    // If keys are not provided, return true.
+    if let Some(keys) = keys {
+        // Check if the number of keys in the event matches the number of provided key patterns.
+        if keys.len() > event.event_content.keys.len() {
+            return false;
+        }
+
+        // Check if each key in the event matches the corresponding key pattern.
+        // Use iterators to traverse both keys and event.event_content.keys simultaneously.
+        for (pattern, key) in keys.iter().zip(event.event_content.keys.iter()) {
+            if !pattern.is_empty() && !pattern.contains(key) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use starknet_types_rpc::EventContent;
+
+    use super::*;
+
+    fn event() -> Event<Felt> {
+        Event {
+            from_address: Felt::from_hex_unchecked("0x1234"),
+            event_content: EventContent {
+                data: vec![Felt::from_hex_unchecked("0x5678")],
+                keys: vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")],
+            },
+        }
+    }
+
+    #[test]
+    fn test_address_and_keys_match() {
+        let event = event();
+        let address = Some(Felt::from_hex_unchecked("0x1234"));
+        let keys = Some(vec![vec![Felt::from_hex_unchecked("0x1")], vec![Felt::from_hex_unchecked("0x2")]]);
+        assert!(event_match_filter(&event, address, &keys));
+    }
+
+    #[test]
+    fn test_address_does_not_match() {
+        let event = event();
+        let address = Some(Felt::from_hex_unchecked("0x5678"));
+        let keys = Some(vec![vec![Felt::from_hex_unchecked("0x1")], vec![Felt::from_hex_unchecked("0x2")]]);
+        assert!(!event_match_filter(&event, address, &keys));
+    }
+
+    #[test]
+    fn test_keys_do_not_match() {
+        let event = event();
+        let address = Some(Felt::from_hex_unchecked("0x1234"));
+        let keys = Some(vec![vec![Felt::from_hex_unchecked("0x1")], vec![Felt::from_hex_unchecked("0x3")]]);
+        assert!(!event_match_filter(&event, address, &keys));
+    }
+
+    #[test]
+    fn test_no_address_provided() {
+        let event = event();
+        let address = None;
+        let keys = Some(vec![vec![Felt::from_hex_unchecked("0x1")], vec![Felt::from_hex_unchecked("0x2")]]);
+        assert!(event_match_filter(&event, address, &keys));
+    }
+
+    #[test]
+    fn test_no_keys_provided() {
+        let event = event();
+        let address = Some(Felt::from_hex_unchecked("0x1234"));
+        let keys = None;
+        assert!(event_match_filter(&event, address, &keys));
+    }
+
+    #[test]
+    fn test_keys_with_pattern() {
+        let event = event();
+        let address = Some(Felt::from_hex_unchecked("0x1234"));
+
+        // [0x1 | 0x2, 0x2]
+        let keys = Some(vec![
+            vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")],
+            vec![Felt::from_hex_unchecked("0x2")],
+        ]);
+        assert!(event_match_filter(&event, address, &keys));
+
+        // [_, 0x3 | 0x2]
+        let keys = Some(vec![vec![], vec![Felt::from_hex_unchecked("0x3"), Felt::from_hex_unchecked("0x2")]]);
+        assert!(event_match_filter(&event, address, &keys));
     }
 }

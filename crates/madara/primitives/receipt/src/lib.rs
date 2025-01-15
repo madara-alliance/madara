@@ -110,6 +110,16 @@ impl TransactionReceipt {
         }
     }
 
+    pub fn into_events(self) -> Vec<Event> {
+        match self {
+            TransactionReceipt::Invoke(receipt) => receipt.events,
+            TransactionReceipt::L1Handler(receipt) => receipt.events,
+            TransactionReceipt::Declare(receipt) => receipt.events,
+            TransactionReceipt::Deploy(receipt) => receipt.events,
+            TransactionReceipt::DeployAccount(receipt) => receipt.events,
+        }
+    }
+
     pub fn execution_result(&self) -> ExecutionResult {
         match self {
             TransactionReceipt::Invoke(receipt) => receipt.execution_result.clone(),

@@ -5,6 +5,7 @@ use starknet_types_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageR
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
+use crate::utils::event_match_filter;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.
@@ -32,11 +33,13 @@ pub async fn get_events(
     filter: EventFilterWithPageRequest<Felt>,
 ) -> StarknetRpcResult<EventsChunk<Felt>> {
     let from_address = filter.address;
-    let keys = filter.keys.unwrap_or_default();
+    let keys = filter.keys;
     let chunk_size = filter.chunk_size;
 
-    if keys.len() > MAX_EVENTS_KEYS {
-        return Err(StarknetRpcApiError::TooManyKeysInFilter);
+    if let Some(keys) = &keys {
+        if keys.len() > MAX_EVENTS_KEYS {
+            return Err(StarknetRpcApiError::TooManyKeysInFilter);
+        }
     }
     if chunk_size > MAX_EVENTS_CHUNK_SIZE as u64 {
         return Err(StarknetRpcApiError::PageSizeTooBig);
@@ -65,7 +68,7 @@ pub async fn get_events(
             (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
         };
 
-        let block_filtered_events: Vec<EmittedEvent<Felt>> = get_block_events(starknet, &block)
+        let block_filtered_events: Vec<EmittedEvent<Felt>> = drain_block_events(block)
             .into_iter()
             .filter(|event| event_match_filter(&event.event, from_address, &keys))
             .collect();
@@ -96,15 +99,6 @@ pub async fn get_events(
     Ok(EventsChunk { events: filtered_events, continuation_token: None })
 }
 
-#[inline]
-fn event_match_filter(event: &Event<Felt>, address: Option<Felt>, keys: &[Vec<Felt>]) -> bool {
-    let match_from_address = address.map_or(true, |addr| addr == event.from_address);
-    let match_keys = keys.iter().enumerate().all(|(i, keys)| {
-        event.event_content.keys.len() > i && (keys.is_empty() || keys.contains(&event.event_content.keys[i]))
-    });
-    match_from_address && match_keys
-}
-
 fn block_range(
     starknet: &Starknet,
     from_block: Option<BlockId>,
@@ -124,22 +118,22 @@ fn block_range(
     Ok((from_block_n, to_block_n, latest_block_n))
 }
 
-fn get_block_events(_starknet: &Starknet, block: &MadaraMaybePendingBlock) -> Vec<EmittedEvent<Felt>> {
+pub fn drain_block_events(block: MadaraMaybePendingBlock) -> Vec<EmittedEvent<Felt>> {
     let (block_hash, block_number) = match &block.info {
         MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
     };
 
-    let tx_hash_and_events = block.inner.receipts.iter().flat_map(|receipt| {
+    let tx_hash_and_events = block.inner.receipts.into_iter().flat_map(|receipt| {
         let tx_hash = receipt.transaction_hash();
-        receipt.events().iter().map(move |events| (tx_hash, events))
+        receipt.into_events().into_iter().map(move |events| (tx_hash, events))
     });
 
     tx_hash_and_events
         .map(|(transaction_hash, event)| EmittedEvent {
             event: Event {
                 from_address: event.from_address,
-                event_content: EventContent { keys: event.keys.clone(), data: event.data.clone() },
+                event_content: EventContent { keys: event.keys, data: event.data },
             },
             block_hash,
             block_number,
