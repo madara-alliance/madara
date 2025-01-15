@@ -1,3 +1,4 @@
+use mp_chain_config::StarknetVersion;
 use serde::{Deserialize, Serialize};
 use starknet_core::utils::starknet_keccak;
 use starknet_types_core::{
@@ -280,6 +281,14 @@ pub struct Event {
 
 impl Event {
     /// Calculate the hash of the event.
+    pub fn compute_hash(&self, transaction_hash: Felt, starknet_version: StarknetVersion) -> Felt {
+        if starknet_version < StarknetVersion::V0_13_2 {
+            self.compute_hash_pedersen()
+        } else {
+            self.compute_hash_poseidon(&transaction_hash)
+        }
+    }
+
     pub fn compute_hash_pedersen(&self) -> Felt {
         let keys_hash = Pedersen::hash_array(&self.keys);
         let data_hash = Pedersen::hash_array(&self.data);

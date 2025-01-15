@@ -1,20 +1,27 @@
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
-use mp_receipt::TransactionReceipt;
-use mp_transactions::Transaction;
 use starknet_core::types::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
-pub fn compute_transaction_commitment<'a>(
-    transactions: impl IntoIterator<Item = &'a Transaction>,
-    transaction_hashes: impl IntoIterator<Item = Felt>,
+pub fn compute_event_commitment(
+    events_hashes: impl IntoIterator<Item = Felt>,
     starknet_version: StarknetVersion,
 ) -> Felt {
-    let tx_hashes_with_signature = transactions
-        .into_iter()
-        .zip(transaction_hashes)
-        .map(|(tx, tx_hash)| tx.compute_hash_with_signature(tx_hash, starknet_version));
+    let mut peekable = events_hashes.into_iter().peekable();
+    if peekable.peek().is_none() {
+        return Felt::ZERO;
+    }
+    if starknet_version < StarknetVersion::V0_13_2 {
+        compute_merkle_root::<Pedersen>(peekable)
+    } else {
+        compute_merkle_root::<Poseidon>(peekable)
+    }
+}
 
+pub fn compute_transaction_commitment(
+    tx_hashes_with_signature: impl IntoIterator<Item = Felt>,
+    starknet_version: StarknetVersion,
+) -> Felt {
     if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(tx_hashes_with_signature)
     } else {
@@ -22,13 +29,11 @@ pub fn compute_transaction_commitment<'a>(
     }
 }
 
-pub fn compute_receipt_commitment<'a>(
-    receipts: impl IntoIterator<Item = &'a TransactionReceipt>,
+pub fn compute_receipt_commitment(
+    receipt_hashes: impl IntoIterator<Item = Felt>,
     _starknet_version: StarknetVersion,
 ) -> Felt {
-    let receipts = receipts.into_iter().map(TransactionReceipt::compute_hash);
-
-    compute_merkle_root::<Poseidon>(receipts)
+    compute_merkle_root::<Poseidon>(receipt_hashes)
 }
 
 /// Compute the root hash of a list of values.

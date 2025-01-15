@@ -26,9 +26,9 @@ impl Service for Sync2Service {
         }
 
         let p2p_commands = self.p2p_commands.take().expect("Service already started");
-        let backend = self.db_backend.clone();
+        let args = mc_sync2::P2pPipelineArguments::new(self.db_backend.clone(), p2p_commands);
 
-        join_set.spawn(async move { mc_sync2::forward_sync(backend, p2p_commands, Default::default()).await });
+        join_set.spawn(async move { mc_sync2::forward_sync(args, Default::default()).await });
 
         Ok(())
     }

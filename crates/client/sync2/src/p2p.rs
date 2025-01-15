@@ -1,13 +1,34 @@
 use crate::{
     controller::{ApplyOutcome, PipelineSteps},
+    import::{BlockImportError, BlockImporter, BlockValidationConfig},
     peer_set::PeerSet,
     util::AbortOnDrop,
 };
 use anyhow::Context;
 use futures::Future;
-use mc_p2p::PeerId;
+use mc_db::MadaraBackend;
 use mc_p2p::SyncHandlerError;
+use mc_p2p::{P2pCommands, PeerId};
 use std::{borrow::Cow, ops::Range, sync::Arc};
+
+#[derive(Clone)]
+pub struct P2pPipelineArguments {
+    pub(crate) backend: Arc<MadaraBackend>,
+    pub(crate) peer_set: Arc<PeerSet>,
+    pub(crate) p2p_commands: P2pCommands,
+    pub(crate) importer: Arc<BlockImporter>,
+}
+
+impl P2pPipelineArguments {
+    pub fn new(backend: Arc<MadaraBackend>, p2p_commands: P2pCommands) -> Self {
+        Self {
+            importer: Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default())),
+            backend,
+            peer_set: Arc::new(PeerSet::new(p2p_commands.clone())),
+            p2p_commands,
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum P2pError {
@@ -23,6 +44,16 @@ impl From<SyncHandlerError> for P2pError {
             SyncHandlerError::Internal(err) => Self::Internal(err),
             SyncHandlerError::BadRequest(err) => Self::Peer(err),
             SyncHandlerError::EndOfStream => Self::peer_error("Stream ended unexpectedly"),
+        }
+    }
+}
+
+impl From<BlockImportError> for P2pError {
+    fn from(value: BlockImportError) -> Self {
+        if value.is_internal() {
+            Self::Internal(anyhow::anyhow!(value))
+        } else {
+            Self::Peer(value.to_string().into())
         }
     }
 }
@@ -97,20 +128,18 @@ impl<S: P2pPipelineSteps + Send + Sync + 'static> PipelineSteps for P2pPipelineC
         block_range: Range<u64>,
         (peer_id, input): Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        AbortOnDrop::spawn(async move {
-            match self.steps.clone().p2p_sequential_step(peer_id, block_range.clone(), input).await {
-                Ok(output) => {
-                    self.peer_set.peer_operation_success(peer_id);
-                    Ok(ApplyOutcome::Success(output))
-                }
-                Err(P2pError::Peer(err)) => {
-                    tracing::debug!("Retrying pipeline for block (block_n={block_range:?}) due to peer error during sequential step: {err} [peer_id={peer_id}]");
-                    self.peer_set.peer_operation_error(peer_id);
-                    Ok(ApplyOutcome::Retry)
-                }
-                Err(P2pError::Internal(err)) => Err(err.context("Peer to peer pipeline sequential step")),
+        match self.steps.clone().p2p_sequential_step(peer_id, block_range.clone(), input).await {
+            Ok(output) => {
+                self.peer_set.peer_operation_success(peer_id);
+                Ok(ApplyOutcome::Success(output))
             }
-        }).await
+            Err(P2pError::Peer(err)) => {
+                tracing::debug!("Retrying pipeline for block (block_n={block_range:?}) due to peer error during sequential step: {err} [peer_id={peer_id}]");
+                self.peer_set.peer_operation_error(peer_id);
+                Ok(ApplyOutcome::Retry)
+            }
+            Err(P2pError::Internal(err)) => Err(err.context("Peer to peer pipeline sequential step")),
+        }
     }
 
     fn starting_block_n(&self) -> Option<u64> {

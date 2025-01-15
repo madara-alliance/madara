@@ -8,7 +8,7 @@ use futures::{channel::mpsc, stream, SinkExt, Stream, StreamExt};
 use libp2p::PeerId;
 use mc_db::stream::BlockStreamConfig;
 use mp_block::{BlockHeaderWithSignatures, TransactionWithReceipt};
-use mp_class::ClassInfo;
+use mp_class::ClassInfoWithHash;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use starknet_core::types::Felt;
@@ -112,8 +112,8 @@ impl P2pCommands {
         &mut self,
         peer: PeerId,
         config: BlockStreamConfig,
-        declared_classes: impl IntoIterator<Item = HashMap<Felt, DeclaredClassCompiledClass>> + 'a,
-    ) -> impl Stream<Item = Result<Vec<ClassInfo>, sync_handlers::Error>> + 'a {
+        declared_classes: impl IntoIterator<Item = &HashMap<Felt, DeclaredClassCompiledClass>> + 'a,
+    ) -> impl Stream<Item = Result<Vec<ClassInfoWithHash>, sync_handlers::Error>> + 'a {
         let req = model::ClassesRequest { iteration: Some(config.into()) };
         let (callback, recv) = mpsc::channel(3);
         let _res = self.inner.send(Command::SyncClasses { peer, req, callback }).await;

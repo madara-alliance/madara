@@ -10,6 +10,8 @@ use mp_block::MadaraBlockInner;
 use mp_block::TransactionWithReceipt;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::ConvertedClass;
+use mp_receipt::EventWithTransactionHash;
+use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 
 impl MadaraBackend {
@@ -62,8 +64,50 @@ impl MadaraBackend {
         let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
         let block_n_encoded = bincode::serialize(&block_n)?;
         batch.put_cf(&block_n_to_state_diff, &block_n_encoded, &bincode::serialize(&value)?);
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
-        self.contract_db_store_block_no_rayon(block_n, ContractDbBlockUpdate::from_state_diff(value), &mut batch)?;
+        self.contract_db_store_block(block_n, ContractDbBlockUpdate::from_state_diff(value))?;
+
+        Ok(())
+    }
+
+    pub fn store_events(&self, block_n: u64, value: Vec<EventWithTransactionHash>) -> Result<(), MadaraStorageError> {
+        let mut batch = WriteBatchWithTransaction::default();
+
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let block_n_encoded = bincode::serialize(&block_n)?;
+
+        // update block transactions (TODO: we should separate receipts and events)
+        let mut inner: MadaraBlockInner =
+            bincode::deserialize(&self.db.get_cf(&block_n_to_block_inner, &block_n_encoded)?.unwrap_or_default())?;
+
+        let mut inner_m = inner.receipts.iter_mut().peekable();
+        for ev in value {
+            let receipt_mut = loop {
+                let Some(receipt) = inner_m.peek_mut() else {
+                    return Err(MadaraStorageError::InconsistentStorage(
+                        format!("No transaction for hash {:#x} in block_n {block_n}", ev.transaction_hash).into(),
+                    ));
+                };
+
+                if receipt.transaction_hash() == ev.transaction_hash {
+                    break receipt;
+                }
+                let _item = inner_m.next();
+            };
+
+            let events_mut = match receipt_mut {
+                TransactionReceipt::Invoke(receipt) => &mut receipt.events,
+                TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
+                TransactionReceipt::Declare(receipt) => &mut receipt.events,
+                TransactionReceipt::Deploy(receipt) => &mut receipt.events,
+                TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
+            };
+
+            events_mut.push(ev.event);
+        }
+
+        batch.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&inner)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
         Ok(())

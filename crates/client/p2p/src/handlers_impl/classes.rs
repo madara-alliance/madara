@@ -11,8 +11,8 @@ use base64::prelude::*;
 use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mc_db::db_block_id::DbBlockId;
 use mp_class::{
-    ClassInfo, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass, LegacyClassInfo,
-    LegacyContractEntryPoint, LegacyEntryPointsByType, SierraClassInfo, SierraEntryPoint,
+    ClassInfo, ClassInfoWithHash, CompressedLegacyContractClass, EntryPointsByType, FlattenedSierraClass,
+    LegacyClassInfo, LegacyContractEntryPoint, LegacyEntryPointsByType, SierraClassInfo, SierraEntryPoint,
 };
 use mp_state_update::DeclaredClassCompiledClass;
 use starknet_core::types::Felt;
@@ -219,14 +219,14 @@ pub async fn classes_sync(
 /// Note: you need to get the `declared_classes` field from the `StateDiff` beforehand.
 pub async fn read_classes_stream(
     res: impl Stream<Item = model::ClassesResponse>,
-    declared_classes: HashMap<Felt, DeclaredClassCompiledClass>,
-) -> Result<Vec<ClassInfo>, sync_handlers::Error> {
+    declared_classes: &HashMap<Felt, DeclaredClassCompiledClass>,
+) -> Result<Vec<ClassInfoWithHash>, sync_handlers::Error> {
     pin!(res);
 
     let mut out: HashMap<Felt, ClassInfo> = HashMap::with_capacity(declared_classes.len());
     while out.len() < declared_classes.len() {
         let handle_fin = || {
-            if declared_classes.is_empty() {
+            if out.is_empty() {
                 sync_handlers::Error::EndOfStream
             } else {
                 sync_handlers::Error::bad_request(format!(
@@ -261,5 +261,5 @@ pub async fn read_classes_stream(
         out_entry.insert(class_info);
     }
 
-    Ok(out.into_values().collect())
+    Ok(out.into_iter().map(|(class_hash, class_info)| ClassInfoWithHash { class_info, class_hash }).collect())
 }

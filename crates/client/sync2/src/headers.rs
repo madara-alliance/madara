@@ -1,29 +1,24 @@
-// headers sync
-
 use crate::{
     controller::PipelineController,
-    p2p::{P2pError, P2pPipelineController, P2pPipelineSteps},
-    peer_set::PeerSet,
+    import::BlockImporter,
+    p2p::{P2pError, P2pPipelineArguments, P2pPipelineController, P2pPipelineSteps},
 };
 use anyhow::Context;
 use futures::{StreamExt, TryStreamExt};
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
-use mp_block::{BlockHeaderWithSignatures, BlockId};
-use mp_convert::ToFelt;
+use mp_block::{BlockHeaderWithSignatures, BlockId, Header};
 use starknet_core::types::Felt;
 use std::{ops::Range, sync::Arc};
 
 pub type HeadersSync = PipelineController<P2pPipelineController<HeadersSyncSteps>>;
 pub fn headers_pipeline(
-    backend: Arc<MadaraBackend>,
-    peer_set: Arc<PeerSet>,
-    p2p_commands: P2pCommands,
+    P2pPipelineArguments { backend, peer_set, p2p_commands, importer }: P2pPipelineArguments,
     parallelization: usize,
     batch_size: usize,
 ) -> HeadersSync {
     PipelineController::new(
-        P2pPipelineController::new(peer_set, HeadersSyncSteps { backend, p2p_commands }),
+        P2pPipelineController::new(peer_set, HeadersSyncSteps { backend, p2p_commands, importer }),
         parallelization,
         batch_size,
     )
@@ -32,12 +27,13 @@ pub fn headers_pipeline(
 pub struct HeadersSyncSteps {
     backend: Arc<MadaraBackend>,
     p2p_commands: P2pCommands,
+    importer: Arc<BlockImporter>,
 }
 
 impl P2pPipelineSteps for HeadersSyncSteps {
     type InputItem = ();
     type SequentialStepInput = Vec<BlockHeaderWithSignatures>;
-    type Output = Vec<BlockHeaderWithSignatures>;
+    type Output = Vec<Header>;
 
     async fn p2p_parallel_step(
         self: Arc<Self>,
@@ -57,8 +53,6 @@ impl P2pPipelineSteps for HeadersSyncSteps {
             .take(limit as _)
             .map(move |signed_header| {
                 let signed_header = signed_header?;
-                // TODO: verify signatures
-
                 // verify parent hash for batch
                 if let Some(latest_block_hash) = previous_block_hash {
                     if latest_block_hash != signed_header.header.parent_block_hash {
@@ -68,28 +62,11 @@ impl P2pPipelineSteps for HeadersSyncSteps {
                         )));
                     }
                 }
+
+                self.importer.verify_header(block_n, &signed_header)?;
+
                 previous_block_hash = Some(signed_header.block_hash);
-
-                // verify block_number
-                if block_n != signed_header.header.block_number {
-                    return Err(P2pError::peer_error(format!(
-                        "Mismatched block_number: {}, expected {}",
-                        signed_header.header.block_number, block_n
-                    )));
-                }
                 block_n += 1;
-
-                // verify block_hash
-                // TODO: pre_v0_13_2_override
-                let _block_hash = signed_header
-                    .header
-                    .compute_hash(self.backend.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
-                // if signed_header.block_hash != block_hash {
-                //     return Err(P2pError::peer_error(format!(
-                //         "Mismatched block_hash: {:#x}, expected {:#x}",
-                //         signed_header.block_hash, block_hash
-                //     )));
-                // }
 
                 Ok(signed_header)
             })
@@ -134,14 +111,14 @@ impl P2pPipelineSteps for HeadersSyncSteps {
             )));
         }
 
-        tracing::debug!("storing headers for {block_range:?}, peer_id: {peer_id}");
+        tracing::debug!("Storing headers for {block_range:?}, peer_id: {peer_id}");
         for header in input.iter().cloned() {
             self.backend.store_block_header(header).context("Storing block header")?;
         }
 
         self.backend.head_status().headers.set(block_range.last());
 
-        Ok(input)
+        Ok(input.into_iter().map(|h| h.header).collect())
     }
 
     fn starting_block_n(&self) -> Option<u64> {

@@ -6,31 +6,33 @@ use crate::{
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
-use mp_block::Header;
-use std::{ops::Range, sync::Arc};
+use mp_state_update::DeclaredClassCompiledClass;
+use starknet_core::types::Felt;
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
-pub type TransactionsSync = PipelineController<P2pPipelineController<TransactionsSyncSteps>>;
-pub fn transactions_pipeline(
+pub type ClassesSync = PipelineController<P2pPipelineController<ClassesSyncSteps>>;
+pub fn classes_pipeline(
     P2pPipelineArguments { backend, peer_set, p2p_commands, importer }: P2pPipelineArguments,
     parallelization: usize,
     batch_size: usize,
-) -> TransactionsSync {
+) -> ClassesSync {
     PipelineController::new(
-        P2pPipelineController::new(peer_set, TransactionsSyncSteps { backend, p2p_commands, importer }),
+        P2pPipelineController::new(peer_set, ClassesSyncSteps { backend, p2p_commands, importer }),
         parallelization,
         batch_size,
     )
 }
-pub struct TransactionsSyncSteps {
+pub struct ClassesSyncSteps {
     backend: Arc<MadaraBackend>,
     p2p_commands: P2pCommands,
     importer: Arc<BlockImporter>,
 }
 
-impl P2pPipelineSteps for TransactionsSyncSteps {
-    type InputItem = Header;
-    type SequentialStepInput = Vec<Header>;
-    type Output = Vec<Header>;
+impl P2pPipelineSteps for ClassesSyncSteps {
+    /// All declared classes, extracted from state diff.
+    type InputItem = HashMap<Felt, DeclaredClassCompiledClass>;
+    type SequentialStepInput = ();
+    type Output = ();
 
     async fn p2p_parallel_step(
         self: Arc<Self>,
@@ -38,40 +40,41 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
-        tracing::debug!("p2p transactions parallel step: {block_range:?}, peer_id: {peer_id}");
+        tracing::debug!("p2p classes parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands
             .clone()
-            .make_transactions_stream(
+            .make_classes_stream(
                 peer_id,
                 BlockStreamConfig::default().with_block_range(block_range.clone()),
-                input.iter().map(|input| input.transaction_count as _).collect::<Vec<_>>(),
+                input.iter(),
             )
             .await;
         tokio::pin!(strm);
 
-        for (block_n, header) in block_range.zip(input.iter().cloned()) {
-            let transactions = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
-            self.importer.verify_and_save_transactions(block_n, transactions, header).await?;
+        for (block_n, check_against) in block_range.zip(input.iter()) {
+            let classes = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
+
+            self.importer.verify_and_save_classes(block_n, classes, check_against.clone()).await?;
         }
 
-        Ok(input)
+        Ok(())
     }
 
     async fn p2p_sequential_step(
         self: Arc<Self>,
         peer_id: PeerId,
         block_range: Range<u64>,
-        input: Self::SequentialStepInput,
+        _input: Self::SequentialStepInput,
     ) -> Result<Self::Output, P2pError> {
-        tracing::debug!("p2p transactions sequential step: {block_range:?}, peer_id: {peer_id}");
+        tracing::debug!("p2p classes sequential step: {block_range:?}, peer_id: {peer_id}");
         if let Some(block_n) = block_range.last() {
-            self.backend.head_status().transactions.set(Some(block_n));
+            self.backend.head_status().classes.set(Some(block_n));
         }
-        Ok(input)
+        Ok(())
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().transactions.get()
+        self.backend.head_status().classes.get()
     }
 }

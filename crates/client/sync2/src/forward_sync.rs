@@ -1,7 +1,4 @@
-use crate::peer_set::PeerSet;
-use mc_db::MadaraBackend;
-use mc_p2p::P2pCommands;
-use std::sync::Arc;
+use crate::p2p::P2pPipelineArguments;
 
 /// Pipeline order:
 /// ```plaintext
@@ -42,6 +39,12 @@ pub struct ForwardSyncConfig {
     pub transactions_batch_size: usize,
     pub state_diffs_parallelization: usize,
     pub state_diffs_batch_size: usize,
+    pub events_parallelization: usize,
+    pub events_batch_size: usize,
+    pub classes_parallelization: usize,
+    pub classes_batch_size: usize,
+    pub apply_state_parallelization: usize,
+    pub apply_state_batch_size: usize,
 }
 
 impl Default for ForwardSyncConfig {
@@ -53,38 +56,41 @@ impl Default for ForwardSyncConfig {
             transactions_batch_size: 2,
             state_diffs_parallelization: 3,
             state_diffs_batch_size: 2,
+            events_parallelization: 2,
+            events_batch_size: 2,
+            classes_parallelization: 2,
+            classes_batch_size: 2,
+            apply_state_parallelization: 2,
+            apply_state_batch_size: 2,
         }
     }
 }
 
-pub async fn forward_sync(
-    backend: Arc<MadaraBackend>,
-    p2p_commands: P2pCommands,
-    config: ForwardSyncConfig,
-) -> anyhow::Result<()> {
-    let peer_set = Arc::new(PeerSet::new(p2p_commands.clone()));
-
-    let mut headers_pipeline = crate::headers::headers_pipeline(
-        backend.clone(),
-        peer_set.clone(),
-        p2p_commands.clone(),
-        config.headers_parallelization,
-        config.headers_batch_size,
-    );
+/// Events pipeline is currently always done after tx and receipts for now.
+/// TODO: fix that when the db supports saving events separately.
+pub async fn forward_sync(args: P2pPipelineArguments, config: ForwardSyncConfig) -> anyhow::Result<()> {
+    let mut headers_pipeline =
+        crate::headers::headers_pipeline(args.clone(), config.headers_parallelization, config.headers_batch_size);
     let mut transactions_pipeline = crate::transactions::transactions_pipeline(
-        backend.clone(),
-        peer_set.clone(),
-        p2p_commands.clone(),
+        args.clone(),
         config.transactions_parallelization,
         config.transactions_batch_size,
     );
-    // let mut state_diffs_pipeline = crate::transactions::transactions_pipeline(
-    //     backend.clone(),
-    //     peer_set.clone(),
-    //     p2p_commands.clone(),
-    //     config.state_diffs_parallelization,
-    //     config.state_diffs_batch_size,
-    // );
+    let mut state_diffs_pipeline = crate::state_diffs::state_diffs_pipeline(
+        args.clone(),
+        config.state_diffs_parallelization,
+        config.state_diffs_batch_size,
+    );
+    let mut classes_pipeline =
+        crate::classes::classes_pipeline(args.clone(), config.classes_parallelization, config.classes_batch_size);
+    let mut events_pipeline =
+        crate::events::events_pipeline(args.clone(), config.events_parallelization, config.events_batch_size);
+    let mut apply_state_pipeline = crate::apply_state::apply_state_pipeline(
+        args.backend.clone(),
+        args.importer.clone(),
+        config.apply_state_parallelization,
+        config.apply_state_batch_size,
+    );
 
     loop {
         while headers_pipeline.can_schedule_more() {
@@ -93,17 +99,30 @@ pub async fn forward_sync(
         }
 
         tokio::select! {
-            Some(res) = headers_pipeline.next(), if transactions_pipeline.can_schedule_more() /*&& state_diffs_pipeline.can_schedule_more()*/ => {
+            Some(res) = headers_pipeline.next(), if transactions_pipeline.can_schedule_more() && state_diffs_pipeline.can_schedule_more() => {
                 let (_range, headers) = res?;
                 transactions_pipeline.push(headers.iter().cloned());
-                // state_diffs_pipeline.push(headers);
+                state_diffs_pipeline.push(headers);
             }
-            Some(res) = transactions_pipeline.next() => {
+            Some(res) = transactions_pipeline.next(), if events_pipeline.can_schedule_more() => {
+                let (_range, headers) = res?;
+                events_pipeline.push(headers);
+            }
+            Some(res) = events_pipeline.next() => {
                 res?;
             }
-            // Some(res) = state_diffs_pipeline.next() => {
-            //     res?;
-            // }
+            Some(res) = state_diffs_pipeline.next(), if classes_pipeline.can_schedule_more() => {
+                let (_range, state_diffs) = res?;
+                classes_pipeline.push(state_diffs.iter().map(|s| s.all_declared_classes()));
+                apply_state_pipeline.push(state_diffs);
+            }
+            Some(res) = classes_pipeline.next() => {
+                res?;
+            }
+            Some(res) = apply_state_pipeline.next() => {
+                res?;
+            }
+            // all pipelines are empty, we're done :)
             else => break
         }
     }

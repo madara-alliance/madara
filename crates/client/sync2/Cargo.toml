@@ -26,6 +26,8 @@ m-cairo-test-contracts.workspace = true
 [dependencies]
 
 # Madara
+bonsai-trie.workspace = true
+
 mc-analytics.workspace = true
 mc-block-import.workspace = true
 mc-db.workspace = true
@@ -38,6 +40,8 @@ mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
 mp-gateway.workspace = true
+mp-receipt.workspace = true
+mp-state-update.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
 
@@ -65,9 +69,11 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # Other
 anyhow.workspace = true
 async-trait.workspace = true
+bitvec.workspace = true
 futures = { workspace = true, default-features = true }
 hyper.workspace = true
 log.workspace = true
+rayon.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = [

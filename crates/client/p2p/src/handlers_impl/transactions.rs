@@ -878,7 +878,7 @@ pub async fn transactions_sync(
 }
 
 /// Used by [`crate::commands::P2pCommands::make_transactions_stream`] to send a transactions stream request.
-/// Note that the events in the transaction receipt will not be filled in, as it needs to be fetched using the events stream request.
+/// Note that the events in the transaction receipt will not be filled in, as they need to be fetched using the events stream request.
 pub async fn read_transactions_stream(
     res: impl Stream<Item = model::TransactionsResponse>,
     transactions_count: usize,

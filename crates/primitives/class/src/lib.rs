@@ -1,6 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
-
 use starknet_types_core::felt::Felt;
+use std::{collections::HashMap, fmt, sync::Arc};
 
 pub mod class_hash;
 pub mod class_update;
@@ -41,6 +40,27 @@ pub struct SierraConvertedClass {
     pub class_hash: Felt,
     pub info: SierraClassInfo,
     pub compiled: Arc<CompiledSierra>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ClassType {
+    Sierra,
+    Legacy,
+}
+
+impl fmt::Display for ClassType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sierra => write!(f, "Sierra"),
+            Self::Legacy => write!(f, "Legacy"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassInfoWithHash {
+    pub class_info: ClassInfo,
+    pub class_hash: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

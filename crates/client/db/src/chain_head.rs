@@ -29,12 +29,20 @@ pub struct ChainHead {
     pub state_diffs: BlockNStatus,
     pub classes: BlockNStatus,
     pub transactions: BlockNStatus,
+    pub events: BlockNStatus,
     pub l1_head: BlockNStatus,
+    pub global_trie: BlockNStatus,
 }
 
 impl ChainHead {
     pub fn latest_full_block_n(&self) -> Option<u64> {
-        self.transactions.get()
+        self.headers
+            .get()
+            .max(self.state_diffs.get())
+            .max(self.classes.get())
+            .max(self.transactions.get())
+            .max(self.events.get())
+            .max(self.global_trie.get())
     }
 }
 

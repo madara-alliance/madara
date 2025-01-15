@@ -175,7 +175,7 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
-    pub(crate) fn class_db_store_block(
+    pub fn class_db_store_block(
         &self,
         block_number: u64,
         converted_classes: &[ConvertedClass],
