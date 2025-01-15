@@ -9,11 +9,15 @@ jobs:
   update-db-version:
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.labels.*.name, 'db-migration')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Install yq
-        run: sudo apt-get install -y yq
+        uses: mikefarah/yq@master
 
       - name: Check if PR already bumped
         id: check_bump
@@ -40,7 +44,7 @@ jobs:
         if: steps.check_bump.outputs.already_bumped == 'false'
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
-            git add .db-versions.toml
+            git add .db-versions.yml
             git commit -m "chore: bump db version"
-            git push origin HEAD
+            git push origin ${{ github.head_ref || github.ref_name }}
           fi
