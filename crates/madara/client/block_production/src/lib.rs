@@ -32,6 +32,7 @@ use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_state_update::{ContractStorageDiffItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
@@ -125,37 +126,101 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.current_pending_tick = n;
     }
 
-    /// Continue the pending block state by re-adding all of its transactions back into the mempool.
-    /// This function will always clear the pending block in db, even if the transactions could not be added to the mempool.
-    pub fn re_add_pending_block_txs_to_mempool(
+    /// Closes the last pending block store in db (if any).
+    ///
+    /// This avoids re-executing transaction by re-adding them to the [Mempool],
+    /// as was done before.
+    pub async fn close_pending_block(
         backend: &MadaraBackend,
-        mempool: &Mempool,
+        importer: &Arc<BlockImporter>,
+        metrics: &Arc<BlockProductionMetrics>,
     ) -> Result<(), Cow<'static, str>> {
-        let Some(current_pending_block) =
-            backend.get_block(&DbBlockId::Pending).map_err(|err| format!("Getting pending block: {err:#}"))?
-        else {
+        let err_pending_block = |err| format!("Getting pending block: {err:#}");
+        let err_pending_state_diff = |err| format!("Getting pending state update: {err:#}");
+        let err_pending_visited_segments = |err| format!("Getting pending visited segments: {err:#}");
+        let err_pending_clear = |err| format!("Clearing pending block: {err:#}");
+        let err_latest_block_n = |err| format!("Failed to get latest block number: {err:#}");
+
+        let start_time = Instant::now();
+
+        let pending_block = backend
+            .get_block(&DbBlockId::Pending)
+            .map_err(err_pending_block)?
+            .map(|block| MadaraPendingBlock::try_from(block).expect("Ready block stored in place of pending"));
+        let Some(pending_block) = pending_block else {
             // No pending block
             return Ok(());
         };
-        backend.clear_pending_block().map_err(|err| format!("Clearing pending block: {err:#}"))?;
 
-        let n_txs = re_add_finalized_to_blockifier::re_add_txs_to_mempool(current_pending_block, mempool, backend)
-            .map_err(|err| format!("Re-adding transactions to mempool: {err:#}"))?;
+        let pending_state_diff = backend.get_pending_block_state_update().map_err(err_pending_state_diff)?;
+        let pending_visited_segments =
+            backend.get_pending_block_segments().map_err(err_pending_visited_segments)?.unwrap_or_default();
 
-        if n_txs > 0 {
-            tracing::info!("🔁 Re-added {n_txs} transactions from the pending block back into the mempool");
-        }
+        let declared_classes = pending_state_diff.declared_classes.iter().try_fold(
+            vec![],
+            |mut acc, DeclaredClassItem { class_hash, .. }| match backend
+                .get_converted_class(&BlockId::Tag(BlockTag::Pending), class_hash)
+            {
+                Ok(Some(class)) => {
+                    acc.push(class);
+                    Ok(acc)
+                }
+                Ok(None) => {
+                    Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: not found in db"))
+                }
+                Err(err) => Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: {err:#}")),
+            },
+        )?;
+
+        // NOTE: we disabled the Write Ahead Log when clearing the pending block
+        // so this will be done atomically at the same time as we close the next
+        // block, after we manually flush the db.
+        backend.clear_pending_block().map_err(err_pending_clear)?;
+
+        let block_n = backend.get_latest_block_n().map_err(err_latest_block_n)?.unwrap_or(0);
+        let n_txs = pending_block.inner.transactions.len();
+
+        // Close and import the pending block
+        close_block(
+            &importer,
+            pending_block,
+            &pending_state_diff,
+            backend.chain_config().chain_id.clone(),
+            block_n,
+            declared_classes,
+            pending_visited_segments,
+        )
+        .await
+        .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
+
+        // Flush changes to disk, pending block removal and adding the next
+        // block happens atomically
+        backend.flush().map_err(|err| format!("DB flushing error: {err:#}"))?;
+
+        let end_time = start_time.elapsed();
+        tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
+
+        // Record metrics
+        let attributes = [
+            KeyValue::new("transactions_added", n_txs.to_string()),
+            KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
+        ];
+
+        metrics.block_counter.add(1, &[]);
+        metrics.block_gauge.record(block_n, &attributes);
+        metrics.transaction_counter.add(n_txs as u64, &[]);
+
         Ok(())
     }
 
-    pub fn new(
+    pub async fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        if let Err(err) = Self::re_add_pending_block_txs_to_mempool(&backend, &mempool) {
+        if let Err(err) = Self::close_pending_block(&backend, &importer, &metrics).await {
             // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
             // a fresh one.
             tracing::error!("Failed to continue the pending block state: {err:#}");
