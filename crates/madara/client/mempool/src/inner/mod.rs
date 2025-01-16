@@ -199,6 +199,8 @@ pub enum TxInsertionError {
 #[cfg(any(test, feature = "testing"))]
 impl CheckInvariants for MempoolInner {
     fn check_invariants(&self) {
+        let mut deploy_account_txs = self.deployed_contracts.clone();
+
         // tx_intent_queue_ready can only contain one tx of every contract
         let mut tx_counts = HashMap::<Felt, usize>::default();
         for intent in self.tx_intent_queue_ready.iter() {
@@ -219,9 +221,10 @@ impl CheckInvariants for MempoolInner {
             if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
                 let contract_address = tx.contract_address;
                 assert!(
-                    self.has_deployed_contract(&contract_address),
+                    deploy_account_txs.contains(&contract_address),
                     "Ready deploy account tx from sender {contract_address:x?} is not part of deployed contacts"
                 );
+                deploy_account_txs.decrement(contract_address)
             }
 
             *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
@@ -266,6 +269,7 @@ impl CheckInvariants for MempoolInner {
                         self.has_deployed_contract(&contract_address),
                         "Pending deploy account tx from sender {contract_address:x?} is not part of deployed contacts",
                     );
+                    deploy_account_txs.decrement(contract_address)
                 }
 
                 *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
@@ -294,6 +298,9 @@ impl CheckInvariants for MempoolInner {
                 nonce_mapping.transactions.keys()
             );
         }
+
+        // Without this check, we would only check that there is an entry for every deploy tx in the mempool, and not the inverse relation.
+        assert!(deploy_account_txs.is_empty(), "Excess deployed contracts remaining: {:#?}", deploy_account_txs);
     }
 }
 
