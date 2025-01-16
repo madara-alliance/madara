@@ -177,7 +177,7 @@ impl PartialOrd for TransactionIntentPendingByTimestamp {
 /// An [intent] to be consumed by the [Mempool].
 ///
 /// This data struct will check [timestamp], [contract_address] and [nonce]
-/// (in that oreder) for equality. [nonce_next] is not considered as it should
+/// (in that order) for equality. [nonce_next] is not considered as it should
 /// directly follow from [nonce] and therefore its equality and order is implied.
 ///
 /// # Type Safety

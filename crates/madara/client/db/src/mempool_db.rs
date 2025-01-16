@@ -9,7 +9,7 @@ use starknet_types_core::felt::Felt;
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 /// A nonce is deemed ready when it directly follows the previous nonce in db
-/// for a contract  address. This guarantees that dependent transactions are not
+/// for a contract address. This guarantees that dependent transactions are not
 /// executed out of order by the mempool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NonceStatus {
@@ -73,7 +73,7 @@ struct DbMempoolTxInfoEncoder<'a> {
 }
 
 #[derive(Deserialize)]
-/// This struct is used as a templace to deserialize Mempool transactions from
+/// This struct is used as a template to deserialize Mempool transactions from
 /// the database.
 pub struct DbMempoolTxInfoDecoder {
     pub saved_tx: SavedTransaction,

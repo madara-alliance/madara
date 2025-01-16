@@ -54,8 +54,8 @@ use starknet_api::transaction::TransactionHash;
 ///
 /// ## [Pending]
 ///
-/// FIFO queue. The queue is distributed across all current contract addresses
-/// in the mempool, with each contract address having a [BTreeMap] queue mapped
+/// FIFO queue. The queue has an entry per contract address in the mempool, with
+/// each contract address having a [BTreeMap] queue of its transactions mapped
 /// to it. We do this to have access to [BTreeMap::entry] which avoids a double
 /// lookup in [pop_next] when moving pending intents to the ready queue. Intents
 /// in this queue are ordered by their [Nonce].
@@ -173,7 +173,7 @@ pub struct MempoolInner {
     /// [tx_intent_queue_pending_by_nonce]: Self::tx_intent_queue_pending_by_nonce
     // TODO: can remove nonce_next from TransactionIntentPendingByTimestamp
     pub(crate) tx_intent_queue_pending_by_timestamp: BTreeSet<TransactionIntentPendingByTimestamp>,
-    /// A count of all deployed contract declared so far.
+    /// List of all new deployed contracts currently in the mempool.
     pub(crate) deployed_contracts: DeployedContracts,
     /// Constraints on the number of transactions allowed in the [Mempool]
     ///
