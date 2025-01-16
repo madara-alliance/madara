@@ -28,4 +28,9 @@ impl DeployedContracts {
     pub fn contains(&self, address: &ContractAddress) -> bool {
         self.0.contains_key(address)
     }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn count(&self) -> u64 {
+        self.0.iter().fold(0, |acc, entry| acc + entry.1)
+    }
 }

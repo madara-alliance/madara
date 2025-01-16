@@ -780,7 +780,7 @@ mod test {
     /// account.
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
-    fn mempool_take_tx_deploy(
+    fn mempool_deploy_count(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
@@ -815,7 +815,7 @@ mod test {
     /// > This bug was originally detected through proptesting.
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
-    fn mempool_take_tx_deploy_replace(
+    fn mempool_deploy_replace(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
@@ -868,6 +868,115 @@ mod test {
         // This should have updated the count of deploy transactions.
         let inner = mempool.inner.read().expect("Poisoned lock");
         assert!(inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+    }
+
+    /// This test makes sure that replacing a deploy account transaction with a
+    /// non-deploy account transaction reduces the deploy transaction count.
+    ///
+    /// > This bug was originally detected through proptesting
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_deploy_replace2(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+
+        // First, we insert the deploy account transaction
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_deploy_v1_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        let force = true;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+        drop(inner);
+
+        // Now we replace the previous transaction with a non-deploy account tx
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_account_v0_valid,
+            arrived_at: ArrivedAtTimestamp::now(),
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        let force = true;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        // The deploy transaction count at that address should be 0
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(!inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+    }
+
+    /// This tests makes sure that when deploy account transactions are removed
+    /// because their age exceeds the allowed limit, then the deploy transaction
+    /// count is also updated.
+    ///
+    /// > This bug was originally detected through proptesting
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    fn mempool_deploy_remove_age_exceeded(
+        backend: Arc<mc_db::MadaraBackend>,
+        l1_data_provider: Arc<MockL1DataProvider>,
+        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+    ) {
+        let mempool = Mempool::new(
+            backend,
+            l1_data_provider,
+            MempoolLimits { max_age: Some(Duration::from_secs(3_600)), ..MempoolLimits::for_testing() },
+        );
+
+        // First, we insert the deploy account transaction
+        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
+        let mempool_tx = MempoolTransaction {
+            tx: tx_deploy_v1_valid,
+            arrived_at: ArrivedAtTimestamp::UNIX_EPOCH,
+            converted_class: None,
+            nonce: nonce_info.nonce,
+            nonce_next: nonce_info.nonce_next,
+        };
+        let contract_address = mempool_tx.contract_address();
+
+        let force = true;
+        let update_limits = true;
+        let result =
+            mempool.inner.write().expect("Poisoned lock").insert_tx(mempool_tx, force, update_limits, nonce_info);
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(inner.deployed_contracts.contains(&contract_address));
+        inner.check_invariants();
+        drop(inner);
+
+        // Next, we manually call `remove_age_exceeded_txs`
+        mempool.inner.write().expect("Poisoned lock").remove_age_exceeded_txs();
+
+        // This should have removed the deploy contract transaction and updated
+        // the count at that address
+        let inner = mempool.inner.read().expect("Poisoned lock");
+        assert!(!inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
     }
 

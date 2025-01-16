@@ -201,6 +201,7 @@ impl CheckInvariants for MempoolInner {
     fn check_invariants(&self) {
         // tx_intent_queue_ready can only contain one tx of every contract
         let mut tx_counts = HashMap::<Felt, usize>::default();
+        let mut deployed_count = 0;
         for intent in self.tx_intent_queue_ready.iter() {
             intent.check_invariants();
 
@@ -222,6 +223,7 @@ impl CheckInvariants for MempoolInner {
                     self.has_deployed_contract(&contract_address),
                     "Ready deploy account tx from sender {contract_address:x?} is not part of deployed contacts"
                 );
+                deployed_count += 1;
             }
 
             *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
@@ -266,6 +268,7 @@ impl CheckInvariants for MempoolInner {
                         self.has_deployed_contract(&contract_address),
                         "Pending deploy account tx from sender {contract_address:x?} is not part of deployed contacts",
                     );
+                    deployed_count += 1;
                 }
 
                 *tx_counts.entry(intent.contract_address).or_insert(0) += 1;
@@ -294,6 +297,17 @@ impl CheckInvariants for MempoolInner {
                 nonce_mapping.transactions.keys()
             );
         }
+
+        assert_eq!(
+            deployed_count,
+            self.deployed_contracts.count(),
+            "{} extra deployed contract mappings, remaining contract mappings are: {:?}, counted {}.\nready intents are {:#?}\npending intents are {:#?}",
+            self.deployed_contracts.count().saturating_sub(deployed_count),
+            self.deployed_contracts,
+            deployed_count,
+            self.tx_intent_queue_ready,
+            self.tx_intent_queue_pending_by_nonce
+        );
     }
 }
 
@@ -368,10 +382,19 @@ impl MempoolInner {
                             debug_assert!(removed);
                             self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&previous));
 
+                            // So! This is a pretty nasty edge case. If we
+                            // replace a transaction, and the previous tx was
+                            // a deploy account, we must DECREMENT the count for
+                            // that address. If the NEW transactions is a deploy
+                            // but not the old one, we must INCREMENT the count.
+                            // Otherwise, we have replaced a deploy account with
+                            // another deploy account and we do nothing.
                             if let Some(contract_address) = &deployed_contract_address {
                                 if previous.tx.tx_type() != TransactionType::DeployAccount {
                                     self.deployed_contracts.increment(*contract_address);
                                 }
+                            } else if previous.tx.tx_type() == TransactionType::DeployAccount {
+                                self.deployed_contracts.decrement(previous.contract_address());
                             }
                         } else if let Some(contract_address) = &deployed_contract_address {
                             self.deployed_contracts.increment(*contract_address)
@@ -421,6 +444,8 @@ impl MempoolInner {
                                 if previous.tx.tx_type() != TransactionType::DeployAccount {
                                     self.deployed_contracts.increment(*contract_address);
                                 }
+                            } else if previous.tx.tx_type() == TransactionType::DeployAccount {
+                                self.deployed_contracts.decrement(previous.contract_address())
                             }
                         } else if let Some(contract_address) = &deployed_contract_address {
                             self.deployed_contracts.increment(*contract_address);
@@ -533,7 +558,14 @@ impl MempoolInner {
 
             let limits = TransactionCheckedLimits::limits_for(nonce_mapping_entry.get());
             if self.limiter.tx_age_exceeded(&limits) {
-                nonce_mapping_entry.remove();
+                let mempool_tx = nonce_mapping_entry.remove();
+
+                // We must remember to update the deploy contract count on
+                // removal!
+                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
+                    self.deployed_contracts.decrement(tx.contract_address);
+                }
+
                 if nonce_mapping.transactions.is_empty() {
                     entry.remove();
                 }
@@ -583,7 +615,13 @@ impl MempoolInner {
                 // Step 2: we found it! Now we remove the entry in
                 // tx_intent_queue_pending_by_timestamp
 
-                nonce_mapping_entry.remove(); // *- snip -*
+                let mempool_tx = nonce_mapping_entry.remove(); // *- snip -*
+                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
+                    // Remember to update the deployed contract count along the
+                    // way!
+                    self.deployed_contracts.decrement(tx.contract_address);
+                }
+
                 if nonce_mapping.transactions.is_empty() {
                     entry.remove(); // *- snip -*
                 }
