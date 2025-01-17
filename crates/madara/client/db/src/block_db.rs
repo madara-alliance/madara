@@ -186,6 +186,12 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn has_pending_block(&self) -> Result<bool> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        Ok(self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)?.is_some())
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_pending_block_state_update(&self) -> Result<StateDiff> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else {

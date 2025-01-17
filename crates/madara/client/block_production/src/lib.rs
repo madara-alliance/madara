@@ -33,7 +33,6 @@ use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, StateDiff, StorageEntry};
-use mp_state_update::{ContractStorageDiffItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
@@ -132,8 +131,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     /// as was done before.
     pub async fn close_pending_block(
         backend: &MadaraBackend,
-        importer: &Arc<BlockImporter>,
-        metrics: &Arc<BlockProductionMetrics>,
+        importer: &BlockImporter,
+        metrics: &BlockProductionMetrics,
     ) -> Result<(), Cow<'static, str>> {
         let err_pending_block = |err| format!("Getting pending block: {err:#}");
         let err_pending_state_diff = |err| format!("Getting pending state update: {err:#}");
@@ -143,24 +142,31 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let start_time = Instant::now();
 
+        // We cannot use `backend.get_block` to check for the existence of the
+        // pending block as it will ALWAYS return a pending block, even if there
+        // is none in db (it uses the Default::default in that case).
+        if !backend.has_pending_block().map_err(err_pending_block)? {
+            return Ok(());
+        }
+
         let pending_block = backend
             .get_block(&DbBlockId::Pending)
             .map_err(err_pending_block)?
-            .map(|block| MadaraPendingBlock::try_from(block).expect("Ready block stored in place of pending"));
-        let Some(pending_block) = pending_block else {
-            // No pending block
-            return Ok(());
-        };
+            .map(|block| MadaraPendingBlock::try_from(block).expect("Ready block stored in place of pending"))
+            .expect("Checked above");
 
         let pending_state_diff = backend.get_pending_block_state_update().map_err(err_pending_state_diff)?;
         let pending_visited_segments =
             backend.get_pending_block_segments().map_err(err_pending_visited_segments)?.unwrap_or_default();
 
-        let declared_classes = pending_state_diff.declared_classes.iter().try_fold(
-            vec![],
-            |mut acc, DeclaredClassItem { class_hash, .. }| match backend
-                .get_converted_class(&BlockId::Tag(BlockTag::Pending), class_hash)
-            {
+        let mut classes = pending_state_diff
+            .deprecated_declared_classes
+            .iter()
+            .chain(pending_state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, .. }| class_hash));
+        let capacity = pending_state_diff.deprecated_declared_classes.len() + pending_state_diff.declared_classes.len();
+
+        let declared_classes = classes.try_fold(Vec::with_capacity(capacity), |mut acc, class_hash| {
+            match backend.get_converted_class(&BlockId::Tag(BlockTag::Pending), class_hash) {
                 Ok(Some(class)) => {
                     acc.push(class);
                     Ok(acc)
@@ -169,20 +175,20 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: not found in db"))
                 }
                 Err(err) => Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: {err:#}")),
-            },
-        )?;
+            }
+        })?;
 
         // NOTE: we disabled the Write Ahead Log when clearing the pending block
         // so this will be done atomically at the same time as we close the next
         // block, after we manually flush the db.
         backend.clear_pending_block().map_err(err_pending_clear)?;
 
-        let block_n = backend.get_latest_block_n().map_err(err_latest_block_n)?.unwrap_or(0);
+        let block_n = backend.get_latest_block_n().map_err(err_latest_block_n)?.map(|n| n + 1).unwrap_or(0);
         let n_txs = pending_block.inner.transactions.len();
 
         // Close and import the pending block
         close_block(
-            &importer,
+            importer,
             pending_block,
             &pending_state_diff,
             backend.chain_config().chain_id.clone(),
@@ -621,12 +627,17 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
+    use blockifier::{
+        bouncer::BouncerWeights, compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key,
+    };
     use mc_db::MadaraBackend;
+    use mc_mempool::Mempool;
+    use mp_block::VisitedSegments;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_state_update::{
-        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry,
+        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+        StorageEntry,
     };
     use starknet_api::{
         class_hash, contract_address,
@@ -635,12 +646,153 @@ mod tests {
     };
     use starknet_types_core::felt::Felt;
 
-    use crate::finalize_execution_state::state_map_to_state_diff;
+    use crate::{
+        finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, BlockProductionTask,
+    };
 
-    #[test]
-    fn test_state_map_to_state_diff() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    type TxFixtureInfo = (mp_transactions::Transaction, mp_receipt::TransactionReceipt);
 
+    #[rstest::fixture]
+    fn backend() -> Arc<MadaraBackend> {
+        MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()))
+    }
+
+    #[rstest::fixture]
+    fn setup(
+        backend: Arc<MadaraBackend>,
+    ) -> (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>) {
+        (
+            Arc::clone(&backend),
+            Arc::new(mc_block_import::BlockImporter::new(Arc::clone(&backend), None).unwrap()),
+            Arc::new(BlockProductionMetrics::register()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_invoke_v0(#[default(Felt::ZERO)] contract_address: Felt) -> TxFixtureInfo {
+        (
+            mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(
+                mp_transactions::InvokeTransactionV0 { contract_address, ..Default::default() },
+            )),
+            mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt::default()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_l1_handler(#[default(Felt::ZERO)] contract_address: Felt) -> TxFixtureInfo {
+        (
+            mp_transactions::Transaction::L1Handler(mp_transactions::L1HandlerTransaction {
+                contract_address,
+                ..Default::default()
+            }),
+            mp_receipt::TransactionReceipt::L1Handler(mp_receipt::L1HandlerTransactionReceipt::default()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_declare_v0(#[default(Felt::ZERO)] sender_address: Felt) -> TxFixtureInfo {
+        (
+            mp_transactions::Transaction::Declare(mp_transactions::DeclareTransaction::V0(
+                mp_transactions::DeclareTransactionV0 { sender_address, ..Default::default() },
+            )),
+            mp_receipt::TransactionReceipt::Declare(mp_receipt::DeclareTransactionReceipt::default()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_deploy() -> TxFixtureInfo {
+        (
+            mp_transactions::Transaction::Deploy(mp_transactions::DeployTransaction::default()),
+            mp_receipt::TransactionReceipt::Deploy(mp_receipt::DeployTransactionReceipt::default()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_deploy_account() -> TxFixtureInfo {
+        (
+            mp_transactions::Transaction::DeployAccount(mp_transactions::DeployAccountTransaction::V1(
+                mp_transactions::DeployAccountTransactionV1::default(),
+            )),
+            mp_receipt::TransactionReceipt::DeployAccount(mp_receipt::DeployAccountTransactionReceipt::default()),
+        )
+    }
+
+    #[rstest::fixture]
+    fn converted_class_legacy(#[default(Felt::ZERO)] class_hash: Felt) -> mp_class::ConvertedClass {
+        mp_class::ConvertedClass::Legacy(mp_class::LegacyConvertedClass {
+            class_hash,
+            info: mp_class::LegacyClassInfo {
+                contract_class: Arc::new(mp_class::CompressedLegacyContractClass {
+                    program: vec![],
+                    entry_points_by_type: mp_class::LegacyEntryPointsByType {
+                        constructor: vec![],
+                        external: vec![],
+                        l1_handler: vec![],
+                    },
+                    abi: None,
+                }),
+            },
+        })
+    }
+
+    #[rstest::fixture]
+    fn converted_class_sierra(
+        #[default(Felt::ZERO)] class_hash: Felt,
+        #[default(Felt::ZERO)] compiled_class_hash: Felt,
+    ) -> mp_class::ConvertedClass {
+        mp_class::ConvertedClass::Sierra(mp_class::SierraConvertedClass {
+            class_hash,
+            info: mp_class::SierraClassInfo {
+                contract_class: Arc::new(mp_class::FlattenedSierraClass {
+                    sierra_program: vec![],
+                    contract_class_version: "".to_string(),
+                    entry_points_by_type: mp_class::EntryPointsByType {
+                        constructor: vec![],
+                        external: vec![],
+                        l1_handler: vec![],
+                    },
+                    abi: "".to_string(),
+                }),
+                compiled_class_hash,
+            },
+            compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
+        })
+    }
+
+    #[rstest::fixture]
+    fn visited_segments() -> mp_block::VisitedSegments {
+        mp_block::VisitedSegments(vec![
+            mp_block::VisitedSegmentEntry { class_hash: Felt::ONE, segments: vec![0, 1, 2] },
+            mp_block::VisitedSegmentEntry { class_hash: Felt::TWO, segments: vec![0, 1, 2] },
+            mp_block::VisitedSegmentEntry { class_hash: Felt::THREE, segments: vec![0, 1, 2] },
+        ])
+    }
+
+    #[rstest::fixture]
+    fn bouncer_weights() -> BouncerWeights {
+        BouncerWeights {
+            builtin_count: blockifier::bouncer::BuiltinCount {
+                add_mod: 0,
+                bitwise: 1,
+                ecdsa: 2,
+                ec_op: 3,
+                keccak: 4,
+                mul_mod: 5,
+                pedersen: 6,
+                poseidon: 7,
+                range_check: 8,
+                range_check96: 9,
+            },
+            gas: 10,
+            message_segment_length: 11,
+            n_events: 12,
+            n_steps: 13,
+            state_diff_size: 14,
+        }
+    }
+
+    #[rstest::rstest]
+    fn block_prod_state_map_to_state_diff(backend: Arc<MadaraBackend>) {
         let mut nonces = HashMap::new();
         nonces.insert(contract_address!(1u32), nonce!(1));
         nonces.insert(contract_address!(2u32), nonce!(2));
@@ -757,5 +909,769 @@ mod tests {
             serde_json::to_string_pretty(&actual).unwrap_or_default(),
             serde_json::to_string_pretty(&expected).unwrap_or_default()
         );
+    }
+
+    /// This test makes sure that if a pending block is already present in db
+    /// at startup, then it is closed and stored in db.
+    ///
+    /// This happens if a full node is shutdown (gracefully or not) midway
+    /// during block production.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_pass(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
+        #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
+        #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
+        tx_deploy: TxFixtureInfo,
+        tx_deploy_account: TxFixtureInfo,
+        #[from(converted_class_legacy)]
+        #[with(Felt::ZERO)]
+        converted_class_legacy_0: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::ONE, Felt::ONE)]
+        converted_class_sierra_1: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::TWO, Felt::TWO)]
+        converted_class_sierra_2: mp_class::ConvertedClass,
+        visited_segments: VisitedSegments,
+        bouncer_weights: BouncerWeights,
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // ================================================================== //
+        //                  PART 1: we prepare the pending block              //
+        // ================================================================== //
+
+        let pending_inner = mp_block::MadaraBlockInner {
+            transactions: vec![tx_invoke_v0.0, tx_l1_handler.0, tx_declare_v0.0, tx_deploy.0, tx_deploy_account.0],
+            receipts: vec![tx_invoke_v0.1, tx_l1_handler.1, tx_declare_v0.1, tx_deploy.1, tx_deploy_account.1],
+        };
+
+        let pending_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![Felt::ZERO],
+            declared_classes: vec![
+                DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
+                DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
+            ],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let converted_classes =
+            vec![converted_class_legacy_0.clone(), converted_class_sierra_1.clone(), converted_class_sierra_2.clone()];
+
+        // ================================================================== //
+        //                   PART 2: storing the pending block                //
+        // ================================================================== //
+
+        // This simulates a node restart after shutting down midway during block
+        // production.
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+                        header: mp_block::header::PendingHeader::default(),
+                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                    }),
+                    inner: pending_inner.clone(),
+                },
+                pending_state_diff.clone(),
+                converted_classes.clone(),
+                Some(visited_segments.clone()),
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //        PART 3: init block production and seal pending block        //
+        // ================================================================== //
+
+        // This should load the pending block from db and close it
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect("Failed to close pending block");
+
+        // Now we check this was the case.
+        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+
+        let block_inner = backend
+            .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest block from db")
+            .expect("Missing latest block")
+            .inner;
+        assert_eq!(block_inner, pending_inner);
+
+        let state_diff = backend
+            .get_block_state_diff(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest state diff from db")
+            .expect("Missing latest state diff");
+        assert_eq!(state_diff, pending_state_diff);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ZERO)
+            .expect("Failed to retrieve class at hash 0x0 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_legacy_0);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ONE)
+            .expect("Failed to retrieve class at hash 0x1 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_1);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::TWO)
+            .expect("Failed to retrieve class at hash 0x2 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_2);
+
+        // visited segments and bouncer weights are currently not stored for in
+        // ready blocks
+    }
+
+    /// This test makes sure that if a pending block is already present in db
+    /// at startup, then it is closed and stored in db on top of the latest
+    /// block.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_pass_on_top(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+
+        // Transactions
+        #[from(tx_invoke_v0)]
+        #[with(Felt::ZERO)]
+        tx_invoke_v0_0: TxFixtureInfo,
+        #[from(tx_invoke_v0)]
+        #[with(Felt::ONE)]
+        tx_invoke_v0_1: TxFixtureInfo,
+        #[from(tx_l1_handler)]
+        #[with(Felt::ONE)]
+        tx_l1_handler_1: TxFixtureInfo,
+        #[from(tx_l1_handler)]
+        #[with(Felt::TWO)]
+        tx_l1_handler_2: TxFixtureInfo,
+        #[from(tx_declare_v0)]
+        #[with(Felt::TWO)]
+        tx_declare_v0_2: TxFixtureInfo,
+        #[from(tx_declare_v0)]
+        #[with(Felt::THREE)]
+        tx_declare_v0_3: TxFixtureInfo,
+        tx_deploy: TxFixtureInfo,
+        tx_deploy_account: TxFixtureInfo,
+
+        // Converted classes
+        #[from(converted_class_legacy)]
+        #[with(Felt::ZERO)]
+        converted_class_legacy_0: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::ONE, Felt::ONE)]
+        converted_class_sierra_1: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::TWO, Felt::TWO)]
+        converted_class_sierra_2: mp_class::ConvertedClass,
+
+        // Pending data
+        visited_segments: VisitedSegments,
+        bouncer_weights: BouncerWeights,
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // ================================================================== //
+        //                   PART 1: we prepare the ready block               //
+        // ================================================================== //
+
+        let ready_inner = mp_block::MadaraBlockInner {
+            transactions: vec![tx_invoke_v0_0.0, tx_l1_handler_1.0, tx_declare_v0_2.0],
+            receipts: vec![tx_invoke_v0_0.1, tx_l1_handler_1.1, tx_declare_v0_2.1],
+        };
+
+        let ready_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![],
+            declared_classes: vec![],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let ready_converted_classes = vec![];
+
+        // ================================================================== //
+        //                   PART 2: storing the ready block                  //
+        // ================================================================== //
+
+        // Simulates block closure before the shutdown
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+                        header: mp_block::Header::default(),
+                        block_hash: Felt::ZERO,
+                        tx_hashes: vec![Felt::ZERO, Felt::ONE, Felt::TWO],
+                    }),
+                    inner: ready_inner.clone(),
+                },
+                ready_state_diff.clone(),
+                ready_converted_classes.clone(),
+                Some(visited_segments.clone()),
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //                  PART 3: we prepare the pending block              //
+        // ================================================================== //
+
+        let pending_inner = mp_block::MadaraBlockInner {
+            transactions: vec![
+                tx_invoke_v0_1.0,
+                tx_l1_handler_2.0,
+                tx_declare_v0_3.0,
+                tx_deploy.0,
+                tx_deploy_account.0,
+            ],
+            receipts: vec![tx_invoke_v0_1.1, tx_l1_handler_2.1, tx_declare_v0_3.1, tx_deploy.1, tx_deploy_account.1],
+        };
+
+        let pending_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![Felt::ZERO],
+            declared_classes: vec![
+                DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
+                DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
+            ],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let pending_converted_classes =
+            vec![converted_class_legacy_0.clone(), converted_class_sierra_1.clone(), converted_class_sierra_2.clone()];
+
+        // ================================================================== //
+        //                   PART 4: storing the pending block                //
+        // ================================================================== //
+
+        // This simulates a node restart after shutting down midway during block
+        // production.
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+                        header: mp_block::header::PendingHeader::default(),
+                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                    }),
+                    inner: pending_inner.clone(),
+                },
+                pending_state_diff.clone(),
+                pending_converted_classes.clone(),
+                Some(visited_segments.clone()),
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //        PART 5: init block production and seal pending block        //
+        // ================================================================== //
+
+        // This should load the pending block from db and close it on top of the
+        // previous block.
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect("Failed to close pending block");
+
+        // Now we check this was the case.
+        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+
+        let block = backend
+            .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest block from db")
+            .expect("Missing latest block");
+
+        assert_eq!(block.info.as_nonpending().unwrap().header.parent_block_hash, Felt::ZERO);
+        assert_eq!(block.inner, pending_inner);
+
+        let state_diff = backend
+            .get_block_state_diff(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest state diff from db")
+            .expect("Missing latest state diff");
+        assert_eq!(state_diff, state_diff);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ZERO)
+            .expect("Failed to retrieve class at hash 0x0 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_legacy_0);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ONE)
+            .expect("Failed to retrieve class at hash 0x1 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_1);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::TWO)
+            .expect("Failed to retrieve class at hash 0x2 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_2);
+
+        // visited segments and bouncer weights are currently not stored for in
+        // ready blocks
+    }
+
+    /// This test makes sure that it is possible to start the block production
+    /// task even if there is no pending block in db at the time of startup.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_no_pending(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // Simulates starting block production without a pending block in db
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect("Failed to close pending block");
+
+        // Now we check no block was added to the db
+        assert_eq!(backend.get_latest_block_n().unwrap(), None);
+    }
+
+    /// This test makes sure that if a pending block is already present in db
+    /// at startup, then it is closed and stored in db, event if has no visited
+    /// segments.
+    ///
+    /// This will arise if switching from a full node to a sequencer with the
+    /// same db.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_no_visited_segments(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
+        #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
+        #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
+        tx_deploy: TxFixtureInfo,
+        tx_deploy_account: TxFixtureInfo,
+        #[from(converted_class_legacy)]
+        #[with(Felt::ZERO)]
+        converted_class_legacy_0: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::ONE, Felt::ONE)]
+        converted_class_sierra_1: mp_class::ConvertedClass,
+        #[from(converted_class_sierra)]
+        #[with(Felt::TWO, Felt::TWO)]
+        converted_class_sierra_2: mp_class::ConvertedClass,
+        bouncer_weights: BouncerWeights,
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // ================================================================== //
+        //                  PART 1: we prepare the pending block              //
+        // ================================================================== //
+
+        let pending_inner = mp_block::MadaraBlockInner {
+            transactions: vec![tx_invoke_v0.0, tx_l1_handler.0, tx_declare_v0.0, tx_deploy.0, tx_deploy_account.0],
+            receipts: vec![tx_invoke_v0.1, tx_l1_handler.1, tx_declare_v0.1, tx_deploy.1, tx_deploy_account.1],
+        };
+
+        let pending_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![Felt::ZERO],
+            declared_classes: vec![
+                DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
+                DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
+            ],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let converted_classes =
+            vec![converted_class_legacy_0.clone(), converted_class_sierra_1.clone(), converted_class_sierra_2.clone()];
+
+        // ================================================================== //
+        //                   PART 2: storing the pending block                //
+        // ================================================================== //
+
+        // This simulates a node restart after shutting down midway during block
+        // production.
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+                        header: mp_block::header::PendingHeader::default(),
+                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                    }),
+                    inner: pending_inner.clone(),
+                },
+                pending_state_diff.clone(),
+                converted_classes.clone(),
+                None, // No visited segments!
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //        PART 3: init block production and seal pending block        //
+        // ================================================================== //
+
+        // This should load the pending block from db and close it
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect("Failed to close pending block");
+
+        // Now we check this was the case.
+        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+
+        let block_inner = backend
+            .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest block from db")
+            .expect("Missing latest block")
+            .inner;
+        assert_eq!(block_inner, pending_inner);
+
+        let state_diff = backend
+            .get_block_state_diff(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest state diff from db")
+            .expect("Missing latest state diff");
+        assert_eq!(state_diff, pending_state_diff);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ZERO)
+            .expect("Failed to retrieve class at hash 0x0 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_legacy_0);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ONE)
+            .expect("Failed to retrieve class at hash 0x1 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_1);
+
+        let class = backend
+            .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::TWO)
+            .expect("Failed to retrieve class at hash 0x2 from db")
+            .expect("Missing class at index 0x0");
+        assert_eq!(class, converted_class_sierra_2);
+
+        // visited segments and bouncer weights are currently not stored for in
+        // ready blocks
+    }
+
+    /// This test makes sure that closing the pending block from db will fail if
+    /// the pending state diff references a non-existing class.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_fail_missing_class(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
+        #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
+        #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
+        tx_deploy: TxFixtureInfo,
+        tx_deploy_account: TxFixtureInfo,
+        visited_segments: VisitedSegments,
+        bouncer_weights: BouncerWeights,
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // ================================================================== //
+        //                  PART 1: we prepare the pending block              //
+        // ================================================================== //
+
+        let pending_inner = mp_block::MadaraBlockInner {
+            transactions: vec![tx_invoke_v0.0, tx_l1_handler.0, tx_declare_v0.0, tx_deploy.0, tx_deploy_account.0],
+            receipts: vec![tx_invoke_v0.1, tx_l1_handler.1, tx_declare_v0.1, tx_deploy.1, tx_deploy_account.1],
+        };
+
+        let pending_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![],
+            declared_classes: vec![DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE }],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let converted_classes = vec![];
+
+        // ================================================================== //
+        //                   PART 2: storing the pending block                //
+        // ================================================================== //
+
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+                        header: mp_block::header::PendingHeader::default(),
+                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                    }),
+                    inner: pending_inner.clone(),
+                },
+                pending_state_diff.clone(),
+                converted_classes.clone(),
+                Some(visited_segments.clone()),
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //        PART 3: init block production and seal pending block        //
+        // ================================================================== //
+
+        // This should fail since the pending state update references a
+        // non-existent declared class at address 0x1
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect_err("Should error");
+
+        assert!(err.contains("Failed to retrieve pending declared class at hash"));
+        assert!(err.contains("not found in db"));
+    }
+
+    /// This test makes sure that closing the pending block from db will fail if
+    /// the pending state diff references a non-existing legacy class.
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
+        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
+        #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
+        #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
+        tx_deploy: TxFixtureInfo,
+        tx_deploy_account: TxFixtureInfo,
+        visited_segments: VisitedSegments,
+        bouncer_weights: BouncerWeights,
+    ) {
+        let (backend, importer, metrics) = setup;
+
+        // ================================================================== //
+        //                  PART 1: we prepare the pending block              //
+        // ================================================================== //
+
+        let pending_inner = mp_block::MadaraBlockInner {
+            transactions: vec![tx_invoke_v0.0, tx_l1_handler.0, tx_declare_v0.0, tx_deploy.0, tx_deploy_account.0],
+            receipts: vec![tx_invoke_v0.1, tx_l1_handler.1, tx_declare_v0.1, tx_deploy.1, tx_deploy_account.1],
+        };
+
+        let pending_state_diff = mp_state_update::StateDiff {
+            storage_diffs: vec![
+                ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::TWO,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::THREE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ZERO, value: Felt::ZERO },
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                },
+            ],
+            deprecated_declared_classes: vec![Felt::ZERO],
+            declared_classes: vec![],
+            deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+            replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
+            nonces: vec![
+                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
+            ],
+        };
+
+        let converted_classes = vec![];
+
+        // ================================================================== //
+        //                   PART 2: storing the pending block                //
+        // ================================================================== //
+
+        backend
+            .store_block(
+                mp_block::MadaraMaybePendingBlock {
+                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+                        header: mp_block::header::PendingHeader::default(),
+                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                    }),
+                    inner: pending_inner.clone(),
+                },
+                pending_state_diff.clone(),
+                converted_classes.clone(),
+                Some(visited_segments.clone()),
+                Some(bouncer_weights.clone()),
+            )
+            .expect("Failed to store pending block");
+
+        // ================================================================== //
+        //        PART 3: init block production and seal pending block        //
+        // ================================================================== //
+
+        // This should fail since the pending state update references a
+        // non-existent declared class at address 0x0
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
+            .await
+            .expect_err("Should error");
+
+        assert!(err.contains("Failed to retrieve pending declared class at hash"));
+        assert!(err.contains("not found in db"));
     }
 }
