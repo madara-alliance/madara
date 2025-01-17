@@ -1,0 +1,28 @@
+[package]
+description = "Madara primitive for block state update"
+name = "mp-state-update"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+
+# Starknet
+starknet-types-core = { workspace = true }
+starknet-types-rpc = { workspace = true }
+
+# Other
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+bincode = { workspace = true }
+mp-convert = { workspace = true }

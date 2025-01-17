@@ -3,6 +3,34 @@
 ## Next release
 
 - feat(rpc): added `getMessagesStatus` method
+- fix(block_production): dynamic block closing now adds special address with prev block hash
+- fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
+- fix(compilation): crate-level compilation
+- chore: Move crates under a madara subdir
+- chore(nix): resolve flake and direnv compatibility issues
+- fix: Gateway path fix
+- fix: instrumentation code
+- feat: block resource cap removed from the pending tick
+- fix: replace class hash issue resolved + gas fees issue resolved
+- fix: trim hash of eth state was failing with 0x0
+- fix: devnet accounts getting deployed in sequencer mode
+- fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
+- fix: oracle need condition
+- fix(block_production): continue pending block now reexecutes the previous transactions
+- feat(services): reworked Madara services for better cancellation control
+- feat: fetch eth/strk price and sync strk gas price
+- feat(block_production): continue pending block on restart
+- feat(mempool): mempool transaction saving on db
+- feat(mempool): mempool transaction limits
+- feat(cli): madaraup quickfix
+- feat(cli): added madaraup for v0.7.0
+- refactor(rpc): replace starknet-rs by starknet-types-rpc
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
+- feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
+- feat(warp): added warp update to madara
+- docs(readme): updated README.md docs and added Docker Compose support
+- fix(log): define RUST_LOG=info by default
+- fix(tracing): RUST_LOG filtering support
 - fix(fgw): fetch class
 - feat: possibility of starting madara & kakarot-rpc in docker
 - feat(debug): service cancelling and profiling build

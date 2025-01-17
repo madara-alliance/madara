@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+
+# Check if the platform is Windows
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  echo "Note: Madaraup does not support Powershell or Cmd on Windows."
+  echo "Please use Git BASH (https://gitforwindows.org/) or WSL (https://learn.microsoft.com/en-us/windows/wsl/install)."
+fi
+
+set -e
+
+BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
+MADARA_DIR=${MADARA_DIR-"$BASE_DIR/.madara"}
+MADARA_BIN_DIR="$MADARA_DIR/bin"
+TEMP_DIR="$MADARA_DIR/tmp"
+
+BINS=(madara)
+
+export RUSTFLAGS="-C target-cpu=native"
+
+main() {
+  need_cmd git
+  need_cmd curl
+
+  while [[ $1 ]]; do
+    case $1 in
+      --)               shift; break;;
+      -r|--repo)       shift; MADARAUP_REPO=$1;;
+      -b|--branch)     shift; MADARAUP_BRANCH=$1;;
+      -t|--tag)        shift; MADARAUP_TAG=$1;;
+      -v|--version)    shift; MADARAUP_VERSION=$1;;
+      -p|--path)       shift; MADARAUP_LOCAL_REPO=$1;;
+      -P|--pr)         shift; MADARAUP_PR=$1;;
+      -c|--commit)     shift; MADARAUP_COMMIT=$1;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        warn "unknown option: $1"
+        usage
+        exit 1
+    esac; shift
+  done
+
+  # Check if Rust is required
+  if [ -n "$MADARAUP_BRANCH" ] || [ -n "$MADARAUP_TAG" ] || [ -n "$MADARAUP_PR" ] || [ -n "$MADARAUP_COMMIT" ] || [ -n "$MADARAUP_LOCAL_REPO" ] || [ -n "$MADARAUP_REPO" ]; then
+    if ! command -v rustc &> /dev/null; then
+      err "Rust is required for building from source. Please install Rust from https://www.rust-lang.org/tools/install."
+    fi
+  fi
+
+  REMOTE_OPTION=$(check_exclusive_options MADARAUP_BRANCH MADARAUP_TAG MADARAUP_PR)
+
+  if [ -n "$REMOTE_OPTION" ]; then
+    if [ "$REMOTE_OPTION" = "MADARAUP_PR" ]; then
+      say "Using $REMOTE_OPTION: $MADARAUP_PR"
+      MADARAUP_BRANCH="refs/pull/$MADARAUP_PR/head"
+    else
+      say "Using $REMOTE_OPTION: ${!REMOTE_OPTION}"
+    fi
+  fi
+
+  if [[ -n "$MADARAUP_LOCAL_REPO" ]]; then
+    need_cmd cargo
+    
+    if [ -n "$MADARAUP_REPO" ] || [ -n "$MADARAUP_BRANCH" ] || [ -n "$MADARAUP_VERSION" ]; then
+      warn "--branch, --version, and --repo arguments are ignored during local install"
+    fi
+
+    say "installing from $MADARAUP_LOCAL_REPO"
+    cd "$MADARAUP_LOCAL_REPO"
+    ensure cargo build --release
+
+    ensure mkdir -p "$MADARA_BIN_DIR"
+    for bin in "${BINS[@]}"; do
+      rm -f "$MADARA_BIN_DIR/$bin"
+      ensure cp "target/release/$bin" "$MADARA_BIN_DIR/$bin"
+    done
+
+    say "done"
+    welcome_msg
+    exit 0
+  fi
+
+  MADARAUP_REPO=${MADARAUP_REPO-madara-alliance/madara}
+  MADARAUP_VERSION=${MADARAUP_VERSION-stable}
+
+  # Handle installation via binary download
+  if [[ "$MADARAUP_REPO" == "madara-alliance/madara" && -z "$MADARAUP_BRANCH" && -z "$MADARAUP_COMMIT" ]]; then
+    if [ -n "$MADARAUP_TAG" ]; then
+      MADARAUP_VERSION=$MADARAUP_TAG
+    fi
+
+    # Set default version
+    if [[ "$MADARAUP_VERSION" == "stable" ]]; then
+      MADARAUP_VERSION="v0.7.0"
+    elif [[ "$MADARAUP_VERSION" == [[:digit:]]* ]]; then
+      MADARAUP_VERSION="v${MADARAUP_VERSION}"
+    fi
+
+    say "installing madara (version ${MADARAUP_VERSION})"
+
+    # Platform detection and binary name selection
+    PLATFORM="$(uname -s)"
+    case $PLATFORM in
+      Linux)   
+        PLATFORM="linux"
+        BINARY_NAME="madara-${MADARAUP_VERSION}-x86_64"
+        ;;
+      Darwin)  
+        PLATFORM="darwin"
+        BINARY_NAME="madara-${MADARAUP_VERSION}-aarch64-apple-darwin"
+        ;;
+      *)       err "unsupported platform: $PLATFORM" ;;
+    esac
+
+    # Create temporary directory for download
+    ensure mkdir -p "$TEMP_DIR"
+    ensure mkdir -p "$MADARA_BIN_DIR"
+
+    # Download binary
+    DOWNLOAD_URL="https://github.com/${MADARAUP_REPO}/releases/download/${MADARAUP_VERSION}/${BINARY_NAME}"
+    TEMP_BIN="$TEMP_DIR/$BINARY_NAME"
+    
+    say "Downloading Madara from: $DOWNLOAD_URL"
+    
+    if ! curl -L -f "$DOWNLOAD_URL" -o "$TEMP_BIN" 2>/dev/null; then
+        err "Failed to download binary from $DOWNLOAD_URL"
+    fi
+    
+    ensure chmod +x "$TEMP_BIN"
+    ensure mv "$TEMP_BIN" "$MADARA_BIN_DIR/madara"
+
+    # Clean up
+    rm -rf "$TEMP_DIR"
+
+    say "done!"
+    welcome_msg
+    exit 0
+  fi
+
+  need_cmd cargo
+  MADARAUP_BRANCH=${MADARAUP_BRANCH-main}
+  REPO_PATH="$MADARA_DIR/$MADARAUP_REPO"
+
+  if [ ! -d "$REPO_PATH" ]; then
+    AUTHOR="$(echo "$MADARAUP_REPO" | cut -d'/' -f1)"
+    ensure mkdir -p "$MADARA_DIR/$AUTHOR"
+    cd "$MADARA_DIR/$AUTHOR"
+    ensure git clone "https://github.com/$MADARAUP_REPO"
+  fi
+
+  cd "$REPO_PATH"
+  ensure git fetch origin "${MADARAUP_BRANCH}:remotes/origin/${MADARAUP_BRANCH}"
+  ensure git checkout "origin/${MADARAUP_BRANCH}"
+
+  if [ -n "$MADARAUP_COMMIT" ]; then
+    say "installing at commit $MADARAUP_COMMIT"
+    ensure git checkout "$MADARAUP_COMMIT"
+  fi
+
+  ensure cargo build --release
+  
+  for bin in "${BINS[@]}"; do
+    ensure cp "target/release/$bin" "$MADARA_BIN_DIR/"
+    ensure chmod +x "$MADARA_BIN_DIR/$bin"
+  done
+
+  say "done"
+  welcome_msg
+}
+
+usage() {
+  cat 1>&2 <<'EOF'
+The installer for Madara.
+
+Update or revert to a specific Madara version with ease.
+
+USAGE:
+    madaraup <OPTIONS>
+
+OPTIONS:
+    -h, --help      Print help information
+    -v, --version   Install a specific version (e.g. `madaraup --version 0.1.0`)
+    -b, --branch    Install a specific branch (e.g. `madaraup --branch main`)
+    -P, --pr        Install a specific Pull Request (e.g. `madaraup --pr 42`)
+    -c, --commit    Install a specific commit (e.g. `madaraup --commit abc123`)
+    -r, --repo      Install from a remote GitHub repo (e.g. `madaraup --repo username/madara`)
+    -p, --path      Install a local repository (e.g. `madaraup --path ./madara`)
+EOF
+}
+
+say() {
+  printf "madaraup: %s\n" "$1"
+}
+
+warn() {
+  say "warning: ${1}" >&2
+}
+
+err() {
+  say "$1" >&2
+  exit 1
+}
+
+need_cmd() {
+  if ! check_cmd "$1"; then
+    err "need '$1' (command not found)"
+  fi
+}
+
+check_cmd() {
+  command -v "$1" &>/dev/null
+}
+
+ensure() {
+  if ! "$@"; then err "command failed: $*"; fi
+}
+
+check_exclusive_options() {
+  local options=("$@")
+  local count=0
+  local set_option=""
+
+  for option in "${options[@]}"; do
+    if [ -n "${!option}" ]; then
+      ((count++))
+      set_option="$option"
+    fi
+  done
+
+  if [ "$count" -gt 1 ]; then
+    err "only one of ${options[*]} can be specified"
+  elif [ "$count" -eq 1 ]; then
+    echo "$set_option"
+  fi
+}
+
+welcome_msg() {
+  cat <<EOF
+
+════════════════════════════════════════════════════════
+
+             __  ___          __                
+            /  |/  /___ _____/ /___ __________ _
+           / /|_/ / __ `/ __  / __ `/ ___/ __ `/
+          / /  / / /_/ / /_/ / /_/ / /  / /_/ / 
+         /_/  /_/\__,_/\__,_/\__,_/_/   \__,_/  
+                                        v0.7.0   
+                                                  
+
+    Repo : https://github.com/madara-alliance/madara
+    Docs : https://docs.madara.build
+    Chat : https://t.me/madarastarknet
+
+Successfully installed Madara ${MADARAUP_VERSION}! 🎉
+
+For more info on how to get started, check out:
+https://docs.madara.build/
+
+To start the devnet, run:
+    madara --devnet
+
+════════════════════════════════════════════════════════
+
+EOF
+}
+
+main "$@" || exit 1

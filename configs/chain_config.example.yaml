@@ -69,3 +69,11 @@ bouncer_config:
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
 sequencer_address: "0x0"
+
+# Transaction limit in the mempool.
+mempool_tx_limit: 10000
+# Transaction limit in the mempool, additional limit for declare transactions.
+mempool_declare_tx_limit: 20
+# Max age of a transaction in the mempool. Null for no age limit.
+# mempool_tx_max_age: "5h"
+mempool_tx_max_age: null

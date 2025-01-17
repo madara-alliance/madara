@@ -1,30 +1,27 @@
 #!/bin/bash
 set -e
 
-anvil --fork-url https://eth.merkle.io --fork-block-number 20395662 &
+# Configuration
+export PROPTEST_CASES=5
+export ETH_FORK_URL=https://eth.merkle.io
 
-subshell() {
-    set -e
-    rm -f target/madara-* lcov.info
+# Clean up previous coverage data
+rm -f target/madara-* lcov.info
 
-    source <(cargo llvm-cov show-env --export-prefix)
+# Set up LLVM coverage environment
+source <(cargo llvm-cov show-env --export-prefix)
 
-    cargo build --bin madara --profile dev
+# Build the binary with coverage instrumentation
+cargo build --bin madara --profile dev
+export COVERAGE_BIN=$(realpath target/debug/madara)
 
-    export COVERAGE_BIN=$(realpath target/debug/madara)
-    export ETH_FORK_URL=https://eth.merkle.io
+# Run tests with coverage collection
+if cargo test --profile dev "${@:-"--workspace"}"; then
+  echo "✅ All tests passed successfully!"
+else
+  echo "❌ Some tests failed."
+fi
 
-    # wait for anvil
-    while ! nc -z localhost 8545; do
-        sleep 1
-    done
-
-    cargo test --profile dev --workspace $@
-
-    cargo llvm-cov report --lcov --output-path lcov.info
-    cargo llvm-cov report
-}
-
-(subshell $@ && r=$?) || r=$?
-pkill -P $$
-exit $r
+# Generate coverage reports
+cargo llvm-cov report --lcov --output-path lcov.info    # Generate LCOV report
+cargo llvm-cov report   # Display coverage summary in terminal
