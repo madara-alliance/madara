@@ -11,7 +11,7 @@ use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion, Transaction};
+use starknet_api::transaction::{Calldata, L1HandlerTransaction, Transaction, TransactionVersion};
 use starknet_api::transaction_hash::get_transaction_hash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;

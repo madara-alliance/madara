@@ -1,10 +1,10 @@
-use jsonrpsee::core::RpcResult;
-use starknet_types_rpc::TxnStatus;
-use m_proc_macros::versioned_rpc;
 use alloy::primitives::TxHash;
+use jsonrpsee::core::RpcResult;
+use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TxnStatus;
 
 pub(crate) type NewHead = starknet_types_rpc::BlockHeader<Felt>;
 

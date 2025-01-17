@@ -1,5 +1,7 @@
 use crate::utils::ResultExt;
-use crate::versions::user::{v0_7_1::methods::read::get_transaction_status::get_transaction_status, v0_8_0::MessageStatus};
+use crate::versions::user::{
+    v0_7_1::methods::read::get_transaction_status::get_transaction_status, v0_8_0::MessageStatus,
+};
 use crate::{Starknet, StarknetRpcApiError, StarknetRpcResult};
 use alloy::primitives::TxHash;
 
@@ -32,5 +34,3 @@ pub fn get_messages_status(starknet: &Starknet, transaction_hash: TxHash) -> Sta
         },
     )
 }
-
-
