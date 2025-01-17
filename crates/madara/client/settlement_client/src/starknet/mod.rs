@@ -15,10 +15,10 @@ use starknet_crypto::poseidon_hash_many;
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
 use starknet_types_core::felt::Felt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, trace};
 use url::Url;
 
 pub mod event;
@@ -29,6 +29,7 @@ pub mod utils;
 pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
     pub l2_core_contract: Felt,
+    pub processed_update_state_block: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -39,7 +40,11 @@ pub struct StarknetClientConfig {
 
 impl Clone for StarknetClient {
     fn clone(&self) -> Self {
-        StarknetClient { provider: Arc::clone(&self.provider), l2_core_contract: self.l2_core_contract }
+        StarknetClient {
+            provider: Arc::clone(&self.provider),
+            l2_core_contract: self.l2_core_contract,
+            processed_update_state_block: AtomicU64::new(self.processed_update_state_block.load(Ordering::Relaxed)),
+        }
     }
 }
 
@@ -62,7 +67,11 @@ impl ClientTrait for StarknetClient {
         // Check if l2 contract exists :
         // If contract is not there this will error out.
         provider.get_class_at(BlockId::Tag(BlockTag::Latest), config.l2_contract_address).await?;
-        Ok(Self { provider: Arc::new(provider), l2_core_contract: config.l2_contract_address })
+        Ok(Self {
+            provider: Arc::new(provider),
+            l2_core_contract: config.l2_contract_address,
+            processed_update_state_block: AtomicU64::new(0), // Keeping this as 0 initially when client is initialized.
+        })
     }
 
     async fn get_latest_block_number(&self) -> anyhow::Result<u64> {
@@ -142,36 +151,32 @@ impl ClientTrait for StarknetClient {
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()> {
-        loop {
-            let events_response = ctx.run_until_cancelled(self.get_events(
+        while let Some(events) = ctx
+            .run_until_cancelled(self.get_events(
                 BlockId::Number(self.get_latest_block_number().await?),
                 BlockId::Number(self.get_latest_block_number().await?),
                 self.l2_core_contract,
                 vec![get_selector_from_name("LogStateUpdate")?],
-            ));
+            ))
+            .await
+        {
+            let events_fetched = events?;
+            if let Some(event) = events_fetched.last() {
+                let data = event;
+                let block_number = data.data[1].to_u64().ok_or(anyhow!("Block number conversion failed"))?;
 
-            match events_response.await {
-                Some(Ok(emitted_events)) => {
-                    if let Some(event) = emitted_events.last() {
-                        let data = event; // Create a longer-lived binding
-                        let formatted_event = StateUpdate {
-                            block_number: data.data[1].to_u64().ok_or(anyhow!("Block number conversion failed"))?,
-                            global_root: data.data[0],
-                            block_hash: data.data[2],
-                        };
-                        update_l1(&backend, formatted_event, l1_block_metrics.clone())?;
-                    }
-                }
-                Some(Err(e)) => {
-                    error!("Error processing event: {:?}", e);
-                }
-                None => {
-                    trace!("Starknet Client : No event found");
+                let current_processed = self.processed_update_state_block.load(Ordering::Relaxed);
+                if current_processed < block_number {
+                    let formatted_event =
+                        StateUpdate { block_number, global_root: data.data[0], block_hash: data.data[2] };
+                    update_l1(&backend, formatted_event, l1_block_metrics.clone())?;
+                    self.processed_update_state_block.store(block_number, Ordering::Relaxed);
                 }
             }
 
             sleep(Duration::from_millis(100)).await;
         }
+        Ok(())
     }
 
     // We are returning here (0,0) because we are assuming that
