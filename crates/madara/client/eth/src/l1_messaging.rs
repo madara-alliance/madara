@@ -396,7 +396,7 @@ mod l1_messaging_tests {
         let _ = contract.setIsCanceled(false).send().await;
         // Send a Event and wait for processing, Panic if fail
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
 
