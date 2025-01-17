@@ -1,7 +1,7 @@
 use crate::error::DbError;
 use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
 use alloy::primitives::TxHash;
-use rocksdb::WriteOptions;
+use rocksdb::{IteratorMode, WriteOptions};
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
@@ -148,6 +148,7 @@ impl MadaraBackend {
         l1_handler_tx_hash: Felt,
         order: u64,
     ) -> Result<(), DbError> {
+        println!("Adding L1-L2 mapping: {}, {}", l1_tx_hash, l1_handler_tx_hash);
         let l1_l2_mappings_column = self.db.get_column(Column::L1MessagingHandlerTxHashes);
         let mut key = [0u8; 40];
         key[..32].copy_from_slice(l1_tx_hash.as_slice());
@@ -156,5 +157,14 @@ impl MadaraBackend {
         writeopts.disable_wal(true);
         self.db.put_cf_opt(&l1_l2_mappings_column, key, l1_handler_tx_hash.to_bytes_be(), &writeopts)?;
         Ok(())
+    }
+
+    /// Retrieve the latest L1 messaging [Nonce] if one is available, otherwise
+    /// returns [None].
+    pub fn get_l1_messaging_nonce_latest(&self) -> Result<Option<Nonce>, MadaraStorageError> {
+        let nonce_column = self.db.get_column(Column::L1MessagingNonce);
+        let mut iter = self.db.iterator_cf(&nonce_column, IteratorMode::End);
+        let nonce = iter.next().transpose()?.map(|(bytes, _)| bincode::deserialize(&bytes)).transpose()?;
+        Ok(nonce)
     }
 }

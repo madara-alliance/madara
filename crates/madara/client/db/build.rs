@@ -95,10 +95,10 @@ fn parse_version(content: &str) -> Result<u32, BuildError> {
     content
         .lines()
         .find(|line| line.starts_with("current_version:"))
-        .ok_or_else(|| BuildError::Parse(Cow::Borrowed("Could not find current_version")))?
+        .ok_or(BuildError::Parse(Cow::Borrowed("Could not find current_version")))?
         .split(':')
         .nth(1)
-        .ok_or_else(|| BuildError::Parse(Cow::Borrowed("Invalid current_version format")))?
+        .ok_or(BuildError::Parse(Cow::Borrowed("Invalid current_version format")))?
         .trim()
         .parse()
         .map_err(|_| BuildError::Parse(Cow::Borrowed("Could not parse current_version as u32")))

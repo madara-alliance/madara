@@ -121,7 +121,7 @@ async fn process_l1_to_l2_msg(
         &l1_handler_transaction.version,
     )?;
 
-    mempool.accept_l1_handler_tx(l1_handler_transaction.clone().into(), fees)?;
+    mempool.tx_accept_l1_handler(l1_handler_transaction.clone().into(), fees)?;
 
     let l1_tx_hash = log.transaction_hash.context("Missing transaction hash")?;
     let block_number = log.block_number.context("Event missing block number")?;
@@ -212,6 +212,7 @@ mod l1_messaging_tests {
     use rstest::*;
     use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
     use starknet_types_core::felt::Felt;
+    use std::mem;
     use std::{sync::Arc, time::Duration};
     use tempfile::TempDir;
     use tracing_test::traced_test;
@@ -395,11 +396,11 @@ mod l1_messaging_tests {
         let _ = contract.setIsCanceled(false).send().await;
         // Send a Event and wait for processing, Panic if fail
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
 
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
 
-        let (handler_tx, handler_tx_hash) = match mempool.take_tx().unwrap().tx {
+        let (handler_tx, handler_tx_hash) = match mempool.tx_take().unwrap().tx {
             Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
             Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
         };
