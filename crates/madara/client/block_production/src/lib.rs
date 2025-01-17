@@ -46,7 +46,6 @@ use std::time::Instant;
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
-mod re_add_finalized_to_blockifier;
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
