@@ -917,6 +917,7 @@ mod tests {
     /// during block production.
     #[rstest::rstest]
     #[tokio::test]
+    #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_pass(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
@@ -1009,7 +1010,7 @@ mod tests {
                 pending_state_diff.clone(),
                 converted_classes.clone(),
                 Some(visited_segments.clone()),
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1065,6 +1066,7 @@ mod tests {
     /// block.
     #[rstest::rstest]
     #[tokio::test]
+    #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_pass_on_top(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
 
@@ -1174,7 +1176,7 @@ mod tests {
                 ready_state_diff.clone(),
                 ready_converted_classes.clone(),
                 Some(visited_segments.clone()),
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1255,7 +1257,7 @@ mod tests {
                 pending_state_diff.clone(),
                 pending_converted_classes.clone(),
                 Some(visited_segments.clone()),
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1334,6 +1336,7 @@ mod tests {
     /// same db.
     #[rstest::rstest]
     #[tokio::test]
+    #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_no_visited_segments(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
@@ -1425,7 +1428,7 @@ mod tests {
                 pending_state_diff.clone(),
                 converted_classes.clone(),
                 None, // No visited segments!
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1480,6 +1483,7 @@ mod tests {
     /// the pending state diff references a non-existing class.
     #[rstest::rstest]
     #[tokio::test]
+    #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_fail_missing_class(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
@@ -1557,7 +1561,7 @@ mod tests {
                 pending_state_diff.clone(),
                 converted_classes.clone(),
                 Some(visited_segments.clone()),
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1579,6 +1583,7 @@ mod tests {
     /// the pending state diff references a non-existing legacy class.
     #[rstest::rstest]
     #[tokio::test]
+    #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
@@ -1656,7 +1661,7 @@ mod tests {
                 pending_state_diff.clone(),
                 converted_classes.clone(),
                 Some(visited_segments.clone()),
-                Some(bouncer_weights.clone()),
+                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
