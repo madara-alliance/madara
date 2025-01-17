@@ -219,7 +219,7 @@ mod tests {
             &self,
             mut tx: BroadcastedInvokeTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::Error> {
+        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -238,14 +238,14 @@ mod tests {
 
             tracing::debug!("tx: {:?}", tx);
 
-            self.mempool.accept_invoke_tx(tx)
+            self.mempool.tx_accept_invoke(tx)
         }
 
         pub fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::Error> {
+        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -262,14 +262,14 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_declare_tx(tx)
+            self.mempool.tx_accept_declare(tx)
         }
 
         pub fn sign_and_add_deploy_account_tx(
             &self,
             mut tx: BroadcastedDeployAccountTxn<Felt>,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::Error> {
+        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -285,7 +285,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.accept_deploy_account_tx(tx)
+            self.mempool.tx_accept_deploy_account(tx)
         }
 
         /// (STRK in FRI, ETH in WEI)
@@ -716,7 +716,7 @@ mod tests {
 
         assert_matches!(
             result,
-            Err(mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(
+            Err(mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::Limit(
                 mc_mempool::MempoolLimitReached::MaxTransactions { max: 5 }
             )))
         )

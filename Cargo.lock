@@ -651,6 +651,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
+
+[[package]]
 name = "ark-ec"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5803,6 +5809,7 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "proptest-derive",
+ "proptest-state-machine",
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
@@ -7006,6 +7013,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.89",
+]
+
+[[package]]
+name = "proptest-state-machine"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e943d140e09d07740fb496487c51fb8eb31c70389ac4a2e9dcd8a0d9fdf228d4"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]
@@ -8424,6 +8440,7 @@ name = "starknet-types-core"
 version = "0.1.7"
 source = "git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7#e5f3769150684d3c726951dd3f075815cdcdba5d"
 dependencies = [
+ "arbitrary",
  "lambdaworks-crypto",
  "lambdaworks-math",
  "lazy_static",

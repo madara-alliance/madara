@@ -32,7 +32,7 @@ use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::from_blockifier_execution_info;
-use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use mp_state_update::{ContractStorageDiffItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
@@ -207,7 +207,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             let to_take = batch_size.saturating_sub(txs_to_process.len());
             let cur_len = txs_to_process.len();
             if to_take > 0 {
-                self.mempool.take_txs_chunk(/* extend */ &mut txs_to_process, batch_size);
+                self.mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
 
                 txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.clone_tx()));
             }
@@ -284,7 +284,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // Add back the unexecuted transactions to the mempool.
         stats.n_re_added_to_mempool = txs_to_process.len();
         self.mempool
-            .re_add_txs(txs_to_process, executed_txs)
+            .txs_re_add(txs_to_process, executed_txs)
             .map_err(|err| Error::Unexpected(format!("Mempool error: {err:#}").into()))?;
 
         tracing::debug!(
@@ -330,6 +330,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             visited_segments,
         )
         .await?;
+
+        // Removes nonces in the mempool nonce cache which have been included
+        // into the current block.
+        for NonceUpdate { contract_address, .. } in state_diff.nonces.iter() {
+            self.mempool.tx_mark_included(contract_address);
+        }
 
         // Flush changes to disk
         self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
