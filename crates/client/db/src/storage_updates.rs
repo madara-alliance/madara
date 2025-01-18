@@ -54,6 +54,8 @@ impl MadaraBackend {
         let block_inner = MadaraBlockInner { transactions, receipts };
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&block_inner)?);
 
+        // TODO: other columns
+
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
     }

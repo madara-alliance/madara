@@ -38,11 +38,11 @@ impl ChainHead {
     pub fn latest_full_block_n(&self) -> Option<u64> {
         self.headers
             .get()
-            .max(self.state_diffs.get())
-            .max(self.classes.get())
-            .max(self.transactions.get())
-            .max(self.events.get())
-            .max(self.global_trie.get())
+            .min(self.state_diffs.get())
+            .min(self.classes.get())
+            .min(self.transactions.get())
+            .min(self.events.get())
+            .min(self.global_trie.get())
     }
 }
 

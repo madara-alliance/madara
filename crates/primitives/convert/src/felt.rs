@@ -34,7 +34,6 @@ impl FeltExt for Felt {
             u64::from_be_bytes([b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23]]),
             u64::from_be_bytes([b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31]]),
         ];
-
         // Check if it overflows the modulus.
 
         // p=2^251 + 17*2^192 + 1
@@ -49,7 +48,7 @@ impl FeltExt for Felt {
             }
         }
 
-        Ok(Felt::from_raw(limbs))
+        Ok(Felt::from_bytes_be(b))
     }
 
     fn slice_be_len(&self) -> usize {

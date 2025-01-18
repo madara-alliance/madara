@@ -46,15 +46,17 @@ impl model::class::Class {
 impl TryFrom<model::Cairo0Class> for LegacyClassInfo {
     type Error = FromModelError;
     fn try_from(value: model::Cairo0Class) -> Result<Self, Self::Error> {
+        let abi: Vec<starknet_core::types::LegacyContractAbiEntry> = serde_json::from_str(&value.abi).map_err(FromModelError::LegacyClassJsonError)?;
+        // tracing::debug!("legacy class {:?}", value.abi, abi);
         Ok(Self {
             contract_class: Arc::new(CompressedLegacyContractClass {
-                program: value.program.into(),
+                program: BASE64_STANDARD.decode(&value.program).map_err(FromModelError::LegacyClassBase64Decode)?,
                 entry_points_by_type: LegacyEntryPointsByType {
                     constructor: value.constructors.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
                     external: value.externals.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
                     l1_handler: value.l1_handlers.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
                 },
-                abi: serde_json::from_str(&value.abi).map_err(FromModelError::LegacyClassJsonError)?,
+                abi: Some(abi.into_iter().map(Into::into).collect()),
             }),
         })
     }

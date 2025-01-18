@@ -21,6 +21,7 @@ pub fn events_pipeline(
         batch_size,
     )
 }
+
 pub struct EventsSyncSteps {
     backend: Arc<MadaraBackend>,
     p2p_commands: P2pCommands,

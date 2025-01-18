@@ -16,6 +16,7 @@ use starknet_types_core::felt::Felt;
 use crate::header::GasPrices;
 
 // TODO: where should we put that?
+#[derive(Debug, Clone)]
 pub struct TransactionWithReceipt {
     pub transaction: Transaction,
     pub receipt: TransactionReceipt,

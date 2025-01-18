@@ -54,6 +54,7 @@ impl P2pPipelineSteps for StateDiffsSyncSteps {
         let mut state_diffs = vec![];
         for (block_n, header) in block_range.zip(input) {
             let state_diff = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
+            tracing::debug!("GOT STATE DIFF FOR block_n={block_n}, {state_diff:#?}");
             state_diffs.push(state_diff.clone());
             self.importer.verify_and_save_state_diff(block_n, state_diff, header).await?;
         }

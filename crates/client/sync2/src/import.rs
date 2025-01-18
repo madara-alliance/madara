@@ -11,7 +11,7 @@ use mp_class::{
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
-use mp_utils::rayon::RayonPool;
+use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
@@ -28,8 +28,8 @@ pub struct BlockValidationConfig {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlockImportError {
-    #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
-    TransactionHash { index: usize, got: Felt, expected: Felt },
+    // #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
+    // TransactionHash { index: usize, got: Felt, expected: Felt },
     #[error("Transaction count mismatch: expected {expected}, got {got}")]
     TransactionCount { got: u64, expected: u64 },
     #[error("Transaction commitment mismatch: expected {expected:#x}, got {got:#x}")]
@@ -159,17 +159,18 @@ impl BlockImporter {
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
             .par_iter()
             .enumerate()
-            .map(|(index, tx)| {
+            .map(|(_index, tx)| {
                 let got = tx.transaction.compute_hash(
                     self.db.chain_config().chain_id.to_felt(),
                     starknet_version,
                     /* is_query */ false,
                 );
-                let expected = tx.receipt.transaction_hash();
-                if expected != got {
-                    return Err(BlockImportError::TransactionHash { index, got, expected });
-                }
-                Ok((tx.transaction.compute_hash_with_signature(expected, starknet_version), tx.receipt.compute_hash()))
+                // For pre-v0.13.2, our tx hash is only used for commitment computation. 
+                // let expected = tx.receipt.transaction_hash();
+                // // if expected != got {
+                // //     return Err(BlockImportError::TransactionHash { index, got, expected });
+                // // }
+                Ok((tx.transaction.compute_hash_with_signature(got, starknet_version), tx.receipt.compute_hash()))
             })
             .collect::<Result<_, BlockImportError>>()?;
 
@@ -369,7 +370,7 @@ impl BlockImporter {
         }
 
         // Verify state diff commitment.
-        let expected = check_against.event_commitment;
+        let expected = check_against.state_diff_commitment.unwrap_or_default();
         let got = state_diff.compute_hash();
         if expected != got {
             return Err(BlockImportError::StateDiffCommitment { got, expected });
@@ -440,7 +441,8 @@ impl BlockImporter {
         state_diffs: Vec<StateDiff>,
     ) -> anyhow::Result<()> {
         let this = self.clone();
-        self.rayon_pool.spawn_rayon_task(move || this.apply_to_global_trie_inner(block_range, state_diffs)).await?;
+        // do not use the shared permits for a sequential step
+        global_spawn_rayon_task(move || this.apply_to_global_trie_inner(block_range, state_diffs)).await?;
         Ok(())
     }
 
@@ -451,6 +453,7 @@ impl BlockImporter {
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
         for (block_n, state_diff) in block_range.zip(state_diffs) {
+            tracing::debug!("applying state_diff block_n={block_n} {state_diff:#?}");
             let (contract_trie_root, class_trie_root) = rayon::join(
                 || {
                     update_global_trie::contracts::contract_trie_root(

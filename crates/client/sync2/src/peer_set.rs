@@ -5,7 +5,7 @@ use std::num::Saturating;
 use tokio::time::{Duration, Instant};
 
 // TODO: add bandwidth metric
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 struct PeerStats {
     // prioritize peers that are behaving correctly
     successes: Saturating<i32>,
@@ -35,14 +35,14 @@ impl PeerStats {
         // so, we put a temporary small malus if the peer is already in use.
         // if we are using the peer a lot, we want that malus to be higher - we really don't want to spam a single peer.
         let in_use_malus = if self.in_use_counter < Saturating(16) {
-            self.in_use_counter
+            self.in_use_counter * Saturating(2)
         } else {
-            self.in_use_counter * Saturating(10)
+            self.in_use_counter * Saturating(5)
         };
         let in_use_malus = Saturating(in_use_malus.0 as i32);
 
-        // we only count up to 10 successes, to avoid having a score go too high.
-        let successes = self.successes.max(Saturating(5));
+        // we only count up to 20 successes, to avoid having a score go too high.
+        let successes = self.successes.min(Saturating(20));
 
         (Saturating(-10) * self.failures + successes - in_use_malus).0.into()
     }
@@ -52,7 +52,7 @@ impl PeerStats {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct PeerSortedByScore {
     peer_id: PeerId,
     score: i64,
@@ -65,7 +65,10 @@ impl PeerSortedByScore {
 
 impl Ord for PeerSortedByScore {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.score.cmp(&other.score)
+        // other and self are swapped because we want the highest score to lowest
+
+        // score can have collisions, so we compare by peer_id next
+        other.score.cmp(&self.score).then(other.peer_id.cmp(&self.peer_id))
     }
 }
 impl PartialOrd for PeerSortedByScore {
@@ -76,14 +79,18 @@ impl PartialOrd for PeerSortedByScore {
 
 // Invariants:
 // 1) there should be a one-to-one correspondance between the `queue` and `stats_by_peer` variable.
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct PeerSetInner {
     queue: BTreeSet<PeerSortedByScore>,
     stats_by_peer: HashMap<PeerId, PeerStats>,
+    evicted_peers_ban_deadlines: HashMap<PeerId, Instant>,
 }
 
 impl PeerSetInner {
+    const EVICTION_BAN_DELAY: Duration = Duration::from_secs(3);
+
     fn peek_next(&self) -> Option<PeerId> {
+        tracing::debug!("PEER SET Peek next {:#?}", self);
         self.queue.first().map(|p| p.peer_id)
     }
 
@@ -91,7 +98,8 @@ impl PeerSetInner {
         match self.stats_by_peer.entry(peer) {
             hash_map::Entry::Occupied(mut entry) => {
                 // Remove old queue entry.
-                debug_assert!(self.queue.remove(&PeerSortedByScore::new(peer, entry.get())), "Invariant 1 violated");
+                let removed = self.queue.remove(&PeerSortedByScore::new(peer, entry.get()));
+                debug_assert!(removed, "Invariant 1 violated");
 
                 // Update the stats in-place
                 f(entry.get_mut());
@@ -99,26 +107,38 @@ impl PeerSetInner {
                 if entry.get().should_evict() {
                     // evict
                     entry.remove();
+                    tracing::debug!("PEER SET Evicting {peer} for {:?}", Self::EVICTION_BAN_DELAY);
+                    self.evicted_peers_ban_deadlines.insert(peer, Instant::now() + Self::EVICTION_BAN_DELAY);
                 } else {
                     // Reinsert the queue entry with the new score.
                     // If insert returns true, the value is already in the queue - which would mean that the peer id is duplicated in the queue.
                     // `stats_by_peer` has PeerId as key and as such cannot have a duplicate peer id. This means that if there is a duplicated
                     // peer_id in the queue, there is not a one-to-one correspondance between the two datastructures.
-                    debug_assert!(self.queue.insert(PeerSortedByScore::new(peer, entry.get())), "Invariant 1 violated");
+                    let inserted = self.queue.insert(PeerSortedByScore::new(peer, entry.get()));
+                    debug_assert!(inserted, "Invariant 1 violated");
                 }
             }
             hash_map::Entry::Vacant(_entry) => {}
         }
+        tracing::debug!("PEER SET Update stats for {peer}, now: {:#?}", self);
     }
 
     fn append_new_peers(&mut self, new_peers: impl IntoIterator<Item = PeerId>) {
+        let now = Instant::now();
+        self.evicted_peers_ban_deadlines.retain(|_, v| *v > now);
+
         for peer_id in new_peers.into_iter() {
+            if self.evicted_peers_ban_deadlines.contains_key(&peer_id) {
+                continue;
+            }
+
             if let hash_map::Entry::Vacant(entry) = self.stats_by_peer.entry(peer_id) {
                 let stats = PeerStats::default();
                 self.queue.insert(PeerSortedByScore::new(peer_id, &stats));
                 entry.insert(stats);
             }
         }
+        tracing::debug!("PEER SET Append new peers now: {:#?}", self);
     }
 }
 
@@ -130,10 +150,11 @@ pub struct GetPeersInner {
 impl GetPeersInner {
     /// We avoid spamming get_random_peers: the start of each get_random_peers request must be separated by at least this duration.
     /// This has no effect if the get_random_peers operation takes more time to complete than this delay.
-    const GET_RANDOM_PEERS_DELAY: Duration = Duration::from_millis(100);
+    const GET_RANDOM_PEERS_DELAY: Duration = Duration::from_millis(3000);
 
     pub fn new(commands: P2pCommands) -> Self {
-        Self { commands, wait_until: None }
+        // We have a start-up wait until, because the p2p service may take some time to boot up.
+        Self { commands, wait_until: Some(Instant::now() + Self::GET_RANDOM_PEERS_DELAY) }
     }
 
     pub async fn get_new_peers(&mut self) -> HashSet<PeerId> {
@@ -149,11 +170,15 @@ impl GetPeersInner {
         let mut res = self.commands.get_random_peers().await;
         tracing::debug!("Got get_random_peers answer: {res:?}");
         res.remove(&self.commands.peer_id()); // remove ourselves from the response, in case we find ourselves
+        if res.len() == 0 {
+            tracing::warn!(
+                "Could not find any peer in network. Please check that your network configuration is correct."
+            );
+        }
         res
     }
 }
 
-// TODO: eviction ban list? if we evicted a peer from the set, we may want to block it for some delay.
 // TODO: we may want to invalidate the peer list over time
 // Mutex order: to statically ensure deadlocks are not possible, inner should always be locked after get_peers_mutex, if the two need to be taken at once.
 pub struct PeerSet {

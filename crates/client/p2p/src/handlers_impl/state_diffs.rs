@@ -109,7 +109,7 @@ pub async fn state_diffs_sync(
     Ok(())
 }
 
-/// Note: The declared_contracts field of the state diff will be empty. Its content will be instead in the replaced class field.
+/// Note: The declared_contracts field of the state diff will be empty. Its content will be instead in the replaced_classes field.
 pub async fn read_state_diffs_stream(
     res: impl Stream<Item = model::StateDiffsResponse>,
     state_diff_length: usize,

@@ -1,3 +1,5 @@
+use mp_utils::graceful_shutdown;
+
 use crate::p2p::P2pPipelineArguments;
 
 /// Pipeline order:
@@ -99,6 +101,8 @@ pub async fn forward_sync(args: P2pPipelineArguments, config: ForwardSyncConfig)
         }
 
         tokio::select! {
+            _ = graceful_shutdown() => break,
+
             Some(res) = headers_pipeline.next(), if transactions_pipeline.can_schedule_more() && state_diffs_pipeline.can_schedule_more() => {
                 let (_range, headers) = res?;
                 transactions_pipeline.push(headers.iter().cloned());

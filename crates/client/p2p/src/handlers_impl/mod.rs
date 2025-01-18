@@ -30,6 +30,8 @@ pub enum FromModelError {
     InvalidEnumVariant { ty: Cow<'static, str>, value: i32 },
     #[error("Legacy class conversion json error: {0:#}")]
     LegacyClassJsonError(serde_json::Error),
+    #[error("Legacy class base64 decode error: {0:#}")]
+    LegacyClassBase64Decode(base64::DecodeError),
 }
 impl FromModelError {
     pub fn missing_field(s: impl Into<Cow<'static, str>>) -> Self {

@@ -36,7 +36,7 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
         self: Arc<Self>,
         peer_id: PeerId,
         block_range: Range<u64>,
-        input: Vec<Self::InputItem>,
+        input: Vec<Header>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
         tracing::debug!("p2p transactions parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
@@ -52,6 +52,7 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
 
         for (block_n, header) in block_range.zip(input.iter().cloned()) {
             let transactions = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
+            tracing::debug!("GOT STATE TRANSACTIONS FOR block_n={block_n}, {transactions:#?}");
             self.importer.verify_and_save_transactions(block_n, transactions, header).await?;
         }
 

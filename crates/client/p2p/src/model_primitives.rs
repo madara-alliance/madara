@@ -225,3 +225,35 @@ impl From<Uint128> for u128 {
         ])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn felt_252() {
+        let test_one = |felt, serialized| {
+            let mut dest = vec![];
+            Felt252::from(felt).to_bytes(&mut dest);
+            assert_eq!(&dest[..], serialized);
+            let back = Felt252::from_bytes(dest.into()).unwrap();
+            assert_eq!(SnFelt::from(back), felt);
+        };
+        test_one(SnFelt::from_hex_unchecked("0x0"), &[0u8; 0] as &[u8]);
+        test_one(SnFelt::from_hex_unchecked("0x1"), &[1]);
+        test_one(
+            SnFelt::from_hex_unchecked("0x40000000000001100000000000012100000000000000000000000000000000"),
+            &[64, 0, 0, 0, 0, 0, 1, 16, 0, 0, 0, 0, 0, 1, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        test_one(
+            SnFelt::from_hex_unchecked("0x800000000000011000000000000000000000000000000000000000000000000"),
+            &[8, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        assert!(Felt252::from_bytes(
+            (&[8u8, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+                as &[_])
+                .into()
+        )
+        .is_err());
+    }
+}

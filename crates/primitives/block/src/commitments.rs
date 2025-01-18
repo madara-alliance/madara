@@ -53,8 +53,8 @@ pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator
     let mut bonsai_storage =
         bonsai_trie::BonsaiStorage::<_, _, H>::new(bonsai_db, config).expect("Failed to create bonsai storage");
 
-    values.into_iter().enumerate().for_each(|(id, value)| {
-        let key = BitVec::from_vec(id.to_be_bytes().to_vec()); // TODO: remove this useless allocation
+    values.into_iter().enumerate().for_each(|(index, value)| {
+        let key = BitVec::from_vec(index.to_be_bytes().to_vec()); // TODO: remove this useless allocation
         bonsai_storage.insert(IDENTIFIER, key.as_bitslice(), &value).expect("Failed to insert into bonsai storage");
     });
 
