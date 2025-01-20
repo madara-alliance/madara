@@ -59,7 +59,9 @@ impl L1HandlerTransactionReceipt {
         finality_status: starknet_types_rpc::TxnFinalityStatus,
     ) -> starknet_types_rpc::L1HandlerTxnReceipt<Felt> {
         starknet_types_rpc::L1HandlerTxnReceipt::<Felt> {
-            message_hash: self.message_hash.to_string(),
+            // We have to manually convert the H256 bytes to a hex hash as the
+            // impl of Display for H256 skips the middle bytes.
+            message_hash: self.message_hash.as_fixed_bytes().into_iter().map(|b| format!("{b:02x}")).collect(),
             common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
                 events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
