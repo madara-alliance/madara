@@ -11,7 +11,7 @@ use std::iter;
 pub struct NonceTxMapping {
     /// An ordered mapping of the transactions to come from an account, accessed
     /// by [Nonce].
-    pub(crate) transactions: BTreeMap<Nonce, MempoolTransaction>,
+    pub transactions: BTreeMap<Nonce, MempoolTransaction>,
 }
 
 #[derive(Debug)]

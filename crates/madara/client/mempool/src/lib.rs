@@ -109,7 +109,7 @@ pub trait MempoolProvider: Send + Sync {
 pub struct Mempool {
     backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
-    inner: RwLock<MempoolInner>,
+    pub inner: RwLock<MempoolInner>,
     metrics: MempoolMetrics,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
 }
