@@ -188,12 +188,10 @@ mod eth_client_gas_price_worker_test {
     use crate::eth::EthereumClientConfig;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
-    use serial_test::serial;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
-    #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
         let anvil = get_shared_anvil();
@@ -240,7 +238,6 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
         let anvil = get_shared_anvil();
@@ -266,7 +263,6 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
         let anvil = get_shared_anvil();
@@ -294,7 +290,6 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
         let anvil = get_shared_anvil();
@@ -322,7 +317,6 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 20);
     }
 
-    #[serial]
     #[tokio::test]
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
         let mock_server = MockServer::start();
@@ -390,7 +384,6 @@ mod eth_client_gas_price_worker_test {
         mock.assert();
     }
 
-    #[serial]
     #[tokio::test]
     async fn update_gas_price_works() {
         let anvil = get_shared_anvil();

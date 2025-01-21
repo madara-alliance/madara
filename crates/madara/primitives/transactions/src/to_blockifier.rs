@@ -177,7 +177,7 @@ pub enum ToBlockifierError {
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
     #[error("Failed to convert base64 program to cairo program: {0}")]
-    Base64ToCairoError(#[from] base64::DecodeError),
+    Base64ToCairoError(#[from] std::io::Error),
     #[error("Missing class")]
     MissingClass,
 }

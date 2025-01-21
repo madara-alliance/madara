@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.
 pub struct MempoolAddTxProvider {
+    // PERF: this can go as we are always wrapping MempoolAddTxProvider inside
+    // Arc<dyn AddMempoolProvider>
     mempool: Arc<Mempool>,
 }
 
@@ -22,24 +24,24 @@ impl MempoolAddTxProvider {
     }
 }
 
-impl From<mc_mempool::Error> for StarknetRpcApiError {
-    fn from(value: mc_mempool::Error) -> Self {
+impl From<mc_mempool::MempoolError> for StarknetRpcApiError {
+    fn from(value: mc_mempool::MempoolError) -> Self {
         match value {
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::DuplicateTxn) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::DuplicateTxn) => {
                 StarknetRpcApiError::DuplicateTxn
             }
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::Limit(limit)) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::Limit(limit)) => {
                 StarknetRpcApiError::FailedToReceiveTxn { err: Some(format!("{}", limit).into()) }
             }
-            mc_mempool::Error::InnerMempool(mc_mempool::TxInsersionError::NonceConflict) => {
+            mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::NonceConflict) => {
                 StarknetRpcApiError::FailedToReceiveTxn {
                     err: Some("A transaction with this nonce and sender address already exists".into()),
                 }
             }
-            mc_mempool::Error::Validation(err) => {
+            mc_mempool::MempoolError::Validation(err) => {
                 StarknetRpcApiError::ValidationFailure { error: format!("{err:#}").into() }
             }
-            mc_mempool::Error::Exec(err) => {
+            mc_mempool::MempoolError::Exec(err) => {
                 StarknetRpcApiError::TxnExecutionError { tx_index: 0, error: format!("{err:#}") }
             }
             err => {
@@ -56,24 +58,24 @@ impl AddTransactionProvider for MempoolAddTxProvider {
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.mempool.accept_declare_v0_tx(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_declare_v0(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTxn<Felt>,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.mempool.accept_declare_tx(declare_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_declare(declare_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
     ) -> RpcResult<ContractAndTxnHash<Felt>> {
-        Ok(self.mempool.accept_deploy_account_tx(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_deploy_account(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTxn<Felt>,
     ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
-        Ok(self.mempool.accept_invoke_tx(invoke_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_invoke(invoke_transaction).map_err(StarknetRpcApiError::from)?)
     }
 }

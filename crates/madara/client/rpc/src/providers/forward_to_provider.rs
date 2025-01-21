@@ -35,9 +35,7 @@ impl AddTransactionProvider for ForwardToProvider {
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
         let sequencer_response = match self
             .provider
-            .add_declare_transaction(
-                declare_transaction.try_into().map_err(|_| StarknetRpcApiError::InvalidContractClass)?,
-            )
+            .add_declare_transaction(declare_transaction.try_into().map_err(StarknetRpcApiError::from)?)
             .await
         {
             Ok(response) => response,
@@ -53,14 +51,17 @@ impl AddTransactionProvider for ForwardToProvider {
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
     ) -> RpcResult<ContractAndTxnHash<Felt>> {
-        let sequencer_response =
-            match self.provider.add_deploy_account_transaction(deploy_account_transaction.into()).await {
-                Ok(response) => response,
-                Err(SequencerError::StarknetError(e)) => {
-                    return Err(StarknetRpcApiError::from(e).into());
-                }
-                Err(e) => bail_internal_server_error!("Failed to add deploy account transaction to sequencer: {e}"),
-            };
+        let sequencer_response = match self
+            .provider
+            .add_deploy_account_transaction(deploy_account_transaction.try_into().map_err(StarknetRpcApiError::from)?)
+            .await
+        {
+            Ok(response) => response,
+            Err(SequencerError::StarknetError(e)) => {
+                return Err(StarknetRpcApiError::from(e).into());
+            }
+            Err(e) => bail_internal_server_error!("Failed to add deploy account transaction to sequencer: {e}"),
+        };
 
         Ok(sequencer_response)
     }
@@ -69,7 +70,11 @@ impl AddTransactionProvider for ForwardToProvider {
         &self,
         invoke_transaction: BroadcastedInvokeTxn<Felt>,
     ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
-        let sequencer_response = match self.provider.add_invoke_transaction(invoke_transaction.into()).await {
+        let sequencer_response = match self
+            .provider
+            .add_invoke_transaction(invoke_transaction.try_into().map_err(StarknetRpcApiError::from)?)
+            .await
+        {
             Ok(response) => response,
             Err(SequencerError::StarknetError(e)) => {
                 return Err(StarknetRpcApiError::from(e).into());

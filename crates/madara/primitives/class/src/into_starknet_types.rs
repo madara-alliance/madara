@@ -10,7 +10,7 @@ use crate::{
 };
 
 impl TryFrom<starknet_types_rpc::MaybeDeprecatedContractClass<Felt>> for ContractClass {
-    type Error = base64::DecodeError;
+    type Error = std::io::Error;
 
     fn try_from(contract_class: starknet_types_rpc::MaybeDeprecatedContractClass<Felt>) -> Result<Self, Self::Error> {
         match contract_class {
@@ -123,15 +123,16 @@ impl From<SierraEntryPoint> for starknet_types_rpc::SierraEntryPoint<Felt> {
 }
 
 impl TryFrom<starknet_types_rpc::DeprecatedContractClass<Felt>> for CompressedLegacyContractClass {
-    type Error = base64::DecodeError;
+    type Error = std::io::Error;
 
     fn try_from(
         compressed_legacy_contract_class: starknet_types_rpc::DeprecatedContractClass<Felt>,
     ) -> Result<Self, Self::Error> {
         use base64::Engine;
 
-        let decoded_program =
-            base64::engine::general_purpose::STANDARD.decode(&compressed_legacy_contract_class.program)?;
+        let decoded_program = base64::engine::general_purpose::STANDARD
+            .decode(&compressed_legacy_contract_class.program)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         Ok(CompressedLegacyContractClass {
             program: decoded_program,

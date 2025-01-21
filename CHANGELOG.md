@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(primitives): limit legacy class sizes
 - feat : l3 support
 - fix(block_production): dynamic block closing now adds special address with prev block hash
 - fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it

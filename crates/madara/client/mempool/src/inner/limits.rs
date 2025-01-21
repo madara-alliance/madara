@@ -7,6 +7,7 @@ use mp_chain_config::ChainConfig;
 use crate::MempoolTransaction;
 
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub struct MempoolLimits {
     pub max_transactions: usize,
     pub max_declare_transactions: usize,
@@ -31,6 +32,7 @@ impl MempoolLimits {
 /// tick has been executed and excess transactions are added back into the mempool.
 /// This means that the inner mempool may have fewer transactions than what the limits says at a given time.
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MempoolLimiter {
     pub config: MempoolLimits,
     current_transactions: usize,
@@ -47,6 +49,7 @@ pub enum MempoolLimitReached {
     Age { max: Duration },
 }
 
+#[derive(Debug)]
 pub(crate) struct TransactionCheckedLimits {
     check_tx_limit: bool,
     check_declare_limit: bool,
@@ -87,6 +90,10 @@ impl TransactionCheckedLimits {
                 tx_arrived_at: tx.arrived_at,
             },
         }
+    }
+
+    pub fn checks_age(&self) -> bool {
+        self.check_age
     }
 }
 

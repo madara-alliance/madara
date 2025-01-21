@@ -16,7 +16,11 @@ cargo build --bin madara --profile dev
 export COVERAGE_BIN=$(realpath target/debug/madara)
 
 # Run tests with coverage collection
-cargo test --profile dev "${@:-"--workspace"}"
+if cargo test --profile dev "${@:-"--workspace"}"; then
+  echo "✅ All tests passed successfully!"
+else
+  echo "❌ Some tests failed."
+fi
 
 # Generate coverage reports
 cargo llvm-cov report --lcov --output-path lcov.info    # Generate LCOV report
