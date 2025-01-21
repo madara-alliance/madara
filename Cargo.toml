@@ -153,7 +153,7 @@ mc-devnet = { path = "crates/madara/client/devnet" }
 m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "notlesh/snos-2024-11-04" }
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -165,8 +165,7 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 ] }
 starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.8.0"
-# blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", rev = "6624e910c57db9a16f1607c1ed26f7d8f1114e73" }
+blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = ["testing"] }
 starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
@@ -302,15 +301,15 @@ stark_evm_adapter = "0.1.1"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/byteZorvin/zaun", branch = "type-update" }
+appchain-core-contract-client = { git = "https://github.com/notlesh/zaun", branch = "madara-monorepo" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
-prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "tmp/snos_devnet_zero_txs" }
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 
 da-client-interface = { path = "crates/orchestrator/da-clients/da-client-interface" }
 ethereum-da-client = { path = "crates/orchestrator/da-clients/ethereum" }
@@ -331,28 +330,7 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
-starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", rev = "6624e910c57db9a16f1607c1ed26f7d8f1114e73" }
+starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = ["testing"] }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
-cairo-vm = { path = "../cairo-vm/vm" }
-
-[patch."https://github.com/keep-starknet-strange/snos"]
-starknet-os = { path = "../snos/crates/starknet-os" }
-prove_block = { path = "../snos/crates/bin/prove_block" }
-
-[patch."https://github.com/karnotxyz/zaun"]
-# ethereum-instance = { path = "../zaun/crates/l2/ethereum-instance" }
-# starkgate-manager-client = { path = "../zaun/crates/l2/starkgate-manager-client" }
-# starkgate-registry-client = { path = "../zaun/crates/l2/starkgate-registry-client" }
-# starknet-core-contract-client = { path = "../zaun/crates/l2/starknet-core-contract-client" }
-# starknet-erc20-client = { path = "../zaun/crates/l2/starknet-erc20-client" }
-# starknet-eth-bridge-client = { path = "../zaun/crates/l2/starknet-eth-bridge-client" }
-# starknet-proxy-client = { path = "../zaun/crates/l2/starknet-proxy-client" }
-# starknet-token-bridge-client = { path = "../zaun/crates/l2/starknet-token-bridge-client" }
-# zaun-utils = { path = "../zaun/crates/l2/utils", package = "utils" }
-
-[patch."https://github.com/byteZorvin/zaun"]
-appchain-core-contract-client = { path = "../zaun/crates/l3/appchain-core-contract-client" }
-
-[patch."https://github.com/Moonsong-Labs/cairo-vm"]
-cairo-vm = { path = "../cairo-vm/vm" }
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
