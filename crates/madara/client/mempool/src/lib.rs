@@ -360,8 +360,7 @@ impl MempoolProvider for Mempool {
         // INFO: L1 nonce are stored differently in the db because of this, which is
         // why we do not use `retrieve_nonce_readiness`.
         let nonce_next = nonce.try_increment()?;
-        let nonce_target =
-            self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
+        let nonce_target = self.backend.get_l1_messaging_nonce_latest()?.unwrap_or(nonce);
         let nonce_info = if nonce != nonce_target {
             NonceInfo::pending(nonce, nonce_next)
         } else {
