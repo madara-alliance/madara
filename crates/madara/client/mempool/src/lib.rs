@@ -364,10 +364,6 @@ impl MempoolProvider for Mempool {
         let nonce_info = if nonce != nonce_target {
             NonceInfo::pending(nonce, nonce_next)
         } else {
-            let _ = self
-                .backend
-                .set_l1_messaging_nonce(nonce)
-                .map_err(|_err| MempoolError::StorageError(MadaraStorageError::InvalidNonce));
             NonceInfo::ready(nonce, nonce_next)
         };
 

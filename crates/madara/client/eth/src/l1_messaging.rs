@@ -101,6 +101,8 @@ async fn process_l1_to_l2_msg(
     if backend.has_l1_messaging_nonce(tx_nonce)? {
         tracing::debug!("⟠ L1 -> L2 event already processed: {tx_nonce:?}");
         return Ok(());
+    } else {
+        backend.set_l1_messaging_nonce(tx_nonce)?;
     }
 
     // Check if cancellation was initiated

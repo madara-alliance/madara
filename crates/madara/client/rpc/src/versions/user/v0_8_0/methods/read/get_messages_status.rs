@@ -22,7 +22,13 @@ pub fn get_messages_status(starknet: &Starknet, transaction_hash: TxHash) -> Sta
                     tracing::error!("L1 handler tx {l1_handler_tx_hash:?} for L1 tx {transaction_hash:?} not found");
                     return Err(StarknetRpcApiError::InternalServerError);
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to retrieve transaction status for L1 handler transaction {l1_handler_tx_hash:?} \
+                         related to L1 transaction {transaction_hash:?}: {e:?}"
+                    );
+                    return Err(StarknetRpcApiError::InternalServerError);
+                }
             };
             acc.push(MessageStatus {
                 transaction_hash: *l1_handler_tx_hash,
