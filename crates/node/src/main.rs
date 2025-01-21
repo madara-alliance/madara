@@ -16,7 +16,7 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_convert::ToFelt;
 use mp_utils::service::{Service, ServiceGroup};
-use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, Sync2Service};
+use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService};
 use starknet_providers::SequencerGatewayProvider;
 use std::sync::Arc;
 
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let importer = Arc::new(
         BlockImporter::new(
             Arc::clone(db_service.backend()),
-            run_cmd.sync_params.unsafe_starting_block,
+            None,
             // Always flush when in authority mode as we really want to minimize the risk of losing a block when the app is unexpectedly killed :)
             /* always_force_flush */
             run_cmd.is_sequencer(),
@@ -151,20 +151,8 @@ async fn main() -> anyhow::Result<()> {
             }
             // Block sync service. (full node)
             false => {
-                // Feeder gateway sync service.
-                // let sync_service = SyncService::new(
-                //     &run_cmd.sync_params,
-                //     Arc::clone(&chain_config),
-                //     &db_service,
-                //     importer,
-                //     telemetry_service.new_handle(),
-                // )
-                // .await
-                // .context("Initializing sync service")?;
-
-                // Sync service
                 let sync_service =
-                    Sync2Service::new(&run_cmd.sync_params, db_service.backend(), p2p_service.commands(), l1_head_recv)
+                    SyncService::new(&run_cmd.sync_params, db_service.backend(), p2p_service.commands(), l1_head_recv)
                         .await
                         .context("Initializing sync service")?;
 

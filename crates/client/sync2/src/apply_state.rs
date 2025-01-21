@@ -4,7 +4,7 @@ use mc_db::MadaraBackend;
 use mp_state_update::StateDiff;
 
 use crate::{
-    controller::{ApplyOutcome, PipelineController, PipelineSteps},
+    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     import::BlockImporter,
 };
 
@@ -40,6 +40,7 @@ impl PipelineSteps for ApplyStateSteps {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
+        tracing::debug!("Apply state sequential step {block_range:?}");
         self.importer.apply_to_global_trie(block_range, input).await?;
         Ok(ApplyOutcome::Success(()))
     }

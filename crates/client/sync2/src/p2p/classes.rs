@@ -1,8 +1,8 @@
+use crate::{import::BlockImporter, pipeline::PipelineController};
 use super::{
-    controller::{P2pError, P2pPipelineController, P2pPipelineSteps},
+    pipeline::{P2pError, P2pPipelineController, P2pPipelineSteps},
     P2pPipelineArguments,
 };
-use crate::{controller::PipelineController, import::BlockImporter};
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};

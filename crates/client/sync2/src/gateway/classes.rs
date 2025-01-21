@@ -1,5 +1,5 @@
 use crate::{
-    controller::{ApplyOutcome, PipelineController, PipelineSteps},
+    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     import::BlockImporter,
 };
 use anyhow::Context;

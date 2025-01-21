@@ -40,18 +40,18 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    pub fn add_param(mut self, name: Cow<'static, str>, value: &str) -> Self {
-        self.params.insert(name, value.to_string());
+    pub fn add_param(mut self, name: impl Into<Cow<'static, str>>, value: impl Into<Cow<'static, str>>) -> Self {
+        self.params.insert(name.into(), value.into().to_string());
         self
     }
 
     pub fn with_block_id(mut self, block_id: BlockId) -> Self {
         match block_id {
             BlockId::Hash(hash) => {
-                self = self.add_param(Cow::from("blockHash"), &format!("0x{hash:x}"));
+                self = self.add_param(Cow::from("blockHash"), format!("0x{hash:x}"));
             }
             BlockId::Number(number) => {
-                self = self.add_param(Cow::from("blockNumber"), &number.to_string());
+                self = self.add_param(Cow::from("blockNumber"), number.to_string());
             }
             BlockId::Tag(tag) => {
                 let tag = match tag {
@@ -65,7 +65,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     pub fn with_class_hash(mut self, class_hash: Felt) -> Self {
-        self = self.add_param(Cow::from("classHash"), &format!("0x{class_hash:x}"));
+        self = self.add_param(Cow::from("classHash"), format!("0x{class_hash:x}"));
         self
     }
 

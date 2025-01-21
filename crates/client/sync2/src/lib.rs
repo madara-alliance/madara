@@ -1,7 +1,9 @@
 mod apply_state;
-mod controller;
-mod import;
-pub mod p2p;
+mod pipeline;
+mod sync;
 mod update_global_trie;
 mod util;
-mod gateway;
+
+pub mod p2p;
+pub mod gateway;
+pub mod import;

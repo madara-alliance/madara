@@ -152,14 +152,19 @@ impl BlockImporter {
 
     // TRANSACTIONS & RECEIPTS
 
+    /// Called in a rayon-pool context.
+    /// Returns the transactions and receipt commitment.
     pub fn verify_transactions(
         &self,
         _block_n: u64,
         transactions: &[TransactionWithReceipt],
         check_against: &Header,
-    ) -> Result<(), BlockImportError> {
+        allow_pre_v0_13_2: bool,
+    ) -> Result<(Felt, Felt), BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
+        let is_pre_v0_13_2_special_case =
+            allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 
         // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
@@ -189,26 +194,28 @@ impl BlockImporter {
 
         // Verify transaction commitment.
         let expected = check_against.transaction_commitment;
-        let got = compute_transaction_commitment(
+        let transaction_commitment = compute_transaction_commitment(
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
             starknet_version,
         );
-        if expected != got {
-            return Err(BlockImportError::TransactionCommitment { got, expected });
+        if !is_pre_v0_13_2_special_case && expected != transaction_commitment {
+            return Err(BlockImportError::TransactionCommitment { got: transaction_commitment, expected });
         }
 
         // Verify receipt commitment.
         let expected = check_against.receipt_commitment.unwrap_or_default();
-        let got = compute_receipt_commitment(
+        let receipt_commitment = compute_receipt_commitment(
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
             starknet_version,
         );
-        if expected != got {
-            return Err(BlockImportError::ReceiptCommitment { got, expected });
+        if !is_pre_v0_13_2_special_case && expected != receipt_commitment {
+            return Err(BlockImportError::ReceiptCommitment { got: receipt_commitment, expected });
         }
-        Ok(())
+
+        Ok((transaction_commitment, receipt_commitment))
     }
 
+    /// Called in a rayon-pool context.
     pub fn save_transactions(
         &self,
         block_n: u64,
@@ -347,12 +354,17 @@ impl BlockImporter {
     // STATE DIFF
 
     /// Called in a rayon-pool context.
+    /// Returns the state diff commitment.
     pub fn verify_state_diff(
         &self,
         _block_n: u64,
         state_diff: &StateDiff,
         check_against: &Header,
-    ) -> Result<(), BlockImportError> {
+        allow_pre_v0_13_2: bool,
+    ) -> Result<Felt, BlockImportError> {
+        let is_pre_v0_13_2_special_case =
+            allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
+
         // Verify state diff length (we want to check it when the block does not come from p2p).
         let expected = check_against.state_diff_length.unwrap_or_default();
         let got = state_diff.len() as _;
@@ -363,10 +375,10 @@ impl BlockImporter {
         // Verify state diff commitment.
         let expected = check_against.state_diff_commitment.unwrap_or_default();
         let got = state_diff.compute_hash();
-        if expected != got {
+        if !is_pre_v0_13_2_special_case && expected != got {
             return Err(BlockImportError::StateDiffCommitment { got, expected });
         }
-        Ok(())
+        Ok(got)
     }
 
     /// Called in a rayon-pool context.
@@ -381,14 +393,18 @@ impl BlockImporter {
     // EVENTS
 
     /// Called in a rayon-pool context.
+    /// Returns the event commitment.
     pub fn verify_events(
         &self,
         _block_n: u64,
         events: &[EventWithTransactionHash],
         check_against: &Header,
-    ) -> Result<(), BlockImportError> {
+        allow_pre_v0_13_2: bool,
+    ) -> Result<Felt, BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
+        let is_pre_v0_13_2_special_case =
+            allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 
         let event_hashes: Vec<_> =
             events.par_iter().map(|ev| ev.event.compute_hash(ev.transaction_hash, starknet_version)).collect();
@@ -403,11 +419,11 @@ impl BlockImporter {
         // Verify events commitment.
         let expected = check_against.event_commitment;
         let got = compute_event_commitment(event_hashes, starknet_version);
-        if expected != got {
+        if !is_pre_v0_13_2_special_case && expected != got {
             return Err(BlockImportError::EventCommitment { got, expected });
         }
 
-        Ok(())
+        Ok(got)
     }
 
     /// Called in a rayon-pool context.

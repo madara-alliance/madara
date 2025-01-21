@@ -1,3 +1,4 @@
+use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 use anyhow::Context;
 use mp_block::header::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
@@ -6,7 +7,13 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
-use super::{receipt::ConfirmedReceipt, transaction::Transaction};
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockHeader {
+    pub block_number: u64,
+    pub block_hash: Felt,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]

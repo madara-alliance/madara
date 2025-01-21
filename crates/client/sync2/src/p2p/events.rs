@@ -1,8 +1,8 @@
 use super::{
-    controller::{P2pError, P2pPipelineController, P2pPipelineSteps},
+    pipeline::{P2pError, P2pPipelineController, P2pPipelineSteps},
     P2pPipelineArguments,
 };
-use crate::{controller::PipelineController, import::BlockImporter};
+use crate::{import::BlockImporter, pipeline::PipelineController};
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
@@ -55,7 +55,7 @@ impl P2pPipelineSteps for EventsSyncSteps {
             let events = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
             self.importer
                 .run_in_rayon_pool(move |importer| {
-                    importer.verify_events(block_n, &events, &header)?;
+                    importer.verify_events(block_n, &events, &header, /* allow_pre_v0_13_2 */ false)?;
                     importer.save_events(block_n, events)
                 })
                 .await?

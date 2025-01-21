@@ -1,10 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
+use anyhow::Context;
+use mc_gateway::client::builder::FeederClient;
 use mp_chain_config::ChainConfig;
-use starknet_api::core::ChainId;
-
-use mc_sync::fetch::fetchers::FetchConfig;
-use mp_utils::parsers::{parse_duration, parse_url};
+use mp_utils::parsers::parse_url;
+use reqwest::header::{HeaderName, HeaderValue};
 use url::Url;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -13,16 +13,15 @@ pub struct SyncParams {
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
     pub sync_disabled: bool,
 
-    /// The block you want to start syncing from. This will most probably break your database.
-    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
-    pub unsafe_starting_block: Option<u64>,
+    // /// The block you want to start syncing from. This will most probably break your database.
+    // #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
+    // pub unsafe_starting_block: Option<u64>,
 
-    /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
-    /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
-    // TODO(docs): explain the security cost
-    #[clap(env = "MADARA_DISABLE_ROOT", long)]
-    pub disable_root: bool,
-
+    // /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
+    // /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
+    // // TODO(docs): explain the security cost
+    // #[clap(env = "MADARA_DISABLE_ROOT", long)]
+    // pub disable_root: bool,
     /// Gateway api key to avoid rate limiting (optional).
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
@@ -30,33 +29,6 @@ pub struct SyncParams {
     /// Feeder gateway url used to sync blocks, state updates and classes
     #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
     pub gateway_url: Option<Url>,
-
-    /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    #[clap(
-		env = "MADARA_SYNC_POLLING_INTERVAL",
-        long,
-        value_parser = parse_duration,
-        default_value = "4s",
-        value_name = "SYNC POLLING INTERVAL",
-        help = "Set the sync polling interval (e.g., '4s', '100ms', '1min')"
-    )]
-    pub sync_polling_interval: Duration,
-
-    /// Pending block polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    #[clap(
-		env = "MADARA_PENDING_BLOCK_POLL_INTERVAL",
-        long,
-        value_parser = parse_duration,
-        default_value = "2s",
-        value_name = "PENDING BLOCK POLL INTERVAL",
-        help = "Set the pending block poll interval (e.g., '2s', '500ms', '30s')"
-    )]
-    pub pending_block_poll_interval: Duration,
-
-    /// Disable sync polling. This currently means that the sync process will not import any more block once it has caught up with the
-    /// blockchain tip.
-    #[clap(env = "MADARA_NO_SYNC_POLLING", long)]
-    pub no_sync_polling: bool,
 
     /// Number of blocks to sync. May be useful for benchmarking the sync service.
     #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "NUMBER OF BLOCKS")]
@@ -66,16 +38,18 @@ pub struct SyncParams {
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub backup_every_n_blocks: Option<u64>,
 
-    // Documentation needs to be kept in sync with [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
-    /// UNSTABLE: Used for experimental p2p support. When p2p sync will be fully implemented, this field will go away,
-    /// and we will always compute v0.13.2 hashes. However, we can't verify the old pre-v0.13.2 blocks yet during sync,
-    /// so this field bridges the gap. When set, we will always trust the integrity of pre-v0.13.2 blocks during sync.
-    #[clap(long)]
-    pub compute_v0_13_2_hashes: bool,
+    #[clap(env = "MADARA_P2P_SYNC", long)]
+    pub p2p_sync: bool,
+    // // Documentation needs to be kept in sync with [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
+    // /// UNSTABLE: Used for experimental p2p support. When p2p sync will be fully implemented, this field will go away,
+    // /// and we will always compute v0.13.2 hashes. However, we can't verify the old pre-v0.13.2 blocks yet during sync,
+    // /// so this field bridges the gap. When set, we will always trust the integrity of pre-v0.13.2 blocks during sync.
+    // #[clap(long)]
+    // pub compute_v0_13_2_hashes: bool,
 }
 
 impl SyncParams {
-    pub fn block_fetch_config(&self, chain_id: ChainId, chain_config: Arc<ChainConfig>) -> FetchConfig {
+    pub fn create_feeder_client(&self, chain_config: Arc<ChainConfig>) -> anyhow::Result<FeederClient> {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (
                 url.join("/gateway/").expect("Error parsing url"),
@@ -84,16 +58,15 @@ impl SyncParams {
             None => (chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone()),
         };
 
-        let polling = if self.no_sync_polling { None } else { Some(self.sync_polling_interval) };
+        let mut client = FeederClient::new(gateway, feeder_gateway);
 
-        FetchConfig {
-            gateway,
-            feeder_gateway,
-            chain_id,
-            verify: !self.disable_root,
-            api_key: self.gateway_key.clone(),
-            sync_polling_interval: polling,
-            n_blocks_to_sync: self.n_blocks_to_sync,
+        if let Some(api_key) = &self.gateway_key {
+            client.add_header(
+                HeaderName::from_static("x-throttling-bypass"),
+                HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+            )
         }
+
+        Ok(client)
     }
 }

@@ -3,7 +3,9 @@ use crate::error::{SequencerError, StarknetError};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::{
-    block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
+    block::{
+        ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,
+    },
     state_update::{
         ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
@@ -26,6 +28,16 @@ impl FeederClient {
             }
             _ => Ok(ProviderBlockPendingMaybe::NonPending(request.send_get::<ProviderBlock>().await?)),
         }
+    }
+
+    pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_block")
+            .expect("Failed to add URI segment. This should not fail in prod.")
+            .with_block_id(block_id)
+            .add_param("headerOnly", "true");
+
+        request.send_get::<ProviderBlockHeader>().await
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {

@@ -1,18 +1,17 @@
-use crate::import::{BlockImporter, BlockValidationConfig};
+use crate::import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_p2p::P2pCommands;
 use peer_set::PeerSet;
 use std::sync::Arc;
 
 mod classes;
-mod controller;
 mod events;
 mod forward_sync;
 mod headers;
 mod peer_set;
+mod pipeline;
 mod state_diffs;
 mod transactions;
-mod sync;
 
 pub use forward_sync::*;
 
@@ -25,12 +24,7 @@ pub struct P2pPipelineArguments {
 }
 
 impl P2pPipelineArguments {
-    pub fn new(backend: Arc<MadaraBackend>, p2p_commands: P2pCommands) -> Self {
-        Self {
-            importer: Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default())),
-            backend,
-            peer_set: Arc::new(PeerSet::new(p2p_commands.clone())),
-            p2p_commands,
-        }
+    pub fn new(backend: Arc<MadaraBackend>, p2p_commands: P2pCommands, importer: Arc<BlockImporter>) -> Self {
+        Self { importer, backend, peer_set: Arc::new(PeerSet::new(p2p_commands.clone())), p2p_commands }
     }
 }

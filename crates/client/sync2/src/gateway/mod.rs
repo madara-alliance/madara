@@ -1,19 +1,22 @@
 use crate::{
-    controller::{ApplyOutcome, PipelineController, PipelineSteps},
+    apply_state::ApplyStateSync,
     import::BlockImporter,
+    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
+    sync::{ForwardPipeline, Probe, SyncController},
 };
 use anyhow::Context;
-use mp_utils::graceful_shutdown;
-use core::error;
+use classes::ClassesSync;
+use core::fmt;
 use mc_db::MadaraBackend;
+use mc_eth::state_update::L1HeadReceiver;
 use mc_gateway::client::builder::FeederClient;
-use mp_block::{BlockHeaderWithSignatures, BlockId, Header, TransactionWithReceipt};
+use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, Header, TransactionWithReceipt};
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_gateway::state_update::{ProviderStateUpdateWithBlock, ProviderStateUpdateWithBlockPendingMaybe};
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
-use std::{ops::Range, sync::Arc};
+use std::{iter, ops::Range, sync::Arc};
 
 mod classes;
 
@@ -101,14 +104,14 @@ impl TryFrom<ProviderStateUpdateWithBlock> for GatewayBlock {
     }
 }
 
-pub type GatewaySync = PipelineController<GatewaySyncSteps>;
+pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;
 pub fn block_with_state_update_pipeline(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: FeederClient,
     parallelization: usize,
     batch_size: usize,
-) -> GatewaySync {
+) -> GatewayBlockSync {
     PipelineController::new(GatewaySyncSteps { backend, importer, client }, parallelization, batch_size)
 }
 
@@ -129,6 +132,7 @@ impl PipelineSteps for GatewaySyncSteps {
         _input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
         let mut out = vec![];
+        tracing::debug!("Gateway sync parallel step {:?}", block_range);
         for block_n in block_range {
             let block = self
                 .client
@@ -145,16 +149,42 @@ impl PipelineSteps for GatewaySyncSteps {
             let state_diff = self
                 .importer
                 .run_in_rayon_pool(move |importer| {
-                    let signed_header = BlockHeaderWithSignatures {
+                    let mut signed_header = BlockHeaderWithSignatures {
                         header: gateway_block.header,
                         block_hash: gateway_block.block_hash,
                         consensus_signatures: vec![],
                     };
+                    tracing::debug!("{:#?}", signed_header);
 
+                    // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
+                    let allow_pre_v0_13_2 = true;
+
+                    let state_diff_commitment = importer.verify_state_diff(
+                        block_n,
+                        &gateway_block.state_diff,
+                        &signed_header.header,
+                        allow_pre_v0_13_2,
+                    )?;
+                    let (transaction_commitment, receipt_commitment) = importer.verify_transactions(
+                        block_n,
+                        &gateway_block.transactions,
+                        &signed_header.header,
+                        allow_pre_v0_13_2,
+                    )?;
+                    let event_commitment = importer.verify_events(
+                        block_n,
+                        &gateway_block.events,
+                        &signed_header.header,
+                        allow_pre_v0_13_2,
+                    )?;
+                    signed_header.header = Header {
+                        state_diff_commitment: Some(state_diff_commitment),
+                        transaction_commitment,
+                        event_commitment,
+                        receipt_commitment: Some(receipt_commitment),
+                        ..signed_header.header
+                    };
                     importer.verify_header(block_n, &signed_header)?;
-                    importer.verify_state_diff(block_n, &gateway_block.state_diff, &signed_header.header)?;
-                    importer.verify_transactions(block_n, &gateway_block.transactions, &signed_header.header)?;
-                    importer.verify_events(block_n, &gateway_block.events, &signed_header.header)?;
 
                     importer.save_header(block_n, signed_header)?;
                     importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
@@ -166,6 +196,8 @@ impl PipelineSteps for GatewaySyncSteps {
                 .await?;
             out.push(state_diff);
         }
+
+        tracing::debug!("out= {out:?}");
 
         Ok(out)
     }
@@ -201,68 +233,183 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            block_parallelization: 2,
+            block_parallelization: 100,
             block_batch_size: 1,
-            classes_parallelization: 2,
+            classes_parallelization: 200,
             classes_batch_size: 1,
-            apply_state_parallelization: 1,
-            apply_state_batch_size: 1,
+            apply_state_parallelization: 3,
+            apply_state_batch_size: 20,
         }
     }
 }
 
-/// Events pipeline is currently always done after tx and receipts for now.
-/// TODO: fix that when the db supports saving events separately.
-pub async fn forward_sync(
+pub type GatewaySync = SyncController<GatewayForwardSync, GatewayLatestProbe>;
+pub fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: FeederClient,
+    l1_head_recv: L1HeadReceiver,
+    stop_at_block_n: Option<u64>,
     config: ForwardSyncConfig,
-) -> anyhow::Result<()> {
-    let mut blocks_pipeline = block_with_state_update_pipeline(
-        backend.clone(),
-        importer.clone(),
-        client.clone(),
-        config.block_parallelization,
-        config.block_batch_size,
-    );
-    let mut classes_pipeline = classes::classes_pipeline(
-        backend.clone(),
-        importer.clone(),
-        client.clone(),
-        config.classes_parallelization,
-        config.classes_batch_size,
-    );
-    let mut apply_state_pipeline = super::apply_state::apply_state_pipeline(
-        backend.clone(),
-        importer.clone(),
-        config.apply_state_parallelization,
-        config.apply_state_batch_size,
-    );
+) -> GatewaySync {
+    let probe = GatewayLatestProbe::new(client.clone());
+    SyncController::new(
+        GatewayForwardSync::new(backend, importer, client, config),
+        l1_head_recv,
+        stop_at_block_n,
+        Some(probe.into()),
+    )
+}
 
-    loop {
-        while blocks_pipeline.can_schedule_more() {
-            // todo follow until l1 head
-            blocks_pipeline.push(std::iter::once(()))
-        }
+pub struct GatewayForwardSync {
+    blocks_pipeline: GatewayBlockSync,
+    classes_pipeline: ClassesSync,
+    apply_state_pipeline: ApplyStateSync,
+}
 
-        tokio::select! {
-            _ = graceful_shutdown() => break,
+impl GatewayForwardSync {
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        importer: Arc<BlockImporter>,
+        client: FeederClient,
+        config: ForwardSyncConfig,
+    ) -> Self {
+        let blocks_pipeline = block_with_state_update_pipeline(
+            backend.clone(),
+            importer.clone(),
+            client.clone(),
+            config.block_parallelization,
+            config.block_batch_size,
+        );
+        let classes_pipeline = classes::classes_pipeline(
+            backend.clone(),
+            importer.clone(),
+            client.clone(),
+            config.classes_parallelization,
+            config.classes_batch_size,
+        );
+        let apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            backend.clone(),
+            importer.clone(),
+            config.apply_state_parallelization,
+            config.apply_state_batch_size,
+        );
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline }
+    }
+}
 
-            Some(res) = blocks_pipeline.next(), if classes_pipeline.can_schedule_more() && apply_state_pipeline.can_schedule_more() => {
-                let (_range, state_diffs) = res?;
-                classes_pipeline.push(state_diffs.iter().map(|s| s.all_declared_classes()));
-                apply_state_pipeline.push(state_diffs);
+impl ForwardPipeline for GatewayForwardSync {
+    async fn run(&mut self, target_height: u64) -> anyhow::Result<()> {
+        tracing::debug!("Run pipeline to height={target_height:?}");
+        loop {
+            while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
+            {
+                self.blocks_pipeline.push(iter::once(()));
             }
-            Some(res) = classes_pipeline.next() => {
-                res?;
+            tokio::select! {
+                Some(res) = self.blocks_pipeline.next(), if self.classes_pipeline.can_schedule_more() && self.apply_state_pipeline.can_schedule_more() => {
+                    let (_range, state_diffs) = res?;
+                    self.classes_pipeline.push(state_diffs.iter().map(|s| s.all_declared_classes()));
+                    self.apply_state_pipeline.push(state_diffs);
+                }
+                Some(res) = self.classes_pipeline.next() => {
+                    res?;
+                }
+                Some(res) = self.apply_state_pipeline.next() => {
+                    res?;
+                }
+                // all pipelines are empty, we're done :)
+                else => break Ok(())
             }
-            Some(res) = apply_state_pipeline.next() => {
-                res?;
-            }
-            // all pipelines are empty, we're done :)
-            else => break
         }
     }
-    Ok(())
+
+    fn next_input_block_n(&self) -> u64 {
+        self.blocks_pipeline.next_input_block_n()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.blocks_pipeline.is_empty() && self.classes_pipeline.is_empty() && self.apply_state_pipeline.is_empty()
+    }
+
+    fn input_batch_size(&self) -> usize {
+        self.blocks_pipeline.input_batch_size()
+    }
+
+    fn show_status(&self, target_height: Option<u64>) {
+        struct DisplayFromFn<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(F);
+        impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFromFn<F> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                (self.0)(f)
+            }
+        }
+        fn show_pipeline<S: PipelineSteps>(
+            f: &mut fmt::Formatter<'_>,
+            name: &str,
+            pipeline: &PipelineController<S>,
+            target_height: Option<u64>,
+        ) -> fmt::Result {
+            let last_applied_block_n = pipeline.last_applied_block_n();
+            write!(f, "{name}: ")?;
+
+            if let Some(last_applied_block_n) = last_applied_block_n {
+                write!(f, "{last_applied_block_n}")?;
+            } else {
+                write!(f, "N")?;
+            }
+
+            if let Some(target_height) = target_height {
+                write!(f, "/{target_height}")?;
+            } else {
+                write!(f, "/?")?;
+            }
+
+            write!(f, " [{}", pipeline.queue_len())?;
+            if pipeline.is_applying() {
+                write!(f, "+")?;
+            }
+            write!(f, "]")?;
+
+            Ok(())
+        }
+
+        tracing::info!(
+            "{}",
+            DisplayFromFn(move |f| {
+                show_pipeline(f, "Blocks", &self.blocks_pipeline, target_height)?;
+                write!(f, " | ")?;
+                show_pipeline(f, "Classes", &self.classes_pipeline, target_height)?;
+                write!(f, " | ")?;
+                show_pipeline(f, "State", &self.apply_state_pipeline, target_height)?;
+                Ok(())
+            })
+        );
+    }
+}
+
+pub struct GatewayLatestProbe {
+    client: FeederClient,
+}
+
+impl GatewayLatestProbe {
+    pub fn new(client: FeederClient) -> Self {
+        Self { client }
+    }
+}
+
+impl Probe for GatewayLatestProbe {
+    type State = Option<u64>;
+    fn highest_known_block_from_state(&self, state: &Self::State) -> Option<u64> {
+        *state
+    }
+
+    async fn forward_probe(
+        self: Arc<Self>,
+        _next_block_n: u64,
+        _batch_size: usize,
+        _state: Self::State,
+    ) -> anyhow::Result<Self::State> {
+        let header = self.client.get_header(BlockId::Tag(BlockTag::Latest)).await.context("Getting latest header")?;
+        Ok(Some(header.block_number))
+    }
 }

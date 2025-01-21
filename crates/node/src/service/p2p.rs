@@ -36,8 +36,8 @@ impl P2pService {
         Ok(Self { p2p, enabled: config.p2p })
     }
 
-    pub fn commands(&mut self) -> P2pCommands {
-        self.p2p.as_ref().expect("Commands option already taken").commands()
+    pub fn commands(&mut self) -> Option<P2pCommands> {
+        self.p2p.as_ref().map(|p2p| p2p.commands())
     }
 }
 

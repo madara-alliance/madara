@@ -1,6 +1,7 @@
+use super::peer_set::{PeerGuard, PeerSet};
 use crate::{
-    controller::{ApplyOutcome, PipelineSteps},
     import::BlockImportError,
+    pipeline::{ApplyOutcome, PipelineSteps},
     util::AbortOnDrop,
 };
 use anyhow::Context;
@@ -8,8 +9,6 @@ use futures::Future;
 use mc_p2p::PeerId;
 use mc_p2p::SyncHandlerError;
 use std::{borrow::Cow, ops::Range, sync::Arc};
-
-use super::peer_set::{PeerGuard, PeerSet};
 
 #[derive(Debug, thiserror::Error)]
 pub enum P2pError {

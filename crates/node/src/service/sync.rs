@@ -1,51 +1,44 @@
 use crate::cli::SyncParams;
-use anyhow::Context;
-use mc_block_import::BlockImporter;
-use mc_db::{DatabaseService, MadaraBackend};
-use mc_sync::fetch::fetchers::FetchConfig;
-use mc_telemetry::TelemetryHandle;
-use mp_chain_config::ChainConfig;
+use mc_db::MadaraBackend;
+use mc_eth::state_update::L1HeadReceiver;
+use mc_p2p::P2pCommands;
+use mc_sync2::import::{BlockImporter, BlockValidationConfig};
 use mp_utils::service::Service;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::task::JoinSet;
 
 #[derive(Clone)]
-pub struct SyncService {
+struct StartArgs {
+    p2p_commands: Option<P2pCommands>,
+    l1_head_recv: L1HeadReceiver,
     db_backend: Arc<MadaraBackend>,
-    block_importer: Arc<BlockImporter>,
-    fetch_config: FetchConfig,
-    backup_every_n_blocks: Option<u64>,
-    starting_block: Option<u64>,
-    start_params: Option<TelemetryHandle>,
+    params: SyncParams,
+}
+
+#[derive(Clone)]
+pub struct SyncService {
+    start_args: Option<StartArgs>,
     disabled: bool,
-    pending_block_poll_interval: Duration,
-    // See [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
-    compute_v0_13_2_hashes: bool,
 }
 
 impl SyncService {
     pub async fn new(
         config: &SyncParams,
-        chain_config: Arc<ChainConfig>,
-        db: &DatabaseService,
-        block_importer: Arc<BlockImporter>,
-        telemetry: TelemetryHandle,
+        db: &Arc<MadaraBackend>,
+        mut p2p_commands: Option<P2pCommands>,
+        l1_head_recv: L1HeadReceiver,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone());
-
-        tracing::info!("🛰️  Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
-
+        if !config.p2p_sync {
+            p2p_commands = None;
+        }
         Ok(Self {
-            db_backend: Arc::clone(db.backend()),
-            fetch_config,
-            starting_block: config.unsafe_starting_block,
-            backup_every_n_blocks: config.backup_every_n_blocks,
-            block_importer,
-            start_params: Some(telemetry),
+            start_args: (!config.sync_disabled).then_some(StartArgs {
+                p2p_commands,
+                l1_head_recv,
+                db_backend: db.clone(),
+                params: config.clone(),
+            }),
             disabled: config.sync_disabled,
-            pending_block_poll_interval: config.pending_block_poll_interval,
-            compute_v0_13_2_hashes: config.compute_v0_13_2_hashes,
         })
     }
 }
@@ -56,31 +49,29 @@ impl Service for SyncService {
         if self.disabled {
             return Ok(());
         }
-        let SyncService {
-            fetch_config,
-            backup_every_n_blocks,
-            starting_block,
-            pending_block_poll_interval,
-            block_importer,
-            compute_v0_13_2_hashes,
-            ..
-        } = self.clone();
-        let telemetry = self.start_params.take().context("Service already started")?;
-
-        let db_backend = Arc::clone(&self.db_backend);
-
+        let this = self.start_args.take().expect("Service already started");
+        let stop_at_block_n = None;
+        let importer = Arc::new(BlockImporter::new(this.db_backend.clone(), BlockValidationConfig::default()));
         join_set.spawn(async move {
-            mc_sync::sync(
-                &db_backend,
-                block_importer,
-                fetch_config,
-                starting_block,
-                backup_every_n_blocks,
-                telemetry,
-                pending_block_poll_interval,
-                compute_v0_13_2_hashes,
-            )
-            .await
+            if this.params.p2p_sync {
+                let Some(p2p_commands) = this.p2p_commands else {
+                    anyhow::bail!("Cannot enable --p2p-sync without starting the peer-to-peer service using --p2p.")
+                };
+                let args = mc_sync2::p2p::P2pPipelineArguments::new(this.db_backend, p2p_commands, importer);
+                mc_sync2::p2p::forward_sync(args, this.l1_head_recv, stop_at_block_n, Default::default()).run().await
+            } else {
+                let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
+                mc_sync2::gateway::forward_sync(
+                    this.db_backend,
+                    importer,
+                    gateway,
+                    this.l1_head_recv,
+                    stop_at_block_n,
+                    Default::default(),
+                )
+                .run()
+                .await
+            }
         });
 
         Ok(())
