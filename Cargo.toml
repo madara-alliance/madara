@@ -153,7 +153,7 @@ mc-devnet = { path = "crates/madara/client/devnet" }
 m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.1"
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "notlesh/snos-2024-11-04" }
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -166,10 +166,12 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 starknet-types-rpc = "0.7.1"
 
 blockifier = "=0.8.0"
+# blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", rev = "6624e910c57db9a16f1607c1ed26f7d8f1114e73" }
 starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
+# alloy = { version = "0.8.3", features = [
 alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
@@ -329,8 +331,28 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
+starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", rev = "6624e910c57db9a16f1607c1ed26f7d8f1114e73" }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+
+cairo-vm = { path = "../cairo-vm/vm" }
 
 [patch."https://github.com/keep-starknet-strange/snos"]
 starknet-os = { path = "../snos/crates/starknet-os" }
 prove_block = { path = "../snos/crates/bin/prove_block" }
+
+[patch."https://github.com/karnotxyz/zaun"]
+# ethereum-instance = { path = "../zaun/crates/l2/ethereum-instance" }
+# starkgate-manager-client = { path = "../zaun/crates/l2/starkgate-manager-client" }
+# starkgate-registry-client = { path = "../zaun/crates/l2/starkgate-registry-client" }
+# starknet-core-contract-client = { path = "../zaun/crates/l2/starknet-core-contract-client" }
+# starknet-erc20-client = { path = "../zaun/crates/l2/starknet-erc20-client" }
+# starknet-eth-bridge-client = { path = "../zaun/crates/l2/starknet-eth-bridge-client" }
+# starknet-proxy-client = { path = "../zaun/crates/l2/starknet-proxy-client" }
+# starknet-token-bridge-client = { path = "../zaun/crates/l2/starknet-token-bridge-client" }
+# zaun-utils = { path = "../zaun/crates/l2/utils", package = "utils" }
+
+[patch."https://github.com/byteZorvin/zaun"]
+appchain-core-contract-client = { path = "../zaun/crates/l3/appchain-core-contract-client" }
+
+[patch."https://github.com/Moonsong-Labs/cairo-vm"]
+cairo-vm = { path = "../cairo-vm/vm" }
