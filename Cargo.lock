@@ -1175,6 +1175,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
+source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1194,6 +1195,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
+source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -2678,49 +2680,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
-dependencies = [
- "anyhow",
- "ark-ec",
- "ark-ff 0.4.2",
- "ark-secp256k1",
- "ark-secp256r1",
- "cached",
- "cairo-lang-casm 2.8.4",
- "cairo-lang-runner",
- "cairo-lang-starknet-classes",
- "cairo-lang-utils 2.8.4",
- "cairo-vm",
- "derive_more 0.99.18",
- "indexmap 2.6.0",
- "itertools 0.10.5",
- "keccak",
- "log",
- "num-bigint",
- "num-integer",
- "num-rational",
- "num-traits 0.2.19",
- "once_cell",
- "paste",
- "phf",
- "rand",
- "rstest 0.17.0",
- "serde",
- "serde_json",
- "sha2",
- "sha3",
- "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
- "starknet_api",
- "strum 0.25.0",
- "strum_macros 0.25.3",
- "thiserror 1.0.65",
-]
-
-[[package]]
-name = "blockifier"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "481ee091c604037e5e81cf0debf1eca9f69d4f61636b27d7732c7cf14efbb508"
+source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -4608,6 +4568,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4617,6 +4578,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
+source = "git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo#1fa902bafae507424b5ea83a625830ffe6b0eca5"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -6694,7 +6656,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.7",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -7655,7 +7617,7 @@ dependencies = [
  "alloy 0.8.3",
  "anyhow",
  "async-trait",
- "blockifier 0.8.0",
+ "blockifier",
  "clap",
  "fdlimit",
  "futures",
@@ -7845,7 +7807,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bitvec",
- "blockifier 0.8.0",
+ "blockifier",
  "lazy_static",
  "mc-analytics",
  "mc-block-import",
@@ -7889,7 +7851,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
- "blockifier 0.8.0",
+ "blockifier",
  "bonsai-trie",
  "lazy_static",
  "librocksdb-sys",
@@ -7927,7 +7889,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "blockifier 0.8.0",
+ "blockifier",
  "m-cairo-test-contracts",
  "mc-block-import",
  "mc-block-production",
@@ -8032,7 +7994,7 @@ dependencies = [
 name = "mc-exec"
 version = "0.7.0"
 dependencies = [
- "blockifier 0.8.0",
+ "blockifier",
  "cairo-vm",
  "mc-db",
  "mp-block",
@@ -8121,7 +8083,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bitvec",
- "blockifier 0.8.0",
+ "blockifier",
  "lazy_static",
  "mc-analytics",
  "mc-block-import",
@@ -8168,7 +8130,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "bitvec",
- "blockifier 0.8.0",
+ "blockifier",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -8443,7 +8405,7 @@ dependencies = [
 name = "mp-block"
 version = "0.7.0"
 dependencies = [
- "blockifier 0.8.0",
+ "blockifier",
  "mp-chain-config",
  "mp-receipt",
  "mp-transactions",
@@ -8469,7 +8431,7 @@ name = "mp-chain-config"
 version = "0.7.0"
 dependencies = [
  "anyhow",
- "blockifier 0.8.0",
+ "blockifier",
  "lazy_static",
  "mp-utils",
  "primitive-types",
@@ -8489,7 +8451,7 @@ name = "mp-class"
 version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
- "blockifier 0.8.0",
+ "blockifier",
  "cairo-lang-starknet 1.0.0-alpha.6",
  "cairo-lang-starknet 1.0.0-rc0",
  "cairo-lang-starknet 1.1.1",
@@ -8572,7 +8534,7 @@ name = "mp-receipt"
 version = "0.7.0"
 dependencies = [
  "bincode 1.3.3",
- "blockifier 0.8.0",
+ "blockifier",
  "cairo-vm",
  "primitive-types",
  "rstest 0.18.2",
@@ -8603,7 +8565,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "base64 0.22.1",
- "blockifier 0.8.0",
+ "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.8.4",
  "cairo-vm",
@@ -9923,9 +9885,10 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
  "anyhow",
- "blockifier 0.8.0-rc.3",
+ "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.8.4",
  "cairo-vm",
@@ -10430,6 +10393,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -10444,8 +10408,9 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
- "blockifier 0.8.0-rc.3",
+ "blockifier",
  "cairo-lang-starknet-classes",
  "rpc-client",
  "serde",
@@ -11891,6 +11856,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11899,7 +11865,7 @@ dependencies = [
  "ark-secp256r1",
  "base64 0.21.7",
  "bitvec",
- "blockifier 0.8.0-rc.3",
+ "blockifier",
  "c-kzg",
  "cairo-lang-casm 2.8.4",
  "cairo-lang-starknet 2.8.4",
@@ -11939,8 +11905,9 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
 dependencies = [
- "blockifier 0.8.0-rc.3",
+ "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-vm",
  "flate2",
@@ -12073,7 +12040,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes",
