@@ -151,7 +151,8 @@ impl Mempool {
         let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
             block
         } else {
-            // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
+            // No current pending block, we'll make an unsaved empty one for
+            // the sake of validating this tx.
             let parent_block_hash = self
                 .backend
                 .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
