@@ -998,6 +998,25 @@ mod tests {
 
         // This simulates a node restart after shutting down midway during block
         // production.
+        //
+        // Block production functions by storing un-finalized blocks as pending.
+        // This is the only form of data we can recover without re-execution as
+        // everything else is stored in RAM (mempool transactions which have not
+        // been polled yet are also stored in db for retrieval, but these
+        // haven't been executed anyways). This means that if ever the node
+        // crashes, we will only be able to retrieve whatever data was stored in
+        // the pending block. This is done atomically so we never commit partial
+        // data to the database and only a full pending block can ever be
+        // stored.
+        //
+        // We are therefore simulating stopping and restarting the node, since:
+        //
+        // - This is the only pending data that can persist a node restart, and
+        //   it cannot be partially valid (we still test failing cases though).
+        //
+        // - Upon restart, this is what the block production would be looking to
+        //   seal.
+
         backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
@@ -1274,6 +1293,15 @@ mod tests {
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
 
+        // Block 0 should not have been overridden!
+        let block = backend
+            .get_block(&mp_block::BlockId::Number(0))
+            .expect("Failed to retrieve block 0 from db")
+            .expect("Missing block 0");
+
+        assert_eq!(block.info.as_nonpending().unwrap().header.parent_block_hash, Felt::ZERO);
+        assert_eq!(block.inner, ready_inner);
+
         let block = backend
             .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
             .expect("Failed to retrieve latest block from db")
@@ -1282,11 +1310,18 @@ mod tests {
         assert_eq!(block.info.as_nonpending().unwrap().header.parent_block_hash, Felt::ZERO);
         assert_eq!(block.inner, pending_inner);
 
+        // Block 0 should not have been overridden!
+        let state_diff = backend
+            .get_block_state_diff(&mp_block::BlockId::Number(0))
+            .expect("Failed to retrieve state diff at block 0 from db")
+            .expect("Missing state diff at block 0");
+        assert_eq!(ready_state_diff, state_diff);
+
         let state_diff = backend
             .get_block_state_diff(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
             .expect("Failed to retrieve latest state diff from db")
             .expect("Missing latest state diff");
-        assert_eq!(state_diff, state_diff);
+        assert_eq!(pending_state_diff, state_diff);
 
         let class = backend
             .get_converted_class(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest), &Felt::ZERO)
