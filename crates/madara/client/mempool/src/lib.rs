@@ -350,7 +350,6 @@ impl MempoolProvider for Mempool {
         let nonce = Nonce(Felt::from(tx.nonce));
         let (btx, class) =
             tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
-
         // L1 Handler nonces represent the ordering of L1 transactions sent by
         // the core L1 contract. In principle this is a bit strange, as there
         // currently is only 1 core L1 contract, so all transactions should be
@@ -366,6 +365,10 @@ impl MempoolProvider for Mempool {
         let nonce_info = if nonce != nonce_target {
             NonceInfo::pending(nonce, nonce_next)
         } else {
+            let _ = self
+                .backend
+                .set_l1_messaging_nonce(nonce)
+                .map_err(|_err| MempoolError::StorageError(MadaraStorageError::InvalidNonce));
             NonceInfo::ready(nonce, nonce_next)
         };
 
@@ -430,7 +433,6 @@ impl MempoolProvider for Mempool {
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     fn tx_take(&self) -> Option<MempoolTransaction> {
-        print!("PASSING HERE?");
         if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
             let contract_address = mempool_tx.contract_address().to_felt();
             let nonce_next = mempool_tx.nonce_next;

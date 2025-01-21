@@ -670,9 +670,7 @@ impl MempoolInner {
         // Pop tx queue.
         let (tx_mempool, contract_address, nonce_next) = loop {
             // Bubble up None if the mempool is empty.
-            println!("DEBUG: Before pop");
             let tx_intent = self.tx_intent_queue_ready.pop_first()?;
-            println!("DEBUG: tx_intent: {:?}", tx_intent);
             let tx_mempool = self.pop_tx_from_intent(&tx_intent);
 
             let limits = TransactionCheckedLimits::limits_for(&tx_mempool);

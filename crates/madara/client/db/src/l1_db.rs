@@ -148,7 +148,6 @@ impl MadaraBackend {
         l1_handler_tx_hash: Felt,
         order: u64,
     ) -> Result<(), DbError> {
-        println!("Adding L1-L2 mapping: {}, {}", l1_tx_hash, l1_handler_tx_hash);
         let l1_l2_mappings_column = self.db.get_column(Column::L1MessagingHandlerTxHashes);
         let mut key = [0u8; 40];
         key[..32].copy_from_slice(l1_tx_hash.as_slice());

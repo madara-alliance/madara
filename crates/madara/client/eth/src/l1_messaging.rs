@@ -96,12 +96,11 @@ async fn process_l1_to_l2_msg(
     );
 
     let tx_nonce = Nonce(u256_to_felt(event.nonce)?);
+
     // Ensure that L1 message has not been executed
     if backend.has_l1_messaging_nonce(tx_nonce)? {
         tracing::debug!("⟠ L1 -> L2 event already processed: {tx_nonce:?}");
         return Ok(());
-    } else {
-        backend.set_l1_messaging_nonce(tx_nonce)?;
     }
 
     // Check if cancellation was initiated
@@ -393,41 +392,10 @@ mod l1_messaging_tests {
             })
         };
 
-        if let Ok(mempool_inner_read) = mempool.inner.try_read() {
-            let queue_ready = mempool_inner_read.tx_intent_queue_ready.clone();
-            let queue_waiting = mempool_inner_read.tx_intent_queue_pending_by_nonce.clone();
-            let len = mempool_inner_read.tx_intent_queue_pending_by_nonce.len();
-            println!("ready is empty1?: {:?}", queue_ready.is_empty());
-            println!("waiting is empty1?: {:?}", queue_waiting.is_empty());
-            println!("waiting queue len1: {:?}", len);
-        } else {
-            println!("The worker is holding the lock on mempool.inner");
-        }
-
         let _ = contract.setIsCanceled(false).send().await;
         // Send a Event and wait for processing, Panic if fail
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
-
-        println!("Startin checking queue");
-        if let Ok(mempool_inner_read) = mempool.inner.try_read() {
-            let queue_ready = mempool_inner_read.tx_intent_queue_ready.clone();
-            let queue_waiting = mempool_inner_read.tx_intent_queue_pending_by_nonce.clone();
-            println!("ready is empty?: {:?}", queue_ready.is_empty());
-            println!("waiting is empty?: {:?}", queue_waiting.is_empty());
-            println!("waiting queue len: {:?}", queue_waiting.len());
-            let contract_address = queue_waiting.keys().next().cloned().unwrap();
-            // 0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82 
-            println!("Contract address: {:?}", contract_address.to_hex_string());
-
-            let nonce_mapping = mempool_inner_read.nonce_mapping.get(&contract_address).unwrap();
-            let nonce = nonce_mapping.transactions.keys().next().unwrap();
-            let tx = nonce_mapping.transactions.get(nonce).unwrap();
-            println!("Contract address has nonce: {:?}", nonce);
-            println!("Contract address has tx: {:?}", tx);
-        } else {
-            println!("The worker is holding the lock on mempool.inner");
-        }
 
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
 
