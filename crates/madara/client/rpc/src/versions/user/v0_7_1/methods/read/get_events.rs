@@ -70,7 +70,7 @@ pub async fn get_events(
 
         let block_filtered_events: Vec<EmittedEvent<Felt>> = drain_block_events(block)
             .into_iter()
-            .filter(|event| event_match_filter(&event.event, from_address, &keys))
+            .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             .collect();
 
         if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {

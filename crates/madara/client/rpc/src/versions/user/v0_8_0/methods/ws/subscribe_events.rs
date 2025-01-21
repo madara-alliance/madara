@@ -43,7 +43,10 @@ pub async fn subscribe_events(
                 .get_block(&BlockId::Number(block_number))
                 .or_internal_server_error("Failed to retrieve block")?;
             let events = drain_block_events(block);
-            for event in events.into_iter().filter(|event| event_match_filter(&event.event, from_address, &keys)) {
+            for event in events
+                .into_iter()
+                .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
+            {
                 let msg = jsonrpsee::SubscriptionMessage::from_json(&event)
                     .or_internal_server_error("Failed to create response message")?;
                 sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
@@ -55,7 +58,7 @@ pub async fn subscribe_events(
         tokio::select! {
             event = rx.recv() => {
                 let event = event.or_internal_server_error("Failed to retrieve event")?;
-                if event_match_filter(&event.event, from_address, &keys) {
+                if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
                     let msg = jsonrpsee::SubscriptionMessage::from_json(&event)
                         .or_internal_server_error("Failed to create response message")?;
                     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
@@ -232,7 +235,7 @@ mod test {
                 }
             }
         }
-        assert!(nb_events > 0);
+        assert_eq!(nb_events, 1);
     }
 
     // Test 3: Event subscription filtered by keys
@@ -298,7 +301,7 @@ mod test {
     // - Generates initial blocks (0-2)
     // - Starts subscription from block 3
     // - Verifies that only events from blocks 3-9 are received
-    // - Events should arrive in the correct orde
+    // - Events should arrive in the correct order
     #[tokio::test]
     #[rstest::rstest]
     async fn subscribe_events_past_block(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
