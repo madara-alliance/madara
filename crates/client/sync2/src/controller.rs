@@ -43,7 +43,8 @@ pub struct PipelineController<S: PipelineSteps> {
     batch_size: usize,
     applying: Option<SequentialStepFuture<S>>,
     next_inputs: VecDeque<S::InputItem>,
-    next_input_block_n: u64,
+    next_block_n_to_batch: u64,
+    last_applied_block_n: Option<u64>,
 }
 
 type ParallelStepFuture<S> = BoxFuture<
@@ -57,8 +58,8 @@ type SequentialStepFuture<S> = BoxFuture<
 
 impl<S: PipelineSteps> PipelineController<S> {
     pub fn new(steps: S, parallelization: usize, batch_size: usize) -> Self {
-        let next_input_block_n =
-            steps.starting_block_n().map(|block_n| block_n + 1).unwrap_or(/* next is genesis */ 0);
+        let starting_block_n = steps.starting_block_n();
+        let next_input_block_n = starting_block_n.map(|block_n| block_n + 1).unwrap_or(/* next is genesis */ 0);
         Self {
             steps: Arc::new(steps),
             queue: Default::default(),
@@ -66,12 +67,37 @@ impl<S: PipelineSteps> PipelineController<S> {
             batch_size,
             applying: None,
             next_inputs: VecDeque::with_capacity(2 * batch_size),
-            next_input_block_n,
+            next_block_n_to_batch: next_input_block_n,
+            last_applied_block_n: starting_block_n,
         }
     }
 
+    pub fn next_input_block_n(&self) -> u64 {
+        self.next_block_n_to_batch + self.next_inputs.len() as u64
+    }
+    pub fn last_applied_block_n(&self) -> Option<u64> {
+        self.last_applied_block_n
+    }
+    pub fn input_batch_size(&self) -> usize {
+        self.batch_size
+    }
+
     pub fn can_schedule_more(&self) -> bool {
-        self.queue.len() < self.parallelization
+        if self.queue.len() >= self.parallelization {
+            return false;
+        }
+        let slots_remaining = self.parallelization - self.queue.len();
+        self.next_inputs.len() <= slots_remaining * self.batch_size
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.applying.is_none() && self.queue.is_empty() && self.next_inputs.is_empty()
+    }
+    pub fn queue_len(&self) -> usize {
+        self.queue.len()
+    }
+    pub fn is_applying(&self) -> bool {
+        self.applying.is_some()
     }
 
     fn make_parallel_step_future(&self, input: RetryInput<S::InputItem>) -> ParallelStepFuture<S> {
@@ -91,39 +117,46 @@ impl<S: PipelineSteps> PipelineController<S> {
 
     fn schedule_new_batch(&mut self) {
         // make batch
-        let new_next_input_block_n = self.next_input_block_n + self.batch_size as u64;
-        let block_range = self.next_input_block_n..new_next_input_block_n;
-        self.next_input_block_n = new_next_input_block_n;
-        let input = self.next_inputs.drain(0..usize::min(self.batch_size, self.next_inputs.len())).collect();
+        let batch_size =
+            if self.next_inputs.len() < self.batch_size { self.next_inputs.len() } else { self.batch_size };
+
+        let new_next_input_block_n = self.next_block_n_to_batch + batch_size as u64;
+        let block_range = self.next_block_n_to_batch..new_next_input_block_n;
+        self.next_block_n_to_batch = new_next_input_block_n;
+        let input = self.next_inputs.drain(0..usize::min(batch_size, self.next_inputs.len())).collect();
         self.queue.push_back(self.make_parallel_step_future(RetryInput { block_range, input }));
     }
 
     pub fn push(&mut self, input: impl IntoIterator<Item = S::InputItem>) {
         self.next_inputs.extend(input);
-        while !self.next_inputs.is_empty() && self.can_schedule_more() {
-            self.schedule_new_batch();
-        }
     }
 
     pub async fn next(&mut self) -> Option<anyhow::Result<(Range<u64>, S::Output)>> {
         loop {
+            while self.next_inputs.len() >= self.batch_size && self.queue.len() <= self.parallelization {
+                // Prefer making full batches.
+                self.schedule_new_batch();
+            }
+            if self.queue.len() == 0 && self.next_inputs.len() > 0 {
+                // We make a smaller batch when we have nothing to do, to ensure progress.
+                self.schedule_new_batch();
+            }
+
             tokio::select! {
                 Some(res) = OptionFuture::from(self.applying.as_mut()) => {
                     self.applying = None;
-                    tracing::debug!("applying res: {:?}", res.as_ref().map(|(r, o)| (match r {
-                        ApplyOutcome::Success(_out) => "succ".to_string(),
-                        ApplyOutcome::Retry => "retry".to_string(),
-                    }, o.block_range.clone())));
                     match res {
                         Err(err) => return Some(Err(err)),
                         Ok((ApplyOutcome::Success(out), retry_input)) => {
+                            if let Some(last) = retry_input.block_range.clone().last() {
+                                self.last_applied_block_n = Some(last);
+                            }
                             return Some(Ok((retry_input.block_range, out)));
                         }
                         Ok((ApplyOutcome::Retry, retry_input)) => self.queue.push_front(self.make_parallel_step_future(retry_input)),
                     }
                 }
                 Some(res) = self.queue.next(), if self.applying.is_none() => {
-                    tracing::debug!("set applying: {:?}", res.as_ref().map(|(_, r)| r.block_range.clone()));
                     match res {
                         Ok((input, retry_input)) => {
                             self.applying = Some(self.make_sequential_step_future(input, retry_input));

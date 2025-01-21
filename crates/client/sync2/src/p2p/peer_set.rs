@@ -1,7 +1,10 @@
 use mc_p2p::{P2pCommands, PeerId};
+use rand::{thread_rng, Rng};
 use std::cmp;
 use std::collections::{hash_map, BTreeSet, HashMap, HashSet};
 use std::num::Saturating;
+use std::ops::Deref;
+use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 
 // TODO: add bandwidth metric
@@ -15,6 +18,7 @@ struct PeerStats {
     failures: Saturating<i32>,
     // avoid peers that are currently in use
     in_use_counter: Saturating<u32>,
+    rand_additional: Saturating<i32>,
 }
 
 impl PeerStats {
@@ -30,6 +34,9 @@ impl PeerStats {
     fn decrement_in_use(&mut self) {
         self.in_use_counter -= 1;
     }
+    fn reroll_rand(&mut self) {
+        self.rand_additional = Saturating(thread_rng().gen_range(-5..5));
+    }
     fn score(&self) -> i64 {
         // it's okay to use peers that are currently in use, but we don't want to rely on only one peer all the time
         // so, we put a temporary small malus if the peer is already in use.
@@ -44,7 +51,7 @@ impl PeerStats {
         // we only count up to 20 successes, to avoid having a score go too high.
         let successes = self.successes.min(Saturating(20));
 
-        (Saturating(-10) * self.failures + successes - in_use_malus).0.into()
+        (Saturating(-10) * self.failures + successes - in_use_malus + self.rand_additional).0.into()
     }
 
     fn should_evict(&self) -> bool {
@@ -77,6 +84,7 @@ impl PartialOrd for PeerSortedByScore {
     }
 }
 
+// TODO: add a mode to get a random peer regardless of score.
 // Invariants:
 // 1) there should be a one-to-one correspondance between the `queue` and `stats_by_peer` variable.
 #[derive(Default, Debug)]
@@ -110,6 +118,8 @@ impl PeerSetInner {
                     tracing::debug!("PEER SET Evicting {peer} for {:?}", Self::EVICTION_BAN_DELAY);
                     self.evicted_peers_ban_deadlines.insert(peer, Instant::now() + Self::EVICTION_BAN_DELAY);
                 } else {
+                    entry.get_mut().reroll_rand();
+
                     // Reinsert the queue entry with the new score.
                     // If insert returns true, the value is already in the queue - which would mean that the peer id is duplicated in the queue.
                     // `stats_by_peer` has PeerId as key and as such cannot have a duplicate peer id. This means that if there is a duplicated
@@ -200,10 +210,12 @@ impl PeerSet {
 
     /// Returns the next peer to use. If there is are no peers currently in the set,
     /// it will start a get random peers command.
-    // TODO: keep track of the current number of request per peer, and avoid over-using a single peer.
-    // TODO: if we really have to use a peer that just had a peer operation error, delay the next peer request a little
-    // bit so that we don't spam that peer with requests.
-    pub async fn next_peer(&self) -> anyhow::Result<PeerId> {
+    pub async fn next_peer(self: &Arc<Self>) -> anyhow::Result<PeerGuard> {
+        let peer_id = self.next_peer_inner().await?;
+        Ok(PeerGuard { peer_set: self.clone(), peer_id })
+    }
+
+    async fn next_peer_inner(&self) -> anyhow::Result<PeerId> {
         fn next_from_set(inner: &mut PeerSetInner) -> Option<PeerId> {
             inner.peek_next().inspect(|peer| {
                 // this will update the queue order, so that we can return another peer next time this function is called.
@@ -239,7 +251,7 @@ impl PeerSet {
 
     /// Signal that the peer did not follow the protocol correctly, sent bad data or timed out.
     /// We may want to avoid this peer in the future.
-    pub fn peer_operation_error(&self, peer_id: PeerId) {
+    fn peer_operation_error(&self, peer_id: PeerId) {
         tracing::debug!("peer_operation_error: {peer_id:?}");
         let mut inner = self.inner.lock().expect("Poisoned lock");
         inner.update_stats(peer_id, |stats| {
@@ -251,12 +263,48 @@ impl PeerSet {
     /// Signal that the operation with the peer was successful.
     ///
     // TODO: add a bandwidth argument to allow the peer set to score and avoid being drip-fed.
-    pub fn peer_operation_success(&self, peer_id: PeerId) {
+    fn peer_operation_success(&self, peer_id: PeerId) {
         tracing::debug!("peer_operation_success: {peer_id:?}");
         let mut inner = self.inner.lock().expect("Poisoned lock");
         inner.update_stats(peer_id, |stats| {
             stats.decrement_in_use();
             stats.increment_successes();
         })
+    }
+
+    /// Neutral signal that the operation was dropped by our decision. No malus nor bonus.
+    fn peer_operation_drop(&self, peer_id: PeerId) {
+        tracing::debug!("peer_operation_drop: {peer_id:?}");
+        let mut inner = self.inner.lock().expect("Poisoned lock");
+        inner.update_stats(peer_id, |stats| {
+            stats.decrement_in_use();
+        })
+    }
+}
+
+pub struct PeerGuard {
+    peer_set: Arc<PeerSet>,
+    peer_id: PeerId,
+}
+
+impl Deref for PeerGuard {
+    type Target = PeerId;
+    fn deref(&self) -> &Self::Target {
+        &self.peer_id
+    }
+}
+
+impl PeerGuard {
+    pub fn success(self) {
+        self.peer_set.peer_operation_success(self.peer_id)
+    }
+    pub fn error(self) {
+        self.peer_set.peer_operation_error(self.peer_id)
+    }
+}
+
+impl Drop for PeerGuard {
+    fn drop(&mut self) {
+        self.peer_set.peer_operation_drop(self.peer_id)
     }
 }

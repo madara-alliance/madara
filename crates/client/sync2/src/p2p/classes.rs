@@ -1,8 +1,8 @@
-use crate::{
-    controller::PipelineController,
-    import::BlockImporter,
-    p2p::{P2pError, P2pPipelineArguments, P2pPipelineController, P2pPipelineSteps},
+use super::{
+    controller::{P2pError, P2pPipelineController, P2pPipelineSteps},
+    P2pPipelineArguments,
 };
+use crate::{controller::PipelineController, import::BlockImporter};
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
@@ -52,10 +52,15 @@ impl P2pPipelineSteps for ClassesSyncSteps {
             .await;
         tokio::pin!(strm);
 
-        for (block_n, check_against) in block_range.zip(input.iter()) {
+        for (block_n, check_against) in block_range.zip(input.iter().cloned()) {
             let classes = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
 
-            self.importer.verify_and_save_classes(block_n, classes, check_against.clone()).await?;
+            self.importer
+                .run_in_rayon_pool(move |importer| {
+                    let classes = importer.verify_compile_classes(block_n, classes, &check_against)?;
+                    importer.save_classes(block_n, classes)
+                })
+                .await?
         }
 
         Ok(())

@@ -69,6 +69,11 @@ impl BlockStreamConfig {
         self.limit = limit.into();
         self
     }
+
+    pub fn with_start(mut self, start: impl Into<u64>) -> Self {
+        self.start = start.into();
+        self
+    }
 }
 
 impl Default for BlockStreamConfig {

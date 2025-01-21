@@ -4,7 +4,7 @@ use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use mc_db::MadaraBackend;
 use mc_db::{bonsai_identifier, MadaraStorageError};
-use mp_block::{BlockId, BlockTag};
+use mp_block::BlockId;
 use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
@@ -77,7 +77,7 @@ pub fn contract_trie_root(
         .map(|(contract_address, mut leaf)| {
             let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be())?;
             leaf.storage_root = Some(storage_root);
-            let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf)?;
+            let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             Ok((bv, leaf_hash))
@@ -113,18 +113,21 @@ fn contract_state_leaf_hash(
     backend: &MadaraBackend,
     contract_address: &Felt,
     contract_leaf: &ContractLeaf,
+    block_number: u64,
 ) -> Result<Felt, MadaraStorageError> {
     let nonce = contract_leaf.nonce.unwrap_or(
-        backend.get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)?.unwrap_or(Felt::ZERO),
+        backend.get_contract_nonce_at(&BlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO),
     );
 
     let class_hash = contract_leaf.class_hash.unwrap_or(
-        backend.get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
+        backend.get_contract_class_hash_at(&BlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
     );
 
     let storage_root = contract_leaf
         .storage_root
         .ok_or(MadaraStorageError::InconsistentStorage("Storage root need to be set".into()))?;
+
+    tracing::debug!("contract is {contract_address:#x} block_n={block_number} nonce={nonce:#x} class_hash={class_hash:#x} storage_root={storage_root:#x}");
 
     // computes the contract state leaf hash
     Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))

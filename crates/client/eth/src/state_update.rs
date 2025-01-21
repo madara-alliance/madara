@@ -20,8 +20,11 @@ pub struct L1StateUpdate {
     pub block_hash: Felt,
 }
 
+pub type L1HeadReceiver = tokio::sync::watch::Receiver<Option<L1StateUpdate>>;
+pub type L1HeadSender = tokio::sync::watch::Sender<Option<L1StateUpdate>>;
+
 /// Get the last Starknet state update verified on the L1
-pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
+async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
     let block_number = client.get_last_verified_block_number().await?;
     let block_hash = client.get_last_verified_block_hash().await?;
     let global_root = client.get_last_state_root().await?;
@@ -31,11 +34,12 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
 
 /// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
 /// verified state
-pub async fn listen_and_update_state(
+async fn listen_and_update_state(
     eth_client: &EthereumClient,
     backend: &MadaraBackend,
     block_metrics: &L1BlockMetrics,
     chain_id: ChainId,
+    l1_head_sender: L1HeadSender,
 ) -> anyhow::Result<()> {
     let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
@@ -45,13 +49,14 @@ pub async fn listen_and_update_state(
         let log = event_result.context("listening for events")?;
         let format_event: L1StateUpdate =
             convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
+        l1_head_sender.send_modify(|s| *s = Some(format_event.clone()));
         update_l1(backend, format_event, block_metrics, chain_id.clone())?;
     }
 
     Ok(())
 }
 
-pub fn update_l1(
+fn update_l1(
     backend: &MadaraBackend,
     state_update: L1StateUpdate,
     block_metrics: &L1BlockMetrics,
@@ -83,6 +88,7 @@ pub async fn state_update_worker(
     backend: &MadaraBackend,
     eth_client: &EthereumClient,
     chain_id: ChainId,
+    l1_head_sender: L1HeadSender,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
@@ -92,10 +98,11 @@ pub async fn state_update_worker(
     // ideally here there would be one service which will update the l1 gas prices and another one for messages and one that's already present is state update
     // Get and store the latest verified state
     let initial_state = get_initial_state(eth_client).await.context("Getting initial ethereum state")?;
+    l1_head_sender.send_modify(|s| *s = Some(initial_state.clone()));
     update_l1(backend, initial_state, &eth_client.l1_block_metrics, chain_id.clone())?;
 
     // Listen to LogStateUpdate (0x77552641) update and send changes continusly
-    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id)
+    listen_and_update_state(eth_client, backend, &eth_client.l1_block_metrics, chain_id, l1_head_sender)
         .await
         .context("Subscribing to the LogStateUpdate event")?;
 
@@ -181,6 +188,8 @@ mod eth_client_event_subscription_test {
         let eth_client =
             EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
 
+        let (snd, _recv) = tokio::sync::watch::channel(None);
+
         // Start listening for state updates
         let listen_handle = {
             let db = Arc::clone(&db);
@@ -190,6 +199,7 @@ mod eth_client_event_subscription_test {
                     db.backend(),
                     &eth_client.l1_block_metrics,
                     chain_info.chain_id.clone(),
+                    snd,
                 )
                 .await
             })

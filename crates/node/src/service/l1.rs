@@ -3,6 +3,7 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
+use mc_eth::state_update::L1HeadSender;
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
 use mp_utils::service::Service;
@@ -15,6 +16,7 @@ use tokio::task::JoinSet;
 pub struct L1SyncService {
     db_backend: Arc<MadaraBackend>,
     eth_client: Option<EthereumClient>,
+    l1_head_snd: Option<L1HeadSender>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -33,6 +35,7 @@ impl L1SyncService {
         authority: bool,
         devnet: bool,
         mempool: Arc<Mempool>,
+        l1_head_snd: L1HeadSender,
     ) -> anyhow::Result<Self> {
         let eth_client = if !config.sync_l1_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -77,6 +80,7 @@ impl L1SyncService {
             gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll,
             mempool,
+            l1_head_snd: Some(l1_head_snd),
         })
     }
 }
@@ -84,8 +88,11 @@ impl L1SyncService {
 #[async_trait::async_trait]
 impl Service for L1SyncService {
     async fn start(&mut self, join_set: &mut JoinSet<anyhow::Result<()>>) -> anyhow::Result<()> {
+        let recv = self.l1_head_snd.take().expect("Service already started");
         let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
             self.clone();
+
+
 
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
@@ -100,6 +107,7 @@ impl Service for L1SyncService {
                     gas_price_sync_disabled,
                     gas_price_poll,
                     mempool,
+                    recv,
                 )
                 .await
             });

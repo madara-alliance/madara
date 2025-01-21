@@ -83,6 +83,18 @@ impl MadaraBackend {
         let mut inner: MadaraBlockInner =
             bincode::deserialize(&self.db.get_cf(&block_n_to_block_inner, &block_n_encoded)?.unwrap_or_default())?;
 
+        // just in case we stored them with receipt earlier, overwrite them
+        for receipt in inner.receipts.iter_mut() {
+            let events_mut = match receipt {
+                TransactionReceipt::Invoke(receipt) => &mut receipt.events,
+                TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
+                TransactionReceipt::Declare(receipt) => &mut receipt.events,
+                TransactionReceipt::Deploy(receipt) => &mut receipt.events,
+                TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
+            };
+            events_mut.clear()
+        }
+
         let mut inner_m = inner.receipts.iter_mut().peekable();
         for ev in value {
             let receipt_mut = loop {

@@ -92,13 +92,23 @@ impl BlockImportError {
 #[derive(Clone)]
 pub struct BlockImporter {
     db: Arc<MadaraBackend>,
-    rayon_pool: Arc<RayonPool>,
     config: BlockValidationConfig,
+    rayon_pool: Arc<RayonPool>,
 }
 
 impl BlockImporter {
     pub fn new(db: Arc<MadaraBackend>, config: BlockValidationConfig) -> BlockImporter {
-        Self { rayon_pool: Arc::new(RayonPool::new()), db, config }
+        Self { db, config, rayon_pool: Arc::new(RayonPool::new()) }
+    }
+
+    /// Does class compilation.
+    pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
+    where
+        F: FnOnce(&BlockImporter) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let this = self.clone();
+        self.rayon_pool.spawn_rayon_task(move || func(&this)).await
     }
 
     // HEADERS
@@ -132,24 +142,20 @@ impl BlockImporter {
         Ok(())
     }
 
-    // TRANSACTIONS & RECEIPTS
-
-    pub async fn verify_and_save_transactions(
-        &self,
-        block_n: u64,
-        transactions: Vec<TransactionWithReceipt>,
-        check_against: Header,
-    ) -> Result<(), BlockImportError> {
-        let this = self.clone();
-        self.rayon_pool
-            .spawn_rayon_task(move || this.verify_and_save_transactions_inner(block_n, transactions, &check_against))
-            .await
+    pub fn save_header(&self, block_n: u64, signed_header: BlockHeaderWithSignatures) -> Result<(), BlockImportError> {
+        self.db.store_block_header(signed_header).map_err(|error| BlockImportError::InternalDb {
+            error,
+            context: format!("Storing block header for {block_n}").into(),
+        })?;
+        Ok(())
     }
 
-    fn verify_and_save_transactions_inner(
+    // TRANSACTIONS & RECEIPTS
+
+    pub fn verify_transactions(
         &self,
-        block_n: u64,
-        transactions: Vec<TransactionWithReceipt>,
+        _block_n: u64,
+        transactions: &[TransactionWithReceipt],
         check_against: &Header,
     ) -> Result<(), BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
@@ -165,7 +171,7 @@ impl BlockImporter {
                     starknet_version,
                     /* is_query */ false,
                 );
-                // For pre-v0.13.2, our tx hash is only used for commitment computation. 
+                // For pre-v0.13.2, our tx hash is only used for commitment computation.
                 // let expected = tx.receipt.transaction_hash();
                 // // if expected != got {
                 // //     return Err(BlockImportError::TransactionHash { index, got, expected });
@@ -200,9 +206,15 @@ impl BlockImporter {
         if expected != got {
             return Err(BlockImportError::ReceiptCommitment { got, expected });
         }
+        Ok(())
+    }
 
+    pub fn save_transactions(
+        &self,
+        block_n: u64,
+        transactions: Vec<TransactionWithReceipt>,
+    ) -> Result<(), BlockImportError> {
         tracing::debug!("Storing transactions for {block_n:?}");
-
         self.db.store_transactions(block_n, transactions).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing transactions for {block_n}").into(),
@@ -212,42 +224,24 @@ impl BlockImporter {
 
     // CLASSES
 
-    /// Does class compilation.
-    pub async fn verify_and_save_classes(
-        &self,
-        block_n: u64,
-        declared_classes: Vec<ClassInfoWithHash>,
-        check_against: HashMap<Felt, DeclaredClassCompiledClass>,
-    ) -> Result<(), BlockImportError> {
-        let this = self.clone();
-        self.rayon_pool
-            .spawn_rayon_task(move || this.verify_and_save_classes_inner(block_n, declared_classes, &check_against))
-            .await
-    }
-
     /// Called in a rayon-pool context.
-    fn verify_and_save_classes_inner(
+    pub fn verify_compile_classes(
         &self,
-        block_n: u64,
+        _block_n: u64,
         declared_classes: Vec<ClassInfoWithHash>,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
-    ) -> Result<(), BlockImportError> {
+    ) -> Result<Vec<ConvertedClass>, BlockImportError> {
         if check_against.len() != declared_classes.len() {
             return Err(BlockImportError::ClassCount {
                 got: declared_classes.len() as _,
                 expected: check_against.len() as _,
             });
         }
-        let classes: Vec<_> = declared_classes
+        let classes = declared_classes
             .into_par_iter()
             .map(|class| self.verify_compile_class(class, check_against))
             .collect::<Result<_, _>>()?;
-
-        self.db.class_db_store_block(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: format!("Storing classes for {block_n}").into(),
-        })?;
-        Ok(())
+        Ok(classes)
     }
 
     /// Called in a rayon-pool context.
@@ -341,25 +335,22 @@ impl BlockImporter {
         }
     }
 
-    // STATE DIFF
-
-    pub async fn verify_and_save_state_diff(
-        &self,
-        block_n: u64,
-        state_diff: StateDiff,
-        check_against: Header,
-    ) -> Result<(), BlockImportError> {
-        let this = self.clone();
-        self.rayon_pool
-            .spawn_rayon_task(move || this.verify_and_save_state_diff_inner(block_n, state_diff, &check_against))
-            .await
+    /// Called in a rayon-pool context.
+    pub fn save_classes(&self, block_n: u64, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
+        self.db.class_db_store_block(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
+            error,
+            context: format!("Storing classes for {block_n}").into(),
+        })?;
+        Ok(())
     }
 
+    // STATE DIFF
+
     /// Called in a rayon-pool context.
-    fn verify_and_save_state_diff_inner(
+    pub fn verify_state_diff(
         &self,
-        block_n: u64,
-        state_diff: StateDiff,
+        _block_n: u64,
+        state_diff: &StateDiff,
         check_against: &Header,
     ) -> Result<(), BlockImportError> {
         // Verify state diff length (we want to check it when the block does not come from p2p).
@@ -375,34 +366,25 @@ impl BlockImporter {
         if expected != got {
             return Err(BlockImportError::StateDiffCommitment { got, expected });
         }
+        Ok(())
+    }
 
+    /// Called in a rayon-pool context.
+    pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
         self.db.store_state_diff(block_n, state_diff).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing state_diff for {block_n}").into(),
         })?;
-
         Ok(())
     }
 
     // EVENTS
 
-    pub async fn verify_and_save_events(
-        &self,
-        block_n: u64,
-        events: Vec<EventWithTransactionHash>,
-        check_against: Header,
-    ) -> Result<(), BlockImportError> {
-        let this = self.clone();
-        self.rayon_pool
-            .spawn_rayon_task(move || this.verify_and_save_events_inner(block_n, events, &check_against))
-            .await
-    }
-
     /// Called in a rayon-pool context.
-    fn verify_and_save_events_inner(
+    pub fn verify_events(
         &self,
-        block_n: u64,
-        events: Vec<EventWithTransactionHash>,
+        _block_n: u64,
+        events: &[EventWithTransactionHash],
         check_against: &Header,
     ) -> Result<(), BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
@@ -425,11 +407,15 @@ impl BlockImporter {
             return Err(BlockImportError::EventCommitment { got, expected });
         }
 
+        Ok(())
+    }
+
+    /// Called in a rayon-pool context.
+    pub fn save_events(&self, block_n: u64, events: Vec<EventWithTransactionHash>) -> Result<(), BlockImportError> {
         self.db.store_events(block_n, events).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing events for {block_n}").into(),
         })?;
-
         Ok(())
     }
 

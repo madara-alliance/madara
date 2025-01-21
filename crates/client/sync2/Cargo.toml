@@ -33,6 +33,7 @@ mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway.workspace = true
 mc-p2p.workspace = true
+mc-eth.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true
@@ -83,3 +84,4 @@ tokio = { workspace = true, features = [
   "signal",
 ] }
 url.workspace = true
+rand.workspace = true

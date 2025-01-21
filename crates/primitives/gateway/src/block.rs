@@ -144,6 +144,38 @@ impl ProviderBlock {
         }
     }
 
+    pub fn header_(&self) -> anyhow::Result<mp_block::Header> {
+        Ok(mp_block::Header {
+            parent_block_hash: self.parent_block_hash,
+            sequencer_address: self.sequencer_address.unwrap_or_default(),
+            block_timestamp: self.timestamp,
+            protocol_version: self
+                .starknet_version
+                .as_deref()
+                .map(|version| version.parse().context("Invalid Starknet version"))
+                .unwrap_or_else(|| {
+                    StarknetVersion::try_from_mainnet_block_number(self.block_number)
+                        .context(format!("Unable to determine Starknet version for block {:#x}", self.block_hash))
+                })?,
+            l1_gas_price: mp_block::header::GasPrices {
+                eth_l1_gas_price: self.l1_gas_price.price_in_wei,
+                strk_l1_gas_price: self.l1_gas_price.price_in_fri,
+                eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
+                strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+            },
+            l1_da_mode: self.l1_da_mode,
+            block_number: self.block_number,
+            global_state_root: self.state_root,
+            transaction_count: self.transactions.len() as u64,
+            transaction_commitment: self.transaction_commitment,
+            event_count: self.transaction_receipts.iter().map(|tx| tx.events.len() as u64).sum(),
+            event_commitment: self.event_commitment,
+            state_diff_length: self.state_diff_length,
+            state_diff_commitment: self.state_diff_commitment,
+            receipt_commitment: self.receipt_commitment,
+        })
+    }
+
     pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
         Ok(mc_block_import::UnverifiedHeader {
             parent_block_hash: Some(self.parent_block_hash),

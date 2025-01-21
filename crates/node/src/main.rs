@@ -112,6 +112,8 @@ async fn main() -> anyhow::Result<()> {
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mempool = Arc::new(Mempool::new(Arc::clone(db_service.backend()), Arc::clone(&l1_data_provider)));
 
+    let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
+
     let l1_service = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &db_service,
@@ -121,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.is_sequencer(),
         run_cmd.is_devnet(),
         Arc::clone(&mempool),
+        l1_head_snd,
     )
     .await
     .context("Initializing the l1 sync service")?;
@@ -130,51 +133,51 @@ async fn main() -> anyhow::Result<()> {
 
     // Block provider startup.
     // `rpc_add_txs_method_provider` is a trait object that tells the RPC task where to put the transactions when using the Write endpoints.
-    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) = match run_cmd
-        .is_sequencer()
-    {
-        // Block production service. (authority)
-        true => {
-            let block_production_service = BlockProductionService::new(
-                &run_cmd.block_production_params,
-                &db_service,
-                Arc::clone(&mempool),
-                importer,
-                Arc::clone(&l1_data_provider),
-                run_cmd.devnet,
-                telemetry_service.new_handle(),
-            )?;
+    let (block_provider_service, rpc_add_txs_method_provider): (_, Arc<dyn AddTransactionProvider>) =
+        match run_cmd.is_sequencer() {
+            // Block production service. (authority)
+            true => {
+                let block_production_service = BlockProductionService::new(
+                    &run_cmd.block_production_params,
+                    &db_service,
+                    Arc::clone(&mempool),
+                    importer,
+                    Arc::clone(&l1_data_provider),
+                    run_cmd.devnet,
+                    telemetry_service.new_handle(),
+                )?;
 
-            (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
-        }
-        // Block sync service. (full node)
-        false => {
-            // Feeder gateway sync service.
-            // let sync_service = SyncService::new(
-            //     &run_cmd.sync_params,
-            //     Arc::clone(&chain_config),
-            //     &db_service,
-            //     importer,
-            //     telemetry_service.new_handle(),
-            // )
-            // .await
-            // .context("Initializing sync service")?;
+                (ServiceGroup::default().with(block_production_service), Arc::new(MempoolAddTxProvider::new(mempool)))
+            }
+            // Block sync service. (full node)
+            false => {
+                // Feeder gateway sync service.
+                // let sync_service = SyncService::new(
+                //     &run_cmd.sync_params,
+                //     Arc::clone(&chain_config),
+                //     &db_service,
+                //     importer,
+                //     telemetry_service.new_handle(),
+                // )
+                // .await
+                // .context("Initializing sync service")?;
 
-            // Sync service
-            let sync_service = Sync2Service::new(&run_cmd.sync_params, db_service.backend(), p2p_service.commands())
-                .await
-                .context("Initializing sync service")?;
+                // Sync service
+                let sync_service =
+                    Sync2Service::new(&run_cmd.sync_params, db_service.backend(), p2p_service.commands(), l1_head_recv)
+                        .await
+                        .context("Initializing sync service")?;
 
-            (
-                ServiceGroup::default().with(sync_service),
-                Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
-                    chain_config.gateway_url.clone(),
-                    chain_config.feeder_gateway_url.clone(),
-                    chain_config.chain_id.to_felt(),
-                ))),
-            )
-        }
-    };
+                (
+                    ServiceGroup::default().with(sync_service),
+                    Arc::new(ForwardToProvider::new(SequencerGatewayProvider::new(
+                        chain_config.gateway_url.clone(),
+                        chain_config.feeder_gateway_url.clone(),
+                        chain_config.chain_id.to_felt(),
+                    ))),
+                )
+            }
+        };
 
     let rpc_service = RpcService::new(&run_cmd.rpc_params, &db_service, Arc::clone(&rpc_add_txs_method_provider))
         .context("Initializing rpc service")?;
