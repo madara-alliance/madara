@@ -274,7 +274,17 @@ impl Default for TrieLogConfig {
     }
 }
 
-/// EventChannels manages a pub/sub system for events with 16 specific channels plus one "all" channel.
+/// EventChannels manages a highly efficient and scalable pub/sub system for events with 16 specific channels
+/// plus one "all" channel. This architecture provides several key benefits:
+///
+/// Benefits:
+/// - Selective Subscription: Subscribers can choose between receiving all events or filtering for specific
+///   senders, optimizing network and processing resources
+/// - Memory Efficiency: The fixed number of channels (16) provides a good balance between granularity
+///   and memory overhead
+/// - Predictable Routing: The XOR-based hash function ensures consistent and fast mapping of sender
+///   addresses to channels
+///
 /// Events are distributed based on the sender's address in the event, where each sender address
 /// is mapped to one of the 16 specific channels using a simple XOR-based hash function.
 /// Subscribers can choose to either receive all events or only events from specific senders
