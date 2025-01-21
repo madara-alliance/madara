@@ -167,7 +167,7 @@ async fn process_message(
         }
     };
 
-    let res = mempool.accept_l1_handler_tx(transaction.into(), fees.unwrap_or(0))?;
+    let res = mempool.tx_accept_l1_handler(transaction.into(), fees.unwrap_or(0))?;
 
     Ok(Some(res.transaction_hash))
 }
