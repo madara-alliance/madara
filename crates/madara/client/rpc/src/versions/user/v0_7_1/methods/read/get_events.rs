@@ -69,7 +69,6 @@ pub async fn get_events(
         };
 
         let block_filtered_events: Vec<EmittedEvent<Felt>> = drain_block_events(block)
-            .into_iter()
             .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             .collect();
 
@@ -118,7 +117,23 @@ fn block_range(
     Ok((from_block_n, to_block_n, latest_block_n))
 }
 
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> Vec<EmittedEvent<Felt>> {
+/// Extracts and iterates over all events emitted within a block.
+///
+/// This function processes all transactions in a given block (whether pending or confirmed)
+/// and returns an iterator over their emitted events. Each event is enriched with its
+/// contextual information including block details and the transaction that generated it.
+///
+/// # Arguments
+///
+/// * `block` - A reference to either a pending or confirmed block (`MadaraMaybePendingBlock`)
+///
+/// # Returns
+///
+/// Returns an iterator yielding `EmittedEvent<Felt>` items. Each item contains:
+/// - The event data (from address, keys, and associated data)
+/// - Block context (hash and number, if the block is confirmed)
+/// - Transaction hash that generated the event
+pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent<Felt>> {
     let (block_hash, block_number) = match &block.info {
         MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
@@ -129,15 +144,13 @@ pub fn drain_block_events(block: MadaraMaybePendingBlock) -> Vec<EmittedEvent<Fe
         receipt.into_events().into_iter().map(move |events| (tx_hash, events))
     });
 
-    tx_hash_and_events
-        .map(|(transaction_hash, event)| EmittedEvent {
-            event: Event {
-                from_address: event.from_address,
-                event_content: EventContent { keys: event.keys, data: event.data },
-            },
-            block_hash,
-            block_number,
-            transaction_hash,
-        })
-        .collect()
+    tx_hash_and_events.map(move |(transaction_hash, event)| EmittedEvent {
+        event: Event {
+            from_address: event.from_address,
+            event_content: EventContent { keys: event.keys, data: event.data },
+        },
+        block_hash,
+        block_number,
+        transaction_hash,
+    })
 }

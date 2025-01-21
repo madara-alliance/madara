@@ -42,9 +42,7 @@ pub async fn subscribe_events(
             let block = starknet
                 .get_block(&BlockId::Number(block_number))
                 .or_internal_server_error("Failed to retrieve block")?;
-            let events = drain_block_events(block);
-            for event in events
-                .into_iter()
+            for event in drain_block_events(block)
                 .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             {
                 let msg = jsonrpsee::SubscriptionMessage::from_json(&event)
