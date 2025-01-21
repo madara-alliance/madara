@@ -108,6 +108,8 @@ pub enum Column {
     BlockHashToBlockN,
     /// One To One
     BlockNToStateDiff,
+    /// block_n => bloom filter for events
+    EventBloom,
     /// Meta column for block storage (sync tip, pending block)
     BlockStorageMeta,
 
@@ -178,6 +180,7 @@ impl Column {
             BlockHashToBlockN,
             BlockStorageMeta,
             BlockNToStateDiff,
+            EventBloom,
             ClassInfo,
             ClassCompiled,
             PendingClassInfo,
@@ -214,6 +217,7 @@ impl Column {
             BlockHashToBlockN => "block_hash_to_block_n",
             BlockStorageMeta => "block_storage_meta",
             BlockNToStateDiff => "block_n_to_state_diff",
+            EventBloom => "event_bloom",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",
@@ -239,6 +243,12 @@ impl Column {
             MempoolTransactions => "mempool_transactions",
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn test_column_all() {
+    assert_eq!(Column::ALL.len(), Column::NUM_COLUMNS);
 }
 
 pub trait DatabaseExt {

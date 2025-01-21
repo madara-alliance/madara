@@ -1,4 +1,5 @@
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_bloom_filter::EventBloomSearcher;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
@@ -6,6 +7,7 @@ use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
 use crate::utils::event_match_filter;
+use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.
@@ -32,6 +34,8 @@ pub async fn get_events(
     starknet: &Starknet,
     filter: EventFilterWithPageRequest<Felt>,
 ) -> StarknetRpcResult<EventsChunk<Felt>> {
+    // TODO: use a continuation token like BlockN_EventN were EventN is the index of the event in the block and not the index of filtered events
+
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size;
@@ -61,13 +65,28 @@ pub async fn get_events(
     let from_block = continuation_token.block_n;
     let mut filtered_events: Vec<EmittedEvent<Felt>> = Vec::new();
 
-    for current_block in from_block..=to_block {
-        let (_pending, block) = if current_block <= latest_block {
-            (false, starknet.get_block(&BlockId::Number(current_block))?)
-        } else {
-            (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
-        };
+    let iter_filter = starknet
+        .backend
+        .get_event_filter_stream(from_block)
+        .or_internal_server_error("Error getting event filter stream")?;
 
+    let key_filter = EventBloomSearcher::new(from_address.as_ref(), keys.as_deref());
+
+    for filter_block in iter_filter {
+        let (current_block, filter) = filter_block.or_internal_server_error("Error getting next filter block")?;
+
+        if current_block > latest_block {
+            break;
+        }
+
+        if !key_filter.search(&filter) {
+            continue;
+        }
+
+        let block =
+            starknet.get_block(&BlockId::Number(current_block)).or_internal_server_error("Error getting block")?;
+
+        // TODO: take only the events to fill the chunk not all the events
         let block_filtered_events: Vec<EmittedEvent<Felt>> = drain_block_events(block)
             .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             .collect();
@@ -94,7 +113,12 @@ pub async fn get_events(
 
             return Ok(EventsChunk { events: filtered_events, continuation_token: token });
         }
+        if current_block == to_block {
+            break;
+        }
     }
+    // TODO: handle the case where 'to_block' is pending
+
     Ok(EventsChunk { events: filtered_events, continuation_token: None })
 }
 

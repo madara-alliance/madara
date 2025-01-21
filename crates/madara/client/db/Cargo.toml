@@ -21,6 +21,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mc-analytics = { workspace = true }
 mp-block = { workspace = true }
+mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-receipt = { workspace = true }

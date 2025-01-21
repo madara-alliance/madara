@@ -191,6 +191,11 @@ mod tests {
     }
 
     #[fixture]
+    fn matching_keys_empty() -> Vec<Vec<Felt>> {
+        vec![vec![], vec![]]
+    }
+
+    #[fixture]
     fn non_matching_keys() -> Vec<Vec<Felt>> {
         vec![vec![Felt::from_hex_unchecked("0x1")], vec![Felt::from_hex_unchecked("0x3")]]
     }
@@ -198,6 +203,15 @@ mod tests {
     #[rstest]
     fn test_address_and_keys_match(base_event: Event<Felt>, matching_address: Felt, matching_keys: Vec<Vec<Felt>>) {
         assert!(event_match_filter(&base_event, Some(&matching_address), Some(&matching_keys)));
+    }
+
+    #[rstest]
+    fn test_address_and_empty_keys_match(
+        base_event: Event<Felt>,
+        matching_address: Felt,
+        matching_keys_empty: Vec<Vec<Felt>>,
+    ) {
+        assert!(event_match_filter(&base_event, Some(&matching_address), Some(&matching_keys_empty)));
     }
 
     #[rstest]
