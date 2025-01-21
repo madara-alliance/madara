@@ -23,7 +23,6 @@ jobs:
   linters:
     name: Run linters
     needs: update_db_version
-    if: ${{ github.event.pull_request.draft == false && always() }}
     uses: ./.github/workflows/linters.yml
 
   rust_check:
@@ -39,14 +38,12 @@ jobs:
   coverage:
     name: Run Coverage
     needs: update_db_version
-    if: ${{ github.event.pull_request.draft == false && always() }}
     secrets: inherit
     uses: ./.github/workflows/coverage.yml
 
   build:
     name: Build Madara
     needs: update_db_version
-    if: ${{ github.event.pull_request.draft == false && always() }}
     uses: ./.github/workflows/build.yml
 
   js_test:

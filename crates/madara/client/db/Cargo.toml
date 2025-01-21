@@ -32,6 +32,7 @@ mp-utils = { workspace = true }
 blockifier = { workspace = true }
 bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true }
+starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
