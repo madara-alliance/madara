@@ -451,6 +451,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.block.clone().into(),
             new_state_diff,
             self.declared_classes.clone(),
+            None,
             Some(visited_segments),
             Some(bouncer_weights),
         )?;

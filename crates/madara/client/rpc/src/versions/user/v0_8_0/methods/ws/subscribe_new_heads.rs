@@ -164,6 +164,7 @@ mod test {
                     vec![],
                     None,
                     None,
+                    None,
                 )
                 .expect("Storing block");
 

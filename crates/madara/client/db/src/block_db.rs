@@ -8,8 +8,9 @@ use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments,
 };
+use mp_bloom_filter::{EventBloomReader, EventBloomWriter};
 use mp_state_update::StateDiff;
-use rocksdb::WriteOptions;
+use rocksdb::{Direction, IteratorMode, WriteOptions};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::EmittedEvent;
@@ -285,7 +286,12 @@ impl MadaraBackend {
 
     /// Also clears pending block
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub(crate) fn block_db_store_block(&self, block: &MadaraBlock, state_diff: &StateDiff) -> Result<()> {
+    pub(crate) fn block_db_store_block(
+        &self,
+        block: &MadaraBlock,
+        state_diff: &StateDiff,
+        events_bloom: Option<EventBloomWriter>,
+    ) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
@@ -293,6 +299,7 @@ impl MadaraBackend {
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
         let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
+        let event_bloom = self.db.get_column(Column::EventBloom);
         let meta = self.db.get_column(Column::BlockStorageMeta);
 
         let block_hash_encoded = bincode::serialize(&block.info.block_hash)?;
@@ -306,6 +313,9 @@ impl MadaraBackend {
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
+        if let Some(events_bloom) = events_bloom {
+            tx.put_cf(&event_bloom, &block_n_encoded, bincode::serialize(&events_bloom)?);
+        }
         tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
         // susbcribers
@@ -479,5 +489,24 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
         }
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_event_filter_stream(
+        &self,
+        block_n: u64,
+    ) -> Result<impl Iterator<Item = Result<(u64, EventBloomReader)>> + '_> {
+        let col = self.db.get_column(Column::EventBloom);
+        let key = bincode::serialize(&block_n)?;
+        let iter_mode = IteratorMode::From(&key, Direction::Forward);
+        let iter = self.db.iterator_cf(&col, iter_mode);
+
+        Ok(iter.map(|kvs| {
+            kvs.map_err(MadaraStorageError::from).and_then(|(key, value)| {
+                let stored_block_n: u64 = bincode::deserialize(&key).map_err(MadaraStorageError::from)?;
+                let bloom = bincode::deserialize(&value).map_err(MadaraStorageError::from)?;
+                Ok((stored_block_n, bloom))
+            })
+        }))
     }
 }

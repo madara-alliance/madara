@@ -1,0 +1,38 @@
+[package]
+description = "Madara primitive for block state update"
+name = "mp-bloom-filter"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+ahash.workspace = true
+mp-receipt.workspace = true
+serde.workspace = true
+starknet-types-core.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+twox-hash = "2.1"
+
+rand.workspace = true
+plotters = "0.3"
+statistical = "1.0"
+rayon.workspace = true
+bincode.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "bloom_benchmark"
+harness = false
+path = "benches/bloom_benchmark.rs"
