@@ -16,6 +16,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 
+use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
 use std::time::Duration;
 use url::Url;
 
@@ -23,10 +24,8 @@ pub const DEPLOYER_ADDRESS: &str = "0x055be462e718c4166d656d11f89e341115b8bc8238
 pub const DEPLOYER_PRIVATE_KEY: &str = "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07";
 pub const UDC_ADDRESS: &str = "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf";
 pub const MADARA_PORT: &str = "19944";
-pub const MADARA_BINARY_PATH: &str = "../../../test-artifacts/madara";
-pub const MADARA_CONFIG_PATH: &str = "../../../configs/presets/devnet.yaml";
-pub const APPCHAIN_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/appchain_test.sierra.json";
-pub const MESSAGING_CONTRACT_SIERRA_PATH: &str = "src/starknet/test_contracts/messaging_test.sierra.json";
+pub const MADARA_BINARY_PATH: &str = "../../../../test-artifacts/madara";
+pub const MADARA_CONFIG_PATH: &str = "../../../../configs/presets/devnet.yaml";
 
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
 pub const APPCHAIN_CONTRACT_CASM_HASH: &str = "0x07f36e830605ddeb7c4c094639b628de297cbf61f45385b1fc3231029922b30b";
@@ -87,7 +86,7 @@ pub async fn prepare_starknet_client_test() -> anyhow::Result<(StarknetAccount, 
     let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
     let account = starknet_account()?;
     let deployed_appchain_contract_address =
-        deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA_PATH, APPCHAIN_CONTRACT_CASM_HASH).await?;
+        deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA, APPCHAIN_CONTRACT_CASM_HASH).await?;
     Ok((account, deployed_appchain_contract_address, madara))
 }
 
@@ -95,7 +94,7 @@ pub async fn prepare_starknet_client_messaging_test() -> anyhow::Result<(Starkne
     let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
     let account = starknet_account()?;
     let deployed_appchain_contract_address =
-        deploy_contract(&account, MESSAGING_CONTRACT_SIERRA_PATH, MESSAGING_CONTRACT_CASM_HASH).await?;
+        deploy_contract(&account, MESSAGING_CONTRACT_SIERRA, MESSAGING_CONTRACT_CASM_HASH).await?;
     Ok((account, deployed_appchain_contract_address, madara))
 }
 
@@ -176,8 +175,8 @@ pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
     Ok(account)
 }
 
-pub async fn deploy_contract(account: &StarknetAccount, sierra_path: &str, casm_hash: &str) -> anyhow::Result<Felt> {
-    let contract_artifact: SierraClass = serde_json::from_reader(std::fs::File::open(sierra_path)?)?;
+pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8], casm_hash: &str) -> anyhow::Result<Felt> {
+    let contract_artifact: SierraClass = serde_json::from_slice(sierra)?;
     let flattened_class = contract_artifact.flatten()?;
     let result = account.declare_v2(Arc::new(flattened_class), Felt::from_str(casm_hash)?).send().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;

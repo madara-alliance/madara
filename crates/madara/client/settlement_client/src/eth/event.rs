@@ -5,6 +5,7 @@ use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
 use anyhow::Error;
 use futures::Stream;
+use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -12,7 +13,7 @@ type StreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
 type StreamType = Pin<Box<dyn Stream<Item = StreamItem> + Send + 'static>>;
 
 pub struct EthereumEventStream {
-    stream: StreamType,
+    pub stream: StreamType,
 }
 
 impl EthereumEventStream {
@@ -31,20 +32,26 @@ impl Stream for EthereumEventStream {
                 Ok((event, log)) => {
                     let event_data = (|| -> anyhow::Result<CommonMessagingEventData> {
                         Ok(CommonMessagingEventData {
-                            from: event.fromAddress.as_slice().into(),
-                            to: event.toAddress.to_be_bytes_vec(),
-                            selector: event.selector.to_be_bytes_vec(),
-                            nonce: event.nonce.to_be_bytes_vec(),
+                            from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
+                            to: Felt::from_bytes_be_slice(event.toAddress.to_be_bytes_vec().as_slice()),
+                            selector: Felt::from_bytes_be_slice(event.selector.to_be_bytes_vec().as_slice()),
+                            nonce: Felt::from_bytes_be_slice(event.nonce.to_be_bytes_vec().as_slice()),
                             payload: {
                                 let mut payload_vec = vec![];
-                                event.payload.iter().for_each(|ele| payload_vec.push(ele.to_be_bytes_vec()));
+                                event.payload.iter().for_each(|ele| {
+                                    payload_vec.push(Felt::from_bytes_be_slice(ele.to_be_bytes_vec().as_slice()))
+                                });
                                 payload_vec
                             },
-                            fee: Some(event.fee.to_be_bytes_vec()),
-                            transaction_hash: log
-                                .transaction_hash
-                                .ok_or_else(|| anyhow::anyhow!("Missing transaction hash"))?
-                                .to_vec(),
+                            fee: Some(
+                                event.fee.try_into().map_err(|e| anyhow::anyhow!("Felt conversion error: {}", e))?,
+                            ),
+                            transaction_hash: Felt::from_bytes_be_slice(
+                                log.transaction_hash
+                                    .ok_or_else(|| anyhow::anyhow!("Missing transaction hash"))?
+                                    .to_vec()
+                                    .as_slice(),
+                            ),
                             message_hash: None,
                             block_number: log.block_number.ok_or_else(|| anyhow::anyhow!("Missing block number"))?,
                             event_index: Some(log.log_index.ok_or_else(|| anyhow::anyhow!("Missing log index"))?),
@@ -62,7 +69,7 @@ impl Stream for EthereumEventStream {
 }
 
 #[cfg(test)]
-mod eth_event_stream_tests {
+pub mod eth_event_stream_tests {
     use super::*;
     use alloy::primitives::{Address, LogData, B256, U256};
     use futures::stream::iter;
@@ -71,7 +78,7 @@ mod eth_event_stream_tests {
     use std::str::FromStr;
 
     // Helper function to create mock event
-    fn create_mock_event() -> LogMessageToL2 {
+    pub fn create_mock_event() -> LogMessageToL2 {
         LogMessageToL2 {
             fromAddress: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
             toAddress: U256::from(1u64),
@@ -83,7 +90,7 @@ mod eth_event_stream_tests {
     }
 
     // Helper function to create mock log
-    fn create_mock_log() -> Log {
+    pub fn create_mock_log() -> Log {
         Log {
             inner: alloy::primitives::Log {
                 address: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),

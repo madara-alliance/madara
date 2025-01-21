@@ -157,6 +157,8 @@ where
     }
 
     // Factory method to create the appropriate service
+    // Add the if condition here :
+    // should_enable_sync
     pub async fn create(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Box<dyn Service>> {
         match config.settlement_layer {
             MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),

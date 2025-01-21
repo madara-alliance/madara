@@ -2,9 +2,11 @@ use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
 use crate::state_update::StateUpdate;
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use futures::Stream;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
+use mockall::automock;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -14,6 +16,14 @@ pub enum ClientType {
     STARKNET,
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct DummyConfig;
+pub type DummyStream = BoxStream<'static, Option<anyhow::Result<CommonMessagingEventData>>>;
+
+#[automock(
+    type Config = DummyConfig;
+    type StreamType = DummyStream;
+)]
 #[async_trait]
 pub trait ClientTrait: Send + Sync {
     // Configuration type used for initialization
@@ -79,7 +89,25 @@ pub trait ClientTrait: Send + Sync {
     // ============================================================
     // Stream Implementations :
     // ============================================================
-    type StreamType: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>;
-    async fn get_event_stream(&self, last_synced_event_block: LastSyncedEventBlock)
-        -> anyhow::Result<Self::StreamType>;
+
+    /// The type of Stream that will be returned by get_messaging_stream
+    /// - Stream: Represents an asynchronous sequence of values
+    /// - Item: Each element in the stream is wrapped in Option to handle potential gaps
+    /// - anyhow::Result: Each item is further wrapped in Result for error handling
+    /// - CommonMessagingEventData: The actual message data structure being streamed
+    type StreamType: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send;
+
+    /// Retrieves a stream of messaging events starting from the last synced block
+    ///
+    /// # Arguments
+    /// * `last_synced_event_block` - Contains information about the last block that was
+    ///    successfully processed, used as starting point for the new stream
+    ///
+    /// # Returns
+    /// * `anyhow::Result<Self::StreamType>` - Returns the stream if successful, or an error
+    ///    if stream creation fails
+    async fn get_messaging_stream(
+        &self,
+        last_synced_event_block: LastSyncedEventBlock,
+    ) -> anyhow::Result<Self::StreamType>;
 }

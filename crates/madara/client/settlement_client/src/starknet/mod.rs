@@ -151,15 +151,18 @@ impl ClientTrait for StarknetClient {
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()> {
-        while let Some(events) = ctx
-            .run_until_cancelled(self.get_events(
-                BlockId::Number(self.get_latest_block_number().await?),
-                BlockId::Number(self.get_latest_block_number().await?),
+        let latest_block = self.get_latest_block_number().await?;
+        let selector = get_selector_from_name("LogStateUpdate")?;
+        let events_fetch = move || async move {
+            self.get_events(
+                BlockId::Number(latest_block),
+                BlockId::Number(latest_block),
                 self.l2_core_contract,
-                vec![get_selector_from_name("LogStateUpdate")?],
-            ))
-            .await
-        {
+                vec![selector],
+            )
+        };
+
+        while let Some(events) = ctx.run_until_cancelled(events_fetch().await).await {
             let events_fetched = events?;
             if let Some(event) = events_fetched.last() {
                 let data = event;
@@ -213,11 +216,8 @@ impl ClientTrait for StarknetClient {
         Ok(call_res[0])
     }
 
-    // ============================================================
-    // Stream Implementations :
-    // ============================================================
     type StreamType = StarknetEventStream;
-    async fn get_event_stream(
+    async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
     ) -> anyhow::Result<StarknetEventStream> {
@@ -270,15 +270,10 @@ impl StarknetClient {
     }
 
     fn event_to_felt_array(&self, event: &CommonMessagingEventData) -> Vec<Felt> {
-        let mut felt_vec = vec![
-            Felt::from_bytes_be_slice(event.from.as_slice()),
-            Felt::from_bytes_be_slice(event.to.as_slice()),
-            Felt::from_bytes_be_slice(event.selector.as_slice()),
-            Felt::from_bytes_be_slice(event.nonce.as_slice()),
-        ];
+        let mut felt_vec = vec![event.from, event.to, event.selector, event.nonce];
         felt_vec.push(Felt::from(event.payload.len()));
         event.payload.clone().into_iter().for_each(|felt| {
-            felt_vec.push(Felt::from_bytes_be_slice(felt.as_slice()));
+            felt_vec.push(felt);
         });
 
         felt_vec
@@ -498,5 +493,358 @@ pub mod starknet_client_tests {
 
         // This line should never be reached due to the return in the loop
         Err(anyhow::anyhow!("Max retries reached while polling for block {}", block_number))
+    }
+}
+
+#[cfg(test)]
+mod l2_messaging_test {
+    use crate::client::ClientTrait;
+    use crate::messaging::sync;
+    use crate::starknet::utils::{
+        cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
+        StarknetAccount, MADARA_PORT,
+    };
+    use crate::starknet::{StarknetClient, StarknetClientConfig};
+    use mc_db::DatabaseService;
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
+    use rstest::{fixture, rstest};
+    use starknet_api::core::Nonce;
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use tracing_test::traced_test;
+    use url::Url;
+
+    struct TestRunnerStarknet {
+        #[allow(dead_code)]
+        madara: MadaraProcess, // Not used but needs to stay in scope otherwise it will be dropped
+        account: StarknetAccount,
+        chain_config: Arc<ChainConfig>,
+        db_service: Arc<DatabaseService>,
+        deployed_address: Felt,
+        starknet_client: StarknetClient,
+        mempool: Arc<Mempool>,
+    }
+
+    #[fixture]
+    async fn setup_test_env_starknet() -> TestRunnerStarknet {
+        let (account, deployed_contract_address, madara) = prepare_starknet_client_messaging_test().await.unwrap();
+
+        // Set up chain info
+        let chain_config = Arc::new(ChainConfig::madara_test());
+
+        // Set up database paths
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
+
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
+                .await
+                .expect("Failed to create database service"),
+        );
+
+        let starknet_client = StarknetClient::new(StarknetClientConfig {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str()).unwrap(),
+            l2_contract_address: deployed_contract_address,
+        })
+        .await
+        .unwrap();
+
+        let l1_gas_setter = GasPriceProvider::new();
+        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
+
+        let mempool = Arc::new(Mempool::new(
+            Arc::clone(db.backend()),
+            Arc::clone(&l1_data_provider),
+            MempoolLimits::for_testing(),
+        ));
+
+        TestRunnerStarknet {
+            madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        }
+    }
+
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_basic_workflow_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
+
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
+
+        // Firing the event
+        let fire_event_block_number = fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Log asserts
+        // ===========
+        assert!(logs_contain("fromAddress: \"0x07484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
+        // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
+        // expecting the same in logs
+        assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
+
+        // Assert that the event is well stored in db
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, fire_event_block_number);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert!(db.backend().has_l1_messaging_nonce(nonce)?);
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
+
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    // This test is redundant now as the event poller will not return the same
+    // event twice with same nonce that's why added ignore here.
+    #[ignore]
+    async fn e2e_test_already_processed_event_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
+
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
+
+        // Firing the event
+        let fire_event_block_number = fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Log asserts
+        // ===========
+        assert!(logs_contain("fromAddress: \"0x07484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
+        // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
+        // expecting the same in logs
+        assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
+
+        // Assert that the event is well stored in db
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, fire_event_block_number);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        assert!(db.backend().has_l1_messaging_nonce(nonce)?);
+
+        // Firing the event second time
+        fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        // Assert that the event processed was in last block only not in the latest block.
+        assert_eq!(
+            last_block.block_number,
+            db.backend()
+                .messaging_last_synced_l1_block_with_event()
+                .expect("failed to retrieve block")
+                .unwrap()
+                .block_number
+        );
+        assert!(logs_contain("Event already processed"));
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
+
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_message_canceled_starknet(
+        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    ) -> anyhow::Result<()> {
+        // Initial Setup
+        // ==================================
+        let TestRunnerStarknet {
+            madara: _madara,
+            account,
+            chain_config,
+            db_service: db,
+            deployed_address: deployed_contract_address,
+            starknet_client,
+            mempool,
+        } = setup_test_env_starknet.await;
+
+        // Start worker handle
+        // ==================================
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(Box::new(starknet_client)),
+                    Arc::clone(db.backend()),
+                    chain_config.chain_id.clone(),
+                    mempool,
+                    ServiceContext::new_for_testing(),
+                )
+                .await
+            })
+        };
+
+        cancel_messaging_event(&account, deployed_contract_address).await?;
+        // Firing cancelled event
+        fire_messaging_event(&account, deployed_contract_address).await?;
+        tokio::time::sleep(Duration::from_secs(15)).await;
+
+        let last_block =
+            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        assert_eq!(last_block.block_number, 0);
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        // cancelled message nonce should be inserted to avoid reprocessing
+        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
+        assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
+
+        // Cancelling worker
+        worker_handle.abort();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod starknet_client_event_subscription_test {
+    use crate::client::ClientTrait;
+    use crate::gas_price::L1BlockMetrics;
+    use crate::starknet::event::StarknetEventStream;
+    use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
+    use crate::starknet::{StarknetClient, StarknetClientConfig};
+    use crate::state_update::{state_update_worker, StateUpdate};
+    use mc_db::DatabaseService;
+    use mp_chain_config::ChainConfig;
+    use mp_utils::service::ServiceContext;
+    use rstest::rstest;
+    use starknet_types_core::felt::Felt;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use url::Url;
+
+    #[rstest]
+    #[tokio::test]
+    async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
+        // Setting up the DB and l1 block metrics
+        // ================================================
+
+        let chain_info = Arc::new(ChainConfig::madara_test());
+
+        // Set up database paths
+        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
+        let base_path = temp_dir.path().join("data");
+        let backup_dir = Some(temp_dir.path().join("backups"));
+
+        // Initialize database service
+        let db = Arc::new(
+            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
+                .await
+                .expect("Failed to create database service"),
+        );
+
+        // Making Starknet client and start worker
+        // ================================================
+        let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
+
+        let starknet_client = StarknetClient::new(StarknetClientConfig {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            l2_contract_address: deployed_address,
+        })
+        .await?;
+
+        let l1_block_metrics = L1BlockMetrics::register()?;
+
+        let listen_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                state_update_worker::<StarknetClientConfig, StarknetEventStream>(
+                    Arc::clone(db.backend()),
+                    Arc::new(Box::new(starknet_client)),
+                    ServiceContext::new_for_testing(),
+                    Arc::new(l1_block_metrics),
+                )
+                .await
+                .expect("Failed to init state update worker.")
+            })
+        };
+
+        // Firing the state update event
+        send_state_update(
+            &account,
+            deployed_address,
+            StateUpdate {
+                block_number: 100,
+                global_root: Felt::from_str("0xbeef")?,
+                block_hash: Felt::from_str("0xbeef")?,
+            },
+        )
+        .await?;
+
+        // Wait for this update to be registered in the DB. Approx 10 secs
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Verify the block number
+        let block_in_db =
+            db.backend().get_l1_last_confirmed_block().expect("Failed to get L2 last confirmed block number");
+
+        listen_handle.abort();
+        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
+        Ok(())
     }
 }

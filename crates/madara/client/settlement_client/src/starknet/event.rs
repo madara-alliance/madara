@@ -1,5 +1,6 @@
 use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
+use log::warn;
 use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
@@ -76,7 +77,7 @@ impl Stream for StarknetEventStream {
                 let latest_block = provider.block_number().await?;
 
                 for event in event_vec.clone() {
-                    let event_nonce = event.data[4];
+                    let event_nonce = event.data[1];
                     if !processed_events.contains(&event_nonce) {
                         return Ok((Some(event), filter));
                     }
@@ -106,26 +107,26 @@ impl Stream for StarknetEventStream {
                             // Update the filter
                             self.filter = updated_filter;
                             // Insert the event nonce before returning
-                            self.processed_events.insert(event.data[4]);
+                            self.processed_events.insert(event.data[1]);
 
                             let event_data = event
                                 .block_number
                                 .ok_or_else(|| anyhow::anyhow!("Unable to get block number from event"))
                                 .map(|block_number| CommonMessagingEventData {
-                                    from: event.keys[2].to_bytes_be().to_vec(),
-                                    to: event.keys[3].to_bytes_be().to_vec(),
-                                    selector: event.data[0].to_bytes_be().to_vec(),
-                                    nonce: event.data[1].to_bytes_be().to_vec(),
+                                    from: event.keys[2],
+                                    to: event.keys[3],
+                                    selector: event.data[0],
+                                    nonce: event.data[1],
                                     payload: {
                                         let mut payload_array = vec![];
                                         event.data.iter().skip(3).for_each(|data| {
-                                            payload_array.push(data.to_bytes_be().to_vec());
+                                            payload_array.push(*data);
                                         });
                                         payload_array
                                     },
                                     fee: None,
-                                    transaction_hash: event.transaction_hash.to_bytes_be().to_vec(),
-                                    message_hash: Some(event.keys[1].to_bytes_be().to_vec()),
+                                    transaction_hash: event.transaction_hash,
+                                    message_hash: Some(event.keys[1]),
                                     block_number,
                                     event_index: None,
                                 });
@@ -142,7 +143,14 @@ impl Stream for StarknetEventStream {
                 }
                 Poll::Pending => Poll::Pending,
             },
-            None => Poll::Ready(Some(None)), // Handle the case where future is None
+            None => {
+                // If the code comes here then this is an unexpected behaviour.
+                // Following scenarios can lead to this:
+                // - Not able to call the RPC and fetch events.
+                // - Connection Issues.
+                warn!("Starknet Event Stream : Unable to fetch events from starknet stream. Restart Sequencer.");
+                Poll::Ready(Some(None))
+            }
         }
     }
 }
@@ -229,16 +237,18 @@ mod starknet_event_stream_tests {
             block_number: Some(block_number),
             block_hash: Some(Felt::from_hex("0x5678").unwrap()),
             data: vec![
-                Felt::from_hex("0x0001").unwrap(),                  // message_hash
-                Felt::from_hex("0x1111").unwrap(),                  // from
-                Felt::from_hex("0x2222").unwrap(),                  // to
                 Felt::from_hex("0x3333").unwrap(),                  // selector
                 Felt::from_hex(&format!("0x{:x}", nonce)).unwrap(), // nonce
                 Felt::from_hex("0x5555").unwrap(),                  // len
                 Felt::from_hex("0x6666").unwrap(),                  // payload[0]
                 Felt::from_hex("0x7777").unwrap(),                  // payload[1]
             ],
-            keys: vec![],
+            keys: vec![
+                Felt::from_hex("0x0001").unwrap(), // event key
+                Felt::from_hex("0x0001").unwrap(), // message_hash
+                Felt::from_hex("0x1111").unwrap(), // from
+                Felt::from_hex("0x2222").unwrap(), // to
+            ],
         }
     }
 
@@ -317,6 +327,50 @@ mod starknet_event_stream_tests {
             _ => panic!("Expected None for empty events"),
         }
 
+        events_mock.assert();
+        block_mock.assert();
+    }
+
+    #[tokio::test]
+    #[rstest]
+    async fn test_multiple_events_in_single_block() {
+        let mock_server = MockStarknetServer::new();
+
+        // Create two events with different nonces but same block number
+        let test_event1 = create_test_event(1, 100);
+        let test_event2 = create_test_event(2, 100);
+
+        // Setup mocks for events and block number
+        let events_mock = mock_server.mock_get_events(vec![test_event1.clone(), test_event2.clone()], None);
+        let block_mock = mock_server.mock_block_number(101);
+
+        let mut stream = Box::pin(setup_stream(&mock_server));
+
+        if let Some(Some(Ok(event_data1))) = stream.next().await {
+            assert_eq!(event_data1.block_number, 100);
+            assert_eq!(event_data1.nonce, Felt::from_hex("0x1").unwrap());
+            assert_eq!(event_data1.payload.len(), 2);
+            assert_eq!(event_data1.transaction_hash, test_event1.transaction_hash);
+        } else {
+            panic!("Expected first event");
+        }
+
+        if let Some(Some(Ok(event_data2))) = stream.next().await {
+            assert_eq!(event_data2.block_number, 100);
+            assert_eq!(event_data2.nonce, Felt::from_hex("0x2").unwrap());
+            assert_eq!(event_data2.payload.len(), 2);
+            assert_eq!(event_data2.transaction_hash, test_event2.transaction_hash);
+        } else {
+            panic!("Expected second event");
+        }
+
+        // Verify that there are no more events
+        match stream.next().await {
+            Some(None) => { /* Expected */ }
+            _ => panic!("Expected None after processing all events"),
+        }
+
+        // Verify mocks were called
         events_mock.assert();
         block_mock.assert();
     }
