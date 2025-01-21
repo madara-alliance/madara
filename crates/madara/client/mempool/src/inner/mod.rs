@@ -156,12 +156,12 @@ pub struct MempoolInner {
     /// FIFO queue of all [ready] intents.
     ///
     /// [ready]: TransactionIntentReady
-    pub tx_intent_queue_ready: BTreeSet<TransactionIntentReady>,
+    pub(crate) tx_intent_queue_ready: BTreeSet<TransactionIntentReady>,
     /// FIFO queue of all [pending] intents, sorted by their [Nonce].
     ///
     /// [pending]: TransactionIntentPendingByNonce
     // TODO: can remove contract_address from TransactionIntentPendingByNonce
-    pub tx_intent_queue_pending_by_nonce: HashMap<Felt, BTreeMap<TransactionIntentPendingByNonce, ()>>,
+    pub(crate) tx_intent_queue_pending_by_nonce: HashMap<Felt, BTreeMap<TransactionIntentPendingByNonce, ()>>,
     /// FIFO queue of all [pending] intents, sorted by their time of arrival.
     ///
     /// This is required for the rapid removal of age-exceeded txs in
@@ -172,9 +172,9 @@ pub struct MempoolInner {
     /// [remove_age_exceeded_txs]: Self::remove_age_exceeded_txs
     /// [tx_intent_queue_pending_by_nonce]: Self::tx_intent_queue_pending_by_nonce
     // TODO: can remove nonce_next from TransactionIntentPendingByTimestamp
-    pub tx_intent_queue_pending_by_timestamp: BTreeSet<TransactionIntentPendingByTimestamp>,
+    pub(crate) tx_intent_queue_pending_by_timestamp: BTreeSet<TransactionIntentPendingByTimestamp>,
     /// List of all new deployed contracts currently in the mempool.
-    pub deployed_contracts: DeployedContracts,
+    pub(crate) deployed_contracts: DeployedContracts,
     /// Constraints on the number of transactions allowed in the [Mempool]
     ///
     /// [Mempool]: super::Mempool

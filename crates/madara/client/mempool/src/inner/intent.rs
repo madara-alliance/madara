@@ -50,20 +50,20 @@ use super::ArrivedAtTimestamp;
 
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
-pub struct MarkerReady;
+pub(crate) struct MarkerReady;
 
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
-pub struct MarkerPendingByNonce;
+pub(crate) struct MarkerPendingByNonce;
 
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
-pub struct MarkerPendingByTimestamp;
+pub(crate) struct MarkerPendingByTimestamp;
 
 /// A [transaction intent] which is ready to be consumed.
 ///
 /// [transaction intent]: TransactionIntent
-pub type TransactionIntentReady = TransactionIntent<MarkerReady>;
+pub(crate) type TransactionIntentReady = TransactionIntent<MarkerReady>;
 
 impl Ord for TransactionIntentReady {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
@@ -200,19 +200,19 @@ impl PartialOrd for TransactionIntentPendingByTimestamp {
 /// [Invariants]: CheckInvariants
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
-pub struct TransactionIntent<K> {
+pub(crate) struct TransactionIntent<K> {
     /// The contract responsible for sending the transaction.
-    pub contract_address: Felt,
+    pub(crate) contract_address: Felt,
     /// Time at which the transaction was received by the mempool.
-    pub timestamp: ArrivedAtTimestamp,
+    pub(crate) timestamp: ArrivedAtTimestamp,
     /// The [Nonce] of the transaction associated to this intent. We use this
     /// for retrieval purposes later on.
-    pub nonce: Nonce,
+    pub(crate) nonce: Nonce,
     /// This is the [Nonce] of the transaction right after this one. We
     /// precompute this to avoid making calculations on a [Felt] in the hot
     /// loop, as this can be expensive.
-    pub nonce_next: Nonce,
-    pub phantom: PhantomData<K>,
+    pub(crate) nonce_next: Nonce,
+    pub(crate) phantom: PhantomData<K>,
 }
 
 #[cfg(any(test, feature = "testing"))]
