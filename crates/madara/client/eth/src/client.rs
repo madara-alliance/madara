@@ -167,8 +167,7 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
 
-    use serial_test::serial;
-    use std::ops::Range;
+    use std::ops::{Deref, Range};
     use std::sync::Mutex;
     use tokio;
 
@@ -212,12 +211,37 @@ pub mod eth_client_getter_test {
 
     static ANVIL: Mutex<Option<Arc<AnvilInstance>>> = Mutex::new(None);
 
-    pub fn get_shared_anvil() -> Arc<AnvilInstance> {
-        let mut anvil = ANVIL.lock().expect("poisoned lock");
-        if anvil.is_none() {
-            *anvil = Some(Arc::new(create_anvil_instance()));
+    /// Wrapper for an Anvil instance that automatically cleans up when all handles are dropped
+    pub struct AnvilHandle {
+        instance: Arc<AnvilInstance>,
+    }
+
+    impl Drop for AnvilHandle {
+        fn drop(&mut self) {
+            let mut guard = ANVIL.lock().expect("poisoned lock");
+            // Check if this Arc is the last one (strong_count == 2 because of our reference
+            // and the one in the static)
+            if Arc::strong_count(&self.instance) == 2 {
+                println!("Cleaning up Anvil instance");
+                *guard = None;
+            }
         }
-        Arc::clone(anvil.as_ref().unwrap())
+    }
+
+    impl Deref for AnvilHandle {
+        type Target = AnvilInstance;
+
+        fn deref(&self) -> &Self::Target {
+            &self.instance
+        }
+    }
+
+    pub fn get_shared_anvil() -> AnvilHandle {
+        let mut guard = ANVIL.lock().expect("poisoned lock");
+        if guard.is_none() {
+            *guard = Some(Arc::new(create_anvil_instance()));
+        }
+        AnvilHandle { instance: Arc::clone(guard.as_ref().unwrap()) }
     }
 
     pub fn create_anvil_instance() -> AnvilInstance {
@@ -245,7 +269,6 @@ pub mod eth_client_getter_test {
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
-    #[serial]
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
         let anvil = get_shared_anvil();
@@ -261,7 +284,6 @@ pub mod eth_client_getter_test {
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_latest_block_number_works() {
         let anvil = get_shared_anvil();
@@ -271,7 +293,6 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_event_block_number_works() {
         let anvil = get_shared_anvil();
@@ -283,7 +304,6 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_hash_works() {
         let anvil = get_shared_anvil();
@@ -294,7 +314,6 @@ pub mod eth_client_getter_test {
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_state_root_works() {
         let anvil = get_shared_anvil();
@@ -304,7 +323,6 @@ pub mod eth_client_getter_test {
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_number_works() {
         let anvil = get_shared_anvil();

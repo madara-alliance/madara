@@ -11,9 +11,10 @@ use mc_rpc::{
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
-use mp_gateway::error::StarknetError;
+use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::{
-    UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
+    AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
+    UserTransaction,
 };
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
@@ -23,7 +24,7 @@ use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::TraceBlockTransactionsResult;
+use starknet_types_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
@@ -349,8 +350,16 @@ async fn declare_transaction(
     tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    match add_transaction_provider.add_declare_transaction(tx.into()).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+    let tx: BroadcastedDeclareTxn<Felt> = match tx.try_into() {
+        Ok(tx) => tx,
+        Err(e) => {
+            let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());
+            return create_json_response(hyper::StatusCode::OK, &error);
+        }
+    };
+
+    match add_transaction_provider.add_declare_transaction(tx).await {
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }
 }
@@ -360,7 +369,7 @@ async fn deploy_account_transaction(
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
     match add_transaction_provider.add_deploy_account_transaction(tx.into()).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }
 }
@@ -370,7 +379,7 @@ async fn invoke_transaction(
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
     match add_transaction_provider.add_invoke_transaction(tx.into()).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &result),
+        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
         Err(e) => create_json_response(hyper::StatusCode::OK, &e),
     }
 }

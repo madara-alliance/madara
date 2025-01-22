@@ -21,6 +21,7 @@ mc-db = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
+proptest-state-machine.workspace = true
 bitvec.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-test.workspace = true
@@ -29,6 +30,7 @@ mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
+starknet-types-core = { workspace = true, features = ["arbitrary"] }
 
 [features]
 testing = ["blockifier/testing", "mc-db/testing", "mockall"]
@@ -62,8 +64,8 @@ mockall = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio-util.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

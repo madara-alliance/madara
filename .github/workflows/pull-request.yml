@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  contents: write
   pull-requests: write
 
 jobs:
@@ -22,7 +23,6 @@ jobs:
   linters:
     name: Run linters
     needs: update_db_version
-    if: ${{ always() }}
     uses: ./.github/workflows/linters.yml
 
   rust_check:
@@ -38,18 +38,15 @@ jobs:
   coverage:
     name: Run Coverage
     needs: update_db_version
-    if: ${{ always() }}
     secrets: inherit
     uses: ./.github/workflows/coverage.yml
 
   build:
     name: Build Madara
     needs: update_db_version
-    if: ${{ always() }}
     uses: ./.github/workflows/build.yml
 
   js_test:
     name: Run JS Tests
     needs: build
-    if: ${{ always() }}
     uses: ./.github/workflows/starknet-js-test.yml

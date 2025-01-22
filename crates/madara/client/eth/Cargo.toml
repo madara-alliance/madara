@@ -81,7 +81,6 @@ tempfile.workspace = true
 dotenv.workspace = true
 httpmock.workspace = true
 tracing-test = "0.2.5"
-serial_test.workspace = true
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }

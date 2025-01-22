@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # Database version management script
@@ -64,7 +64,7 @@ CURRENT_VERSION=$(yq '.current_version' "$FILE")
 NEW_VERSION=$((CURRENT_VERSION + 1))
 
 # Update version and append to history
-yq -i -y ".current_version = $NEW_VERSION |
-  .versions = [{\"version\": $NEW_VERSION, \"pr\": $PR_NUMBER}] + .versions" "$FILE"
+yq e ".current_version = $NEW_VERSION |
+  .versions = [{\"version\": $NEW_VERSION, \"pr\": $PR_NUMBER}] + .versions" -i "$FILE"
 
 echo "Successfully updated DB version to ${NEW_VERSION} (PR #${PR_NUMBER})"

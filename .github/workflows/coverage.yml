@@ -22,7 +22,7 @@ jobs:
         with:
           toolchain: 1.81
 
-      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverae uses custom rustc args
+      - uses: Swatinem/rust-cache@v2 # use a different cache key as coverage uses custom rustc args
         with:
           cache-provider: buildjet
           key: "coverage"
@@ -49,7 +49,7 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev --workspace -- --test-threads=1
+          cargo test --profile dev --workspace
 
       - name: Generate coverage info
         run: |

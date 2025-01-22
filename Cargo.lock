@@ -1215,6 +1215,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
+
+[[package]]
 name = "ark-ec"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6656,7 +6662,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.7",
  "tokio",
  "tower-service",
  "tracing",
@@ -7873,6 +7879,7 @@ dependencies = [
  "rocksdb",
  "serde",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "starknet-types-rpc",
  "starknet_api",
  "tempfile",
  "thiserror 2.0.3",
@@ -7975,7 +7982,6 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "serial_test",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
  "starknet_api",
  "tempfile",
@@ -8107,6 +8113,7 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "proptest-derive",
+ "proptest-state-machine",
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
@@ -9828,6 +9835,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "proptest-state-machine"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e943d140e09d07740fb496487c51fb8eb31c70389ac4a2e9dcd8a0d9fdf228d4"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "prost"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10882,15 +10898,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scc"
-version = "2.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8d25269dd3a12467afe2e510f69fb0b46b698e5afb296b59f2145259deaf8e8"
-dependencies = [
- "sdd",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10973,12 +10980,6 @@ dependencies = [
  "ring",
  "untrusted",
 ]
-
-[[package]]
-name = "sdd"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49c1eeaf4b6a87c7479688c6d52b9f1153cedd3c489300564f932b065c6eab95"
 
 [[package]]
 name = "sec1"
@@ -11266,31 +11267,6 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
-]
-
-[[package]]
-name = "serial_test"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b4b487fe2acf240a021cf57c6b2b4903b1e78ca0ecd862a71b71d2a51fed77d"
-dependencies = [
- "futures",
- "log",
- "once_cell",
- "parking_lot 0.12.3",
- "scc",
- "serial_test_derive",
-]
-
-[[package]]
-name = "serial_test_derive"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82fe9db325bcef1fbcde82e078a5cc4efdf787e96b3b9cf45b50b529f2083d67"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.89",
 ]
 
 [[package]]
@@ -12005,6 +11981,7 @@ name = "starknet-types-core"
 version = "0.1.7"
 source = "git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7#e5f3769150684d3c726951dd3f075815cdcdba5d"
 dependencies = [
+ "arbitrary",
  "lambdaworks-crypto",
  "lambdaworks-math",
  "lazy_static",

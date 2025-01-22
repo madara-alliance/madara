@@ -169,6 +169,59 @@ impl FlattenedSierraClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompressedSierraClass {
+    /// The gzipped compressed program as a base64 string.
+    pub sierra_program: String,
+    pub contract_class_version: String,
+    pub entry_points_by_type: EntryPointsByType,
+    pub abi: String,
+}
+
+impl TryFrom<FlattenedSierraClass> for CompressedSierraClass {
+    type Error = std::io::Error;
+
+    fn try_from(flattened_sierra_class: FlattenedSierraClass) -> Result<Self, Self::Error> {
+        let mut base64_encoder =
+            base64::write::EncoderWriter::new(Vec::new(), &base64::engine::general_purpose::STANDARD);
+        let mut gzip_encoder = flate2::write::GzEncoder::new(&mut base64_encoder, flate2::Compression::default());
+        serde_json::to_writer(&mut gzip_encoder, &flattened_sierra_class.sierra_program)?;
+        gzip_encoder.try_finish()?;
+        drop(gzip_encoder);
+        let encoded_data = base64_encoder
+            .finish()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "base64 encoding error"))?;
+        let sierra_program = String::from_utf8(encoded_data)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "base64 encoding error: invalid utf8"))?;
+
+        Ok(Self {
+            sierra_program,
+            contract_class_version: flattened_sierra_class.contract_class_version,
+            entry_points_by_type: flattened_sierra_class.entry_points_by_type,
+            abi: flattened_sierra_class.abi,
+        })
+    }
+}
+
+impl TryFrom<CompressedSierraClass> for FlattenedSierraClass {
+    type Error = std::io::Error;
+
+    fn try_from(compressed_sierra_class: CompressedSierraClass) -> Result<Self, Self::Error> {
+        let string_reader = std::io::Cursor::new(compressed_sierra_class.sierra_program);
+        let base64_decoder =
+            base64::read::DecoderReader::new(string_reader, &base64::engine::general_purpose::STANDARD);
+        let gzip_decoder = flate2::read::GzDecoder::new(base64_decoder);
+        let sierra_program = serde_json::from_reader(gzip_decoder)?;
+
+        Ok(Self {
+            sierra_program,
+            contract_class_version: compressed_sierra_class.contract_class_version,
+            entry_points_by_type: compressed_sierra_class.entry_points_by_type,
+            abi: compressed_sierra_class.abi,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct EntryPointsByType {
     pub constructor: Vec<SierraEntryPoint>,
