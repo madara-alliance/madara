@@ -12,6 +12,7 @@ use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::EmittedEvent;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -186,6 +187,12 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn has_pending_block(&self) -> Result<bool> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        Ok(self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)?.is_some())
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_pending_block_state_update(&self) -> Result<StateDiff> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else {
@@ -313,6 +320,29 @@ impl MadaraBackend {
                 tracing::debug!("Failed to send block info to subscribers: {e}");
             }
         }
+        if self.sender_event.receiver_count() > 0 {
+            let block_number = block.info.header.block_number;
+            let block_hash = block.info.block_hash;
+
+            block
+                .inner
+                .receipts
+                .iter()
+                .flat_map(|receipt| {
+                    let tx_hash = receipt.transaction_hash();
+                    receipt.events().iter().map(move |event| (tx_hash, event))
+                })
+                .for_each(|(transaction_hash, event)| {
+                    if let Err(e) = self.sender_event.publish(EmittedEvent {
+                        event: event.clone().into(),
+                        block_hash: Some(block_hash),
+                        block_number: Some(block_number),
+                        transaction_hash,
+                    }) {
+                        tracing::debug!("Failed to send event to subscribers: {e}");
+                    }
+                });
+        }
 
         // clear pending
         tx.delete_cf(&meta, ROW_PENDING_INFO);
@@ -398,6 +428,11 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn subscribe_block_info(&self) -> tokio::sync::broadcast::Receiver<mp_block::MadaraBlockInfo> {
         self.sender_block_info.subscribe()
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
+        self.sender_event.subscribe(from_address)
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
