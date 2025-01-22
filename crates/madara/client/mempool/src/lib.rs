@@ -100,9 +100,6 @@ pub trait MempoolProvider: Send + Sync {
         txs: VecDeque<MempoolTransaction>,
         consumed_txs: Vec<MempoolTransaction>,
     ) -> Result<(), MempoolError>;
-    fn txs_insert_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError>
-    where
-        Self: Sized;
     fn chain_id(&self) -> Felt;
 }
 
@@ -154,7 +151,8 @@ impl Mempool {
         let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
             block
         } else {
-            // No current pending block, we'll make an unsaved empty one for the sake of validating this tx.
+            // No current pending block, we'll make an unsaved empty one for
+            // the sake of validating this tx.
             let parent_block_hash = self
                 .backend
                 .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
@@ -486,37 +484,6 @@ impl MempoolProvider for Mempool {
         Ok(())
     }
 
-    /// This is called by the block production task to re-add transaction from
-    /// the pending block back into the mempool
-    #[tracing::instrument(skip(self, txs), fields(module = "Mempool"))]
-    fn txs_insert_no_validation(&self, txs: Vec<MempoolTransaction>, force: bool) -> Result<(), MempoolError> {
-        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
-
-        for tx in &txs {
-            // Theoretically we should not have to invalidate the nonce cache
-            // here as this function should ONLY be called when adding the
-            // pending block back into the mempool from the db. However I am
-            // afraid someone will end up using this incorrectly so I am adding
-            // this here.
-            nonce_cache.remove(&tx.contract_address());
-
-            // Save to db. Transactions are marked as ready since they were
-            // already previously included into the pending block
-            let nonce_info = NonceInfo::ready(tx.nonce, tx.nonce_next);
-            let saved_tx = blockifier_to_saved_tx(&tx.tx, tx.arrived_at);
-            self.backend.save_mempool_transaction(
-                &saved_tx,
-                tx.tx_hash().to_felt(),
-                &tx.converted_class,
-                &nonce_info,
-            )?;
-        }
-
-        let mut inner = self.inner.write().expect("Poisoned lock");
-        inner.insert_txs(txs, force)?;
-
-        Ok(())
-    }
     fn chain_id(&self) -> Felt {
         Felt::from_bytes_be_slice(format!("{}", self.backend.chain_config().chain_id).as_bytes())
     }
