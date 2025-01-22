@@ -1,9 +1,9 @@
-name: "Changelog Workflow"
+name: "Changelog Workflow (Orchestrator)"
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
     branches: [main]
-    paths-ignore:
+    paths:
       - 'orchestrator/'
 
 jobs:
@@ -13,3 +13,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: dangoslen/changelog-enforcer@v3
+        with:
+          changeLogPath: 'orchestrator/CHANGELOG.md'
