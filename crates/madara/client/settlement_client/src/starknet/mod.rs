@@ -151,18 +151,21 @@ impl ClientTrait for StarknetClient {
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
     ) -> anyhow::Result<()> {
-        let latest_block = self.get_latest_block_number().await?;
-        let selector = get_selector_from_name("LogStateUpdate")?;
-        let events_fetch = move || async move {
-            self.get_events(
-                BlockId::Number(latest_block),
-                BlockId::Number(latest_block),
-                self.l2_core_contract,
-                vec![selector],
-            )
-        };
+        while let Some(events) = ctx
+            .run_until_cancelled(async {
+                let latest_block = self.get_latest_block_number().await?;
+                let selector = get_selector_from_name("LogStateUpdate")?;
 
-        while let Some(events) = ctx.run_until_cancelled(events_fetch().await).await {
+                self.get_events(
+                    BlockId::Number(latest_block),
+                    BlockId::Number(latest_block),
+                    self.l2_core_contract,
+                    vec![selector],
+                )
+                .await
+            })
+            .await
+        {
             let events_fetched = events?;
             if let Some(event) = events_fetched.last() {
                 let data = event;

@@ -1,6 +1,6 @@
 use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
-use log::warn;
+use log::error;
 use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
@@ -148,7 +148,7 @@ impl Stream for StarknetEventStream {
                 // Following scenarios can lead to this:
                 // - Not able to call the RPC and fetch events.
                 // - Connection Issues.
-                warn!("Starknet Event Stream : Unable to fetch events from starknet stream. Restart Sequencer.");
+                error!("Starknet Event Stream : Unable to fetch events from starknet stream. Restart Sequencer.");
                 Poll::Ready(Some(None))
             }
         }

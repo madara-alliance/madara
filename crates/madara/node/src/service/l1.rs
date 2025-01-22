@@ -57,7 +57,7 @@ pub type StarknetSyncService = L1SyncService<StarknetClientConfig, StarknetEvent
 // Implementation for Ethereum
 impl EthereumSyncService {
     pub async fn new(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Self> {
-        let settlement_client = if sync_config.should_enable_sync(config) {
+        let settlement_client = {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Address::from_str(sync_config.l1_core_address.as_str())?;
                 let client = EthereumClient::new(EthereumClientConfig {
@@ -76,8 +76,6 @@ impl EthereumSyncService {
                     "No Ethereum endpoint provided. Use --l1-endpoint <RPC URL> or disable with --no-l1-sync."
                 );
             }
-        } else {
-            None
         };
 
         Self::create_service(config, sync_config, settlement_client).await
@@ -87,7 +85,7 @@ impl EthereumSyncService {
 // Implementation for Starknet
 impl StarknetSyncService {
     pub async fn new(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Self> {
-        let settlement_client = if sync_config.should_enable_sync(config) {
+        let settlement_client = {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
                 let core_address = Felt::from_str(sync_config.l1_core_address.as_str())?;
                 let client = StarknetClient::new(StarknetClientConfig {
@@ -106,8 +104,6 @@ impl StarknetSyncService {
                     "No Starknet endpoint provided. Use --l1-endpoint <RPC URL> or disable with --no-l1-sync."
                 );
             }
-        } else {
-            None
         };
 
         Self::create_service(config, sync_config, settlement_client).await
@@ -157,12 +153,14 @@ where
     }
 
     // Factory method to create the appropriate service
-    // Add the if condition here :
-    // should_enable_sync
     pub async fn create(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Box<dyn Service>> {
-        match config.settlement_layer {
-            MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),
-            MadaraSettlementLayer::Starknet => Ok(Box::new(StarknetSyncService::new(config, sync_config).await?)),
+        if sync_config.should_enable_sync(config) {
+            match config.settlement_layer {
+                MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),
+                MadaraSettlementLayer::Starknet => Ok(Box::new(StarknetSyncService::new(config, sync_config).await?)),
+            }
+        } else {
+            Err(anyhow::anyhow!("❗ L1 Sync is disabled"))
         }
     }
 }
