@@ -2,6 +2,7 @@ use std::{panic::AssertUnwindSafe, sync::atomic::AtomicUsize, thread};
 use tokio::sync::Semaphore;
 
 /// Wraps the rayon pool in a tokio-friendly way.
+///
 /// This should be avoided in RPC/p2p/any other end-user endpoints, as this could be a DoS vector. To avoid that,
 /// signature verification should probably be done before sending to the rayon pool
 /// As a safety, a semaphore is added to bound the queue and support backpressure.
