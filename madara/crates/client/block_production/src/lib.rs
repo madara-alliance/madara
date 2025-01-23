@@ -100,6 +100,7 @@ struct ContinueBlockResult {
 }
 
 /// The block production task consumes transactions from the mempool in batches.
+///
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
 /// and we need to re-add the transactions back into the mempool.
 ///
