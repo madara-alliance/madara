@@ -170,6 +170,7 @@ fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
 /// The backing database for a bonsai storage view. This is used
 /// to implement historical access (for storage proofs), by applying
 /// changes from the trie-log without modifying the real database.
+///
 /// This is kind of a hack for now. This abstraction shouldn't look like
 /// this at all ideally, and it should probably be an implementation
 /// detail of bonsai-trie.
