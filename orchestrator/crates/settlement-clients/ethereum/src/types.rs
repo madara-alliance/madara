@@ -1,5 +1,7 @@
 use alloy::network::{Ethereum, EthereumWallet};
-use alloy::providers::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller};
+use alloy::providers::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
+};
 use alloy::providers::{Identity, RootProvider};
 use alloy::transports::http::{Client, Http};
 use alloy_primitives::U256;

@@ -112,7 +112,7 @@ lazy_static! {
 #[async_trait]
 pub trait QueueProvider: Send + Sync {
     async fn send_message_to_queue(&self, queue: QueueType, payload: String, delay: Option<Duration>)
-    -> EyreResult<()>;
+        -> EyreResult<()>;
     async fn consume_message_from_queue(&self, queue: QueueType) -> std::result::Result<Delivery, QueueError>;
     async fn create_queue(&self, queue_config: &QueueConfig) -> EyreResult<()>;
     async fn setup(&self) -> EyreResult<()> {

@@ -229,13 +229,11 @@ async fn process_job_handles_panic() {
     // DB checks - verify the job was moved to failed state
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(job_in_db.status, JobStatus::Failed);
-    assert!(
-        job_in_db
-            .metadata
-            .get(JOB_METADATA_FAILURE_REASON)
-            .unwrap()
-            .contains("Job handler panicked with message: Simulated panic in process_job")
-    );
+    assert!(job_in_db
+        .metadata
+        .get(JOB_METADATA_FAILURE_REASON)
+        .unwrap()
+        .contains("Job handler panicked with message: Simulated panic in process_job"));
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is not

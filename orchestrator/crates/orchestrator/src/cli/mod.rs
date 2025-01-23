@@ -607,10 +607,18 @@ pub mod validate_params {
         Ok(ServiceParams {
             // return None if the value is empty string
             max_block_to_process: service_args.max_block_to_process.clone().and_then(|s| {
-                if s.is_empty() { None } else { Some(s.parse::<u64>().expect("Failed to parse max block to process")) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.parse::<u64>().expect("Failed to parse max block to process"))
+                }
             }),
             min_block_to_process: service_args.min_block_to_process.clone().and_then(|s| {
-                if s.is_empty() { None } else { Some(s.parse::<u64>().expect("Failed to parse min block to process")) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.parse::<u64>().expect("Failed to parse min block to process"))
+                }
             }),
         })
     }

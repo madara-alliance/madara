@@ -671,7 +671,11 @@ pub mod test {
 
         let mut new_hex_chars = hex_chars.join("");
         new_hex_chars = new_hex_chars.trim_start_matches('0').to_string();
-        if new_hex_chars.is_empty() { "0x0".to_string() } else { format!("0x{}", new_hex_chars) }
+        if new_hex_chars.is_empty() {
+            "0x0".to_string()
+        } else {
+            format!("0x{}", new_hex_chars)
+        }
     }
 
     fn create_state_diff(
