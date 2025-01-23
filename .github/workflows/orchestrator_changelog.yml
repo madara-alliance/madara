@@ -2,7 +2,6 @@ name: "Changelog Workflow (Orchestrator)"
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-    branches: [main]
     paths:
       - 'orchestrator/'
 
