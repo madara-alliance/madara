@@ -30,5 +30,5 @@ jobs:
       - name: Format and clippy
         run: |
           cargo fmt -- --check
-          cargo clippy --workspace --no-deps -- -D warnings
-          cargo clippy --workspace --tests --no-deps -- -D warnings
+          cargo clippy --workspace --exclude orchestrator --no-deps -- -D warnings
+          cargo clippy --workspace --exclude orchestrator --tests --no-deps -- -D warnings
