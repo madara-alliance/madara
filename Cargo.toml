@@ -29,14 +29,14 @@ members = [
   "madara/crates/client/block_production",
 
   # orchestrator
-  "orchestrator/crates/orchestrator", # TODO: rename
+  "orchestrator/crates/orchestrator",                                   # TODO: rename
   "orchestrator/crates/da-clients/da-client-interface",
   "orchestrator/crates/da-clients/ethereum",
   "orchestrator/crates/prover-clients/prover-client-interface",
   "orchestrator/crates/prover-clients/gps-fact-checker",
   "orchestrator/crates/prover-clients/sharp-service",
   "orchestrator/crates/prover-clients/atlantic-service",
-  "orchestrator/crates/utils", # TODO: rename
+  "orchestrator/crates/utils",                                          # TODO: rename
   "orchestrator/crates/settlement-clients/settlement-client-interface",
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
@@ -165,7 +165,9 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 ] }
 starknet-types-rpc = "0.7.1"
 
-blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = ["testing"] }
+blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+  "testing",
+] }
 starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
@@ -330,7 +332,9 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
-starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = ["testing"] }
+starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+  "testing",
+] }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
