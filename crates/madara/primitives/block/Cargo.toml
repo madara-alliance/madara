@@ -14,6 +14,10 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+default = []
+testing = []
+
 [dependencies]
 
 # Madara
@@ -31,6 +35,7 @@ blockifier = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
 starknet_api.workspace = true
+malachite-core-types.workspace = true
 
 # Other
 primitive-types.workspace = true

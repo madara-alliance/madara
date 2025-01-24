@@ -28,6 +28,7 @@ members = [
   "crates/madara/proc-macros",
   "crates/madara/tests",
   "crates/madara/cairo-test-contracts",
+  "crates/madara/primitives/malachite",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -374,6 +375,12 @@ dotenv = "0.15.0"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
+
+# Starknet consensus
+
+[workspace.dependencies.malachite-core-types]
+git = "https://github.com/informalsystems/malachite.git"
+package = "informalsystems-malachitebft-core-types"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

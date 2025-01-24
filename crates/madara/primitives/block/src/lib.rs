@@ -227,6 +227,7 @@ impl MadaraMaybePendingBlock {
 }
 
 /// Starknet block definition.
+#[cfg_attr(any(test, feature = "testing"), derive(PartialEq))]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MadaraBlock {
     pub info: MadaraBlockInfo,
@@ -241,6 +242,37 @@ impl MadaraBlock {
 
     pub fn version(&self) -> StarknetVersion {
         self.info.header.protocol_version
+    }
+}
+
+/// For testing we use a more rigorous impl of [PartialEq] which doesn't just
+/// check the block hash.
+#[cfg(not(any(test, feature = "testing")))]
+impl PartialEq for MadaraBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.info.block_hash == other.info.block_hash
+    }
+}
+
+impl Eq for MadaraBlock {}
+
+impl Ord for MadaraBlock {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.info.header.block_number.cmp(&other.info.header.block_number)
+    }
+}
+
+impl PartialOrd for MadaraBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl malachite_core_types::Value for MadaraBlock {
+    type Id = Felt;
+
+    fn id(&self) -> Self::Id {
+        self.info.block_hash
     }
 }
 
