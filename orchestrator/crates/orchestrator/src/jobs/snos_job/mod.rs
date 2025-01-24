@@ -30,7 +30,7 @@ pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
 
-pub const COMPILED_OS: &[u8] = include_bytes!("../../../../../../build/os_latest.json");
+pub const COMPILED_OS: &[u8] = include_bytes!("../../../../../build/os_latest.json");
 
 #[derive(Error, Debug, PartialEq)]
 pub enum SnosError {

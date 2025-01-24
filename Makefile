@@ -154,3 +154,15 @@ restart: clean
 .PHONY: frestart
 frestart: fclean
 	@make --silent start
+
+
+snos:
+	python3.9 -m venv orchestrator_venv && \
+	. ./orchestrator_venv/bin/activate && \
+	pip install cairo-lang==0.13.2 "sympy<1.13.0" && \
+	mkdir -p orchestrator/build && \
+	git submodule update --init --recursive && \
+	cd cairo-lang && \
+	git checkout $(CAIRO_LANG_COMMIT) && \
+	cd .. && \
+	cairo-compile cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path cairo-lang/src
