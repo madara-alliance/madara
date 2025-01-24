@@ -1,0 +1,20 @@
+[package]
+name = "malachite"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+# Madara
+mp-block.workspace = true
+
+# Starknet
+malachite-core-types.workspace = true
+starknet-types-core.workspace = true
+
+[lints]
+workspace = true
