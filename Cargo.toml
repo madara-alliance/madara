@@ -330,7 +330,6 @@ bincode = "1.3"
 
 # Numbers
 base64 = "0.22"
-sha3 = "0.10"
 bigdecimal = "0.4.5"
 num-traits = "0.2"
 num-bigint = "0.4"
@@ -374,6 +373,7 @@ dotenv = "0.15.0"
 # Misc
 flate2 = "1.0"
 regex = "1.10.5"
+sha3 = "0.10"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
