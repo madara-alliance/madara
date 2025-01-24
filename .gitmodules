@@ -6,6 +6,3 @@
     path = madara-bootstrapper
 	url = https://github.com/madara-alliance/madara-bootstrapper.git
 	ignore = all
-[submodule "pathfinder"]
-	path = pathfinder
-	url = https://github.com/eqlabs/pathfinder.git
