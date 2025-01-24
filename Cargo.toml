@@ -69,6 +69,18 @@ default-members = [
   "madara/crates/primitives/chain_config",
   "madara/crates/primitives/utils",
   "madara/crates/proc-macros",
+
+  "orchestrator/crates/orchestrator",                                   # TODO: rename
+  "orchestrator/crates/da-clients/da-client-interface",
+  "orchestrator/crates/da-clients/ethereum",
+  "orchestrator/crates/prover-clients/prover-client-interface",
+  "orchestrator/crates/prover-clients/gps-fact-checker",
+  "orchestrator/crates/prover-clients/sharp-service",
+  "orchestrator/crates/prover-clients/atlantic-service",
+  "orchestrator/crates/utils",                                          # TODO: rename
+  "orchestrator/crates/settlement-clients/settlement-client-interface",
+  "orchestrator/crates/settlement-clients/ethereum",
+  "orchestrator/crates/settlement-clients/starknet",
 ]
 
 [workspace.lints.rust]
@@ -190,7 +202,7 @@ async-trait = "0.1"
 base64 = "0.22"
 sha3 = "0.10"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
-clap = { version = "4.4" }
+clap = { version = "4.4", features = ["derive", "env"] }
 flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.22", default-features = false, features = [
