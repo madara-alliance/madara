@@ -4,7 +4,7 @@ name: Task - Linters Cargo
 on:
   workflow_dispatch:
   workflow_call:
-
+  
 jobs:
   cargo-lint:
     runs-on: ubuntu-latest
@@ -17,18 +17,20 @@ jobs:
         with:
           toolchain: 1.81
           components: rustfmt, clippy
-
+  
       - uses: software-mansion/setup-scarb@v1
         with:
           scarb-version: "2.8.2"
-
+  
       - name: Setup build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
-
+  
       - name: Format and clippy
         run: |
           cargo fmt -- --check
-          cargo clippy --workspace --exclude orchestrator --no-deps -- -D warnings
-          cargo clippy --workspace --exclude orchestrator --tests --no-deps -- -D warnings
+          cargo clippy --workspace --no-deps -- -D warnings
+          cargo clippy --workspace --tests --no-deps -- -D warnings
+          cargo clippy --workspace --features testing --no-deps -- -D warnings
+          cargo clippy --workspace --features testing --tests --no-deps -- -D warnings
