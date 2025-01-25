@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- ci: linters added
 - readme: setup instructions added
 - Added : Grafana dashboard
 - tests: http_client tests added
