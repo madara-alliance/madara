@@ -23,4 +23,4 @@ jobs:
 
       - name: Check the project
         run: |
-          cargo check --release --workspace --exclude orchestrator
+          cargo check --release --workspace
