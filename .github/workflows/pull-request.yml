@@ -24,10 +24,10 @@ jobs:
     name: Run linters
     needs: update_db_version
     uses: ./.github/workflows/linters.yml
-
+  
   linters_orchestrator:
     name: Run Orchestrator linters
-    if: contains(github.event.pull_request.files.*.path, 'orchestrator/')
+    needs: update_db_version
     uses: ./.github/workflows/linters-orchestrator.yml
 
   rust_check:
