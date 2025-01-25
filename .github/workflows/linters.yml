@@ -10,10 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run prettier root
-        run: npx prettier --check .
-      - name: Run prettier orchestrator
-        working-directory: orchestrator
+      - name: Run prettier
         run: npx prettier --check .
 
   markdown-lint:
