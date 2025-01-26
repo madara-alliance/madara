@@ -14,17 +14,19 @@ scan_todos() {
         exit 1
     fi
 
-    # Build the find command based on whether an extension is provided
-    local find_cmd="find \"$dir\" -type f"
-    if [ -n "$ext" ]; then
-        find_cmd+=" -name \"*.$ext\""
-    fi
-    if [ -n "$max_depth" ]; then
-        find_cmd+=" -maxdepth $max_depth"
-    fi
+# Build the find command using an array
+local find_cmd=(find "$dir" -type f)
+if [ -n "$ext" ]; then
+    find_cmd+=(-name "*.$ext")
+fi
+if [ -n "$max_depth" ]; then
+    find_cmd+=(-maxdepth "$max_depth")
+fi
 
-    # Execute the find command and process the files
-    eval $find_cmd | while read -r file; do
+# Execute the find command and process the files
+"${find_cmd[@]}" | while read -r file; do
+    ...
+done
         # Search for TODO/FIXME and group results by file
         matches=$(grep -n -E "TODO|FIXME" "$file")
         if [ -n "$matches" ]; then
