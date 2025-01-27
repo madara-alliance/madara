@@ -11,7 +11,7 @@ jobs:
   coverage:
     permissions:
       pull-requests: write
-    runs-on: karnot-arc-runner-set
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup build deps
