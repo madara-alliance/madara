@@ -20,6 +20,10 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/db-version.yml
 
+  changelog_orchestrator:
+    name: Update Orchestrator Changelog
+    uses: ./.github/workflows/orchestrator_changelog.yml
+
   linters:
     name: Run linters
     needs: update_db_version
@@ -56,3 +60,8 @@ jobs:
     name: Run JS Tests
     needs: build
     uses: ./.github/workflows/starknet-js-test.yml
+
+  e2e_test:
+    name: Run E2E Tests
+    needs: build
+    uses: ./.github/workflows/e2e-test.yml
