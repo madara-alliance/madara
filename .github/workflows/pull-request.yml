@@ -35,11 +35,17 @@ jobs:
     needs: rust_check
     uses: ./.github/workflows/linters-cargo.yml
 
-  coverage:
-    name: Run Coverage
+  madara_coverage:
+    name: Run Madara Coverage
     needs: update_db_version
     secrets: inherit
     uses: ./.github/workflows/coverage.yml
+
+  orchestrator_coverage:
+    name: Run Orchestrator Coverage
+    needs: update_db_version
+    secrets: inherit
+    uses: ./.github/workflows/orchestrator-coverage.yml
 
   build:
     name: Build Madara

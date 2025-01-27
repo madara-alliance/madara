@@ -1,0 +1,141 @@
+name: Rust Test & Coverage
+
+on:
+  workflow_call:
+    secrets:
+      ETHEREUM_SEPOLIA_BLAST_RPC:
+        required: true
+      RPC_FOR_SNOS:
+        required: true
+
+jobs:
+  coverage:
+    runs-on: karnot-arc-runner-set
+
+    services:
+      localstack:
+        image: localstack/localstack
+        env:
+          SERVICES: s3, sqs, sns
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install necessary dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libclang-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Display Python version
+        run: python --version
+
+      - name: Install cairo 0
+        run: |
+          # Creating venv
+          python3.9 -m venv ~/cairo_venv
+          source ~/cairo_venv/bin/activate
+
+          # Installing deps
+          sudo apt install -y libgmp3-dev
+          pip3 install ecdsa fastecdsa sympy
+
+          # Installing cairo lang
+          pip3 install cairo-lang
+
+      - name: Check Anvil Installation
+        run: |
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+
+      - name: Install cargo-llvm-cov & nextest
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Setup scarb
+        uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.2"
+
+      - name: Build Mock Contracts using Scarb
+        run: |
+          cd crates/settlement-clients/starknet/src/tests/mock_contracts
+          scarb fmt --check
+          scarb build
+
+      - name: Checkout Madara
+        uses: actions/checkout@v4
+        with:
+          repository: madara-alliance/madara
+          ref: "0c821aecd1cafc516d00548473fcaddaa4dc0ce4"
+          path: madara
+
+      - name: Build Madara
+        working-directory: madara
+        run: |
+          cargo build
+          mv target/debug/madara ../madara-binary
+          cd ..
+          echo -e "
+          MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/madara-binary\"" >> .env.test
+          cat .env.test
+
+      - name: Getting neccesary files for testing
+        run: |
+          wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
+          # TODO: this can be optimised
+          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./crates/orchestrator/src/tests/artifacts/238996-SN.zip
+
+      - name: Build SNOS files
+        run: |
+          make snos
+
+      - name: Check rust version
+        run: rustup show
+
+      - name: Run llvm-cov tests
+        env:
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests --no-fail-fast
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          files: lcov.info
+          debug: true
