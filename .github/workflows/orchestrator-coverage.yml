@@ -10,7 +10,7 @@ on:
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
 
     services:
       localstack:
@@ -144,7 +144,7 @@ jobs:
             --workspace \
             --package orchestrator \
             --exclude madara \
-            --exclude orchestrator/e2e-tests \
+            --exclude oe2e-tests \
             --no-fail-fast
 
       - name: Coveralls

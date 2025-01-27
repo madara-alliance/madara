@@ -8,7 +8,7 @@ on:
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
 
     services:
       localstack:
