@@ -60,5 +60,5 @@ jobs:
       - name: Orchestrator Format and clippy
         working-directory: orchestrator
         run: |
-          cargo clippy --workspace --features testing --no-deps -- -D warnings
-          cargo clippy --workspace --features testing --tests --no-deps -- -D warnings
+          cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
+          cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings

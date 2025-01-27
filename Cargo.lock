@@ -1775,7 +1775,7 @@ dependencies = [
  "env_logger 0.11.6",
  "gps-fact-checker",
  "hex",
- "httpmock",
+ "httpmock 0.7.0",
  "lazy_static",
  "log",
  "opentelemetry",
@@ -2528,6 +2528,17 @@ name = "base64ct"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
+
+[[package]]
+name = "basic-cookies"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67bd8fd42c16bdb08688243dc5f0cc117a3ca9efeeaba3a345a18a6159ad96f7"
+dependencies = [
+ "lalrpop 0.20.2",
+ "lalrpop-util 0.20.2",
+ "regex",
+]
 
 [[package]]
 name = "bb8"
@@ -6631,6 +6642,34 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "httpmock"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08ec9586ee0910472dec1a1f0f8acf52f0fdde93aea74d70d4a3107b4be0fd5b"
+dependencies = [
+ "assert-json-diff",
+ "async-object-pool",
+ "async-std",
+ "async-trait",
+ "base64 0.21.7",
+ "basic-cookies",
+ "crossbeam-utils",
+ "form_urlencoded",
+ "futures-util",
+ "hyper 0.14.31",
+ "lazy_static",
+ "levenshtein",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_regex",
+ "similar",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "httpmock"
 version = "0.8.0-alpha.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d649264818ad8f19c01f72b4ddf2f0cfcd1183691b956de733673e81d8a51f"
@@ -7464,6 +7503,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
+name = "levenshtein"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db13adb97ab515a3691f56e4dbab09283d0b86cb45abd991d8634a9d6f501760"
+
+[[package]]
 name = "libc"
 version = "0.2.161"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7947,7 +7992,7 @@ dependencies = [
  "bitvec",
  "dotenv",
  "futures",
- "httpmock",
+ "httpmock 0.7.0",
  "lazy_static",
  "mc-analytics",
  "mc-db",
@@ -8155,7 +8200,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "futures",
- "httpmock",
+ "httpmock 0.7.0",
  "hyper 1.5.0",
  "jsonrpsee",
  "m-cairo-test-contracts",
@@ -9097,7 +9142,7 @@ dependencies = [
  "ethereum-settlement-client",
  "futures",
  "hex",
- "httpmock",
+ "httpmock 0.8.0-alpha.1",
  "hyper 0.14.31",
  "itertools 0.13.0",
  "lazy_static",
@@ -11382,7 +11427,7 @@ dependencies = [
  "dotenvy",
  "gps-fact-checker",
  "hex",
- "httpmock",
+ "httpmock 0.7.0",
  "lazy_static",
  "log",
  "opentelemetry",
@@ -13200,7 +13245,7 @@ dependencies = [
  "base64 0.22.1",
  "color-eyre",
  "dotenv",
- "httpmock",
+ "httpmock 0.7.0",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

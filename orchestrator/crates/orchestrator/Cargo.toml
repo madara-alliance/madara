@@ -103,4 +103,5 @@ testing = []
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
-httpmock = { workspace = true, features = ["remote"] }
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
+
