@@ -65,3 +65,4 @@ jobs:
     name: Run E2E Tests
     needs: build
     uses: ./.github/workflows/e2e-test.yml
+    secrets: inherit
