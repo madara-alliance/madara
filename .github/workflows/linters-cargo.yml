@@ -57,5 +57,8 @@ jobs:
           cargo fmt -- --check
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
+      - name: Orchestrator Format and clippy
+        working-directory: orchestrator
+        run: |
           cargo clippy --workspace --features testing --no-deps -- -D warnings
           cargo clippy --workspace --features testing --tests --no-deps -- -D warnings

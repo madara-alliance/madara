@@ -101,6 +101,6 @@ with_sqs = ["omniqueue"]
 testing = []
 
 [dev-dependencies]
-hyper = { workspace = true, features = ["full"] }
+hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { workspace = true, features = ["remote"] }
