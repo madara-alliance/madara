@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy::network::Ethereum;
 use alloy::primitives::{I256, U256};
-use alloy::providers::{PendingTransactionError, Provider};
+use alloy::providers::Provider;
 use alloy::rpc::types::eth::TransactionReceipt;
 use alloy::sol;
 use alloy::transports::http::Http;
@@ -62,8 +62,6 @@ sol! {
 pub enum StarknetValidityContractError {
     #[error("RPC error: {0}")]
     RpcError(#[from] RpcError<TransportErrorKind>),
-    #[error("Pending Transaction Error: {0}")]
-    PendingTransactionError(#[from] PendingTransactionError),
     #[error("Failed to estimate gas: {0}")]
     EstimateGasError(#[from] alloy::contract::Error),
 }
@@ -128,7 +126,7 @@ where
             .await?
             .get_receipt()
             .await
-            .map_err(StarknetValidityContractError::PendingTransactionError)
+            .map_err(StarknetValidityContractError::RpcError)
     }
 
     async fn update_state_kzg(
@@ -155,6 +153,6 @@ where
             .await?
             .get_receipt()
             .await
-            .map_err(StarknetValidityContractError::PendingTransactionError)
+            .map_err(StarknetValidityContractError::RpcError)
     }
 }

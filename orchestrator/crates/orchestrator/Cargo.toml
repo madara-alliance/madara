@@ -12,7 +12,14 @@ name = "orchestrator"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { version = "0.2.1", features = [
+  "full",
+  "node-bindings",
+  "rpc-types-debug",
+  "rpc-types-trace",
+  "json-rpc",
+  "rpc-client",
+] }
 assert_matches = { workspace = true }
 async-std = { workspace = true }
 async-trait = { workspace = true }

@@ -14,7 +14,7 @@ dotenvy.workspace = true
 env_logger.workspace = true
 gps-fact-checker.workspace = true
 hex.workspace = true
-httpmock.workspace = true
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 lazy_static.workspace = true
 log.workspace = true
 prover-client-interface.workspace = true
@@ -51,4 +51,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 tokio.workspace = true
-httpmock.workspace = true
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
