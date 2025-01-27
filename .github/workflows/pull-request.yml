@@ -22,7 +22,7 @@ jobs:
 
   changelog_orchestrator:
     name: Update Orchestrator Changelog
-    uses: ./.github/workflows/orchestrator_changelog.yml
+    uses: ./.github/workflows/orchestrator-changelog.yml
 
   linters:
     name: Run linters
