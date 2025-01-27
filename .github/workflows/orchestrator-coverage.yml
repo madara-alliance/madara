@@ -91,6 +91,7 @@ jobs:
           scarb-version: "2.8.2"
 
       - name: Build Mock Contracts using Scarb
+        working-directory: orchestrator
         run: |
           cd crates/settlement-clients/starknet/src/tests/mock_contracts
           scarb fmt --check
@@ -101,10 +102,10 @@ jobs:
         with:
           repository: madara-alliance/madara
           ref: "0c821aecd1cafc516d00548473fcaddaa4dc0ce4"
-          path: madara
+          path: orchestrator/madara
 
       - name: Build Madara
-        working-directory: madara
+        working-directory: orchestrator/madara
         run: |
           cargo build
           mv target/debug/madara ../madara-binary
@@ -114,6 +115,7 @@ jobs:
           cat .env.test
 
       - name: Getting neccesary files for testing
+        working-directory: orchestrator
         run: |
           wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
           # TODO: this can be optimised
@@ -132,7 +134,18 @@ jobs:
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
-        run: RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest --release --features testing --lcov --output-path lcov.info --test-threads=1 --workspace --exclude=e2e-tests --no-fail-fast
+        run: |
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+            --release \
+            --features testing \
+            --lcov \
+            --output-path lcov.info \
+            --test-threads=1 \
+            --workspace \
+            --package orchestrator \
+            --exclude madara \
+            --exclude orchestrator/e2e-tests \
+            --no-fail-fast
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
