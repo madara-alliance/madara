@@ -142,9 +142,8 @@ jobs:
             --output-path lcov.info \
             --test-threads=1 \
             --workspace \
-            --package orchestrator \
             --exclude madara \
-            --exclude oe2e-tests \
+            --exclude e2e-tests \
             --no-fail-fast
 
       - name: Coveralls
