@@ -131,10 +131,10 @@ mod settlement_client_tests {
     use alloy::sol_types::private::U256;
     use alloy_primitives::FixedBytes;
     use color_eyre::eyre::eyre;
+    use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+    use orchestrator_utils::env_utils::get_env_var_or_panic;
     use rstest::rstest;
-    use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
     use tokio::time::sleep;
-    use utils::env_utils::get_env_var_or_panic;
 
     use super::{BLOCK_TIME, ENV_FILE_PATH};
     use crate::conversion::to_padded_hex;

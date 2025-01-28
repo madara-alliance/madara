@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use httpmock::MockServer;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use reqwest::Client;
 use serde_json::Value;
-use utils::env_utils::get_env_var_or_panic;
 
 #[allow(dead_code)]
 /// MockServerGlobal (has mock server inside)

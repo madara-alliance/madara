@@ -20,12 +20,12 @@ use orchestrator::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use orchestrator::queue::job_queue::JobQueueMessage;
 use orchestrator::queue::sqs::AWSSQSValidatedArgs;
 use orchestrator::queue::QueueType;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate};
 use url::Url;
-use utils::env_utils::get_env_var_or_panic;
 use uuid::Uuid;
 
 extern crate e2e_tests;

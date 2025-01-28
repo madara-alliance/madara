@@ -22,12 +22,12 @@ dotenvy.workspace = true
 itertools.workspace = true
 log.workspace = true
 num-bigint.workspace = true
+orchestrator-utils.workspace = true
 serde.workspace = true
 starknet.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
-orchestrator-utils.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

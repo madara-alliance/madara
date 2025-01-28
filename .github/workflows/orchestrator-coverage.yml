@@ -141,9 +141,8 @@ jobs:
             --lcov \
             --output-path lcov.info \
             --test-threads=1 \
-            --workspace \
-            --exclude=madara \
-            --exclude=e2e-tests
+            --package "orchestrator-*" \
+            --no-fail-fast
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2

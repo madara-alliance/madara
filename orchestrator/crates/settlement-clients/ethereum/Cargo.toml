@@ -22,14 +22,14 @@ dotenvy = { workspace = true }
 lazy_static = { workspace = true }
 log.workspace = true
 mockall = { workspace = true }
+orchestrator-settlement-client-interface = { workspace = true }
+orchestrator-utils = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-orchestrator-settlement-client-interface = { workspace = true }
 starknet-os = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
-orchestrator-utils = { workspace = true }
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

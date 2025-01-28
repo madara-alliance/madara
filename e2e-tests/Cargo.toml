@@ -25,11 +25,12 @@ clap.workspace = true
 color-eyre.workspace = true
 dotenvy.workspace = true
 env_logger.workspace = true
-orchestrator-ethereum-settlement-client.workspace = true
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 log.workspace = true
 mongodb.workspace = true
 orchestrator-core.workspace = true
+orchestrator-ethereum-settlement-client.workspace = true
+orchestrator-utils.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rstest.workspace = true
 serde.workspace = true
@@ -42,7 +43,6 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
 url.workspace = true
-orchestrator-utils.workspace = true
 uuid.workspace = true
 
 [[test]]

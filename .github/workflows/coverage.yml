@@ -49,7 +49,7 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev --workspace --exclude=orchestrator --exclude=e2e-tests
+          cargo test --profile dev --package "mc-*" --package "mp-*"
 
       - name: Generate coverage info
         run: |

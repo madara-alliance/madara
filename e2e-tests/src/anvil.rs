@@ -7,9 +7,9 @@ use alloy::primitives::{fixed_bytes, Address, Bytes, I256, U256};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use tokio::time::sleep;
 use url::Url;
-use utils::env_utils::get_env_var_or_panic;
 
 sol!(
     #[allow(missing_docs)]
