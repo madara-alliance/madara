@@ -27,7 +27,7 @@ use alloy::primitives::{keccak256, B256};
 use cairo_vm::Felt252;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use utils::ensure;
+use orchestrator_utils::ensure;
 
 use super::error::FactError;
 use super::fact_topology::FactTopology;

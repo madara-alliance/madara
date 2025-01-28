@@ -1,5 +1,5 @@
 [package]
-name = "gps-fact-checker"
+name = "orchestrator-gps-fact-checker"
 version.workspace = true
 edition.workspace = true
 
@@ -27,7 +27,7 @@ starknet.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
-utils.workspace = true
+orchestrator-utils.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

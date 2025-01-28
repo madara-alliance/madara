@@ -1,4 +1,4 @@
-use ethereum_da_client::EthereumDaValidatedArgs;
+use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
 
 pub mod ethereum;
 

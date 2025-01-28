@@ -7,7 +7,7 @@ use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use httpmock::prelude::*;
 use mockall::predicate::eq;
-use prover_client_interface::{MockProverClient, TaskStatus};
+use orchestrator_prover_client_interface::{MockProverClient, TaskStatus};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;

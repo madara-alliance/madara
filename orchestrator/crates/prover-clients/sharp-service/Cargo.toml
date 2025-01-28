@@ -1,5 +1,5 @@
 [package]
-name = "sharp-service"
+name = "orchestrator-sharp-service"
 version.workspace = true
 edition.workspace = true
 
@@ -10,12 +10,12 @@ base64.workspace = true
 cairo-vm.workspace = true
 color-eyre.workspace = true
 dotenvy.workspace = true
-gps-fact-checker.workspace = true
+orchestrator-gps-fact-checker.workspace = true
 hex.workspace = true
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 lazy_static.workspace = true
 log.workspace = true
-prover-client-interface.workspace = true
+orchestrator-prover-client-interface.workspace = true
 reqwest.workspace = true
 rstest.workspace = true
 serde.workspace = true
@@ -24,7 +24,7 @@ starknet-os.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
-utils.workspace = true
+orchestrator-utils.workspace = true
 uuid.workspace = true
 
 #Instrumentation

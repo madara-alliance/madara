@@ -14,7 +14,7 @@ use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
-use settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;

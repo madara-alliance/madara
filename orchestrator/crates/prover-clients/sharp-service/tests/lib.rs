@@ -3,14 +3,14 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
 // ProverClient
-use prover_client_interface::ProverClient;
-use prover_client_interface::{Task, TaskStatus};
+use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_prover_client_interface::{Task, TaskStatus};
+use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde_json::json;
-use sharp_service::{SharpProverService, SharpValidatedArgs};
 use starknet_os::sharp::CairoJobStatus;
 use url::Url;
-use utils::env_utils::get_env_var_or_panic;
 
 use crate::constants::TEST_FACT;
 

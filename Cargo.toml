@@ -40,7 +40,7 @@ members = [
   "orchestrator/crates/settlement-clients/settlement-client-interface",
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
-  "e2e-tests",                                                          # TODO: rename / merge with existing tests
+  "e2e-tests", # TODO: rename / merge with existing tests
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -343,17 +343,17 @@ majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = 
 starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 
-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
-utils = { path = "orchestrator/crates/utils" }
-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
-orchestrator = { path = "orchestrator/crates/orchestrator" }
+orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
+orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
+orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
+orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
+orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
+orchestrator-utils = { path = "orchestrator/crates/utils" }
+orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
+orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
+orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
+orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-core = { path = "orchestrator/crates/orchestrator" }
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

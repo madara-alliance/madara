@@ -1,5 +1,5 @@
 use alloy::primitives::hex::FromHexError;
-use prover_client_interface::ProverClientError;
+use orchestrator_prover_client_interface::ProverClientError;
 use reqwest::StatusCode;
 
 #[derive(Debug, thiserror::Error)]

@@ -5,17 +5,17 @@ use std::sync::Arc;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
-use da_client_interface::{DaClient, MockDaClient};
-use ethereum_da_client::EthereumDaValidatedArgs;
-use ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use httpmock::MockServer;
-use prover_client_interface::{MockProverClient, ProverClient};
-use settlement_client_interface::{MockSettlementClient, SettlementClient};
-use sharp_service::SharpValidatedArgs;
+use orchestrator_da_client_interface::{DaClient, MockDaClient};
+use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
+use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
+use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
+use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
+use orchestrator_sharp_service::SharpValidatedArgs;
+use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
-use utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
 
 use super::common::delete_storage;
 use crate::alerts::aws_sns::AWSSNSValidatedArgs;
@@ -299,10 +299,10 @@ async fn implement_api_server(api_server_type: ConfigType, config: Arc<Config>) 
 pub mod implement_client {
     use std::sync::Arc;
 
-    use da_client_interface::{DaClient, MockDaClient};
     use httpmock::MockServer;
-    use prover_client_interface::{MockProverClient, ProverClient};
-    use settlement_client_interface::{MockSettlementClient, SettlementClient};
+    use orchestrator_da_client_interface::{DaClient, MockDaClient};
+    use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
+    use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::{JsonRpcClient, Url};
 

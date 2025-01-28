@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::vm::runners::cairo_pie::{BuiltinAdditionalData, CairoPie, PublicMemoryPage};
-use utils::ensure;
+use orchestrator_utils::ensure;
 
 use super::error::FactError;
 

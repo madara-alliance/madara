@@ -1,5 +1,5 @@
 [package]
-name = "settlement-client-interface"
+name = "orchestrator-settlement-client-interface"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -13,4 +13,4 @@ c-kzg = { workspace = true }
 color-eyre = { workspace = true }
 mockall = { workspace = true }
 starknet = { workspace = true }
-utils = { workspace = true }
+orchestrator-utils = { workspace = true }

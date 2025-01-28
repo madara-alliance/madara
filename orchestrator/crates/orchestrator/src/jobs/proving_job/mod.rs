@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, WrapErr};
-use prover_client_interface::{Task, TaskStatus};
+use orchestrator_prover_client_interface::{Task, TaskStatus};
 use thiserror::Error;
 use uuid::Uuid;
 

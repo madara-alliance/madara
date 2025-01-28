@@ -7,8 +7,8 @@ use std::str::FromStr;
 use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
-use gps_fact_checker::FactChecker;
-use prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_gps_fact_checker::FactChecker;
+use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 

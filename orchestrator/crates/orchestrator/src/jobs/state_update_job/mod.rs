@@ -3,12 +3,12 @@ pub mod utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ::utils::collections::{has_dup, is_sorted};
+use ::orchestrator_utils::collections::{has_dup, is_sorted};
 use async_trait::async_trait;
 use cairo_vm::Felt252;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
-use settlement_client_interface::SettlementVerificationStatus;
+use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use starknet_os::io::output::StarknetOsOutput;
 use thiserror::Error;
 use uuid::Uuid;

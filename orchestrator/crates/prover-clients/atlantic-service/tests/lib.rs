@@ -1,10 +1,10 @@
-use atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
-use prover_client_interface::{ProverClient, Task};
+use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
+use orchestrator_prover_client_interface::{ProverClient, Task};
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
-use utils::env_utils::get_env_var_or_panic;
 
 use crate::constants::CAIRO_PIE_PATH;
 

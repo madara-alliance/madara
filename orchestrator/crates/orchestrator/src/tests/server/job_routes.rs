@@ -5,11 +5,11 @@ use std::sync::Arc;
 use chrono::{SubsecRound as _, Utc};
 use hyper::{Body, Request};
 use mockall::predicate::eq;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
-use utils::env_utils::get_env_var_or_panic;
 use uuid::Uuid;
 
 use crate::config::Config;

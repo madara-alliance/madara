@@ -1,5 +1,5 @@
 [package]
-name = "starknet-settlement-client"
+name = "orchestrator-starknet-settlement-client"
 version.workspace = true
 edition.workspace = true
 
@@ -18,12 +18,12 @@ mockall = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
-settlement-client-interface = { workspace = true }
+orchestrator-settlement-client-interface = { workspace = true }
 starknet = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true }
 url = { workspace = true }
-utils = { workspace = true }
+orchestrator-utils = { workspace = true }
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

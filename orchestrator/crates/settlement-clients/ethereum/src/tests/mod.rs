@@ -7,7 +7,7 @@ use alloy::primitives::Address;
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::ProviderBuilder;
 use alloy::sol;
-use utils::env_utils::get_env_var_or_panic;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 // Using the Pipe trait to write chained operations easier
 #[allow(dead_code)]
 trait Pipe: Sized {

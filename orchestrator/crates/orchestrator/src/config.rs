@@ -2,22 +2,22 @@ use std::sync::Arc;
 
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
-use atlantic_service::AtlanticProverService;
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::{Region, SdkConfig};
 use aws_credential_types::Credentials;
 use cairo_vm::types::layout_name::LayoutName;
 use color_eyre::eyre::eyre;
-use da_client_interface::DaClient;
 use dotenvy::dotenv;
-use ethereum_da_client::EthereumDaClient;
-use ethereum_settlement_client::EthereumSettlementClient;
-use prover_client_interface::ProverClient;
-use settlement_client_interface::SettlementClient;
-use sharp_service::SharpProverService;
+use orchestrator_atlantic_service::AtlanticProverService;
+use orchestrator_da_client_interface::DaClient;
+use orchestrator_ethereum_da_client::EthereumDaClient;
+use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_settlement_client_interface::SettlementClient;
+use orchestrator_sharp_service::SharpProverService;
+use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Url};
-use starknet_settlement_client::StarknetSettlementClient;
 
 use crate::alerts::aws_sns::AWSSNS;
 use crate::alerts::Alerts;

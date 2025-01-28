@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use da_client_interface::DaVerificationStatus;
 #[cfg(feature = "with_mongodb")]
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
+use orchestrator_da_client_interface::DaVerificationStatus;
+use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use serde::{Deserialize, Serialize};
-use settlement_client_interface::SettlementVerificationStatus;
 use uuid::Uuid;
 
 /// An external id.

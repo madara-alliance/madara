@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use gps_fact_checker::FactCheckerError;
 use mockall::automock;
+use orchestrator_gps_fact_checker::FactCheckerError;
 
 /// Prover client provides an abstraction over different proving services that do the following:
 /// - Accept a task containing Cairo intermediate execution artifacts (in PIE format)

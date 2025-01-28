@@ -1,9 +1,9 @@
 use base64::engine::general_purpose;
 use base64::Engine;
 use cairo_vm::types::layout_name::LayoutName;
+use orchestrator_utils::http_client::HttpClient;
 use reqwest::{Certificate, Identity, Method, StatusCode};
 use url::Url;
-use utils::http_client::HttpClient;
 use uuid::Uuid;
 
 use crate::error::SharpError;

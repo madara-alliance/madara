@@ -301,12 +301,12 @@ pub mod validate_params {
     use std::time::Duration;
 
     use alloy::primitives::Address;
-    use atlantic_service::AtlanticValidatedArgs;
     use cairo_vm::types::layout_name::LayoutName;
-    use ethereum_da_client::EthereumDaValidatedArgs;
-    use ethereum_settlement_client::EthereumSettlementValidatedArgs;
-    use sharp_service::SharpValidatedArgs;
-    use starknet_settlement_client::StarknetSettlementValidatedArgs;
+    use orchestrator_atlantic_service::AtlanticValidatedArgs;
+    use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
+    use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
+    use orchestrator_sharp_service::SharpValidatedArgs;
+    use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
     use url::Url;
 
     use super::alert::aws_sns::AWSSNSCliArgs;

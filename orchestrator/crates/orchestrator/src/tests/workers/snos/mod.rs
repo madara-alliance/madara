@@ -1,9 +1,9 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use da_client_interface::MockDaClient;
 use httpmock::MockServer;
 use mockall::predicate::eq;
+use orchestrator_da_client_interface::MockDaClient;
 use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;

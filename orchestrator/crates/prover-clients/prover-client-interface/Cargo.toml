@@ -1,13 +1,13 @@
 [package]
-name = "prover-client-interface"
+name = "orchestrator-prover-client-interface"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
 cairo-vm.workspace = true
-gps-fact-checker.workspace = true
+orchestrator-gps-fact-checker.workspace = true
 mockall.workspace = true
 starknet-os.workspace = true
 thiserror.workspace = true
-utils.workspace = true
+orchestrator-utils.workspace = true

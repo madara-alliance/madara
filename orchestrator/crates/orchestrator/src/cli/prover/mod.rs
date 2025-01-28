@@ -1,5 +1,5 @@
-use atlantic_service::AtlanticValidatedArgs;
-use sharp_service::SharpValidatedArgs;
+use orchestrator_atlantic_service::AtlanticValidatedArgs;
+use orchestrator_sharp_service::SharpValidatedArgs;
 
 pub mod atlantic;
 pub mod sharp;

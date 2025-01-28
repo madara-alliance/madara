@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use cairo_vm::types::layout_name::LayoutName;
+use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
 use url::Url;
-use utils::http_client::{HttpClient, RequestBuilder};
 
 use crate::error::AtlanticError;
 use crate::types::{AtlanticAddJobResponse, AtlanticGetStatusResponse};

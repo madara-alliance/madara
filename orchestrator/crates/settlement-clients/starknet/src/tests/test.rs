@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre::eyre;
+use orchestrator_settlement_client_interface::SettlementClient;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::{fixture, rstest};
-use settlement_client_interface::SettlementClient;
 use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::contract::ContractFactory;
 use starknet::core::types::contract::{CompiledClass, SierraClass};
@@ -17,7 +18,6 @@ use starknet::macros::{felt, selector};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
 use starknet::signers::{LocalWallet, SigningKey};
-use utils::env_utils::get_env_var_or_panic;
 
 use super::setup::{wait_for_cond, MadaraCmd, MadaraCmdBuilder};
 use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient, StarknetSettlementValidatedArgs};

@@ -2,8 +2,8 @@ use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, KeyValue};
-use utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
-use utils::register_metric;
+use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
+use orchestrator_utils::register_metric;
 
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
 

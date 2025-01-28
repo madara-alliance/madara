@@ -425,10 +425,10 @@ pub mod test {
 
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
-    use da_client_interface::MockDaClient;
     use httpmock::prelude::*;
     use majin_blob_core::blob;
     use majin_blob_types::serde;
+    use orchestrator_da_client_interface::MockDaClient;
     use rstest::rstest;
     use serde_json::json;
     use starknet::core::types::{
