@@ -141,8 +141,14 @@ jobs:
             --lcov \
             --output-path lcov.info \
             --test-threads=1 \
-            --workspace-root orchestrator \
-            --exclude e2e-tests \
+            --package "orchestrator" \
+            --package "da-client-interface" \
+            --package "atlantic-service" \
+            --package "sharp-service" \
+            --package "prover-client-interface" \
+            --package "gps-fact-checker" \
+            --package "settlement-client-interface" \
+            --package "utils" \
             --no-fail-fast
 
       - name: Coveralls

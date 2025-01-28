@@ -46,10 +46,16 @@ jobs:
           PROPTEST_CASES: 10
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
-          cargo build --bin madara --profile dev
+          # Only build madara crates
+          cargo build --bin madara --profile dev \
+            --package "mc-*" \
+            --package "mp-*"
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev --workspace --exclude orchestrator
+          # Only test madara crates
+          cargo test --profile dev \
+            --package "mc-*" \
+            --package "mp-*"
 
       - name: Generate coverage info
         run: |
