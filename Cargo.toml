@@ -40,7 +40,7 @@ members = [
   "orchestrator/crates/settlement-clients/settlement-client-interface",
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
-  # "e2e-tests", # TODO: rename / merge with existing tests
+  "e2e-tests", # TODO: rename / merge with existing tests
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.

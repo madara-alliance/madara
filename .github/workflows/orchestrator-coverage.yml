@@ -109,9 +109,9 @@ jobs:
         run: |
           cargo build
           mv target/debug/madara ../madara-binary
-          cd ..
+          cd ../..
           echo -e "
-          MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/madara-binary\"" >> .env.test
+          MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/orchestrator/madara-binary\"" >> .env.test
           cat .env.test
 
       - name: Getting neccesary files for testing
@@ -141,8 +141,7 @@ jobs:
             --lcov \
             --output-path lcov.info \
             --test-threads=1 \
-            --workspace \
-            --exclude madara \
+            --workspace-root orchestrator \
             --exclude e2e-tests \
             --no-fail-fast
 
