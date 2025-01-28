@@ -141,15 +141,9 @@ jobs:
             --lcov \
             --output-path lcov.info \
             --test-threads=1 \
-            --package "orchestrator" \
-            --package "da-client-interface" \
-            --package "atlantic-service" \
-            --package "sharp-service" \
-            --package "prover-client-interface" \
-            --package "gps-fact-checker" \
-            --package "settlement-client-interface" \
-            --package "utils" \
-            --no-fail-fast
+            --workspace \
+            --exclude=madara \
+            --exclude=e2e-tests
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
