@@ -9,7 +9,7 @@ type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
 pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 
-/// Struct to store block number and event_index where L1->L2 Message occured
+/// Struct to store block number and event_index where L1->L2 Message occurred
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LastSyncedEventBlock {
     pub block_number: u64,
