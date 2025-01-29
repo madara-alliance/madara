@@ -25,13 +25,13 @@ pub async fn gas_price_worker_once(
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
 
-    let last_update_timestemp =
+    let last_update_timestamp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
     if duration_since_last_update > 10 * gas_price_poll_ms {
         anyhow::bail!(
             "Gas prices have not been updated for {} ms. Last update was at {}",
             duration_since_last_update.as_micros(),
-            last_update_timestemp
+            last_update_timestamp
         );
     }
 
