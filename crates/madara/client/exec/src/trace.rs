@@ -44,7 +44,7 @@ pub fn execution_result_to_tx_trace(
     let fee_transfer_invocation =
         execution_info.fee_transfer_call_info.as_ref().map(try_get_funtion_invocation_from_call_info).transpose()?;
 
-    let computation_resources = agregate_execution_ressources(
+    let computation_resources = aggregate_execution_ressources(
         validate_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
         execute_function_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
         fee_transfer_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
@@ -273,7 +273,7 @@ fn state_diff_is_empty(commitment_state_diff: &CommitmentStateDiff) -> bool {
         && commitment_state_diff.class_hash_to_compiled_class_hash.is_empty()
 }
 
-fn agregate_execution_ressources(
+fn aggregate_execution_ressources(
     a: Option<&starknet_types_rpc::ComputationResources>,
     b: Option<&starknet_types_rpc::ComputationResources>,
     c: Option<&starknet_types_rpc::ComputationResources>,
