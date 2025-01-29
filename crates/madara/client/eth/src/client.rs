@@ -121,7 +121,7 @@ impl EthereumClient {
     pub async fn get_last_event_block_number<T: SolEvent>(&self) -> anyhow::Result<u64> {
         let latest_block: u64 = self.get_latest_block_number().await?;
 
-        // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
+        // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurrence in the last ~24h
         let filter = Filter::new()
             .from_block(latest_block - 6000)
             .to_block(latest_block)
