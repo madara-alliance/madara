@@ -1,4 +1,4 @@
-use flate2::bufread::GzDecoder;
+use flate2::read::GzDecoder;
 use starknet_core::types::LegacyContractEntryPoint;
 use starknet_core::types::{
     contract::legacy::{
@@ -22,13 +22,17 @@ pub enum ParseCompressedLegacyClassError {
 const MiB: u64 = 1024 * 1024;
 const CLASS_SIZE_LIMIT: u64 = 4 * MiB;
 
+/// Decompress and limits the size of the decompression stream, to avoid potential DoS vectors.
+pub fn gz_decompress_stream(r: impl io::Read) -> impl io::Read {
+    ReadSizeLimiter::new(GzDecoder::new(r), CLASS_SIZE_LIMIT)
+}
+
 /// Attempts to recover a compressed legacy program.
 pub fn parse_compressed_legacy_class(
     class: CompressedLegacyContractClass,
 ) -> Result<LegacyContractClass, ParseCompressedLegacyClassError> {
     // decompress and parse as a single [`Read`] pipeline to avoid having an intermediary buffer here.
-    let program: LegacyProgram =
-        serde_json::from_reader(ReadSizeLimiter::new(GzDecoder::new(class.program.as_slice()), CLASS_SIZE_LIMIT))?;
+    let program: LegacyProgram = serde_json::from_reader(gz_decompress_stream(class.program.as_slice()))?;
 
     let is_pre_0_11_0 = match &program.compiler_version {
         Some(compiler_version) => {
