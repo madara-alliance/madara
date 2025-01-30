@@ -3,7 +3,6 @@ use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 use crate::{MadaraStorageError, DB};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
-use mp_transactions::TransactionWithHash;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
@@ -13,7 +12,7 @@ use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{EmittedEvent, Txn};
+use starknet_types_rpc::EmittedEvent;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 

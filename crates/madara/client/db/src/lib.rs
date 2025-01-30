@@ -7,7 +7,6 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
 use mp_block::MadaraBlockInner;
 use mp_chain_config::ChainConfig;
-use mp_transactions::TransactionWithHash;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
@@ -17,7 +16,7 @@ use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use starknet_types_rpc::{EmittedEvent, Txn};
+use starknet_types_rpc::EmittedEvent;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
