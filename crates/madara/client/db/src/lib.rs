@@ -5,7 +5,9 @@ use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
+use mp_block::MadaraBlockInner;
 use mp_chain_config::ChainConfig;
+use mp_transactions::TransactionWithHash;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
@@ -15,7 +17,7 @@ use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use starknet_types_rpc::EmittedEvent;
+use starknet_types_rpc::{EmittedEvent, Txn};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
@@ -419,6 +421,7 @@ pub struct MadaraBackend {
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     sender_event: EventChannels,
+    sender_pending_tx: tokio::sync::broadcast::Sender<MadaraBlockInner>,
     write_opt_no_wal: WriteOptions,
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
@@ -525,6 +528,7 @@ impl MadaraBackend {
             trie_log_config: Default::default(),
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
+            sender_pending_tx: tokio::sync::broadcast::channel(100).0,
             write_opt_no_wal: make_write_opt_no_wal(),
             _temp_dir: Some(temp_dir),
         })
@@ -585,6 +589,7 @@ impl MadaraBackend {
             trie_log_config,
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
+            sender_pending_tx: tokio::sync::broadcast::channel(100).0,
             write_opt_no_wal: make_write_opt_no_wal(),
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,

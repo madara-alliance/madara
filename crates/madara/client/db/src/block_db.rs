@@ -3,6 +3,7 @@ use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 use crate::{MadaraStorageError, DB};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
+use mp_transactions::TransactionWithHash;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
@@ -12,7 +13,7 @@ use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::EmittedEvent;
+use starknet_types_rpc::{EmittedEvent, Txn};
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -176,7 +177,7 @@ impl MadaraBackend {
         Ok(res)
     }
 
-    fn get_pending_block_inner(&self) -> Result<MadaraBlockInner> {
+    pub fn get_pending_block_inner(&self) -> Result<MadaraBlockInner> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else {
             // See pending block quirk
@@ -433,6 +434,11 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
         self.sender_event.subscribe(from_address)
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn subscribe_pending_transaction(&self) -> tokio::sync::broadcast::Receiver<MadaraBlockInner> {
+        self.sender_pending_tx.subscribe()
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
