@@ -1,6 +1,7 @@
 use crate::{
-    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     import::BlockImporter,
+    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
+    util::AbortOnDrop,
 };
 use anyhow::Context;
 use mc_db::MadaraBackend;
@@ -37,41 +38,47 @@ impl PipelineSteps for ClassesSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
-        for (block_n, classes) in block_range.zip(input) {
-            let mut declared_classes = vec![];
-            for (&class_hash, &compiled_class_hash) in classes.iter() {
-                let class = self
-                    .client
-                    .get_class_by_hash(class_hash, BlockId::Number(block_n))
-                    .await
-                    .with_context(|| format!("Getting state update with block_n={block_n}"))?;
-
-                let class_info = match &class {
-                    mp_class::ContractClass::Sierra(class) => {
-                        let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
-                            anyhow::bail!("Expected a Sierra class, found a Legacy class")
-                        };
-                        ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
-                    }
-                    mp_class::ContractClass::Legacy(class) => {
-                        if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
-                            anyhow::bail!("Expected a Legacy class, found a Sierra class")
-                        }
-                        ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
-                    }
-                };
-
-                declared_classes.push(ClassInfoWithHash { class_info, class_hash });
-            }
-
-            self.importer
-                .run_in_rayon_pool(move |importer| {
-                    let classes = importer.verify_compile_classes(block_n, declared_classes, &classes)?;
-                    importer.save_classes(block_n, classes)
-                })
-                .await?;
+        if input.iter().all(|i| i.is_empty()) {
+            return Ok(());
         }
-        Ok(())
+        AbortOnDrop::spawn(async move {
+            for (block_n, classes) in block_range.zip(input) {
+                let mut declared_classes = vec![];
+                for (&class_hash, &compiled_class_hash) in classes.iter() {
+                    let class = self
+                        .client
+                        .get_class_by_hash(class_hash, BlockId::Number(block_n))
+                        .await
+                        .with_context(|| format!("Getting class_hash={class_hash:#x} with block_n={block_n}"))?;
+
+                    let class_info = match &class {
+                        mp_class::ContractClass::Sierra(class) => {
+                            let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
+                                anyhow::bail!("Expected a Sierra class, found a Legacy class")
+                            };
+                            ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
+                        }
+                        mp_class::ContractClass::Legacy(class) => {
+                            if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
+                                anyhow::bail!("Expected a Legacy class, found a Sierra class")
+                            }
+                            ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
+                        }
+                    };
+
+                    declared_classes.push(ClassInfoWithHash { class_info, class_hash });
+                }
+
+                self.importer
+                    .run_in_rayon_pool(move |importer| {
+                        let classes = importer.verify_compile_classes(block_n, declared_classes, &classes)?;
+                        importer.save_classes(block_n, classes)
+                    })
+                    .await?;
+            }
+            Ok(())
+        })
+        .await
     }
 
     async fn sequential_step(

@@ -838,23 +838,24 @@ pub async fn transactions_sync(
     req: model::TransactionsRequest,
     mut out: Sender<model::TransactionsResponse>,
 ) -> Result<(), sync_handlers::Error> {
-    let stream = ctx
+    let ite = ctx
         .app_ctx
         .backend
-        .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
-    pin!(stream);
+        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
 
     tracing::debug!("transactions sync!");
 
-    while let Some(res) = stream.next().await {
+    for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;
 
-        let block_inner = ctx
+        let Some(block_inner) = ctx
             .app_ctx
             .backend
             .get_block_inner(&DbBlockId::Number(header.header.block_number))
             .or_internal_server_error("Getting block state diff")?
-            .ok_or_internal_server_error("No body for block")?;
+        else {
+            continue; // it is possible that we have the header but not the transactions for this block yet.
+        };
 
         for (transaction, receipt) in block_inner.transactions.into_iter().zip(block_inner.receipts) {
             let el = TransactionWithReceipt { transaction, receipt };

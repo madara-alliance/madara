@@ -46,7 +46,8 @@ impl model::class::Class {
 impl TryFrom<model::Cairo0Class> for LegacyClassInfo {
     type Error = FromModelError;
     fn try_from(value: model::Cairo0Class) -> Result<Self, Self::Error> {
-        let abi: Vec<starknet_core::types::LegacyContractAbiEntry> = serde_json::from_str(&value.abi).map_err(FromModelError::LegacyClassJsonError)?;
+        let abi: Vec<starknet_core::types::LegacyContractAbiEntry> =
+            serde_json::from_str(&value.abi).map_err(FromModelError::LegacyClassJsonError)?;
         // tracing::debug!("legacy class {:?}", value.abi, abi);
         Ok(Self {
             contract_class: Arc::new(CompressedLegacyContractClass {
@@ -171,15 +172,14 @@ pub async fn classes_sync(
     req: model::ClassesRequest,
     mut out: Sender<model::ClassesResponse>,
 ) -> Result<(), sync_handlers::Error> {
-    let stream = ctx
+    let ite = ctx
         .app_ctx
         .backend
-        .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
-    pin!(stream);
+        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
 
     tracing::debug!("classes sync!");
 
-    while let Some(res) = stream.next().await {
+    for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;
 
         let state_diff = ctx
@@ -194,12 +194,14 @@ pub async fn classes_sync(
             .into_iter()
             .chain(state_diff.declared_classes.into_iter().map(|entry| entry.class_hash))
         {
-            let class_info = ctx
+            let Some(class_info) = ctx
                 .app_ctx
                 .backend
                 .get_class_info(&DbBlockId::Number(header.header.block_number), &class_hash)
                 .or_internal_server_error("Getting class info")?
-                .ok_or_internal_server_error("Class info not found")?;
+            else {
+                continue; // it is possible that we have the state diff but not the class yet for that block.
+            };
 
             let class = model::Class { domain: 0, class_hash: Some(class_hash.into()), class: Some(class_info.into()) };
 

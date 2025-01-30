@@ -4,6 +4,6 @@ mod sync;
 mod update_global_trie;
 mod util;
 
-pub mod p2p;
 pub mod gateway;
 pub mod import;
+pub mod p2p;

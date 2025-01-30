@@ -92,8 +92,6 @@ impl Service for L1SyncService {
         let L1SyncService { l1_gas_provider, chain_id, gas_price_sync_disabled, gas_price_poll, mempool, .. } =
             self.clone();
 
-
-
         if let Some(eth_client) = self.eth_client.take() {
             // enabled
 

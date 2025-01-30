@@ -137,7 +137,7 @@ impl<S: PipelineSteps> PipelineController<S> {
                 // Prefer making full batches.
                 self.schedule_new_batch();
             }
-            if self.queue.len() == 0 && self.next_inputs.len() > 0 {
+            if self.queue.is_empty() && !self.next_inputs.is_empty() {
                 // We make a smaller batch when we have nothing to do, to ensure progress.
                 self.schedule_new_batch();
             }

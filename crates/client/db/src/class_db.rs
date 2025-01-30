@@ -122,6 +122,11 @@ impl MadaraBackend {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
 
+        log::debug!(
+            "Store class {block_id:?} {:?}",
+            converted_classes.iter().map(|c| c.class_hash()).collect::<Vec<_>>()
+        );
+
         converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(col_info),
             |col, chunk| {

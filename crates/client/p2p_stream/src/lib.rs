@@ -237,7 +237,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { request_timeout: Duration::from_secs(60), max_concurrent_streams: 100 }
+        Self { request_timeout: Duration::from_secs(60), max_concurrent_streams: 10000 }
     }
 }
 

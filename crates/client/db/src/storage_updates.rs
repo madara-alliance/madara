@@ -25,7 +25,7 @@ impl MadaraBackend {
         let info = MadaraBlockInfo { header: header.header, block_hash: header.block_hash, tx_hashes: vec![] };
 
         let block_n_encoded = bincode::serialize(&block_n)?;
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&info)?);
+        tx.put_cf(&block_n_to_block, block_n.to_be_bytes(), bincode::serialize(&info)?);
         tx.put_cf(&block_hash_to_block_n, &bincode::serialize(&header.block_hash)?, &block_n_encoded);
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
@@ -46,9 +46,9 @@ impl MadaraBackend {
 
         // update block info tx hashes (we should get rid of this field at some point IMO)
         let mut block_info: MadaraBlockInfo =
-            bincode::deserialize(&self.db.get_cf(&block_n_to_block, &block_n_encoded)?.unwrap_or_default())?;
+            bincode::deserialize(&self.db.get_cf(&block_n_to_block, block_n.to_be_bytes())?.unwrap_or_default())?;
         block_info.tx_hashes = value.iter().map(|tx_with_receipt| tx_with_receipt.receipt.transaction_hash()).collect();
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block_info)?);
+        tx.put_cf(&block_n_to_block, block_n.to_be_bytes(), bincode::serialize(&block_info)?);
 
         let (transactions, receipts) = value.into_iter().map(|t| (t.transaction, t.receipt)).unzip();
         let block_inner = MadaraBlockInner { transactions, receipts };

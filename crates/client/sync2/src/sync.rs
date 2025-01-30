@@ -4,7 +4,7 @@ use futures::{
 };
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
 use mp_utils::graceful_shutdown;
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 
 pub trait ForwardPipeline {
@@ -17,14 +17,12 @@ pub trait ForwardPipeline {
 }
 
 pub trait Probe {
-    type State: Default + Clone + Debug;
-    fn highest_known_block_from_state(&self, state: &Self::State) -> Option<u64>;
+    /// Returns the new highest known block.
     fn forward_probe(
         self: Arc<Self>,
         next_block_n: u64,
         batch_size: usize,
-        state: Self::State,
-    ) -> impl Future<Output = anyhow::Result<Self::State>> + Send + 'static;
+    ) -> impl Future<Output = anyhow::Result<Option<u64>>> + Send + 'static;
 }
 
 pub struct SyncController<P: ForwardPipeline, R: Probe> {
@@ -33,8 +31,8 @@ pub struct SyncController<P: ForwardPipeline, R: Probe> {
     l1_head_recv: L1HeadReceiver,
     stop_at_block_n: Option<u64>,
     current_l1_head: Option<L1StateUpdate>,
-    current_probe_future: Option<BoxFuture<'static, anyhow::Result<R::State>>>,
-    probe_state: R::State,
+    current_probe_future: Option<BoxFuture<'static, anyhow::Result<Option<u64>>>>,
+    probe_highest_known_block: Option<u64>,
     probe_wait_deadline: Option<Instant>,
 }
 
@@ -54,7 +52,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
             stop_at_block_n,
             current_l1_head: None,
             current_probe_future: None,
-            probe_state: Default::default(),
+            probe_highest_known_block: Default::default(),
             probe_wait_deadline: None,
         }
     }
@@ -82,14 +80,11 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
         }
 
         let mut target_block = self.current_l1_head.as_ref().map(|h| h.block_number);
-        if let Some(probe) = &self.probe {
-            target_block =
-                aggregate_options(target_block, probe.highest_known_block_from_state(&self.probe_state), u64::max);
-        }
+        target_block = aggregate_options(target_block, self.probe_highest_known_block, u64::max);
 
         // Bound by stop_at_block_n
-        let target_block = aggregate_options(target_block, self.stop_at_block_n, u64::min);
-        target_block
+
+        aggregate_options(target_block, self.stop_at_block_n, u64::min)
     }
 
     fn show_status(&self) {
@@ -103,7 +98,12 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
 
             let can_run_pipeline = !self.forward_pipeline.is_empty()
                 || target_height.is_some_and(|b| b >= self.forward_pipeline.next_input_block_n());
-            tracing::debug!("can run {:?} {:?} {}", can_run_pipeline, target_height, self.forward_pipeline.next_input_block_n());
+            tracing::debug!(
+                "can run {:?} {:?} {}",
+                can_run_pipeline,
+                target_height,
+                self.forward_pipeline.next_input_block_n()
+            );
 
             if let Some(probe) = &self.probe {
                 tracing::debug!("run inner {:?} {:?}", self.forward_pipeline.next_input_block_n(), target_height);
@@ -111,9 +111,8 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                     let fut = probe.clone().forward_probe(
                         self.forward_pipeline.next_input_block_n(),
                         self.forward_pipeline.input_batch_size(),
-                        self.probe_state.clone(),
                     );
-                    let delay = self.probe_wait_deadline.clone();
+                    let delay = self.probe_wait_deadline;
 
                     self.current_probe_future = Some(
                         async move {
@@ -133,9 +132,14 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                 }
                 Some(res) = OptionFuture::from(self.current_probe_future.as_mut()) => {
                     self.current_probe_future = None;
-                    self.probe_wait_deadline = Some(Instant::now() + PROBE_WAIT_DELAY);
-                    self.probe_state = res?;
-                    tracing::debug!("GOT {:?}", self.probe_state);
+                    self.probe_wait_deadline = None;
+                    let probe_new_highest_block = res?;
+                    // Only delay the probe when it did not return any new block.
+                    if self.probe_highest_known_block == probe_new_highest_block {
+                        self.probe_wait_deadline = Some(Instant::now() + PROBE_WAIT_DELAY);
+                    }
+                    self.probe_highest_known_block = probe_new_highest_block;
+                    tracing::debug!("GOT {:?}", self.probe_highest_known_block);
                 }
                 Some(res) = OptionFuture::from(
                     target_height.filter(|_| can_run_pipeline)

@@ -180,7 +180,7 @@ impl GetPeersInner {
         let mut res = self.commands.get_random_peers().await;
         tracing::debug!("Got get_random_peers answer: {res:?}");
         res.remove(&self.commands.peer_id()); // remove ourselves from the response, in case we find ourselves
-        if res.len() == 0 {
+        if res.is_empty() {
             tracing::warn!(
                 "Could not find any peer in network. Please check that your network configuration is correct."
             );

@@ -4,8 +4,8 @@ use mc_db::MadaraBackend;
 use mp_state_update::StateDiff;
 
 use crate::{
-    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     import::BlockImporter,
+    pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
 };
 
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;

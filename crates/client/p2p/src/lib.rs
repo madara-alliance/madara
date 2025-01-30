@@ -1,7 +1,7 @@
 use anyhow::Context;
 use behaviour::MadaraP2pBehaviour;
 use futures::{channel::mpsc, FutureExt};
-use libp2p::{futures::StreamExt, identity::Keypair, multiaddr::Protocol, Multiaddr, Swarm};
+use libp2p::{futures::StreamExt, gossipsub::IdentTopic, identity::Keypair, multiaddr::Protocol, Multiaddr, Swarm};
 use mc_db::MadaraBackend;
 use mp_utils::graceful_shutdown;
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
@@ -137,16 +137,24 @@ pub struct MadaraP2p {
 }
 
 impl MadaraP2p {
-    /// Main loop of the p2p service.
-    pub async fn run(&mut self) -> anyhow::Result<()> {
-        let multi_addr = "/ip4/0.0.0.0".parse::<Multiaddr>()?.with(Protocol::Tcp(self.config.port.unwrap_or(0)));
-        self.swarm.listen_on(multi_addr).context("Binding port")?;
-
+    pub fn dial_bootstrap_nodes(&mut self) {
         for node in &self.config.bootstrap_nodes {
             if let Err(err) = self.swarm.dial(node.clone()) {
                 tracing::debug!("Could not dial bootstrap node {node}: {err:#}");
             }
         }
+    }
+
+    /// Main loop of the p2p service.
+    pub async fn run(&mut self) -> anyhow::Result<()> {
+        let multi_addr = "/ip4/0.0.0.0".parse::<Multiaddr>()?.with(Protocol::Tcp(self.config.port.unwrap_or(0)));
+        self.swarm.listen_on(multi_addr).context("Binding port")?;
+
+        self.dial_bootstrap_nodes();
+
+        let block_propagation_topic = &format!("blocks/{}", self.db.chain_config().chain_id.as_hex());
+        self.swarm.behaviour_mut().gossipsub.subscribe(&IdentTopic::new(block_propagation_topic))?;
+        tracing::debug!("Gossipsub subscribed to {block_propagation_topic}");
 
         let mut status_interval = tokio::time::interval(self.config.status_interval);
         let mut commands_recv = self.commands_receiver.take().context("Service already started")?;

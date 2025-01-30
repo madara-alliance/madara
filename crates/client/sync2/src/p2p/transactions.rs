@@ -2,7 +2,7 @@ use super::{
     pipeline::{P2pError, P2pPipelineController, P2pPipelineSteps},
     P2pPipelineArguments,
 };
-use crate::{pipeline::PipelineController, import::BlockImporter};
+use crate::{import::BlockImporter, pipeline::PipelineController};
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
@@ -55,7 +55,12 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
             tracing::debug!("GOT STATE TRANSACTIONS FOR block_n={block_n}, {transactions:#?}");
             self.importer
                 .run_in_rayon_pool(move |importer| {
-                    importer.verify_transactions(block_n, &transactions, &header, /* allow_pre_v0_13_2 */ false)?;
+                    importer.verify_transactions(
+                        block_n,
+                        &transactions,
+                        &header,
+                        /* allow_pre_v0_13_2 */ false,
+                    )?;
                     importer.save_transactions(block_n, transactions)
                 })
                 .await?

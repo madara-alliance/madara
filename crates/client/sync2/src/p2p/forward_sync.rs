@@ -1,4 +1,3 @@
-use super::peer_set::PeerSet;
 use super::{
     classes::ClassesSync, events::EventsSync, headers::HeadersSync, state_diffs::StateDiffsSync,
     transactions::TransactionsSync,
@@ -8,12 +7,12 @@ use crate::p2p::pipeline::P2pError;
 use crate::pipeline::{PipelineController, PipelineSteps};
 use crate::sync::{ForwardPipeline, Probe, SyncController};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
-use anyhow::Context;
 use core::fmt;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use mc_db::stream::BlockStreamConfig;
 use mc_eth::state_update::L1HeadReceiver;
 use mc_p2p::{P2pCommands, PeerId};
+use std::collections::HashSet;
 use std::iter;
 use std::sync::Arc;
 
@@ -67,18 +66,18 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            headers_parallelization: 8,
+            headers_parallelization: 100,
             headers_batch_size: 8,
-            transactions_parallelization: 8,
-            transactions_batch_size: 4,
-            state_diffs_parallelization: 8,
-            state_diffs_batch_size: 4,
-            events_parallelization: 8,
-            events_batch_size: 4,
-            classes_parallelization: 8,
-            classes_batch_size: 4,
-            apply_state_parallelization: 8,
-            apply_state_batch_size: 4,
+            transactions_parallelization: 100,
+            transactions_batch_size: 1,
+            state_diffs_parallelization: 100,
+            state_diffs_batch_size: 1,
+            events_parallelization: 100,
+            events_batch_size: 1,
+            classes_parallelization: 200,
+            classes_batch_size: 1,
+            apply_state_parallelization: 3,
+            apply_state_batch_size: 20,
         }
     }
 }
@@ -90,7 +89,7 @@ pub fn forward_sync(
     stop_at_block_n: Option<u64>,
     config: ForwardSyncConfig,
 ) -> P2pSync {
-    let probe = P2pHeadersProbe::new(args.peer_set.clone(), args.p2p_commands.clone(), args.importer.clone());
+    let probe = P2pHeadersProbe::new(args.p2p_commands.clone(), args.importer.clone());
     SyncController::new(P2pForwardSync::new(args, config), l1_head_recv, stop_at_block_n, Some(probe.into()))
 }
 
@@ -257,24 +256,22 @@ impl ForwardPipeline for P2pForwardSync {
 }
 
 pub struct P2pHeadersProbe {
-    peer_set: Arc<PeerSet>,
     p2p_commands: P2pCommands,
     importer: Arc<BlockImporter>,
 }
 impl P2pHeadersProbe {
-    pub fn new(peer_set: Arc<PeerSet>, p2p_commands: P2pCommands, importer: Arc<BlockImporter>) -> Self {
-        Self { peer_set, p2p_commands, importer }
+    pub fn new(p2p_commands: P2pCommands, importer: Arc<BlockImporter>) -> Self {
+        Self { p2p_commands, importer }
     }
 
-    async fn block_exists_at(self: Arc<Self>, block_n: u64) -> anyhow::Result<bool> {
-        let attempts = 5;
+    async fn block_exists_at(self: Arc<Self>, block_n: u64, peers: &HashSet<PeerId>) -> anyhow::Result<bool> {
+        let max_attempts = 2;
 
-        tracing::debug!("testing block at {block_n}");
-
-        // TODO: prefer a random peer instead of a scored one, try to avoid peer overlap
-        for _peer in 0..attempts {
-            let peer_guard = self.peer_set.clone().next_peer().await.context("Getting peer from peer set")?;
-            match self.clone().block_exists_at_inner(*peer_guard, block_n).await {
+        for peer_id in peers.iter().take(max_attempts) {
+            tracing::debug!("EXISTS AT Checking {peer_id}, {block_n}");
+            let got = self.clone().block_exists_at_inner(*peer_id, block_n).await;
+            tracing::debug!("END EXISTS AT Checking {peer_id}, {block_n} => {got:?}");
+            match got {
                 // Found it
                 Ok(true) => return Ok(true),
                 // Retry with another peer
@@ -282,10 +279,8 @@ impl P2pHeadersProbe {
 
                 Err(P2pError::Peer(err)) => {
                     tracing::debug!(
-                        "Retrying probing step (block_n={block_n:?}) due to peer error: {err:#} [peer_id={}]",
-                        *peer_guard
+                        "Retrying probing step (block_n={block_n:?}) due to peer error: {err:#} [peer_id={peer_id}]"
                     );
-                    peer_guard.error();
                 }
                 Err(P2pError::Internal(err)) => return Err(err.context("Peer to peer probing step")),
             }
@@ -293,13 +288,14 @@ impl P2pHeadersProbe {
         Ok(false)
     }
     async fn block_exists_at_inner(self: Arc<Self>, peer_id: PeerId, block_n: u64) -> Result<bool, P2pError> {
+        tracing::debug!("block_exists_at_inner {peer_id} {block_n}.");
         let strm = self
             .p2p_commands
             .clone()
             .make_headers_stream(peer_id, BlockStreamConfig::default().with_limit(1).with_start(block_n))
             .await;
         tokio::pin!(strm);
-        let signed_header = match strm.next().await.transpose() {
+        let signed_header = match strm.try_next().await {
             Ok(None) | Err(mc_p2p::SyncHandlerError::EndOfStream) => return Ok(false),
             Ok(Some(signed_header)) => signed_header,
             Err(err) => return Err(err.into()),
@@ -311,48 +307,31 @@ impl P2pHeadersProbe {
     }
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct ProbeState {
-    highest_known_block: Option<u64>,
-}
-
-const N_BATCHES_LOOKAHEAD: usize = 8;
 impl Probe for P2pHeadersProbe {
-    type State = ProbeState;
-
-    fn highest_known_block_from_state(&self, state: &Self::State) -> Option<u64> {
-        state.highest_known_block
-    }
-
     async fn forward_probe(
         self: Arc<Self>,
         current_next_block: u64,
-        batch_size: usize,
-        mut state: Self::State,
-    ) -> anyhow::Result<Self::State> {
-        // current_block_n <= chain_head
+        _batch_size: usize,
+    ) -> anyhow::Result<Option<u64>> {
+        tracing::debug!("FORWARD PROBE current_next_block={current_next_block}",);
 
-        tracing::debug!("FORWARD PROBE {state:?} current_next_block={current_next_block}",);
+        // powers of two
+        let checks = iter::successors(Some(1u64), |n| n.checked_mul(2)).map(|n| current_next_block + n - 1);
 
-        let checks = [
-            // first test: 1 blocks away.
-            // second test: batch_size - 1 blocks away.
-            // third test: N_BATCHES_LOOKAHEAD * batch_size - 1 blocks away.
-            current_next_block,
-            current_next_block + (batch_size - 1) as u64,
-            current_next_block + (N_BATCHES_LOOKAHEAD * batch_size - 1) as u64,
-        ];
+        let mut peers = self.p2p_commands.clone().get_random_peers().await;
+        peers.remove(&self.p2p_commands.peer_id()); // remove ourselves
+        tracing::debug!("hhhh {peers:?}",);
 
-        state.highest_known_block = current_next_block.checked_sub(1);
+        let mut highest_known_block = current_next_block.checked_sub(1);
         for (i, block_n) in checks.into_iter().enumerate() {
             tracing::debug!("PROBE CHECK {i} current_next_block={current_next_block} {block_n}");
 
-            if !self.clone().block_exists_at(block_n).await? {
-                return Ok(state);
+            if !self.clone().block_exists_at(block_n, &peers).await? {
+                return Ok(highest_known_block);
             }
-            state.highest_known_block = Some(block_n);
+            highest_known_block = Some(block_n);
         }
 
-        Ok(state)
+        Ok(highest_known_block)
     }
 }

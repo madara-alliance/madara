@@ -63,7 +63,7 @@ impl SyncParams {
         if let Some(api_key) = &self.gateway_key {
             client.add_header(
                 HeaderName::from_static("x-throttling-bypass"),
-                HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
+                HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?,
             )
         }
 

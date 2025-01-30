@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::{
     block_stream_config,
     error::{OptionExt, ResultExt},
@@ -128,16 +130,14 @@ pub async fn headers_sync(
     req: model::BlockHeadersRequest,
     mut out: Sender<model::BlockHeadersResponse>,
 ) -> Result<(), sync_handlers::Error> {
-    let stream = ctx
+    let ite = ctx
         .app_ctx
         .backend
-        .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
-    // Add the Fin message
-    pin!(stream);
+        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
 
     tracing::debug!("headers sync!");
 
-    while let Some(res) = stream.next().await {
+    for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;
         let header = BlockHeaderWithSignatures {
             header: header.header,
@@ -152,6 +152,7 @@ pub async fn headers_sync(
         .await?;
     }
 
+    // Add the Fin message
     out.send(model::BlockHeadersResponse {
         header_message: Some(model::block_headers_response::HeaderMessage::Fin(model::Fin {})),
     })

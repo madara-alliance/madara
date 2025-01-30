@@ -3,6 +3,7 @@ use crate::{
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     sync::{ForwardPipeline, Probe, SyncController},
+    util::AbortOnDrop,
 };
 use anyhow::Context;
 use classes::ClassesSync;
@@ -58,7 +59,7 @@ impl TryFrom<ProviderStateUpdateWithBlock> for GatewayBlock {
                     .map(|version| Ok(version.parse()?))
                     .unwrap_or_else(|| {
                         StarknetVersion::try_from_mainnet_block_number(value.block.block_number)
-                            .ok_or_else(|| FromGatewayError::FromMainnetStarknetVersion(value.block.block_hash))
+                            .ok_or(FromGatewayError::FromMainnetStarknetVersion(value.block.block_hash))
                     })?,
                 l1_gas_price: mp_block::header::GasPrices {
                     eth_l1_gas_price: value.block.l1_gas_price.price_in_wei,
@@ -131,75 +132,78 @@ impl PipelineSteps for GatewaySyncSteps {
         block_range: Range<u64>,
         _input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
-        let mut out = vec![];
-        tracing::debug!("Gateway sync parallel step {:?}", block_range);
-        for block_n in block_range {
-            let block = self
-                .client
-                .get_state_update_with_block(BlockId::Number(block_n))
-                .await
-                .with_context(|| format!("Getting state update with block_n={block_n}"))?;
+        AbortOnDrop::spawn(async move {
+            let mut out = vec![];
+            tracing::debug!("Gateway sync parallel step {:?}", block_range);
+            for block_n in block_range {
+                let block = self
+                    .client
+                    .get_state_update_with_block(BlockId::Number(block_n))
+                    .await
+                    .with_context(|| format!("Getting state update with block_n={block_n}"))?;
 
-            let ProviderStateUpdateWithBlockPendingMaybe::NonPending(block) = block else {
-                anyhow::bail!("Asked for a block_n, got a pending one")
-            };
+                let ProviderStateUpdateWithBlockPendingMaybe::NonPending(block) = block else {
+                    anyhow::bail!("Asked for a block_n, got a pending one")
+                };
 
-            let gateway_block: GatewayBlock = block.try_into().context("Parsing gateway block")?;
+                let gateway_block: GatewayBlock = block.try_into().context("Parsing gateway block")?;
 
-            let state_diff = self
-                .importer
-                .run_in_rayon_pool(move |importer| {
-                    let mut signed_header = BlockHeaderWithSignatures {
-                        header: gateway_block.header,
-                        block_hash: gateway_block.block_hash,
-                        consensus_signatures: vec![],
-                    };
-                    tracing::debug!("{:#?}", signed_header);
+                let state_diff = self
+                    .importer
+                    .run_in_rayon_pool(move |importer| {
+                        let mut signed_header = BlockHeaderWithSignatures {
+                            header: gateway_block.header,
+                            block_hash: gateway_block.block_hash,
+                            consensus_signatures: vec![],
+                        };
+                        tracing::debug!("{:#?}", signed_header);
 
-                    // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
-                    let allow_pre_v0_13_2 = true;
+                        // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
+                        let allow_pre_v0_13_2 = true;
 
-                    let state_diff_commitment = importer.verify_state_diff(
-                        block_n,
-                        &gateway_block.state_diff,
-                        &signed_header.header,
-                        allow_pre_v0_13_2,
-                    )?;
-                    let (transaction_commitment, receipt_commitment) = importer.verify_transactions(
-                        block_n,
-                        &gateway_block.transactions,
-                        &signed_header.header,
-                        allow_pre_v0_13_2,
-                    )?;
-                    let event_commitment = importer.verify_events(
-                        block_n,
-                        &gateway_block.events,
-                        &signed_header.header,
-                        allow_pre_v0_13_2,
-                    )?;
-                    signed_header.header = Header {
-                        state_diff_commitment: Some(state_diff_commitment),
-                        transaction_commitment,
-                        event_commitment,
-                        receipt_commitment: Some(receipt_commitment),
-                        ..signed_header.header
-                    };
-                    importer.verify_header(block_n, &signed_header)?;
+                        let state_diff_commitment = importer.verify_state_diff(
+                            block_n,
+                            &gateway_block.state_diff,
+                            &signed_header.header,
+                            allow_pre_v0_13_2,
+                        )?;
+                        let (transaction_commitment, receipt_commitment) = importer.verify_transactions(
+                            block_n,
+                            &gateway_block.transactions,
+                            &signed_header.header,
+                            allow_pre_v0_13_2,
+                        )?;
+                        let event_commitment = importer.verify_events(
+                            block_n,
+                            &gateway_block.events,
+                            &signed_header.header,
+                            allow_pre_v0_13_2,
+                        )?;
+                        signed_header.header = Header {
+                            state_diff_commitment: Some(state_diff_commitment),
+                            transaction_commitment,
+                            event_commitment,
+                            receipt_commitment: Some(receipt_commitment),
+                            ..signed_header.header
+                        };
+                        importer.verify_header(block_n, &signed_header)?;
 
-                    importer.save_header(block_n, signed_header)?;
-                    importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
-                    importer.save_transactions(block_n, gateway_block.transactions)?;
-                    importer.save_events(block_n, gateway_block.events)?;
+                        importer.save_header(block_n, signed_header)?;
+                        importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
+                        importer.save_transactions(block_n, gateway_block.transactions)?;
+                        importer.save_events(block_n, gateway_block.events)?;
 
-                    anyhow::Ok(gateway_block.state_diff)
-                })
-                .await?;
-            out.push(state_diff);
-        }
+                        anyhow::Ok(gateway_block.state_diff)
+                    })
+                    .await?;
+                out.push(state_diff);
+            }
 
-        tracing::debug!("out= {out:?}");
+            tracing::debug!("out= {out:?}");
 
-        Ok(out)
+            Ok(out)
+        })
+        .await
     }
     async fn sequential_step(
         self: Arc<Self>,
@@ -398,17 +402,7 @@ impl GatewayLatestProbe {
 }
 
 impl Probe for GatewayLatestProbe {
-    type State = Option<u64>;
-    fn highest_known_block_from_state(&self, state: &Self::State) -> Option<u64> {
-        *state
-    }
-
-    async fn forward_probe(
-        self: Arc<Self>,
-        _next_block_n: u64,
-        _batch_size: usize,
-        _state: Self::State,
-    ) -> anyhow::Result<Self::State> {
+    async fn forward_probe(self: Arc<Self>, _next_block_n: u64, _batch_size: usize) -> anyhow::Result<Option<u64>> {
         let header = self.client.get_header(BlockId::Tag(BlockTag::Latest)).await.context("Getting latest header")?;
         Ok(Some(header.block_number))
     }

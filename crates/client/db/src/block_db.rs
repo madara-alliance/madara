@@ -94,7 +94,7 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
-        let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
+        let res = self.db.get_cf(&col, block_n.to_be_bytes())?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -258,7 +258,7 @@ impl MadaraBackend {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block.info)?);
+        tx.put_cf(&block_n_to_block, block.info.header.block_number.to_be_bytes(), bincode::serialize(&block.info)?);
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);

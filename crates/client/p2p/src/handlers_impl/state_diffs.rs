@@ -49,23 +49,24 @@ pub async fn state_diffs_sync(
     req: model::StateDiffsRequest,
     mut out: Sender<model::StateDiffsResponse>,
 ) -> Result<(), sync_handlers::Error> {
-    let stream = ctx
+    let ite = ctx
         .app_ctx
         .backend
-        .block_info_stream(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
-    pin!(stream);
+        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
 
     tracing::debug!("state diffs sync!");
 
-    while let Some(res) = stream.next().await {
+    for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;
 
-        let state_diff = ctx
+        let Some(state_diff) = ctx
             .app_ctx
             .backend
             .get_block_state_diff(&DbBlockId::Number(header.header.block_number))
             .or_internal_server_error("Getting block state diff")?
-            .ok_or_internal_server_error("No state diff for block")?;
+        else {
+            continue; // it is possible that we have the header but not the state diff for this block yet.
+        };
 
         // Legacy declared classes
         for &class_hash in &state_diff.deprecated_declared_classes {

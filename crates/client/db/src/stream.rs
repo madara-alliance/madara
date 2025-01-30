@@ -1,7 +1,10 @@
 use crate::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
+use crate::{Column, DatabaseExt};
 use futures::{stream, Stream};
 use mp_block::MadaraBlockInfo;
+use std::iter;
 use std::{
+    collections::VecDeque,
     num::NonZeroU64,
     ops::{Bound, RangeBounds},
     sync::Arc,
@@ -83,6 +86,108 @@ impl Default for BlockStreamConfig {
 }
 
 impl MadaraBackend {
+    pub fn block_info_iterator(
+        self: &Arc<Self>,
+        iteration: BlockStreamConfig,
+    ) -> impl Iterator<Item = Result<MadaraBlockInfo, MadaraStorageError>> {
+        // The important thing here is to avoid keeping iterators around in the iterator state,
+        // as an iterator instance will pin the memtables.
+        // To avoid that, we buffer a few blocks ahead to still benefit from the rocksdb iterators.
+        // Note, none of that has been benchmarked.
+        const BUFFER_SIZE: usize = 32;
+
+        struct State {
+            backend: Arc<MadaraBackend>,
+            iteration: BlockStreamConfig,
+            buf: VecDeque<MadaraBlockInfo>,
+            next_block_n: Option<u64>,
+            total_got: u64,
+        }
+
+        impl State {
+            fn next_item(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+                if self.buf.is_empty() {
+                    if self.iteration.limit.is_some_and(|limit| self.total_got >= limit) {
+                        return Ok(None);
+                    }
+
+                    let Some(mut next_block_n) = self.next_block_n else {
+                        return Ok(None);
+                    };
+
+                    let col = self.backend.db.get_column(Column::BlockNToBlockInfo);
+                    let mut ite = self.backend.db.raw_iterator_cf(&col);
+
+                    match self.iteration.direction {
+                        Direction::Forward => ite.seek(next_block_n.to_be_bytes()),
+                        Direction::Backward => ite.seek_for_prev(next_block_n.to_be_bytes()),
+                    }
+
+                    for _ in 0..BUFFER_SIZE {
+                        let Some((k, v)) = ite.item() else {
+                            ite.status()?; // bubble up error, or, we reached the end.
+                            break;
+                        };
+
+                        let block_n =
+                            u64::from_be_bytes(k.try_into().map_err(|_| MadaraStorageError::InvalidBlockNumber)?);
+
+                        if self.iteration.direction == Direction::Backward {
+                            // If we asked for a block that does not yet exist, we start from the highest block found instead.
+                            next_block_n = u64::min(next_block_n, block_n);
+                        }
+
+                        let val = bincode::deserialize(v)?;
+
+                        self.buf.push_back(val);
+                        self.total_got += 1;
+
+                        // update next_block_n
+                        match self.iteration.direction {
+                            Direction::Forward => {
+                                self.next_block_n = next_block_n.checked_add(self.iteration.step.get());
+                            }
+                            Direction::Backward => {
+                                self.next_block_n = next_block_n.checked_sub(self.iteration.step.get());
+                            }
+                        }
+                        let Some(next) = self.next_block_n else { break };
+                        next_block_n = next;
+
+                        if self.iteration.limit.is_some_and(|limit| self.total_got >= limit) {
+                            break;
+                        }
+
+                        if self.iteration.step.get() > 1 {
+                            // seek here instead of next/prev
+                            match self.iteration.direction {
+                                Direction::Forward => ite.seek(next_block_n.to_be_bytes()),
+                                Direction::Backward => ite.seek_for_prev(next_block_n.to_be_bytes()),
+                            }
+                        } else {
+                            match self.iteration.direction {
+                                Direction::Forward => ite.next(),
+                                Direction::Backward => ite.prev(),
+                            };
+                        }
+                    }
+                }
+
+                Ok(self.buf.pop_front())
+            }
+        }
+
+        let mut state = State {
+            backend: Arc::clone(self),
+            buf: VecDeque::with_capacity(BUFFER_SIZE),
+            next_block_n: Some(iteration.start),
+            total_got: 0,
+            iteration,
+        };
+        iter::from_fn(move || state.next_item().transpose())
+    }
+
+    /// This function will follow the tip of the chain when asked for Forward iteration, hence it is a Stream and not an Iterator.
     pub fn block_info_stream(
         self: &Arc<Self>,
         iteration: BlockStreamConfig,
@@ -107,6 +212,7 @@ impl MadaraBackend {
         //  funky looking state machine. yay!
 
         // TODO: use db iterators to fill a VecDeque buffer (we don't want to hold a db iterator across an await point!)
+        //   => reuse block_info_iterator logic
         // TODO: what should we do about reorgs?! i would assume we go back and rereturn the new blocks..?
 
         struct State {
@@ -544,5 +650,167 @@ mod tests {
         assert_eq!(resolve_range(10..), (10, None));
         assert_eq!(resolve_range(10..15), (10, Some(5)));
         assert_eq!(resolve_range(10..=15), (10, Some(6)));
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_simple(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig::default());
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(1)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_empty_chain(empty_chain: Arc<MadaraBackend>) {
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig::default());
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_start_from_block(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig { start: 3, ..Default::default() });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_start_from_not_yet_created(empty_chain: Arc<MadaraBackend>) {
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig { start: 3, ..Default::default() });
+        assert_eq!(ite.next().transpose().unwrap(), None);
+
+        store_block(&empty_chain, 0);
+        store_block(&empty_chain, 1);
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig { start: 3, ..Default::default() });
+        assert_eq!(ite.next().transpose().unwrap(), None);
+        store_block(&empty_chain, 2);
+        store_block(&empty_chain, 3);
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig { start: 3, ..Default::default() });
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+        store_block(&empty_chain, 4);
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig { start: 3, ..Default::default() });
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_backward(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig {
+            direction: Direction::Backward,
+            start: 3,
+            ..Default::default()
+        });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(1)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_backward_empty(empty_chain: Arc<MadaraBackend>) {
+        let mut ite = empty_chain.block_info_iterator(BlockStreamConfig {
+            direction: Direction::Backward,
+            start: 0,
+            ..Default::default()
+        });
+
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_backward_start_from_not_yet_created(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig {
+            direction: Direction::Backward,
+            start: 10,
+            ..Default::default()
+        });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(1)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_step(test_chain: Arc<MadaraBackend>) {
+        let mut ite =
+            test_chain.block_info_iterator(BlockStreamConfig { step: 2.try_into().unwrap(), ..Default::default() });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+
+        store_block(&test_chain, 5);
+        let mut ite =
+            test_chain.block_info_iterator(BlockStreamConfig { step: 2.try_into().unwrap(), ..Default::default() });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+
+        store_block(&test_chain, 6);
+        let mut ite =
+            test_chain.block_info_iterator(BlockStreamConfig { step: 2.try_into().unwrap(), ..Default::default() });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(6)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_step_backward(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig {
+            direction: Direction::Backward,
+            step: 2.try_into().unwrap(),
+            start: 4,
+            ..Default::default()
+        });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_limit(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig { limit: Some(3), ..Default::default() });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(0)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(1)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
+    }
+
+    #[rstest::rstest]
+    fn test_iterator_limit_backward(test_chain: Arc<MadaraBackend>) {
+        let mut ite = test_chain.block_info_iterator(BlockStreamConfig {
+            direction: Direction::Backward,
+            limit: Some(3),
+            start: 5,
+            ..Default::default()
+        });
+
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(4)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(3)));
+        assert_eq!(ite.next().transpose().unwrap(), Some(block_info(2)));
+        assert_eq!(ite.next().transpose().unwrap(), None);
     }
 }
