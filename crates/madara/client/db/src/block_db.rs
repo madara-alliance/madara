@@ -129,7 +129,7 @@ impl MadaraBackend {
     // Pending block quirk: We should act as if there is always a pending block in db, to match
     //  juno and pathfinder's handling of pending blocks.
 
-    fn get_pending_block_info(&self) -> Result<MadaraPendingBlockInfo> {
+    pub fn get_pending_block_info(&self) -> Result<MadaraPendingBlockInfo> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk

@@ -2,7 +2,7 @@ use mp_block::MadaraBlockInner;
 use mp_transactions::{Transaction, TransactionWithHash};
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::Event;
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use crate::StarknetRpcApiError;
 
@@ -213,6 +213,7 @@ pub fn pending_tx_match_filter(addresses: &Option<Vec<Felt>>, transaction: &Tran
 pub fn get_filtered_pending_tx_with_hash(
     pending_block: MadaraBlockInner,
     sender_addresses: &Option<Vec<Felt>>,
+    sent_txs: &HashSet<Felt>
 ) -> Vec<TransactionWithHash> {
     pending_block
         .transactions
@@ -220,6 +221,7 @@ pub fn get_filtered_pending_tx_with_hash(
         .zip(pending_block.receipts)
         .map(|(transaction, receipt)| TransactionWithHash::new(transaction, receipt.transaction_hash()))
         .filter(|tx_with_hash| pending_tx_match_filter(sender_addresses, tx_with_hash))
+        .filter(|tx_with_hash| !sent_txs.contains(&tx_with_hash.hash))
         .collect()
 }
 
