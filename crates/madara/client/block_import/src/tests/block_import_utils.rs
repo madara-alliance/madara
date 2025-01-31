@@ -104,7 +104,6 @@ pub fn create_dummy_block() -> PreValidatedBlock {
         receipts: vec![],
         state_diff: StateDiff::default(),
         converted_classes: Default::default(),
-        visited_segments: None,
     }
 }
 
@@ -129,7 +128,6 @@ pub fn create_dummy_unverified_full_block() -> UnverifiedFullBlock {
         declared_classes: vec![],
         commitments: UnverifiedCommitments::default(),
         trusted_converted_classes: vec![],
-        visited_segments: None,
     }
 }
 
@@ -153,6 +151,5 @@ pub fn create_dummy_pending_block() -> PreValidatedPendingBlock {
         receipts: vec![],
         state_diff: StateDiff::default(),
         converted_classes: Default::default(),
-        visited_segments: None,
     }
 }

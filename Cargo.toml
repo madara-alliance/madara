@@ -1,60 +1,60 @@
 [workspace]
 members = [
-  # madara
-  "crates/madara/client/db",
-  "crates/madara/client/exec",
-  "crates/madara/client/sync",
-  "crates/madara/client/eth",
-  "crates/madara/client/rpc",
-  "crates/madara/client/gateway/client",
-  "crates/madara/client/gateway/server",
-  "crates/madara/client/analytics",
-  "crates/madara/client/telemetry",
-  "crates/madara/client/devnet",
-  "crates/madara/client/mempool",
-  "crates/madara/client/block_import",
-  "crates/madara/node",
-  "crates/madara/primitives/block",
-  "crates/madara/primitives/convert",
-  "crates/madara/primitives/transactions",
-  "crates/madara/primitives/class",
-  "crates/madara/primitives/gateway",
-  "crates/madara/primitives/receipt",
-  "crates/madara/primitives/state_update",
-  "crates/madara/primitives/chain_config",
-  "crates/madara/primitives/utils",
-  "crates/madara/proc-macros",
-  "crates/madara/tests",
-  "crates/madara/cairo-test-contracts",
-  "crates/madara/client/block_production",
+    # madara
+    "crates/madara/client/db",
+    "crates/madara/client/exec",
+    "crates/madara/client/sync",
+    "crates/madara/client/eth",
+    "crates/madara/client/rpc",
+    "crates/madara/client/gateway/client",
+    "crates/madara/client/gateway/server",
+    "crates/madara/client/analytics",
+    "crates/madara/client/telemetry",
+    "crates/madara/client/devnet",
+    "crates/madara/client/mempool",
+    "crates/madara/client/block_import",
+    "crates/madara/node",
+    "crates/madara/primitives/block",
+    "crates/madara/primitives/convert",
+    "crates/madara/primitives/transactions",
+    "crates/madara/primitives/class",
+    "crates/madara/primitives/gateway",
+    "crates/madara/primitives/receipt",
+    "crates/madara/primitives/state_update",
+    "crates/madara/primitives/chain_config",
+    "crates/madara/primitives/utils",
+    "crates/madara/proc-macros",
+    "crates/madara/tests",
+    "crates/madara/cairo-test-contracts",
+    "crates/madara/client/block_production",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
-  # madara
-  "crates/madara/client/db",
-  "crates/madara/client/exec",
-  "crates/madara/client/sync",
-  "crates/madara/client/eth",
-  "crates/madara/client/gateway/client",
-  "crates/madara/client/gateway/server",
-  "crates/madara/client/rpc",
-  "crates/madara/client/telemetry",
-  "crates/madara/client/devnet",
-  "crates/madara/client/mempool",
-  "crates/madara/client/block_import",
-  "crates/madara/client/analytics",
-  "crates/madara/node",
-  "crates/madara/primitives/block",
-  "crates/madara/primitives/convert",
-  "crates/madara/primitives/transactions",
-  "crates/madara/primitives/class",
-  "crates/madara/primitives/gateway",
-  "crates/madara/primitives/receipt",
-  "crates/madara/primitives/state_update",
-  "crates/madara/primitives/chain_config",
-  "crates/madara/primitives/utils",
-  "crates/madara/proc-macros",
+    # madara
+    "crates/madara/client/db",
+    "crates/madara/client/exec",
+    "crates/madara/client/sync",
+    "crates/madara/client/eth",
+    "crates/madara/client/gateway/client",
+    "crates/madara/client/gateway/server",
+    "crates/madara/client/rpc",
+    "crates/madara/client/telemetry",
+    "crates/madara/client/devnet",
+    "crates/madara/client/mempool",
+    "crates/madara/client/block_import",
+    "crates/madara/client/analytics",
+    "crates/madara/node",
+    "crates/madara/primitives/block",
+    "crates/madara/primitives/convert",
+    "crates/madara/primitives/transactions",
+    "crates/madara/primitives/class",
+    "crates/madara/primitives/gateway",
+    "crates/madara/primitives/receipt",
+    "crates/madara/primitives/state_update",
+    "crates/madara/primitives/chain_config",
+    "crates/madara/primitives/utils",
+    "crates/madara/proc-macros",
 ]
 
 [workspace.lints.rust]
@@ -102,7 +102,7 @@ librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
 bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
-  "std",
+    "std",
 ] }
 
 # Madara proc macros
@@ -147,21 +147,21 @@ starknet-signers = "0.10"
 starknet = "0.12.0"
 
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
-  "hash",
+    "hash",
 ] }
 starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.8.0"
-starknet_api = "=0.13.0-rc.1"
-cairo-lang-starknet-classes = "=2.8.4"
-cairo-lang-utils = "=2.8.4"
+blockifier = "=0.14.0-rc.0"
+starknet_api = "=0.14.0-rc.0"
+cairo-lang-starknet-classes = "=2.10.0-rc.1"
+cairo-lang-utils = "=2.10.0-rc.1"
 
 alloy = { version = "0.4.0", features = [
-  "node-bindings",
-  "rpc-types",
-  "provider-http",
-  "contract",
-  "node-bindings",
+    "node-bindings",
+    "rpc-types",
+    "provider-http",
+    "contract",
+    "node-bindings",
 ] }
 
 # Other third party dependencies
@@ -177,8 +177,8 @@ clap = { version = "4.4" }
 flate2 = "1.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.22", default-features = false, features = [
-  "server",
-  "client",
+    "server",
+    "client",
 ] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }
@@ -203,8 +203,8 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 rstest = "0.18"
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_with = { version = "3.11", default-features = false, features = [
-  "alloc",
-  "macros",
+    "alloc",
+    "macros",
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
@@ -232,18 +232,18 @@ opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
 opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
 opentelemetry-stdout = { version = "0.25.0" }
 opentelemetry-otlp = { version = "0.25.0", features = [
-  "tonic",
-  "metrics",
-  "logs",
+    "tonic",
+    "metrics",
+    "logs",
 ] }
 opentelemetry-semantic-conventions = { version = "0.25.0" }
 opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
 tracing = { version = "0.1.40", default-features = false }
 tracing-core = { version = "0.1.32", default-features = false }
 tracing-subscriber = { version = "0.3.18", features = [
-  "env-filter",
-  "registry",
-  "std",
+    "env-filter",
+    "registry",
+    "std",
 ] }
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"

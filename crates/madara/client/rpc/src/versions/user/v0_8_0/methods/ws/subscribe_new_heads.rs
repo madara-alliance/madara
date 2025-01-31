@@ -117,7 +117,7 @@ pub async fn subscribe_new_heads(
     }
 }
 
-async fn send_block_header<'a>(
+async fn send_block_header(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     block_info: mp_block::MadaraBlockInfo,
     block_n: u64,
@@ -162,7 +162,6 @@ mod test {
                     },
                     mp_state_update::StateDiff::default(),
                     vec![],
-                    None,
                     None,
                 )
                 .expect("Storing block");

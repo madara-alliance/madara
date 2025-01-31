@@ -1,4 +1,3 @@
-use core::num::NonZeroU128;
 use mp_chain_config::StarknetVersion;
 use serde::Deserialize;
 use serde::Serialize;
@@ -101,6 +100,7 @@ pub struct Header {
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
+// TODO: add l2_gas_price
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GasPrices {
     pub eth_l1_gas_price: u128,
@@ -109,15 +109,23 @@ pub struct GasPrices {
     pub strk_l1_data_gas_price: u128,
 }
 
-impl From<&GasPrices> for blockifier::blockifier::block::GasPrices {
+impl From<&GasPrices> for starknet_api::block::GasPrices {
     fn from(gas_prices: &GasPrices) -> Self {
-        let one = NonZeroU128::new(1).unwrap();
-
         Self {
-            eth_l1_gas_price: NonZeroU128::new(gas_prices.eth_l1_gas_price).unwrap_or(one),
-            strk_l1_gas_price: NonZeroU128::new(gas_prices.strk_l1_gas_price).unwrap_or(one),
-            eth_l1_data_gas_price: NonZeroU128::new(gas_prices.eth_l1_data_gas_price).unwrap_or(one),
-            strk_l1_data_gas_price: NonZeroU128::new(gas_prices.strk_l1_data_gas_price).unwrap_or(one),
+            eth_gas_prices: starknet_api::block::GasPriceVector {
+                l1_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_gas_price.into())
+                    .unwrap_or_default(),
+                l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_data_gas_price.into())
+                    .unwrap_or_default(),
+                l2_gas_price: Default::default(), // 1
+            },
+            strk_gas_prices: starknet_api::block::GasPriceVector {
+                l1_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_gas_price.into())
+                    .unwrap_or_default(),
+                l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_data_gas_price.into())
+                    .unwrap_or_default(),
+                l2_gas_price: Default::default(), // 1
+            },
         }
     }
 }

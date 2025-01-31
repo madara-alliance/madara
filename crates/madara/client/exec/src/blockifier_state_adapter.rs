@@ -1,4 +1,4 @@
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::execution::contract_class::RunnableCompiledClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
@@ -104,7 +104,7 @@ impl StateReader for BlockifierStateAdapter {
         ))
     }
 
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
@@ -120,7 +120,7 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        converted_class.to_blockifier_class().map_err(|err| {
+        (&converted_class).try_into().map_err(|err| {
             tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
         })

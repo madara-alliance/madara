@@ -2,13 +2,11 @@ use anyhow::Context;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transactions::{
-    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, L1HandlerTransaction as BL1HandlerTransaction,
-};
 use header::make_pending_header;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo};
 use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
@@ -19,8 +17,8 @@ use mp_transactions::BroadcastedTransactionExt;
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
 use mp_transactions::ToBlockifierError;
-use starknet_api::core::{ContractAddress, Nonce};
-use starknet_api::transaction::TransactionHash;
+use starknet_api::core::Nonce;
+use starknet_api::executable_transaction::AccountTransaction as ApiExecutableTransaction;
 use starknet_api::StarknetApiError;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{
@@ -167,25 +165,26 @@ impl Mempool {
         // If the contract has been deployed for the same block is is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
         //  may appear during that time - but it is not a problem.
-        let deploy_account_tx_hash = if let Transaction::AccountTransaction(AccountTransaction::Invoke(tx)) = &tx {
-            let mempool = self.inner.read().expect("Poisoned lock");
-            if mempool.has_deployed_contract(&tx.tx.sender_address()) {
-                Some(tx.tx_hash) // we return the wrong tx hash here but it's ok because the actual hash is unused by blockifier
+        let deploy_account_tx_hash =
+            if let Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::Invoke(tx), .. }) = &tx {
+                let mempool = self.inner.read().expect("Poisoned lock");
+                if mempool.has_deployed_contract(&tx.tx.sender_address()) {
+                    Some(tx.tx_hash) // we return the wrong tx hash here but it's ok because the actual hash is unused by blockifier
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
-        let tx_hash = tx_hash(&tx).to_felt();
+        let tx_hash = tx.tx_hash().0;
         tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
         // Perform validations
         let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&self.backend), &pending_block_info)?;
         let mut validator = exec_context.tx_validator();
 
-        if let Transaction::AccountTransaction(account_tx) = clone_transaction(&tx) {
+        if let Transaction::Account(account_tx) = tx.clone() {
             validator.perform_validations(account_tx, deploy_account_tx_hash.is_some())?
         }
 
@@ -282,27 +281,20 @@ impl Mempool {
     }
 }
 
-pub fn transaction_hash(tx: &Transaction) -> Felt {
-    match tx {
-        Transaction::AccountTransaction(tx) => match tx {
-            AccountTransaction::Declare(tx) => *tx.tx_hash,
-            AccountTransaction::DeployAccount(tx) => *tx.tx_hash,
-            AccountTransaction::Invoke(tx) => *tx.tx_hash,
-        },
-        Transaction::L1HandlerTransaction(tx) => *tx.tx_hash,
-    }
-}
-
 fn declare_class_hash(tx: &Transaction) -> Option<Felt> {
     match tx {
-        Transaction::AccountTransaction(AccountTransaction::Declare(tx)) => Some(*tx.class_hash()),
+        Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::Declare(tx), .. }) => {
+            Some(*tx.class_hash())
+        }
         _ => None,
     }
 }
 
 fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
     match tx {
-        Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) => Some(**tx.contract_address),
+        Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::DeployAccount(tx), .. }) => {
+            Some(**tx.contract_address)
+        }
         _ => None,
     }
 }
@@ -322,9 +314,10 @@ impl MempoolProvider for Mempool {
         };
 
         let tx = BroadcastedTxn::Invoke(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
-        let res = AddInvokeTransactionResult { transaction_hash: transaction_hash(&btx) };
+        let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().0 };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
         Ok(res)
     }
@@ -334,7 +327,7 @@ impl MempoolProvider for Mempool {
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = ClassAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
 
@@ -370,7 +363,7 @@ impl MempoolProvider for Mempool {
             NonceInfo::ready(nonce, nonce_next)
         };
 
-        let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&btx) };
+        let res = L1HandlerTransactionResult { transaction_hash: btx.tx_hash().0 };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
         Ok(res)
     }
@@ -387,10 +380,11 @@ impl MempoolProvider for Mempool {
         };
 
         let tx = BroadcastedTxn::Declare(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
         let res = ClassAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
@@ -403,10 +397,11 @@ impl MempoolProvider for Mempool {
         tx: BroadcastedDeployAccountTxn<Felt>,
     ) -> Result<ContractAndTxnHash<Felt>, MempoolError> {
         let tx = BroadcastedTxn::DeployAccount(tx);
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
+        let (btx, class) =
+            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
 
         let res = ContractAndTxnHash {
-            transaction_hash: transaction_hash(&btx),
+            transaction_hash: btx.tx_hash().0,
             contract_address: deployed_contract_address(&btx).expect("Created transaction should be deploy account"),
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceInfo::default())?;
@@ -491,75 +486,8 @@ impl MempoolProvider for Mempool {
 
 pub(crate) fn is_only_query(tx: &Transaction) -> bool {
     match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.only_query(),
-            AccountTransaction::DeployAccount(tx) => tx.only_query,
-            AccountTransaction::Invoke(tx) => tx.only_query,
-        },
-        Transaction::L1HandlerTransaction(_) => false,
-    }
-}
-
-pub(crate) fn contract_addr(tx: &Transaction) -> ContractAddress {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.sender_address(),
-            AccountTransaction::DeployAccount(tx) => tx.contract_address,
-            AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
-    }
-}
-
-pub(crate) fn nonce(tx: &Transaction) -> Nonce {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx.nonce(),
-            AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-            AccountTransaction::Invoke(tx) => tx.tx.nonce(),
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
-    }
-}
-
-pub(crate) fn tx_hash(tx: &Transaction) -> TransactionHash {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => match account_tx {
-            AccountTransaction::Declare(tx) => tx.tx_hash,
-            AccountTransaction::DeployAccount(tx) => tx.tx_hash,
-            AccountTransaction::Invoke(tx) => tx.tx_hash,
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx_hash,
-    }
-}
-
-// AccountTransaction does not implement Clone :(
-pub(crate) fn clone_transaction(tx: &Transaction) -> Transaction {
-    match tx {
-        Transaction::AccountTransaction(account_tx) => Transaction::AccountTransaction(match account_tx {
-            AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
-                true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                    .expect("Making blockifier transaction for query"),
-                false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
-                    .expect("Making blockifier transaction"),
-            }),
-            AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
-                tx: tx.tx.clone(),
-                tx_hash: tx.tx_hash,
-                contract_address: tx.contract_address,
-                only_query: tx.only_query,
-            }),
-            AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
-                tx: tx.tx.clone(),
-                tx_hash: tx.tx_hash,
-                only_query: tx.only_query,
-            }),
-        }),
-        Transaction::L1HandlerTransaction(tx) => Transaction::L1HandlerTransaction(BL1HandlerTransaction {
-            tx: tx.tx.clone(),
-            tx_hash: tx.tx_hash,
-            paid_fee_on_l1: tx.paid_fee_on_l1,
-        }),
+        Transaction::Account(account_tx) => account_tx.execution_flags.only_query,
+        Transaction::L1Handler(_) => false,
     }
 }
 
@@ -570,6 +498,7 @@ mod test {
     use mc_db::mempool_db::NonceStatus;
     use mp_block::{MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
     use mp_state_update::{NonceUpdate, StateDiff};
+    use starknet_api::core::ContractAddress;
 
     use super::*;
 
@@ -596,34 +525,38 @@ mod test {
     fn tx_account_v0_valid(
         #[default(Felt::ZERO)] contract_address: Felt,
     ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                blockifier::transaction::transactions::InvokeTransaction {
-                    tx: starknet_api::transaction::InvokeTransaction::V0(
-                        starknet_api::transaction::InvokeTransactionV0 {
-                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                            ..Default::default()
-                        },
-                    ),
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    only_query: false,
-                },
-            ),
+        blockifier::transaction::transaction_execution::Transaction::Account(
+            blockifier::transaction::account_transaction::AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                    starknet_api::executable_transaction::InvokeTransaction {
+                        tx: starknet_api::transaction::InvokeTransaction::V0(
+                            starknet_api::transaction::InvokeTransactionV0 {
+                                contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                                ..Default::default()
+                            },
+                        ),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    },
+                ),
+                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+            },
         )
     }
 
     #[rstest::fixture]
     fn tx_account_v1_invalid() -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-            blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                blockifier::transaction::transactions::InvokeTransaction {
-                    tx: starknet_api::transaction::InvokeTransaction::V1(
-                        starknet_api::transaction::InvokeTransactionV1::default(),
-                    ),
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    only_query: true,
-                },
-            ),
+        blockifier::transaction::transaction_execution::Transaction::Account(
+            blockifier::transaction::account_transaction::AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                    starknet_api::executable_transaction::InvokeTransaction {
+                        tx: starknet_api::transaction::InvokeTransaction::V1(
+                            starknet_api::transaction::InvokeTransactionV1::default(),
+                        ),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    },
+                ),
+                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+            },
         )
     }
 
@@ -631,17 +564,19 @@ mod test {
     fn tx_deploy_v1_valid(
         #[default(Felt::ZERO)] contract_address: Felt,
     ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-            blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-                blockifier::transaction::transactions::DeployAccountTransaction {
-                    tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                        starknet_api::transaction::DeployAccountTransactionV1::default(),
-                    ),
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                    only_query: false,
-                },
-            ),
+        blockifier::transaction::transaction_execution::Transaction::Account(
+            blockifier::transaction::account_transaction::AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                    starknet_api::executable_transaction::DeployAccountTransaction {
+                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                            starknet_api::transaction::DeployAccountTransactionV1::default(),
+                        ),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                    },
+                ),
+                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+            },
         )
     }
 
@@ -649,14 +584,14 @@ mod test {
     fn tx_l1_handler_valid(
         #[default(Felt::ZERO)] contract_address: Felt,
     ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(
-            blockifier::transaction::transactions::L1HandlerTransaction {
+        blockifier::transaction::transaction_execution::Transaction::L1Handler(
+            starknet_api::executable_transaction::L1HandlerTransaction {
                 tx: starknet_api::transaction::L1HandlerTransaction {
                     contract_address: ContractAddress::try_from(contract_address).unwrap(),
                     ..Default::default()
                 },
                 tx_hash: starknet_api::transaction::TransactionHash::default(),
-                paid_fee_on_l1: starknet_api::transaction::Fee::default(),
+                paid_fee_on_l1: starknet_api::transaction::fields::Fee::default(),
             },
         )
     }
@@ -1647,7 +1582,6 @@ mod test {
                 },
                 vec![],
                 None,
-                None,
             )
             .expect("Failed to store block");
 
@@ -1687,7 +1621,6 @@ mod test {
                     ..Default::default()
                 },
                 vec![],
-                None,
                 None,
             )
             .expect("Failed to store block");

@@ -1,5 +1,3 @@
-use blockifier::execution::contract_class::{ClassInfo as BClassInfo, ContractClass as BContractClass};
-use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashMap, sync::Arc};
 
@@ -9,6 +7,8 @@ pub mod compile;
 pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
+mod to_blockifier;
+mod to_starknet_api;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConvertedClass {
@@ -29,24 +29,6 @@ impl ConvertedClass {
             ConvertedClass::Legacy(legacy) => ClassInfo::Legacy(legacy.info.clone()),
             ConvertedClass::Sierra(sierra) => ClassInfo::Sierra(sierra.info.clone()),
         }
-    }
-
-    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
-        Ok(match self {
-            ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
-            ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
-        })
-    }
-
-    pub fn to_blockifier_class_info(&self) -> Result<BClassInfo, ClassCompilationError> {
-        Ok(match self {
-            ConvertedClass::Legacy(class) => BClassInfo::new(&class.info.contract_class.to_blockifier_class()?, 0, 0)?,
-            ConvertedClass::Sierra(class) => BClassInfo::new(
-                &class.compiled.to_blockifier_class()?,
-                class.info.contract_class.sierra_program.len(),
-                class.info.contract_class.abi.len(),
-            )?,
-        })
     }
 }
 

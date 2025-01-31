@@ -35,7 +35,7 @@ pub async fn trace_block_transactions(
         })
         .collect::<Result<_, _>>()?;
 
-    let executions_results = exec_context.re_execute_transactions([], transactions, true, true)?;
+    let executions_results = exec_context.re_execute_transactions([], transactions)?;
 
     let traces = executions_results
         .into_iter()

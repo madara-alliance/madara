@@ -22,6 +22,7 @@ use primitive_types::H160;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
+use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 use url::Url;
 
@@ -47,13 +48,28 @@ pub mod public_key {
     pub const SEPOLIA_INTEGRATION: &str = "0x4e4856eb36dbd5f4a7dca29f7bb5232974ef1fb7eb5b597c58077174c294da1";
 }
 
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_0.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_1.json");
 const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
-    include_bytes!("../resources/versioned_constants_13_1_1.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2: &[u8] = include_bytes!("../resources/versioned_constants_13_2.json");
+    include_bytes!("../resources/versioned_constants_0_13_1_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_2.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2_1: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_2_1.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_3: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_3.json");
+const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_4: &[u8] =
+    include_bytes!("../resources/versioned_constants_0_13_4.json");
 
 lazy_static::lazy_static! {
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_4: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_4).unwrap();
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_3: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_3).unwrap();
+    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2_1: VersionedConstants =
+        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2_1).unwrap();
     pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2: VersionedConstants =
         serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2).unwrap();
     pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1: VersionedConstants =
@@ -228,11 +244,12 @@ impl ChainConfig {
                         range_check: usize::MAX,
                         range_check96: usize::MAX,
                     },
-                    gas: 5_000_000,
+                    l1_gas: 5_000_000,
                     n_steps: 40_000_000,
                     message_segment_length: usize::MAX,
                     n_events: usize::MAX,
                     state_diff_size: 131072,
+                    sierra_gas: GasAmount(20),
                 },
             },
             // We are not producing blocks for these chains.
@@ -374,6 +391,9 @@ impl Default for ChainVersionedConstants {
             (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
             (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
             (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2.deref().clone()),
+            (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2_1.deref().clone()),
+            (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_3.deref().clone()),
+            (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_4.deref().clone()),
         ]
         .into()
     }
@@ -455,6 +475,7 @@ where
 #[cfg(test)]
 mod tests {
     use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
+    use cairo_vm::types::builtin_name::BuiltinName;
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
@@ -495,17 +516,20 @@ mod tests {
         assert_eq!(constants.segment_arena_cells, json["segment_arena_cells"].as_bool().unwrap());
 
         // Check L2ResourceGasCosts
-        let l2_costs = &constants.l2_resource_gas_costs;
+        let l2_costs = &constants.deprecated_l2_resource_gas_costs;
         assert_eq!(l2_costs.gas_per_data_felt, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
         // Check OsConstants
         let os_constants = &constants.os_constants;
-        assert_eq!(os_constants.gas_costs.step_gas_cost, json["os_constants"]["step_gas_cost"].as_u64().unwrap());
         assert_eq!(
-            os_constants.gas_costs.range_check_gas_cost,
-            json["os_constants"]["range_check_gas_cost"].as_u64().unwrap()
+            os_constants.gas_costs.base.step_gas_cost,
+            json["os_constants"]["base"]["step_gas_cost"].as_u64().unwrap()
+        );
+        assert_eq!(
+            os_constants.gas_costs.builtins.range_check,
+            json["os_constants"]["builtins"]["range_check"].as_u64().unwrap()
         );
         // Add more checks for other gas costs...
 
@@ -525,21 +549,21 @@ mod tests {
         let vm_costs = constants.vm_resource_fee_cost();
 
         // Verify specific resource costs
-        assert_eq!(vm_costs.get("n_steps").unwrap(), &ResourceCost::new(5, 1000));
-        assert_eq!(vm_costs.get("pedersen_builtin").unwrap(), &ResourceCost::new(16, 100));
-        assert_eq!(vm_costs.get("range_check_builtin").unwrap(), &ResourceCost::new(8, 100));
-        assert_eq!(vm_costs.get("ecdsa_builtin").unwrap(), &ResourceCost::new(1024, 100));
-        assert_eq!(vm_costs.get("bitwise_builtin").unwrap(), &ResourceCost::new(32, 100));
-        assert_eq!(vm_costs.get("poseidon_builtin").unwrap(), &ResourceCost::new(16, 100));
-        assert_eq!(vm_costs.get("ec_op_builtin").unwrap(), &ResourceCost::new(512, 100));
-        assert_eq!(vm_costs.get("keccak_builtin").unwrap(), &ResourceCost::new(1024, 100));
+        assert_eq!(vm_costs.n_steps, ResourceCost::new(5, 1000));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::pedersen).unwrap(), &ResourceCost::new(16, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::range_check).unwrap(), &ResourceCost::new(8, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::ecdsa).unwrap(), &ResourceCost::new(1024, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::bitwise).unwrap(), &ResourceCost::new(32, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::poseidon).unwrap(), &ResourceCost::new(16, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::ec_op).unwrap(), &ResourceCost::new(512, 100));
+        assert_eq!(vm_costs.builtins.get(&BuiltinName::keccak).unwrap(), &ResourceCost::new(1024, 100));
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
         assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
 
         // Check bouncer config
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
+        assert_eq!(chain_config.bouncer_config.block_max_capacity.l1_gas, 5000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.n_steps, 40000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 131072);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);

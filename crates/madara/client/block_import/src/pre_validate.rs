@@ -77,7 +77,6 @@ pub fn pre_validate_inner(
         unverified_global_state_root: block.commitments.global_state_root,
         unverified_block_hash: block.commitments.block_hash,
         unverified_block_number: block.unverified_block_number,
-        visited_segments: block.visited_segments,
     })
 }
 
@@ -98,7 +97,6 @@ pub fn pre_validate_pending_inner(
         state_diff: block.state_diff,
         receipts: block.receipts,
         converted_classes,
-        visited_segments: block.visited_segments,
     })
 }
 
@@ -177,7 +175,7 @@ fn class_conversion(
             Ok(ConvertedClass::Sierra(SierraConvertedClass {
                 class_hash: sierra.class_hash,
                 info: SierraClassInfo { contract_class: Arc::new(sierra.contract_class), compiled_class_hash },
-                compiled: Arc::new(compiled_class),
+                compiled: Arc::new((&compiled_class).try_into().unwrap()),
             }))
         }
         DeclaredClass::Legacy(legacy) => {

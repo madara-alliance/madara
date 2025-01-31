@@ -1,8 +1,9 @@
 use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
 use blockifier::{
     blockifier::{
-        config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
-        transaction_executor::TransactionExecutor,
+        config::TransactionExecutorConfig,
+        stateful_validator::StatefulValidator,
+        transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
     },
     context::{BlockContext, ChainInfo, FeeTokenAddresses},
     state::cached_state::CachedState,
@@ -25,7 +26,7 @@ impl ExecutionContext {
             self.init_cached_state(),
             self.block_context.clone(),
             // No concurrency yet.
-            TransactionExecutorConfig { concurrency_config: Default::default() },
+            TransactionExecutorConfig { concurrency_config: Default::default(), stack_size: DEFAULT_STACK_SIZE },
         )
     }
 
@@ -128,7 +129,7 @@ impl ExecutionContext {
                 eth_fee_token_address: backend.chain_config().parent_fee_token_address,
             },
         };
-        let block_info = blockifier::blockifier::block::BlockInfo {
+        let block_info = starknet_api::block::BlockInfo {
             block_number: BlockNumber(block_number),
             block_timestamp: BlockTimestamp(block_timestamp.0),
             sequencer_address: sequencer_address

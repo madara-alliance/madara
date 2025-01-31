@@ -101,7 +101,6 @@ pub fn verify_apply_inner(
             },
             block.state_diff,
             block.converted_classes,
-            block.visited_segments,
             None,
         )
         .map_err(make_db_error("storing block in db"))?;
@@ -146,7 +145,6 @@ pub fn verify_apply_pending_inner(
             },
             block.state_diff,
             block.converted_classes,
-            block.visited_segments,
             None,
         )
         .map_err(make_db_error("storing block in db"))?;
@@ -411,7 +409,7 @@ mod verify_apply_tests {
         if populate_db {
             let header = create_dummy_header();
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None).unwrap();
         }
 
         // Create a validation context with the specified ignore_block_order flag
@@ -665,7 +663,7 @@ mod verify_apply_tests {
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -691,7 +689,7 @@ mod verify_apply_tests {
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -727,7 +725,7 @@ mod verify_apply_tests {
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());
-            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -773,7 +771,7 @@ mod verify_apply_tests {
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());
-            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 

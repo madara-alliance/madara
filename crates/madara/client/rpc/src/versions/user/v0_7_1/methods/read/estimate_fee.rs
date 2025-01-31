@@ -36,15 +36,15 @@ pub async fn estimate_fee(
 
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
+    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
+
     let transactions = request
         .into_iter()
-        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
+        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version, validate, true).map(|(tx, _)| tx))
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
-
-    let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
+    let execution_results = exec_context.re_execute_transactions([], transactions)?;
 
     let fee_estimates = execution_results.iter().enumerate().try_fold(
         Vec::with_capacity(execution_results.len()),
@@ -52,7 +52,7 @@ pub async fn estimate_fee(
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
-                    error: result.execution_info.revert_error.clone().unwrap_or_default(),
+                    error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
                 });
             }
             acc.push(exec_context.execution_result_to_fee_estimate(result));

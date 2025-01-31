@@ -1,7 +1,7 @@
 use mc_block_import::{
     BlockImportError, BlockImportResult, BlockImporter, BlockValidationContext, UnverifiedFullBlock, UnverifiedHeader,
 };
-use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments};
+use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
@@ -15,7 +15,6 @@ pub async fn close_block(
     chain_id: ChainId,
     block_number: u64,
     declared_classes: Vec<ConvertedClass>,
-    visited_segments: VisitedSegments,
 ) -> Result<BlockImportResult, BlockImportError> {
     let validation = BlockValidationContext::new(chain_id).trust_transaction_hashes(true);
 
@@ -49,7 +48,6 @@ pub async fn close_block(
                 receipts: inner.receipts,
                 trusted_converted_classes: declared_classes,
                 commitments: Default::default(), // the block importer will compute the commitments for us
-                visited_segments: Some(visited_segments),
                 ..Default::default()
             },
             validation.clone(),

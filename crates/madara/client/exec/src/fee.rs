@@ -1,5 +1,5 @@
 use crate::{ExecutionContext, ExecutionResult};
-use blockifier::transaction::objects::FeeType;
+use starknet_api::block::{FeeType, GasPriceVector};
 use starknet_types_core::felt::Felt;
 
 impl ExecutionContext {
@@ -7,25 +7,22 @@ impl ExecutionContext {
         &self,
         executions_result: &ExecutionResult,
     ) -> starknet_types_rpc::FeeEstimate<Felt> {
-        let gas_price =
-            self.block_context.block_info().gas_prices.get_gas_price_by_fee_type(&executions_result.fee_type).get();
-        let data_gas_price = self
-            .block_context
-            .block_info()
-            .gas_prices
-            .get_data_gas_price_by_fee_type(&executions_result.fee_type)
-            .get();
+        let GasPriceVector { l1_gas_price, l1_data_gas_price, .. } =
+            self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);
+        let l1_gas_price = l1_gas_price.get().0;
+        let l1_data_gas_price = l1_data_gas_price.get().0;
 
-        let data_gas_consumed = executions_result.execution_info.transaction_receipt.da_gas.l1_data_gas;
-        let data_gas_fee = data_gas_consumed.saturating_mul(data_gas_price);
+        let data_gas_consumed: u128 = executions_result.execution_info.receipt.da_gas.l1_data_gas.0.into();
+        let data_gas_fee = data_gas_consumed.saturating_mul(l1_data_gas_price);
         let gas_consumed =
-            executions_result.execution_info.transaction_receipt.fee.0.saturating_sub(data_gas_fee) / gas_price.max(1);
-        let minimal_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_gas;
-        let minimal_data_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_data_gas;
-        let gas_consumed = gas_consumed.max(minimal_gas_consumed);
-        let data_gas_consumed = data_gas_consumed.max(minimal_data_gas_consumed);
-        let overall_fee =
-            gas_consumed.saturating_mul(gas_price).saturating_add(data_gas_consumed.saturating_mul(data_gas_price));
+            executions_result.execution_info.receipt.fee.0.saturating_sub(data_gas_fee) / l1_gas_price.max(1);
+        let minimal_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_gas.0;
+        let minimal_data_gas_consumed = executions_result.minimal_l1_gas.unwrap_or_default().l1_data_gas.0;
+        let gas_consumed = gas_consumed.max(minimal_gas_consumed.into());
+        let data_gas_consumed = data_gas_consumed.max(minimal_data_gas_consumed.into());
+        let overall_fee = gas_consumed
+            .saturating_mul(l1_gas_price)
+            .saturating_add(data_gas_consumed.saturating_mul(l1_data_gas_price));
 
         let unit = match executions_result.fee_type {
             FeeType::Eth => starknet_types_rpc::PriceUnit::Wei,
@@ -33,9 +30,9 @@ impl ExecutionContext {
         };
         starknet_types_rpc::FeeEstimate {
             gas_consumed: gas_consumed.into(),
-            gas_price: gas_price.into(),
+            gas_price: l1_gas_price.into(),
             data_gas_consumed: data_gas_consumed.into(),
-            data_gas_price: data_gas_price.into(),
+            data_gas_price: l1_data_gas_price.into(),
             overall_fee: overall_fee.into(),
             unit,
         }

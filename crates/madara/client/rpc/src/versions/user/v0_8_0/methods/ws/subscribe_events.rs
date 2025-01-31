@@ -150,7 +150,6 @@ mod test {
                     mp_state_update::StateDiff::default(),
                     vec![],
                     None,
-                    None,
                 )
                 .expect("Storing block");
 

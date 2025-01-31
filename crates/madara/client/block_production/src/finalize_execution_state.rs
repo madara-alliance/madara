@@ -6,7 +6,6 @@ use blockifier::{
     transaction::errors::TransactionExecutionError,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_block::{VisitedSegmentEntry, VisitedSegments};
 use mp_convert::ToFelt;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -101,64 +100,34 @@ pub(crate) fn state_map_to_state_diff(
     })
 }
 
-fn get_visited_segments<S: StateReader>(tx_executor: &mut TransactionExecutor<S>) -> Result<VisitedSegments, Error> {
-    let visited_segments = tx_executor
-        .block_state
-        .as_ref()
-        .expect(BLOCK_STATE_ACCESS_ERR)
-        .visited_pcs
-        .iter()
-        .map(|(class_hash, class_visited_pcs)| -> Result<_, Error> {
-            let contract_class = tx_executor
-                .block_state
-                .as_ref()
-                .expect(BLOCK_STATE_ACCESS_ERR)
-                .get_compiled_contract_class(*class_hash)
-                .map_err(TransactionExecutionError::StateError)?;
-            Ok(VisitedSegmentEntry {
-                class_hash: class_hash.to_felt(),
-                segments: contract_class.get_visited_segments(class_visited_pcs)?,
-            })
-        })
-        .collect::<Result<_, Error>>()?;
-
-    Ok(VisitedSegments(visited_segments))
-}
-
 pub(crate) fn finalize_execution_state<S: StateReader>(
     tx_executor: &mut TransactionExecutor<S>,
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-) -> Result<(StateDiff, VisitedSegments, BouncerWeights), Error> {
+) -> Result<(StateDiff, BouncerWeights), Error> {
     let state_map = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
-        .map_err(TransactionExecutionError::StateError)?;
+        .map_err(TransactionExecutionError::StateError)?
+        .state_maps;
     let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
 
-    let visited_segments = get_visited_segments(tx_executor)?;
-
-    Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
+    Ok((state_update, *tx_executor.bouncer.get_accumulated_weights()))
 }
 
 #[cfg(test)]
 mod test {
     use std::{collections::HashMap, sync::Arc};
 
-    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
+    use blockifier::state::cached_state::StateMaps;
     use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
     use mp_state_update::{
         ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry,
     };
-    use starknet_api::{
-        class_hash, contract_address,
-        core::{ClassHash, ContractAddress, PatriciaKey},
-        felt, patricia_key,
-    };
+    use starknet_api::{class_hash, compiled_class_hash, contract_address, felt, nonce, storage_key};
     use starknet_core::types::Felt;
 
     #[test]
@@ -228,17 +197,11 @@ mod test {
             },
         ];
 
-        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+        let deprecated_declared_classes = vec![felt!("0xc1a553")];
 
         let declared_classes = vec![
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a551").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
-            },
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a552").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
-            },
+            DeclaredClassItem { class_hash: felt!("0xc1a551"), compiled_class_hash: felt!("0x1") },
+            DeclaredClassItem { class_hash: felt!("0xc1a552"), compiled_class_hash: felt!("0x2") },
         ];
 
         let nonces = vec![
@@ -248,9 +211,9 @@ mod test {
         ];
 
         let deployed_contracts = vec![
-            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
-            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
-            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+            DeployedContractItem { address: felt!(1u32), class_hash: felt!("0xc1a551") },
+            DeployedContractItem { address: felt!(2u32), class_hash: felt!("0xc1a552") },
+            DeployedContractItem { address: felt!(3u32), class_hash: felt!("0xc1a553") },
         ];
 
         let replaced_classes = vec![];

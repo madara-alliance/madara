@@ -27,7 +27,7 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraPendingBlock, VisitedSegments};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
@@ -83,11 +83,6 @@ struct ContinueBlockResult {
     /// The accumulated state changes from executing transactions in this continuation
     state_diff: StateDiff,
 
-    /// Tracks which segments of Cairo program code were accessed during transaction execution,
-    /// organized by class hash. This information is used as input for SNOS (Starknet OS)
-    /// when generating proofs of execution.
-    visited_segments: VisitedSegments,
-
     /// The current state of resource consumption tracked by the bouncer
     bouncer_weights: BouncerWeights,
 
@@ -135,7 +130,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     ) -> Result<(), Cow<'static, str>> {
         let err_pending_block = |err| format!("Getting pending block: {err:#}");
         let err_pending_state_diff = |err| format!("Getting pending state update: {err:#}");
-        let err_pending_visited_segments = |err| format!("Getting pending visited segments: {err:#}");
         let err_pending_clear = |err| format!("Clearing pending block: {err:#}");
         let err_latest_block_n = |err| format!("Failed to get latest block number: {err:#}");
 
@@ -155,8 +149,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .expect("Checked above");
 
         let pending_state_diff = backend.get_pending_block_state_update().map_err(err_pending_state_diff)?;
-        let pending_visited_segments =
-            backend.get_pending_block_segments().map_err(err_pending_visited_segments)?.unwrap_or_default();
 
         let mut classes = pending_state_diff
             .deprecated_declared_classes
@@ -193,7 +185,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             backend.chain_config().chain_id.clone(),
             block_n,
             declared_classes,
-            pending_visited_segments,
         )
         .await
         .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
@@ -279,7 +270,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.clone_tx()));
+                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.tx.clone()));
             }
 
             if txs_to_process.is_empty() {
@@ -320,8 +311,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         self.block
                             .inner
                             .receipts
-                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.clone_tx()));
-                        let converted_tx = TransactionWithHash::from(mempool_tx.clone_tx());
+                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.tx.clone()));
+                        let converted_tx = TransactionWithHash::from(mempool_tx.tx.clone());
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -348,7 +339,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
 
-        let (state_diff, visited_segments, bouncer_weights) =
+        let (state_diff, bouncer_weights) =
             finalize_execution_state::finalize_execution_state(&mut self.executor, &self.backend, &on_top_of)?;
 
         // Add back the unexecuted transactions to the mempool.
@@ -364,17 +355,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok(ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full })
+        Ok(ContinueBlockResult { state_diff, bouncer_weights, stats, block_now_full })
     }
 
     /// Closes the current block and prepares for the next one
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    async fn close_and_prepare_next_block(
-        &mut self,
-        state_diff: StateDiff,
-        visited_segments: VisitedSegments,
-        start_time: Instant,
-    ) -> Result<(), Error> {
+    async fn close_and_prepare_next_block(&mut self, state_diff: StateDiff, start_time: Instant) -> Result<(), Error> {
         let block_n = self.block_n();
         // Convert the pending block to a closed block and save to db
         let parent_block_hash = Felt::ZERO; // temp parent block hash
@@ -397,7 +383,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.backend.chain_config().chain_id.clone(),
             block_n,
             declared_classes,
-            visited_segments,
         )
         .await?;
 
@@ -488,13 +473,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let start_time = Instant::now();
 
-        let ContinueBlockResult {
-            state_diff: mut new_state_diff,
-            visited_segments,
-            bouncer_weights,
-            stats,
-            block_now_full,
-        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+        let ContinueBlockResult { state_diff: mut new_state_diff, bouncer_weights, stats, block_now_full } =
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         if stats.n_added_to_block > 0 {
             tracing::info!(
@@ -511,7 +491,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
             tracing::info!("Resource limits reached, closing block early");
-            self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await?;
+            self.close_and_prepare_next_block(new_state_diff, start_time).await?;
             return Ok(true);
         }
 
@@ -521,7 +501,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.block.clone().into(),
             new_state_diff,
             self.declared_classes.clone(),
-            Some(visited_segments),
             Some(bouncer_weights),
         )?;
         // do not forget to flush :)
@@ -540,7 +519,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let start_time = Instant::now();
         let ContinueBlockResult {
             state_diff: mut new_state_diff,
-            visited_segments,
             bouncer_weights: _weights,
             stats: _stats,
             block_now_full: _block_now_full,
@@ -548,7 +526,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
-        self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await
+        self.close_and_prepare_next_block(new_state_diff, start_time).await
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
@@ -626,23 +604,15 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use blockifier::{
-        bouncer::BouncerWeights, compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key,
-    };
+    use blockifier::{bouncer::BouncerWeights, state::cached_state::StateMaps};
     use mc_db::MadaraBackend;
     use mc_mempool::Mempool;
-    use mp_block::VisitedSegments;
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
     use mp_state_update::{
         ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
         StorageEntry,
     };
-    use starknet_api::{
-        class_hash, contract_address,
-        core::{ClassHash, ContractAddress, PatriciaKey},
-        felt, patricia_key,
-    };
+    use starknet_api::{class_hash, compiled_class_hash, contract_address, felt, nonce, storage_key};
     use starknet_types_core::felt::Felt;
 
     use crate::{
@@ -759,15 +729,6 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn visited_segments() -> mp_block::VisitedSegments {
-        mp_block::VisitedSegments(vec![
-            mp_block::VisitedSegmentEntry { class_hash: Felt::ONE, segments: vec![0, 1, 2] },
-            mp_block::VisitedSegmentEntry { class_hash: Felt::TWO, segments: vec![0, 1, 2] },
-            mp_block::VisitedSegmentEntry { class_hash: Felt::THREE, segments: vec![0, 1, 2] },
-        ])
-    }
-
-    #[rstest::fixture]
     fn bouncer_weights() -> BouncerWeights {
         BouncerWeights {
             builtin_count: blockifier::bouncer::BuiltinCount {
@@ -782,11 +743,12 @@ mod tests {
                 range_check: 8,
                 range_check96: 9,
             },
-            gas: 10,
+            l1_gas: 10,
             message_segment_length: 11,
             n_events: 12,
             n_steps: 13,
             state_diff_size: 14,
+            sierra_gas: 15u64.into(),
         }
     }
 
@@ -855,17 +817,11 @@ mod tests {
             },
         ];
 
-        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+        let deprecated_declared_classes = vec![felt!("0xc1a553")];
 
         let declared_classes = vec![
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a551").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
-            },
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a552").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
-            },
+            DeclaredClassItem { class_hash: felt!("0xc1a551"), compiled_class_hash: felt!("0x1") },
+            DeclaredClassItem { class_hash: felt!("0xc1a552"), compiled_class_hash: felt!("0x2") },
         ];
 
         let nonces = vec![
@@ -875,9 +831,9 @@ mod tests {
         ];
 
         let deployed_contracts = vec![
-            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
-            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
-            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+            DeployedContractItem { address: felt!(1u32), class_hash: felt!("0xc1a551") },
+            DeployedContractItem { address: felt!(2u32), class_hash: felt!("0xc1a552") },
+            DeployedContractItem { address: felt!(3u32), class_hash: felt!("0xc1a553") },
         ];
 
         let replaced_classes = vec![];
@@ -934,7 +890,6 @@ mod tests {
         #[from(converted_class_sierra)]
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
-        visited_segments: VisitedSegments,
         bouncer_weights: BouncerWeights,
     ) {
         let (backend, importer, metrics) = setup;
@@ -1028,7 +983,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
@@ -1123,7 +1077,6 @@ mod tests {
         converted_class_sierra_2: mp_class::ConvertedClass,
 
         // Pending data
-        visited_segments: VisitedSegments,
         bouncer_weights: BouncerWeights,
     ) {
         let (backend, importer, metrics) = setup;
@@ -1194,7 +1147,6 @@ mod tests {
                 },
                 ready_state_diff.clone(),
                 ready_converted_classes.clone(),
-                Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
@@ -1275,7 +1227,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 pending_converted_classes.clone(),
-                Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
@@ -1372,7 +1323,7 @@ mod tests {
     #[rstest::rstest]
     #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_no_visited_segments(
+    async fn block_prod_pending_close_on_startup(
         setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
@@ -1462,7 +1413,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                None, // No visited segments!
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
@@ -1526,7 +1476,6 @@ mod tests {
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
-        visited_segments: VisitedSegments,
         bouncer_weights: BouncerWeights,
     ) {
         let (backend, importer, metrics) = setup;
@@ -1595,7 +1544,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
@@ -1626,7 +1574,6 @@ mod tests {
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
-        visited_segments: VisitedSegments,
         bouncer_weights: BouncerWeights,
     ) {
         let (backend, importer, metrics) = setup;
@@ -1695,7 +1642,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
             .expect("Failed to store pending block");

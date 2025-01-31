@@ -240,7 +240,6 @@ impl MadaraBackend {
         &self,
         block: &MadaraPendingBlock,
         state_update: &StateDiff,
-        visited_segments: Option<VisitedSegments>,
         bouncer_weights: Option<BouncerWeights>,
     ) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
@@ -248,9 +247,6 @@ impl MadaraBackend {
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
-        if let Some(visited_segments) = visited_segments {
-            tx.put_cf(&col, ROW_PENDING_SEGMENTS, bincode::serialize(&visited_segments)?);
-        }
         if let Some(bouncer_weights) = bouncer_weights {
             tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
         }

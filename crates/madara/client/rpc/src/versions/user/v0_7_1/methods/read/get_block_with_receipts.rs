@@ -252,7 +252,6 @@ mod tests {
                 StateDiff::default(),
                 vec![],
                 None,
-                None,
             )
             .unwrap();
 
