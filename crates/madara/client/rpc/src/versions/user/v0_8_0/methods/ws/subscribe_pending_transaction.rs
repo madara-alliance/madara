@@ -96,11 +96,12 @@ pub async fn send_pending_transactions(
         let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_message)
             .or_internal_server_error("Failed to create response message")?;
         sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
+    } else {
+        let tx_message: Felt = TxnHash::from(tx_with_hash.hash);
+        let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_message)
+            .or_internal_server_error("Failed to create response message")?;
+        sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
     }
-    let tx_message: Felt = TxnHash::from(tx_with_hash.hash);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_message)
-        .or_internal_server_error("Failed to create response message")?;
-    sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
     sent_txs_cache.insert(tx_with_hash.hash);
     Ok(())
 }
