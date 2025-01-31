@@ -25,6 +25,8 @@ pub enum ClassCompilationError {
     ParsingSierraVersion(Cow<'static, str>),
     #[error("Failed to construct a blockifier class: {0}")]
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
+    #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
+    CompiledClassHashMismatch { expected: Felt, got: Felt },
 }
 
 impl CompressedLegacyContractClass {

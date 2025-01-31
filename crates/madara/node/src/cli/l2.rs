@@ -19,12 +19,13 @@ pub struct L2SyncParams {
     // /// The block you want to start syncing from. This will most probably break your database.
     // #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
     // pub unsafe_starting_block: Option<u64>,
+    /// Disable the global tries computation.
+    /// When importing a block, the state root computation is the most expensive operation.
+    /// Disabling it will mean a big speed-up in syncing speed, but storage proofs will be
+    /// unavailable, and producing blocks will fail to compute the state root.
+    #[clap(env = "MADARA_DISABLE_TRIES", long)]
+    pub disable_tries: bool,
 
-    // /// Disable state root verification. When importing a block, the state root verification is the most expensive operation.
-    // /// Disabling it will mean the sync service will have a huge speed-up, at a security cost
-    // // TODO(docs): explain the security cost
-    // #[clap(env = "MADARA_DISABLE_ROOT", long)]
-    // pub disable_root: bool,
     /// Gateway api key to avoid rate limiting (optional).
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
@@ -49,42 +50,16 @@ pub struct L2SyncParams {
     #[arg(env = "MADARA_WARP_UPDATE_SHUTDOWN_RECEIVER", long, default_value_t = false)]
     pub warp_update_shutdown_receiver: bool,
 
-    // /// Polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    // #[clap(
-    // 	env = "MADARA_SYNC_POLLING_INTERVAL",
-    //     long,
-    //     value_parser = parse_duration,
-    //     default_value = "4s",
-    //     value_name = "SYNC POLLING INTERVAL",
-    //     help = "Set the sync polling interval (e.g., '4s', '100ms', '1min')"
-    // )]
-    // pub sync_polling_interval: Duration,
+    /// Stop sync at a specific block_n. May be useful for benchmarking the sync service.
+    #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "BLOCK NUMBER")]
+    pub sync_stop_at: Option<u64>,
 
-    // /// Pending block polling interval, in seconds. This only affects the sync service once it has caught up with the blockchain tip.
-    // #[clap(
-    // 	env = "MADARA_PENDING_BLOCK_POLL_INTERVAL",
-    //     long,
-    //     value_parser = parse_duration,
-    //     default_value = "2s",
-    //     value_name = "PENDING BLOCK POLL INTERVAL",
-    //     help = "Set the pending block poll interval (e.g., '2s', '500ms', '30s')"
-    // )]
-    // pub pending_block_poll_interval: Duration,
-
-    // /// Disable sync polling. This currently means that the sync process will not import any more block once it has caught up with the
-    // /// blockchain tip.
-    // #[clap(env = "MADARA_NO_SYNC_POLLING", long)]
-    // pub no_sync_polling: bool,
-    /// Number of blocks to sync. May be useful for benchmarking the sync service.
-    #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "NUMBER OF BLOCKS")]
-    pub n_blocks_to_sync: Option<u64>,
-
-    // /// Gracefully shutdown Madara once it has finished synchronizing all
-    // /// blocks. This can either be once the node has caught up with the head of
-    // /// the chain or when it has synced as many blocks as specified by
-    // /// --n-blocks-to-sync.
-    // #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
-    // pub stop_on_sync: bool,
+    /// Gracefully shutdown Madara once it has finished synchronizing all
+    /// blocks. This can either be once the node has caught up with the head of
+    /// the chain or when it has synced to the target height by using
+    /// `--sync-stop-at <BLOCK NUMBER>`.
+    #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
+    pub stop_on_sync: bool,
 
     // /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     // #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
@@ -129,18 +104,6 @@ pub struct L2SyncParams {
     //     default_value_t = 5
     // )]
     // pub flush_every_n_seconds: u64,
-
-    // /// Number of blocks to fetch in parallel. This only affects sync time, and
-    // /// does not affect the node once it has reached the tip of the chain.
-    // /// Increasing this can lead to lower sync times at the cost of higher cpu
-    // /// and ram utilization.
-    // #[clap(
-    //     env = "MADARA_SYNC_PARALLELISM",
-    //     long, value_name = "SYNC PARALLELISM",
-    //     default_value_t = 10,
-    //     value_parser = clap::value_parser!(u8).range(1..)
-    // )]
-    // pub sync_parallelism: u8,
     #[clap(env = "MADARA_P2P_SYNC", long)]
     pub p2p_sync: bool,
     // // Documentation needs to be kept in sync with [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].

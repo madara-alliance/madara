@@ -1,9 +1,11 @@
 //! Starknet block primitives.
 
 use crate::header::GasPrices;
+use commitments::{BlockCommitments, CommitmentComputationContext};
 use header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader};
 use mp_chain_config::StarknetVersion;
-use mp_receipt::TransactionReceipt;
+use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
+use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
 use starknet_types_core::felt::Felt;
 
@@ -315,6 +317,43 @@ pub struct VisitedSegments(pub Vec<VisitedSegmentEntry>);
 pub struct VisitedSegmentEntry {
     pub class_hash: Felt,
     pub segments: Vec<usize>,
+}
+
+pub struct FullBlock {
+    pub block_hash: Felt,
+    pub header: Header,
+    pub state_diff: StateDiff,
+    pub transactions: Vec<TransactionWithReceipt>,
+    pub events: Vec<EventWithTransactionHash>,
+}
+
+/// A pending block is a block that has not yet been closed.
+pub struct PendingFullBlock {
+    pub header: PendingHeader,
+    pub state_diff: StateDiff,
+    pub transactions: Vec<TransactionWithReceipt>,
+    pub events: Vec<EventWithTransactionHash>,
+}
+
+impl PendingFullBlock {
+    /// Uses the rayon thread pool.
+    pub fn close_block(
+        self,
+        ctx: &CommitmentComputationContext,
+        block_number: u64,
+        new_global_state_root: Felt,
+        pre_v0_13_2_override: bool,
+    ) -> FullBlock {
+        let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
+        let header = self.header.to_closed_header(commitments, new_global_state_root, block_number);
+        FullBlock {
+            block_hash: header.compute_hash(ctx.chain_id, pre_v0_13_2_override),
+            header,
+            state_diff: self.state_diff,
+            transactions: self.transactions,
+            events: self.events,
+        }
+    }
 }
 
 #[cfg(test)]

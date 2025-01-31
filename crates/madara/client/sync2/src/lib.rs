@@ -1,8 +1,9 @@
 mod apply_state;
 mod pipeline;
 mod sync;
-mod update_global_trie;
 mod util;
+
+pub use sync::SyncControllerConfig;
 
 pub mod gateway;
 pub mod import;

@@ -40,6 +40,7 @@ pub mod mempool_db;
 pub mod storage_updates;
 pub mod stream;
 pub mod tests;
+mod update_global_trie;
 
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};

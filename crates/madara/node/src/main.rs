@@ -10,12 +10,10 @@ use clap::Parser;
 use cli::RunCmd;
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
-use mc_block_import::BlockImporter;
 use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
-use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
@@ -186,42 +184,42 @@ async fn main() -> anyhow::Result<()> {
 
     // L2 Sync
 
-    let _warp_update = if run_cmd.args_preset.warp_update_receiver {
-        let mut deferred_service_start = vec![];
-        let mut deferred_service_stop = vec![];
+    // let _warp_update = if run_cmd.args_preset.warp_update_receiver {
+    //     let mut deferred_service_start = vec![];
+    //     let mut deferred_service_stop = vec![];
 
-        if !run_cmd.rpc_params.rpc_disable {
-            deferred_service_start.push(MadaraServiceId::RpcUser);
-        }
+    //     if !run_cmd.rpc_params.rpc_disable {
+    //         deferred_service_start.push(MadaraServiceId::RpcUser);
+    //     }
 
-        if run_cmd.rpc_params.rpc_admin {
-            deferred_service_start.push(MadaraServiceId::RpcAdmin);
-        }
+    //     if run_cmd.rpc_params.rpc_admin {
+    //         deferred_service_start.push(MadaraServiceId::RpcAdmin);
+    //     }
 
-        if run_cmd.gateway_params.feeder_gateway_enable {
-            deferred_service_start.push(MadaraServiceId::Gateway);
-        }
+    //     if run_cmd.gateway_params.feeder_gateway_enable {
+    //         deferred_service_start.push(MadaraServiceId::Gateway);
+    //     }
 
-        if run_cmd.telemetry_params.telemetry {
-            deferred_service_start.push(MadaraServiceId::Telemetry);
-        }
+    //     if run_cmd.telemetry_params.telemetry {
+    //         deferred_service_start.push(MadaraServiceId::Telemetry);
+    //     }
 
-        if run_cmd.is_sequencer() {
-            deferred_service_start.push(MadaraServiceId::BlockProduction);
-            deferred_service_stop.push(MadaraServiceId::L2Sync);
-        }
+    //     if run_cmd.is_sequencer() {
+    //         deferred_service_start.push(MadaraServiceId::BlockProduction);
+    //         deferred_service_stop.push(MadaraServiceId::L2Sync);
+    //     }
 
-        Some(WarpUpdateConfig {
-            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
-            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
-            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
-            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
-            deferred_service_start,
-            deferred_service_stop,
-        })
-    } else {
-        None
-    };
+    //     Some(WarpUpdateConfig {
+    //         warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+    //         warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+    //         warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+    //         warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
+    //         deferred_service_start,
+    //         deferred_service_stop,
+    //     })
+    // } else {
+    //     None
+    // };
 
     let service_l2_sync = SyncService::new(
         &run_cmd.l2_sync_params,
@@ -246,15 +244,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Block production
 
-    let importer = Arc::new(
-        BlockImporter::new(Arc::clone(service_db.backend()), None) //run_cmd.l2_sync_params.unsafe_starting_block)
-            .context("Initializing importer service")?,
-    );
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,
         &service_db,
         Arc::clone(&mempool),
-        importer,
         Arc::clone(&l1_data_provider),
     )?;
 

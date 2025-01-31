@@ -24,11 +24,16 @@ pub trait Probe {
     ) -> impl Future<Output = anyhow::Result<Option<u64>>> + Send + 'static;
 }
 
+pub struct SyncControllerConfig {
+    pub l1_head_recv: L1HeadReceiver,
+    pub stop_at_block_n: Option<u64>,
+    pub stop_on_sync: bool,
+}
+
 pub struct SyncController<P: ForwardPipeline, R: Probe> {
     forward_pipeline: P,
     probe: Option<Arc<R>>,
-    l1_head_recv: L1HeadReceiver,
-    stop_at_block_n: Option<u64>,
+    config: SyncControllerConfig,
     current_l1_head: Option<L1StateUpdate>,
     current_probe_future: Option<BoxFuture<'static, anyhow::Result<Option<u64>>>>,
     probe_highest_known_block: Option<u64>,
@@ -38,17 +43,11 @@ pub struct SyncController<P: ForwardPipeline, R: Probe> {
 /// Avoid spamming the probe.
 const PROBE_WAIT_DELAY: Duration = Duration::from_secs(2);
 impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
-    pub fn new(
-        forward_pipeline: P,
-        l1_head_recv: L1HeadReceiver,
-        stop_at_block_n: Option<u64>,
-        probe: Option<Arc<R>>,
-    ) -> Self {
+    pub fn new(forward_pipeline: P, probe: Option<Arc<R>>, config: SyncControllerConfig) -> Self {
         Self {
             forward_pipeline,
             probe,
-            l1_head_recv,
-            stop_at_block_n,
+            config,
             current_l1_head: None,
             current_probe_future: None,
             probe_highest_known_block: Default::default(),
@@ -83,7 +82,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
 
         // Bound by stop_at_block_n
 
-        aggregate_options(target_block, self.stop_at_block_n, u64::min)
+        aggregate_options(target_block, self.config.stop_at_block_n, u64::min)
     }
 
     fn show_status(&self) {
@@ -126,8 +125,8 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
             }
 
             tokio::select! {
-                Ok(()) = self.l1_head_recv.changed() => {
-                    self.current_l1_head = self.l1_head_recv.borrow_and_update().clone();
+                Ok(()) = self.config.l1_head_recv.changed() => {
+                    self.current_l1_head = self.config.l1_head_recv.borrow_and_update().clone();
                 }
                 Some(res) = OptionFuture::from(self.current_probe_future.as_mut()) => {
                     self.current_probe_future = None;

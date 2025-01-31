@@ -1,8 +1,7 @@
 //! We override some of the codegen definitions to avoid useless allocations, in particular,
 //! [`Felt252`], [`Hash`], [`Hash256`]. [`Uint128`], [`Address`] (felt251), [`EthereumAddress`]. TODO:  [`PeerId`]
 
-use std::ops::{Deref, DerefMut};
-
+use crate::model;
 use bytes::Buf;
 use bytes::BufMut;
 use bytes::Bytes;
@@ -10,8 +9,7 @@ use mp_convert::FeltExt;
 use prost::DecodeError;
 use starknet_core::types::Felt as SnFelt;
 use starknet_core::types::Hash256 as SnHash256;
-
-use crate::model;
+use std::ops::{Deref, DerefMut};
 
 trait WrappedBytesPrimitive: Default {
     fn to_bytes(&self, dest: &mut impl BufMut);

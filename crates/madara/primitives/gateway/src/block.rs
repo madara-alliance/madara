@@ -3,12 +3,18 @@ use super::{
     transaction::Transaction,
 };
 use anyhow::Context;
-use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
+use mp_block::{
+    header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader},
+    FullBlock, PendingFullBlock, TransactionWithReceipt,
+};
 use mp_chain_config::StarknetVersion;
 use mp_convert::hex_serde::U128AsHex;
+use mp_receipt::EventWithTransactionHash;
+use mp_state_update::StateDiff;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
+use std::mem;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -154,7 +160,14 @@ impl ProviderBlock {
         }
     }
 
-    pub fn header_(&self) -> anyhow::Result<mp_block::Header> {
+    pub fn into_full_block(self, state_diff: StateDiff) -> anyhow::Result<FullBlock> {
+        let header = self.header()?;
+        let TransactionsReceiptsAndEvents { transactions, events } =
+            convert_txs(self.transactions, self.transaction_receipts);
+        Ok(FullBlock { block_hash: self.block_hash, header, transactions, events, state_diff })
+    }
+
+    pub fn header(&self) -> anyhow::Result<mp_block::Header> {
         Ok(mp_block::Header {
             parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address.unwrap_or_default(),
@@ -183,29 +196,6 @@ impl ProviderBlock {
             state_diff_length: self.state_diff_length,
             state_diff_commitment: self.state_diff_commitment,
             receipt_commitment: self.receipt_commitment,
-        })
-    }
-
-    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
-        Ok(mc_block_import::UnverifiedHeader {
-            parent_block_hash: Some(self.parent_block_hash),
-            sequencer_address: self.sequencer_address.unwrap_or_default(),
-            block_timestamp: BlockTimestamp(self.timestamp),
-            protocol_version: self
-                .starknet_version
-                .as_deref()
-                .map(|version| version.parse().context("Invalid Starknet version"))
-                .unwrap_or_else(|| {
-                    StarknetVersion::try_from_mainnet_block_number(self.block_number)
-                        .context(format!("Unable to determine Starknet version for block {:#x}", self.block_hash))
-                })?,
-            l1_gas_price: mp_block::header::GasPrices {
-                eth_l1_gas_price: self.l1_gas_price.price_in_wei,
-                strk_l1_gas_price: self.l1_gas_price.price_in_fri,
-                eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
-                strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
-            },
-            l1_da_mode: self.l1_da_mode,
         })
     }
 }
@@ -265,9 +255,9 @@ impl ProviderBlockPending {
         }
     }
 
-    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
-        Ok(mc_block_import::UnverifiedHeader {
-            parent_block_hash: Some(self.parent_block_hash),
+    pub fn header(&self) -> anyhow::Result<PendingHeader> {
+        Ok(PendingHeader {
+            parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address,
             block_timestamp: BlockTimestamp(self.timestamp),
             protocol_version: self
@@ -287,6 +277,13 @@ impl ProviderBlockPending {
             },
             l1_da_mode: self.l1_da_mode,
         })
+    }
+
+    pub fn into_full_block(self, state_diff: StateDiff) -> anyhow::Result<PendingFullBlock> {
+        let header = self.header()?;
+        let TransactionsReceiptsAndEvents { transactions, events } =
+            convert_txs(self.transactions, self.transaction_receipts);
+        Ok(PendingFullBlock { header, transactions, events, state_diff })
     }
 }
 
@@ -340,4 +337,30 @@ fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transa
             ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
         })
         .collect()
+}
+
+struct TransactionsReceiptsAndEvents {
+    transactions: Vec<TransactionWithReceipt>,
+    events: Vec<EventWithTransactionHash>,
+}
+
+fn convert_txs(transactions: Vec<Transaction>, mut receipts: Vec<ConfirmedReceipt>) -> TransactionsReceiptsAndEvents {
+    TransactionsReceiptsAndEvents {
+        events: receipts
+            .iter_mut()
+            .flat_map(|receipt| {
+                mem::take(&mut receipt.events)
+                    .into_iter()
+                    .map(|event| EventWithTransactionHash { transaction_hash: receipt.transaction_hash, event })
+            })
+            .collect(),
+        transactions: transactions
+            .into_iter()
+            .zip(receipts)
+            .map(|(transaction, receipt)| TransactionWithReceipt {
+                receipt: receipt.into_mp(&transaction),
+                transaction: transaction.into(),
+            })
+            .collect(),
+    }
 }

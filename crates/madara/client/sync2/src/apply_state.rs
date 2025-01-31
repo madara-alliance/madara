@@ -1,12 +1,10 @@
-use std::{ops::Range, sync::Arc};
-
-use mc_db::MadaraBackend;
-use mp_state_update::StateDiff;
-
 use crate::{
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
 };
+use mc_db::MadaraBackend;
+use mp_state_update::StateDiff;
+use std::{ops::Range, sync::Arc};
 
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
@@ -14,12 +12,14 @@ pub fn apply_state_pipeline(
     importer: Arc<BlockImporter>,
     parallelization: usize,
     batch_size: usize,
+    disable_tries: bool,
 ) -> ApplyStateSync {
-    PipelineController::new(ApplyStateSteps { backend, importer }, parallelization, batch_size)
+    PipelineController::new(ApplyStateSteps { backend, importer, disable_tries }, parallelization, batch_size)
 }
 pub struct ApplyStateSteps {
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
+    disable_tries: bool,
 }
 
 impl PipelineSteps for ApplyStateSteps {
@@ -40,8 +40,10 @@ impl PipelineSteps for ApplyStateSteps {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        tracing::debug!("Apply state sequential step {block_range:?}");
-        self.importer.apply_to_global_trie(block_range, input).await?;
+        if !self.disable_tries {
+            tracing::debug!("Apply state sequential step {block_range:?}");
+            self.importer.apply_to_global_trie(block_range, input).await?;
+        }
         Ok(ApplyOutcome::Success(()))
     }
 

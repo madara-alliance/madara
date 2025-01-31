@@ -1,9 +1,9 @@
+use crate::MadaraBackend;
+use crate::{bonsai_identifier, MadaraStorageError};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use mc_db::MadaraBackend;
-use mc_db::{bonsai_identifier, MadaraStorageError};
 use mp_state_update::DeclaredClassItem;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;

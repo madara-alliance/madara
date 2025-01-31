@@ -1,5 +1,7 @@
-use starknet_core::types::Felt;
-use starknet_types_core::hash::{Poseidon, StarkHash};
+use starknet_types_core::{
+    felt::Felt,
+    hash::{Poseidon, StarkHash},
+};
 
 pub mod classes;
 pub mod contracts;

@@ -1,6 +1,5 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
-use mc_block_import::{BlockImporter, BlockValidationContext};
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
@@ -10,7 +9,6 @@ use std::{io::Write, sync::Arc};
 
 pub struct BlockProductionService {
     backend: Arc<MadaraBackend>,
-    block_import: Arc<BlockImporter>,
     mempool: Arc<Mempool>,
     metrics: Arc<BlockProductionMetrics>,
     l1_data_provider: Arc<dyn L1DataProvider>,
@@ -23,7 +21,6 @@ impl BlockProductionService {
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
-        block_import: Arc<BlockImporter>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
@@ -33,7 +30,6 @@ impl BlockProductionService {
             l1_data_provider,
             mempool,
             metrics,
-            block_import,
             n_devnet_contracts: config.devnet_contracts,
         })
     }
@@ -44,16 +40,14 @@ impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, block_import, .. } = self;
+        let Self { backend, l1_data_provider, mempool, metrics, .. } = self;
 
         let block_production_task = BlockProductionTask::new(
             Arc::clone(backend),
-            Arc::clone(block_import),
             Arc::clone(mempool),
             Arc::clone(metrics),
             Arc::clone(l1_data_provider),
-        )
-        .await?;
+        )?;
 
         runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
 
@@ -75,7 +69,7 @@ impl BlockProductionService {
     /// called on node startup even if sequencer block production is not yet
     /// enabled. This happens during warp updates on a local sequencer.
     pub async fn setup_devnet(&self) -> anyhow::Result<()> {
-        let Self { backend, n_devnet_contracts, block_import, .. } = self;
+        let Self { backend, n_devnet_contracts, .. } = self;
 
         let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
             // deploy devnet genesis
@@ -86,18 +80,8 @@ impl BlockProductionService {
             let contracts =
                 genesis_config.add_devnet_contracts(*n_devnet_contracts).context("Failed to add devnet contracts")?;
 
-            let genesis_block =
-                genesis_config.build(backend.chain_config()).context("Building genesis block from devnet config")?;
-
-            block_import
-                .add_block(
-                    genesis_block,
-                    BlockValidationContext::new(backend.chain_config().chain_id.clone()).trust_class_hashes(true),
-                )
-                .await
-                .context("Importing devnet genesis block")?;
-
-            contracts.save_to_db(backend).context("Saving predeployed devnet contract keys to database")?;
+            // Deploy genesis block
+            genesis_config.build_and_store(backend).context("Building and storing genesis block")?;
 
             contracts
         } else {

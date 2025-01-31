@@ -19,7 +19,6 @@ rstest.workspace = true
 regex.workspace = true
 
 mc-db = { workspace = true, features = ["testing"] }
-mc-block-import = { workspace = true, features = ["testing"] }
 # Compile the test contracts in test cfg.
 m-cairo-test-contracts.workspace = true
 
@@ -29,7 +28,6 @@ m-cairo-test-contracts.workspace = true
 bonsai-trie.workspace = true
 
 mc-analytics.workspace = true
-mc-block-import.workspace = true
 mc-db.workspace = true
 mc-eth.workspace = true
 mc-gateway-client.workspace = true

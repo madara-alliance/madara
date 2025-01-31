@@ -2,14 +2,13 @@ use crate::{
     apply_state::ApplyStateSync,
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
-    sync::{ForwardPipeline, Probe, SyncController},
+    sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig},
     util::AbortOnDrop,
 };
 use anyhow::Context;
 use classes::ClassesSync;
 use core::fmt;
 use mc_db::MadaraBackend;
-use mc_eth::state_update::L1HeadReceiver;
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, Header, TransactionWithReceipt};
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
@@ -232,6 +231,7 @@ pub struct ForwardSyncConfig {
     pub classes_batch_size: usize,
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
+    pub disable_tries: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -243,7 +243,14 @@ impl Default for ForwardSyncConfig {
             classes_batch_size: 1,
             apply_state_parallelization: 3,
             apply_state_batch_size: 20,
+            disable_tries: false,
         }
+    }
+}
+
+impl ForwardSyncConfig {
+    pub fn disable_tries(self, val: bool) -> Self {
+        Self { disable_tries: val, ..self }
     }
 }
 
@@ -252,16 +259,14 @@ pub fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
-    l1_head_recv: L1HeadReceiver,
-    stop_at_block_n: Option<u64>,
+    controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> GatewaySync {
     let probe = GatewayLatestProbe::new(client.clone());
     SyncController::new(
         GatewayForwardSync::new(backend, importer, client, config),
-        l1_head_recv,
-        stop_at_block_n,
         Some(probe.into()),
+        controller_config,
     )
 }
 
@@ -297,6 +302,7 @@ impl GatewayForwardSync {
             importer.clone(),
             config.apply_state_parallelization,
             config.apply_state_batch_size,
+            config.disable_tries,
         );
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline }
     }

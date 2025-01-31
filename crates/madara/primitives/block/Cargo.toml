@@ -20,7 +20,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
 mp-receipt = { workspace = true }
+mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 
 # Starknet
@@ -30,6 +32,7 @@ starknet-types-rpc = { workspace = true }
 
 # Other
 primitive-types.workspace = true
+rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 

@@ -5,12 +5,11 @@ use super::{
 use crate::import::BlockImporter;
 use crate::p2p::pipeline::P2pError;
 use crate::pipeline::{PipelineController, PipelineSteps};
-use crate::sync::{ForwardPipeline, Probe, SyncController};
+use crate::sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
 use core::fmt;
 use futures::TryStreamExt;
 use mc_db::stream::BlockStreamConfig;
-use mc_eth::state_update::L1HeadReceiver;
 use mc_p2p::{P2pCommands, PeerId};
 use std::collections::HashSet;
 use std::iter;
@@ -18,17 +17,17 @@ use std::sync::Arc;
 
 /// Pipeline order:
 /// ```plaintext
-///  ┌───────┐    ┌───────────┐     ┌───────┐           
-///  │headers├─┬─►│state_diffs├──┬─►│classes│           
-///  └───────┘ │  └───────────┘  │  └───────┘           
-///            │                 │                      
-///            │  ┌────────────┐ │  ┌──────────────────┐
-///            ├─►│tx, receipts│ └─►│update_global_trie│
-///            │  └────────────┘    └──────────────────┘
-///            │                                        
-///            │  ┌──────┐                              
-///            └─►│events│                              
-///               └──────┘                              
+///  ┌───────┐    ┌───────────┐       ┌───────┐           
+///  │headers├─┬─►│state_diffs├────┬─►│classes│           
+///  └───────┘ │  └───────────┘    │  └───────┘           
+///            │                   │                      
+///            │  ┌────────────┐   │  ┌──────────────────┐
+///            └─►│tx, receipts├─┐ └─►│update_global_trie│
+///               └────────────┘ │    └──────────────────┘
+///                              │                        
+///                              │  ┌──────┐              
+///                              └─►│events│              
+///                                 └──────┘              
 /// ```
 /// State diffs, transactions with receipt, and events are checked against their corresponding commitments
 /// in the header.
@@ -61,6 +60,7 @@ pub struct ForwardSyncConfig {
     pub classes_batch_size: usize,
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
+    pub disable_tries: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -78,19 +78,25 @@ impl Default for ForwardSyncConfig {
             classes_batch_size: 1,
             apply_state_parallelization: 3,
             apply_state_batch_size: 20,
+            disable_tries: false,
         }
+    }
+}
+
+impl ForwardSyncConfig {
+    pub fn disable_tries(self, val: bool) -> Self {
+        Self { disable_tries: val, ..self }
     }
 }
 
 pub type P2pSync = SyncController<P2pForwardSync, P2pHeadersProbe>;
 pub fn forward_sync(
     args: P2pPipelineArguments,
-    l1_head_recv: L1HeadReceiver,
-    stop_at_block_n: Option<u64>,
+    controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> P2pSync {
     let probe = P2pHeadersProbe::new(args.p2p_commands.clone(), args.importer.clone());
-    SyncController::new(P2pForwardSync::new(args, config), l1_head_recv, stop_at_block_n, Some(probe.into()))
+    SyncController::new(P2pForwardSync::new(args, config), Some(probe.into()), controller_config)
 }
 
 /// Events pipeline is currently always done after tx and receipts for now.
@@ -127,6 +133,7 @@ impl P2pForwardSync {
             args.importer.clone(),
             config.apply_state_parallelization,
             config.apply_state_batch_size,
+            config.disable_tries,
         );
 
         Self {

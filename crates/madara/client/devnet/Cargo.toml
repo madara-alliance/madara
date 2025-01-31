@@ -33,7 +33,6 @@ m-cairo-test-contracts.workspace = true
 [dependencies]
 
 # Madara
-mc-block-import.workspace = true
 mc-db.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true

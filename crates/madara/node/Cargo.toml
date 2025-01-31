@@ -22,7 +22,6 @@ name = "madara"
 
 # Madara
 mc-analytics = { workspace = true }
-mc-block-import = { workspace = true }
 mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
@@ -32,7 +31,6 @@ mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
 mc-p2p = { workspace = true }
 mc-rpc = { workspace = true }
-mc-sync = { workspace = true }
 mc-sync2 = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
@@ -86,4 +84,3 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-sound = ["mc-sync/m"]

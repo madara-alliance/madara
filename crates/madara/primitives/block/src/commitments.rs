@@ -1,9 +1,129 @@
+use crate::{header::PendingHeader, Header, TransactionWithReceipt};
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
+use mp_receipt::EventWithTransactionHash;
+use mp_state_update::StateDiff;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
 };
+
+pub struct CommitmentComputationContext {
+    pub protocol_version: StarknetVersion,
+    pub chain_id: Felt,
+}
+
+pub struct TransactionAndReceiptCommitment {
+    pub transaction_commitment: Felt,
+    pub receipt_commitment: Felt,
+    pub transaction_count: u64,
+}
+
+impl TransactionAndReceiptCommitment {
+    /// Uses the rayon pool.
+    pub fn compute(ctx: &CommitmentComputationContext, transactions: &[TransactionWithReceipt]) -> Self {
+        // Override pre-v0.13.2 transaction hash computation
+        let starknet_version = StarknetVersion::max(ctx.protocol_version, StarknetVersion::V0_13_2);
+
+        // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
+        let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
+            .par_iter()
+            .enumerate()
+            .map(|(_index, tx)| {
+                let got = tx.transaction.compute_hash(ctx.chain_id, starknet_version, /* is_query */ false);
+                (tx.transaction.compute_hash_with_signature(got, starknet_version), tx.receipt.compute_hash())
+            })
+            .collect();
+
+        let transaction_commitment = compute_transaction_commitment(
+            tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
+            ctx.protocol_version,
+        );
+
+        let receipt_commitment = compute_receipt_commitment(
+            tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
+            starknet_version,
+        );
+
+        Self { transaction_commitment, receipt_commitment, transaction_count: transactions.len() as u64 }
+    }
+}
+
+pub struct StateDiffCommitment {
+    pub state_diff_commitment: Felt,
+    pub state_diff_length: u64,
+}
+
+impl StateDiffCommitment {
+    pub fn compute(_ctx: &CommitmentComputationContext, state_diff: &StateDiff) -> Self {
+        Self { state_diff_length: state_diff.len() as u64, state_diff_commitment: state_diff.compute_hash() }
+    }
+}
+
+pub struct EventsCommitment {
+    pub events_commitment: Felt,
+    pub events_count: u64,
+}
+
+impl EventsCommitment {
+    pub fn compute(ctx: &CommitmentComputationContext, events: &[EventWithTransactionHash]) -> Self {
+        // Override pre-v0.13.2 transaction hash computation
+        let starknet_version = StarknetVersion::max(ctx.protocol_version, StarknetVersion::V0_13_2);
+
+        let event_hashes: Vec<_> =
+            events.par_iter().map(|ev| ev.event.compute_hash(ev.transaction_hash, starknet_version)).collect();
+
+        let events_commitment = compute_event_commitment(event_hashes, starknet_version);
+
+        Self { events_commitment, events_count: events.len() as u64 }
+    }
+}
+
+pub struct BlockCommitments {
+    pub transaction: TransactionAndReceiptCommitment,
+    pub state_diff: StateDiffCommitment,
+    /// A commitment to the events produced in this block
+    pub event: EventsCommitment,
+}
+
+impl BlockCommitments {
+    /// Uses the rayon pool.
+    pub fn compute(
+        ctx: &CommitmentComputationContext,
+        transactions: &[TransactionWithReceipt],
+        state_diff: &StateDiff,
+        events: &[EventWithTransactionHash],
+    ) -> Self {
+        let (transaction, (state_diff, event)) = rayon::join(
+            || TransactionAndReceiptCommitment::compute(ctx, transactions),
+            || rayon::join(|| StateDiffCommitment::compute(ctx, state_diff), || EventsCommitment::compute(ctx, events)),
+        );
+        Self { transaction, state_diff, event }
+    }
+}
+
+impl PendingHeader {
+    pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {
+        Header {
+            parent_block_hash: self.parent_block_hash,
+            block_number,
+            sequencer_address: self.sequencer_address,
+            block_timestamp: self.block_timestamp,
+            protocol_version: self.protocol_version,
+            l1_gas_price: self.l1_gas_price,
+            l1_da_mode: self.l1_da_mode,
+            global_state_root,
+            transaction_count: commitments.transaction.transaction_count,
+            transaction_commitment: commitments.transaction.transaction_commitment,
+            event_count: commitments.event.events_count,
+            event_commitment: commitments.event.events_commitment,
+            state_diff_length: Some(commitments.state_diff.state_diff_length),
+            state_diff_commitment: Some(commitments.state_diff.state_diff_commitment),
+            receipt_commitment: Some(commitments.transaction.receipt_commitment),
+        }
+    }
+}
 
 pub fn compute_event_commitment(
     events_hashes: impl IntoIterator<Item = Felt>,

@@ -38,6 +38,10 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
         block_range: Range<u64>,
         input: Vec<Header>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
+        if input.iter().all(|i| i.transaction_count == 0) {
+            return Ok(input);
+        }
+
         tracing::debug!("p2p transactions parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands

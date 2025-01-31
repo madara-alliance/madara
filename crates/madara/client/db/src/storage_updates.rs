@@ -5,6 +5,7 @@ use crate::DatabaseExt;
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
 use crate::WriteBatchWithTransaction;
+use mp_block::FullBlock;
 use mp_block::MadaraBlockInfo;
 use mp_block::MadaraBlockInner;
 use mp_block::TransactionWithReceipt;
@@ -15,8 +16,22 @@ use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
+use starknet_types_core::felt::Felt;
 
 impl MadaraBackend {
+    pub fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
+        let block_n = block.header.block_number;
+        self.store_block_header(BlockHeaderWithSignatures {
+            header: block.header,
+            block_hash: block.block_hash,
+            consensus_signatures: vec![],
+        })?;
+        self.store_transactions(block_n, block.transactions)?;
+        self.store_state_diff(block_n, block.state_diff)?;
+        self.store_events(block_n, block.events)?;
+        Ok(())
+    }
+
     pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
         let mut tx = WriteBatchWithTransaction::default();
         let block_n = header.header.block_number;
@@ -127,6 +142,36 @@ impl MadaraBackend {
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
         Ok(())
+    }
+
+    /// Returns the new global state root. Multiple state diffs can be applied at once, only the latest state root will
+    /// be returned.
+    /// Errors if the batch is empty.
+    pub fn apply_state<'a>(
+        &self,
+        start_block_n: u64,
+        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+    ) -> Result<Felt, MadaraStorageError> {
+        let mut state_root = None;
+        for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
+            tracing::debug!("applying state_diff block_n={block_n} {state_diff:#?}");
+            let (contract_trie_root, class_trie_root) = rayon::join(
+                || {
+                    crate::update_global_trie::contracts::contract_trie_root(
+                        self,
+                        &state_diff.deployed_contracts,
+                        &state_diff.replaced_classes,
+                        &state_diff.nonces,
+                        &state_diff.storage_diffs,
+                        block_n,
+                    )
+                },
+                || crate::update_global_trie::classes::class_trie_root(self, &state_diff.declared_classes, block_n),
+            );
+
+            state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
+        }
+        state_root.ok_or_else(|| MadaraStorageError::EmptyBatch)
     }
 }
 

@@ -8,7 +8,7 @@ use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
 use mp_block::Header;
 use mp_state_update::StateDiff;
-use std::{ops::Range, sync::Arc};
+use std::{iter, ops::Range, sync::Arc};
 
 pub type StateDiffsSync = PipelineController<P2pPipelineController<StateDiffsSyncSteps>>;
 pub fn state_diffs_pipeline(
@@ -39,6 +39,10 @@ impl P2pPipelineSteps for StateDiffsSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
+        if input.iter().all(|i| i.state_diff_length == Some(0)) {
+            return Ok(iter::repeat(StateDiff::default()).take(input.len()).collect());
+        }
+
         tracing::debug!("p2p state_diffs parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands

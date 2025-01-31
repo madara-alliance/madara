@@ -1,12 +1,11 @@
 //! Handle incomming p2p events
-use std::collections::hash_map;
-
 use crate::{
     behaviour::{self},
     MadaraP2p,
 };
 use futures::channel::mpsc;
 use libp2p::{kad::QueryResult, swarm::SwarmEvent};
+use std::collections::hash_map;
 
 impl MadaraP2p {
     pub fn handle_event(&mut self, event: SwarmEvent<behaviour::Event>) -> anyhow::Result<()> {

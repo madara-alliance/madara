@@ -6506,7 +6506,6 @@ dependencies = [
  "hyper 0.14.31",
  "jsonrpsee",
  "mc-analytics",
- "mc-block-import",
  "mc-block-production",
  "mc-db",
  "mc-devnet",
@@ -6516,7 +6515,6 @@ dependencies = [
  "mc-mempool",
  "mc-p2p",
  "mc-rpc",
- "mc-sync",
  "mc-sync2",
  "mc-telemetry",
  "mp-block",
@@ -6602,44 +6600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-block-import"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "bonsai-trie",
- "itertools 0.13.0",
- "mc-analytics",
- "mc-db",
- "mp-block",
- "mp-chain-config",
- "mp-class",
- "mp-convert",
- "mp-receipt",
- "mp-state-update",
- "mp-transactions",
- "num-traits 0.2.19",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "rayon",
- "rstest 0.18.2",
- "serde",
- "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
- "starknet_api",
- "tempfile",
- "thiserror 2.0.3",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "mc-block-production"
 version = "0.7.0"
 dependencies = [
@@ -6649,7 +6609,6 @@ dependencies = [
  "blockifier",
  "lazy_static",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-exec",
  "mc-mempool",
@@ -6690,6 +6649,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
+ "bitvec",
  "blockifier",
  "bonsai-trie",
  "futures",
@@ -6733,7 +6693,6 @@ dependencies = [
  "assert_matches",
  "blockifier",
  "m-cairo-test-contracts",
- "mc-block-import",
  "mc-block-production",
  "mc-db",
  "mc-mempool",
@@ -6927,7 +6886,6 @@ dependencies = [
  "blockifier",
  "lazy_static",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-exec",
  "mockall",
@@ -7036,49 +6994,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-sync"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "futures",
- "httpmock",
- "hyper 1.5.0",
- "jsonrpsee",
- "m-cairo-test-contracts",
- "mc-analytics",
- "mc-block-import",
- "mc-db",
- "mc-gateway-client",
- "mc-rpc",
- "mc-telemetry",
- "mp-block",
- "mp-chain-config",
- "mp-class",
- "mp-gateway",
- "mp-utils",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "regex",
- "rstest 0.18.2",
- "serde_json",
- "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
- "starknet_api",
- "tempfile",
- "thiserror 2.0.3",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "mc-sync2"
 version = "0.7.0"
 dependencies = [
@@ -7091,7 +7006,6 @@ dependencies = [
  "hyper 1.5.0",
  "m-cairo-test-contracts",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-eth",
  "mc-gateway-client",
@@ -7229,7 +7143,9 @@ dependencies = [
  "blockifier",
  "bonsai-trie",
  "mp-chain-config",
+ "mp-class",
  "mp-receipt",
+ "mp-state-update",
  "mp-transactions",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -7238,6 +7154,7 @@ dependencies = [
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "primitive-types",
+ "rayon",
  "serde",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
  "starknet-types-rpc",
@@ -7321,7 +7238,6 @@ dependencies = [
  "base64 0.22.1",
  "http 1.1.0",
  "hyper 1.5.0",
- "mc-block-import",
  "mp-block",
  "mp-chain-config",
  "mp-class",

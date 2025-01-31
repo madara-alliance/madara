@@ -40,6 +40,10 @@ impl P2pPipelineSteps for ClassesSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
+        if input.iter().all(|i| i.is_empty()) {
+            return Ok(());
+        }
+
         tracing::debug!("p2p classes parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands

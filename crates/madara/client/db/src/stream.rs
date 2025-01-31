@@ -168,7 +168,7 @@ impl MadaraBackend {
                             match self.iteration.direction {
                                 Direction::Forward => ite.next(),
                                 Direction::Backward => ite.prev(),
-                            };
+                            }
                         }
                     }
                 }

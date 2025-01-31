@@ -39,6 +39,10 @@ impl P2pPipelineSteps for EventsSyncSteps {
         block_range: Range<u64>,
         input: Vec<Self::InputItem>,
     ) -> Result<Self::SequentialStepInput, P2pError> {
+        if input.iter().all(|i| i.event_count == 0) {
+            return Ok(());
+        }
+
         tracing::debug!("p2p events parallel step: {block_range:?}, peer_id: {peer_id}");
         let strm = self
             .p2p_commands

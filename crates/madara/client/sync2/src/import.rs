@@ -1,4 +1,4 @@
-use mc_db::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
+use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, TransactionWithReceipt,
@@ -15,8 +15,6 @@ use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
-
-use crate::update_global_trie;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
@@ -444,65 +442,7 @@ impl BlockImporter {
     ) -> anyhow::Result<()> {
         let this = self.clone();
         // do not use the shared permits for a sequential step
-        global_spawn_rayon_task(move || this.apply_to_global_trie_inner(block_range, state_diffs)).await?;
-        Ok(())
-    }
-
-    /// Called in a rayon-pool context.
-    fn apply_to_global_trie_inner(
-        &self,
-        block_range: Range<u64>,
-        state_diffs: Vec<StateDiff>,
-    ) -> Result<(), BlockImportError> {
-        for (block_n, state_diff) in block_range.zip(state_diffs) {
-            tracing::debug!("applying state_diff block_n={block_n} {state_diff:#?}");
-            let (contract_trie_root, class_trie_root) = rayon::join(
-                || {
-                    update_global_trie::contracts::contract_trie_root(
-                        &self.db,
-                        &state_diff.deployed_contracts,
-                        &state_diff.replaced_classes,
-                        &state_diff.nonces,
-                        &state_diff.storage_diffs,
-                        block_n,
-                    )
-                },
-                || update_global_trie::classes::class_trie_root(&self.db, &state_diff.declared_classes, block_n),
-            );
-
-            let Some(block_info) =
-                self.db.get_block_info(&DbBlockId::Number(block_n)).map_err(|error| BlockImportError::InternalDb {
-                    error,
-                    context: format!("Getting block header for block #{block_n}").into(),
-                })?
-            else {
-                return Err(BlockImportError::Internal(
-                    format!("Cannot find block header for block #{block_n}").into(),
-                ));
-            };
-
-            let Some(block_info) = block_info.as_nonpending() else {
-                return Err(BlockImportError::Internal(format!("Block at #{block_n} is pending").into()));
-            };
-
-            // Check the global_state_root
-
-            let expected = block_info.header.global_state_root;
-            let got = update_global_trie::calculate_state_root(
-                contract_trie_root.map_err(|error| BlockImportError::InternalDb {
-                    error,
-                    context: format!("Updating contract trie for block #{block_n}").into(),
-                })?,
-                class_trie_root.map_err(|error| BlockImportError::InternalDb {
-                    error,
-                    context: format!("Updating class trie for block #{block_n}").into(),
-                })?,
-            );
-
-            if expected != got {
-                return Err(BlockImportError::GlobalStateRoot { got, expected });
-            }
-        }
+        global_spawn_rayon_task(move || this.db.apply_state(block_range.start, state_diffs.iter())).await?;
         Ok(())
     }
 }

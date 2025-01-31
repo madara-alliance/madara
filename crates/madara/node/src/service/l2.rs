@@ -1,7 +1,10 @@
 use mc_db::MadaraBackend;
 use mc_eth::state_update::L1HeadReceiver;
 use mc_p2p::P2pCommands;
-use mc_sync2::import::{BlockImporter, BlockValidationConfig};
+use mc_sync2::{
+    import::{BlockImporter, BlockValidationConfig},
+    SyncControllerConfig,
+};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 
@@ -50,25 +53,33 @@ impl Service for SyncService {
             return Ok(());
         }
         let this = self.start_args.take().expect("Service already started");
-        let stop_at_block_n = None;
         let importer = Arc::new(BlockImporter::new(this.db_backend.clone(), BlockValidationConfig::default()));
+
+        let config = SyncControllerConfig {
+            l1_head_recv: this.l1_head_recv,
+            stop_at_block_n: this.params.sync_stop_at,
+            stop_on_sync: this.params.stop_on_sync,
+        };
 
         runner.service_loop(move |ctx| async move {
             if this.params.p2p_sync {
+                use mc_sync2::p2p::{forward_sync, ForwardSyncConfig, P2pPipelineArguments};
+
                 let Some(p2p_commands) = this.p2p_commands else {
                     anyhow::bail!("Cannot enable --p2p-sync without starting the peer-to-peer service using --p2p.")
                 };
-                let args = mc_sync2::p2p::P2pPipelineArguments::new(this.db_backend, p2p_commands, importer);
-                mc_sync2::p2p::forward_sync(args, this.l1_head_recv, stop_at_block_n, Default::default()).run(ctx).await
+                let args = P2pPipelineArguments::new(this.db_backend, p2p_commands, importer);
+                forward_sync(args, config, ForwardSyncConfig::default().disable_tries(this.params.disable_tries))
+                    .run(ctx)
+                    .await
             } else {
                 let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
                 mc_sync2::gateway::forward_sync(
                     this.db_backend,
                     importer,
                     gateway,
-                    this.l1_head_recv,
-                    stop_at_block_n,
-                    Default::default(),
+                    config,
+                    mc_sync2::gateway::ForwardSyncConfig::default().disable_tries(this.params.disable_tries),
                 )
                 .run(ctx)
                 .await
