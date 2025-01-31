@@ -194,26 +194,32 @@ pub fn pending_tx_match_filter(addresses: &Option<Vec<Felt>>, transaction: &Tran
     true
 }
 
-/// Constructs a vector of [`TransactionWithHash`] objects from the provided [`MadaraBlockInner`]
-/// and filters them by sender address.
+/// Constructs a vector of [`TransactionWithHash`] objects from the provided [`MadaraBlockInner`],
+/// applies address filtering, and excludes already-sent transactions.
 ///
 /// This function pairs each transaction in the given `pending_block` with its corresponding receipt
-/// to create a [`TransactionWithHash`] object. It then applies [`pending_tx_match_filter`] to
-/// include only transactions whose sender addresses match those in `sender_addresses` (if provided).
+/// to create a [`TransactionWithHash`] object. It then applies two filters:
+/// 1. [`pending_tx_match_filter`] to include only transactions whose sender addresses match those in
+///    `sender_addresses` (if provided).
+/// 2. Excludes any transactions whose hash is already present in `sent_txs`.
 ///
 /// # Arguments
 ///
 /// * `pending_block` - A [`MadaraBlockInner`] containing the transactions and their receipts.
-/// * `sender_addresses` - An optional vector of `Felt` representing permissible sender addresses.
+/// * `sender_addresses` - An optional vector of [`Felt`] representing permissible sender addresses.
 ///    - If [`Some`], only transactions whose sender address is in this vector are included.
 ///    - If [`None`], all transactions are included (no filtering).
+/// * `sent_txs` - A [`HashSet<Felt>`] of transaction hashes that have already been processed or sent.
+///    - Any transaction with a hash in this set is excluded from the returned vector.
 ///
 /// # Returns
-/// A vector of [`TransactionWithHash`] objects that satisfy the filtering criteria.
+///
+/// A vector of [`TransactionWithHash`] objects that pass the sender-address filter and have not
+/// yet been processed (i.e., are not in `sent_txs`).
 pub fn get_filtered_pending_tx_with_hash(
     pending_block: MadaraBlockInner,
     sender_addresses: &Option<Vec<Felt>>,
-    sent_txs: &HashSet<Felt>
+    sent_txs: &HashSet<Felt>,
 ) -> Vec<TransactionWithHash> {
     pending_block
         .transactions

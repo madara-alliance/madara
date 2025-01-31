@@ -256,7 +256,7 @@ impl MadaraBackend {
         }
 
         if self.sender_pending_tx.receiver_count() > 0 {
-            if let Err(e) = self.sender_pending_tx.send(block.inner.clone()) {
+            if let Err(e) = self.sender_pending_tx.send(block.clone()) {
                 tracing::debug!("Failed to send block inner to subscribers: {e}");
             }
         }
@@ -443,7 +443,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_pending_transaction(&self) -> tokio::sync::broadcast::Receiver<MadaraBlockInner> {
+    pub fn subscribe_pending_transaction(&self) -> tokio::sync::broadcast::Receiver<MadaraPendingBlock> {
         self.sender_pending_tx.subscribe()
     }
 

@@ -14,6 +14,16 @@ struct SentTxsCache {
     parent_block_hash: Felt,
 }
 
+impl SentTxsCache {
+    fn maybe_update_parent_anb_clear_txs_cache(&mut self, parent_block_hash: Felt) {
+        if parent_block_hash != self.parent_block_hash {
+            // Clear cache as the pending block is new
+            self.sent_txs_hashes.clear();
+            self.parent_block_hash = parent_block_hash;
+        }
+    }
+}
+
 pub async fn subscribe_pending_transaction(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -44,13 +54,16 @@ pub async fn subscribe_pending_transaction(
             .parent_block_hash;
 
         // Update sent txs cache with current pending block parent block hash
+        // This will be used to clearing sent_txs_hashed after the pending block is finalised
         sent_txs_cache.parent_block_hash = latest_block_parent_hash;
 
-        let txs_with_hash = get_filtered_pending_tx_with_hash(latest_pending_block, &sender_addresses, &sent_txs_cache.sent_txs_hashes);
+        let txs_with_hash =
+            get_filtered_pending_tx_with_hash(latest_pending_block, &sender_addresses, &sent_txs_cache.sent_txs_hashes);
 
         // Send current pending block transactions
         for tx_with_hash in txs_with_hash {
-            send_pending_transactions(&tx_with_hash, transaction_details, &sink).await?;
+            send_pending_transactions(&tx_with_hash, transaction_details, &sink, &mut sent_txs_cache.sent_txs_hashes)
+                .await?;
         }
     }
     // New pending block transactions
@@ -58,9 +71,10 @@ pub async fn subscribe_pending_transaction(
         tokio::select! {
             latest_pending_block = rx.recv() => {
                 let latest_pending_block = latest_pending_block.or_internal_server_error("Failed to retrieve block info")?;
-                let txs_with_hash = get_filtered_pending_tx_with_hash(latest_pending_block, &sender_addresses, &sent_txs_cache.sent_txs_hashes);
+                sent_txs_cache.maybe_update_parent_anb_clear_txs_cache(latest_pending_block.info.header.parent_block_hash);
+                let txs_with_hash = get_filtered_pending_tx_with_hash(latest_pending_block.inner, &sender_addresses, &sent_txs_cache.sent_txs_hashes);
                 for tx_with_hash in txs_with_hash {
-                    send_pending_transactions(&tx_with_hash, transaction_details, &sink).await?;
+                    send_pending_transactions(&tx_with_hash, transaction_details, &sink, &mut sent_txs_cache.sent_txs_hashes).await?;
                 }
 
             },
@@ -75,6 +89,7 @@ pub async fn send_pending_transactions(
     tx_with_hash: &TransactionWithHash,
     transaction_details: bool,
     sink: &jsonrpsee::SubscriptionSink,
+    sent_txs_cache: &mut HashSet<Felt>,
 ) -> Result<(), StarknetWsApiError> {
     if transaction_details {
         let tx_message = Txn::from(tx_with_hash.transaction.clone());
@@ -86,5 +101,6 @@ pub async fn send_pending_transactions(
     let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_message)
         .or_internal_server_error("Failed to create response message")?;
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
+    sent_txs_cache.insert(tx_with_hash.hash);
     Ok(())
 }

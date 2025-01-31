@@ -5,7 +5,7 @@ use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use db_metrics::DbMetrics;
-use mp_block::MadaraBlockInner;
+use mp_block::MadaraPendingBlock;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
@@ -420,7 +420,7 @@ pub struct MadaraBackend {
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     sender_event: EventChannels,
-    sender_pending_tx: tokio::sync::broadcast::Sender<MadaraBlockInner>,
+    sender_pending_tx: tokio::sync::broadcast::Sender<MadaraPendingBlock>,
     write_opt_no_wal: WriteOptions,
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
