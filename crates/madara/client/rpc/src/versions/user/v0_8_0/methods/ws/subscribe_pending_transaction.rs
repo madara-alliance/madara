@@ -16,16 +16,19 @@ pub async fn subscribe_pending_transaction(
 
     let mut rx = starknet.backend.subscribe_pending_transaction();
 
-    let latest_pending_block =
-        starknet.backend.get_pending_block_inner().or_internal_server_error("Failed to retrieve latest block")?;
+    // Skip retrieving transactions from the pending block if it does not exist.
+    // get_pending_block_inner will return a "fake" default pending block if none exists (see pending block quirk).
+    if starknet.backend.has_pending_block().unwrap_or_default() {
+        let latest_pending_block =
+            starknet.backend.get_pending_block_inner().or_internal_server_error("Failed to retrieve latest block")?;
 
-    let txs_with_hash = get_filtered_pending_tx_with_hash(latest_pending_block, &sender_addresses);
+        let txs_with_hash = get_filtered_pending_tx_with_hash(latest_pending_block, &sender_addresses);
 
-    // Send current pending block transactions
-    for tx_with_hash in txs_with_hash {
-        send_pending_transactions(&tx_with_hash, transaction_details, &sink).await?;
+        // Send current pending block transactions
+        for tx_with_hash in txs_with_hash {
+            send_pending_transactions(&tx_with_hash, transaction_details, &sink).await?;
+        }
     }
-
     // New pending block transactions
     loop {
         tokio::select! {

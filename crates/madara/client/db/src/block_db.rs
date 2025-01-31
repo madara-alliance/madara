@@ -254,7 +254,7 @@ impl MadaraBackend {
         if let Some(bouncer_weights) = bouncer_weights {
             tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
         }
-        
+
         if self.sender_pending_tx.receiver_count() > 0 {
             if let Err(e) = self.sender_pending_tx.send(block.inner.clone()) {
                 tracing::debug!("Failed to send block inner to subscribers: {e}");
