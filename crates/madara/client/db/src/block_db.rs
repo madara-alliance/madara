@@ -129,7 +129,7 @@ impl MadaraBackend {
     // Pending block quirk: We should act as if there is always a pending block in db, to match
     //  juno and pathfinder's handling of pending blocks.
 
-    fn get_pending_block_info(&self) -> Result<MadaraPendingBlockInfo> {
+    pub fn get_pending_block_info(&self) -> Result<MadaraPendingBlockInfo> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk
@@ -176,7 +176,7 @@ impl MadaraBackend {
         Ok(res)
     }
 
-    fn get_pending_block_inner(&self) -> Result<MadaraBlockInner> {
+    pub fn get_pending_block_inner(&self) -> Result<MadaraBlockInner> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else {
             // See pending block quirk
@@ -254,6 +254,13 @@ impl MadaraBackend {
         if let Some(bouncer_weights) = bouncer_weights {
             tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
         }
+
+        if self.sender_pending_tx.receiver_count() > 0 {
+            if let Err(e) = self.sender_pending_tx.send(block.clone()) {
+                tracing::debug!("Failed to send block inner to subscribers: {e}");
+            }
+        }
+
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
@@ -433,6 +440,11 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
         self.sender_event.subscribe(from_address)
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn subscribe_pending_transaction(&self) -> tokio::sync::broadcast::Receiver<MadaraPendingBlock> {
+        self.sender_pending_tx.subscribe()
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]

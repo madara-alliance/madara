@@ -1,7 +1,8 @@
-use std::fmt;
-
+use mp_block::MadaraBlockInner;
+use mp_transactions::{Transaction, TransactionWithHash};
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::Event;
+use std::{collections::HashSet, fmt};
 
 use crate::StarknetRpcApiError;
 
@@ -156,6 +157,78 @@ pub fn event_match_filter(event: &Event<Felt>, address: Option<&Felt>, keys: Opt
     }
 
     true
+}
+
+/// Filters pending transactions based on an optional list of sender addresses.
+///
+/// This function checks if a pending transaction's sender address (extracted from `TransactionWithHash`)
+/// is included in the provided list of addresses. If `addresses` is:
+///
+/// - [`Some`] with a vector of [`Felt`], the transaction's sender address must be present
+///   in that list for the function to return `true`.
+/// - [`None`], the function allows all transactions and returns `true`.
+///
+/// # Arguments
+///
+/// * `addresses` - An optional vector of `Felt` representing permissible sender addresses.
+/// * `transaction` - A reference to the [`TransactionWithHash`] whose underlying [`Transaction`]
+///   is checked.
+///
+/// # Returns
+///
+/// * `true` if `addresses` is `None` (no filtering) or if the transaction's sender address
+///   is in the provided list of addresses.
+/// * `false` otherwise.
+pub fn pending_tx_match_filter(addresses: &Option<Vec<Felt>>, transaction: &TransactionWithHash) -> bool {
+    // Check if the event's address is contained in the provided vector of addresses
+    if let Some(address_list) = addresses {
+        let sender_address = match &transaction.transaction {
+            Transaction::Invoke(tx) => tx.sender_address(),
+            Transaction::L1Handler(tx) => &tx.contract_address,
+            Transaction::Declare(tx) => tx.sender_address(),
+            Transaction::Deploy(tx) => &tx.contract_address_salt,
+            Transaction::DeployAccount(tx) => tx.sender_address(),
+        };
+        return address_list.contains(sender_address);
+    }
+    true
+}
+
+/// Constructs a vector of [`TransactionWithHash`] objects from the provided [`MadaraBlockInner`],
+/// applies address filtering, and excludes already-sent transactions.
+///
+/// This function pairs each transaction in the given `pending_block` with its corresponding receipt
+/// to create a [`TransactionWithHash`] object. It then applies two filters:
+/// 1. [`pending_tx_match_filter`] to include only transactions whose sender addresses match those in
+///    `sender_addresses` (if provided).
+/// 2. Excludes any transactions whose hash is already present in `sent_txs`.
+///
+/// # Arguments
+///
+/// * `pending_block` - A [`MadaraBlockInner`] containing the transactions and their receipts.
+/// * `sender_addresses` - An optional vector of [`Felt`] representing permissible sender addresses.
+///    - If [`Some`], only transactions whose sender address is in this vector are included.
+///    - If [`None`], all transactions are included (no filtering).
+/// * `sent_txs` - A [`HashSet<Felt>`] of transaction hashes that have already been processed or sent.
+///    - Any transaction with a hash in this set is excluded from the returned vector.
+///
+/// # Returns
+///
+/// A vector of [`TransactionWithHash`] objects that pass the sender-address filter and have not
+/// yet been processed (i.e., are not in `sent_txs`).
+pub fn get_filtered_pending_tx_with_hash(
+    pending_block: MadaraBlockInner,
+    sender_addresses: &Option<Vec<Felt>>,
+    sent_txs: &HashSet<Felt>,
+) -> Vec<TransactionWithHash> {
+    pending_block
+        .transactions
+        .into_iter()
+        .zip(pending_block.receipts)
+        .map(|(transaction, receipt)| TransactionWithHash::new(transaction, receipt.transaction_hash()))
+        .filter(|tx_with_hash| pending_tx_match_filter(sender_addresses, tx_with_hash))
+        .filter(|tx_with_hash| !sent_txs.contains(&tx_with_hash.hash))
+        .collect()
 }
 
 #[cfg(test)]
