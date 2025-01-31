@@ -1,0 +1,90 @@
+---
+# Issue Types - Core labels for issue categorization
+- name: bug
+  color: "d73a4a"
+  description: Report an issue or unexpected behavior
+- name: feature
+  color: "a2eeef"
+  description: Request for new feature or enhancement
+  aliases: ["enhancement"]
+- name: question
+  color: "d876e3"
+  description: Request for information or clarification
+
+# Development Status - Progress tracking
+- name: research
+  color: "0890c3"
+  description: Research and exploration required before implementation
+  aliases: ["exploration"]
+- name: wont-fix
+  color: "ffffff"
+  description: This will not be worked on or fixed
+  aliases: ["wontfix"]
+- name: stale
+  color: "ededed"
+  description: No activity for a long period
+
+# Quality & Testing - Code quality related labels
+- name: code-quality
+  color: "c5def5"
+  description: Improvements to code structure and quality
+  aliases: ["code quality"]
+- name: testing
+  color: "1d76db"
+  description: Related to tests and test infrastructure
+  aliases: ["tests"]
+- name: docs
+  color: "0075ca"
+  description: Documentation changes or improvements
+  aliases: ["documentation"]
+- name: performance
+  color: "fef2c0"
+  description: Performance improvements or optimizations
+  aliases: ["perf"]
+
+# Component Specific - Labels for specific components
+- name: node
+  color: "2cbe4e"
+  description: Related to the full node implementation
+  aliases: ["full node"]
+- name: sequencer
+  color: "d93f0b"
+  description: Related to the sequencing logic and implementation
+- name: infrastructure
+  color: "c2e0c6"
+  description: CI/CD, deployment and infrastructure changes
+  aliases: ["infra"]
+
+# Version & Features Tracking - Version and feature specific labels
+- name: v0.13.2
+  color: "b104c2"
+  description: Related to version 0.13.2
+  aliases: ["0.13.2"]
+- name: db-migration
+  color: "ee0701"
+  description: Requires database schema changes or migration
+  aliases: ["bump_db"]
+- name: rpc-v0.8.0
+  color: "53112f"
+  description: Implementation of RPC specification v0.8.0
+  aliases: ["rpc-0.8.0"]
+
+# Issue Management - Issue workflow labels
+- name: help-wanted
+  color: "008672"
+  description: Looking for contributors to help with this
+  aliases: ["help wanted"]
+- name: duplicate
+  color: "cfd3d7"
+  description: Similar issue or PR already exists
+- name: invalid
+  color: "e4e669"
+  description: This issue or PR is not applicable
+# ----------------------------------------
+# Color Scheme Reference:
+# - Reds (d73a4a, ee0701) for critical/blocking issues
+# - Blues (0075ca, 1d76db) for technical tasks
+# - Greens (2cbe4e, c2e0c6) for components
+# - Purples (b104c2, d876e3) for versions/questions
+# - Yellows (e4e669, fef2c0) for warnings/performance
+# - Grays (ededed, ffffff) for workflow status

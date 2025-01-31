@@ -1,0 +1,154 @@
+services:
+  starknet:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - 9944:9944
+    networks:
+      - internal_prod
+    volumes:
+      - madara_files_prod:/var/lib/madara
+    entrypoint: ["tini", "--"]
+    command: >
+      /usr/local/bin/madara
+      --base-path=${MADARA_BASE_PATH:-/var/lib/madara}
+      --rpc-port=${MADARA_RPC_PORT:-9944}
+      --rpc-external
+      --rpc-cors=*
+      --${MADARA_MODE:-sequencer}
+      ${MADARA_PRESET:+--preset=${MADARA_PRESET}}
+      ${MADARA_CHAIN_CONFIG:+--chain-config-path=${MADARA_CHAIN_CONFIG}}
+    environment:
+      - MADARA_BASE_PATH=${MADARA_BASE_PATH:-/var/lib/madara}
+      - MADARA_MODE=${MADARA_MODE:-sequencer}
+      - MADARA_PRESET=${MADARA_PRESET:-}
+      - MADARA_CHAIN_CONFIG=${MADARA_CHAIN_CONFIG:-}
+      - MADARA_RPC_PORT=${MADARA_RPC_PORT:-9944}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MADARA_RPC_PORT:-9944}/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo:
+    image: mongo:6.0.8
+    restart: always
+    ports:
+      - 27017:27017
+    volumes:
+      - mongo_data_prod:/data/db
+    networks:
+      - internal_prod
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongo
+      MONGO_INITDB_ROOT_PASSWORD: mongo
+
+  apibara-dna:
+    image: quay.io/apibara/starknet:1.5.0
+    command:
+      - start
+      - --rpc=http://starknet:${MADARA_RPC_PORT:-9944}/
+      - --wait-for-rpc
+      - --data=/data
+      - --head-refresh-interval-ms=1000
+    ports:
+      - 7171:7171
+    volumes:
+      - apibara_prod:/data
+    networks:
+      - internal_prod
+    restart: on-failure
+
+  indexer:
+    image: quay.io/apibara/sink-mongo:0.9.2
+    command:
+      - run
+      - /indexer/src/main.ts
+    environment:
+      - ALLOW_ENV_FROM_ENV=DEBUG,APIBARA_AUTH_TOKEN,STARTING_BLOCK,STREAM_URL,SINK_TYPE,MONGO_CONNECTION_STRING,MONGO_DATABASE_NAME,STARKNET_NETWORK,KAKAROT_ADDRESS,ALLOW_NET,MONGO_REPLACE_DATA_INSIDE_TRANSACTION,DEFAULT_BLOCK_GAS_LIMIT
+      - DEBUG=""
+      - APIBARA_AUTH_TOKEN=""
+      - MONGO_CONNECTION_STRING=mongodb://mongo:mongo@mongo:27017
+      - MONGO_DATABASE_NAME=kakarot-local
+      - STARTING_BLOCK=0
+      - STREAM_URL=http://apibara-dna:7171
+      - SINK_TYPE=mongo
+      - STARKNET_NETWORK=http://starknet:${MADARA_RPC_PORT:-9944}/
+      - ALLOW_NET=
+      - MONGO_REPLACE_DATA_INSIDE_TRANSACTION=false
+      - KAKAROT_ADDRESS=0x6b09c5cca7e5ef944dc3be7514cc1ae5a6e267f0f1f2b5520e90dc00aecf6e1
+      - DEFAULT_BLOCK_GAS_LIMIT=7000000
+    restart: on-failure
+    volumes:
+      - indexer_code_prod:/indexer
+    networks:
+      - internal_prod
+    depends_on:
+      - starknet
+      - kakarot-deployer
+
+  kakarot-rpc:
+    image: ghcr.io/kkrt-labs/kakarot-rpc/node:v0.7.1-alpha1
+    pull_policy: always
+    ports:
+      - 3030:3030
+    environment:
+      - KAKAROT_RPC_URL=0.0.0.0:3030
+      - STARKNET_NETWORK=http://starknet:${MADARA_RPC_PORT:-9944}/
+      - RUST_LOG=kakarot_rpc=info
+      - MONGO_CONNECTION_STRING=mongodb://mongo:mongo@mongo:27017
+      - MONGO_DATABASE_NAME=kakarot-local
+      - KAKAROT_ADDRESS=0x6b09c5cca7e5ef944dc00aecf6e1
+      - UNINITIALIZED_ACCOUNT_CLASS_HASH=0x600f6862938312a05a0cfecba0dcaf37693efc9e4075a6adfb62e196022678e
+      - ACCOUNT_CONTRACT_CLASS_HASH=0x1276d0b017701646f8646b69de6c3b3584edce71879678a679f28c07a9971cf
+      - MAX_FELTS_IN_CALLDATA=30000
+      - MAX_LOGS=10000
+      - WHITE_LISTED_EIP_155_TRANSACTION_HASHES=0xeddf9e61fb9d8f5111840daef55e5fde0041f5702856532cdbb5a02998033d26,0xb6274b80bc7cda162df89894c7748a5cb7ba2eaa6004183c41a1837c3b072f1e,0x07471adfe8f4ec553c1199f495be97fc8be8e0626ae307281c22534460184ed1,0xb95343413e459a0f97461812111254163ae53467855c0d73e0f1e7c5b8442fa3
+      - RELAYER_PRIVATE_KEY=0x1234
+      - RELAYERS_ADDRESSES=0x12,0x34
+    restart: on-failure
+    volumes:
+      - indexer_code_prod:/usr/src/indexer
+    depends_on:
+      - starknet
+      - kakarot-deployer
+    networks:
+      - internal_prod
+
+  kakarot-deployer:
+    image: ghcr.io/madara-alliance/kakarot:v0.9.2
+    depends_on:
+      starknet:
+        condition: service_started
+    environment:
+      STARKNET_NETWORK: madara
+      MADARA_RPC_URL: http://starknet:${MADARA_RPC_PORT:-9944}/
+      MADARA_ACCOUNT_ADDRESS: 0x04c8c5928b98558300b2c5769f5306ff85864b8f1aee449dde8e4cfc53b42944
+      MADARA_PRIVATE_KEY: 0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07
+      MADARA_EVM_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+    networks:
+      - internal_prod
+    command: >
+      bash -c '
+      export PATH=$$PATH:/root/.cargo/bin;
+      uv --version;
+      until curl -s http://starknet:${MADARA_RPC_PORT:-9944}/; do
+        echo "Waiting for starknet client to be available...";
+        sleep 5;
+      done;
+      exec uv run deploy
+      '
+    restart: "no"
+
+networks:
+  internal_prod:
+    driver: bridge
+
+volumes:
+  madara_files_prod:
+  mongo_data_prod:
+  apibara_prod:
+  indexer_code_prod:

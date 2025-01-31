@@ -1,0 +1,40 @@
+name: madara_runner
+
+services:
+  madara:
+    image: madara:latest
+    container_name: "madara_runner"
+    cpus: "4.0"
+    mem_limit: "16gb"
+    ports:
+      - 9944:9944
+    labels:
+      - "autoheal=true"
+    environment:
+      - RPC_API_KEY_FILE=/run/secrets/rpc_api_key
+    secrets:
+      - rpc_api_key
+    volumes:
+      - /var/lib/madara:/tmp/madara
+      - ./madara-runner.sh:/usr/local/bin/runner.sh:ro
+    entrypoint:
+      - /usr/local/bin/runner.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure:3
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    tty: true
+    restart: always
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+
+secrets:
+  rpc_api_key:
+    file: .secrets/rpc_api.secret

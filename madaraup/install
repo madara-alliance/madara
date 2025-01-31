@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Installing madaraup..."
+
+# Set up base directories
+BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
+MADARA_DIR=${MADARA_DIR-"$BASE_DIR/.madara"}
+MADARA_BIN_DIR="$MADARA_DIR/bin"
+MADARA_MAN_DIR="$MADARA_DIR/share/man/man1"
+
+# URL for the madaraup binary
+BIN_URL="https://raw.githubusercontent.com/madara-alliance/madara/main/madaraup/madaraup"
+BIN_PATH="$MADARA_BIN_DIR/madaraup"
+
+# Create the .madara bin directory and madaraup binary if it doesn't exist
+mkdir -p $MADARA_BIN_DIR
+curl -# -L $BIN_URL -o $BIN_PATH
+chmod +x $BIN_PATH
+
+mkdir -p $MADARA_MAN_DIR
+
+case $SHELL in
+*/zsh)
+    PROFILE=${ZDOTDIR-"$HOME"}/.zshenv
+    PREF_SHELL=zsh
+    ;;
+*/bash)
+    PROFILE=$HOME/.bashrc
+    PREF_SHELL=bash
+    ;;
+*/fish)
+    PROFILE=$HOME/.config/fish/config.fish
+    PREF_SHELL=fish
+    ;;
+*/ash)
+    PROFILE=$HOME/.profile
+    PREF_SHELL=ash
+    ;;
+*)
+    echo "madaraup: could not detect shell, manually add ${MADARA_BIN_DIR} to your PATH."
+    exit 1
+esac
+
+if [[ ":$PATH:" != *":${MADARA_BIN_DIR}:"* ]]; then
+    echo >> $PROFILE && echo "export PATH=\"\$PATH:$MADARA_BIN_DIR\"" >> $PROFILE
+fi
+
+echo && echo "Detected your preferred shell is ${PREF_SHELL} and added madaraup to PATH. Run 'source ${PROFILE}' or start a new terminal session to use madaraup."
+echo "Then, simply run 'madaraup' to install Madara."

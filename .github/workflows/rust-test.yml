@@ -20,16 +20,6 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
-      - name: Launch Anvil
-        run: anvil --fork-url $ANVIL_FORK_URL --fork-block-number $ANVIL_BLOCK_NUMBER &
-        env:
-          ANVIL_FORK_URL: "https://eth.merkle.io"
-          ANVIL_BLOCK_NUMBER: 20395662
-      - name: Wait for Anvil to be ready
-        run: |
-          while ! nc -z localhost 8545; do
-            sleep 1
-          done
 
       - name: Run unit tests
         run: |

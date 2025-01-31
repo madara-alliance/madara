@@ -2,7 +2,48 @@
 
 ## Next release
 
+- fix(primitives): limit legacy class sizes
+- fix(block_production): dynamic block closing now adds special address with prev block hash
+- fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
+- fix(compilation): crate-level compilation
+- chore: Move crates under a madara subdir
+- chore(nix): resolve flake and direnv compatibility issues
+- fix: Gateway path fix
+- fix: instrumentation code
+- feat: block resource cap removed from the pending tick
+- fix: replace class hash issue resolved + gas fees issue resolved
+- fix: trim hash of eth state was failing with 0x0
+- fix: devnet accounts getting deployed in sequencer mode
+- fix(rpc): fix BroadcastedDeclareTxn V3 in starknet-types-rpc
+- fix: oracle need condition
+- fix(block_production): continue pending block now reexecutes the previous transactions
+- feat(services): reworked Madara services for better cancellation control
+- feat: fetch eth/strk price and sync strk gas price
+- feat(block_production): continue pending block on restart
+- feat(mempool): mempool transaction saving on db
+- feat(mempool): mempool transaction limits
+- feat(cli): madaraup quickfix
+- feat(cli): added madaraup for v0.7.0
+- refactor(rpc): replace starknet-rs by starknet-types-rpc
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
+- feat(v0.8.0-rc0): storage proofs for rpc version v0.8.0
+- feat(warp): added warp update to madara
+- docs(readme): updated README.md docs and added Docker Compose support
+- fix(log): define RUST_LOG=info by default
+- fix(tracing): RUST_LOG filtering support
+- fix(fgw): fetch class
+- feat: possibility of starting madara & kakarot-rpc in docker
+- feat(debug): service cancelling and profiling build
+- feat(endpoint): added extra admin rpc endpoint for sensitive rpc calls
 - fix(db): fix number of files in db, startup hang, ram issues and flushing issues
+- fix: FeePayment conversion
+- fix(block_production): get l2-to-l1 messages recursively from the call tree
+- refactor: replace starknet-rs BlockId with types-rs BlockId and remove redundant mp_block::BlockId
+- feat(fgw): added `add_transaction` for gateway client
+- fix(fgw): include `l1_to_l2_consumed_message` in L1 handler receipt
+- build: up starknet-rs, starknet-types, blockifier(v0.8.0), cairo
+- feat(rpc): added `getCompiledCasm` method
+- fix(error): Added a comment for non archive node L1 keys
 - feat(confg): added chain config template and fgw example
 - feat(v0.8.0-rc0): starknet_subscribeNewHeads
 - fix(rocksdb): update max open files opt

@@ -11,6 +11,7 @@ WORKDIR /usr/src/madara/
 # Copy the source code into the container
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
+COPY .db-versions.yml .db-versions.yml ./
 COPY cairo-artifacts cairo-artifacts
 
 # Install runtime dependencies
@@ -26,7 +27,7 @@ RUN cargo build --release
 FROM debian:bookworm
 # Install runtime dependencies
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates &&\
+    apt-get install -y openssl ca-certificates tini curl &&\
     apt-get autoremove -y; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*

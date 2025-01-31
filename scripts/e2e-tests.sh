@@ -4,25 +4,18 @@
 # Usage: ``./scripts/e2e-tests.sh <name of the tests to run>`
 set -e
 
-# will also launch anvil and automatically close it down on error or success
+# Configuration
+export PROPTEST_CASES=10
+export ETH_FORK_URL=https://eth.merkle.io
 
-anvil --fork-url https://eth.merkle.io --fork-block-number 20395662 &
+# Build the binary
+cargo build --bin madara --profile dev
+export COVERAGE_BIN=$(realpath target/debug/madara)
 
-subshell() {
-    set -e
-    cargo build --bin madara --profile dev
-
-    export COVERAGE_BIN=$(realpath target/debug/madara)
-    export ETH_FORK_URL=https://eth.merkle.io
-
-    # wait for anvil
-    while ! nc -z localhost 8545; do
-        sleep 1
-    done
-
-    cargo test --profile dev --workspace $@
-}
-
-(subshell $@ && r=$?) || r=$?
-pkill -P $$
-exit $r
+# Run the tests
+if cargo test --profile dev "${@:-"--workspace"}"; then
+  echo "✅ All tests passed successfully!"
+else
+  echo "❌ Some tests failed."
+  exit 1
+fi
