@@ -115,7 +115,7 @@ async function deployContract({ provider, account }: TestContext) {
   await provider.waitForTransaction(deployResult.transaction_hash);
 
   // Add assertion to check if the contract address is valid
-  expect(deployResult.contract_address[0]).toBeTruthy();
+  expect(deployResult.contract_address).toBeTruthy();
 
   // Retrieve the class hash for the deployed contract
   let response = await provider.getClassHashAt(
