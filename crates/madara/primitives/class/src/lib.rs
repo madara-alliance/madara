@@ -206,11 +206,11 @@ impl TryFrom<CompressedSierraClass> for FlattenedSierraClass {
     type Error = std::io::Error;
 
     fn try_from(compressed_sierra_class: CompressedSierraClass) -> Result<Self, Self::Error> {
-        let string_reader = std::io::Cursor::new(compressed_sierra_class.sierra_program);
-        let base64_decoder =
-            base64::read::DecoderReader::new(string_reader, &base64::engine::general_purpose::STANDARD);
-        let gzip_decoder = flate2::read::GzDecoder::new(base64_decoder);
-        let sierra_program = serde_json::from_reader(gzip_decoder)?;
+        let s = compressed_sierra_class.sierra_program;
+        // base64 -> gz -> json
+        let sierra_program = serde_json::from_reader(crate::convert::gz_decompress_stream(
+            base64::read::DecoderReader::new(s.as_bytes(), &base64::engine::general_purpose::STANDARD),
+        ))?;
 
         Ok(Self {
             sierra_program,

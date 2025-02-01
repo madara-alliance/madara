@@ -5591,6 +5591,7 @@ dependencies = [
  "rocksdb",
  "serde",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "starknet-types-rpc",
  "starknet_api",
  "tempfile",
  "thiserror 2.0.3",

@@ -6,6 +6,11 @@ on:
   workflow_call:
 
 jobs:
+  db-check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Checking DB Version"
+
   update-db-version:
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.labels.*.name, 'db-migration')

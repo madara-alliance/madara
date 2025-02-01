@@ -400,7 +400,7 @@ Here is a list of all the supported methods with their current status:
 | ------ | ------------------------------------------------ |
 | ✅     | `starknet_unsubscribe` (v0.8.0)                  |
 | ✅     | `starknet_subscribeNewHeads` (v0.8.0)            |
-| ❌     | `starknet_subscribeEvents` (v0.8.0)              |
+| ✅     | `starknet_subscribeEvents` (v0.8.0)              |
 | ❌     | `starknet_subscribeTransactionStatus` (v0.8.0)   |
 | ❌     | `starknet_subscribePendingTransactions` (v0.8.0) |
 | ❌     | `starknet_subscriptionReorg` (v0.8.0)            |

@@ -162,70 +162,6 @@ alloy = { version = "0.4.0", features = [
   "node-bindings",
 ] }
 
-# Other third party dependencies
-paste = "1.0.15"
-anyhow = "1.0"
-bigdecimal = "0.4.5"
-assert_matches = "1.5"
-async-trait = "0.1"
-base64 = "0.22"
-sha3 = "0.10"
-bitvec = { version = "1.0", default-features = false, features = ["std"] }
-clap = { version = "4.4" }
-flate2 = "1.0"
-futures = { version = "0.3", default-features = false, features = ["std"] }
-jsonrpsee = { version = "0.22", default-features = false, features = [
-  "server",
-  "client",
-] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.4", features = ["cors"] }
-governor = "0.6"
-hyper = { version = "1.5.0", features = ["full"] }
-hyper-tls = "0.6"
-hyper-util = "0.1.9"
-http = "1.1.0"
-http-body-util = "0.1.2"
-ip_network = "0.4"
-lazy_static = { version = "1.4", default-features = false }
-once_cell = "1.19"
-num-traits = "0.2"
-num-bigint = "0.4"
-primitive-types = "0.12"
-rand = "0.8"
-indoc = "2"
-proc-macro2 = "1.0.86"
-quote = "1.0.26"
-syn = { version = "2.0.39", features = ["full"] }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
-rstest = "0.18"
-serde = { version = "1.0", default-features = false, features = ["std"] }
-serde_with = { version = "3.11", default-features = false, features = [
-  "alloc",
-  "macros",
-] }
-serde_json = { version = "1.0", default-features = false, features = ["std"] }
-serde_yaml = { version = "0.9.34" }
-thiserror = "2.0"
-tokio = { version = "1.34", features = ["signal", "rt"] }
-tokio-util = "0.7.12"
-url = { version = "2.4", features = ["serde"] }
-rayon = "1.10"
-bincode = "1.3"
-fdlimit = "0.3.0"
-proptest = "1.5.0"
-proptest-derive = "0.5.0"
-proptest-state-machine = "0.3.1"
-dotenv = "0.15.0"
-httpmock = "0.7.0"
-tempfile = "3.10.1"
-mockall = "0.13.0"
-serial_test = "3.1.1"
-itertools = "0.13.0"
-regex = "1.10.5"
-bytes = "1.6.0"
-crypto-bigint = "0.5.5"
-
 # Instrumentation
 opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
 opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
@@ -246,6 +182,88 @@ tracing-subscriber = { version = "0.3.18", features = [
 ] }
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
+
+# Networking
+jsonrpsee = { version = "0.22", default-features = false, features = [
+  "server",
+  "client",
+] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.4", features = ["cors"] }
+governor = "0.6"
+hyper = { version = "1.5.0", features = ["full"] }
+hyper-tls = "0.6"
+hyper-util = "0.1.9"
+http = "1.1.0"
+http-body-util = "0.1.2"
+ip_network = "0.4"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+url = { version = "2.4", features = ["serde"] }
+
+# Async
+tokio = { version = "1.34", features = ["signal", "rt"] }
+tokio-util = "0.7.12"
+rayon = "1.10"
+futures = { version = "0.3", default-features = false, features = ["std"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_with = { version = "3.11", default-features = false, features = [
+  "alloc",
+  "macros",
+] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+serde_yaml = { version = "0.9.34" }
+bincode = "1.3"
+
+# Numbers
+base64 = "0.22"
+bigdecimal = "0.4.5"
+num-traits = "0.2"
+num-bigint = "0.4"
+primitive-types = "0.12"
+rand = "0.8"
+crypto-bigint = "0.5.5"
+
+# Std extensions
+lazy_static = { version = "1.4", default-features = false }
+once_cell = "1.19"
+itertools = "0.13.0"
+bitvec = { version = "1.0", default-features = false, features = ["std"] }
+bytes = "1.6.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Testing
+rstest = "0.18"
+proptest = "1.5.0"
+proptest-derive = "0.5.0"
+proptest-state-machine = "0.3.1"
+tempfile = "3.10.1"
+httpmock = "0.7.0"
+mockall = "0.13.0"
+serial_test = "3.1.1"
+fdlimit = "0.3.0"
+assert_matches = "1.5"
+
+# Macros
+indoc = "2"
+proc-macro2 = "1.0.86"
+quote = "1.0.26"
+syn = { version = "2.0.39", features = ["full"] }
+paste = "1.0.15"
+
+# Setup
+clap = { version = "4.4" }
+dotenv = "0.15.0"
+
+# Misc
+flate2 = "1.0"
+regex = "1.10.5"
+sha3 = "0.10"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

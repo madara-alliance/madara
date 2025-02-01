@@ -767,23 +767,6 @@ impl MempoolInner {
         }
     }
 
-    // This is called by the block production when loading the pending block
-    // from db
-    pub fn insert_txs(
-        &mut self,
-        txs: impl IntoIterator<Item = MempoolTransaction>,
-        force: bool,
-    ) -> Result<(), TxInsertionError> {
-        for tx in txs {
-            // Transactions are marked as ready as they were already included
-            // into the pending block
-            let nonce = tx.nonce;
-            let nonce_next = tx.nonce_next;
-            self.insert_tx(tx, force, true, NonceInfo::ready(nonce, nonce_next))?;
-        }
-        Ok(())
-    }
-
     /// Returns true if [MempoolInner] has the transaction at a contract address
     /// and [Nonce] in the ready queue.
     pub fn nonce_is_ready(&self, sender_address: Felt, nonce: Nonce) -> bool {

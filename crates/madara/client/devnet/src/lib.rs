@@ -311,8 +311,9 @@ mod tests {
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None).unwrap());
 
         tracing::debug!("{:?}", block.state_diff);
-        tokio::runtime::Runtime::new()
-            .unwrap()
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        runtime
             .block_on(
                 importer.add_block(
                     block,
@@ -335,14 +336,15 @@ mod tests {
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider), mempool_limits));
         let metrics = BlockProductionMetrics::register();
 
-        let block_production = BlockProductionTask::new(
-            Arc::clone(&backend),
-            Arc::clone(&importer),
-            Arc::clone(&mempool),
-            Arc::new(metrics),
-            Arc::clone(&l1_data_provider),
-        )
-        .unwrap();
+        let block_production = runtime
+            .block_on(BlockProductionTask::new(
+                Arc::clone(&backend),
+                Arc::clone(&importer),
+                Arc::clone(&mempool),
+                Arc::new(metrics),
+                Arc::clone(&l1_data_provider),
+            ))
+            .unwrap();
 
         DevnetForTesting { backend, contracts, block_production, mempool }
     }
