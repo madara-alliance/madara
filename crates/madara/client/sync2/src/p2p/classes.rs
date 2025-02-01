@@ -65,7 +65,7 @@ impl P2pPipelineSteps for ClassesSyncSteps {
                     let classes = importer.verify_compile_classes(block_n, classes, &check_against)?;
                     importer.save_classes(block_n, classes)
                 })
-                .await
+                .await?
         }
 
         Ok(())
