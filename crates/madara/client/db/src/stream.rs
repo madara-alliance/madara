@@ -122,8 +122,14 @@ impl MadaraBackend {
                         Direction::Forward => ite.seek(next_block_n.to_be_bytes()),
                         Direction::Backward => ite.seek_for_prev(next_block_n.to_be_bytes()),
                     }
-
                     for _ in 0..BUFFER_SIZE {
+                        // End condition when moving forward is the latest full block in db.
+                        if self.iteration.direction == Direction::Forward
+                            && self.backend.head_status().next_full_block() <= next_block_n
+                        {
+                            break;
+                        }
+
                         let Some((k, v)) = ite.item() else {
                             ite.status()?; // bubble up error, or, we reached the end.
                             break;

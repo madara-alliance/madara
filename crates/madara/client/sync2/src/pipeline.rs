@@ -1,10 +1,9 @@
-use std::{collections::VecDeque, ops::Range, sync::Arc};
-
 use futures::{
     future::{BoxFuture, OptionFuture},
     stream::FuturesOrdered,
     Future, FutureExt, StreamExt,
 };
+use std::{collections::VecDeque, ops::Range, sync::Arc};
 
 struct RetryInput<I> {
     block_range: Range<u64>,
@@ -127,8 +126,11 @@ impl<S: PipelineSteps> PipelineController<S> {
         self.queue.push_back(self.make_parallel_step_future(RetryInput { block_range, input }));
     }
 
-    pub fn push(&mut self, input: impl IntoIterator<Item = S::InputItem>) {
-        self.next_inputs.extend(input);
+    pub fn push(&mut self, block_range: Range<u64>, input: impl IntoIterator<Item = S::InputItem>) {
+        let next_input_block_n = self.next_input_block_n();
+        // Skip items that we have already handled.
+        self.next_inputs
+            .extend(input.into_iter().zip(block_range).skip_while(|(_, n)| next_input_block_n < *n).map(|(v, _)| v));
     }
 
     pub async fn next(&mut self) -> Option<anyhow::Result<(Range<u64>, S::Output)>> {

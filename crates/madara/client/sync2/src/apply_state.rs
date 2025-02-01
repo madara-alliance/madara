@@ -40,14 +40,19 @@ impl PipelineSteps for ApplyStateSteps {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        if !self.disable_tries {
+        if self.disable_tries {
+            return Ok(ApplyOutcome::Success(()));
+        }
+        if let Some(last_block_n) = block_range.clone().last() {
             tracing::debug!("Apply state sequential step {block_range:?}");
             self.importer.apply_to_global_trie(block_range, input).await?;
+            self.backend.head_status().global_trie.set(Some(last_block_n));
+            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().global_trie.get()
+        self.backend.head_status().latest_full_block_n()
     }
 }

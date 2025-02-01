@@ -481,6 +481,10 @@ impl DatabaseService {
         )
         .await?;
 
+        if let Some(block_n) = handle.head_status().latest_full_block_n() {
+            tracing::info!("📦 Database latest block: #{block_n}");
+        }
+
         Ok(Self { handle })
     }
 

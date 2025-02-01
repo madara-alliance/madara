@@ -215,6 +215,7 @@ impl PipelineSteps for GatewaySyncSteps {
             self.backend.head_status().state_diffs.set(Some(block_n));
             self.backend.head_status().transactions.set(Some(block_n));
             self.backend.head_status().events.set(Some(block_n));
+            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(input))
     }
@@ -314,13 +315,14 @@ impl ForwardPipeline for GatewayForwardSync {
         loop {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
-                self.blocks_pipeline.push(iter::once(()));
+                let next_input_block_n = self.blocks_pipeline.next_input_block_n();
+                self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
             tokio::select! {
                 Some(res) = self.blocks_pipeline.next(), if self.classes_pipeline.can_schedule_more() && self.apply_state_pipeline.can_schedule_more() => {
-                    let (_range, state_diffs) = res?;
-                    self.classes_pipeline.push(state_diffs.iter().map(|s| s.all_declared_classes()));
-                    self.apply_state_pipeline.push(state_diffs);
+                    let (range, state_diffs) = res?;
+                    self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
+                    self.apply_state_pipeline.push(range, state_diffs);
                 }
                 Some(res) = self.classes_pipeline.next() => {
                     res?;

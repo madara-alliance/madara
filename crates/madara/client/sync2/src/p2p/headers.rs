@@ -95,7 +95,8 @@ impl P2pPipelineSteps for HeadersSyncSteps {
         };
 
         // verify first block_hash matches with db
-        let parent_block_hash = if let Some(block_n) = self.backend.head_status().headers.get() {
+        let parent_block_n = first_block.header.block_number.checked_sub(1);
+        let parent_block_hash = if let Some(block_n) = parent_block_n {
             self.backend
                 .get_block_hash(&BlockId::Number(block_n))
                 .context("Getting latest block hash from database.")?
@@ -117,11 +118,12 @@ impl P2pPipelineSteps for HeadersSyncSteps {
         }
 
         self.backend.head_status().headers.set(block_range.last());
+        self.backend.save_head_status_to_db().context("Saving head status to db")?;
 
         Ok(input.into_iter().map(|h| h.header).collect())
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().headers.get()
+        self.backend.head_status().latest_full_block_n()
     }
 }

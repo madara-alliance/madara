@@ -3,6 +3,7 @@ use super::{
     P2pPipelineArguments,
 };
 use crate::{import::BlockImporter, pipeline::PipelineController};
+use anyhow::Context;
 use futures::TryStreamExt;
 use mc_db::{stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
@@ -80,11 +81,12 @@ impl P2pPipelineSteps for StateDiffsSyncSteps {
         tracing::debug!("p2p state_diffs sequential step: {block_range:?}, peer_id: {peer_id}");
         if let Some(block_n) = block_range.last() {
             self.backend.head_status().state_diffs.set(Some(block_n));
+            self.backend.save_head_status_to_db().context("Saving head status to db")?;
         }
         Ok(input)
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().state_diffs.get()
+        self.backend.head_status().latest_full_block_n()
     }
 }

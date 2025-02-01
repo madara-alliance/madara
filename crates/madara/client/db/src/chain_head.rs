@@ -45,6 +45,10 @@ impl ChainHead {
             .min(self.global_trie.get())
     }
 
+    pub fn next_full_block(&self) -> u64 {
+        self.latest_full_block_n().map(|n| n + 1).unwrap_or(0)
+    }
+
     pub(crate) fn load_from_db(db: &DB) -> Result<Self, MadaraStorageError> {
         let col = db.get_column(Column::BlockStorageMeta);
         if let Some(res) = db.get_pinned_cf(&col, ROW_HEAD_STATUS)? {
@@ -62,6 +66,11 @@ impl MadaraBackend {
     }
     pub fn load_head_status_from_db(&mut self) -> Result<(), MadaraStorageError> {
         self.head_status = ChainHead::load_from_db(&self.db)?;
+        Ok(())
+    }
+    pub fn save_head_status_to_db(&self) -> Result<(), MadaraStorageError> {
+        let col = self.db.get_column(Column::BlockStorageMeta);
+        self.db.put_cf_opt(&col, ROW_HEAD_STATUS, bincode::serialize(&self.head_status)?, &self.writeopts_no_wal)?;
         Ok(())
     }
 }

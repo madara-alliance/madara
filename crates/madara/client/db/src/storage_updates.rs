@@ -217,6 +217,16 @@ impl MadaraBackend {
         r1.and(r2).and(r3)?;
 
         self.snapshots.set_new_head(DbBlockId::from_block_n(block_n));
+
+        if let Some(block_n) = block_n {
+            self.head_status.headers.set(Some(block_n));
+            self.head_status.state_diffs.set(Some(block_n));
+            self.head_status.transactions.set(Some(block_n));
+            self.head_status.classes.set(Some(block_n));
+            self.head_status.events.set(Some(block_n));
+            self.head_status.global_trie.set(Some(block_n));
+        }
+
         Ok(())
     }
 

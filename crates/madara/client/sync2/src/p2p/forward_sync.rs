@@ -155,26 +155,27 @@ impl ForwardPipeline for P2pForwardSync {
             while self.headers_pipeline.can_schedule_more()
                 && self.headers_pipeline.next_input_block_n() <= target_height
             {
-                self.headers_pipeline.push(iter::once(()));
+                let next_input_block_n = self.headers_pipeline.next_input_block_n();
+                self.headers_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
             tokio::select! {
                 Some(res) = self.headers_pipeline.next(), if self.transactions_pipeline.can_schedule_more() && self.state_diffs_pipeline.can_schedule_more() => {
-                    let (_range, headers) = res?;
-                    self.transactions_pipeline.push(headers.iter().cloned());
-                    self.state_diffs_pipeline.push(headers);
+                    let (range, headers) = res?;
+                    self.transactions_pipeline.push(range.clone(), headers.iter().cloned());
+                    self.state_diffs_pipeline.push(range, headers);
                 }
                 Some(res) = self.transactions_pipeline.next(), if self.events_pipeline.can_schedule_more() => {
-                    let (_range, headers) = res?;
-                    self.events_pipeline.push(headers);
+                    let (range, headers) = res?;
+                    self.events_pipeline.push(range, headers);
                 }
                 Some(res) = self.events_pipeline.next() => {
                     res?;
                 }
                 Some(res) = self.state_diffs_pipeline.next(), if self.classes_pipeline.can_schedule_more() => {
-                    let (_range, state_diffs) = res?;
-                    self.classes_pipeline.push(state_diffs.iter().map(|s| s.all_declared_classes()));
-                    self.apply_state_pipeline.push(state_diffs);
+                    let (range, state_diffs) = res?;
+                    self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
+                    self.apply_state_pipeline.push(range, state_diffs);
                 }
                 Some(res) = self.classes_pipeline.next() => {
                     res?;
