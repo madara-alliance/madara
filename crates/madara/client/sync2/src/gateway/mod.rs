@@ -155,7 +155,6 @@ impl PipelineSteps for GatewaySyncSteps {
                             block_hash: gateway_block.block_hash,
                             consensus_signatures: vec![],
                         };
-                        tracing::debug!("{:#?}", signed_header);
 
                         // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
                         let allow_pre_v0_13_2 = true;
@@ -197,9 +196,6 @@ impl PipelineSteps for GatewaySyncSteps {
                     .await?;
                 out.push(state_diff);
             }
-
-            tracing::debug!("out= {out:?}");
-
             Ok(out)
         })
         .await
@@ -209,7 +205,7 @@ impl PipelineSteps for GatewaySyncSteps {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        tracing::debug!("gateway sync sequential step: {block_range:?}");
+        tracing::debug!("Gateway sync sequential step: {block_range:?}");
         if let Some(block_n) = block_range.last() {
             self.backend.head_status().headers.set(Some(block_n));
             self.backend.head_status().state_diffs.set(Some(block_n));

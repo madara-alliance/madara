@@ -498,7 +498,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
     pub(crate) fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
-        tracing::debug!("closing block #{}", block_n);
+        tracing::debug!("Closing block #{}", block_n);
 
         // Complete the block with full bouncer capacity
         let start_time = Instant::now();

@@ -154,7 +154,7 @@ impl MadaraBackend {
     ) -> Result<Felt, MadaraStorageError> {
         let mut state_root = None;
         for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
-            tracing::debug!("applying state_diff block_n={block_n} {state_diff:#?}");
+            tracing::debug!("applying state_diff block_n={block_n}");
             let (contract_trie_root, class_trie_root) = rayon::join(
                 || {
                     crate::update_global_trie::contracts::contract_trie_root(

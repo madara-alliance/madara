@@ -48,7 +48,6 @@ impl TryFrom<model::Cairo0Class> for LegacyClassInfo {
     fn try_from(value: model::Cairo0Class) -> Result<Self, Self::Error> {
         let abi: Vec<starknet_core::types::LegacyContractAbiEntry> =
             serde_json::from_str(&value.abi).map_err(FromModelError::LegacyClassJsonError)?;
-        // tracing::debug!("legacy class {:?}", value.abi, abi);
         Ok(Self {
             contract_class: Arc::new(CompressedLegacyContractClass {
                 program: BASE64_STANDARD.decode(&value.program).map_err(FromModelError::LegacyClassBase64Decode)?,
@@ -172,12 +171,13 @@ pub async fn classes_sync(
     req: model::ClassesRequest,
     mut out: Sender<model::ClassesResponse>,
 ) -> Result<(), sync_handlers::Error> {
+    let iterator_config = block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?;
     let ite = ctx
         .app_ctx
         .backend
-        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
+        .block_info_iterator(iterator_config.clone());
 
-    tracing::debug!("classes sync!");
+    tracing::debug!("serving classes sync! {iterator_config:?}");
 
     for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;

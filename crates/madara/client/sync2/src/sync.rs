@@ -91,12 +91,12 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
     }
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
-        let a = loop {
+        loop {
             let target_height = self.target_height();
 
             let can_run_pipeline = !self.forward_pipeline.is_empty()
                 || target_height.is_some_and(|b| b >= self.forward_pipeline.next_input_block_n());
-            tracing::debug!(
+            tracing::trace!(
                 "can run {:?} {:?} {}",
                 can_run_pipeline,
                 target_height,
@@ -104,7 +104,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
             );
 
             if let Some(probe) = &self.probe {
-                tracing::debug!("run inner {:?} {:?}", self.forward_pipeline.next_input_block_n(), target_height);
+                tracing::trace!("run inner {:?} {:?}", self.forward_pipeline.next_input_block_n(), target_height);
                 if self.current_probe_future.is_none() && !can_run_pipeline {
                     let fut = probe.clone().forward_probe(
                         self.forward_pipeline.next_input_block_n(),
@@ -137,7 +137,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                         self.probe_wait_deadline = Some(Instant::now() + PROBE_WAIT_DELAY);
                     }
                     self.probe_highest_known_block = probe_new_highest_block;
-                    tracing::debug!("GOT {:?}", self.probe_highest_known_block);
+                    tracing::trace!("probe result {:?}", self.probe_highest_known_block);
                 }
                 Some(res) = OptionFuture::from(
                     target_height.filter(|_| can_run_pipeline)
@@ -148,9 +148,6 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                 }
                 else => break Ok(()),
             }
-        };
-        tracing::debug!("out {:?}", self.forward_pipeline.next_input_block_n());
-        self.show_status();
-        a
+        }
     }
 }

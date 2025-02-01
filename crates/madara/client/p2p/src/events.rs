@@ -9,7 +9,7 @@ use std::collections::hash_map;
 
 impl MadaraP2p {
     pub fn handle_event(&mut self, event: SwarmEvent<behaviour::Event>) -> anyhow::Result<()> {
-        tracing::debug!("event: {event:?}");
+        tracing::trace!("event: {event:?}");
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 let listen_address = address.with_p2p(*self.swarm.local_peer_id()).expect("Making multiaddr");
@@ -23,7 +23,7 @@ impl MadaraP2p {
                 stats: _stats,
                 step,
             })) => {
-                tracing::debug!("KAD OutboundQueryProgressed: {id:?} {result:?} {step:?}");
+                tracing::trace!("KAD OutboundQueryProgressed: {id:?} {result:?} {step:?}");
                 if let hash_map::Entry::Occupied(mut entry) = self.pending_get_closest_peers.entry(id) {
                     let QueryResult::GetClosestPeers(res) = result else {
                         anyhow::bail!("pending_get_closest_peers entry {id} has the wrong result type: {result:?}")
@@ -33,19 +33,19 @@ impl MadaraP2p {
                         Ok(res) => {
                             let send_all = || {
                                 for el in res.peers {
-                                    tracing::debug!("KAD SEND {id:?}");
+                                    tracing::trace!("KAD SEND {id:?}");
                                     entry.get_mut().unbounded_send(el.peer_id)?;
                                 }
                                 Ok::<_, mpsc::TrySendError<_>>(())
                             };
 
                             if let Err(err) = send_all() {
-                                tracing::debug!("Channel closed for kad query {id}: {err:#}");
+                                tracing::trace!("Channel closed for kad query {id}: {err:#}");
                                 entry.remove();
                                 return Ok(());
                             }
                         }
-                        Err(err) => tracing::debug!("Failed get_closest_peer request: {err:#}"),
+                        Err(err) => tracing::trace!("Failed get_closest_peer request: {err:#}"),
                     }
 
                     if step.last {

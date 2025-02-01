@@ -22,9 +22,9 @@ pub async fn pre_validate(
     block: UnverifiedFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedBlock, BlockImportError> {
-    tracing::debug!("spawning pre_validate");
+    tracing::trace!("spawning pre_validate");
     let res = pool.spawn_rayon_task(move || pre_validate_inner(block, validation)).await;
-    tracing::debug!("finished pre_validate");
+    tracing::trace!("finished pre_validate");
     res
 }
 
@@ -34,9 +34,9 @@ pub async fn pre_validate_pending(
     block: UnverifiedPendingFullBlock,
     validation: BlockValidationContext,
 ) -> Result<PreValidatedPendingBlock, BlockImportError> {
-    tracing::debug!("spawning pre_validate (pending)");
+    tracing::trace!("spawning pre_validate (pending)");
     let res = pool.spawn_rayon_task(move || pre_validate_pending_inner(block, validation)).await;
-    tracing::debug!("finished pre_validate (pending)");
+    tracing::trace!("finished pre_validate (pending)");
     res
 }
 

@@ -84,6 +84,24 @@ impl Default for ForwardSyncConfig {
 }
 
 impl ForwardSyncConfig {
+    #[allow(unused)]
+    fn low() -> Self {
+        Self {
+            headers_parallelization: 1,
+            headers_batch_size: 1,
+            transactions_parallelization: 1,
+            transactions_batch_size: 1,
+            state_diffs_parallelization: 1,
+            state_diffs_batch_size: 1,
+            events_parallelization: 1,
+            events_batch_size: 1,
+            classes_parallelization: 1,
+            classes_batch_size: 1,
+            apply_state_parallelization: 3,
+            apply_state_batch_size: 1,
+            disable_tries: false,
+        }
+    }
     pub fn disable_tries(self, val: bool) -> Self {
         Self { disable_tries: val, ..self }
     }
@@ -150,7 +168,7 @@ impl P2pForwardSync {
 impl ForwardPipeline for P2pForwardSync {
     async fn run(&mut self, target_height: u64) -> anyhow::Result<()> {
         loop {
-            tracing::debug!("stop_block={target_height:?}, hl={}", self.headers_pipeline.is_empty());
+            tracing::trace!("stop_block={target_height:?}, hl={}", self.headers_pipeline.is_empty());
 
             while self.headers_pipeline.can_schedule_more()
                 && self.headers_pipeline.next_input_block_n() <= target_height
@@ -273,13 +291,11 @@ impl P2pHeadersProbe {
     }
 
     async fn block_exists_at(self: Arc<Self>, block_n: u64, peers: &HashSet<PeerId>) -> anyhow::Result<bool> {
-        let max_attempts = 2;
+        let max_attempts = 4;
 
         for peer_id in peers.iter().take(max_attempts) {
-            tracing::debug!("EXISTS AT Checking {peer_id}, {block_n}");
-            let got = self.clone().block_exists_at_inner(*peer_id, block_n).await;
-            tracing::debug!("END EXISTS AT Checking {peer_id}, {block_n} => {got:?}");
-            match got {
+            tracing::debug!("Probe exists_at checking {peer_id}, {block_n}");
+            match self.clone().block_exists_at_inner(*peer_id, block_n).await {
                 // Found it
                 Ok(true) => return Ok(true),
                 // Retry with another peer
@@ -296,7 +312,6 @@ impl P2pHeadersProbe {
         Ok(false)
     }
     async fn block_exists_at_inner(self: Arc<Self>, peer_id: PeerId, block_n: u64) -> Result<bool, P2pError> {
-        tracing::debug!("block_exists_at_inner {peer_id} {block_n}.");
         let strm = self
             .p2p_commands
             .clone()
@@ -321,18 +336,18 @@ impl Probe for P2pHeadersProbe {
         current_next_block: u64,
         _batch_size: usize,
     ) -> anyhow::Result<Option<u64>> {
-        tracing::debug!("FORWARD PROBE current_next_block={current_next_block}",);
+        tracing::debug!("Forward probe current_next_block={current_next_block}",);
 
         // powers of two
         let checks = iter::successors(Some(1u64), |n| n.checked_mul(2)).map(|n| current_next_block + n - 1);
 
         let mut peers = self.p2p_commands.clone().get_random_peers().await;
         peers.remove(&self.p2p_commands.peer_id()); // remove ourselves
-        tracing::debug!("hhhh {peers:?}",);
+        tracing::debug!("Probe got {} peers", peers.len());
 
         let mut highest_known_block = current_next_block.checked_sub(1);
         for (i, block_n) in checks.into_iter().enumerate() {
-            tracing::debug!("PROBE CHECK {i} current_next_block={current_next_block} {block_n}");
+            tracing::debug!("Probe check {i} current_next_block={current_next_block} {block_n}");
 
             if !self.clone().block_exists_at(block_n, &peers).await? {
                 return Ok(highest_known_block);

@@ -57,7 +57,6 @@ impl P2pPipelineSteps for TransactionsSyncSteps {
 
         for (block_n, header) in block_range.zip(input.iter().cloned()) {
             let transactions = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
-            tracing::debug!("GOT STATE TRANSACTIONS FOR block_n={block_n}, {transactions:#?}");
             self.importer
                 .run_in_rayon_pool(move |importer| {
                     importer.verify_transactions(

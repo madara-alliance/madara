@@ -822,12 +822,13 @@ pub async fn transactions_sync(
     req: model::TransactionsRequest,
     mut out: Sender<model::TransactionsResponse>,
 ) -> Result<(), sync_handlers::Error> {
+    let iterator_config = block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?;
     let ite = ctx
         .app_ctx
         .backend
-        .block_info_iterator(block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?);
+        .block_info_iterator(iterator_config.clone());
 
-    tracing::debug!("transactions sync!");
+    tracing::debug!("serving transactions sync! {iterator_config:?}");
 
     for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;

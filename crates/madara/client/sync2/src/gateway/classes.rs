@@ -7,7 +7,7 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::BlockId;
-use mp_class::{ClassInfo, ClassInfoWithHash, LegacyClassInfo, SierraClassInfo};
+use mp_class::{ClassInfo, ClassInfoWithHash, ConvertedClass, LegacyClassInfo, SierraClassInfo};
 use mp_state_update::DeclaredClassCompiledClass;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
@@ -30,7 +30,7 @@ pub struct ClassesSyncSteps {
 }
 impl PipelineSteps for ClassesSyncSteps {
     type InputItem = HashMap<Felt, DeclaredClassCompiledClass>;
-    type SequentialStepInput = ();
+    type SequentialStepInput = Vec<Vec<ConvertedClass>>;
     type Output = ();
 
     async fn parallel_step(
@@ -39,9 +39,11 @@ impl PipelineSteps for ClassesSyncSteps {
         input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
         if input.iter().all(|i| i.is_empty()) {
-            return Ok(());
+            return Ok(vec![]);
         }
         AbortOnDrop::spawn(async move {
+            tracing::debug!("Gateway classes parallel step: {block_range:?}");
+            let mut out = vec![];
             for (block_n, classes) in block_range.zip(input) {
                 let mut declared_classes = vec![];
                 for (&class_hash, &compiled_class_hash) in classes.iter() {
@@ -69,14 +71,16 @@ impl PipelineSteps for ClassesSyncSteps {
                     declared_classes.push(ClassInfoWithHash { class_info, class_hash });
                 }
 
-                self.importer
+                let ret = self
+                    .importer
                     .run_in_rayon_pool(move |importer| {
-                        let classes = importer.verify_compile_classes(block_n, declared_classes, &classes)?;
-                        importer.save_classes(block_n, classes)
+                        importer.verify_compile_classes(block_n, declared_classes, &classes)
                     })
                     .await?;
+
+                out.push(ret);
             }
-            Ok(())
+            Ok(out)
         })
         .await
     }
@@ -84,9 +88,20 @@ impl PipelineSteps for ClassesSyncSteps {
     async fn sequential_step(
         self: Arc<Self>,
         block_range: Range<u64>,
-        _input: Self::SequentialStepInput,
+        input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
-        tracing::debug!("gateway classes sequential step: {block_range:?}");
+        tracing::debug!("Gateway classes sequential step: {block_range:?}");
+        // Save classes in sequential step, because some chains have duplicate class declarations, and we want to be sure
+        // we always record the earliest block_n
+        let block_range_ = block_range.clone();
+        self.importer
+            .run_in_rayon_pool(move |importer| {
+                for (block_n, input) in block_range_.zip(input) {
+                    importer.save_classes(block_n, input)?;
+                }
+                anyhow::Ok(())
+            })
+            .await?;
         if let Some(block_n) = block_range.last() {
             self.backend.head_status().classes.set(Some(block_n));
             self.backend.save_head_status_to_db()?;

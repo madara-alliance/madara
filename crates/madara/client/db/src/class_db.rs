@@ -25,7 +25,7 @@ impl MadaraBackend {
         nonpending_col: Column,
     ) -> Result<Option<V>, MadaraStorageError> {
         // todo: smallint here to avoid alloc
-        tracing::debug!("class db get encoded kv, key={key:#x}");
+        tracing::trace!("class db get encoded kv, key={key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
         // Get from pending db, then normal db if not found.
@@ -35,7 +35,7 @@ impl MadaraBackend {
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
-        tracing::debug!("class db get encoded kv, state is not pending");
+        tracing::trace!("class db get encoded kv, state is not pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
@@ -61,6 +61,7 @@ impl MadaraBackend {
             Column::ClassInfo,
         )?
         else {
+            tracing::debug!("no class info");
             return Ok(None);
         };
 
@@ -72,6 +73,7 @@ impl MadaraBackend {
             _ => false,
         };
         if !valid {
+            tracing::debug!("rejected {:?}", (requested_id, info.block_id));
             return Ok(None);
         }
         tracing::debug!("class db get class info, state is valid");
@@ -94,7 +96,7 @@ impl MadaraBackend {
     ) -> Result<Option<CompiledSierra>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        tracing::debug!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
+        tracing::trace!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
 
         let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
             requested_id.is_pending(),
@@ -156,7 +158,7 @@ impl MadaraBackend {
         col_info: Column,
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
-        tracing::debug!(
+        tracing::trace!(
             "Store class {block_id:?} {:?}",
             converted_classes.iter().map(|c| c.class_hash()).collect::<Vec<_>>()
         );

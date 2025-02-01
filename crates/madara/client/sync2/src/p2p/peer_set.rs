@@ -98,7 +98,6 @@ impl PeerSetInner {
     const EVICTION_BAN_DELAY: Duration = Duration::from_secs(3);
 
     fn peek_next(&self) -> Option<PeerId> {
-        tracing::debug!("PEER SET Peek next {:#?}", self);
         self.queue.first().map(|p| p.peer_id)
     }
 
@@ -115,7 +114,7 @@ impl PeerSetInner {
                 if entry.get().should_evict() {
                     // evict
                     entry.remove();
-                    tracing::debug!("PEER SET Evicting {peer} for {:?}", Self::EVICTION_BAN_DELAY);
+                    tracing::debug!("Peer Set Evicting {peer} for {:?}", Self::EVICTION_BAN_DELAY);
                     self.evicted_peers_ban_deadlines.insert(peer, Instant::now() + Self::EVICTION_BAN_DELAY);
                 } else {
                     entry.get_mut().reroll_rand();
@@ -130,7 +129,7 @@ impl PeerSetInner {
             }
             hash_map::Entry::Vacant(_entry) => {}
         }
-        tracing::debug!("PEER SET Update stats for {peer}, now: {:#?}", self);
+        tracing::debug!("Peer Set Update stats for {peer}");
     }
 
     fn append_new_peers(&mut self, new_peers: impl IntoIterator<Item = PeerId>) {
@@ -148,7 +147,7 @@ impl PeerSetInner {
                 entry.insert(stats);
             }
         }
-        tracing::debug!("PEER SET Append new peers now: {:#?}", self);
+        tracing::debug!("Append new peers now: {:#?} peers", self.stats_by_peer.len());
     }
 }
 
@@ -178,7 +177,7 @@ impl GetPeersInner {
         self.wait_until = Some(now + Self::GET_RANDOM_PEERS_DELAY);
 
         let mut res = self.commands.get_random_peers().await;
-        tracing::debug!("Got get_random_peers answer: {res:?}");
+        tracing::trace!("Got get_random_peers answer: {res:?}");
         res.remove(&self.commands.peer_id()); // remove ourselves from the response, in case we find ourselves
         if res.is_empty() {
             tracing::warn!(
@@ -212,7 +211,7 @@ impl PeerSet {
     /// it will start a get random peers command.
     pub async fn next_peer(self: &Arc<Self>) -> anyhow::Result<PeerGuard> {
         let peer_id = self.next_peer_inner().await?;
-        Ok(PeerGuard { peer_set: self.clone(), peer_id })
+        Ok(PeerGuard { peer_set: Some(self.clone()), peer_id })
     }
 
     async fn next_peer_inner(&self) -> anyhow::Result<PeerId> {
@@ -283,7 +282,7 @@ impl PeerSet {
 }
 
 pub struct PeerGuard {
-    peer_set: Arc<PeerSet>,
+    peer_set: Option<Arc<PeerSet>>,
     peer_id: PeerId,
 }
 
@@ -295,16 +294,19 @@ impl Deref for PeerGuard {
 }
 
 impl PeerGuard {
-    pub fn success(self) {
-        self.peer_set.peer_operation_success(self.peer_id)
+    pub fn success(mut self) {
+        self.peer_set.take().expect("Peer set already taken").peer_operation_success(self.peer_id)
     }
-    pub fn error(self) {
-        self.peer_set.peer_operation_error(self.peer_id)
+    pub fn error(mut self) {
+        self.peer_set.take().expect("Peer set already taken").peer_operation_error(self.peer_id)
     }
 }
 
 impl Drop for PeerGuard {
+    // Note: we use an Option because success() and error() will still call the destructor.
     fn drop(&mut self) {
-        self.peer_set.peer_operation_drop(self.peer_id)
+        if let Some(peer_set) = self.peer_set.take() {
+            peer_set.peer_operation_drop(self.peer_id)
+        }
     }
 }
