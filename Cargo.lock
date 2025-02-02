@@ -7020,6 +7020,7 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
+ "num-traits 0.2.19",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

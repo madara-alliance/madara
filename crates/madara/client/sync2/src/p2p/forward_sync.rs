@@ -2,11 +2,12 @@ use super::{
     classes::ClassesSync, events::EventsSync, headers::HeadersSync, state_diffs::StateDiffsSync,
     transactions::TransactionsSync,
 };
-use crate::counter::ThroughputCounter;
 use crate::import::BlockImporter;
+use crate::metrics::SyncMetrics;
 use crate::p2p::pipeline::P2pError;
 use crate::sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
+use anyhow::Context;
 use futures::TryStreamExt;
 use mc_db::stream::BlockStreamConfig;
 use mc_db::MadaraBackend;
@@ -14,7 +15,6 @@ use mc_p2p::{P2pCommands, PeerId};
 use std::collections::HashSet;
 use std::iter;
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Pipeline order:
 /// ```plaintext
@@ -127,7 +127,6 @@ pub struct P2pForwardSync {
     classes_pipeline: ClassesSync,
     events_pipeline: EventsSync,
     apply_state_pipeline: ApplyStateSync,
-    counter: ThroughputCounter,
     backend: Arc<MadaraBackend>,
 }
 
@@ -164,14 +163,13 @@ impl P2pForwardSync {
             classes_pipeline,
             events_pipeline,
             apply_state_pipeline,
-            counter: ThroughputCounter::new(Duration::from_secs(5 * 60)),
             backend: args.backend,
         }
     }
 }
 
 impl ForwardPipeline for P2pForwardSync {
-    async fn run(&mut self, target_height: u64) -> anyhow::Result<()> {
+    async fn run(&mut self, target_height: u64, metrics: &mut SyncMetrics) -> anyhow::Result<()> {
         loop {
             tracing::trace!("stop_block={target_height:?}, hl={}", self.headers_pipeline.is_empty());
 
@@ -222,9 +220,9 @@ impl ForwardPipeline for P2pForwardSync {
             }
 
             let new_next_full_block = self.backend.head_status().next_full_block();
-            for _block_n in next_full_block..new_next_full_block {
+            for block_n in next_full_block..new_next_full_block {
                 // Notify of a new full block here.
-                self.counter.increment();
+                metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
     }
@@ -256,10 +254,6 @@ impl ForwardPipeline for P2pForwardSync {
 
     fn latest_block(&self) -> Option<u64> {
         self.backend.head_status().latest_full_block_n()
-    }
-
-    fn throughput_counter(&self) -> &ThroughputCounter {
-        &self.counter
     }
 }
 

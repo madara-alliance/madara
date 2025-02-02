@@ -1,4 +1,4 @@
-use crate::counter::ThroughputCounter;
+use crate::metrics::SyncMetrics;
 use futures::{
     future::{BoxFuture, OptionFuture},
     Future, FutureExt,
@@ -8,10 +8,13 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 
 pub trait ForwardPipeline {
-    fn run(&mut self, target_block_n: u64) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn run(
+        &mut self,
+        target_block_n: u64,
+        metrics: &mut SyncMetrics,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn next_input_block_n(&self) -> u64;
     fn show_status(&self);
-    fn throughput_counter(&self) -> &ThroughputCounter;
     /// Return false when no work can be done.
     fn is_empty(&self) -> bool;
     fn latest_block(&self) -> Option<u64>;
@@ -39,6 +42,7 @@ pub struct SyncController<P: ForwardPipeline, R: Probe> {
     current_probe_future: Option<BoxFuture<'static, anyhow::Result<Option<u64>>>>,
     probe_highest_known_block: Option<u64>,
     probe_wait_deadline: Option<Instant>,
+    sync_metrics: SyncMetrics,
 }
 
 /// Avoid spamming the probe.
@@ -46,6 +50,7 @@ const PROBE_WAIT_DELAY: Duration = Duration::from_secs(2);
 impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
     pub fn new(forward_pipeline: P, probe: Option<Arc<R>>, config: SyncControllerConfig) -> Self {
         Self {
+            sync_metrics: SyncMetrics::register(forward_pipeline.next_input_block_n()),
             forward_pipeline,
             probe,
             config,
@@ -153,7 +158,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                 }
                 Some(res) = OptionFuture::from(
                     target_height.filter(|_| can_run_pipeline)
-                        .map(|target| self.forward_pipeline.run(target))
+                        .map(|target| self.forward_pipeline.run(target, &mut self.sync_metrics))
                 ) =>
                 {
                     res?;
@@ -167,7 +172,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
         use crate::util::fmt_option;
 
         let latest_block = self.forward_pipeline.latest_block();
-        let throughput_sec = self.forward_pipeline.throughput_counter().get_throughput();
+        let throughput_sec = self.sync_metrics.counter.get_throughput();
         let target_height = self.target_height();
         self.forward_pipeline.show_status();
 

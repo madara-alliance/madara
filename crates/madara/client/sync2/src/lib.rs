@@ -3,6 +3,7 @@ mod pipeline;
 mod sync;
 mod util;
 mod counter;
+mod metrics;
 
 pub use sync::SyncControllerConfig;
 

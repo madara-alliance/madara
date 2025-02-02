@@ -1,7 +1,7 @@
 use crate::{
     apply_state::ApplyStateSync,
-    counter::ThroughputCounter,
     import::BlockImporter,
+    metrics::SyncMetrics,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig},
     util::AbortOnDrop,
@@ -16,7 +16,7 @@ use mp_gateway::state_update::{ProviderStateUpdateWithBlock, ProviderStateUpdate
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
-use std::{iter, ops::Range, sync::Arc, time::Duration};
+use std::{iter, ops::Range, sync::Arc};
 
 mod classes;
 
@@ -271,7 +271,6 @@ pub struct GatewayForwardSync {
     blocks_pipeline: GatewayBlockSync,
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
-    counter: ThroughputCounter,
     backend: Arc<MadaraBackend>,
 }
 
@@ -303,18 +302,12 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self {
-            blocks_pipeline,
-            classes_pipeline,
-            apply_state_pipeline,
-            counter: ThroughputCounter::new(Duration::from_secs(5 * 60)),
-            backend,
-        }
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }
 }
 
 impl ForwardPipeline for GatewayForwardSync {
-    async fn run(&mut self, target_height: u64) -> anyhow::Result<()> {
+    async fn run(&mut self, target_height: u64, metrics: &mut SyncMetrics) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
         loop {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
@@ -342,9 +335,9 @@ impl ForwardPipeline for GatewayForwardSync {
             }
 
             let new_next_full_block = self.backend.head_status().next_full_block();
-            for _block_n in next_full_block..new_next_full_block {
+            for block_n in next_full_block..new_next_full_block {
                 // Notify of a new full block here.
-                self.counter.increment();
+                metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
     }
@@ -368,10 +361,6 @@ impl ForwardPipeline for GatewayForwardSync {
 
     fn latest_block(&self) -> Option<u64> {
         self.backend.head_status().latest_full_block_n()
-    }
-
-    fn throughput_counter(&self) -> &ThroughputCounter {
-        &self.counter
     }
 }
 
