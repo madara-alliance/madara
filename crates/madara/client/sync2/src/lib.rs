@@ -2,6 +2,7 @@ mod apply_state;
 mod pipeline;
 mod sync;
 mod util;
+mod counter;
 
 pub use sync::SyncControllerConfig;
 

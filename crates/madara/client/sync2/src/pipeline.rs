@@ -116,13 +116,12 @@ impl<S: PipelineSteps> PipelineController<S> {
 
     fn schedule_new_batch(&mut self) {
         // make batch
-        let batch_size =
-            if self.next_inputs.len() < self.batch_size { self.next_inputs.len() } else { self.batch_size };
+        let size = usize::min(self.next_inputs.len(), self.batch_size);
 
-        let new_next_input_block_n = self.next_block_n_to_batch + batch_size as u64;
+        let new_next_input_block_n = self.next_block_n_to_batch + size as u64;
         let block_range = self.next_block_n_to_batch..new_next_input_block_n;
         self.next_block_n_to_batch = new_next_input_block_n;
-        let input = self.next_inputs.drain(0..usize::min(batch_size, self.next_inputs.len())).collect();
+        let input = self.next_inputs.drain(0..size).collect();
         self.queue.push_back(self.make_parallel_step_future(RetryInput { block_range, input }));
     }
 

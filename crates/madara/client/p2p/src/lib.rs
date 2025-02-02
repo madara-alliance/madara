@@ -184,7 +184,7 @@ impl MadaraP2p {
                         .flat_map(|peers_in_bucket| peers_in_bucket.into_iter())
                         .collect::<std::collections::HashSet<_>>();
                     tracing::info!("P2P {peers} peers  IN: {connections_in}  OUT: {connections_out}  Pending: {pending_connections}");
-                    tracing::info!("DHT {dht:?}");
+                    tracing::trace!("DHT {dht:?}");
                 }
 
                 // Make progress on the swarm and handle the events it yields

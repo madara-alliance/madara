@@ -62,7 +62,17 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
             tokio::select! {
                 _ = ctx.cancelled() => break Ok(()),
                 _ = interval.tick() => self.show_status(),
-                res = self.run_inner() => break res
+                res = self.run_inner() => {
+                    res?;
+                    self.show_status();
+                    if self.config.stop_on_sync {
+                        tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
+                        ctx.cancel_global();
+                    } else {
+                        tracing::info!("🌐 Sync process ended");
+                    }// �
+                    break Ok(())
+                }
             }
         }
     }
@@ -92,6 +102,15 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
         loop {
+            if self.forward_pipeline.is_empty()
+                && self
+                    .config
+                    .stop_at_block_n
+                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
+            {
+                // End condition
+                break Ok(());
+            }
             let target_height = self.target_height();
 
             let can_run_pipeline = !self.forward_pipeline.is_empty()

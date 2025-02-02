@@ -1,5 +1,6 @@
 use crate::{
     apply_state::ApplyStateSync,
+    counter::ThroughputCounter,
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig},
@@ -16,7 +17,7 @@ use mp_gateway::state_update::{ProviderStateUpdateWithBlock, ProviderStateUpdate
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
-use std::{iter, ops::Range, sync::Arc};
+use std::{iter, ops::Range, sync::Arc, time::Duration};
 
 mod classes;
 
@@ -239,7 +240,7 @@ impl Default for ForwardSyncConfig {
             classes_parallelization: 200,
             classes_batch_size: 1,
             apply_state_parallelization: 3,
-            apply_state_batch_size: 20,
+            apply_state_batch_size: 5,
             disable_tries: false,
         }
     }
@@ -271,6 +272,8 @@ pub struct GatewayForwardSync {
     blocks_pipeline: GatewayBlockSync,
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
+    counter: ThroughputCounter,
+    backend: Arc<MadaraBackend>,
 }
 
 impl GatewayForwardSync {
@@ -301,7 +304,13 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline }
+        Self {
+            blocks_pipeline,
+            classes_pipeline,
+            apply_state_pipeline,
+            counter: ThroughputCounter::new(Duration::from_secs(5 * 60)),
+            backend,
+        }
     }
 }
 
@@ -314,20 +323,29 @@ impl ForwardPipeline for GatewayForwardSync {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
+
+            let next_full_block = self.backend.head_status().next_full_block();
+
             tokio::select! {
+                Some(res) = self.apply_state_pipeline.next() => {
+                    res?;
+                }
+                Some(res) = self.classes_pipeline.next() => {
+                    res?;
+                }
                 Some(res) = self.blocks_pipeline.next(), if self.classes_pipeline.can_schedule_more() && self.apply_state_pipeline.can_schedule_more() => {
                     let (range, state_diffs) = res?;
                     self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
                     self.apply_state_pipeline.push(range, state_diffs);
                 }
-                Some(res) = self.classes_pipeline.next() => {
-                    res?;
-                }
-                Some(res) = self.apply_state_pipeline.next() => {
-                    res?;
-                }
                 // all pipelines are empty, we're done :)
                 else => break Ok(())
+            }
+
+            let new_next_full_block = self.backend.head_status().next_full_block();
+            for _block_n in next_full_block..new_next_full_block {
+                // Notify of a new full block here.
+                self.counter.increment();
             }
         }
     }
@@ -355,7 +373,6 @@ impl ForwardPipeline for GatewayForwardSync {
             f: &mut fmt::Formatter<'_>,
             name: &str,
             pipeline: &PipelineController<S>,
-            target_height: Option<u64>,
         ) -> fmt::Result {
             let last_applied_block_n = pipeline.last_applied_block_n();
             write!(f, "{name}: ")?;
@@ -366,12 +383,6 @@ impl ForwardPipeline for GatewayForwardSync {
                 write!(f, "N")?;
             }
 
-            if let Some(target_height) = target_height {
-                write!(f, "/{target_height}")?;
-            } else {
-                write!(f, "/?")?;
-            }
-
             write!(f, " [{}", pipeline.queue_len())?;
             if pipeline.is_applying() {
                 write!(f, "+")?;
@@ -380,15 +391,37 @@ impl ForwardPipeline for GatewayForwardSync {
 
             Ok(())
         }
+        // blocks/s
+        let throughput_sec = self.counter.get_throughput();
+        let latest_block = self.backend.head_status().latest_full_block_n();
 
         tracing::info!(
             "{}",
             DisplayFromFn(move |f| {
-                show_pipeline(f, "Blocks", &self.blocks_pipeline, target_height)?;
+                show_pipeline(f, "Blocks", &self.blocks_pipeline)?;
                 write!(f, " | ")?;
-                show_pipeline(f, "Classes", &self.classes_pipeline, target_height)?;
+                show_pipeline(f, "Classes", &self.classes_pipeline)?;
                 write!(f, " | ")?;
-                show_pipeline(f, "State", &self.apply_state_pipeline, target_height)?;
+                show_pipeline(f, "State", &self.apply_state_pipeline)?;
+                Ok(())
+            })
+        );
+        tracing::info!(
+            "{}",
+            DisplayFromFn(move |f| {
+                write!(f, "🔗 Sync is at ")?;
+                if let Some(latest_block) = latest_block {
+                    write!(f, "{latest_block}")?;
+                } else {
+                    write!(f, "-")?;
+                }
+                write!(f, "/")?;
+                if let Some(target_height) = target_height {
+                    write!(f, "{target_height}")?;
+                } else {
+                    write!(f, "?")?;
+                }
+                write!(f, " [{throughput_sec:.2} blocks/s]")?;
                 Ok(())
             })
         );

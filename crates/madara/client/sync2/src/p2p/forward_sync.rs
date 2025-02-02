@@ -2,6 +2,7 @@ use super::{
     classes::ClassesSync, events::EventsSync, headers::HeadersSync, state_diffs::StateDiffsSync,
     transactions::TransactionsSync,
 };
+use crate::counter::ThroughputCounter;
 use crate::import::BlockImporter;
 use crate::p2p::pipeline::P2pError;
 use crate::pipeline::{PipelineController, PipelineSteps};
@@ -10,10 +11,12 @@ use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
 use core::fmt;
 use futures::TryStreamExt;
 use mc_db::stream::BlockStreamConfig;
+use mc_db::MadaraBackend;
 use mc_p2p::{P2pCommands, PeerId};
 use std::collections::HashSet;
 use std::iter;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Pipeline order:
 /// ```plaintext
@@ -66,18 +69,18 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            headers_parallelization: 100,
+            headers_parallelization: 32,
             headers_batch_size: 8,
-            transactions_parallelization: 100,
-            transactions_batch_size: 1,
-            state_diffs_parallelization: 100,
-            state_diffs_batch_size: 1,
-            events_parallelization: 100,
-            events_batch_size: 1,
-            classes_parallelization: 200,
+            transactions_parallelization: 32,
+            transactions_batch_size: 4,
+            state_diffs_parallelization: 32,
+            state_diffs_batch_size: 4,
+            events_parallelization: 32,
+            events_batch_size: 4,
+            classes_parallelization: 128,
             classes_batch_size: 1,
             apply_state_parallelization: 3,
-            apply_state_batch_size: 20,
+            apply_state_batch_size: 5,
             disable_tries: false,
         }
     }
@@ -97,7 +100,7 @@ impl ForwardSyncConfig {
             events_batch_size: 1,
             classes_parallelization: 1,
             classes_batch_size: 1,
-            apply_state_parallelization: 3,
+            apply_state_parallelization: 1,
             apply_state_batch_size: 1,
             disable_tries: false,
         }
@@ -126,6 +129,8 @@ pub struct P2pForwardSync {
     classes_pipeline: ClassesSync,
     events_pipeline: EventsSync,
     apply_state_pipeline: ApplyStateSync,
+    counter: ThroughputCounter,
+    backend: Arc<MadaraBackend>,
 }
 
 impl P2pForwardSync {
@@ -161,6 +166,8 @@ impl P2pForwardSync {
             classes_pipeline,
             events_pipeline,
             apply_state_pipeline,
+            counter: ThroughputCounter::new(Duration::from_secs(5 * 60)),
+            backend: args.backend,
         }
     }
 }
@@ -177,32 +184,49 @@ impl ForwardPipeline for P2pForwardSync {
                 self.headers_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
+            let next_full_block = self.backend.head_status().next_full_block();
+
+            // We poll the consumers first. This seems to help bring the blocks/s higher.
+            // Poll order being important makes me worry that we're not polled enough.
+            // We would need to bring our own `FuturesOrdered` replacement to ensure that
+            // we can `poll` the inner `FuturesUnordered` so that it can make progress even
+            // when we are not trying to get a next element.
+            // We can emulate this behaviour by wrapping all of the futures in `tokio::spawn`,
+            // but it seems there is not much of a perf gain vs this order of polling.
             tokio::select! {
-                Some(res) = self.headers_pipeline.next(), if self.transactions_pipeline.can_schedule_more() && self.state_diffs_pipeline.can_schedule_more() => {
-                    let (range, headers) = res?;
-                    self.transactions_pipeline.push(range.clone(), headers.iter().cloned());
-                    self.state_diffs_pipeline.push(range, headers);
+                Some(res) = self.apply_state_pipeline.next() => {
+                    res?;
+                }
+                Some(res) = self.classes_pipeline.next() => {
+                    res?;
+                }
+                Some(res) = self.state_diffs_pipeline.next(),
+                    if self.classes_pipeline.can_schedule_more() && self.apply_state_pipeline.can_schedule_more() =>
+                {
+                    let (range, state_diffs) = res?;
+                    self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
+                    self.apply_state_pipeline.push(range, state_diffs);
+                }
+                Some(res) = self.events_pipeline.next() => {
+                    res?;
                 }
                 Some(res) = self.transactions_pipeline.next(), if self.events_pipeline.can_schedule_more() => {
                     let (range, headers) = res?;
                     self.events_pipeline.push(range, headers);
                 }
-                Some(res) = self.events_pipeline.next() => {
-                    res?;
-                }
-                Some(res) = self.state_diffs_pipeline.next(), if self.classes_pipeline.can_schedule_more() => {
-                    let (range, state_diffs) = res?;
-                    self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
-                    self.apply_state_pipeline.push(range, state_diffs);
-                }
-                Some(res) = self.classes_pipeline.next() => {
-                    res?;
-                }
-                Some(res) = self.apply_state_pipeline.next() => {
-                    res?;
+                Some(res) = self.headers_pipeline.next(), if self.transactions_pipeline.can_schedule_more() && self.state_diffs_pipeline.can_schedule_more() => {
+                    let (range, headers) = res?;
+                    self.transactions_pipeline.push(range.clone(), headers.iter().cloned());
+                    self.state_diffs_pipeline.push(range, headers);
                 }
                 // all pipelines are empty, we're done :)
                 else => break Ok(())
+            }
+
+            let new_next_full_block = self.backend.head_status().next_full_block();
+            for _block_n in next_full_block..new_next_full_block {
+                // Notify of a new full block here.
+                self.counter.increment();
             }
         }
     }
@@ -235,7 +259,6 @@ impl ForwardPipeline for P2pForwardSync {
             f: &mut fmt::Formatter<'_>,
             name: &str,
             pipeline: &PipelineController<S>,
-            target_height: Option<u64>,
         ) -> fmt::Result {
             let last_applied_block_n = pipeline.last_applied_block_n();
             write!(f, "{name}: ")?;
@@ -244,12 +267,6 @@ impl ForwardPipeline for P2pForwardSync {
                 write!(f, "{last_applied_block_n}")?;
             } else {
                 write!(f, "N")?;
-            }
-
-            if let Some(target_height) = target_height {
-                write!(f, "/{target_height}")?;
-            } else {
-                write!(f, "/?")?;
             }
 
             write!(f, " [{}", pipeline.queue_len())?;
@@ -261,20 +278,42 @@ impl ForwardPipeline for P2pForwardSync {
             Ok(())
         }
 
+        // blocks/s
+        let throughput_sec = self.counter.get_throughput();
+        let latest_block = self.backend.head_status().latest_full_block_n();
+
+        let pipeline_msg = DisplayFromFn(move |f| {
+            write!(f, "📥 ")?;
+            show_pipeline(f, "Headers", &self.headers_pipeline)?;
+            write!(f, " | ")?;
+            show_pipeline(f, "Txs", &self.transactions_pipeline)?;
+            write!(f, " | ")?;
+            show_pipeline(f, "StateDiffs", &self.state_diffs_pipeline)?;
+            write!(f, " | ")?;
+            show_pipeline(f, "Classes", &self.classes_pipeline)?;
+            write!(f, " | ")?;
+            show_pipeline(f, "Events", &self.events_pipeline)?;
+            write!(f, " | ")?;
+            show_pipeline(f, "State", &self.apply_state_pipeline)?;
+            Ok(())
+        });
+        tracing::info!("{}", pipeline_msg);
         tracing::info!(
             "{}",
             DisplayFromFn(move |f| {
-                show_pipeline(f, "Headers", &self.headers_pipeline, target_height)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "Txs", &self.transactions_pipeline, target_height)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "StateDiffs", &self.state_diffs_pipeline, target_height)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "Classes", &self.classes_pipeline, target_height)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "Events", &self.events_pipeline, target_height)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "State", &self.apply_state_pipeline, target_height)?;
+                write!(f, "🔗 Sync is at ")?;
+                if let Some(latest_block) = latest_block {
+                    write!(f, "{latest_block}")?;
+                } else {
+                    write!(f, "-")?;
+                }
+                write!(f, "/")?;
+                if let Some(target_height) = target_height {
+                    write!(f, "{target_height}")?;
+                } else {
+                    write!(f, "?")?;
+                }
+                write!(f, " [{throughput_sec:.2} blocks/s]")?;
                 Ok(())
             })
         );
