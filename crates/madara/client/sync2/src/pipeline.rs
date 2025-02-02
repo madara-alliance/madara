@@ -3,7 +3,7 @@ use futures::{
     stream::FuturesOrdered,
     Future, FutureExt, StreamExt,
 };
-use std::{collections::VecDeque, ops::Range, sync::Arc};
+use std::{collections::VecDeque, fmt, ops::Range, sync::Arc};
 
 struct RetryInput<I> {
     block_range: Range<u64>,
@@ -168,5 +168,33 @@ impl<S: PipelineSteps> PipelineController<S> {
                 else => return None,
             }
         }
+    }
+}
+
+pub struct PipelineStatus {
+    pub jobs: usize,
+    pub applying: bool,
+    pub latest_applied: Option<u64>,
+}
+
+impl<S: PipelineSteps> PipelineController<S> {
+    pub fn status(&self) -> PipelineStatus {
+        PipelineStatus {
+            jobs: self.queue_len(),
+            applying: self.is_applying(),
+            latest_applied: self.last_applied_block_n(),
+        }
+    }
+}
+
+impl fmt::Display for PipelineStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt_option;
+
+        write!(f, "{} [{}", fmt_option(self.latest_applied, "N"), self.jobs)?;
+        if self.applying {
+            write!(f, "+")?;
+        }
+        write!(f, "]")
     }
 }

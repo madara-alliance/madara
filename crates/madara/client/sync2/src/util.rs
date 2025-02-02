@@ -1,7 +1,17 @@
-use core::task;
 use futures::Future;
-use std::pin::Pin;
+use std::{fmt, pin::Pin, task};
 use tokio::task::JoinHandle;
+
+pub fn fmt_option(opt: Option<impl fmt::Display>, or_else: impl fmt::Display) -> impl fmt::Display {
+    DisplayFromFn(move |f| if let Some(val) = &opt { val.fmt(f) } else { or_else.fmt(f) })
+}
+
+pub struct DisplayFromFn<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(F);
+impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFromFn<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
+    }
+}
 
 pub struct AbortOnDrop<T>(JoinHandle<T>);
 impl<T: Send + 'static> AbortOnDrop<T> {

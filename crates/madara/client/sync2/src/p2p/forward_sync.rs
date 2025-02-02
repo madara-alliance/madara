@@ -5,10 +5,8 @@ use super::{
 use crate::counter::ThroughputCounter;
 use crate::import::BlockImporter;
 use crate::p2p::pipeline::P2pError;
-use crate::pipeline::{PipelineController, PipelineSteps};
 use crate::sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
-use core::fmt;
 use futures::TryStreamExt;
 use mc_db::stream::BlockStreamConfig;
 use mc_db::MadaraBackend;
@@ -244,79 +242,24 @@ impl ForwardPipeline for P2pForwardSync {
             && self.apply_state_pipeline.is_empty()
     }
 
-    fn input_batch_size(&self) -> usize {
-        self.headers_pipeline.input_batch_size()
+    fn show_status(&self) {
+        tracing::info!(
+            "📥 Headers: {} | Txs: {} | StateDiffs: {} | Classes: {} | Events: {} | State: {}",
+            self.headers_pipeline.status(),
+            self.transactions_pipeline.status(),
+            self.state_diffs_pipeline.status(),
+            self.classes_pipeline.status(),
+            self.events_pipeline.status(),
+            self.apply_state_pipeline.status(),
+        );
     }
 
-    fn show_status(&self, target_height: Option<u64>) {
-        struct DisplayFromFn<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(F);
-        impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFromFn<F> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                (self.0)(f)
-            }
-        }
-        fn show_pipeline<S: PipelineSteps>(
-            f: &mut fmt::Formatter<'_>,
-            name: &str,
-            pipeline: &PipelineController<S>,
-        ) -> fmt::Result {
-            let last_applied_block_n = pipeline.last_applied_block_n();
-            write!(f, "{name}: ")?;
+    fn latest_block(&self) -> Option<u64> {
+        self.backend.head_status().latest_full_block_n()
+    }
 
-            if let Some(last_applied_block_n) = last_applied_block_n {
-                write!(f, "{last_applied_block_n}")?;
-            } else {
-                write!(f, "N")?;
-            }
-
-            write!(f, " [{}", pipeline.queue_len())?;
-            if pipeline.is_applying() {
-                write!(f, "+")?;
-            }
-            write!(f, "]")?;
-
-            Ok(())
-        }
-
-        // blocks/s
-        let throughput_sec = self.counter.get_throughput();
-        let latest_block = self.backend.head_status().latest_full_block_n();
-
-        let pipeline_msg = DisplayFromFn(move |f| {
-            write!(f, "📥 ")?;
-            show_pipeline(f, "Headers", &self.headers_pipeline)?;
-            write!(f, " | ")?;
-            show_pipeline(f, "Txs", &self.transactions_pipeline)?;
-            write!(f, " | ")?;
-            show_pipeline(f, "StateDiffs", &self.state_diffs_pipeline)?;
-            write!(f, " | ")?;
-            show_pipeline(f, "Classes", &self.classes_pipeline)?;
-            write!(f, " | ")?;
-            show_pipeline(f, "Events", &self.events_pipeline)?;
-            write!(f, " | ")?;
-            show_pipeline(f, "State", &self.apply_state_pipeline)?;
-            Ok(())
-        });
-        tracing::info!("{}", pipeline_msg);
-        tracing::info!(
-            "{}",
-            DisplayFromFn(move |f| {
-                write!(f, "🔗 Sync is at ")?;
-                if let Some(latest_block) = latest_block {
-                    write!(f, "{latest_block}")?;
-                } else {
-                    write!(f, "-")?;
-                }
-                write!(f, "/")?;
-                if let Some(target_height) = target_height {
-                    write!(f, "{target_height}")?;
-                } else {
-                    write!(f, "?")?;
-                }
-                write!(f, " [{throughput_sec:.2} blocks/s]")?;
-                Ok(())
-            })
-        );
+    fn throughput_counter(&self) -> &ThroughputCounter {
+        &self.counter
     }
 }
 
@@ -370,11 +313,7 @@ impl P2pHeadersProbe {
 }
 
 impl Probe for P2pHeadersProbe {
-    async fn forward_probe(
-        self: Arc<Self>,
-        current_next_block: u64,
-        _batch_size: usize,
-    ) -> anyhow::Result<Option<u64>> {
+    async fn forward_probe(self: Arc<Self>, current_next_block: u64) -> anyhow::Result<Option<u64>> {
         tracing::debug!("Forward probe current_next_block={current_next_block}",);
 
         // powers of two

@@ -1,3 +1,4 @@
+use crate::counter::ThroughputCounter;
 use futures::{
     future::{BoxFuture, OptionFuture},
     Future, FutureExt,
@@ -9,10 +10,11 @@ use tokio::time::Instant;
 pub trait ForwardPipeline {
     fn run(&mut self, target_block_n: u64) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn next_input_block_n(&self) -> u64;
-    fn input_batch_size(&self) -> usize;
-    fn show_status(&self, target_height: Option<u64>);
+    fn show_status(&self);
+    fn throughput_counter(&self) -> &ThroughputCounter;
     /// Return false when no work can be done.
     fn is_empty(&self) -> bool;
+    fn latest_block(&self) -> Option<u64>;
 }
 
 pub trait Probe {
@@ -20,7 +22,6 @@ pub trait Probe {
     fn forward_probe(
         self: Arc<Self>,
         next_block_n: u64,
-        batch_size: usize,
     ) -> impl Future<Output = anyhow::Result<Option<u64>>> + Send + 'static;
 }
 
@@ -70,7 +71,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                         ctx.cancel_global();
                     } else {
                         tracing::info!("🌐 Sync process ended");
-                    }// �
+                    }
                     break Ok(())
                 }
             }
@@ -93,11 +94,6 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
         // Bound by stop_at_block_n
 
         aggregate_options(target_block, self.config.stop_at_block_n, u64::min)
-    }
-
-    fn show_status(&self) {
-        let target_height = self.target_height();
-        self.forward_pipeline.show_status(target_height)
     }
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
@@ -125,10 +121,7 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
             if let Some(probe) = &self.probe {
                 tracing::trace!("run inner {:?} {:?}", self.forward_pipeline.next_input_block_n(), target_height);
                 if self.current_probe_future.is_none() && !can_run_pipeline {
-                    let fut = probe.clone().forward_probe(
-                        self.forward_pipeline.next_input_block_n(),
-                        self.forward_pipeline.input_batch_size(),
-                    );
+                    let fut = probe.clone().forward_probe(self.forward_pipeline.next_input_block_n());
                     let delay = self.probe_wait_deadline;
 
                     self.current_probe_future = Some(
@@ -168,5 +161,22 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                 else => break Ok(()),
             }
         }
+    }
+
+    fn show_status(&self) {
+        use crate::util::fmt_option;
+
+        let latest_block = self.forward_pipeline.latest_block();
+        let throughput_sec = self.forward_pipeline.throughput_counter().get_throughput();
+        let target_height = self.target_height();
+        self.forward_pipeline.show_status();
+
+        // fmt_option will unwrap the Option or else show the given string
+
+        tracing::info!(
+            "🔗 Sync is at {}/{} [{throughput_sec:.2} blocks/s]",
+            fmt_option(latest_block, "N"),
+            fmt_option(target_height, "?")
+        );
     }
 }

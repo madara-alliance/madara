@@ -8,7 +8,6 @@ use crate::{
 };
 use anyhow::Context;
 use classes::ClassesSync;
-use core::fmt;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, Header, TransactionWithReceipt};
@@ -358,73 +357,21 @@ impl ForwardPipeline for GatewayForwardSync {
         self.blocks_pipeline.is_empty() && self.classes_pipeline.is_empty() && self.apply_state_pipeline.is_empty()
     }
 
-    fn input_batch_size(&self) -> usize {
-        self.blocks_pipeline.input_batch_size()
+    fn show_status(&self) {
+        tracing::info!(
+            "📥 Blocks: {} | Classes: {} | State: {}",
+            self.blocks_pipeline.status(),
+            self.classes_pipeline.status(),
+            self.apply_state_pipeline.status(),
+        );
     }
 
-    fn show_status(&self, target_height: Option<u64>) {
-        struct DisplayFromFn<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(F);
-        impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFromFn<F> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                (self.0)(f)
-            }
-        }
-        fn show_pipeline<S: PipelineSteps>(
-            f: &mut fmt::Formatter<'_>,
-            name: &str,
-            pipeline: &PipelineController<S>,
-        ) -> fmt::Result {
-            let last_applied_block_n = pipeline.last_applied_block_n();
-            write!(f, "{name}: ")?;
+    fn latest_block(&self) -> Option<u64> {
+        self.backend.head_status().latest_full_block_n()
+    }
 
-            if let Some(last_applied_block_n) = last_applied_block_n {
-                write!(f, "{last_applied_block_n}")?;
-            } else {
-                write!(f, "N")?;
-            }
-
-            write!(f, " [{}", pipeline.queue_len())?;
-            if pipeline.is_applying() {
-                write!(f, "+")?;
-            }
-            write!(f, "]")?;
-
-            Ok(())
-        }
-        // blocks/s
-        let throughput_sec = self.counter.get_throughput();
-        let latest_block = self.backend.head_status().latest_full_block_n();
-
-        tracing::info!(
-            "{}",
-            DisplayFromFn(move |f| {
-                show_pipeline(f, "Blocks", &self.blocks_pipeline)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "Classes", &self.classes_pipeline)?;
-                write!(f, " | ")?;
-                show_pipeline(f, "State", &self.apply_state_pipeline)?;
-                Ok(())
-            })
-        );
-        tracing::info!(
-            "{}",
-            DisplayFromFn(move |f| {
-                write!(f, "🔗 Sync is at ")?;
-                if let Some(latest_block) = latest_block {
-                    write!(f, "{latest_block}")?;
-                } else {
-                    write!(f, "-")?;
-                }
-                write!(f, "/")?;
-                if let Some(target_height) = target_height {
-                    write!(f, "{target_height}")?;
-                } else {
-                    write!(f, "?")?;
-                }
-                write!(f, " [{throughput_sec:.2} blocks/s]")?;
-                Ok(())
-            })
-        );
+    fn throughput_counter(&self) -> &ThroughputCounter {
+        &self.counter
     }
 }
 
@@ -439,7 +386,7 @@ impl GatewayLatestProbe {
 }
 
 impl Probe for GatewayLatestProbe {
-    async fn forward_probe(self: Arc<Self>, _next_block_n: u64, _batch_size: usize) -> anyhow::Result<Option<u64>> {
+    async fn forward_probe(self: Arc<Self>, _next_block_n: u64) -> anyhow::Result<Option<u64>> {
         let header = self.client.get_header(BlockId::Tag(BlockTag::Latest)).await.context("Getting latest header")?;
         Ok(Some(header.block_number))
     }
