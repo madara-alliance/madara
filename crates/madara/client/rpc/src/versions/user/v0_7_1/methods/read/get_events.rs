@@ -34,8 +34,6 @@ pub async fn get_events(
     starknet: &Starknet,
     filter: EventFilterWithPageRequest<Felt>,
 ) -> StarknetRpcResult<EventsChunk<Felt>> {
-    // TODO: use a continuation token like BlockN_EventN were EventN is the index of the event in the block and not the index of filtered events
-
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size;
@@ -94,35 +92,34 @@ pub async fn get_events(
         let block =
             starknet.get_block(&BlockId::Number(current_block)).or_internal_server_error("Error getting block")?;
 
-        let mut last_event_index = 0;
-
-        for (idx, event) in drain_block_events(block)
+        let mut iter = drain_block_events(block)
             .enumerate()
             // Skip events that have already been processed if we are resuming from a continuation token.
             // Otherwise, start from the beginning of the block.
             .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
 
             // Filter events based on the given event filter criteria (address, keys).
-            .filter(|(_, event)| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
+            .filter(|(_, event)| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()));
 
-            // Take exactly enough events to fill the requested chunk size, plus one extra event.
-            // The extra event is used to determine if the block has more matching events.
-            // - If an extra event is found, it means there are still unprocessed events in this block.
-            //   -> The continuation token should point to this block and the next event index.
-            // - If no extra event is found, it means all matching events in this block have been retrieved.
-            //   -> The continuation token should move to the next block.
-            .take(chunk_size as usize - events_chunk.len() + 1)
-        {
-            if events_chunk.len() < chunk_size as usize {
-                events_chunk.push(event);
-                last_event_index = idx;
-            } else {
-                // If a new event was found, it means there are more events that match the filter.
+        // Take exactly enough events to fill the requested chunk size, plus one extra event.
+        // The extra event is used to determine if the block has more matching events.
+        // - If an extra event is found, it means there are still unprocessed events in this block.
+        //   -> The continuation token should point to this block and the next event index.
+        // - If no extra event is found, it means all matching events in this block have been retrieved.
+        //   -> The continuation token should move to the next block.
+        events_chunk.extend(iter.by_ref().take(chunk_size as usize - events_chunk.len()).map(|(_, event)| event));
+
+        if events_chunk.len() >= chunk_size as usize {
+            // If the iterator still has a next event, that means there still are events in the
+            // current block which match the given filter. In that case we return a continuation token.
+            //
+            // NOTE: we return the index of the event in the actual block to make it easier to
+            // retrieve events from that point on in case of a continuation.
+            if let Some((last_event_index, _)) = iter.next() {
                 return Ok(EventsChunk {
                     events: events_chunk,
                     continuation_token: Some(
-                        ContinuationToken { block_n: current_block, event_n: (last_event_index + 1) as u64 }
-                            .to_string(),
+                        ContinuationToken { block_n: current_block, event_n: (last_event_index) as u64 }.to_string(),
                     ),
                 });
             }
