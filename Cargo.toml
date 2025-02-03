@@ -233,6 +233,7 @@ primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
 ahash = "0.8"
+twox-hash = "2.1"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
@@ -255,6 +256,7 @@ httpmock = "0.7.0"
 mockall = "0.13.0"
 fdlimit = "0.3.0"
 assert_matches = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 # Macros
 indoc = "2"

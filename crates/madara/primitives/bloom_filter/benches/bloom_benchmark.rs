@@ -14,7 +14,6 @@ use twox_hash::XxHash64;
 const KEY_SIZE: usize = 32;
 const HASH_COUNT: u8 = 7;
 const BITS_PER_ELEMENT: f64 = 9.6;
-const FALSE_POSITIF_RATE: f64 = 0.01;
 
 const TEST_DATA_SIZE: usize = 100_000;
 const LOOKUP_FILL_RATIO: f64 = 0.5;
@@ -89,16 +88,6 @@ fn bench_sequential_insertion<H: std::hash::Hasher + Default>(c: &mut Criterion,
             }
         });
     });
-
-    // group.bench_function("non atomic", |b| {
-    //     b.iter(|| {
-    //         let mut filter = BloomFilter::<H, BitStore>::optimal(TEST_DATA_SIZE, FALSE_POSITIVE_RATE)
-    //             .expect("Failed to create optimal filter");
-    //         for item in test_data {
-    //             filter.add(black_box(item));
-    //         }
-    //     });
-    // });
 
     group.finish();
 }

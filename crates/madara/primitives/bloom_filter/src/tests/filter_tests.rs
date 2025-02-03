@@ -127,7 +127,7 @@ fn test_actual_false_positive_rate() {
 fn test_size_alignment() {
     // Test that the filter size is properly aligned to 64-bit boundaries
     let filter = BloomFilter::<DefaultHasher, AtomicBitStore>::new(100, HASH_COUNT);
-    assert_eq!(filter.len() % 64, 0, "Filter size should be aligned to 64 bits");
+    assert_eq!(filter.size() % 64, 0, "Filter size should be aligned to 64 bits");
 }
 
 #[test]

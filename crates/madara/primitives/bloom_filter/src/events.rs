@@ -12,6 +12,7 @@ use crate::{AtomicBitStore, BitStore, BloomFilter, PreCalculatedHashes};
 /// where:
 /// - k is the number of hash functions
 /// - p is the desired false positive rate (0.01)
+///
 /// Reference: [Bloom, B. H. (1970). "Space/Time Trade-offs in Hash Coding with Allowable Errors"](https://dl.acm.org/doi/10.1145/362686.362692)
 const HASH_COUNT: u8 = 7;
 
@@ -67,7 +68,7 @@ impl EventBloomWriter {
     }
 
     pub fn size(&self) -> u64 {
-        self.filter.len()
+        self.filter.size()
     }
 
     fn events_to_bloom_keys<'a, I>(events: I) -> impl Iterator<Item = [u8; 33]> + 'a

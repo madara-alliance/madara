@@ -22,12 +22,9 @@ starknet-types-core.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-twox-hash = "2.1"
-
+twox-hash.workspace = true
+criterion.workspace = true
 rand.workspace = true
-plotters = "0.3"
-statistical = "1.0"
 rayon.workspace = true
 bincode.workspace = true
 proptest.workspace = true

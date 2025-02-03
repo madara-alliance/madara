@@ -155,7 +155,7 @@ impl AtomicBitStore {
     }
 
     /// Converts this atomic store into a regular BitStore.
-    pub(crate) fn to_readonly(self) -> BitStore {
+    pub(crate) fn to_readonly(&self) -> BitStore {
         let bits = self.bits.iter().map(|b| b.load(Ordering::Relaxed)).collect();
         BitStore::new_from_slice(bits)
     }

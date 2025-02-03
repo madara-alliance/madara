@@ -3,7 +3,7 @@ use proptest::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::DefaultHasher;
-use tests::utils::{create_filter, HASH_COUNT};
+use tests::utils::create_filter;
 
 proptest! {
     #[test]

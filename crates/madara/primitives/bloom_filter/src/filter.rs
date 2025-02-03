@@ -168,7 +168,7 @@ impl<H: Hasher + Default> BloomFilter<H, AtomicBitStore> {
 
 impl<H: Hasher + Default, B> BloomFilter<H, B> {
     /// Returns the size of the Bloom filter in bits.
-    pub fn len(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.bit_size
     }
 
