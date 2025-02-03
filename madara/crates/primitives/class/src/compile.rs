@@ -7,10 +7,7 @@ use blockifier::execution::{
 };
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
-use std::{
-    borrow::Cow,
-    io::{Cursor, Read},
-};
+use std::borrow::Cow;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClassCompilationError {
@@ -32,11 +29,8 @@ pub enum ClassCompilationError {
 
 impl CompressedLegacyContractClass {
     pub fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
-        let mut decompressor = flate2::read::GzDecoder::new(Cursor::new(&self.program));
-        let mut program = Vec::new();
-        decompressor.read_to_end(&mut program)?;
-
-        let mut program: serde_json::Value = serde_json::from_slice(&program)?;
+        let mut program: serde_json::Value =
+            serde_json::from_reader(crate::convert::gz_decompress_stream(self.program.as_slice()))?;
 
         let program_object = program.as_object_mut().ok_or(ClassCompilationError::ProgramIsNotAnObject)?;
 
