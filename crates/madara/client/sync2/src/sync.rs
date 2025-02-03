@@ -1,16 +1,13 @@
-use crate::metrics::SyncMetrics;
-use futures::{
-    future::{BoxFuture, OptionFuture},
-    Future, FutureExt,
-};
+use crate::{metrics::SyncMetrics, probe::ProbeState};
+use futures::{future::OptionFuture, Future};
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
-use std::{sync::Arc, time::Duration};
-use tokio::time::Instant;
+use std::{cmp, time::Duration};
 
 pub trait ForwardPipeline {
     fn run(
         &mut self,
         target_block_n: u64,
+        probe_height: Option<u64>,
         metrics: &mut SyncMetrics,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn next_input_block_n(&self) -> u64;
@@ -20,44 +17,28 @@ pub trait ForwardPipeline {
     fn latest_block(&self) -> Option<u64>;
 }
 
-pub trait Probe {
-    /// Returns the new highest known block.
-    fn forward_probe(
-        self: Arc<Self>,
-        next_block_n: u64,
-    ) -> impl Future<Output = anyhow::Result<Option<u64>>> + Send + 'static;
-}
-
 pub struct SyncControllerConfig {
     pub l1_head_recv: L1HeadReceiver,
     pub stop_at_block_n: Option<u64>,
     pub stop_on_sync: bool,
 }
 
-pub struct SyncController<P: ForwardPipeline, R: Probe> {
+pub struct SyncController<P: ForwardPipeline> {
     forward_pipeline: P,
-    probe: Option<Arc<R>>,
     config: SyncControllerConfig,
     current_l1_head: Option<L1StateUpdate>,
-    current_probe_future: Option<BoxFuture<'static, anyhow::Result<Option<u64>>>>,
-    probe_highest_known_block: Option<u64>,
-    probe_wait_deadline: Option<Instant>,
+    probe: ProbeState<u64>,
     sync_metrics: SyncMetrics,
 }
 
-/// Avoid spamming the probe.
-const PROBE_WAIT_DELAY: Duration = Duration::from_secs(2);
-impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
-    pub fn new(forward_pipeline: P, probe: Option<Arc<R>>, config: SyncControllerConfig) -> Self {
+impl<P: ForwardPipeline> SyncController<P> {
+    pub fn new(forward_pipeline: P, probe: ProbeState<u64>, config: SyncControllerConfig) -> Self {
         Self {
             sync_metrics: SyncMetrics::register(forward_pipeline.next_input_block_n()),
             forward_pipeline,
-            probe,
             config,
             current_l1_head: None,
-            current_probe_future: None,
-            probe_highest_known_block: Default::default(),
-            probe_wait_deadline: None,
+            probe,
         }
     }
 
@@ -84,21 +65,17 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
     }
 
     fn target_height(&self) -> Option<u64> {
-        fn aggregate_options(a: Option<u64>, b: Option<u64>, f: impl FnOnce(u64, u64) -> u64) -> Option<u64> {
-            match (a, b) {
-                (None, None) => None,
-                (None, Some(b)) => Some(b),
-                (Some(a), None) => Some(a),
-                (Some(a), Some(b)) => Some(f(a, b)),
+        let mut target_block = self.current_l1_head.as_ref().map(|h| h.block_number);
+        target_block = cmp::max(target_block, self.probe.last_val());
+
+        // Bound by stop_at_block_n
+        if let Some(stop_at) = self.config.stop_at_block_n {
+            if target_block >= Some(stop_at) {
+                target_block = Some(stop_at)
             }
         }
 
-        let mut target_block = self.current_l1_head.as_ref().map(|h| h.block_number);
-        target_block = aggregate_options(target_block, self.probe_highest_known_block, u64::max);
-
-        // Bound by stop_at_block_n
-
-        aggregate_options(target_block, self.config.stop_at_block_n, u64::min)
+        target_block
     }
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
@@ -123,42 +100,18 @@ impl<P: ForwardPipeline, R: Probe> SyncController<P, R> {
                 self.forward_pipeline.next_input_block_n()
             );
 
-            if let Some(probe) = &self.probe {
-                tracing::trace!("run inner {:?} {:?}", self.forward_pipeline.next_input_block_n(), target_height);
-                if self.current_probe_future.is_none() && !can_run_pipeline {
-                    let fut = probe.clone().forward_probe(self.forward_pipeline.next_input_block_n());
-                    let delay = self.probe_wait_deadline;
-
-                    self.current_probe_future = Some(
-                        async move {
-                            if let Some(deadline) = delay {
-                                tokio::time::sleep_until(deadline).await;
-                            }
-                            fut.await
-                        }
-                        .boxed(),
-                    );
-                }
-            }
+            let probe_height = self.probe.last_val();
 
             tokio::select! {
                 Ok(()) = self.config.l1_head_recv.changed() => {
                     self.current_l1_head = self.config.l1_head_recv.borrow_and_update().clone();
                 }
-                Some(res) = OptionFuture::from(self.current_probe_future.as_mut()) => {
-                    self.current_probe_future = None;
-                    self.probe_wait_deadline = None;
-                    let probe_new_highest_block = res?;
-                    // Only delay the probe when it did not return any new block.
-                    if self.probe_highest_known_block == probe_new_highest_block {
-                        self.probe_wait_deadline = Some(Instant::now() + PROBE_WAIT_DELAY);
-                    }
-                    self.probe_highest_known_block = probe_new_highest_block;
-                    tracing::trace!("probe result {:?}", self.probe_highest_known_block);
+                res = self.probe.run() => {
+                    res?;
                 }
                 Some(res) = OptionFuture::from(
                     target_height.filter(|_| can_run_pipeline)
-                        .map(|target| self.forward_pipeline.run(target, &mut self.sync_metrics))
+                        .map(|target| self.forward_pipeline.run(target, probe_height, &mut self.sync_metrics))
                 ) =>
                 {
                     res?;

@@ -5,7 +5,8 @@ use super::{
 use crate::import::BlockImporter;
 use crate::metrics::SyncMetrics;
 use crate::p2p::pipeline::P2pError;
-use crate::sync::{ForwardPipeline, Probe, SyncController, SyncControllerConfig};
+use crate::probe::ProbeState;
+use crate::sync::{ForwardPipeline, SyncController, SyncControllerConfig};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
 use anyhow::Context;
 use futures::TryStreamExt;
@@ -15,6 +16,7 @@ use mc_p2p::{P2pCommands, PeerId};
 use std::collections::HashSet;
 use std::iter;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Pipeline order:
 /// ```plaintext
@@ -108,14 +110,15 @@ impl ForwardSyncConfig {
     }
 }
 
-pub type P2pSync = SyncController<P2pForwardSync, P2pHeadersProbe>;
+pub type P2pSync = SyncController<P2pForwardSync>;
 pub fn forward_sync(
     args: P2pPipelineArguments,
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> P2pSync {
-    let probe = P2pHeadersProbe::new(args.p2p_commands.clone(), args.importer.clone());
-    SyncController::new(P2pForwardSync::new(args, config), Some(probe.into()), controller_config)
+    let probe = Arc::new(P2pHeadersProbe::new(args.p2p_commands.clone(), args.importer.clone()));
+    let probe = ProbeState::new(move |val| probe.clone().probe(val), Duration::from_secs(2));
+    SyncController::new(P2pForwardSync::new(args, config), probe, controller_config)
 }
 
 /// Events pipeline is currently always done after tx and receipts for now.
@@ -169,7 +172,12 @@ impl P2pForwardSync {
 }
 
 impl ForwardPipeline for P2pForwardSync {
-    async fn run(&mut self, target_height: u64, metrics: &mut SyncMetrics) -> anyhow::Result<()> {
+    async fn run(
+        &mut self,
+        target_height: u64,
+        _probe_height: Option<u64>,
+        metrics: &mut SyncMetrics,
+    ) -> anyhow::Result<()> {
         loop {
             tracing::trace!("stop_block={target_height:?}, hl={}", self.headers_pipeline.is_empty());
 
@@ -257,7 +265,7 @@ impl ForwardPipeline for P2pForwardSync {
     }
 }
 
-pub struct P2pHeadersProbe {
+struct P2pHeadersProbe {
     p2p_commands: P2pCommands,
     importer: Arc<BlockImporter>,
 }
@@ -304,10 +312,8 @@ impl P2pHeadersProbe {
 
         Ok(true)
     }
-}
-
-impl Probe for P2pHeadersProbe {
-    async fn forward_probe(self: Arc<Self>, current_next_block: u64) -> anyhow::Result<Option<u64>> {
+    async fn probe(self: Arc<Self>, mut highest_known_block: Option<u64>) -> anyhow::Result<Option<u64>> {
+        let current_next_block = highest_known_block.map(|n| n + 1).unwrap_or(0);
         tracing::debug!("Forward probe current_next_block={current_next_block}",);
 
         // powers of two
@@ -317,7 +323,6 @@ impl Probe for P2pHeadersProbe {
         peers.remove(&self.p2p_commands.peer_id()); // remove ourselves
         tracing::debug!("Probe got {} peers", peers.len());
 
-        let mut highest_known_block = current_next_block.checked_sub(1);
         for (i, block_n) in checks.into_iter().enumerate() {
             tracing::debug!("Probe check {i} current_next_block={current_next_block} {block_n}");
 

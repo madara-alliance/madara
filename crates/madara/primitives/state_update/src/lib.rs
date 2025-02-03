@@ -1,11 +1,10 @@
-mod into_starknet_types;
-
-use std::collections::HashMap;
-
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
+use std::collections::HashMap;
+
+mod into_starknet_types;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {

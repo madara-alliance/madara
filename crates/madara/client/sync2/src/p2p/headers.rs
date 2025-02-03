@@ -95,21 +95,23 @@ impl P2pPipelineSteps for HeadersSyncSteps {
         };
 
         // verify first block_hash matches with db
-        let parent_block_n = first_block.header.block_number.checked_sub(1);
-        let parent_block_hash = if let Some(block_n) = parent_block_n {
-            self.backend
-                .get_block_hash(&BlockId::Number(block_n))
-                .context("Getting latest block hash from database.")?
-                .context("Mismatched headers / chain head number.")?
-        } else {
-            Felt::ZERO // genesis' parent block
-        };
+        if !self.importer.is_trust_parent_hash() {
+            let parent_block_n = first_block.header.block_number.checked_sub(1);
+            let parent_block_hash = if let Some(block_n) = parent_block_n {
+                self.backend
+                    .get_block_hash(&BlockId::Number(block_n))
+                    .context("Getting latest block hash from database.")?
+                    .context("Mismatched headers / chain head number.")?
+            } else {
+                Felt::ZERO // genesis' parent block
+            };
 
-        if first_block.header.parent_block_hash != parent_block_hash {
-            return Err(P2pError::peer_error(format!(
-                "Mismatched parent_block_hash: {:#x}, expected {parent_block_hash:#x}",
-                first_block.header.parent_block_hash
-            )));
+            if first_block.header.parent_block_hash != parent_block_hash {
+                return Err(P2pError::peer_error(format!(
+                    "Mismatched parent_block_hash: {:#x}, expected {parent_block_hash:#x}",
+                    first_block.header.parent_block_hash
+                )));
+            }
         }
 
         tracing::debug!("Storing headers for {block_range:?}, peer_id: {peer_id}");
@@ -117,6 +119,7 @@ impl P2pPipelineSteps for HeadersSyncSteps {
             self.importer.save_header(header.header.block_number, header)?;
         }
 
+        self.backend.clear_pending_block().context("Clearing pending block")?;
         self.backend.head_status().headers.set(block_range.last());
         self.backend.save_head_status_to_db().context("Saving head status to db")?;
 

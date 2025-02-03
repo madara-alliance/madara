@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
-use crate::block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe};
+use crate::block::{FromGatewayError, ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -196,7 +196,7 @@ pub struct ProviderStateUpdateWithBlock {
 }
 
 impl ProviderStateUpdateWithBlock {
-    pub fn into_full_block(self) -> anyhow::Result<FullBlock> {
+    pub fn into_full_block(self) -> Result<FullBlock, FromGatewayError> {
         self.block.into_full_block(self.state_update.state_diff.into())
     }
 }
@@ -209,7 +209,7 @@ pub struct ProviderStateUpdateWithBlockPending {
 }
 
 impl ProviderStateUpdateWithBlockPending {
-    pub fn into_full_block(self) -> anyhow::Result<PendingFullBlock> {
+    pub fn into_full_block(self) -> Result<PendingFullBlock, FromGatewayError> {
         self.block.into_full_block(self.state_update.state_diff.into())
     }
 }

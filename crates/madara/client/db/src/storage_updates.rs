@@ -8,6 +8,8 @@ use crate::WriteBatchWithTransaction;
 use mp_block::FullBlock;
 use mp_block::MadaraBlockInfo;
 use mp_block::MadaraBlockInner;
+use mp_block::MadaraPendingBlockInfo;
+use mp_block::PendingFullBlock;
 use mp_block::TransactionWithReceipt;
 use mp_block::{
     BlockHeaderWithSignatures, MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock,
@@ -17,6 +19,50 @@ use mp_receipt::EventWithTransactionHash;
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 use starknet_types_core::felt::Felt;
+
+fn store_events_to_receipts(
+    receipts: &mut Vec<TransactionReceipt>,
+    events: Vec<EventWithTransactionHash>,
+) -> Result<(), MadaraStorageError> {
+    for receipt in receipts.iter_mut() {
+        let events_mut = match receipt {
+            TransactionReceipt::Invoke(receipt) => &mut receipt.events,
+            TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
+            TransactionReceipt::Declare(receipt) => &mut receipt.events,
+            TransactionReceipt::Deploy(receipt) => &mut receipt.events,
+            TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
+        };
+        // just in case we stored them with receipt earlier, overwrite them
+        events_mut.clear()
+    }
+
+    let mut inner_m = receipts.iter_mut().peekable();
+    for ev in events {
+        let receipt_mut = loop {
+            let Some(receipt) = inner_m.peek_mut() else {
+                return Err(MadaraStorageError::InconsistentStorage(
+                    format!("No transaction for hash {:#x}", ev.transaction_hash).into(),
+                ));
+            };
+
+            if receipt.transaction_hash() == ev.transaction_hash {
+                break receipt;
+            }
+            let _item = inner_m.next();
+        };
+
+        let events_mut = match receipt_mut {
+            TransactionReceipt::Invoke(receipt) => &mut receipt.events,
+            TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
+            TransactionReceipt::Declare(receipt) => &mut receipt.events,
+            TransactionReceipt::Deploy(receipt) => &mut receipt.events,
+            TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
+        };
+
+        events_mut.push(ev.event);
+    }
+    Ok(())
+}
 
 impl MadaraBackend {
     pub fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
@@ -29,6 +75,20 @@ impl MadaraBackend {
         self.store_transactions(block_n, block.transactions)?;
         self.store_state_diff(block_n, block.state_diff)?;
         self.store_events(block_n, block.events)?;
+        Ok(())
+    }
+
+    pub fn store_pending_block(&self, block: PendingFullBlock) -> Result<(), MadaraStorageError> {
+        let info = MadaraPendingBlockInfo {
+            header: block.header,
+            tx_hashes: block.transactions.iter().map(|tx| tx.receipt.transaction_hash()).collect(),
+        };
+        let (transactions, receipts) = block.transactions.into_iter().map(|tx| (tx.transaction, tx.receipt)).unzip();
+        let mut inner = MadaraBlockInner { transactions, receipts };
+        store_events_to_receipts(&mut inner.receipts, block.events)?;
+
+        self.block_db_store_pending(&MadaraPendingBlock { info, inner }, &block.state_diff)?;
+        self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
         Ok(())
     }
 
@@ -100,43 +160,7 @@ impl MadaraBackend {
         let mut inner: MadaraBlockInner =
             bincode::deserialize(&self.db.get_cf(&block_n_to_block_inner, &block_n_encoded)?.unwrap_or_default())?;
 
-        // just in case we stored them with receipt earlier, overwrite them
-        for receipt in inner.receipts.iter_mut() {
-            let events_mut = match receipt {
-                TransactionReceipt::Invoke(receipt) => &mut receipt.events,
-                TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
-                TransactionReceipt::Declare(receipt) => &mut receipt.events,
-                TransactionReceipt::Deploy(receipt) => &mut receipt.events,
-                TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
-            };
-            events_mut.clear()
-        }
-
-        let mut inner_m = inner.receipts.iter_mut().peekable();
-        for ev in value {
-            let receipt_mut = loop {
-                let Some(receipt) = inner_m.peek_mut() else {
-                    return Err(MadaraStorageError::InconsistentStorage(
-                        format!("No transaction for hash {:#x} in block_n {block_n}", ev.transaction_hash).into(),
-                    ));
-                };
-
-                if receipt.transaction_hash() == ev.transaction_hash {
-                    break receipt;
-                }
-                let _item = inner_m.next();
-            };
-
-            let events_mut = match receipt_mut {
-                TransactionReceipt::Invoke(receipt) => &mut receipt.events,
-                TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
-                TransactionReceipt::Declare(receipt) => &mut receipt.events,
-                TransactionReceipt::Deploy(receipt) => &mut receipt.events,
-                TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
-            };
-
-            events_mut.push(ev.event);
-        }
+        store_events_to_receipts(&mut inner.receipts, value)?;
 
         batch.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&inner)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;

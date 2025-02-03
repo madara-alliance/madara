@@ -59,12 +59,12 @@ impl P2pPipelineSteps for ClassesSyncSteps {
         tokio::pin!(strm);
 
         let mut out = vec![];
-        for (block_n, check_against) in block_range.zip(input.iter().cloned()) {
+        for (_block_n, check_against) in block_range.zip(input.iter().cloned()) {
             let classes = strm.try_next().await?.ok_or(P2pError::peer_error("Expected to receive item"))?;
 
             let ret = self
                 .importer
-                .run_in_rayon_pool(move |importer| importer.verify_compile_classes(block_n, classes, &check_against))
+                .run_in_rayon_pool(move |importer| importer.verify_compile_classes(classes, &check_against))
                 .await?;
 
             out.push(ret);

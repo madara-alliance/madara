@@ -1,7 +1,7 @@
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
-    BlockHeaderWithSignatures, Header, TransactionWithReceipt,
+    BlockHeaderWithSignatures, Header, PendingFullBlock, TransactionWithReceipt,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -20,8 +20,17 @@ use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 pub struct BlockValidationConfig {
     /// Trust class hashes.
     pub trust_class_hashes: bool,
-    // /// Ignore the order of the blocks to allow starting at some height.
-    // pub trust_parent_hash: bool,
+    /// Ignore the order of the blocks to allow starting at some height.
+    pub trust_parent_hash: bool,
+}
+
+impl BlockValidationConfig {
+    pub fn trust_parent_hash(self, trust_parent_hash: bool) -> Self {
+        Self {
+            trust_parent_hash,
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -99,7 +108,6 @@ impl BlockImporter {
         Self { db, config, rayon_pool: Arc::new(RayonPool::new()) }
     }
 
-    /// Does class compilation.
     pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
     where
         F: FnOnce(&BlockImporter) -> R + Send + 'static,
@@ -107,6 +115,36 @@ impl BlockImporter {
     {
         let this = self.clone();
         self.rayon_pool.spawn_rayon_task(move || func(&this)).await
+    }
+
+    pub fn is_trust_parent_hash(&self) -> bool {
+        self.config.trust_parent_hash
+    }
+
+    // Pending block
+
+    pub fn clear_pending_block(&self) -> Result<(), BlockImportError> {
+        self.db.clear_pending_block().map_err(|error| BlockImportError::InternalDb {
+            error,
+            context: "Clearing pending block".into(),
+        })?;
+        Ok(())
+    }
+
+    pub fn save_pending_block(&self, block: PendingFullBlock) -> Result<(), BlockImportError> {
+        self.db.store_pending_block(block).map_err(|error| BlockImportError::InternalDb {
+            error,
+            context: "Storing pending block".into(),
+        })?;
+        Ok(())
+    }
+
+    pub fn save_pending_classes(&self, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
+        self.db.class_db_store_pending(&classes).map_err(|error| BlockImportError::InternalDb {
+            error,
+            context: "Storing pending classes".into(),
+        })?;
+        Ok(())
     }
 
     // HEADERS
@@ -232,7 +270,6 @@ impl BlockImporter {
     /// Called in a rayon-pool context.
     pub fn verify_compile_classes(
         &self,
-        _block_n: u64,
         declared_classes: Vec<ClassInfoWithHash>,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
     ) -> Result<Vec<ConvertedClass>, BlockImportError> {

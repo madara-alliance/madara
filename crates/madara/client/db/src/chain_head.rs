@@ -49,6 +49,15 @@ impl ChainHead {
         self.latest_full_block_n().map(|n| n + 1).unwrap_or(0)
     }
 
+    pub fn set_to_height(&self, block_n: Option<u64>) {
+        self.headers.set(block_n);
+        self.state_diffs.set(block_n);
+        self.classes.set(block_n);
+        self.transactions.set(block_n);
+        self.events.set(block_n);
+        self.global_trie.set(block_n);
+    }
+
     pub(crate) fn load_from_db(db: &DB) -> Result<Self, MadaraStorageError> {
         let col = db.get_column(Column::BlockStorageMeta);
         if let Some(res) = db.get_pinned_cf(&col, ROW_HEAD_STATUS)? {

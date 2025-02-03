@@ -12,6 +12,41 @@ use mp_state_update::DeclaredClassCompiledClass;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
+pub(crate) async fn get_classes(
+    client: &Arc<GatewayProvider>,
+    block_id: BlockId,
+    classes: &HashMap<Felt, DeclaredClassCompiledClass>,
+) -> anyhow::Result<Vec<ClassInfoWithHash>> {
+    futures::future::try_join_all(classes.iter().map(move |(&class_hash, &compiled_class_hash)| {
+    let block_id = block_id.clone();
+    let client = client.clone();
+    async move {
+        let class = client.clone()
+            .get_class_by_hash(class_hash, block_id.clone())
+            .await
+            .with_context(|| format!("Getting class_hash={class_hash:#x} with block_id={block_id:?}"))?;
+
+        let class_info = match &class {
+            mp_class::ContractClass::Sierra(class) => {
+                let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
+                    anyhow::bail!("Expected a Sierra class, found a Legacy class")
+                };
+                ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
+            }
+            mp_class::ContractClass::Legacy(class) => {
+                if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
+                    anyhow::bail!("Expected a Legacy class, found a Sierra class")
+                }
+                ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
+            }
+        };
+
+        Ok(ClassInfoWithHash { class_info, class_hash })
+    }
+    }))
+    .await
+}
+
 pub type ClassesSync = PipelineController<ClassesSyncSteps>;
 pub fn classes_pipeline(
     backend: Arc<MadaraBackend>,
@@ -45,36 +80,12 @@ impl PipelineSteps for ClassesSyncSteps {
             tracing::debug!("Gateway classes parallel step: {block_range:?}");
             let mut out = vec![];
             for (block_n, classes) in block_range.zip(input) {
-                let mut declared_classes = vec![];
-                for (&class_hash, &compiled_class_hash) in classes.iter() {
-                    let class = self
-                        .client
-                        .get_class_by_hash(class_hash, BlockId::Number(block_n))
-                        .await
-                        .with_context(|| format!("Getting class_hash={class_hash:#x} with block_n={block_n}"))?;
-
-                    let class_info = match &class {
-                        mp_class::ContractClass::Sierra(class) => {
-                            let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
-                                anyhow::bail!("Expected a Sierra class, found a Legacy class")
-                            };
-                            ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
-                        }
-                        mp_class::ContractClass::Legacy(class) => {
-                            if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
-                                anyhow::bail!("Expected a Legacy class, found a Sierra class")
-                            }
-                            ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
-                        }
-                    };
-
-                    declared_classes.push(ClassInfoWithHash { class_info, class_hash });
-                }
+                let declared_classes = get_classes(&self.client, BlockId::Number(block_n), &classes).await?;
 
                 let ret = self
                     .importer
                     .run_in_rayon_pool(move |importer| {
-                        importer.verify_compile_classes(block_n, declared_classes, &classes)
+                        importer.verify_compile_classes(declared_classes, &classes)
                     })
                     .await?;
 

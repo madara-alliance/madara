@@ -16,9 +16,10 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
     pub l2_sync_disabled: bool,
 
-    // /// The block you want to start syncing from. This will most probably break your database.
-    // #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
-    // pub unsafe_starting_block: Option<u64>,
+    /// The block you want to start syncing from. This will most probably break your database.
+    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
+    pub unsafe_starting_block: Option<u64>,
+
     /// Disable the global tries computation.
     /// When importing a block, the state root computation is the most expensive operation.
     /// Disabling it will mean a big speed-up in syncing speed, but storage proofs will be
@@ -58,8 +59,12 @@ pub struct L2SyncParams {
     /// blocks. This can either be once the node has caught up with the head of
     /// the chain or when it has synced to the target height by using
     /// `--sync-stop-at <BLOCK NUMBER>`.
-    #[clap(env = "MADARA_STOP_ON_SYNC", long, default_value_t = false)]
+    #[clap(env = "MADARA_STOP_ON_SYNC", long)]
     pub stop_on_sync: bool,
+
+    /// Disable pending block sync. Does not apply to p2p sync.
+    #[clap(env = "MADARA_STOP_NO_PENDING_SYNC", long)]
+    pub no_pending_sync: bool,
 
     // /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     // #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
@@ -106,12 +111,15 @@ pub struct L2SyncParams {
     // pub flush_every_n_seconds: u64,
     #[clap(env = "MADARA_P2P_SYNC", long)]
     pub p2p_sync: bool,
-    // // Documentation needs to be kept in sync with [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
-    // /// UNSTABLE: Used for experimental p2p support. When p2p sync will be fully implemented, this field will go away,
-    // /// and we will always compute v0.13.2 hashes. However, we can't verify the old pre-v0.13.2 blocks yet during sync,
-    // /// so this field bridges the gap. When set, we will always trust the integrity of pre-v0.13.2 blocks during sync.
-    // #[clap(long)]
-    // pub compute_v0_13_2_hashes: bool,
+
+    /// Compute pre-v0.13.2 hashes. This mode will allow the feeder gateway to display the legacy
+    /// commitment hashes. Serving blocks over peer-to-peer requires >v0.13.2 hashes, which is why this
+    /// is disabled by default. By enabling it, the blocks served by this block over peer-to-peer will be
+    /// incorrect.
+    /// This option has no effect when `--p2p-sync` is enabled, as only post-v0.13.2 commitments can be
+    /// verified and saved in this mode.
+    #[clap(long)]
+    pub compute_pre_v0_13_2_hashes: bool,
 }
 
 impl L2SyncParams {

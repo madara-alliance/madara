@@ -77,9 +77,6 @@ impl<S: PipelineSteps> PipelineController<S> {
     pub fn last_applied_block_n(&self) -> Option<u64> {
         self.last_applied_block_n
     }
-    pub fn input_batch_size(&self) -> usize {
-        self.batch_size
-    }
 
     pub fn can_schedule_more(&self) -> bool {
         if self.queue.len() >= self.parallelization {

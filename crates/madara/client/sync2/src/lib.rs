@@ -4,6 +4,7 @@ mod sync;
 mod util;
 mod counter;
 mod metrics;
+mod probe;
 
 pub use sync::SyncControllerConfig;
 

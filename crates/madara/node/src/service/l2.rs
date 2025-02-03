@@ -53,13 +53,21 @@ impl Service for SyncService {
             return Ok(());
         }
         let this = self.start_args.take().expect("Service already started");
-        let importer = Arc::new(BlockImporter::new(this.db_backend.clone(), BlockValidationConfig::default()));
+        let importer = Arc::new(BlockImporter::new(
+            this.db_backend.clone(),
+            BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()),
+        ));
 
         let config = SyncControllerConfig {
             l1_head_recv: this.l1_head_recv,
             stop_at_block_n: this.params.sync_stop_at,
             stop_on_sync: this.params.stop_on_sync,
         };
+
+        if let Some(starting_block) = this.params.unsafe_starting_block {
+            // We state that starting_block - 1 is the chain head.
+            this.db_backend.head_status().set_to_height(starting_block.checked_sub(1));
+        }
 
         runner.service_loop(move |ctx| async move {
             if this.params.p2p_sync {
@@ -79,7 +87,9 @@ impl Service for SyncService {
                     importer,
                     gateway,
                     config,
-                    mc_sync2::gateway::ForwardSyncConfig::default().disable_tries(this.params.disable_tries),
+                    mc_sync2::gateway::ForwardSyncConfig::default()
+                        .disable_tries(this.params.disable_tries)
+                        .no_sync_pending_block(this.params.no_pending_sync),
                 )
                 .run(ctx)
                 .await
