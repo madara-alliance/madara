@@ -364,7 +364,7 @@ impl MempoolProvider for Mempool {
         let nonce_next = nonce.try_increment()?;
         let nonce_target =
             self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
-        let nonce_info = if nonce != nonce_target {
+        let nonce_info = if nonce_next != nonce_target {
             NonceInfo::pending(nonce, nonce_next)
         } else {
             NonceInfo::ready(nonce, nonce_next)
