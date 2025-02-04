@@ -1,0 +1,37 @@
+[package]
+name = "proto"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+bytes.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+unsigned-varint.workspace = true
+
+mc-db.workspace = true
+mp-block.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-receipt.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
+
+starknet-core.workspace = true
+starknet-types-core.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
