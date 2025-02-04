@@ -25,7 +25,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
     pub no_sync_pending_block: bool,
-    pub compute_pre_v0_13_2_hashes: bool,
+    pub keep_pre_v0_13_2_hashes: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -39,7 +39,7 @@ impl Default for ForwardSyncConfig {
             apply_state_batch_size: 4,
             disable_tries: false,
             no_sync_pending_block: false,
-            compute_pre_v0_13_2_hashes: false,
+            keep_pre_v0_13_2_hashes: false,
         }
     }
 }
@@ -51,8 +51,8 @@ impl ForwardSyncConfig {
     pub fn no_sync_pending_block(self, val: bool) -> Self {
         Self { no_sync_pending_block: val, ..self }
     }
-    pub fn compute_pre_v0_13_2_hashes(self, val: bool) -> Self {
-        Self { compute_pre_v0_13_2_hashes: val, ..self }
+    pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
+        Self { keep_pre_v0_13_2_hashes: val, ..self }
     }
 }
 
@@ -66,7 +66,8 @@ pub fn forward_sync(
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ProbeState::new(move |val| probe.clone().probe(val), Duration::from_secs(2));
-    let no_pending = config.no_sync_pending_block || controller_config.stop_on_sync || controller_config.stop_at_block_n.is_some();
+    let no_pending =
+        config.no_sync_pending_block || controller_config.stop_on_sync || controller_config.stop_at_block_n.is_some();
     SyncController::new(
         GatewayForwardSync::new(backend, importer, client, config, no_pending),
         probe,
@@ -96,6 +97,7 @@ impl GatewayForwardSync {
             client.clone(),
             config.block_parallelization,
             config.block_batch_size,
+            config.keep_pre_v0_13_2_hashes,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),
@@ -118,6 +120,27 @@ impl GatewayForwardSync {
         };
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, pending_sync }
     }
+
+    fn pipeline_status(&self) -> PipelineStatus {
+        PipelineStatus {
+            blocks: self.blocks_pipeline.last_applied_block_n(),
+            classes: self.classes_pipeline.last_applied_block_n(),
+            apply_state: self.apply_state_pipeline.last_applied_block_n(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PipelineStatus {
+    blocks: Option<u64>,
+    classes: Option<u64>,
+    apply_state: Option<u64>,
+}
+
+impl PipelineStatus {
+    pub fn min(&self) -> Option<u64> {
+        self.blocks.min(self.classes).min(self.apply_state)
+    }
 }
 
 impl ForwardPipeline for GatewayForwardSync {
@@ -137,7 +160,7 @@ impl ForwardPipeline for GatewayForwardSync {
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
-            let next_full_block = self.backend.head_status().next_full_block();
+            let start_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             tokio::select! {
                 Some(res) = self.apply_state_pipeline.next() => {
@@ -155,10 +178,11 @@ impl ForwardPipeline for GatewayForwardSync {
                 else => done = true,
             }
 
-            let new_next_full_block = self.backend.head_status().next_full_block();
-            for block_n in next_full_block..new_next_full_block {
+            let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
+            for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
+                self.backend.on_block(block_n).await?;
             }
         }
 

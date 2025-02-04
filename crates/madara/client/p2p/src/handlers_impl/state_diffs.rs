@@ -50,10 +50,7 @@ pub async fn state_diffs_sync(
     mut out: Sender<model::StateDiffsResponse>,
 ) -> Result<(), sync_handlers::Error> {
     let iterator_config = block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?;
-    let ite = ctx
-        .app_ctx
-        .backend
-        .block_info_iterator(iterator_config.clone());
+    let ite = ctx.app_ctx.backend.block_info_iterator(iterator_config.clone());
 
     tracing::debug!("serving state diffs sync! {iterator_config:?}");
 

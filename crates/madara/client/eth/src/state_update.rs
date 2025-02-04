@@ -102,7 +102,7 @@ mod eth_client_event_subscription_test {
     use std::{sync::Arc, time::Duration};
 
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
-    use mc_db::DatabaseService;
+    use mc_db::{DatabaseService, MadaraBackendConfig};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use tempfile::TempDir;
@@ -158,7 +158,7 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
+            DatabaseService::new(chain_info.clone(), MadaraBackendConfig::new(&base_path).backup_dir(backup_dir))
                 .await
                 .expect("Failed to create database service"),
         );

@@ -35,7 +35,7 @@ fn protocol_version(
     block_number: u64,
     block_hash: Felt,
 ) -> Result<StarknetVersion, FromGatewayError> {
-    starknet_version.as_deref().map(|version| Ok(version.parse()?)).unwrap_or_else(|| {
+    starknet_version.map(|version| Ok(version.parse()?)).unwrap_or_else(|| {
         StarknetVersion::try_from_mainnet_block_number(block_number)
             .ok_or(FromGatewayError::FromMainnetStarknetVersion(block_hash))
     })

@@ -169,6 +169,31 @@ impl P2pForwardSync {
             backend: args.backend,
         }
     }
+
+    fn pipeline_status(&self) -> PipelineStatus {
+        PipelineStatus {
+            headers: self.headers_pipeline.last_applied_block_n(),
+            transactions: self.transactions_pipeline.last_applied_block_n(),
+            events: self.events_pipeline.last_applied_block_n(),
+            classes: self.classes_pipeline.last_applied_block_n(),
+            apply_state: self.apply_state_pipeline.last_applied_block_n(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PipelineStatus {
+    headers: Option<u64>,
+    transactions: Option<u64>,
+    events: Option<u64>,
+    classes: Option<u64>,
+    apply_state: Option<u64>,
+}
+
+impl PipelineStatus {
+    pub fn min(&self) -> Option<u64> {
+        self.headers.min(self.transactions).min(self.events).min(self.classes).min(self.apply_state)
+    }
 }
 
 impl ForwardPipeline for P2pForwardSync {
@@ -178,7 +203,8 @@ impl ForwardPipeline for P2pForwardSync {
         _probe_height: Option<u64>,
         metrics: &mut SyncMetrics,
     ) -> anyhow::Result<()> {
-        loop {
+        let mut done = false;
+        while !done {
             tracing::trace!("stop_block={target_height:?}, hl={}", self.headers_pipeline.is_empty());
 
             while self.headers_pipeline.can_schedule_more()
@@ -188,7 +214,8 @@ impl ForwardPipeline for P2pForwardSync {
                 self.headers_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
-            let next_full_block = self.backend.head_status().next_full_block();
+            // Min applied block
+            let start_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             // We poll the consumers first. This seems to help bring the blocks/s higher.
             // Poll order being important makes me worry that we're not polled enough.
@@ -224,15 +251,17 @@ impl ForwardPipeline for P2pForwardSync {
                     self.state_diffs_pipeline.push(range, headers);
                 }
                 // all pipelines are empty, we're done :)
-                else => break Ok(())
+                else => done = true
             }
 
-            let new_next_full_block = self.backend.head_status().next_full_block();
-            for block_n in next_full_block..new_next_full_block {
+            let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
+            for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
+                self.backend.on_block(block_n).await?;
             }
         }
+        Ok(())
     }
 
     fn next_input_block_n(&self) -> u64 {

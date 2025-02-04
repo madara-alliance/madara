@@ -18,31 +18,32 @@ pub(crate) async fn get_classes(
     classes: &HashMap<Felt, DeclaredClassCompiledClass>,
 ) -> anyhow::Result<Vec<ClassInfoWithHash>> {
     futures::future::try_join_all(classes.iter().map(move |(&class_hash, &compiled_class_hash)| {
-    let block_id = block_id.clone();
-    let client = client.clone();
-    async move {
-        let class = client.clone()
-            .get_class_by_hash(class_hash, block_id.clone())
-            .await
-            .with_context(|| format!("Getting class_hash={class_hash:#x} with block_id={block_id:?}"))?;
+        let block_id = block_id.clone();
+        let client = client.clone();
+        async move {
+            let class = client
+                .clone()
+                .get_class_by_hash(class_hash, block_id.clone())
+                .await
+                .with_context(|| format!("Getting class_hash={class_hash:#x} with block_id={block_id:?}"))?;
 
-        let class_info = match &class {
-            mp_class::ContractClass::Sierra(class) => {
-                let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
-                    anyhow::bail!("Expected a Sierra class, found a Legacy class")
-                };
-                ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
-            }
-            mp_class::ContractClass::Legacy(class) => {
-                if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
-                    anyhow::bail!("Expected a Legacy class, found a Sierra class")
+            let class_info = match &class {
+                mp_class::ContractClass::Sierra(class) => {
+                    let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
+                        anyhow::bail!("Expected a Sierra class, found a Legacy class")
+                    };
+                    ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
                 }
-                ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
-            }
-        };
+                mp_class::ContractClass::Legacy(class) => {
+                    if compiled_class_hash != DeclaredClassCompiledClass::Legacy {
+                        anyhow::bail!("Expected a Legacy class, found a Sierra class")
+                    }
+                    ClassInfo::Legacy(LegacyClassInfo { contract_class: class.clone() })
+                }
+            };
 
-        Ok(ClassInfoWithHash { class_info, class_hash })
-    }
+            Ok(ClassInfoWithHash { class_info, class_hash })
+        }
     }))
     .await
 }
@@ -84,9 +85,7 @@ impl PipelineSteps for ClassesSyncSteps {
 
                 let ret = self
                     .importer
-                    .run_in_rayon_pool(move |importer| {
-                        importer.verify_compile_classes(declared_classes, &classes)
-                    })
+                    .run_in_rayon_pool(move |importer| importer.verify_compile_classes(declared_classes, &classes))
                     .await?;
 
                 out.push(ret);

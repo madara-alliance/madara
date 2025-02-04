@@ -10,7 +10,7 @@ use clap::Parser;
 use cli::RunCmd;
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
-use mc_db::{DatabaseService, TrieLogConfig};
+use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
@@ -97,19 +97,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Database
 
-    let service_db = DatabaseService::new(
-        &run_cmd.db_params.base_path,
-        run_cmd.db_params.backup_dir.clone(),
-        run_cmd.db_params.restore_from_latest_backup,
-        Arc::clone(&chain_config),
-        TrieLogConfig {
-            max_saved_trie_logs: run_cmd.db_params.db_max_saved_trie_logs,
-            max_kept_snapshots: run_cmd.db_params.db_max_kept_snapshots,
-            snapshot_interval: run_cmd.db_params.db_snapshot_interval,
-        },
-    )
-    .await
-    .context("Initializing db service")?;
+    let service_db = DatabaseService::new(chain_config.clone(), run_cmd.db_params.backend_config())
+        .await
+        .context("Initializing db service")?;
 
     // L1 Sync
 

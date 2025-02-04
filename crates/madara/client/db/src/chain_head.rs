@@ -25,24 +25,23 @@ impl Clone for BlockNStatus {
 /// We have multiple counters because the sync pipeline is split in sub-pipelines.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub struct ChainHead {
+    // Individual pipeline progress.
     pub headers: BlockNStatus,
     pub state_diffs: BlockNStatus,
     pub classes: BlockNStatus,
     pub transactions: BlockNStatus,
     pub events: BlockNStatus,
-    pub l1_head: BlockNStatus,
     pub global_trie: BlockNStatus,
+
+    pub l1_head: BlockNStatus,
+
+    /// Incremented by [`MadaraBackend::on_block`].
+    pub full_block: BlockNStatus,
 }
 
 impl ChainHead {
     pub fn latest_full_block_n(&self) -> Option<u64> {
-        self.headers
-            .get()
-            .min(self.state_diffs.get())
-            .min(self.classes.get())
-            .min(self.transactions.get())
-            .min(self.events.get())
-            .min(self.global_trie.get())
+        self.full_block.get()
     }
 
     pub fn next_full_block(&self) -> u64 {
@@ -50,12 +49,7 @@ impl ChainHead {
     }
 
     pub fn set_to_height(&self, block_n: Option<u64>) {
-        self.headers.set(block_n);
-        self.state_diffs.set(block_n);
-        self.classes.set(block_n);
-        self.transactions.set(block_n);
-        self.events.set(block_n);
-        self.global_trie.set(block_n);
+        self.full_block.set(block_n);
     }
 
     pub(crate) fn load_from_db(db: &DB) -> Result<Self, MadaraStorageError> {

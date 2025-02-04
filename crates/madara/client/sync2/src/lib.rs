@@ -1,10 +1,10 @@
 mod apply_state;
-mod pipeline;
-mod sync;
-mod util;
 mod counter;
 mod metrics;
+mod pipeline;
 mod probe;
+mod sync;
+mod util;
 
 pub use sync::SyncControllerConfig;
 

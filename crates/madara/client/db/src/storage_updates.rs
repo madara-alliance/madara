@@ -21,7 +21,7 @@ use mp_state_update::StateDiff;
 use starknet_types_core::felt::Felt;
 
 fn store_events_to_receipts(
-    receipts: &mut Vec<TransactionReceipt>,
+    receipts: &mut [TransactionReceipt],
     events: Vec<EventWithTransactionHash>,
 ) -> Result<(), MadaraStorageError> {
     for receipt in receipts.iter_mut() {

@@ -26,10 +26,7 @@ pub struct BlockValidationConfig {
 
 impl BlockValidationConfig {
     pub fn trust_parent_hash(self, trust_parent_hash: bool) -> Self {
-        Self {
-            trust_parent_hash,
-            ..self
-        }
+        Self { trust_parent_hash, ..self }
     }
 }
 
@@ -123,27 +120,17 @@ impl BlockImporter {
 
     // Pending block
 
-    pub fn clear_pending_block(&self) -> Result<(), BlockImportError> {
-        self.db.clear_pending_block().map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: "Clearing pending block".into(),
-        })?;
-        Ok(())
-    }
-
     pub fn save_pending_block(&self, block: PendingFullBlock) -> Result<(), BlockImportError> {
-        self.db.store_pending_block(block).map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: "Storing pending block".into(),
-        })?;
+        self.db
+            .store_pending_block(block)
+            .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending block".into() })?;
         Ok(())
     }
 
     pub fn save_pending_classes(&self, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db.class_db_store_pending(&classes).map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: "Storing pending classes".into(),
-        })?;
+        self.db
+            .class_db_store_pending(&classes)
+            .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending classes".into() })?;
         Ok(())
     }
 

@@ -89,7 +89,8 @@ impl Service for SyncService {
                     config,
                     mc_sync2::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
-                        .no_sync_pending_block(this.params.no_pending_sync),
+                        .no_sync_pending_block(this.params.no_pending_sync)
+                        .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes),
                 )
                 .run(ctx)
                 .await

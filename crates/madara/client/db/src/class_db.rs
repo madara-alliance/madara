@@ -226,10 +226,7 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
-    pub fn class_db_store_pending(
-        &self,
-        converted_classes: &[ConvertedClass],
-    ) -> Result<(), MadaraStorageError> {
+    pub fn class_db_store_pending(&self, converted_classes: &[ConvertedClass]) -> Result<(), MadaraStorageError> {
         self.store_classes(
             DbBlockId::Pending,
             converted_classes,

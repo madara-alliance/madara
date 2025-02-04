@@ -23,8 +23,13 @@ pub fn block_with_state_update_pipeline(
     client: Arc<GatewayProvider>,
     parallelization: usize,
     batch_size: usize,
+    keep_pre_v0_13_2_hashes: bool,
 ) -> GatewayBlockSync {
-    PipelineController::new(GatewaySyncSteps { backend, importer, client }, parallelization, batch_size)
+    PipelineController::new(
+        GatewaySyncSteps { backend, importer, client, keep_pre_v0_13_2_hashes },
+        parallelization,
+        batch_size,
+    )
 }
 
 // TODO: check that the headers follow each other
@@ -32,6 +37,7 @@ pub struct GatewaySyncSteps {
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
+    keep_pre_v0_13_2_hashes: bool,
 }
 impl PipelineSteps for GatewaySyncSteps {
     type InputItem = ();
@@ -59,6 +65,8 @@ impl PipelineSteps for GatewaySyncSteps {
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
+                let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
+
                 let state_diff = self
                     .importer
                     .run_in_rayon_pool(move |importer| {
@@ -68,7 +76,7 @@ impl PipelineSteps for GatewaySyncSteps {
                             consensus_signatures: vec![],
                         };
 
-                        // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
+                        // Allow the gateway format, which has legacy commitments.
                         let allow_pre_v0_13_2 = true;
 
                         let state_diff_commitment = importer.verify_state_diff(
@@ -89,13 +97,16 @@ impl PipelineSteps for GatewaySyncSteps {
                             &signed_header.header,
                             allow_pre_v0_13_2,
                         )?;
-                        signed_header.header = Header {
-                            state_diff_commitment: Some(state_diff_commitment),
-                            transaction_commitment,
-                            event_commitment,
-                            receipt_commitment: Some(receipt_commitment),
-                            ..signed_header.header
-                        };
+                        if !keep_pre_v0_13_2_hashes {
+                            // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
+                            signed_header.header = Header {
+                                state_diff_commitment: Some(state_diff_commitment),
+                                transaction_commitment,
+                                event_commitment,
+                                receipt_commitment: Some(receipt_commitment),
+                                ..signed_header.header
+                            };
+                        }
                         importer.verify_header(block_n, &signed_header)?;
 
                         importer.save_header(block_n, signed_header)?;

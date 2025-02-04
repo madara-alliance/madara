@@ -66,49 +66,6 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_STOP_NO_PENDING_SYNC", long)]
     pub no_pending_sync: bool,
 
-    // /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
-    // #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
-    // pub backup_every_n_blocks: Option<u64>,
-
-    // /// Periodically flushes the database from ram to disk based on the number
-    // /// of blocks synchronized since the last flush. You can set this to a
-    // /// higher number depending on how fast your machine is at synchronizing
-    // /// blocks and how much ram it has available.
-    // ///
-    // /// Be aware that blocks might still be flushed to db earlier based on the
-    // /// value of --flush-every-n-seconds.
-    // ///
-    // /// Note that keeping this value high could lead to blocks being stored in
-    // /// ram for longer periods of time before they are written to disk. This
-    // /// might be an issue for chains which synchronize slowly.
-    // #[clap(
-    //     env = "MADARA_FLUSH_EVERY_N_BLOCKS",
-    //     value_name = "FLUSH EVERY N BLOCKS",
-    //     long,
-    //     value_parser = clap::value_parser!(u64).range(..=10_000),
-    //     default_value_t = 1_000
-    // )]
-    // pub flush_every_n_blocks: u64,
-
-    // /// Periodically flushes the database from ram to disk based on the elapsed
-    // /// time since the last flush. You can set this to a higher number
-    // /// depending on how fast your machine is at synchronizing blocks and how
-    // /// much ram it has available.
-    // ///
-    // /// Be aware that blocks might still be flushed to db earlier based on the
-    // /// value of --flush-every-n-blocks.
-    // ///
-    // /// Note that keeping this value high could lead to blocks being stored in
-    // /// ram for longer periods of time before they are written to disk. This
-    // /// might be an issue for chains which synchronize slowly.
-    // #[clap(
-    //     env = "MADARA_FLUSH_EVERY_N_BLOCKS",
-    //     value_name = "FLUSH EVERY N BLOCKS",
-    //     long,
-    //     value_parser = clap::value_parser!(u64).range(..=3_600),
-    //     default_value_t = 5
-    // )]
-    // pub flush_every_n_seconds: u64,
     #[clap(env = "MADARA_P2P_SYNC", long)]
     pub p2p_sync: bool,
 
@@ -119,7 +76,7 @@ pub struct L2SyncParams {
     /// This option has no effect when `--p2p-sync` is enabled, as only post-v0.13.2 commitments can be
     /// verified and saved in this mode.
     #[clap(long)]
-    pub compute_pre_v0_13_2_hashes: bool,
+    pub keep_pre_v0_13_2_hashes: bool,
 }
 
 impl L2SyncParams {

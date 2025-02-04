@@ -4,10 +4,12 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::time::Instant;
 
+type ProbeFuture<T> = BoxFuture<'static, anyhow::Result<Option<T>>>;
+
 pub struct ProbeState<T: Clone> {
     last_val: Option<T>,
-    future: Option<BoxFuture<'static, anyhow::Result<Option<T>>>>,
-    make_future: Box<dyn FnMut(Option<T>) -> BoxFuture<'static, anyhow::Result<Option<T>>> + Send>,
+    future: Option<ProbeFuture<T>>,
+    make_future: Box<dyn FnMut(Option<T>) -> ProbeFuture<T> + Send>,
     wait: Option<Instant>,
     wait_duration: Duration,
 }
