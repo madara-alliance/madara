@@ -1,12 +1,12 @@
 use super::error::ResultExt;
 use crate::{
     handlers_impl::{block_stream_config, error::OptionExt},
-    model,
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
 use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mc_db::db_block_id::DbBlockId;
+use mp_proto::model;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
@@ -50,10 +50,7 @@ pub async fn state_diffs_sync(
     mut out: Sender<model::StateDiffsResponse>,
 ) -> Result<(), sync_handlers::Error> {
     let iterator_config = block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?;
-    let ite = ctx
-        .app_ctx
-        .backend
-        .block_info_iterator(iterator_config.clone());
+    let ite = ctx.app_ctx.backend.block_info_iterator(iterator_config.clone());
 
     tracing::debug!("serving state diffs sync! {iterator_config:?}");
 

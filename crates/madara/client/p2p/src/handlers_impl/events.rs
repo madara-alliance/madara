@@ -3,44 +3,14 @@ use crate::{
         block_stream_config,
         error::{OptionExt, ResultExt},
     },
-    model,
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
 use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mc_db::db_block_id::DbBlockId;
-use mp_receipt::{Event, EventWithTransactionHash};
+use mp_proto::model;
+use mp_receipt::EventWithTransactionHash;
 use tokio::pin;
-
-use super::FromModelError;
-
-impl From<EventWithTransactionHash> for model::Event {
-    fn from(value: EventWithTransactionHash) -> Self {
-        Self {
-            transaction_hash: Some(value.transaction_hash.into()),
-            from_address: Some(value.event.from_address.into()),
-            keys: value.event.keys.into_iter().map(Into::into).collect(),
-            data: value.event.data.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-impl TryFrom<model::Event> for EventWithTransactionHash {
-    type Error = FromModelError;
-    fn try_from(value: model::Event) -> Result<Self, Self::Error> {
-        Ok(Self {
-            transaction_hash: value
-                .transaction_hash
-                .ok_or(FromModelError::missing_field("Event::transaction_hash"))?
-                .into(),
-            event: Event {
-                from_address: value.from_address.ok_or(FromModelError::missing_field("Event::from_address"))?.into(),
-                keys: value.keys.into_iter().map(Into::into).collect(),
-                data: value.data.into_iter().map(Into::into).collect(),
-            },
-        })
-    }
-}
 
 pub async fn events_sync(
     ctx: ReqContext<MadaraP2pContext>,
@@ -48,10 +18,7 @@ pub async fn events_sync(
     mut out: Sender<model::EventsResponse>,
 ) -> Result<(), sync_handlers::Error> {
     let iterator_config = block_stream_config(&ctx.app_ctx.backend, req.iteration.unwrap_or_default())?;
-    let ite = ctx
-        .app_ctx
-        .backend
-        .block_info_iterator(iterator_config.clone());
+    let ite = ctx.app_ctx.backend.block_info_iterator(iterator_config.clone());
 
     tracing::debug!("serving events sync! {iterator_config:?}");
 

@@ -123,6 +123,7 @@ mp-state-update = { path = "crates/madara/primitives/state_update", default-feat
 mp-utils = { path = "crates/madara/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/madara/primitives/chain_config", default-features = false }
 mp-oracle = { path = "crates/madara/primitives/oracle", default-features = false }
+mp-proto = { path = "crates/madara/primitives/proto", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/madara/client/analytics" }
