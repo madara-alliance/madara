@@ -1,7 +1,7 @@
 use crate::counter::ThroughputCounter;
 use anyhow::Context;
 use mc_analytics::register_gauge_metric_instrument;
-use mc_db::db_block_id::DbBlockId;
+use mc_db::db_block_id::RawDbBlockId;
 use mc_db::MadaraBackend;
 use num_traits::cast::FromPrimitive;
 use opentelemetry::metrics::Gauge;
@@ -137,7 +137,7 @@ impl SyncMetrics {
         self.counter.increment();
 
         let header = backend
-            .get_block_info(&DbBlockId::Number(block_n))
+            .get_block_info(&RawDbBlockId::Number(block_n))
             .context("Getting block info")?
             .context("No block info")?
             .as_nonpending_owned()

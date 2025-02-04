@@ -1,11 +1,11 @@
-use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
+use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
 use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 use anyhow::Context;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
-    BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
-    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo,
+    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
+    MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
@@ -74,7 +74,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
+    pub(crate) fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -302,28 +302,19 @@ impl MadaraBackend {
 
     // Convenience functions
 
-    pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {
+    fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(DbBlockId::Number)),
-            BlockId::Number(block_n) => Ok(Some(DbBlockId::Number(*block_n))),
-            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(DbBlockId::Number)),
-            BlockId::Tag(BlockTag::Pending) => Ok(Some(DbBlockId::Pending)),
-        }
-    }
-
-    fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
-        match id {
-            DbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
-            DbBlockId::Number(block_n) => {
+            RawDbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
+            RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
         }
     }
 
-    fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<MadaraBlockInner>> {
+    fn storage_to_inner(&self, id: &RawDbBlockId) -> Result<Option<MadaraBlockInner>> {
         match id {
-            DbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
-            DbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
+            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
+            RawDbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
 
@@ -333,8 +324,8 @@ impl MadaraBackend {
     pub fn get_block_n(&self, id: &impl DbBlockIdResolvable) -> Result<Option<u64>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
-            DbBlockId::Number(block_id) => Ok(Some(*block_id)),
-            DbBlockId::Pending => Ok(None),
+            RawDbBlockId::Number(block_id) => Ok(Some(*block_id)),
+            RawDbBlockId::Pending => Ok(None),
         }
     }
 
@@ -343,8 +334,8 @@ impl MadaraBackend {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
             // TODO: fast path if id is already a block hash..
-            DbBlockId::Number(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
-            DbBlockId::Pending => Ok(None),
+            RawDbBlockId::Number(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
+            RawDbBlockId::Pending => Ok(None),
         }
     }
 
@@ -352,8 +343,8 @@ impl MadaraBackend {
     pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
-            DbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
-            DbBlockId::Number(block_n) => self.get_state_update(block_n),
+            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
+            RawDbBlockId::Number(block_n) => self.get_state_update(block_n),
         }
     }
 

@@ -5,9 +5,9 @@ use super::{
 use crate::{import::BlockImporter, pipeline::PipelineController};
 use anyhow::Context;
 use futures::{StreamExt, TryStreamExt};
-use mc_db::{stream::BlockStreamConfig, MadaraBackend};
+use mc_db::{db_block_id::DbBlockId, stream::BlockStreamConfig, MadaraBackend};
 use mc_p2p::{P2pCommands, PeerId};
-use mp_block::{BlockHeaderWithSignatures, BlockId, Header};
+use mp_block::{BlockHeaderWithSignatures, Header};
 use starknet_core::types::Felt;
 use std::{ops::Range, sync::Arc};
 
@@ -99,7 +99,7 @@ impl P2pPipelineSteps for HeadersSyncSteps {
             let parent_block_n = first_block.header.block_number.checked_sub(1);
             let parent_block_hash = if let Some(block_n) = parent_block_n {
                 self.backend
-                    .get_block_hash(&BlockId::Number(block_n))
+                    .get_block_hash(&DbBlockId::Number(block_n))
                     .context("Getting latest block hash from database.")?
                     .context("Mismatched headers / chain head number.")?
             } else {

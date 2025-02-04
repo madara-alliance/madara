@@ -1,5 +1,5 @@
 use crate::{
-    db_block_id::{DbBlockId, DbBlockIdResolvable},
+    db_block_id::{DbBlockIdResolvable, RawDbBlockId},
     Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
 };
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
@@ -12,7 +12,7 @@ const LAST_KEY: &[u8] = &[0xFF; 64];
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ClassInfoWithBlockNumber {
     class_info: ClassInfo,
-    block_id: DbBlockId,
+    block_id: RawDbBlockId,
 }
 
 impl MadaraBackend {
@@ -68,8 +68,8 @@ impl MadaraBackend {
         tracing::debug!("class info got {:?}", info.block_id);
 
         let valid = match (requested_id, info.block_id) {
-            (DbBlockId::Pending, _) => true,
-            (DbBlockId::Number(block_n), DbBlockId::Number(real_block_n)) => real_block_n <= block_n,
+            (RawDbBlockId::Pending, _) => true,
+            (RawDbBlockId::Number(block_n), RawDbBlockId::Number(real_block_n)) => real_block_n <= block_n,
             _ => false,
         };
         if !valid {
@@ -153,7 +153,7 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self, converted_classes, col_info, col_compiled), fields(module = "ClassDB"))]
     pub(crate) fn store_classes(
         &self,
-        block_id: DbBlockId,
+        block_id: RawDbBlockId,
         converted_classes: &[ConvertedClass],
         col_info: Column,
         col_compiled: Column,
@@ -221,14 +221,19 @@ impl MadaraBackend {
         block_number: u64,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.store_classes(DbBlockId::Number(block_number), converted_classes, Column::ClassInfo, Column::ClassCompiled)
+        self.store_classes(
+            RawDbBlockId::Number(block_number),
+            converted_classes,
+            Column::ClassInfo,
+            Column::ClassCompiled,
+        )
     }
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
     pub fn class_db_store_pending(&self, converted_classes: &[ConvertedClass]) -> Result<(), MadaraStorageError> {
         self.store_classes(
-            DbBlockId::Pending,
+            RawDbBlockId::Pending,
             converted_classes,
             Column::PendingClassInfo,
             Column::PendingClassCompiled,

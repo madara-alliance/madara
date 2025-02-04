@@ -1,7 +1,9 @@
 #![doc = include_str!("../docs/flat_storage.md")]
 
-use std::{collections::HashMap, sync::Arc};
-
+use crate::{
+    db_block_id::{DbBlockIdResolvable, RawDbBlockId},
+    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
+};
 use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
@@ -9,11 +11,7 @@ use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
-
-use crate::{
-    db_block_id::{DbBlockId, DbBlockIdResolvable},
-    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
-};
+use std::{collections::HashMap, sync::Arc};
 
 pub(crate) struct ContractDbBlockUpdate {
     contract_class_updates: Vec<(Felt, Felt)>,
@@ -82,7 +80,7 @@ impl MadaraBackend {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
         let block_n = match id {
-            DbBlockId::Pending => {
+            RawDbBlockId::Pending => {
                 // Get pending or fallback to latest block_n
                 let col = self.db.get_column(pending_col);
                 // todo: smallint here to avoid alloc
@@ -95,7 +93,7 @@ impl MadaraBackend {
                 let Some(block_n) = self.get_latest_block_n()? else { return Ok(None) };
                 block_n
             }
-            DbBlockId::Number(block_n) => block_n,
+            RawDbBlockId::Number(block_n) => block_n,
         };
 
         // We try to find history values.

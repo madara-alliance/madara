@@ -2,7 +2,7 @@
 mod block_tests {
     use super::super::common::temp_db::temp_db;
     use super::super::common::*;
-    use crate::db_block_id::DbBlockIdResolvable;
+    use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
     use crate::{block_db::TxIndex, db_block_id::DbBlockId};
     use mp_block::{BlockId, Header};
     use mp_chain_config::ChainConfig;
@@ -27,9 +27,9 @@ mod block_tests {
         backend.store_block(block.clone(), state_diff.clone(), vec![]).unwrap();
         backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
 
-        assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), DbBlockId::Number(0));
-        assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), DbBlockId::Number(0));
-        assert_eq!(backend.resolve_block_id(&DbBlockId::Pending).unwrap().unwrap(), DbBlockId::Pending);
+        assert_eq!(backend.resolve_block_id(&BlockId::Hash(block_hash)).unwrap().unwrap(), RawDbBlockId::Number(0));
+        assert_eq!(backend.resolve_block_id(&BlockId::Number(0)).unwrap().unwrap(), RawDbBlockId::Number(0));
+        assert_eq!(backend.resolve_block_id(&DbBlockId::Pending).unwrap().unwrap(), RawDbBlockId::Pending);
     }
 
     #[tokio::test]
@@ -42,7 +42,7 @@ mod block_tests {
 
     #[tokio::test]
     async fn test_store_block() {
-        const BLOCK_ID_0: DbBlockId = DbBlockId::Number(0);
+        const BLOCK_ID_0: RawDbBlockId = RawDbBlockId::Number(0);
 
         let db = temp_db().await;
         let backend = db.backend();
