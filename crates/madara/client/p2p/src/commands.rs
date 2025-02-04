@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     handlers_impl::{self},
-    model, sync_handlers, MadaraP2p,
+    sync_handlers, MadaraP2p,
 };
 use futures::{channel::mpsc, stream, SinkExt, Stream, StreamExt};
 use libp2p::PeerId;
 use mc_db::stream::BlockStreamConfig;
 use mp_block::{BlockHeaderWithSignatures, TransactionWithReceipt};
 use mp_class::ClassInfoWithHash;
+use mp_proto::model;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use starknet_core::types::Felt;

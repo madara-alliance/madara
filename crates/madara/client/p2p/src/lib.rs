@@ -3,6 +3,7 @@ use behaviour::MadaraP2pBehaviour;
 use futures::{channel::mpsc, FutureExt};
 use libp2p::{futures::StreamExt, gossipsub::IdentTopic, identity::Keypair, multiaddr::Protocol, Multiaddr, Swarm};
 use mc_db::MadaraBackend;
+use mp_proto::model;
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use sync_handlers::DynSyncHandler;
 
@@ -11,20 +12,12 @@ mod commands;
 mod events;
 mod handlers_impl;
 mod identity;
-mod model_primitives;
 mod sync_codec;
 mod sync_handlers;
 
 pub use commands::*;
 pub use libp2p::PeerId;
 pub use sync_handlers::Error as SyncHandlerError;
-
-/// Protobuf messages.
-#[allow(clippy::all)]
-pub mod model {
-    pub use crate::model_primitives::*;
-    include!(concat!(env!("OUT_DIR"), "/_.rs"));
-}
 
 pub struct P2pConfig {
     /// None to get an OS-assigned port.

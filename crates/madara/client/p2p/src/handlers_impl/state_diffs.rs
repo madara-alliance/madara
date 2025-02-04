@@ -1,12 +1,12 @@
 use super::error::ResultExt;
 use crate::{
     handlers_impl::{block_stream_config, error::OptionExt},
-    model,
     sync_handlers::{self, ReqContext},
     MadaraP2pContext,
 };
 use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
 use mc_db::db_block_id::DbBlockId;
+use mp_proto::model;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };

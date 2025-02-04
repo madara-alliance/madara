@@ -35,6 +35,7 @@ mp-receipt.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
+mp-proto.workspace = true
 p2p_stream.workspace = true
 
 starknet-core.workspace = true

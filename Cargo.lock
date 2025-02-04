@@ -6943,6 +6943,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-proto",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -7272,6 +7273,32 @@ dependencies = [
  "mp-utils",
  "reqwest 0.12.8",
  "serde",
+]
+
+[[package]]
+name = "mp-proto"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bytes",
+ "mc-db",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "thiserror 2.0.3",
+ "tracing",
+ "unsigned-varint 0.8.0",
 ]
 
 [[package]]

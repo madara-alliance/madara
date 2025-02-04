@@ -5,8 +5,6 @@ use futures::io::{AsyncReadExt, AsyncWriteExt};
 use libp2p::futures::{AsyncRead, AsyncWrite};
 use std::{io, marker::PhantomData};
 
-use crate::model;
-
 pub mod protocols {
     //! This only handles 1 protocol version for now. In the future this file would need
     //! to be rewritten so that it handles returning responses for older protocol versions.
@@ -41,23 +39,26 @@ pub mod codecs {
 
     const MiB: u64 = 1024 * 1024;
 
-    pub type Headers = SyncCodec<protocols::Headers, model::BlockHeadersRequest, model::BlockHeadersResponse>;
+    pub type Headers =
+        SyncCodec<protocols::Headers, mp_proto::model::BlockHeadersRequest, mp_proto::model::BlockHeadersResponse>;
     pub fn headers() -> Headers {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type StateDiffs = SyncCodec<protocols::StateDiffs, model::StateDiffsRequest, model::StateDiffsResponse>;
+    pub type StateDiffs =
+        SyncCodec<protocols::StateDiffs, mp_proto::model::StateDiffsRequest, mp_proto::model::StateDiffsResponse>;
     pub fn state_diffs() -> StateDiffs {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type Classes = SyncCodec<protocols::Classes, model::ClassesRequest, model::ClassesResponse>;
+    pub type Classes = SyncCodec<protocols::Classes, mp_proto::model::ClassesRequest, mp_proto::model::ClassesResponse>;
     pub fn classes() -> Classes {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 4 * MiB })
     }
-    pub type Transactions = SyncCodec<protocols::Transactions, model::TransactionsRequest, model::TransactionsResponse>;
+    pub type Transactions =
+        SyncCodec<protocols::Transactions, mp_proto::model::TransactionsRequest, mp_proto::model::TransactionsResponse>;
     pub fn transactions() -> Transactions {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
-    pub type Events = SyncCodec<protocols::Events, model::EventsRequest, model::EventsResponse>;
+    pub type Events = SyncCodec<protocols::Events, mp_proto::model::EventsRequest, mp_proto::model::EventsResponse>;
     pub fn events() -> Events {
         SyncCodec::new(SyncCodecConfig { req_size_limit_bytes: 1 * MiB, res_size_limit_bytes: 1 * MiB })
     }
