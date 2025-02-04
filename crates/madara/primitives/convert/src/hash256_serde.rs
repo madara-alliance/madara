@@ -15,7 +15,7 @@ impl SerializeAs<Hash256> for Hash256Serde {
 impl<'de> DeserializeAs<'de, Hash256> for Hash256Serde {
     fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<Hash256, D::Error> {
         struct Hash256Visitor;
-        impl<'de> de::Visitor<'de> for Hash256Visitor {
+        impl de::Visitor<'_> for Hash256Visitor {
             type Value = Hash256;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 write!(f, "a byte array of size 32 representing a Hash256")

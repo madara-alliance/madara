@@ -1,6 +1,7 @@
 use mc_db::stream::{BlockStreamConfig, Direction};
 use std::borrow::Cow;
 
+#[allow(clippy::all)]
 pub mod model {
     pub use crate::model_primitives::*;
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
@@ -11,11 +12,6 @@ mod events;
 mod headers;
 mod model_primitives;
 mod transactions;
-
-pub use classes::*;
-pub use events::*;
-pub use headers::*;
-pub use transactions::*;
 
 #[derive(thiserror::Error, Debug)]
 pub enum FromModelError {
