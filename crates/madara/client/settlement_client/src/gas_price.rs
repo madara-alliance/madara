@@ -183,7 +183,7 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::eth::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
+    use crate::eth::eth_client_getter_test::create_ethereum_client;
     use crate::eth::event::EthereumEventStream;
     use crate::eth::EthereumClientConfig;
     use httpmock::{MockServer, Regex};
@@ -194,8 +194,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = get_shared_anvil();
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(None);
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -240,8 +239,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
-        let anvil = get_shared_anvil();
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(None);
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -265,8 +263,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
-        let anvil = get_shared_anvil();
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(None);
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
         l1_gas_provider.set_gas_price_sync_enabled(false);
@@ -292,8 +289,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let anvil = get_shared_anvil();
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(None);
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
@@ -386,8 +382,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn update_gas_price_works() {
-        let anvil = get_shared_anvil();
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(None);
         let l1_gas_provider = GasPriceProvider::new();
 
         l1_gas_provider.update_last_update_timestamp();

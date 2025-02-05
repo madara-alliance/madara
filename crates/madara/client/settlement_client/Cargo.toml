@@ -91,7 +91,6 @@ once_cell.workspace = true
 tempfile.workspace = true
 dotenv.workspace = true
 httpmock.workspace = true
-serial_test.workspace = true
 tracing-test = "0.2.5"
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }

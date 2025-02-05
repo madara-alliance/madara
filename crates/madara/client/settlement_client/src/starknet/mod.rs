@@ -311,7 +311,6 @@ pub mod starknet_client_tests {
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
-    use serial_test::serial;
     use starknet_accounts::ConnectedAccount;
     use starknet_core::types::BlockId;
     use starknet_core::types::MaybePendingBlockWithTxHashes::{Block, PendingBlock};
@@ -324,7 +323,6 @@ pub mod starknet_client_tests {
     use tokio::time::sleep;
     use url::Url;
 
-    #[serial]
     #[tokio::test]
     async fn fail_create_new_client_contract_does_not_exists() -> anyhow::Result<()> {
         prepare_starknet_client_test().await?;
@@ -337,7 +335,6 @@ pub mod starknet_client_tests {
         Ok(())
     }
 
-    #[serial]
     #[tokio::test]
     async fn create_new_client_contract_exists_starknet_client() -> anyhow::Result<()> {
         let (_, deployed_address, _madara) = prepare_starknet_client_test().await?;
@@ -350,7 +347,6 @@ pub mod starknet_client_tests {
         Ok(())
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_event_block_number_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
@@ -389,7 +385,6 @@ pub mod starknet_client_tests {
         Ok(())
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_hash_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
@@ -416,7 +411,6 @@ pub mod starknet_client_tests {
         Ok(())
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_state_root_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
@@ -443,7 +437,6 @@ pub mod starknet_client_tests {
         Ok(())
     }
 
-    #[serial]
     #[tokio::test]
     async fn get_last_verified_block_number_works_starknet_client() -> anyhow::Result<()> {
         let (account, deployed_address, _madara) = prepare_starknet_client_test().await?;
