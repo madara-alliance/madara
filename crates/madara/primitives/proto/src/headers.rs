@@ -1,7 +1,8 @@
 use crate::{
     model::{self},
-    model_field, model_field_variant, FromModelError,
+    model_field, model_field_variant, CollectInto, FromModelError,
 };
+use m_proc_macros::model_describe;
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
     BlockHeaderWithSignatures, ConsensusSignature, Header,
@@ -9,6 +10,8 @@ use mp_block::{
 
 impl TryFrom<model::SignedBlockHeader> for BlockHeaderWithSignatures {
     type Error = FromModelError;
+
+    #[model_describe(model::SignedBlockHeader)]
     fn try_from(value: model::SignedBlockHeader) -> Result<Self, Self::Error> {
         let transactions = model_field!(value => transactions);
         let events = model_field!(value => events);
@@ -23,7 +26,7 @@ impl TryFrom<model::SignedBlockHeader> for BlockHeaderWithSignatures {
                 transaction_count: transactions.n_leaves,
                 transaction_commitment: model_field!(transactions => root).into(),
                 event_count: events.n_leaves,
-                event_commitment: events.root.unwrap_or_default().into(),
+                event_commitment: model_field!(events => root).into(),
                 state_diff_length: Some(state_diff_commitment.state_diff_length),
                 state_diff_commitment: Some(model_field!(state_diff_commitment => root).into()),
                 receipt_commitment: Some(model_field!(value => receipts).into()),
@@ -48,6 +51,8 @@ impl TryFrom<model::SignedBlockHeader> for BlockHeaderWithSignatures {
 
 impl TryFrom<model::ConsensusSignature> for ConsensusSignature {
     type Error = FromModelError;
+
+    #[model_describe(model::ConsensusSignature)]
     fn try_from(value: model::ConsensusSignature) -> Result<Self, Self::Error> {
         Ok(Self { r: model_field!(value => r).into(), s: model_field!(value => s).into() })
     }
@@ -85,7 +90,7 @@ impl From<BlockHeaderWithSignatures> for model::SignedBlockHeader {
             l1_data_availability_mode: model::L1DataAvailabilityMode::from(val.header.l1_da_mode).into(),
             l2_gas_price_fri: None, // TODO: update blockifier
             l2_gas_price_wei: None,
-            signatures: val.consensus_signatures.into_iter().map(Into::into).collect(),
+            signatures: val.consensus_signatures.collect_into(),
         }
     }
 }

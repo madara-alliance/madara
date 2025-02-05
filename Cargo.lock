@@ -7315,6 +7315,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bytes",
+ "m-proc-macros",
  "mc-db",
  "mp-block",
  "mp-class",
