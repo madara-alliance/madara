@@ -1,6 +1,6 @@
 use crate::{
     model::{self},
-    FromModelError,
+    model_field, model_field_variant, FromModelError,
 };
 use mp_block::{
     header::{GasPrices, L1DataAvailabilityMode},
@@ -10,40 +10,37 @@ use mp_block::{
 impl TryFrom<model::SignedBlockHeader> for BlockHeaderWithSignatures {
     type Error = FromModelError;
     fn try_from(value: model::SignedBlockHeader) -> Result<Self, Self::Error> {
-        let transactions = value.transactions.unwrap_or_default();
-        let events = value.events.unwrap_or_default();
-        let state_diff_commitment = value.state_diff_commitment.unwrap_or_default();
+        let transactions = model_field!(value => transactions);
+        let events = model_field!(value => events);
+        let state_diff_commitment = model_field!(value => state_diff_commitment);
         Ok(Self {
             header: Header {
-                parent_block_hash: value.parent_hash.unwrap_or_default().into(),
+                parent_block_hash: model_field!(value => parent_hash).into(),
                 block_number: value.number,
-                global_state_root: value.state_root.unwrap_or_default().into(),
-                sequencer_address: value.sequencer_address.unwrap_or_default().into(),
+                global_state_root: model_field!(value => state_root).into(),
+                sequencer_address: model_field!(value => sequencer_address).into(),
                 block_timestamp: mp_block::header::BlockTimestamp(value.time),
                 transaction_count: transactions.n_leaves,
-                transaction_commitment: transactions.root.unwrap_or_default().into(),
+                transaction_commitment: model_field!(transactions => root).into(),
                 event_count: events.n_leaves,
                 event_commitment: events.root.unwrap_or_default().into(),
                 state_diff_length: Some(state_diff_commitment.state_diff_length),
-                state_diff_commitment: Some(state_diff_commitment.root.unwrap_or_default().into()),
-                receipt_commitment: Some(value.receipts.unwrap_or_default().into()),
+                state_diff_commitment: Some(model_field!(state_diff_commitment => root).into()),
+                receipt_commitment: Some(model_field!(value => receipts).into()),
                 protocol_version: value
                     .protocol_version
                     .parse()
-                    .map_err(|_| FromModelError::invalid_field("SignedBlockHeader::protocol_version"))?,
+                    .map_err(|_| FromModelError::invalid_field("protocol_version"))?,
                 l1_gas_price: GasPrices {
-                    eth_l1_gas_price: value.gas_price_wei.unwrap_or_default().into(),
-                    strk_l1_gas_price: value.gas_price_fri.unwrap_or_default().into(),
-                    eth_l1_data_gas_price: value.data_gas_price_wei.unwrap_or_default().into(),
-                    strk_l1_data_gas_price: value.data_gas_price_fri.unwrap_or_default().into(),
+                    eth_l1_gas_price: model_field!(value => l1_gas_price_wei).into(),
+                    strk_l1_gas_price: model_field!(value => l1_gas_price_fri).into(),
+                    eth_l1_data_gas_price: model_field!(value => l1_data_gas_price_wei).into(),
+                    strk_l1_data_gas_price: model_field!(value => l1_data_gas_price_fri).into(),
                 },
-                l1_da_mode: model::L1DataAvailabilityMode::try_from(value.l1_data_availability_mode)
-                    .map_err(|_| {
-                        FromModelError::invalid_enum_variant("L1DataAvailabilityMode", value.l1_data_availability_mode)
-                    })?
+                l1_da_mode: model_field_variant!(model::L1DataAvailabilityMode => value.l1_data_availability_mode)
                     .into(),
             },
-            block_hash: value.block_hash.unwrap_or_default().into(),
+            block_hash: model_field!(value => block_hash).into(),
             consensus_signatures: value.signatures.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
         })
     }
@@ -52,7 +49,7 @@ impl TryFrom<model::SignedBlockHeader> for BlockHeaderWithSignatures {
 impl TryFrom<model::ConsensusSignature> for ConsensusSignature {
     type Error = FromModelError;
     fn try_from(value: model::ConsensusSignature) -> Result<Self, Self::Error> {
-        Ok(Self { r: value.r.unwrap_or_default().into(), s: value.s.unwrap_or_default().into() })
+        Ok(Self { r: model_field!(value => r).into(), s: model_field!(value => s).into() })
     }
 }
 
@@ -81,11 +78,13 @@ impl From<BlockHeaderWithSignatures> for model::SignedBlockHeader {
             }),
             receipts: val.header.receipt_commitment.map(Into::into),
             protocol_version: val.header.protocol_version.to_string(),
-            gas_price_fri: Some(val.header.l1_gas_price.strk_l1_gas_price.into()),
-            gas_price_wei: Some(val.header.l1_gas_price.eth_l1_gas_price.into()),
-            data_gas_price_fri: Some(val.header.l1_gas_price.strk_l1_data_gas_price.into()),
-            data_gas_price_wei: Some(val.header.l1_gas_price.eth_l1_data_gas_price.into()),
+            l1_gas_price_fri: Some(val.header.l1_gas_price.strk_l1_gas_price.into()),
+            l1_gas_price_wei: Some(val.header.l1_gas_price.eth_l1_gas_price.into()),
+            l1_data_gas_price_fri: Some(val.header.l1_gas_price.strk_l1_data_gas_price.into()),
+            l1_data_gas_price_wei: Some(val.header.l1_gas_price.eth_l1_data_gas_price.into()),
             l1_data_availability_mode: model::L1DataAvailabilityMode::from(val.header.l1_da_mode).into(),
+            l2_gas_price_fri: None, // TODO: update blockifier
+            l2_gas_price_wei: None,
             signatures: val.consensus_signatures.into_iter().map(Into::into).collect(),
         }
     }
