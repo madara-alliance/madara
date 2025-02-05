@@ -254,7 +254,7 @@ pub mod eth_client_getter_test {
     fn get_anvil() -> Arc<AnvilInstance> {
         ANVIL_INSTANCE.get_or_init(|| {
             let fork_url = std::env::var("ETH_FORK_URL")
-                .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");;
+                .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
             let anvil = Anvil::new()
                 .fork(fork_url)
                 .fork_block_number(L1_BLOCK_NUMBER)

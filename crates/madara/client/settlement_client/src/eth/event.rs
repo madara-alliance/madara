@@ -135,13 +135,10 @@ pub mod eth_event_stream_tests {
         }
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn test_error_handling(mock_log: Log) {
-        let mock_events = vec![Err(alloy::sol_types::Error::InvalidLog { 
-            name: "", 
-            log: Box::new(mock_log.inner) 
-        })];
+    async fn test_error_handling() {
+        let mock_events = vec![Err(alloy::sol_types::Error::InvalidLog { name: "", log: Box::default() })];
+
         let mock_stream = iter(mock_events);
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
@@ -165,10 +162,7 @@ pub mod eth_event_stream_tests {
     async fn test_mixed_events(mock_event: LogMessageToL2, mock_log: Log) {
         let mock_events = vec![
             Ok((mock_event.clone(), mock_log.clone())),
-            Err(alloy::sol_types::Error::InvalidLog { 
-                name: "", 
-                log: Box::new(mock_log.inner.clone()) 
-            }),
+            Err(alloy::sol_types::Error::InvalidLog { name: "", log: Box::default() }),
             Ok((mock_event, mock_log)),
         ];
 
