@@ -8,6 +8,6 @@ mod rpc;
 pub use block_production::BlockProductionService;
 pub use gateway::GatewayService;
 pub use l1::L1SyncService;
-pub use l2::SyncService;
+pub use l2::{SyncService, WarpUpdateConfig};
 pub use p2p::P2pService;
 pub use rpc::RpcService;

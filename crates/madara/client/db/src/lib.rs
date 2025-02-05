@@ -638,6 +638,7 @@ impl MadaraBackend {
 
     pub async fn on_block(&self, block_n: u64) -> anyhow::Result<()> {
         self.head_status.set_to_height(Some(block_n));
+        self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
         if self
             .config
             .flush_every_n_blocks

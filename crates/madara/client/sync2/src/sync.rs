@@ -20,6 +20,7 @@ pub trait ForwardPipeline {
 pub struct SyncControllerConfig {
     pub l1_head_recv: L1HeadReceiver,
     pub stop_at_block_n: Option<u64>,
+    pub global_stop_on_sync: bool,
     pub stop_on_sync: bool,
 }
 
@@ -47,21 +48,19 @@ impl<P: ForwardPipeline> SyncController<P> {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
-                _ = ctx.cancelled() => break Ok(()),
+                _ = ctx.cancelled() => return Ok(()),
                 _ = interval.tick() => self.show_status(),
-                res = self.run_inner() => {
-                    res?;
-                    self.show_status();
-                    if self.config.stop_on_sync {
-                        tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
-                        ctx.cancel_global();
-                    } else {
-                        tracing::info!("🌐 Sync process ended");
-                    }
-                    break Ok(())
-                }
+                res = self.run_inner() => break res?,
             }
         }
+        self.show_status();
+        if self.config.global_stop_on_sync {
+            tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
+            ctx.cancel_global();
+        } else {
+            tracing::info!("🌐 Sync process ended");
+        }
+        Ok(())
     }
 
     fn target_height(&self) -> Option<u64> {
@@ -106,15 +105,18 @@ impl<P: ForwardPipeline> SyncController<P> {
                 Ok(()) = self.config.l1_head_recv.changed() => {
                     self.current_l1_head = self.config.l1_head_recv.borrow_and_update().clone();
                 }
-                res = self.probe.run() => {
-                    res?;
-                }
                 Some(res) = OptionFuture::from(
                     target_height.filter(|_| can_run_pipeline)
                         .map(|target| self.forward_pipeline.run(target, probe_height, &mut self.sync_metrics))
                 ) =>
                 {
                     res?;
+                }
+                res = self.probe.run() => {
+                    if probe_height == res? && !can_run_pipeline && self.config.stop_on_sync {
+                        // Probe returned the same thing as last time, and we cannot run the pipeline.
+                        break Ok(())
+                    }
                 }
                 else => break Ok(()),
             }

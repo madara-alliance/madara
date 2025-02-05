@@ -257,8 +257,8 @@ impl ForwardPipeline for P2pForwardSync {
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
-                metrics.update(block_n, &self.backend).context("Updating metrics")?;
                 self.backend.on_block(block_n).await?;
+                metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
         Ok(())

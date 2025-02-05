@@ -1,4 +1,4 @@
-use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_db::MadaraBackend;
 use mp_block::{
     commitments::CommitmentComputationContext, MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt,
 };
@@ -11,13 +11,13 @@ use std::iter;
 
 /// Returns the block_hash of the saved block.
 #[tracing::instrument(skip(backend, state_diff, declared_classes), fields(module = "BlockProductionTask"))]
-pub fn close_and_save_block(
+pub async fn close_and_save_block(
     backend: &MadaraBackend,
     block: MadaraPendingBlock,
     state_diff: StateDiff,
     block_number: u64,
     declared_classes: Vec<ConvertedClass>,
-) -> Result<Felt, MadaraStorageError> {
+) -> anyhow::Result<Felt> {
     let block = PendingFullBlock {
         header: block.info.header,
         state_diff,
@@ -59,6 +59,8 @@ pub fn close_and_save_block(
 
     backend.store_full_block(block)?;
     backend.class_db_store_block(block_number, &declared_classes)?;
+
+    backend.on_block(block_number).await?;
 
     Ok(block_hash)
 }

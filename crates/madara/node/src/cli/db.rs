@@ -45,18 +45,10 @@ pub struct DbParams {
     /// higher number depending on how fast your machine is at synchronizing
     /// blocks and how much ram it has available.
     ///
-    /// Be aware that blocks might still be flushed to db earlier based on the
-    /// value of `--flush-every-n-seconds`.
-    ///
     /// Note that keeping this value high could lead to blocks being stored in
     /// ram for longer periods of time before they are written to disk. This
     /// might be an issue for chains which synchronize slowly.
-    #[clap(
-        env = "MADARA_FLUSH_EVERY_N_BLOCKS",
-        value_name = "FLUSH EVERY N BLOCKS",
-        long,
-        value_parser = clap::value_parser!(u64).range(..=10_000),
-    )]
+    #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub flush_every_n_blocks: Option<u64>,
 }
 

@@ -67,7 +67,7 @@ pub fn forward_sync(
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ProbeState::new(move |val| probe.clone().probe(val), Duration::from_secs(2));
     let no_pending =
-        config.no_sync_pending_block || controller_config.stop_on_sync || controller_config.stop_at_block_n.is_some();
+        config.no_sync_pending_block || controller_config.global_stop_on_sync || controller_config.stop_at_block_n.is_some();
     SyncController::new(
         GatewayForwardSync::new(backend, importer, client, config, no_pending),
         probe,
@@ -181,8 +181,8 @@ impl ForwardPipeline for GatewayForwardSync {
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
-                metrics.update(block_n, &self.backend).context("Updating metrics")?;
                 self.backend.on_block(block_n).await?;
+                metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
 

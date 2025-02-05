@@ -126,7 +126,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     ///
     /// This avoids re-executing transaction by re-adding them to the [Mempool],
     /// as was done before.
-    pub fn close_pending_block(
+    pub async fn close_pending_block(
         backend: &MadaraBackend,
         metrics: &BlockProductionMetrics,
     ) -> Result<(), Cow<'static, str>> {
@@ -180,7 +180,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let n_txs = pending_block.inner.transactions.len();
 
         // Close and import the pending block
-        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes)
+        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes).await
             .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
 
         // Flush changes to disk, pending block removal and adding the next
@@ -203,13 +203,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(())
     }
 
-    pub fn new(
+    pub async fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        if let Err(err) = Self::close_pending_block(&backend, &metrics) {
+        if let Err(err) = Self::close_pending_block(&backend, &metrics).await {
             // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
             // a fresh one.
             tracing::error!("Failed to continue the pending block state: {err:#}");
@@ -352,7 +352,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     /// Closes the current block and prepares for the next one
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn close_and_prepare_next_block(&mut self, state_diff: StateDiff, start_time: Instant) -> Result<(), Error> {
+    async fn close_and_prepare_next_block(&mut self, state_diff: StateDiff, start_time: Instant) -> Result<(), Error> {
         let block_n = self.block_n();
         // Convert the pending block to a closed block and save to db
         let parent_block_hash = Felt::ZERO; // temp parent block hash
@@ -369,7 +369,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Close and import the block
         let block_hash =
-            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes)?;
+            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes).await.map_err(|err| Error::Unexpected(format!("Error closing block: {err:#}").into()))?;
 
         // Removes nonces in the mempool nonce cache which have been included
         // into the current block.
@@ -450,7 +450,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
+    pub async fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
         let current_pending_tick = self.current_pending_tick;
         if current_pending_tick == 0 {
             return Ok(false);
@@ -481,7 +481,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
             tracing::info!("Resource limits reached, closing block early");
-            self.close_and_prepare_next_block(new_state_diff, start_time)?;
+            self.close_and_prepare_next_block(new_state_diff, start_time).await?;
             return Ok(true);
         }
 
@@ -496,7 +496,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub(crate) fn on_block_time(&mut self) -> Result<(), Error> {
+    pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
         tracing::debug!("Closing block #{}", block_n);
 
@@ -507,7 +507,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
-        self.close_and_prepare_next_block(new_state_diff, start_time)
+        self.close_and_prepare_next_block(new_state_diff, start_time).await
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
@@ -528,7 +528,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         loop {
             tokio::select! {
                 instant = interval_block_time.tick() => {
-                    if let Err(err) = self.on_block_time() {
+                    if let Err(err) = self.on_block_time().await {
                         tracing::error!("Block production task has errored: {err:#}");
                         // Clear pending block. The reason we do this is because
                         // if the error happened because the closed block is
@@ -554,7 +554,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         continue
                     }
 
-                    match self.on_pending_time_tick() {
+                    match self.on_pending_time_tick().await {
                         Ok(block_closed) => {
                             if block_closed {
                                 interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
@@ -864,8 +864,9 @@ mod tests {
     /// This happens if a full node is shutdown (gracefully or not) midway
     /// during block production.
     #[rstest::rstest]
+    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    fn block_prod_pending_close_on_startup_pass(
+    async fn block_prod_pending_close_on_startup_pass(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
@@ -981,7 +982,7 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1025,8 +1026,9 @@ mod tests {
     /// at startup, then it is closed and stored in db on top of the latest
     /// block.
     #[rstest::rstest]
+    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    fn block_prod_pending_close_on_startup_pass_on_top(
+    async fn block_prod_pending_close_on_startup_pass_on_top(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
 
         // Transactions
@@ -1218,7 +1220,7 @@ mod tests {
 
         // This should load the pending block from db and close it on top of the
         // previous block.
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
@@ -1278,11 +1280,12 @@ mod tests {
     /// This test makes sure that it is possible to start the block production
     /// task even if there is no pending block in db at the time of startup.
     #[rstest::rstest]
-    fn block_prod_pending_close_on_startup_no_pending(setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>)) {
+    #[tokio::test]
+    async fn block_prod_pending_close_on_startup_no_pending(setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>)) {
         let (backend, metrics) = setup;
 
         // Simulates starting block production without a pending block in db
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
 
         // Now we check no block was added to the db
         assert_eq!(backend.get_latest_block_n().unwrap(), None);
@@ -1295,8 +1298,9 @@ mod tests {
     /// This will arise if switching from a full node to a sequencer with the
     /// same db.
     #[rstest::rstest]
+    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    fn block_prod_pending_close_on_startup_no_visited_segments(
+    async fn block_prod_pending_close_on_startup_no_visited_segments(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
@@ -1394,7 +1398,7 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1437,8 +1441,9 @@ mod tests {
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing class.
     #[rstest::rstest]
+    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    fn block_prod_pending_close_on_startup_fail_missing_class(
+    async fn block_prod_pending_close_on_startup_fail_missing_class(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
@@ -1521,7 +1526,7 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x1
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect_err("Should error");
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));
@@ -1530,8 +1535,9 @@ mod tests {
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing legacy class.
     #[rstest::rstest]
+    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
+    async fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
@@ -1614,7 +1620,7 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x0
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect_err("Should error");
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));

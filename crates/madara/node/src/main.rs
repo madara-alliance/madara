@@ -17,7 +17,7 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
-use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService};
+use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 
@@ -174,50 +174,49 @@ async fn main() -> anyhow::Result<()> {
 
     // L2 Sync
 
-    // let _warp_update = if run_cmd.args_preset.warp_update_receiver {
-    //     let mut deferred_service_start = vec![];
-    //     let mut deferred_service_stop = vec![];
+    let warp_update = if run_cmd.args_preset.warp_update_receiver {
+        let mut deferred_service_start = vec![];
+        let mut deferred_service_stop = vec![];
 
-    //     if !run_cmd.rpc_params.rpc_disable {
-    //         deferred_service_start.push(MadaraServiceId::RpcUser);
-    //     }
+        if !run_cmd.rpc_params.rpc_disable {
+            deferred_service_start.push(MadaraServiceId::RpcUser);
+        }
 
-    //     if run_cmd.rpc_params.rpc_admin {
-    //         deferred_service_start.push(MadaraServiceId::RpcAdmin);
-    //     }
+        if run_cmd.rpc_params.rpc_admin {
+            deferred_service_start.push(MadaraServiceId::RpcAdmin);
+        }
 
-    //     if run_cmd.gateway_params.feeder_gateway_enable {
-    //         deferred_service_start.push(MadaraServiceId::Gateway);
-    //     }
+        if run_cmd.gateway_params.feeder_gateway_enable {
+            deferred_service_start.push(MadaraServiceId::Gateway);
+        }
 
-    //     if run_cmd.telemetry_params.telemetry {
-    //         deferred_service_start.push(MadaraServiceId::Telemetry);
-    //     }
+        if run_cmd.telemetry_params.telemetry {
+            deferred_service_start.push(MadaraServiceId::Telemetry);
+        }
 
-    //     if run_cmd.is_sequencer() {
-    //         deferred_service_start.push(MadaraServiceId::BlockProduction);
-    //         deferred_service_stop.push(MadaraServiceId::L2Sync);
-    //     }
+        if run_cmd.is_sequencer() {
+            deferred_service_start.push(MadaraServiceId::BlockProduction);
+            deferred_service_stop.push(MadaraServiceId::L2Sync);
+        }
 
-    //     Some(WarpUpdateConfig {
-    //         warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
-    //         warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
-    //         warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
-    //         warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
-    //         deferred_service_start,
-    //         deferred_service_stop,
-    //     })
-    // } else {
-    //     None
-    // };
+        Some(WarpUpdateConfig {
+            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
+            deferred_service_start,
+            deferred_service_stop,
+        })
+    } else {
+        None
+    };
 
     let service_l2_sync = SyncService::new(
         &run_cmd.l2_sync_params,
         service_db.backend(),
         service_p2p.commands(),
         l1_head_recv,
-        // service_telemetry.new_handle(),
-        // warp_update,
+        warp_update,
     )
     .await
     .context("Initializing sync service")?;
