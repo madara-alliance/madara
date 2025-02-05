@@ -9,11 +9,11 @@ use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-type StreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
-type StreamType = Pin<Box<dyn Stream<Item = StreamItem> + Send + 'static>>;
+type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
+type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
 
 pub struct EthereumEventStream {
-    pub stream: StreamType,
+    pub stream: EthereumStreamType,
 }
 
 impl EthereumEventStream {
@@ -36,13 +36,13 @@ impl Stream for EthereumEventStream {
                             to: Felt::from_bytes_be_slice(event.toAddress.to_be_bytes_vec().as_slice()),
                             selector: Felt::from_bytes_be_slice(event.selector.to_be_bytes_vec().as_slice()),
                             nonce: Felt::from_bytes_be_slice(event.nonce.to_be_bytes_vec().as_slice()),
-                            payload: {
-                                let mut payload_vec = vec![];
-                                event.payload.iter().for_each(|ele| {
-                                    payload_vec.push(Felt::from_bytes_be_slice(ele.to_be_bytes_vec().as_slice()))
-                                });
-                                payload_vec
-                            },
+                            payload: event.payload.iter().fold(
+                                Vec::with_capacity(event.payload.len()), 
+                                |mut acc, ele| {
+                                    acc.push(Felt::from_bytes_be_slice(ele.to_be_bytes_vec().as_slice()));
+                                    acc
+                                }
+                            ),
                             fee: Some(
                                 event.fee.try_into().map_err(|e| anyhow::anyhow!("Felt conversion error: {}", e))?,
                             ),
@@ -118,12 +118,17 @@ pub mod eth_event_stream_tests {
             Ok((mock_event, mock_log))
         ];
         let mock_stream = iter(mock_events);
-        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
+        let ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
-        let mut events = Vec::new();
-        while let Some(Some(event)) = ethereum_stream.next().await {
-            events.push(event);
-        }
+        let events = ethereum_stream
+            .take_while(|event| futures::future::ready(event.is_some()))
+            .fold(Vec::with_capacity(2), |mut acc, event| async move {
+                if let Some(event) = event {
+                    acc.push(event);
+                }
+                acc
+            })
+            .await;
 
         assert_eq!(events.len(), 2);
 
@@ -162,21 +167,27 @@ pub mod eth_event_stream_tests {
     async fn test_mixed_events(mock_event: LogMessageToL2, mock_log: Log) {
         let mock_events = vec![
             Ok((mock_event.clone(), mock_log.clone())),
-            Err(alloy::sol_types::Error::InvalidLog { name: "", log: Box::default() }),
+            Err(alloy::sol_types::Error::InvalidLog { 
+                name: "", 
+                log: Box::default()
+            }),
             Ok((mock_event, mock_log)),
         ];
 
         let mock_stream = iter(mock_events);
-        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
+        let ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
-        let mut events = Vec::new();
-        while let Some(Some(event)) = ethereum_stream.next().await {
-            events.push(event);
-        }
+        let events = ethereum_stream
+            .take_while(|event| futures::future::ready(event.is_some()))
+            .fold(Vec::with_capacity(3), |mut acc, event| async move {
+                if let Some(event) = event {
+                    acc.push(event);
+                }
+                acc
+            })
+            .await;
 
         assert_eq!(events.len(), 3);
-
-        // Verify event sequence
         assert!(events[0].is_ok(), "First event should be successful");
         assert!(events[1].is_err(), "Second event should be an error");
         assert!(events[2].is_ok(), "Third event should be successful");
