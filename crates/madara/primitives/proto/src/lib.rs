@@ -40,24 +40,18 @@ impl FromModelError {
 }
 
 #[macro_export]
-macro_rules! model_describe {
-    ($model:ty) => {
-        #[allow(unused)]
-        const MODEL: &str = stringify!($model);
-    };
-}
-
-#[macro_export]
 macro_rules! model_field {
     ($struct:expr => $value:ident) => {
-        $struct.$value.ok_or(crate::FromModelError::missing_field(stringify!($value)))?
+        $struct.$value.ok_or($crate::FromModelError::missing_field(format!("{}::{}", __MODEL, stringify!($value))))?
     };
 }
 
 #[macro_export]
 macro_rules! model_field_variant {
     ($model:ty => $value:expr) => {
-        <$model>::try_from($value).map_err(|_| FromModelError::invalid_enum_variant(stringify!($model), $value))?
+        <$model>::try_from($value).map_err(|_| {
+            FromModelError::invalid_enum_variant(concat!(stringify!($model), "::", stringify!($value)), $value)
+        })?
     };
 }
 
@@ -71,6 +65,19 @@ where
 {
     fn try_into_field(self, repr: &'static str) -> Result<T, FromModelError> {
         self.try_into().map_err(|_| FromModelError::invalid_field(repr))
+    }
+}
+
+pub(crate) trait CollectInto<T> {
+    fn collect_into(self) -> Vec<T>;
+}
+
+impl<T, V> CollectInto<T> for Vec<V>
+where
+    V: Into<T>,
+{
+    fn collect_into(self) -> Vec<T> {
+        self.into_iter().map(Into::into).collect()
     }
 }
 
