@@ -1,5 +1,9 @@
 use super::FromModelError;
-use crate::model::{self, receipt::execution_resources::BuiltinCounter};
+use crate::{
+    ensure_field, ensure_field_variant,
+    model::{self, receipt::execution_resources::BuiltinCounter},
+    TryIntoField,
+};
 use mp_block::TransactionWithReceipt;
 use mp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, ExecutionResources,
@@ -17,7 +21,7 @@ use starknet_core::types::Felt;
 impl From<TransactionWithReceipt> for model::TransactionWithReceipt {
     fn from(value: TransactionWithReceipt) -> Self {
         Self {
-            transaction: Some(model::Transaction {
+            transaction: Some(model::TransactionInBlock {
                 transaction_hash: Some(value.receipt.transaction_hash().into()),
                 txn: Some(value.transaction.into()),
             }),
@@ -29,31 +33,26 @@ impl From<TransactionWithReceipt> for model::TransactionWithReceipt {
 impl TryFrom<model::TransactionWithReceipt> for TransactionWithReceipt {
     type Error = FromModelError;
     fn try_from(value: model::TransactionWithReceipt) -> Result<Self, Self::Error> {
-        let tx = TransactionWithHash::try_from(value.transaction.unwrap_or_default())?;
+        let transaction = ensure_field!(value => transaction);
+        let tx = TransactionWithHash::try_from(transaction)?;
         Ok(Self { transaction: tx.transaction, receipt: value.receipt.unwrap_or_default().parse_model(tx.hash)? })
     }
 }
 
-impl TryFrom<model::Transaction> for TransactionWithHash {
+impl TryFrom<model::TransactionInBlock> for TransactionWithHash {
     type Error = FromModelError;
-    fn try_from(value: model::Transaction) -> Result<Self, Self::Error> {
+    fn try_from(value: model::TransactionInBlock) -> Result<Self, Self::Error> {
         Ok(Self {
-            transaction: value
-                .txn
-                .ok_or_else(|| FromModelError::missing_field("Transaction::transaction"))?
-                .try_into()?,
-            hash: value
-                .transaction_hash
-                .ok_or_else(|| FromModelError::missing_field("Transaction::transaction_hash"))?
-                .into(),
+            transaction: ensure_field!(value => txn).try_into()?,
+            hash: ensure_field!(value => transaction_hash).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::Txn> for Transaction {
+impl TryFrom<model::transaction_in_block::Txn> for Transaction {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::Txn) -> Result<Self, Self::Error> {
-        use model::transaction::Txn;
+    fn try_from(value: model::transaction_in_block::Txn) -> Result<Self, Self::Error> {
+        use model::transaction_in_block::Txn;
         Ok(match value {
             Txn::DeclareV0(tx) => Self::Declare(DeclareTransaction::V0(tx.try_into()?)),
             Txn::DeclareV1(tx) => Self::Declare(DeclareTransaction::V1(tx.try_into()?)),
@@ -70,181 +69,165 @@ impl TryFrom<model::transaction::Txn> for Transaction {
     }
 }
 
-impl TryFrom<model::transaction::DeclareV0> for DeclareTransactionV0 {
+impl TryFrom<model::transaction_in_block::DeclareV0WithoutClass> for DeclareTransactionV0 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::DeclareV0) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::DeclareV0WithoutClass) -> Result<Self, Self::Error> {
         Ok(Self {
-            sender_address: value.sender.unwrap_or_default().into(),
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
+            sender_address: ensure_field!(value => sender).into(),
+            max_fee: ensure_field!(value => max_fee).into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            class_hash: ensure_field!(value => class_hash).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::DeclareV1> for DeclareTransactionV1 {
+impl TryFrom<model::transaction_in_block::DeclareV1WithoutClass> for DeclareTransactionV1 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::DeclareV1) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::DeclareV1WithoutClass) -> Result<Self, Self::Error> {
         Ok(Self {
-            sender_address: value.sender.unwrap_or_default().into(),
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
+            sender_address: ensure_field!(value => sender).into(),
+            max_fee: ensure_field!(value => max_fee).into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(value => nonce).into(),
+            class_hash: ensure_field!(value => class_hash).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::DeclareV2> for DeclareTransactionV2 {
+impl TryFrom<model::transaction_in_block::DeclareV2WithoutClass> for DeclareTransactionV2 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::DeclareV2) -> Result<Self, Self::Error> {
-        Ok(Self {
-            sender_address: value.sender.unwrap_or_default().into(),
-            compiled_class_hash: value.compiled_class_hash.unwrap_or_default().into(),
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
-        })
-    }
-}
-
-impl TryFrom<model::transaction::DeclareV3> for DeclareTransactionV3 {
-    type Error = FromModelError;
-    fn try_from(value: model::transaction::DeclareV3) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::DeclareV2WithoutClass) -> Result<Self, Self::Error> {
         Ok(Self {
             sender_address: value.sender.unwrap_or_default().into(),
             compiled_class_hash: value.compiled_class_hash.unwrap_or_default().into(),
+            max_fee: value.max_fee.unwrap_or_default().into(),
             signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
             nonce: value.nonce.unwrap_or_default().into(),
             class_hash: value.class_hash.unwrap_or_default().into(),
-            resource_bounds: value.resource_bounds.unwrap_or_default().try_into()?,
-            tip: value.tip,
-            paymaster_data: value.paymaster_data.into_iter().map(Into::into).collect(),
-            account_deployment_data: value.account_deployment_data.into_iter().map(Into::into).collect(),
-            nonce_data_availability_mode: model::VolitionDomain::try_from(value.nonce_data_availability_mode)
-                .map_err(|_| {
-                    FromModelError::invalid_enum_variant("VolitionDomain", value.nonce_data_availability_mode)
-                })?
-                .into(),
-            fee_data_availability_mode: model::VolitionDomain::try_from(value.fee_data_availability_mode)
-                .map_err(|_| FromModelError::invalid_enum_variant("VolitionDomain", value.fee_data_availability_mode))?
-                .into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::Deploy> for DeployTransaction {
+impl TryFrom<model::transaction_in_block::DeclareV3WithoutClass> for DeclareTransactionV3 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::Deploy) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::DeclareV3WithoutClass) -> Result<Self, Self::Error> {
+        let common = ensure_field!(value => common);
+        Ok(Self {
+            sender_address: ensure_field!(common => sender).into(),
+            compiled_class_hash: ensure_field!(common => compiled_class_hash).into(),
+            signature: ensure_field!(common => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(common => nonce).into(),
+            class_hash: ensure_field!(value => class_hash).into(),
+            resource_bounds: ensure_field!(common => resource_bounds).try_into()?,
+            tip: common.tip,
+            paymaster_data: common.paymaster_data.into_iter().map(Into::into).collect(),
+            account_deployment_data: common.account_deployment_data.into_iter().map(Into::into).collect(),
+            nonce_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => common.nonce_data_availability_mode).into(),
+            fee_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => common.fee_data_availability_mode).into(),
+        })
+    }
+}
+
+impl TryFrom<model::transaction_in_block::Deploy> for DeployTransaction {
+    type Error = FromModelError;
+    fn try_from(value: model::transaction_in_block::Deploy) -> Result<Self, Self::Error> {
         Ok(Self {
             version: value.version.into(),
-            contract_address_salt: value.address_salt.unwrap_or_default().into(),
+            contract_address_salt: ensure_field!(value => address_salt).into(),
             constructor_calldata: value.calldata.into_iter().map(Into::into).collect(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
+            class_hash: ensure_field!(value => class_hash).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::DeployAccountV1> for DeployAccountTransactionV1 {
+impl TryFrom<model::transaction_in_block::DeployAccountV1> for DeployAccountTransactionV1 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::DeployAccountV1) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::DeployAccountV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
-            contract_address_salt: value.address_salt.unwrap_or_default().into(),
+            max_fee: ensure_field!(value => max_fee).into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(value => nonce).into(),
+            contract_address_salt: ensure_field!(value => address_salt).into(),
             constructor_calldata: value.calldata.into_iter().map(Into::into).collect(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
+            class_hash: ensure_field!(value => class_hash).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::DeployAccountV3> for DeployAccountTransactionV3 {
+impl TryFrom<model::DeployAccountV3> for DeployAccountTransactionV3 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::DeployAccountV3) -> Result<Self, Self::Error> {
+    fn try_from(value: model::DeployAccountV3) -> Result<Self, Self::Error> {
         Ok(Self {
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
-            contract_address_salt: value.address_salt.unwrap_or_default().into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(value => nonce).into(),
+            contract_address_salt: ensure_field!(value => address_salt).into(),
             constructor_calldata: value.calldata.into_iter().map(Into::into).collect(),
-            class_hash: value.class_hash.unwrap_or_default().into(),
-            resource_bounds: value.resource_bounds.unwrap_or_default().try_into()?,
+            class_hash: ensure_field!(value => class_hash).into(),
+            resource_bounds: ensure_field!(value => resource_bounds).try_into()?,
             tip: value.tip,
             paymaster_data: value.paymaster_data.into_iter().map(Into::into).collect(),
-            nonce_data_availability_mode: model::VolitionDomain::try_from(value.nonce_data_availability_mode)
-                .map_err(|_| {
-                    FromModelError::invalid_enum_variant("VolitionDomain", value.nonce_data_availability_mode)
-                })?
-                .into(),
-            fee_data_availability_mode: model::VolitionDomain::try_from(value.fee_data_availability_mode)
-                .map_err(|_| FromModelError::invalid_enum_variant("VolitionDomain", value.fee_data_availability_mode))?
-                .into(),
+            nonce_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => value.nonce_data_availability_mode).into(),
+            fee_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => value.fee_data_availability_mode).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::InvokeV0> for InvokeTransactionV0 {
+impl TryFrom<model::transaction_in_block::InvokeV0> for InvokeTransactionV0 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::InvokeV0) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::InvokeV0) -> Result<Self, Self::Error> {
         Ok(Self {
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            contract_address: value.address.unwrap_or_default().into(),
-            entry_point_selector: value.entry_point_selector.unwrap_or_default().into(),
+            max_fee: ensure_field!(value => max_fee).into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            contract_address: ensure_field!(value => address).into(),
+            entry_point_selector: ensure_field!(value => entry_point_selector).into(),
             calldata: value.calldata.into_iter().map(Into::into).collect(),
         })
     }
 }
 
-impl TryFrom<model::transaction::InvokeV1> for InvokeTransactionV1 {
+impl TryFrom<model::transaction_in_block::InvokeV1> for InvokeTransactionV1 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::InvokeV1) -> Result<Self, Self::Error> {
+    fn try_from(value: model::transaction_in_block::InvokeV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            sender_address: value.sender.unwrap_or_default().into(),
+            sender_address: ensure_field!(value => sender).into(),
             calldata: value.calldata.into_iter().map(Into::into).collect(),
-            max_fee: value.max_fee.unwrap_or_default().into(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
+            max_fee: ensure_field!(value => max_fee).into(),
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(value => nonce).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::InvokeV3> for InvokeTransactionV3 {
+impl TryFrom<model::InvokeV3> for InvokeTransactionV3 {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::InvokeV3) -> Result<Self, Self::Error> {
+    fn try_from(value: model::InvokeV3) -> Result<Self, Self::Error> {
         Ok(Self {
-            sender_address: value.sender.unwrap_or_default().into(),
+            sender_address: ensure_field!(value => sender).into(),
             calldata: value.calldata.into_iter().map(Into::into).collect(),
-            signature: value.signature.unwrap_or_default().parts.into_iter().map(Into::into).collect(),
-            nonce: value.nonce.unwrap_or_default().into(),
-            resource_bounds: value.resource_bounds.unwrap_or_default().try_into()?,
+            signature: ensure_field!(value => signature).parts.into_iter().map(Into::into).collect(),
+            nonce: ensure_field!(value => nonce).into(),
+            resource_bounds: ensure_field!(value => resource_bounds).try_into()?,
             tip: value.tip,
             paymaster_data: value.paymaster_data.into_iter().map(Into::into).collect(),
             account_deployment_data: value.account_deployment_data.into_iter().map(Into::into).collect(),
-            nonce_data_availability_mode: model::VolitionDomain::try_from(value.nonce_data_availability_mode)
-                .map_err(|_| {
-                    FromModelError::invalid_enum_variant("VolitionDomain", value.nonce_data_availability_mode)
-                })?
-                .into(),
-            fee_data_availability_mode: model::VolitionDomain::try_from(value.fee_data_availability_mode)
-                .map_err(|_| FromModelError::invalid_enum_variant("VolitionDomain", value.fee_data_availability_mode))?
-                .into(),
+            nonce_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => value.nonce_data_availability_mode).into(),
+            fee_data_availability_mode:
+                ensure_field_variant!(model::VolitionDomain => value.fee_data_availability_mode).into(),
         })
     }
 }
 
-impl TryFrom<model::transaction::L1HandlerV0> for L1HandlerTransaction {
+impl TryFrom<model::L1HandlerV0> for L1HandlerTransaction {
     type Error = FromModelError;
-    fn try_from(value: model::transaction::L1HandlerV0) -> Result<Self, Self::Error> {
+    fn try_from(value: model::L1HandlerV0) -> Result<Self, Self::Error> {
         Ok(Self {
             version: Felt::ZERO,
-            nonce: value
-                .nonce
-                .unwrap_or_default()
-                .0
-                .try_into()
-                .map_err(|_| FromModelError::invalid_field("L1HandlerV0::nonce"))?,
+            nonce: ensure_field!(value => nonce).0.try_into_field("nonce")?,
             contract_address: value.address.unwrap_or_default().into(),
             entry_point_selector: value.entry_point_selector.unwrap_or_default().into(),
             calldata: value.calldata.into_iter().map(Into::into).collect(),
@@ -256,8 +239,8 @@ impl TryFrom<model::ResourceBounds> for ResourceBoundsMapping {
     type Error = FromModelError;
     fn try_from(value: model::ResourceBounds) -> Result<Self, Self::Error> {
         Ok(Self {
-            l1_gas: value.l1_gas.unwrap_or_default().try_into()?,
-            l2_gas: value.l2_gas.unwrap_or_default().try_into()?,
+            l1_gas: ensure_field!(value => l1_gas).try_into()?,
+            l2_gas: ensure_field!(value => l2_gas).try_into()?,
         })
     }
 }
@@ -266,18 +249,8 @@ impl TryFrom<model::ResourceLimits> for ResourceBounds {
     type Error = FromModelError;
     fn try_from(value: model::ResourceLimits) -> Result<Self, Self::Error> {
         Ok(Self {
-            max_amount: value
-                .max_amount
-                .unwrap_or_default()
-                .0
-                .try_into()
-                .map_err(|_| FromModelError::invalid_field("ResourceLimits::max_amount"))?,
-            max_price_per_unit: value
-                .max_price_per_unit
-                .unwrap_or_default()
-                .0
-                .try_into()
-                .map_err(|_| FromModelError::invalid_field("ResourceLimits::max_price_per_unit"))?,
+            max_amount: ensure_field!(value => max_amount).0.try_into_field("max_amount")?,
+            max_price_per_unit: ensure_field!(value => max_price_per_unit).0.try_into_field("max_price_per_unit")?,
         })
     }
 }
@@ -303,7 +276,7 @@ impl model::Receipt {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<TransactionReceipt, FromModelError> {
         use model::receipt::Type;
 
-        Ok(match self.r#type.ok_or(FromModelError::missing_field("Receipt::type"))? {
+        Ok(match ensure_field!(self => r#type) {
             Type::Invoke(tx) => TransactionReceipt::Invoke(tx.parse_model(transaction_hash)?),
             Type::L1Handler(tx) => TransactionReceipt::L1Handler(tx.parse_model(transaction_hash)?),
             Type::Declare(tx) => TransactionReceipt::Declare(tx.parse_model(transaction_hash)?),
@@ -315,16 +288,16 @@ impl model::Receipt {
 
 impl model::receipt::Invoke {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<InvokeTransactionReceipt, FromModelError> {
-        let common = self.common.unwrap_or_default();
+        let common = ensure_field!(self => common);
         Ok(InvokeTransactionReceipt {
             transaction_hash,
             actual_fee: FeePayment {
                 unit: common.price_unit().into(),
-                amount: common.actual_fee.unwrap_or_default().into(),
+                amount: ensure_field!(common => actual_fee).into(),
             },
             messages_sent: common.messages_sent.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
             events: vec![],
-            execution_resources: common.execution_resources.unwrap_or_default().try_into()?,
+            execution_resources: ensure_field!(common => execution_resources).try_into()?,
             execution_result: execution_result(common.revert_reason),
         })
     }
@@ -332,34 +305,34 @@ impl model::receipt::Invoke {
 
 impl model::receipt::L1Handler {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<L1HandlerTransactionReceipt, FromModelError> {
-        let common = self.common.unwrap_or_default();
+        let common = ensure_field!(self => common);
         Ok(L1HandlerTransactionReceipt {
             transaction_hash,
             actual_fee: FeePayment {
                 unit: common.price_unit().into(),
-                amount: common.actual_fee.unwrap_or_default().into(),
+                amount: ensure_field!(common => actual_fee).into(),
             },
             messages_sent: common.messages_sent.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
             events: vec![],
-            execution_resources: common.execution_resources.unwrap_or_default().try_into()?,
+            execution_resources: ensure_field!(common => execution_resources).try_into()?,
             execution_result: execution_result(common.revert_reason),
-            message_hash: self.msg_hash.unwrap_or_default().into(),
+            message_hash: ensure_field!(self => msg_hash).into(),
         })
     }
 }
 
 impl model::receipt::Declare {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<DeclareTransactionReceipt, FromModelError> {
-        let common = self.common.unwrap_or_default();
+        let common = ensure_field!(self => common);
         Ok(DeclareTransactionReceipt {
             transaction_hash,
             actual_fee: FeePayment {
                 unit: common.price_unit().into(),
-                amount: common.actual_fee.unwrap_or_default().into(),
+                amount: ensure_field!(common => actual_fee).into(),
             },
             messages_sent: common.messages_sent.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
             events: vec![],
-            execution_resources: common.execution_resources.unwrap_or_default().try_into()?,
+            execution_resources: ensure_field!(common => execution_resources).try_into()?,
             execution_result: execution_result(common.revert_reason),
         })
     }
@@ -367,36 +340,36 @@ impl model::receipt::Declare {
 
 impl model::receipt::Deploy {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<DeployTransactionReceipt, FromModelError> {
-        let common = self.common.unwrap_or_default();
+        let common = ensure_field!(self => common);
         Ok(DeployTransactionReceipt {
             transaction_hash,
             actual_fee: FeePayment {
                 unit: common.price_unit().into(),
-                amount: common.actual_fee.unwrap_or_default().into(),
+                amount: ensure_field!(common => actual_fee).into(),
             },
             messages_sent: common.messages_sent.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
             events: vec![],
-            execution_resources: common.execution_resources.unwrap_or_default().try_into()?,
+            execution_resources: ensure_field!(common => execution_resources).try_into()?,
             execution_result: execution_result(common.revert_reason),
-            contract_address: self.contract_address.unwrap_or_default().into(),
+            contract_address: ensure_field!(self => contract_address).into(),
         })
     }
 }
 
 impl model::receipt::DeployAccount {
     pub fn parse_model(self, transaction_hash: Felt) -> Result<DeployAccountTransactionReceipt, FromModelError> {
-        let common = self.common.unwrap_or_default();
+        let common = ensure_field!(self => common);
         Ok(DeployAccountTransactionReceipt {
             transaction_hash,
             actual_fee: FeePayment {
                 unit: common.price_unit().into(),
-                amount: common.actual_fee.unwrap_or_default().into(),
+                amount: ensure_field!(common => actual_fee).into(),
             },
             messages_sent: common.messages_sent.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
             events: vec![],
-            execution_resources: common.execution_resources.unwrap_or_default().try_into()?,
+            execution_resources: ensure_field!(common => execution_resources).try_into()?,
             execution_result: execution_result(common.revert_reason),
-            contract_address: self.contract_address.unwrap_or_default().into(),
+            contract_address: ensure_field!(self => contract_address).into(),
         })
     }
 }
@@ -405,8 +378,8 @@ impl TryFrom<model::MessageToL1> for MsgToL1 {
     type Error = FromModelError;
     fn try_from(value: model::MessageToL1) -> Result<Self, Self::Error> {
         Ok(Self {
-            from_address: value.from_address.unwrap_or_default().into(),
-            to_address: value.to_address.unwrap_or_default().into(),
+            from_address: ensure_field!(value => from_address).into(),
+            to_address: ensure_field!(value => to_address).into(),
             payload: value.payload.into_iter().map(Into::into).collect(),
         })
     }
@@ -415,7 +388,7 @@ impl TryFrom<model::MessageToL1> for MsgToL1 {
 impl TryFrom<model::receipt::ExecutionResources> for ExecutionResources {
     type Error = FromModelError;
     fn try_from(value: model::receipt::ExecutionResources) -> Result<Self, Self::Error> {
-        let builtins = value.builtins.unwrap_or_default();
+        let builtins = ensure_field!(value => builtins);
         Ok(Self {
             steps: value.steps.into(),
             memory_holes: value.memory_holes.into(),
@@ -432,18 +405,8 @@ impl TryFrom<model::receipt::ExecutionResources> for ExecutionResources {
             // segment_arena_builtin: builtins.segment_arena,
             segment_arena_builtin: 0,
             data_availability: L1Gas {
-                l1_gas: value
-                    .l1_gas
-                    .unwrap_or_default()
-                    .0
-                    .try_into()
-                    .map_err(|_| FromModelError::invalid_field("ExecutionResources::l1_gas"))?,
-                l1_data_gas: value
-                    .l1_data_gas
-                    .unwrap_or_default()
-                    .0
-                    .try_into()
-                    .map_err(|_| FromModelError::invalid_field("ExecutionResources::l1_data_gas"))?,
+                l1_gas: ensure_field!(value => l1_gas).0.try_into_field("l1_gas")?,
+                l1_data_gas: ensure_field!(value => l1_data_gas).0.try_into_field("l1_data_gas")?,
             },
             // TODO: wrong, update blockifier
             total_gas_consumed: L1Gas::default(),
@@ -454,13 +417,13 @@ impl TryFrom<model::receipt::ExecutionResources> for ExecutionResources {
     }
 }
 
-impl From<TransactionWithHash> for model::Transaction {
+impl From<TransactionWithHash> for model::TransactionInBlock {
     fn from(value: TransactionWithHash) -> Self {
         Self { transaction_hash: Some(value.hash.into()), txn: Some(value.transaction.into()) }
     }
 }
 
-impl From<Transaction> for model::transaction::Txn {
+impl From<Transaction> for model::transaction_in_block::Txn {
     fn from(value: Transaction) -> Self {
         match value {
             Transaction::Invoke(tx) => match tx {
@@ -484,7 +447,7 @@ impl From<Transaction> for model::transaction::Txn {
     }
 }
 
-impl From<InvokeTransactionV0> for model::transaction::InvokeV0 {
+impl From<InvokeTransactionV0> for model::transaction_in_block::InvokeV0 {
     fn from(value: InvokeTransactionV0) -> Self {
         Self {
             max_fee: Some(value.max_fee.into()),
@@ -496,7 +459,7 @@ impl From<InvokeTransactionV0> for model::transaction::InvokeV0 {
     }
 }
 
-impl From<InvokeTransactionV1> for model::transaction::InvokeV1 {
+impl From<InvokeTransactionV1> for model::transaction_in_block::InvokeV1 {
     fn from(value: InvokeTransactionV1) -> Self {
         Self {
             sender: Some(value.sender_address.into()),
@@ -508,7 +471,7 @@ impl From<InvokeTransactionV1> for model::transaction::InvokeV1 {
     }
 }
 
-impl From<InvokeTransactionV3> for model::transaction::InvokeV3 {
+impl From<InvokeTransactionV3> for model::InvokeV3 {
     fn from(value: InvokeTransactionV3) -> Self {
         Self {
             sender: Some(value.sender_address.into()),
@@ -525,7 +488,7 @@ impl From<InvokeTransactionV3> for model::transaction::InvokeV3 {
     }
 }
 
-impl From<L1HandlerTransaction> for model::transaction::L1HandlerV0 {
+impl From<L1HandlerTransaction> for model::L1HandlerV0 {
     fn from(value: L1HandlerTransaction) -> Self {
         Self {
             nonce: Some(Felt::from(value.nonce).into()),
@@ -536,7 +499,7 @@ impl From<L1HandlerTransaction> for model::transaction::L1HandlerV0 {
     }
 }
 
-impl From<DeclareTransactionV0> for model::transaction::DeclareV0 {
+impl From<DeclareTransactionV0> for model::transaction_in_block::DeclareV0WithoutClass {
     fn from(value: DeclareTransactionV0) -> Self {
         Self {
             sender: Some(value.sender_address.into()),
@@ -547,7 +510,7 @@ impl From<DeclareTransactionV0> for model::transaction::DeclareV0 {
     }
 }
 
-impl From<DeclareTransactionV1> for model::transaction::DeclareV1 {
+impl From<DeclareTransactionV1> for model::transaction_in_block::DeclareV1WithoutClass {
     fn from(value: DeclareTransactionV1) -> Self {
         Self {
             sender: Some(value.sender_address.into()),
@@ -559,7 +522,7 @@ impl From<DeclareTransactionV1> for model::transaction::DeclareV1 {
     }
 }
 
-impl From<DeclareTransactionV2> for model::transaction::DeclareV2 {
+impl From<DeclareTransactionV2> for model::transaction_in_block::DeclareV2WithoutClass {
     fn from(value: DeclareTransactionV2) -> Self {
         Self {
             sender: Some(value.sender_address.into()),
@@ -572,25 +535,29 @@ impl From<DeclareTransactionV2> for model::transaction::DeclareV2 {
     }
 }
 
-impl From<DeclareTransactionV3> for model::transaction::DeclareV3 {
+impl From<DeclareTransactionV3> for model::transaction_in_block::DeclareV3WithoutClass {
     fn from(value: DeclareTransactionV3) -> Self {
         Self {
-            sender: Some(value.sender_address.into()),
-            signature: Some(model::AccountSignature { parts: value.signature.into_iter().map(Into::into).collect() }),
             class_hash: Some(value.class_hash.into()),
-            nonce: Some(value.nonce.into()),
-            compiled_class_hash: Some(value.compiled_class_hash.into()),
-            resource_bounds: Some(value.resource_bounds.into()),
-            tip: value.tip,
-            paymaster_data: value.paymaster_data.into_iter().map(Into::into).collect(),
-            account_deployment_data: value.account_deployment_data.into_iter().map(Into::into).collect(),
-            nonce_data_availability_mode: model::VolitionDomain::from(value.nonce_data_availability_mode).into(),
-            fee_data_availability_mode: model::VolitionDomain::from(value.fee_data_availability_mode).into(),
+            common: Some(model::DeclareV3Common {
+                sender: Some(value.sender_address.into()),
+                signature: Some(model::AccountSignature {
+                    parts: value.signature.into_iter().map(Into::into).collect(),
+                }),
+                nonce: Some(value.nonce.into()),
+                compiled_class_hash: Some(value.compiled_class_hash.into()),
+                resource_bounds: Some(value.resource_bounds.into()),
+                tip: value.tip,
+                paymaster_data: value.paymaster_data.into_iter().map(Into::into).collect(),
+                account_deployment_data: value.account_deployment_data.into_iter().map(Into::into).collect(),
+                nonce_data_availability_mode: model::VolitionDomain::from(value.nonce_data_availability_mode).into(),
+                fee_data_availability_mode: model::VolitionDomain::from(value.fee_data_availability_mode).into(),
+            }),
         }
     }
 }
 
-impl From<DeployTransaction> for model::transaction::Deploy {
+impl From<DeployTransaction> for model::transaction_in_block::Deploy {
     fn from(value: DeployTransaction) -> Self {
         Self {
             class_hash: Some(value.class_hash.into()),
@@ -602,7 +569,7 @@ impl From<DeployTransaction> for model::transaction::Deploy {
     }
 }
 
-impl From<DeployAccountTransactionV1> for model::transaction::DeployAccountV1 {
+impl From<DeployAccountTransactionV1> for model::transaction_in_block::DeployAccountV1 {
     fn from(value: DeployAccountTransactionV1) -> Self {
         Self {
             max_fee: Some(value.max_fee.into()),
@@ -615,7 +582,7 @@ impl From<DeployAccountTransactionV1> for model::transaction::DeployAccountV1 {
     }
 }
 
-impl From<DeployAccountTransactionV3> for model::transaction::DeployAccountV3 {
+impl From<DeployAccountTransactionV3> for model::DeployAccountV3 {
     fn from(value: DeployAccountTransactionV3) -> Self {
         Self {
             signature: Some(model::AccountSignature { parts: value.signature.into_iter().map(Into::into).collect() }),
@@ -634,7 +601,11 @@ impl From<DeployAccountTransactionV3> for model::transaction::DeployAccountV3 {
 
 impl From<ResourceBoundsMapping> for model::ResourceBounds {
     fn from(value: ResourceBoundsMapping) -> Self {
-        Self { l1_gas: Some(value.l1_gas.into()), l2_gas: Some(value.l2_gas.into()) }
+        Self {
+            l1_gas: Some(value.l1_gas.into()),
+            l2_gas: Some(value.l2_gas.into()),
+            l1_data_gas: todo!("Update blockifier"),
+        }
     }
 }
 
@@ -782,6 +753,7 @@ impl From<ExecutionResources> for model::receipt::ExecutionResources {
             l1_gas: Some(Felt::from(value.total_gas_consumed.l1_gas).into()),
             l1_data_gas: Some(Felt::from(value.total_gas_consumed.l1_data_gas).into()),
             total_l1_gas: Some(Felt::from(value.total_gas_consumed.l1_gas).into()),
+            l2_gas: todo!("Update blockifier version"),
         }
     }
 }
