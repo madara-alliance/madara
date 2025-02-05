@@ -74,11 +74,11 @@ pub mod eth_event_stream_tests {
     use alloy::primitives::{Address, LogData, B256, U256};
     use futures::stream::iter;
     use futures::StreamExt;
-    use rstest::rstest;
+    use rstest::*;
     use std::str::FromStr;
 
-    // Helper function to create mock event
-    pub fn create_mock_event() -> LogMessageToL2 {
+    #[fixture]
+    fn mock_event() -> LogMessageToL2 {
         LogMessageToL2 {
             fromAddress: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
             toAddress: U256::from(1u64),
@@ -89,8 +89,8 @@ pub mod eth_event_stream_tests {
         }
     }
 
-    // Helper function to create mock log
-    pub fn create_mock_log() -> Log {
+    #[fixture]
+    fn mock_log() -> Log {
         Log {
             inner: alloy::primitives::Log {
                 address: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
@@ -110,21 +110,17 @@ pub mod eth_event_stream_tests {
         }
     }
 
-    #[tokio::test]
     #[rstest]
-    async fn test_successful_event_stream() {
-        // Create a sequence of mock events
-        let mock_events =
-            vec![Ok((create_mock_event(), create_mock_log())), Ok((create_mock_event(), create_mock_log()))];
-
-        // Create a mock stream from the events
+    #[tokio::test]
+    async fn test_successful_event_stream(mock_event: LogMessageToL2, mock_log: Log) {
+        let mock_events = vec![
+            Ok((mock_event.clone(), mock_log.clone())), 
+            Ok((mock_event, mock_log))
+        ];
         let mock_stream = iter(mock_events);
-
-        // Create EthereumEventStream with mock stream
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let mut events = Vec::new();
-
         while let Some(Some(event)) = ethereum_stream.next().await {
             events.push(event);
         }
@@ -132,63 +128,54 @@ pub mod eth_event_stream_tests {
         assert_eq!(events.len(), 2);
 
         // Verify first event
-        match &events[0] {
-            Ok(event_data) => {
-                assert_eq!(event_data.block_number, 100);
-                assert_eq!(event_data.event_index, Some(0u64));
-            }
-            _ => panic!("Expected successful event"),
+        assert!(events[0].is_ok(), "First event should be successful");
+        if let Ok(event_data) = &events[0] {
+            assert_eq!(event_data.block_number, 100);
+            assert_eq!(event_data.event_index, Some(0u64));
         }
     }
 
-    #[tokio::test]
     #[rstest]
-    async fn test_error_handling() {
-        // Create a stream with an error
-        let mock_events = vec![Err(alloy::sol_types::Error::InvalidLog { name: "", log: Box::default() })];
-
+    #[tokio::test]
+    async fn test_error_handling(mock_log: Log) {
+        let mock_events = vec![Err(alloy::sol_types::Error::InvalidLog { 
+            name: "", 
+            log: Box::new(mock_log.inner) 
+        })];
         let mock_stream = iter(mock_events);
-
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let event = ethereum_stream.next().await.unwrap();
-
-        match event {
-            Some(Err(_)) => { /* Test passed */ }
-            _ => panic!("Expected error event"),
-        }
+        assert!(event.unwrap().is_err(), "Expected error event");
     }
 
-    #[tokio::test]
     #[rstest]
+    #[tokio::test]
     async fn test_empty_stream() {
-        // Create an empty stream
         let mock_events: Vec<Result<(LogMessageToL2, Log), alloy::sol_types::Error>> = vec![];
         let mock_stream = iter(mock_events);
-
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let event = ethereum_stream.next().await;
-
         assert!(event.unwrap().is_none(), "Expected None for empty stream");
     }
 
-    #[tokio::test]
     #[rstest]
-    async fn test_mixed_events() {
-        // Create a stream with mixed success and error events
+    #[tokio::test]
+    async fn test_mixed_events(mock_event: LogMessageToL2, mock_log: Log) {
         let mock_events = vec![
-            Ok((create_mock_event(), create_mock_log())),
-            Err(alloy::sol_types::Error::InvalidLog { name: "", log: Box::default() }),
-            Ok((create_mock_event(), create_mock_log())),
+            Ok((mock_event.clone(), mock_log.clone())),
+            Err(alloy::sol_types::Error::InvalidLog { 
+                name: "", 
+                log: Box::new(mock_log.inner.clone()) 
+            }),
+            Ok((mock_event, mock_log)),
         ];
 
         let mock_stream = iter(mock_events);
-
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let mut events = Vec::new();
-
         while let Some(Some(event)) = ethereum_stream.next().await {
             events.push(event);
         }
@@ -196,19 +183,8 @@ pub mod eth_event_stream_tests {
         assert_eq!(events.len(), 3);
 
         // Verify event sequence
-        match &events[0] {
-            Ok(_) => {}
-            _ => panic!("First event should be successful"),
-        }
-
-        match &events[1] {
-            Err(_) => {}
-            _ => panic!("Second event should be an error"),
-        }
-
-        match &events[2] {
-            Ok(_) => {}
-            _ => panic!("Third event should be successful"),
-        }
+        assert!(events[0].is_ok(), "First event should be successful");
+        assert!(events[1].is_err(), "Second event should be an error");
+        assert!(events[2].is_ok(), "Third event should be successful");
     }
 }
