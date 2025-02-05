@@ -180,7 +180,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let n_txs = pending_block.inner.transactions.len();
 
         // Close and import the pending block
-        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes).await
+        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes)
+            .await
             .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
 
         // Flush changes to disk, pending block removal and adding the next
@@ -369,7 +370,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Close and import the block
         let block_hash =
-            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes).await.map_err(|err| Error::Unexpected(format!("Error closing block: {err:#}").into()))?;
+            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes)
+                .await
+                .map_err(|err| Error::Unexpected(format!("Error closing block: {err:#}").into()))?;
 
         // Removes nonces in the mempool nonce cache which have been included
         // into the current block.
@@ -982,7 +985,9 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics)
+            .await
+            .expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1220,7 +1225,9 @@ mod tests {
 
         // This should load the pending block from db and close it on top of the
         // previous block.
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics)
+            .await
+            .expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
@@ -1285,7 +1292,9 @@ mod tests {
         let (backend, metrics) = setup;
 
         // Simulates starting block production without a pending block in db
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics)
+            .await
+            .expect("Failed to close pending block");
 
         // Now we check no block was added to the db
         assert_eq!(backend.get_latest_block_n().unwrap(), None);
@@ -1398,7 +1407,9 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics)
+            .await
+            .expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1526,7 +1537,8 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x1
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
+        let err =
+            BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));
@@ -1620,7 +1632,8 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x0
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
+        let err =
+            BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));

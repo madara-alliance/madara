@@ -66,8 +66,9 @@ pub fn forward_sync(
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ProbeState::new(move |val| probe.clone().probe(val), Duration::from_secs(2));
-    let no_pending =
-        config.no_sync_pending_block || controller_config.global_stop_on_sync || controller_config.stop_at_block_n.is_some();
+    let no_pending = config.no_sync_pending_block
+        || controller_config.global_stop_on_sync
+        || controller_config.stop_at_block_n.is_some();
     SyncController::new(
         GatewayForwardSync::new(backend, importer, client, config, no_pending),
         probe,

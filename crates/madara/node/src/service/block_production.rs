@@ -47,7 +47,8 @@ impl Service for BlockProductionService {
             Arc::clone(mempool),
             Arc::clone(metrics),
             Arc::clone(l1_data_provider),
-        ).await?;
+        )
+        .await?;
 
         runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
 

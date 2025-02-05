@@ -76,7 +76,7 @@ impl CompressedLegacyContractClass {
         let json = serde_json::json!({
             "program": program,
             "entry_points_by_type": self.entry_points_by_type,
-            "abi": self.abi
+            "abi": self.abi()?,
         });
 
         Ok(serde_json::to_string(&json)?)

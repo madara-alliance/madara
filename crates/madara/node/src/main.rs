@@ -17,7 +17,9 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
-use service::{BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService, WarpUpdateConfig};
+use service::{
+    BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService, WarpUpdateConfig,
+};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 
