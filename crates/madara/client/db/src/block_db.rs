@@ -1,15 +1,13 @@
-use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
+use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
+use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
-use crate::{MadaraStorageError, DB};
 use anyhow::Context;
-use blockifier::bouncer::BouncerWeights;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
-    BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
-    MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments,
+    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
+    MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use mp_state_update::StateDiff;
-use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::EmittedEvent;
@@ -25,19 +23,9 @@ struct ChainInfo {
 const ROW_CHAIN_INFO: &[u8] = b"chain_info";
 const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
-const ROW_PENDING_SEGMENTS: &[u8] = b"pending_segments";
-const ROW_PENDING_BOUNCER_WEIGHTS: &[u8] = b"pending_bouncer_weights";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
-
-#[tracing::instrument(skip(db), fields(module = "BlockDB"))]
-pub fn get_latest_block_n(db: &DB) -> Result<Option<u64>> {
-    let col = db.get_column(Column::BlockStorageMeta);
-    let Some(res) = db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
-    let res = bincode::deserialize(&res)?;
-    Ok(Some(res))
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
@@ -86,7 +74,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
+    pub(crate) fn block_hash_to_block_n(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
@@ -106,7 +94,7 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_block_info_from_block_n(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let col = self.db.get_column(Column::BlockNToBlockInfo);
-        let res = self.db.get_cf(&col, bincode::serialize(&block_n)?)?;
+        let res = self.db.get_cf(&col, block_n.to_be_bytes())?;
         let Some(res) = res else { return Ok(None) };
         let block = bincode::deserialize(&res)?;
         Ok(Some(block))
@@ -123,7 +111,8 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        get_latest_block_n(&self.db)
+        Ok(self.head_status().latest_full_block_n())
+        // get_latest_block_n(&self.db)
     }
 
     // Pending block quirk: We should act as if there is always a pending block in db, to match
@@ -204,28 +193,6 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_pending_block_segments(&self) -> Result<Option<VisitedSegments>> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_PENDING_SEGMENTS)? else {
-            // See pending block quirk
-            return Ok(None);
-        };
-        let res = Some(bincode::deserialize(&res)?);
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_pending_block_bouncer_weights(&self) -> Result<Option<BouncerWeights>> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS)? else {
-            // See pending block quirk
-            return Ok(None);
-        };
-        let res = Some(bincode::deserialize(&res)?);
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_l1_last_confirmed_block(&self) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
@@ -236,27 +203,13 @@ impl MadaraBackend {
     // DB write
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub(crate) fn block_db_store_pending(
-        &self,
-        block: &MadaraPendingBlock,
-        state_update: &StateDiff,
-        visited_segments: Option<VisitedSegments>,
-        bouncer_weights: Option<BouncerWeights>,
-    ) -> Result<()> {
+    pub(crate) fn block_db_store_pending(&self, block: &MadaraPendingBlock, state_update: &StateDiff) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
         let col = self.db.get_column(Column::BlockStorageMeta);
         tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
         tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
         tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
-        if let Some(visited_segments) = visited_segments {
-            tx.put_cf(&col, ROW_PENDING_SEGMENTS, bincode::serialize(&visited_segments)?);
-        }
-        if let Some(bouncer_weights) = bouncer_weights {
-            tx.put_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS, bincode::serialize(&bouncer_weights)?);
-        }
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-        self.db.write_opt(tx, &writeopts)?;
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
     }
 
@@ -267,20 +220,14 @@ impl MadaraBackend {
         tx.delete_cf(&col, ROW_PENDING_INFO);
         tx.delete_cf(&col, ROW_PENDING_INNER);
         tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
-        tx.delete_cf(&col, ROW_PENDING_SEGMENTS);
-        tx.delete_cf(&col, ROW_PENDING_BOUNCER_WEIGHTS);
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-        self.db.write_opt(tx, &writeopts)?;
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
-        let mut writeopts = WriteOptions::default(); // todo move that in db
-        writeopts.disable_wal(true);
-        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?, &writeopts)?;
+        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?, &self.writeopts_no_wal)?;
         Ok(())
     }
 
@@ -308,7 +255,7 @@ impl MadaraBackend {
             tx.put_cf(&tx_hash_to_block_n, bincode::serialize(hash)?, &block_n_encoded);
         }
 
-        tx.put_cf(&block_n_to_block, &block_n_encoded, bincode::serialize(&block.info)?);
+        tx.put_cf(&block_n_to_block, block.info.header.block_number.to_be_bytes(), bincode::serialize(&block.info)?);
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
@@ -349,36 +296,25 @@ impl MadaraBackend {
         tx.delete_cf(&meta, ROW_PENDING_INNER);
         tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
 
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-        self.db.write_opt(tx, &writeopts)?;
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
     }
 
     // Convenience functions
 
-    pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {
+    fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            BlockId::Hash(hash) => Ok(self.block_hash_to_block_n(hash)?.map(DbBlockId::Number)),
-            BlockId::Number(block_n) => Ok(Some(DbBlockId::Number(*block_n))),
-            BlockId::Tag(BlockTag::Latest) => Ok(self.get_latest_block_n()?.map(DbBlockId::Number)),
-            BlockId::Tag(BlockTag::Pending) => Ok(Some(DbBlockId::Pending)),
-        }
-    }
-
-    fn storage_to_info(&self, id: &DbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
-        match id {
-            DbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
-            DbBlockId::Number(block_n) => {
+            RawDbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
+            RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
         }
     }
 
-    fn storage_to_inner(&self, id: &DbBlockId) -> Result<Option<MadaraBlockInner>> {
+    fn storage_to_inner(&self, id: &RawDbBlockId) -> Result<Option<MadaraBlockInner>> {
         match id {
-            DbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
-            DbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
+            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
+            RawDbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
 
@@ -388,8 +324,8 @@ impl MadaraBackend {
     pub fn get_block_n(&self, id: &impl DbBlockIdResolvable) -> Result<Option<u64>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
-            DbBlockId::Number(block_id) => Ok(Some(*block_id)),
-            DbBlockId::Pending => Ok(None),
+            RawDbBlockId::Number(block_id) => Ok(Some(*block_id)),
+            RawDbBlockId::Pending => Ok(None),
         }
     }
 
@@ -398,8 +334,8 @@ impl MadaraBackend {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match &ty {
             // TODO: fast path if id is already a block hash..
-            DbBlockId::Number(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
-            DbBlockId::Pending => Ok(None),
+            RawDbBlockId::Number(block_n) => Ok(self.get_block_info_from_block_n(*block_n)?.map(|b| b.block_hash)),
+            RawDbBlockId::Pending => Ok(None),
         }
     }
 
@@ -407,8 +343,8 @@ impl MadaraBackend {
     pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
-            DbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
-            DbBlockId::Number(block_n) => self.get_state_update(block_n),
+            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
+            RawDbBlockId::Number(block_n) => self.get_state_update(block_n),
         }
     }
 

@@ -6,8 +6,7 @@ use blockifier::transaction::{
     transactions::L1HandlerTransaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-use primitive_types::H256;
-use starknet_core::types::MsgToL2;
+use starknet_core::types::{Hash256, MsgToL2};
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
 
@@ -43,7 +42,7 @@ pub enum L1HandlerMessageError {
     InvalidNonce,
 }
 
-fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1HandlerMessageError> {
+fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Hash256, L1HandlerMessageError> {
     let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
     let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
@@ -57,7 +56,7 @@ fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1Hand
         payload: payload.into(),
         nonce,
     };
-    Ok(H256::from_slice(message.hash().as_bytes()))
+    Ok(message.hash())
 }
 
 fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
@@ -74,17 +73,6 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 
     let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
-
-    let message_hash = match tx {
-        Transaction::L1HandlerTransaction(tx) => match get_l1_handler_message_hash(tx) {
-            Ok(hash) => Some(hash),
-            Err(err) => {
-                tracing::error!("Error getting l1 handler message hash: {:?}", err);
-                None
-            }
-        },
-        _ => None,
-    };
 
     let messages_sent = recursive_call_info_iter(res)
         .flat_map(|call| {
@@ -172,14 +160,16 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::L1HandlerTransaction(_tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        Transaction::L1HandlerTransaction(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
             events,
             execution_resources,
             execution_result,
-            message_hash: message_hash.unwrap(), // it's a safe unwrap because it would've panicked earlier if it was Err
+            // This should not panic unless blockifier gives a garbage receipt.
+            // TODO: we should have a soft error here just in case.
+            message_hash: get_l1_handler_message_hash(tx).expect("Error getting l1 handler message hash"),
         }),
     }
 }

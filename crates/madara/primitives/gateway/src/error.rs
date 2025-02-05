@@ -17,7 +17,7 @@ pub enum SequencerError {
     HttpCallError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error },
-    #[error("Error serializing request: {0:#}")]
+    #[error("Serialization/Deserialization error: {0:#}")]
     SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
@@ -38,7 +38,7 @@ mod err {
     pub(crate) const NO_SIGNATURE_FOR_PENDING_BLOCK: &str =
         "BlockSignature is not supported for pending blocks; try querying with a concrete block identifier";
     pub(crate) const NO_BLOCK_HEADER_FOR_PENDING_BLOCK: &str = "Block header is not supported for the pending block";
-    pub(crate) const MISSING_CLASS_HASH: &str = "Missing class_hash parameter";
+    pub(crate) const MISSING_CLASS_HASH: &str = "Missing classHash parameter";
 }
 
 impl StarknetError {

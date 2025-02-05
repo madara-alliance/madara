@@ -377,6 +377,7 @@ pub enum MadaraServiceId {
     RpcAdmin,
     Gateway,
     Telemetry,
+    P2p,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -392,6 +393,7 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::RpcAdmin => PowerOfTwo::P5,
             MadaraServiceId::Gateway => PowerOfTwo::P6,
             MadaraServiceId::Telemetry => PowerOfTwo::P7,
+            MadaraServiceId::P2p => PowerOfTwo::P8,
         }
     }
 }
@@ -411,6 +413,7 @@ impl Display for MadaraServiceId {
                 Self::RpcAdmin => "rpc admin",
                 Self::Gateway => "gateway",
                 Self::Telemetry => "telemetry",
+                Self::P2p => "p2p",
             }
         )
     }
@@ -443,6 +446,7 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P4 => Self::RpcUser,
             PowerOfTwo::P5 => Self::RpcAdmin,
             PowerOfTwo::P6 => Self::Gateway,
+            PowerOfTwo::P7 => Self::P2p,
             _ => Self::Telemetry,
         }
     }
@@ -1182,7 +1186,7 @@ impl<'a> ServiceRunner<'a> {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
 
-        tracing::warn!("⚠️  Forcefully shutting down service with id: {id}");
+        tracing::warn!("⚠️  Forcefully shutting down service: {}", MadaraServiceId::from(*id));
     }
 }
 
@@ -1291,7 +1295,7 @@ impl ServiceMonitor {
                     match result {
                         Ok(result) => {
                             let id = result?;
-                            tracing::debug!("service {id} has shut down");
+                            tracing::debug!("Service {id} has shut down");
                             self.status_actual.deactivate(id);
                             self.status_request.deactivate(id);
                         }
@@ -1316,7 +1320,7 @@ impl ServiceMonitor {
                                     .await
                                     .context("Starting service")?;
 
-                                tracing::debug!("service {svc_id} has started");
+                                tracing::debug!("Service {svc_id} has started");
                             } else {
                                 // reset request
                                 self.status_request.deactivate(svc_id);

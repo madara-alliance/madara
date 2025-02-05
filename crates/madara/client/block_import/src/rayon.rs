@@ -33,17 +33,17 @@ impl RayonPool {
     {
         let max_tasks = self.max_tasks;
         let permit_id = self.permit_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        tracing::debug!("acquire permit {permit_id}");
+        tracing::trace!("acquire permit {permit_id}");
         let permit = self.semaphore.acquire().await.expect("Poisoned semaphore");
         let n_acquired_permits = self.n_acquired_permits.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-        tracing::debug!("acquired permit {permit_id} ({n_acquired_permits}/{max_tasks})");
+        tracing::trace!("acquired permit {permit_id} ({n_acquired_permits}/{max_tasks})");
 
         let res = global_spawn_rayon_task(func).await;
 
         drop(permit);
 
         let n_acquired_permits = self.n_acquired_permits.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        tracing::debug!("released permit {permit_id} ({n_acquired_permits}/{max_tasks})");
+        tracing::trace!("released permit {permit_id} ({n_acquired_permits}/{max_tasks})");
         res
     }
 }

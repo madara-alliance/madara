@@ -1,6 +1,5 @@
 use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
-use rocksdb::WriteOptions;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
@@ -35,9 +34,7 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self, devnet_keys), fields(module = "DevnetDB"))]
     pub fn set_devnet_predeployed_keys(&self, devnet_keys: DevnetPredeployedKeys) -> Result<()> {
         let nonce_column = self.db.get_column(Column::Devnet);
-        let mut writeopts = WriteOptions::default();
-        writeopts.disable_wal(true);
-        self.db.put_cf_opt(&nonce_column, DEVNET_KEYS, bincode::serialize(&devnet_keys)?, &writeopts)?;
+        self.db.put_cf_opt(&nonce_column, DEVNET_KEYS, bincode::serialize(&devnet_keys)?, &self.writeopts_no_wal)?;
         Ok(())
     }
 }

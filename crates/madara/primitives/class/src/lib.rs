@@ -1,7 +1,8 @@
 use blockifier::execution::contract_class::{ClassInfo as BClassInfo, ContractClass as BContractClass};
+use class_hash::ComputeClassHashError;
 use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 pub mod class_hash;
 pub mod class_update;
@@ -63,6 +64,47 @@ pub struct SierraConvertedClass {
     pub compiled: Arc<CompiledSierra>,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ClassType {
+    Sierra,
+    Legacy,
+}
+
+impl fmt::Display for ClassType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sierra => write!(f, "Sierra"),
+            Self::Legacy => write!(f, "Legacy"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassInfoWithHash {
+    pub class_info: ClassInfo,
+    pub class_hash: Felt,
+}
+
+impl ClassInfoWithHash {
+    /// Does class compilation. Does check the resulting compiled class hash.
+    pub fn convert(self) -> Result<ConvertedClass, ClassCompilationError> {
+        match self.class_info {
+            ClassInfo::Sierra(sierra_class_info) => {
+                let compiled = sierra_class_info.compile()?;
+                Ok(ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: self.class_hash,
+                    info: sierra_class_info,
+                    compiled: Arc::new(compiled),
+                }))
+            }
+            ClassInfo::Legacy(legacy_class_info) => Ok(ConvertedClass::Legacy(LegacyConvertedClass {
+                class_hash: self.class_hash,
+                info: legacy_class_info,
+            })),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClassInfo {
     Sierra(SierraClassInfo),
@@ -95,6 +137,17 @@ impl ClassInfo {
             ClassInfo::Legacy(_) => None,
         }
     }
+
+    pub fn compute_hash(&self) -> Result<Felt, ComputeClassHashError> {
+        match self {
+            ClassInfo::Sierra(sierra_class_info) => sierra_class_info.contract_class.compute_class_hash(),
+            ClassInfo::Legacy(legacy_class_info) => legacy_class_info.contract_class.compute_class_hash(),
+        }
+    }
+
+    pub fn with_computed_hash(self) -> Result<ClassInfoWithHash, ComputeClassHashError> {
+        Ok(ClassInfoWithHash { class_hash: self.compute_hash()?, class_info: self })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -106,6 +159,19 @@ pub struct LegacyClassInfo {
 pub struct SierraClassInfo {
     pub contract_class: Arc<FlattenedSierraClass>,
     pub compiled_class_hash: Felt,
+}
+
+impl SierraClassInfo {
+    pub fn compile(&self) -> Result<CompiledSierra, ClassCompilationError> {
+        let (compiled_class_hash, compiled) = self.contract_class.compile_to_casm()?;
+        if self.compiled_class_hash != compiled_class_hash {
+            return Err(ClassCompilationError::CompiledClassHashMismatch {
+                expected: self.compiled_class_hash,
+                got: compiled_class_hash,
+            });
+        }
+        Ok(compiled)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

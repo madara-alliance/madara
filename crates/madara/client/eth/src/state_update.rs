@@ -20,8 +20,11 @@ pub struct L1StateUpdate {
     pub block_hash: Felt,
 }
 
+pub type L1HeadReceiver = tokio::sync::watch::Receiver<Option<L1StateUpdate>>;
+pub type L1HeadSender = tokio::sync::watch::Sender<Option<L1StateUpdate>>;
+
 /// Get the last Starknet state update verified on the L1
-pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
+async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1StateUpdate> {
     let block_number = client.get_last_verified_block_number().await?;
     let block_hash = client.get_last_verified_block_hash().await?;
     let global_root = client.get_last_state_root().await?;
@@ -29,9 +32,40 @@ pub async fn get_initial_state(client: &EthereumClient) -> anyhow::Result<L1Stat
     Ok(L1StateUpdate { global_root, block_number, block_hash })
 }
 
+/// Subscribes to the LogStateUpdate event from the Starknet core contract and store latest
+/// verified state
+async fn listen_and_update_state(
+    eth_client: Arc<EthereumClient>,
+    backend: Arc<MadaraBackend>,
+    l1_head_sender: L1HeadSender,
+) -> anyhow::Result<()> {
+    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
+    // Listen to LogStateUpdate (0x77552641) update and send changes continuously
+    let mut event_stream = event_filter.watch().await.context(ERR_ARCHIVE)?.into_stream();
+
+    // // This does not seem to play well with anvil
+    // #[cfg(not(test))]
+    // {
+    let state_update = get_initial_state(&eth_client).await.context("Getting initial ethereum state")?;
+    update_l1(&backend, &state_update, &eth_client.l1_block_metrics)?;
+    l1_head_sender.send_modify(|s| *s = Some(state_update.clone()));
+    // }
+
+    tracing::info!("🚀 Subscribed to L1 state verification");
+
+    while let Some(event_result) = event_stream.next().await {
+        let log = event_result.context("listening for events")?;
+        let state_update = convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
+        update_l1(&backend, &state_update, &eth_client.l1_block_metrics)?;
+        l1_head_sender.send_modify(|s| *s = Some(state_update.clone()));
+    }
+
+    Ok(())
+}
+
 pub fn update_l1(
     backend: &MadaraBackend,
-    state_update: L1StateUpdate,
+    state_update: &L1StateUpdate,
     block_metrics: &L1BlockMetrics,
 ) -> anyhow::Result<()> {
     tracing::info!(
@@ -53,35 +87,13 @@ pub async fn state_update_worker(
     backend: Arc<MadaraBackend>,
     eth_client: Arc<EthereumClient>,
     mut ctx: ServiceContext,
+    l1_head_sender: L1HeadSender,
 ) -> anyhow::Result<()> {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
-    tracing::info!("🚀 Subscribed to L1 state verification");
-    // This does not seem to play well with anvil
-    #[cfg(not(test))]
-    {
-        let initial_state = get_initial_state(&eth_client).await.context("Getting initial ethereum state")?;
-        update_l1(&backend, initial_state, &eth_client.l1_block_metrics)?;
-    }
-
-    // Listen to LogStateUpdate (0x77552641) update and send changes continuously
-    let event_filter = eth_client.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
-
-    let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
-        Some(res) => res.context(ERR_ARCHIVE)?.into_stream(),
-        None => return anyhow::Ok(()),
-    };
-
-    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
-        let log = event_result.context("listening for events")?;
-        let format_event: L1StateUpdate =
-            convert_log_state_update(log.0.clone()).context("formatting event into an L1StateUpdate")?;
-        update_l1(&backend, format_event, &eth_client.l1_block_metrics)?;
-    }
-
-    anyhow::Ok(())
+    ctx.run_until_cancelled(listen_and_update_state(eth_client, backend, l1_head_sender)).await.unwrap_or(Ok(()))
 }
 
 #[cfg(test)]
@@ -90,7 +102,7 @@ mod eth_client_event_subscription_test {
     use std::{sync::Arc, time::Duration};
 
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
-    use mc_db::DatabaseService;
+    use mc_db::{DatabaseService, MadaraBackendConfig};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use tempfile::TempDir;
@@ -146,7 +158,7 @@ mod eth_client_event_subscription_test {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
+            DatabaseService::new(chain_info.clone(), MadaraBackendConfig::new(&base_path).backup_dir(backup_dir))
                 .await
                 .expect("Failed to create database service"),
         );
@@ -163,14 +175,12 @@ mod eth_client_event_subscription_test {
         let eth_client =
             EthereumClient { provider: Arc::new(provider), l1_core_contract: core_contract.clone(), l1_block_metrics };
 
+        let (snd, _recv) = tokio::sync::watch::channel(None);
+
         // Start listening for state updates
         let listen_handle = {
             let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                state_update_worker(Arc::clone(db.backend()), Arc::new(eth_client), ServiceContext::new_for_testing())
-                    .await
-                    .unwrap()
-            })
+            tokio::spawn(listen_and_update_state(Arc::new(eth_client), db.backend().clone(), snd))
         };
 
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");

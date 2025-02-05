@@ -233,7 +233,7 @@ mod l1_messaging_tests {
         sol,
         transports::http::{Client, Http},
     };
-    use mc_db::DatabaseService;
+    use mc_db::{DatabaseService, MadaraBackendConfig};
     use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
@@ -349,7 +349,7 @@ mod l1_messaging_tests {
 
         // Initialize database service
         let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
+            DatabaseService::new(chain_config.clone(), MadaraBackendConfig::new(&base_path).backup_dir(backup_dir))
                 .await
                 .expect("Failed to create database service"),
         );

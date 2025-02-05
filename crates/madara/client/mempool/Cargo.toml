@@ -39,7 +39,6 @@ testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 
 # Madara
 mc-analytics.workspace = true
-mc-block-import.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mp-block.workspace = true
@@ -64,8 +63,8 @@ mockall = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tokio-util.workspace = true
+tokio.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

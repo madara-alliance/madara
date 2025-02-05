@@ -27,19 +27,19 @@ pub fn class_trie_root(
         })
         .collect();
 
-    tracing::debug!("class_trie inserting");
+    tracing::trace!("class_trie inserting");
     for (key, value) in updates {
         let bytes = key.to_bytes_be();
         let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
         class_trie.insert(bonsai_identifier::CLASS, &bv, &value)?;
     }
 
-    tracing::debug!("class_trie committing");
+    tracing::trace!("class_trie committing");
     class_trie.commit(BasicId::new(block_number))?;
 
     let root_hash = class_trie.root_hash(bonsai_identifier::CLASS)?;
 
-    tracing::debug!("class_trie committed");
+    tracing::trace!("class_trie committed");
 
     Ok(root_hash)
 }

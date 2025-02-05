@@ -26,6 +26,7 @@ mp-utils.workspace = true
 # Other
 anyhow.workspace = true
 lazy_static.workspace = true
+multiaddr.workspace = true
 primitive-types.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

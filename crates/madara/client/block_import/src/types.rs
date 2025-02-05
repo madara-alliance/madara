@@ -35,6 +35,8 @@ pub struct UnverifiedHeader {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockValidationContext {
+    /// The chain id of the current block.
+    pub chain_id: ChainId,
     /// Use the transaction hashes from the transaction receipts instead of computing them.
     pub trust_transaction_hashes: bool,
     /// Trust class hashes.
@@ -45,8 +47,11 @@ pub struct BlockValidationContext {
     pub trust_global_tries: bool,
     /// Ignore the order of the blocks to allow starting at some height.
     pub ignore_block_order: bool,
-    /// The chain id of the current block.
-    pub chain_id: ChainId,
+
+    /// Used for experimental p2p support. When p2p will be merged, this field will go away, and we will always
+    /// compute v0.13.2 hashes. However, we can't verify the old <v0.13.2 blocks yet during sync, so this field
+    /// bridges the gap. When set to true, we will always trust the integrity of these old blocks during sync.
+    pub compute_v0_13_2_hashes: bool,
 }
 
 impl BlockValidationContext {
@@ -57,6 +62,7 @@ impl BlockValidationContext {
             trust_global_tries: false,
             chain_id,
             ignore_block_order: false,
+            compute_v0_13_2_hashes: false,
         }
     }
     pub fn trust_transaction_hashes(mut self, v: bool) -> Self {
