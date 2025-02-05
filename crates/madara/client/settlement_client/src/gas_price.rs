@@ -5,6 +5,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use crate::error::SettlementClientError;
 use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
 use mc_analytics::register_gauge_metric_instrument;
@@ -65,7 +66,7 @@ pub async fn gas_price_worker_once<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
@@ -95,7 +96,7 @@ pub async fn gas_price_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
@@ -120,7 +121,7 @@ async fn update_gas_price<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await?;
 

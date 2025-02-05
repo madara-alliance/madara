@@ -1,3 +1,4 @@
+use crate::error::SettlementClientError;
 use crate::messaging::CommonMessagingEventData;
 use futures::Stream;
 use log::error;
@@ -30,7 +31,7 @@ impl StarknetEventStream {
 }
 
 impl Stream for StarknetEventStream {
-    type Item = Option<anyhow::Result<CommonMessagingEventData>>;
+    type Item = Option<Result<CommonMessagingEventData, SettlementClientError>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.future.is_none() {
@@ -131,14 +132,17 @@ impl Stream for StarknetEventStream {
                                     event_index: None,
                                 });
 
-                            Poll::Ready(Some(Some(event_data)))
+                            match event_data {
+                                Ok(data) => Poll::Ready(Some(Some(Ok(data)))),
+                                Err(e) => Poll::Ready(Some(Some(Err(SettlementClientError::Other(e))))),
+                            }
                         }
                         Ok((None, updated_filter)) => {
                             // Update the filter even when no events are found
                             self.filter = updated_filter;
                             Poll::Ready(Some(None))
                         }
-                        Err(e) => Poll::Ready(Some(Some(Err(e)))),
+                        Err(e) => Poll::Ready(Some(Some(Err(SettlementClientError::Other(e))))),
                     }
                 }
                 Poll::Pending => Poll::Pending,

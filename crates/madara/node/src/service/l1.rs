@@ -5,6 +5,7 @@ use futures::Stream;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_mempool::{GasPriceProvider, Mempool};
 use mc_settlement_client::client::ClientTrait;
+use mc_settlement_client::error::SettlementClientError;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
@@ -39,7 +40,7 @@ impl<'a> L1SyncConfig<'a> {
 pub struct L1SyncService<C: 'static, S: 'static>
 where
     C: Clone,
-    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
+    S: Send + Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>>,
 {
     db_backend: Arc<MadaraBackend>,
     settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>>,
@@ -114,7 +115,7 @@ impl StarknetSyncService {
 impl<C: Clone, S> L1SyncService<C, S>
 where
     C: Clone + 'static,
-    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + 'static,
+    S: Send + Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + 'static,
 {
     async fn create_service(
         config: &L1SyncParams,
@@ -169,7 +170,7 @@ where
 impl<C, S> Service for L1SyncService<C, S>
 where
     C: Clone,
-    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
+    S: Send + Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>>,
 {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if let Some(settlement_client) = &self.settlement_client {
@@ -206,7 +207,7 @@ where
 impl<C, S> ServiceId for L1SyncService<C, S>
 where
     C: Clone,
-    S: Send + Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>>,
+    S: Send + Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>>,
 {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {

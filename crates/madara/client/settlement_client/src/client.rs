@@ -1,3 +1,4 @@
+use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
 use crate::state_update::StateUpdate;
@@ -18,7 +19,7 @@ pub enum ClientType {
 
 #[derive(Debug, Default, PartialEq)]
 pub struct DummyConfig;
-pub type DummyStream = BoxStream<'static, Option<anyhow::Result<CommonMessagingEventData>>>;
+pub type DummyStream = BoxStream<'static, Option<Result<CommonMessagingEventData, SettlementClientError>>>;
 
 #[automock(
     type Config = DummyConfig;
@@ -95,7 +96,7 @@ pub trait ClientTrait: Send + Sync {
     /// - Item: Each element in the stream is wrapped in Option to handle potential gaps
     /// - anyhow::Result: Each item is further wrapped in Result for error handling
     /// - CommonMessagingEventData: The actual message data structure being streamed
-    type StreamType: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send;
+    type StreamType: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send;
 
     /// Retrieves a stream of messaging events starting from the last synced block
     ///

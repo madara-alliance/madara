@@ -1,4 +1,5 @@
 use crate::client::ClientTrait;
+use crate::error::SettlementClientError;
 use crate::gas_price::{gas_price_worker, L1BlockMetrics};
 use crate::messaging::{sync, CommonMessagingEventData};
 use crate::state_update::state_update_worker;
@@ -23,7 +24,7 @@ pub async fn sync_worker<C: 'static, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     let mut join_set = tokio::task::JoinSet::new();
 

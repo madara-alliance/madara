@@ -1,3 +1,4 @@
+use crate::error::SettlementClientError;
 use crate::eth::StarknetCoreContract;
 use crate::state_update::StateUpdate;
 use alloy::primitives::{I256, U256};
@@ -17,13 +18,9 @@ pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogState
     Ok(StateUpdate { block_number, global_root, block_hash })
 }
 
-pub fn u256_to_felt(u256: U256) -> anyhow::Result<Felt> {
-    let binding = u256.to_be_bytes_vec();
-    let bytes = binding.as_slice();
-    let mut bytes_array = [0u8; 32];
-    bytes_array.copy_from_slice(bytes);
-    let felt = Felt::from_bytes_be(&bytes_array);
-    Ok(felt)
+pub fn u256_to_felt(u256: U256) -> Result<Felt, SettlementClientError> {
+    let bytes = u256.to_be_bytes();
+    Ok(Felt::from_bytes_be(&bytes))
 }
 
 pub fn felt_to_u256(felt: Felt) -> U256 {

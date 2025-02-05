@@ -1,4 +1,5 @@
 use crate::client::{ClientTrait, ClientType};
+use crate::error::SettlementClientError;
 use alloy::primitives::B256;
 use futures::{Stream, StreamExt};
 use mc_db::l1_db::LastSyncedEventBlock;
@@ -33,7 +34,7 @@ pub async fn sync<C, S>(
     mut ctx: ServiceContext,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     info!("⟠ Starting L1 Messages Syncing...");
 
@@ -390,10 +391,9 @@ mod messaging_module_tests {
         backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(99, 0))?;
 
         // Mock get_messaging_stream to return error
-        client
-            .expect_get_messaging_stream()
-            .times(1)
-            .returning(move |_| Ok(Box::pin(stream::iter(vec![Some(Err(anyhow::anyhow!("Stream error")))]))));
+        client.expect_get_messaging_stream().times(1).returning(move |_| {
+            Ok(Box::pin(stream::iter(vec![Some(Err(SettlementClientError::Other(anyhow::anyhow!("Stream error"))))])))
+        });
 
         let client: Arc<Box<dyn ClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));

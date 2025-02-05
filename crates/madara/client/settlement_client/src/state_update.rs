@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::client::ClientTrait;
+use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
 use anyhow::Context;
@@ -45,7 +46,7 @@ pub async fn state_update_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<anyhow::Result<CommonMessagingEventData>>> + Send + 'static,
+    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
     backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;

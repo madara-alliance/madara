@@ -25,7 +25,6 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
 
-
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
 sol!(
@@ -116,13 +115,13 @@ impl ClientTrait for EthereumClient {
     /// Get the last Starknet state root verified on L1
     async fn get_last_verified_state_root(&self) -> anyhow::Result<Felt> {
         let state_root = self.l1_core_contract.stateRoot().call().await?;
-        u256_to_felt(state_root._0)
+        Ok(u256_to_felt(state_root._0)?)
     }
 
     /// Get the last Starknet block hash verified on L1
     async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
         let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
-        u256_to_felt(block_hash._0)
+        Ok(u256_to_felt(block_hash._0)?)
     }
 
     async fn get_initial_state(&self) -> anyhow::Result<StateUpdate> {
@@ -213,7 +212,7 @@ impl ClientTrait for EthereumClient {
         //l1ToL2MessageCancellations
         let cancellation_timestamp =
             self.l1_core_contract.l1ToL2MessageCancellations(B256::from_slice(msg_hash.as_slice())).call().await?;
-        u256_to_felt(cancellation_timestamp._0)
+        Ok(u256_to_felt(cancellation_timestamp._0)?)
     }
 
     type StreamType = EthereumEventStream;
@@ -261,7 +260,7 @@ pub mod eth_client_getter_test {
                 .timeout(60_000)
                 .try_spawn()
                 .expect("failed to spawn anvil instance");
-            
+
             Arc::new(anvil)
         }).clone()
     }
@@ -296,16 +295,17 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_latest_block_number_works() {
         let eth_client = create_ethereum_client(None);
-        let block_number = eth_client.provider.get_block_number().await
-            .expect("issue while fetching the block number")
-            .as_u64();
+        let block_number =
+            eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
     #[tokio::test]
     async fn get_last_event_block_number_works() {
         let eth_client = create_ethereum_client(None);
-        let block_number = eth_client.get_last_event_block_number().await
+        let block_number = eth_client
+            .get_last_event_block_number()
+            .await
             .expect("issue while getting the last block number with given event");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
@@ -313,8 +313,8 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_last_verified_block_hash_works() {
         let eth_client = create_ethereum_client(None);
-        let block_hash = eth_client.get_last_verified_block_hash().await
-            .expect("issue while getting the last verified block hash");
+        let block_hash =
+            eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
@@ -322,8 +322,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_last_state_root_works() {
         let eth_client = create_ethereum_client(None);
-        let state_root = eth_client.get_last_verified_state_root().await
-            .expect("issue while getting the state root");
+        let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
@@ -331,8 +330,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_last_verified_block_number_works() {
         let eth_client = create_ethereum_client(None);
-        let block_number = eth_client.get_last_verified_block_number().await
-            .expect("issue");
+        let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
 }
@@ -779,7 +777,8 @@ mod eth_client_event_subscription_test {
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client = EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
+        let eth_client =
+            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
         // Start listening for state updates
