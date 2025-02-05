@@ -110,6 +110,17 @@ pub mod eth_event_stream_tests {
         }
     }
 
+    // Helper function to process stream into a vector
+    async fn collect_stream_events(stream: &mut EthereumEventStream) -> Vec<Option<anyhow::Result<CommonMessagingEventData>>> {
+        stream
+            .take_while(|event| futures::future::ready(event.is_some()))
+            .fold(Vec::new(), |mut acc, event| async move {
+                acc.push(event);
+                acc
+            })
+            .await
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_successful_event_stream(mock_event: LogMessageToL2, mock_log: Log) {
@@ -118,23 +129,14 @@ pub mod eth_event_stream_tests {
             Ok((mock_event, mock_log))
         ];
         let mock_stream = iter(mock_events);
-        let ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
+        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
-        let events = ethereum_stream
-            .take_while(|event| futures::future::ready(event.is_some()))
-            .fold(Vec::with_capacity(2), |mut acc, event| async move {
-                if let Some(event) = event {
-                    acc.push(event);
-                }
-                acc
-            })
-            .await;
+        let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 2);
-
-        // Verify first event
-        assert!(events[0].is_ok(), "First event should be successful");
-        if let Ok(event_data) = &events[0] {
+        let first_event = events[0].as_ref().unwrap();
+        assert!(first_event.is_ok(), "First event should be successful");
+        if let Ok(event_data) = first_event {
             assert_eq!(event_data.block_number, 100);
             assert_eq!(event_data.event_index, Some(0u64));
         }
@@ -175,21 +177,13 @@ pub mod eth_event_stream_tests {
         ];
 
         let mock_stream = iter(mock_events);
-        let ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
+        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
-        let events = ethereum_stream
-            .take_while(|event| futures::future::ready(event.is_some()))
-            .fold(Vec::with_capacity(3), |mut acc, event| async move {
-                if let Some(event) = event {
-                    acc.push(event);
-                }
-                acc
-            })
-            .await;
+        let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 3);
-        assert!(events[0].is_ok(), "First event should be successful");
-        assert!(events[1].is_err(), "Second event should be an error");
-        assert!(events[2].is_ok(), "Third event should be successful");
+        assert!(events[0].as_ref().unwrap().is_ok(), "First event should be successful");
+        assert!(events[1].as_ref().unwrap().is_err(), "Second event should be an error");
+        assert!(events[2].as_ref().unwrap().is_ok(), "Third event should be successful");
     }
 }
