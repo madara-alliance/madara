@@ -6573,6 +6573,7 @@ version = "0.7.0"
 dependencies = [
  "informalsystems-malachitebft-core-types",
  "mp-block",
+ "mp-proto",
  "mp-transactions",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
 ]

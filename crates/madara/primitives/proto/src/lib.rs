@@ -39,6 +39,33 @@ impl FromModelError {
     }
 }
 
+#[macro_export]
+macro_rules! ensure_field {
+    ($struct:expr => $value:ident) => {
+        $struct.$value.ok_or(crate::FromModelError::missing_field(stringify!($value)))?
+    };
+}
+
+#[macro_export]
+macro_rules! ensure_field_variant {
+    ($model:ty => $value:expr) => {
+        <$model>::try_from($value).map_err(|_| FromModelError::invalid_enum_variant(stringify!($model), $value))?
+    };
+}
+
+pub(crate) trait TryIntoField<T> {
+    fn try_into_field(self, repr: &'static str) -> Result<T, FromModelError>;
+}
+
+impl<S, T> TryIntoField<T> for S
+where
+    S: TryInto<T>,
+{
+    fn try_into_field(self, repr: &'static str) -> Result<T, FromModelError> {
+        self.try_into().map_err(|_| FromModelError::invalid_field(repr))
+    }
+}
+
 impl From<BlockStreamConfig> for model::Iteration {
     fn from(value: BlockStreamConfig) -> Self {
         Self {
