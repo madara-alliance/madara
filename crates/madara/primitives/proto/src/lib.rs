@@ -40,14 +40,22 @@ impl FromModelError {
 }
 
 #[macro_export]
-macro_rules! ensure_field {
+macro_rules! model_describe {
+    ($model:ty) => {
+        #[allow(unused)]
+        const MODEL: &str = stringify!($model);
+    };
+}
+
+#[macro_export]
+macro_rules! model_field {
     ($struct:expr => $value:ident) => {
         $struct.$value.ok_or(crate::FromModelError::missing_field(stringify!($value)))?
     };
 }
 
 #[macro_export]
-macro_rules! ensure_field_variant {
+macro_rules! model_field_variant {
     ($model:ty => $value:expr) => {
         <$model>::try_from($value).map_err(|_| FromModelError::invalid_enum_variant(stringify!($model), $value))?
     };
