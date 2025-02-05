@@ -1,12 +1,8 @@
 use crate::{ExecutionContext, ExecutionResult};
 use blockifier::transaction::objects::FeeType;
-use starknet_types_core::felt::Felt;
 
 impl ExecutionContext {
-    pub fn execution_result_to_fee_estimate(
-        &self,
-        executions_result: &ExecutionResult,
-    ) -> starknet_types_rpc::FeeEstimate<Felt> {
+    pub fn execution_result_to_fee_estimate(&self, executions_result: &ExecutionResult) -> mp_rpc::FeeEstimate {
         let gas_price =
             self.block_context.block_info().gas_prices.get_gas_price_by_fee_type(&executions_result.fee_type).get();
         let data_gas_price = self
@@ -28,10 +24,10 @@ impl ExecutionContext {
             gas_consumed.saturating_mul(gas_price).saturating_add(data_gas_consumed.saturating_mul(data_gas_price));
 
         let unit = match executions_result.fee_type {
-            FeeType::Eth => starknet_types_rpc::PriceUnit::Wei,
-            FeeType::Strk => starknet_types_rpc::PriceUnit::Fri,
+            FeeType::Eth => mp_rpc::PriceUnit::Wei,
+            FeeType::Strk => mp_rpc::PriceUnit::Fri,
         };
-        starknet_types_rpc::FeeEstimate {
+        mp_rpc::FeeEstimate {
             gas_consumed: gas_consumed.into(),
             gas_price: gas_price.into(),
             data_gas_consumed: data_gas_consumed.into(),

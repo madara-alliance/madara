@@ -20,11 +20,11 @@ use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
+use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
@@ -238,7 +238,7 @@ pub async fn handle_get_block_traces(
 
     #[derive(Serialize)]
     struct BlockTraces {
-        traces: Vec<TraceBlockTransactionsResult<Felt>>,
+        traces: Vec<TraceBlockTransactionsResult>,
     }
 
     let traces = v0_7_1_trace_block_transactions(
@@ -350,7 +350,7 @@ async fn declare_transaction(
     tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn AddTransactionProvider>,
 ) -> Response<String> {
-    let tx: BroadcastedDeclareTxn<Felt> = match tx.try_into() {
+    let tx: BroadcastedDeclareTxn = match tx.try_into() {
         Ok(tx) => tx,
         Err(e) => {
             let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());

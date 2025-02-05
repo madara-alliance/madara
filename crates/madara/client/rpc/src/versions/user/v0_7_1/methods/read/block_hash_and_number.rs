@@ -1,6 +1,5 @@
 use mp_block::{BlockId, BlockTag};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::BlockHashAndNumber;
+use mp_rpc::BlockHashAndNumber;
 
 use crate::errors::StarknetRpcResult;
 use crate::{utils::OptionExt, Starknet};
@@ -15,7 +14,7 @@ use crate::{utils::OptionExt, Starknet};
 ///
 /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the current
 ///   network.
-pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHashAndNumber<Felt>> {
+pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHashAndNumber> {
     let block_info = starknet.get_block_info(&BlockId::Tag(BlockTag::Latest))?;
     let block_info = block_info.as_nonpending().ok_or_internal_server_error("Latest block is pending")?;
 
