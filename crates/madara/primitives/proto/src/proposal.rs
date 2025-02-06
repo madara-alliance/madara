@@ -23,6 +23,7 @@ pub enum AccumulateError {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub enum OrderedStreamAccumulator<T>
 where
     T: prost::Message,
@@ -33,6 +34,7 @@ where
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub struct OrderedStreamAccumulatorInner<T>
 where
     T: prost::Message,
@@ -46,6 +48,7 @@ where
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 struct OrderedStreamItem {
     content: Vec<u8>,
     message_id: u64,
@@ -72,6 +75,7 @@ impl PartialOrd for OrderedStreamItem {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 struct OrderedStreamLimits {
     max: usize,
     current: usize,
@@ -526,6 +530,257 @@ mod test {
                     break;
                 }
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod proptest {
+    use std::collections::VecDeque;
+
+    use mc_db::stream;
+    use proptest::prelude::*;
+    use proptest::prop_compose;
+    use proptest_state_machine::ReferenceStateMachine;
+    use proptest_state_machine::StateMachineTest;
+    use prost::Message;
+    use starknet_core::types::Felt;
+
+    use crate::model;
+
+    use super::AccumulateError;
+    use super::OrderedStreamAccumulator;
+
+    type SUT = OrderedStreamAccumulator<model::ProposalPart>;
+
+    proptest_state_machine::prop_state_machine! {
+        #![proptest_config(proptest::prelude::ProptestConfig {
+            // Enable verbose mode to make the state machine test print the
+            // transitions for each case.
+            verbose: 1,
+            // The number of tests which need to be valid for this to pass.
+            cases: 64,
+            // Max duration (in milliseconds) for each generated case.
+            timeout: 1_000,
+            ..Default::default()
+        })]
+
+        /// Simulates transaction insertion and removal into [MempoolInner].
+        ///
+        /// Each iteration will simulate the insertion of between 1 and 256
+        /// [MempoolTransaction]s into the mempool. Note that insertions happen
+        /// twice as often as popping from the mempool.
+        #[test]
+        fn ordered_stream_proptest(sequential 1..256 => SUT);
+    }
+
+    #[derive(Clone)]
+    pub struct ValidStreamMessageSequence {
+        proposal_part: model::ProposalPart,
+        stream_messages: VecDeque<model::StreamMessage>,
+        stream_id: Vec<u8>,
+        limit: usize,
+    }
+
+    impl std::fmt::Debug for ValidStreamMessageSequence {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("ValidStreamMessageSequence")
+                .field("stream_id", &self.stream_id)
+                .field("limit", &self.limit)
+                .finish()
+        }
+    }
+
+    prop_compose! {
+        fn stream_id()(seed in 0..100u64) -> Vec<u8> {
+            let stream_id = model::ConsensusStreamId { height: seed, round: seed as u32 };
+            let mut buffer = Vec::new();
+            stream_id.encode(&mut buffer).expect("Failed to encode stream id");
+
+            buffer
+        }
+    }
+
+    prop_compose! {
+        fn proposal_part()(len in 10..100usize) -> model::ProposalPart {
+            let tx = model::ConsensusTransaction {
+                transaction_hash: Some(model::Hash(Felt::ONE)),
+                txn: Some(model::consensus_transaction::Txn::L1Handler(model::L1HandlerV0 {
+                    nonce: Some(model::Felt252(Felt::ZERO)),
+                    address: Some(model::Address(Felt::ONE)),
+                    entry_point_selector: Some(model::Felt252(Felt::TWO)),
+                    calldata: vec![model::Felt252(Felt::THREE); 12]
+                }))
+            };
+
+            model::ProposalPart {
+                messages: Some(model::proposal_part::Messages::Transactions(model::TransactionBatch {
+                    transactions: vec![tx; len]
+                }))
+            }
+        }
+    }
+
+    prop_compose! {
+        fn stream_messages(stream_id: Vec<u8>, proposal_part: model::ProposalPart)(
+            split_into in 1..256usize
+        ) -> VecDeque<model::StreamMessage> {
+            let mut buffer = Vec::new();
+            proposal_part.encode(&mut buffer).expect("Failed to encode proposal part");
+
+            buffer
+                .chunks(buffer.len() / split_into)
+                .map(Vec::from)
+                .map(model::stream_message::Message::Content)
+                .chain(std::iter::once(model::stream_message::Message::Fin(model::Fin {})))
+                .enumerate()
+                .map(|(i, message)| model::StreamMessage {
+                    message: Some(message),
+                    stream_id: stream_id.clone(),
+                    message_id: i as u64
+                })
+                .collect()
+        }
+    }
+
+    prop_compose! {
+        fn valid_stream_message_sequence()(
+            stream_id in stream_id(),
+            proposal_part in proposal_part()
+        )(
+            stream_messages in stream_messages(stream_id.clone(), proposal_part.clone()),
+            stream_id in Just(stream_id),
+            proposal_part in Just(proposal_part),
+            limit in 0..10000usize
+        ) ->ValidStreamMessageSequence {
+            ValidStreamMessageSequence { proposal_part, stream_messages, stream_id, limit }
+        }
+    }
+
+    #[derive(Clone)]
+    pub enum PropTestTransition {
+        Accumulate(model::StreamMessage),
+        ActMalicious(ProptestMaliciousTransition),
+        Collect,
+    }
+
+    impl std::fmt::Debug for PropTestTransition {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Accumulate(_) => f.debug_tuple("Accumulate").field(&"...").finish(),
+                Self::ActMalicious(transition) => f.debug_tuple("ActMalicious").field(&transition).finish(),
+                Self::Collect => f.debug_tuple("Collect").finish(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum ProptestMaliciousTransition {
+        InvalidStreamId(Vec<u8>),
+        InsertGarbageData(Vec<u8>),
+        DoubleFin,
+        InvalidModel,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum ProptestError {
+        InvalidStreamId,
+        MaxBounds,
+        DoubleFin,
+        DecodeError,
+        ModelError,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct OrderedStreamAccumulatorStateMachine {
+        // TODO: flatten this!
+        inner: ValidStreamMessageSequence,
+        error_expected: Option<ProptestError>,
+    }
+
+    impl OrderedStreamAccumulatorStateMachine {
+        fn matches_expected_error(
+            &self,
+            res: Result<OrderedStreamAccumulator<model::ProposalPart>, AccumulateError>,
+        ) -> Option<OrderedStreamAccumulator<model::ProposalPart>> {
+            match res {
+                Ok(res) => Some(res),
+                Err(ref error_actual) => match &self.error_expected {
+                    Some(error_expected) => match (error_actual, error_expected) {
+                        (AccumulateError::InvalidStreamId(..), ProptestError::InvalidStreamId)
+                        | (AccumulateError::MaxBounds(..), ProptestError::MaxBounds)
+                        | (AccumulateError::DoubleFin(..), ProptestError::DoubleFin)
+                        | (AccumulateError::DecodeError(..), ProptestError::DecodeError)
+                        | (AccumulateError::ModelError(..), ProptestError::ModelError) => None,
+                        _ => panic!("Expected {error_expected:?}, got {error_actual:?}"),
+                    },
+                    None => panic!("Error {error_actual} but wasn't expecting any error"),
+                },
+            }
+        }
+    }
+
+    impl ReferenceStateMachine for OrderedStreamAccumulatorStateMachine {
+        type State = OrderedStreamAccumulatorStateMachine;
+        type Transition = PropTestTransition;
+
+        fn init_state() -> BoxedStrategy<Self::State> {
+            valid_stream_message_sequence()
+                .prop_map(|stream_messages| OrderedStreamAccumulatorStateMachine {
+                    error_expected: if stream_messages.limit < stream_messages.proposal_part.encoded_len() {
+                        Some(ProptestError::MaxBounds)
+                    } else {
+                        None
+                    },
+                    inner: stream_messages,
+                })
+                .boxed()
+        }
+
+        fn transitions(state: &Self::State) -> BoxedStrategy<Self::Transition> {
+            let transition = if let Some(stream_message) = state.inner.stream_messages.front() {
+                PropTestTransition::Accumulate(stream_message.clone())
+            } else {
+                PropTestTransition::Collect
+            };
+
+            Just(transition).boxed()
+        }
+
+        fn apply(mut state: Self::State, transition: &Self::Transition) -> Self::State {
+            if let PropTestTransition::Accumulate(_) = transition {
+                state.inner.stream_messages.pop_front();
+            };
+
+            state
+        }
+    }
+
+    impl StateMachineTest for OrderedStreamAccumulator<model::ProposalPart> {
+        type SystemUnderTest = Self;
+        type Reference = OrderedStreamAccumulatorStateMachine;
+
+        fn init_test(ref_state: &<Self::Reference as ReferenceStateMachine>::State) -> Self::SystemUnderTest {
+            Self::new_with_limits(ref_state.inner.limit)
+        }
+
+        fn apply(
+            state: Self::SystemUnderTest,
+            ref_state: &<Self::Reference as ReferenceStateMachine>::State,
+            transition: <Self::Reference as ReferenceStateMachine>::Transition,
+        ) -> Self::SystemUnderTest {
+            match transition {
+                PropTestTransition::Accumulate(stream_message) => {
+                    ref_state.matches_expected_error(state.clone().accumulate(stream_message)).unwrap_or(state)
+                }
+                PropTestTransition::ActMalicious(_) => todo!(),
+                PropTestTransition::Collect => {
+                    if ref_state.error_expected.is_none() {
+                        assert_eq!(state.clone().consume(), Some(ref_state.inner.proposal_part.clone()));
+                    }
+                    state
+                }
+            }
         }
     }
 }
