@@ -39,6 +39,8 @@ unsigned-varint.workspace = true
 # Debug and testing
 tracing.workspace = true
 rstest.workspace = true
+assert_matches.workspace = true
+rand.workspace = true
 
 [lints]
 workspace = true

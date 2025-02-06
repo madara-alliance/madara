@@ -7313,6 +7313,7 @@ name = "mp-proto"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "base64 0.22.1",
  "bytes",
  "m-proc-macros",
@@ -7326,6 +7327,7 @@ dependencies = [
  "mp-utils",
  "prost",
  "prost-build",
+ "rand",
  "rstest 0.18.2",
  "serde",
  "serde_json",
