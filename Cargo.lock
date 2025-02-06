@@ -7326,6 +7326,7 @@ dependencies = [
  "mp-utils",
  "prost",
  "prost-build",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-core",

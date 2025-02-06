@@ -8,16 +8,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-base64.workspace = true
-bytes.workspace = true
-prost.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-unsigned-varint.workspace = true
-
+# Madara
 mc-db.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
@@ -29,8 +20,25 @@ mp-utils.workspace = true
 
 m-proc-macros.workspace = true
 
+# Starknet
 starknet-core.workspace = true
 starknet-types-core.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Protobuf
+base64.workspace = true
+bytes.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unsigned-varint.workspace = true
+
+# Debug and testing
+tracing.workspace = true
+rstest.workspace = true
 
 [lints]
 workspace = true
