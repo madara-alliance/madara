@@ -11,6 +11,7 @@ mod classes;
 mod events;
 mod headers;
 mod model_primitives;
+mod proposal;
 mod transactions;
 
 #[derive(thiserror::Error, Debug)]
