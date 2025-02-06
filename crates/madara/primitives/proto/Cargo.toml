@@ -41,6 +41,9 @@ tracing.workspace = true
 rstest.workspace = true
 assert_matches.workspace = true
 rand.workspace = true
+proptest.workspace = true
+proptest-derive.workspace = true
+proptest-state-machine.workspace = true
 
 [lints]
 workspace = true
