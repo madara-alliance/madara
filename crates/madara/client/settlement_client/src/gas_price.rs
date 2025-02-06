@@ -64,7 +64,7 @@ pub async fn gas_price_worker_once<C, S>(
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()>
+) -> Result<(), SettlementClientError>
 where
     S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
@@ -74,27 +74,35 @@ where
     }
 
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
-    let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
+    let duration_since_last_update = SystemTime::now()
+        .duration_since(last_update_timestamp)
+        .context("Failed to calculate time since last update")
+        .map_err(SettlementClientError::Other)?;
 
-    let last_update_timestamp =
-        last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
+    let last_update_timestamp = last_update_timestamp
+        .duration_since(UNIX_EPOCH)
+        .context("SystemTime before UNIX EPOCH!")
+        .map_err(SettlementClientError::Other)?
+        .as_micros();
+
     if duration_since_last_update > 10 * gas_price_poll_ms {
-        anyhow::bail!(
+        return Err(SettlementClientError::Other(anyhow::anyhow!(
             "Gas prices have not been updated for {} ms. Last update was at {}",
             duration_since_last_update.as_micros(),
             last_update_timestamp
-        );
+        )));
     }
 
-    anyhow::Ok(())
+    Ok(())
 }
+
 pub async fn gas_price_worker<C, S>(
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()>
+) -> Result<(), SettlementClientError>
 where
     S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
@@ -112,26 +120,34 @@ where
         .await?;
     }
 
-    anyhow::Ok(())
+    Ok(())
 }
 
 async fn update_gas_price<C, S>(
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()>
+) -> Result<(), SettlementClientError>
 where
     S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
-    let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await?;
+    let (eth_gas_price, avg_blob_base_fee) = settlement_client
+        .get_gas_prices()
+        .await
+        .context("Failed to get gas prices")
+        .map_err(SettlementClientError::Other)?;
 
     l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
     // fetch eth/strk price and update
     if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
-        let (eth_strk_price, decimals) =
-            oracle_provider.fetch_eth_strk_price().await.context("failed to retrieve ETH/STRK price")?;
+        let (eth_strk_price, decimals) = oracle_provider
+            .fetch_eth_strk_price()
+            .await
+            .context("Failed to retrieve ETH/STRK price")
+            .map_err(SettlementClientError::Other)?;
+
         let strk_gas_price = (BigDecimal::new(eth_gas_price.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
         .as_bigint_and_exponent();
@@ -140,22 +156,38 @@ where
         .as_bigint_and_exponent();
 
         l1_gas_provider.update_strk_l1_gas_price(
-            strk_gas_price.0.to_str_radix(10).parse::<u128>().context("failed to update strk l1 gas price")?,
+            strk_gas_price
+                .0
+                .to_str_radix(10)
+                .parse::<u128>()
+                .context("Failed to update STRK L1 gas price")
+                .map_err(SettlementClientError::Other)?,
         );
         l1_gas_provider.update_strk_l1_data_gas_price(
             strk_data_gas_price
                 .0
                 .to_str_radix(10)
                 .parse::<u128>()
-                .context("failed to update strk l1 data gas price")?,
+                .context("Failed to update STRK L1 data gas price")
+                .map_err(SettlementClientError::Other)?,
         );
     }
 
     l1_gas_provider.update_last_update_timestamp();
 
     // Update block number separately to avoid holding the lock for too long
-    update_l1_block_metrics(settlement_client.get_latest_block_number().await?, l1_block_metrics, l1_gas_provider)
-        .await?;
+    update_l1_block_metrics(
+        settlement_client
+            .get_latest_block_number()
+            .await
+            .context("Failed to get latest block number")
+            .map_err(SettlementClientError::Other)?,
+        l1_block_metrics,
+        l1_gas_provider,
+    )
+    .await
+    .context("Failed to update L1 block metrics")
+    .map_err(SettlementClientError::Other)?;
 
     Ok(())
 }
@@ -164,7 +196,7 @@ async fn update_l1_block_metrics(
     block_number: u64,
     l1_block_metrics: Arc<L1BlockMetrics>,
     l1_gas_provider: &GasPriceProvider,
-) -> anyhow::Result<()> {
+) -> Result<(), SettlementClientError> {
     // Get the current gas price
     let current_gas_price = l1_gas_provider.get_gas_prices();
     let eth_gas_price = current_gas_price.eth_l1_gas_price;
@@ -172,12 +204,10 @@ async fn update_l1_block_metrics(
     tracing::debug!("Gas price fetched is: {:?}", eth_gas_price);
 
     // Update the metrics
-
     l1_block_metrics.l1_block_number.record(block_number, &[]);
     l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
 
     // We're ignoring l1_gas_price_strk
-
     Ok(())
 }
 
@@ -201,7 +231,7 @@ mod eth_client_gas_price_worker_test {
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Spawn the gas_price_worker in a separate task
-        let worker_handle: JoinHandle<anyhow::Result<()>> = tokio::spawn({
+        let worker_handle: JoinHandle<Result<(), SettlementClientError>> = tokio::spawn({
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
@@ -364,16 +394,16 @@ mod eth_client_gas_price_worker_test {
         .await;
 
         match result {
-            Ok(Ok(_)) => panic!("Expected gas_price_worker to panic, but it didn't"),
-            Ok(Err(panic_msg)) => {
-                if let Some(panic_msg) = panic_msg.downcast_ref::<String>() {
+            Ok(Ok(_)) => panic!("Expected gas_price_worker to fail, but it succeeded"),
+            Ok(Err(err)) => match err {
+                SettlementClientError::Other(e) => {
+                    let error_msg = e.to_string();
                     let re =
                         Regex::new(r"Gas prices have not been updated for \d+ ms\. Last update was at \d+").unwrap();
-                    assert!(re.is_match(panic_msg), "Panic message did not match expected format. Got: {}", panic_msg);
-                } else {
-                    panic!("Panic occurred, but message was not a string");
+                    assert!(re.is_match(&error_msg), "Error message did not match expected format. Got: {}", error_msg);
                 }
-            }
+                other => panic!("Expected Other error variant, got: {:?}", other),
+            },
             Err(err) => panic!("gas_price_worker timed out: {err}"),
         }
 

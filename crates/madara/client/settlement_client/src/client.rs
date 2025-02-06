@@ -34,29 +34,29 @@ pub trait ClientTrait: Send + Sync {
     fn get_client_type(&self) -> ClientType;
 
     // Create a new instance of the client
-    async fn new(config: Self::Config) -> anyhow::Result<Self>
+    async fn new(config: Self::Config) -> Result<Self, SettlementClientError>
     where
         Self: Sized;
 
     // Get the latest block number
-    async fn get_latest_block_number(&self) -> anyhow::Result<u64>;
+    async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
 
     // Get the block number of the last occurrence of the state update event
-    async fn get_last_event_block_number(&self) -> anyhow::Result<u64>;
+    async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError>;
 
     // Get the last verified block number
-    async fn get_last_verified_block_number(&self) -> anyhow::Result<u64>;
+    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError>;
 
     // Get the last state root
     // - change this to Felt in implementation
     // - write tests for conversion to Felt from <native-type>
-    async fn get_last_verified_state_root(&self) -> anyhow::Result<Felt>;
+    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError>;
 
     // Get the last verified block hash
-    async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt>;
+    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError>;
 
     // Get initial state from client
-    async fn get_initial_state(&self) -> anyhow::Result<StateUpdate>;
+    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError>;
 
     // Listen for update state events
     async fn listen_for_update_state_events(
@@ -64,13 +64,13 @@ pub trait ClientTrait: Send + Sync {
         backend: Arc<MadaraBackend>,
         ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), SettlementClientError>;
 
     // get gas prices
-    async fn get_gas_prices(&self) -> anyhow::Result<(u128, u128)>;
+    async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError>;
 
     // Get message hash from event
-    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> anyhow::Result<Vec<u8>>;
+    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> Result<Vec<u8>, SettlementClientError>;
 
     /// Get cancellation status of an L1 to L2 message
     ///
@@ -85,7 +85,7 @@ pub trait ClientTrait: Send + Sync {
     ///     - 0 if the message has not been cancelled
     ///     - timestamp of the cancellation if it has been cancelled
     /// - An Error if the call fail
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> anyhow::Result<Felt>;
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> Result<Felt, SettlementClientError>;
 
     // ============================================================
     // Stream Implementations :
@@ -94,7 +94,7 @@ pub trait ClientTrait: Send + Sync {
     /// The type of Stream that will be returned by get_messaging_stream
     /// - Stream: Represents an asynchronous sequence of values
     /// - Item: Each element in the stream is wrapped in Option to handle potential gaps
-    /// - anyhow::Result: Each item is further wrapped in Result for error handling
+    /// - Result<T, SettlementClientError>: Each item is further wrapped in Result for error handling
     /// - CommonMessagingEventData: The actual message data structure being streamed
     type StreamType: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send;
 
@@ -105,10 +105,10 @@ pub trait ClientTrait: Send + Sync {
     ///    successfully processed, used as starting point for the new stream
     ///
     /// # Returns
-    /// * `anyhow::Result<Self::StreamType>` - Returns the stream if successful, or an error
+    /// * `Result<Self::StreamType, SettlementClientError>` - Returns the stream if successful, or an error
     ///    if stream creation fails
     async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
-    ) -> anyhow::Result<Self::StreamType>;
+    ) -> Result<Self::StreamType, SettlementClientError>;
 }

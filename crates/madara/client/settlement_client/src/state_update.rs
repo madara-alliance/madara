@@ -23,7 +23,7 @@ pub fn update_l1(
     backend: &MadaraBackend,
     state_update: StateUpdate,
     block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()> {
+) -> Result<(), SettlementClientError> {
     tracing::info!(
         "🔄 Updated L1 head #{} ({}) with state root ({})",
         state_update.block_number,
@@ -33,7 +33,10 @@ pub fn update_l1(
 
     block_metrics.l1_block_number.record(state_update.block_number, &[]);
 
-    backend.write_last_confirmed_block(state_update.block_number).context("Setting l1 last confirmed block number")?;
+    backend
+        .write_last_confirmed_block(state_update.block_number)
+        .context("Setting l1 last confirmed block number")
+        .map_err(SettlementClientError::Other)?;
     tracing::debug!("update_l1: wrote last confirmed block number");
 
     Ok(())
@@ -44,22 +47,38 @@ pub async fn state_update_worker<C, S>(
     settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
     ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()>
+) -> Result<(), SettlementClientError>
 where
     S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
-    backend.clear_last_confirmed_block().context("Clearing l1 last confirmed block number")?;
+    backend
+        .clear_last_confirmed_block()
+        .context("Failed to clear L1 last confirmed block number")
+        .map_err(SettlementClientError::Other)?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
+
     // This does not seem to play well with anvil
     #[cfg(not(test))]
     {
-        let initial_state = settlement_client.get_initial_state().await.context("Getting initial ethereum state")?;
-        update_l1(&backend, initial_state, l1_block_metrics.clone())?;
+        let initial_state = settlement_client
+            .get_initial_state()
+            .await
+            .context("Failed to get initial ethereum state")
+            .map_err(SettlementClientError::Other)?;
+
+        update_l1(&backend, initial_state, l1_block_metrics.clone())
+            .context("Failed to update L1 with initial state")
+            .map_err(SettlementClientError::Other)?;
     }
 
-    settlement_client.listen_for_update_state_events(backend, ctx, l1_block_metrics.clone()).await?;
-    anyhow::Ok(())
+    settlement_client
+        .listen_for_update_state_events(backend, ctx, l1_block_metrics.clone())
+        .await
+        .context("Failed to listen for update state events")
+        .map_err(SettlementClientError::Other)?;
+
+    Ok(())
 }

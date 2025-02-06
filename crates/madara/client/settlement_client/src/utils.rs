@@ -18,13 +18,19 @@ pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogState
     Ok(StateUpdate { block_number, global_root, block_hash })
 }
 
-pub fn u256_to_felt(u256: U256) -> Result<Felt, SettlementClientError> {
-    let bytes = u256.to_be_bytes();
-    Ok(Felt::from_bytes_be(&bytes))
+pub fn u256_to_felt(value: U256) -> Result<Felt, SettlementClientError> {
+    let bytes = value.to_be_bytes();
+    // Felt::from_bytes_be returns Felt directly, not a Result
+    let felt = Felt::from_bytes_be(&bytes);
+    Ok(felt)
 }
 
-pub fn felt_to_u256(felt: Felt) -> U256 {
-    U256::from_be_bytes(felt.to_bytes_be())
+pub fn felt_to_u256(felt: Felt) -> Result<U256, SettlementClientError> {
+    let bytes = felt.to_bytes_be();
+    if bytes.len() > 32 {
+        return Err(SettlementClientError::ConversionError("Felt value too large for U256".into()));
+    }
+    Ok(U256::from_be_bytes(bytes))
 }
 
 #[cfg(test)]

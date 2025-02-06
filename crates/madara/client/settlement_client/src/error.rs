@@ -21,9 +21,24 @@ pub enum SettlementClientError {
     #[error("Invalid log: {0}")]
     InvalidLog(String),
 
+    #[error("Invalid contract: {0}")]
+    InvalidContract(String),
+
+    #[error("Conversion error: {0}")]
+    ConversionError(String),
+
     #[error("Ethereum RPC error: {0}")]
     EthereumRpcError(#[from] alloy::sol_types::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+
+    #[error("Invalid event: {0}")]
+    InvalidEvent(String),
+
+    #[error("Invalid response: {0}")]
+    InvalidResponse(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
