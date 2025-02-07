@@ -538,7 +538,6 @@ mod test {
 mod proptest {
     use std::collections::VecDeque;
 
-    use mc_db::stream;
     use proptest::prelude::*;
     use proptest::prop_compose;
     use proptest_state_machine::ReferenceStateMachine;
@@ -565,30 +564,8 @@ mod proptest {
             ..Default::default()
         })]
 
-        /// Simulates transaction insertion and removal into [MempoolInner].
-        ///
-        /// Each iteration will simulate the insertion of between 1 and 256
-        /// [MempoolTransaction]s into the mempool. Note that insertions happen
-        /// twice as often as popping from the mempool.
         #[test]
         fn ordered_stream_proptest(sequential 1..256 => SUT);
-    }
-
-    #[derive(Clone)]
-    pub struct ValidStreamMessageSequence {
-        proposal_part: model::ProposalPart,
-        stream_messages: VecDeque<model::StreamMessage>,
-        stream_id: Vec<u8>,
-        limit: usize,
-    }
-
-    impl std::fmt::Debug for ValidStreamMessageSequence {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("ValidStreamMessageSequence")
-                .field("stream_id", &self.stream_id)
-                .field("limit", &self.limit)
-                .finish()
-        }
     }
 
     prop_compose! {
@@ -644,115 +621,219 @@ mod proptest {
     }
 
     prop_compose! {
-        fn valid_stream_message_sequence()(
+        fn reference_state_machine()(
             stream_id in stream_id(),
             proposal_part in proposal_part()
         )(
             stream_messages in stream_messages(stream_id.clone(), proposal_part.clone()),
             stream_id in Just(stream_id),
             proposal_part in Just(proposal_part),
-            limit in 0..10000usize
-        ) ->ValidStreamMessageSequence {
-            ValidStreamMessageSequence { proposal_part, stream_messages, stream_id, limit }
+            delta in 0..10_000usize
+        ) -> OrderedStreamAccumulatorStateMachine {
+            let size = proposal_part.encoded_len();
+            let limit = if delta > 5_000 {
+                size.saturating_sub(delta)
+            } else {
+                size.saturating_add(delta)
+            };
+
+            OrderedStreamAccumulatorStateMachine {
+                proposal_part,
+                stream_messages,
+                stream_id,
+                message_id: 0,
+                size,
+                limit,
+            }
         }
     }
 
     #[derive(Clone)]
-    pub enum PropTestTransition {
+    pub enum ProptestTransition {
         Accumulate(model::StreamMessage),
         ActMalicious(ProptestMaliciousTransition),
         Collect,
     }
 
-    impl std::fmt::Debug for PropTestTransition {
+    #[derive(Clone)]
+    pub enum ProptestMaliciousTransition {
+        InvalidStreamId(model::StreamMessage),
+        InsertGarbageData(model::StreamMessage),
+        DoubleFin(model::StreamMessage),
+        InvalidModel(model::StreamMessage),
+    }
+
+    impl std::fmt::Debug for ProptestTransition {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Accumulate(_) => f.debug_tuple("Accumulate").field(&"...").finish(),
+                Self::Accumulate(_) => f.debug_tuple("Accumulate").finish(),
                 Self::ActMalicious(transition) => f.debug_tuple("ActMalicious").field(&transition).finish(),
                 Self::Collect => f.debug_tuple("Collect").finish(),
             }
         }
     }
 
-    #[derive(Clone, Debug)]
-    pub enum ProptestMaliciousTransition {
-        InvalidStreamId(Vec<u8>),
-        InsertGarbageData(Vec<u8>),
-        DoubleFin,
-        InvalidModel,
-    }
-
-    #[derive(Clone, Debug)]
-    pub enum ProptestError {
-        InvalidStreamId,
-        MaxBounds,
-        DoubleFin,
-        DecodeError,
-        ModelError,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct OrderedStreamAccumulatorStateMachine {
-        // TODO: flatten this!
-        inner: ValidStreamMessageSequence,
-        error_expected: Option<ProptestError>,
-    }
-
-    impl OrderedStreamAccumulatorStateMachine {
-        fn matches_expected_error(
-            &self,
-            res: Result<OrderedStreamAccumulator<model::ProposalPart>, AccumulateError>,
-        ) -> Option<OrderedStreamAccumulator<model::ProposalPart>> {
-            match res {
-                Ok(res) => Some(res),
-                Err(ref error_actual) => match &self.error_expected {
-                    Some(error_expected) => match (error_actual, error_expected) {
-                        (AccumulateError::InvalidStreamId(..), ProptestError::InvalidStreamId)
-                        | (AccumulateError::MaxBounds(..), ProptestError::MaxBounds)
-                        | (AccumulateError::DoubleFin(..), ProptestError::DoubleFin)
-                        | (AccumulateError::DecodeError(..), ProptestError::DecodeError)
-                        | (AccumulateError::ModelError(..), ProptestError::ModelError) => None,
-                        _ => panic!("Expected {error_expected:?}, got {error_actual:?}"),
-                    },
-                    None => panic!("Error {error_actual} but wasn't expecting any error"),
-                },
+    impl std::fmt::Debug for ProptestMaliciousTransition {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::InvalidStreamId(_) => f.debug_tuple("InvalidStreamId").finish(),
+                Self::InsertGarbageData(_) => f.debug_tuple("InsertGarbageData").finish(),
+                Self::DoubleFin(_) => f.debug_tuple("DoubleFin").finish(),
+                Self::InvalidModel(_) => f.debug_tuple("InvalidModel").finish(),
             }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct OrderedStreamAccumulatorStateMachine {
+        proposal_part: model::ProposalPart,
+        stream_messages: VecDeque<model::StreamMessage>,
+        stream_id: Vec<u8>,
+        message_id: u64,
+        size: usize,
+        limit: usize,
+    }
+
+    impl std::fmt::Debug for OrderedStreamAccumulatorStateMachine {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let stream_messages = self
+                .stream_messages
+                .iter()
+                .map(|m| {
+                    m.message.clone().map(|m| match m {
+                        model::stream_message::Message::Content(_) => "Content(...)",
+                        model::stream_message::Message::Fin(_) => "Fin",
+                    })
+                })
+                .take(5)
+                .collect::<Vec<_>>();
+
+            let stream_messages = if stream_messages.len() < self.stream_messages.len() {
+                format!("{stream_messages:?}... ({} items)", self.stream_messages.len())
+            } else {
+                format!("{stream_messages:?} ({} items)", self.stream_messages.len())
+            };
+
+            f.debug_struct("OrderedStreamAccumulatorStateMachine")
+                .field("stream_messages", &stream_messages)
+                .field("stream_id", &model::ConsensusStreamId::decode(self.stream_id.as_slice()).unwrap())
+                .field("message_id", &self.message_id)
+                .field("size", &self.size)
+                .field("limit", &self.limit)
+                .finish()
         }
     }
 
     impl ReferenceStateMachine for OrderedStreamAccumulatorStateMachine {
         type State = OrderedStreamAccumulatorStateMachine;
-        type Transition = PropTestTransition;
+        type Transition = ProptestTransition;
 
         fn init_state() -> BoxedStrategy<Self::State> {
-            valid_stream_message_sequence()
-                .prop_map(|stream_messages| OrderedStreamAccumulatorStateMachine {
-                    error_expected: if stream_messages.limit < stream_messages.proposal_part.encoded_len() {
-                        Some(ProptestError::MaxBounds)
-                    } else {
-                        None
-                    },
-                    inner: stream_messages,
-                })
-                .boxed()
+            reference_state_machine().boxed()
         }
 
         fn transitions(state: &Self::State) -> BoxedStrategy<Self::Transition> {
-            let transition = if let Some(stream_message) = state.inner.stream_messages.front() {
-                PropTestTransition::Accumulate(stream_message.clone())
+            if let Some(stream_message) = state.stream_messages.front() {
+                prop_oneof![
+                    4 => Just(ProptestTransition::Accumulate(stream_message.clone())),
+                    // 1 => Self::act_malicious(state)
+                ]
+                .boxed()
             } else {
-                PropTestTransition::Collect
-            };
-
-            Just(transition).boxed()
+                prop_oneof! [
+                    1 => Just(ProptestTransition::Collect),
+                    // 1 => Self::act_malicious(state)
+                ]
+                .boxed()
+            }
         }
 
         fn apply(mut state: Self::State, transition: &Self::Transition) -> Self::State {
-            if let PropTestTransition::Accumulate(_) = transition {
-                state.inner.stream_messages.pop_front();
-            };
+            match transition {
+                ProptestTransition::Accumulate(_) => {
+                    state.stream_messages.pop_front();
+                    state.message_id += 1;
+                }
+                ProptestTransition::ActMalicious(transition) => match transition {
+                    ProptestMaliciousTransition::InvalidStreamId(_) => {
+                        state.stream_messages.pop_front();
+                    }
+                    ProptestMaliciousTransition::InsertGarbageData(_) => {
+                        state.stream_messages.pop_front();
+                        state.size += 1;
+                    }
+                    _ => (),
+                },
+                ProptestTransition::Collect => (),
+            }
 
             state
+        }
+    }
+
+    impl OrderedStreamAccumulatorStateMachine {
+        fn act_malicious(state: &Self) -> impl Strategy<Value = ProptestTransition> {
+            let invalid_stream_id = || {
+                let mut stream_id = state.stream_id.clone();
+                stream_id[0] += 1;
+
+                let mut stream_message = state.stream_messages.front().cloned().unwrap_or_default();
+                stream_message.stream_id = stream_id;
+
+                ProptestMaliciousTransition::InvalidStreamId(stream_message)
+            };
+
+            let insert_garbage_data = || {
+                let content = state
+                    .stream_messages
+                    .front()
+                    .cloned()
+                    .unwrap_or_default()
+                    .message
+                    .unwrap_or(model::stream_message::Message::Content(vec![]));
+
+                let content = if let model::stream_message::Message::Content(mut content) = content {
+                    content.push(42);
+                    content
+                } else {
+                    vec![42]
+                };
+
+                let stream_message = model::StreamMessage {
+                    message: Some(model::stream_message::Message::Content(content)),
+                    stream_id: state.stream_id.clone(),
+                    message_id: state.message_id,
+                };
+
+                ProptestMaliciousTransition::InsertGarbageData(stream_message)
+            };
+
+            let double_fin = || {
+                let stream_message = model::StreamMessage {
+                    message: Some(model::stream_message::Message::Fin(model::Fin {})),
+                    stream_id: state.stream_id.clone(),
+                    message_id: u64::MAX - state.message_id,
+                };
+
+                ProptestMaliciousTransition::DoubleFin(stream_message)
+            };
+
+            let invalid_model = || {
+                let stream_mesage = model::StreamMessage {
+                    message: None,
+                    stream_id: state.stream_id.clone(),
+                    message_id: u64::MAX / 2 - state.message_id,
+                };
+
+                ProptestMaliciousTransition::InvalidModel(stream_mesage)
+            };
+
+            prop_oneof![
+                Just(ProptestTransition::ActMalicious(invalid_stream_id())),
+                Just(ProptestTransition::ActMalicious(insert_garbage_data())),
+                Just(ProptestTransition::ActMalicious(double_fin())),
+                Just(ProptestTransition::ActMalicious(invalid_model()))
+            ]
         }
     }
 
@@ -761,7 +842,7 @@ mod proptest {
         type Reference = OrderedStreamAccumulatorStateMachine;
 
         fn init_test(ref_state: &<Self::Reference as ReferenceStateMachine>::State) -> Self::SystemUnderTest {
-            Self::new_with_limits(ref_state.inner.limit)
+            Self::new_with_limits(ref_state.limit)
         }
 
         fn apply(
@@ -770,15 +851,72 @@ mod proptest {
             transition: <Self::Reference as ReferenceStateMachine>::Transition,
         ) -> Self::SystemUnderTest {
             match transition {
-                PropTestTransition::Accumulate(stream_message) => {
-                    ref_state.matches_expected_error(state.clone().accumulate(stream_message)).unwrap_or(state)
+                ProptestTransition::Accumulate(stream_message) => {
+                    let res = state.clone().accumulate(stream_message.clone());
+                    Self::check_limits(&res, stream_message.clone(), &state, ref_state);
+
+                    if matches!(stream_message.message.unwrap(), model::stream_message::Message::Fin(_))
+                        && ref_state.limit >= ref_state.size
+                    {
+                        if let Ok(res) = &res {
+                            assert_matches::assert_matches!(res, OrderedStreamAccumulator::Done(_));
+                        }
+                    }
+
+                    res.unwrap_or(state)
                 }
-                PropTestTransition::ActMalicious(_) => todo!(),
-                PropTestTransition::Collect => {
-                    if ref_state.error_expected.is_none() {
-                        assert_eq!(state.clone().consume(), Some(ref_state.inner.proposal_part.clone()));
+                ProptestTransition::ActMalicious(transition) => match transition {
+                    ProptestMaliciousTransition::InvalidStreamId(stream_message) => {
+                        let res = state.clone().accumulate(stream_message.clone());
+                        Self::check_limits(&res, stream_message, &state, ref_state);
+                        assert_matches::assert_matches!(res, Err(AccumulateError::InvalidStreamId(..)));
+                        res.unwrap_or(state)
+                    }
+                    ProptestMaliciousTransition::InsertGarbageData(stream_message) => {
+                        let res = state.clone().accumulate(stream_message.clone());
+                        Self::check_limits(&res, stream_message, &state, ref_state);
+                        res.unwrap_or(state)
+                    }
+                    ProptestMaliciousTransition::DoubleFin(stream_message) => {
+                        let res = state.clone().accumulate(stream_message.clone());
+                        Self::check_limits(&res, stream_message, &state, ref_state);
+                        assert_matches::assert_matches!(res, Err(AccumulateError::DoubleFin(..)));
+                        res.unwrap_or(state)
+                    }
+                    ProptestMaliciousTransition::InvalidModel(stream_message) => {
+                        let res = state.clone().accumulate(stream_message.clone());
+                        Self::check_limits(&res, stream_message, &state, ref_state);
+                        assert_matches::assert_matches!(res, Err(AccumulateError::ModelError(..)));
+                        res.unwrap_or(state)
+                    }
+                },
+                ProptestTransition::Collect => {
+                    if ref_state.limit >= ref_state.size {
+                        let res = state.clone().consume();
+                        assert!(state.is_done(), "Called collect on incomplete stream");
+                        assert!(res.is_some(), "Complete stream returned none");
+                        assert_eq!(res, Some(ref_state.proposal_part.clone()), "Collected stream does not match");
                     }
                     state
+                }
+            }
+        }
+    }
+
+    impl OrderedStreamAccumulator<model::ProposalPart> {
+        fn check_limits(
+            res: &Result<Self, AccumulateError>,
+            stream_message: model::StreamMessage,
+            state: &Self,
+            ref_state: &OrderedStreamAccumulatorStateMachine,
+        ) {
+            if let OrderedStreamAccumulator::Accumulate(inner) = &state {
+                if let model::stream_message::Message::Content(bytes) = stream_message.message.clone().unwrap() {
+                    if ref_state.limit < ref_state.size && inner.limits.clone().update(bytes.len()).is_err() {
+                        assert_matches::assert_matches!(res, Err(AccumulateError::MaxBounds(..)));
+                    } else {
+                        assert_matches::assert_matches!(res, Ok(..));
+                    }
                 }
             }
         }
