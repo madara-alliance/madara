@@ -31,7 +31,7 @@ impl StarknetEventStream {
 }
 
 impl Stream for StarknetEventStream {
-    type Item = Option<Result<CommonMessagingEventData, SettlementClientError>>;
+    type Item = Result<CommonMessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.future.is_none() {
@@ -133,16 +133,16 @@ impl Stream for StarknetEventStream {
                                 });
 
                             match event_data {
-                                Ok(data) => Poll::Ready(Some(Some(Ok(data)))),
-                                Err(e) => Poll::Ready(Some(Some(Err(SettlementClientError::Other(e))))),
+                                Ok(data) => Poll::Ready(Some(Ok(data))),
+                                Err(e) => Poll::Ready(Some(Err(SettlementClientError::Other(e)))),
                             }
                         }
                         Ok((None, updated_filter)) => {
                             // Update the filter even when no events are found
                             self.filter = updated_filter;
-                            Poll::Ready(Some(None))
+                            Poll::Ready(None)
                         }
-                        Err(e) => Poll::Ready(Some(Some(Err(SettlementClientError::Other(e))))),
+                        Err(e) => Poll::Ready(Some(Err(SettlementClientError::Other(e)))),
                     }
                 }
                 Poll::Pending => Poll::Pending,
@@ -153,7 +153,7 @@ impl Stream for StarknetEventStream {
                 // - Not able to call the RPC and fetch events.
                 // - Connection Issues.
                 error!("Starknet Event Stream : Unable to fetch events from starknet stream. Restart Sequencer.");
-                Poll::Ready(Some(None))
+                Poll::Ready(None)
             }
         }
     }

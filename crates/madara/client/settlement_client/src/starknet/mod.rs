@@ -195,7 +195,7 @@ impl SettlementClientTrait for StarknetClient {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
     }
 
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> Result<Felt, SettlementClientError> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
         let call_res = self
             .provider
             .call(
@@ -203,7 +203,7 @@ impl SettlementClientTrait for StarknetClient {
                     contract_address: self.l2_core_contract,
                     entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations")
                         .map_err(|e| SettlementClientError::Other(e.into()))?,
-                    calldata: vec![Felt::from_bytes_be_slice(msg_hash.as_slice())],
+                    calldata: vec![Felt::from_bytes_be_slice(msg_hash)],
                 },
                 BlockId::Tag(BlockTag::Pending),
             )

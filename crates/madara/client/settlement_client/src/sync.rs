@@ -24,7 +24,7 @@ pub async fn sync_worker<C: 'static, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let mut join_set = tokio::task::JoinSet::new();
 

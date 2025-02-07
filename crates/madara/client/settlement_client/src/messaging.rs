@@ -11,7 +11,6 @@ use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct CommonMessagingEventData {
@@ -35,9 +34,9 @@ pub async fn sync<C, S>(
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
-    info!("⟠ Starting L1 Messages Syncing...");
+    tracing::info!("⟠ Starting L1 Messages Syncing...");
 
     let last_synced_event_block = backend
         .messaging_last_synced_l1_block_with_event()
@@ -51,7 +50,7 @@ where
         .context("Failed to get messaging stream")?;
     let mut event_stream = Box::pin(stream);
 
-    while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
+    while let Some(event_result) = ctx.run_until_cancelled(event_stream.next()).await {
         if let Some(event) = event_result {
             let event_data = event?;
             let tx = parse_handle_message_transaction(&event_data)
@@ -65,11 +64,11 @@ where
                 .context("Failed to check message nonce")
                 .map_err(SettlementClientError::Other)?
             {
-                info!("Event already processed");
+                tracing::info!("Event already processed");
                 return Ok(());
             }
 
-            info!(
+            tracing::info!(
                 "Processing Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
                 event_data.block_number,
                 format!("0x{}", event_data.transaction_hash.to_hex_string()),
@@ -82,14 +81,14 @@ where
                 ClientType::ETH => B256::from_slice(event_hash.as_slice()).to_string(),
                 ClientType::STARKNET => Felt::from_bytes_be_slice(event_hash.as_slice()).to_hex_string(),
             };
-            info!("Checking for cancellation, event hash: {:?}", converted_event_hash);
+            tracing::info!("Checking for cancellation, event hash: {:?}", converted_event_hash);
 
             let cancellation_timestamp = settlement_client
-                .get_l1_to_l2_message_cancellations(event_hash)
+                .get_l1_to_l2_message_cancellations(&event_hash)
                 .await
                 .context("Failed to get message cancellation status")?;
             if cancellation_timestamp != Felt::ZERO {
-                info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
+                tracing::info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
                 handle_cancelled_message(backend, tx_nonce)
                     .context("Failed to handle cancelled message")
                     .map_err(SettlementClientError::Other)?;
@@ -99,9 +98,10 @@ where
             // Process message
             match process_message(&backend, &event_data, &chain_id, mempool.clone()).await {
                 Ok(Some(tx_hash)) => {
-                    info!(
+                    tracing::info!(
                         "Message from block: {:?} submitted, transaction hash: {:?}",
-                        event_data.block_number, tx_hash
+                        event_data.block_number,
+                        tx_hash
                     );
 
                     let block_sent =
@@ -113,9 +113,10 @@ where
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    error!(
+                    tracing::error!(
                         "Unexpected error while processing Message from block: {:?}, error: {:?}",
-                        event_data.block_number, e
+                        event_data.block_number,
+                        e
                     );
                     return Err(SettlementClientError::Other(anyhow::anyhow!("Failed to process message")));
                 }
@@ -135,7 +136,7 @@ fn handle_cancelled_message(backend: Arc<MadaraBackend>, nonce: Nonce) -> Result
         }
         Ok(true) => {}
         Err(e) => {
-            error!("Unexpected DB error: {:?}", e);
+            tracing::error!("Unexpected DB error: {:?}", e);
             return Err(SettlementClientError::Other(anyhow::anyhow!("Database error: {}", e)));
         }
     }
@@ -186,7 +187,7 @@ async fn process_message(
             return Ok(None);
         }
         Err(e) => {
-            error!("⟠ Unexpected DB error: {:?}", e);
+            tracing::error!("⟠ Unexpected DB error: {:?}", e);
             return Err(SettlementClientError::Other(anyhow::anyhow!("Database error: {}", e)));
         }
     };
@@ -202,7 +203,10 @@ async fn process_message(
 #[cfg(test)]
 mod messaging_module_tests {
     use super::*;
-    use crate::client::{DummyConfig, DummyStream, MockSettlementClientTrait};
+    use crate::client::{
+        test_types::{DummyConfig, DummyStream},
+        MockSettlementClientTrait,
+    };
     use futures::stream;
     use mc_db::DatabaseService;
     use mc_mempool::{GasPriceProvider, L1DataProvider, MempoolLimits};

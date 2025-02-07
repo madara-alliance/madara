@@ -25,7 +25,7 @@ impl EthereumEventStream {
 }
 
 impl Stream for EthereumEventStream {
-    type Item = Option<Result<CommonMessagingEventData, SettlementClientError>>;
+    type Item = Result<CommonMessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
@@ -64,11 +64,11 @@ impl Stream for EthereumEventStream {
                             })
                         })();
 
-                    Poll::Ready(Some(Some(event_data)))
+                    Poll::Ready(Some(event_data))
                 }
-                Err(e) => Poll::Ready(Some(Some(Err(SettlementClientError::EthereumRpcError(e))))),
+                Err(e) => Poll::Ready(Some(Err(SettlementClientError::EthereumRpcError(e)))),
             },
-            Poll::Ready(None) => Poll::Ready(Some(None)),
+            Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -120,7 +120,7 @@ pub mod eth_event_stream_tests {
     // Helper function to process stream into a vector
     async fn collect_stream_events(
         stream: &mut EthereumEventStream,
-    ) -> Vec<Option<Result<CommonMessagingEventData, SettlementClientError>>> {
+    ) -> Vec<Result<CommonMessagingEventData, SettlementClientError>> {
         stream
             .take_while(|event| futures::future::ready(event.is_some()))
             .fold(Vec::new(), |mut acc, event| async move {

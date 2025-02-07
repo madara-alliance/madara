@@ -66,7 +66,7 @@ pub async fn gas_price_worker_once<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
     match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
@@ -104,7 +104,7 @@ pub async fn gas_price_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
@@ -129,7 +129,7 @@ async fn update_gas_price<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let (eth_gas_price, avg_blob_base_fee) = settlement_client
         .get_gas_prices()

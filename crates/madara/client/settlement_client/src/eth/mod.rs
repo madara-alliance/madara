@@ -228,10 +228,10 @@ impl SettlementClientTrait for EthereumClient {
     ///     - 0 if the message has not been cancelled
     ///     - timestamp of the cancellation if it has been cancelled
     /// - An Error if the call fail
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: Vec<u8>) -> Result<Felt, SettlementClientError> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
         let cancellation_timestamp = self
             .l1_core_contract
-            .l1ToL2MessageCancellations(B256::from_slice(msg_hash.as_slice()))
+            .l1ToL2MessageCancellations(B256::from_slice(msg_hash))
             .call()
             .await
             .map_err(|e| SettlementClientError::Other(e.into()))?;

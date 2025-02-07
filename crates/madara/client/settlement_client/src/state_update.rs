@@ -49,7 +49,7 @@ pub async fn state_update_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>> + Send + 'static,
+    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
     backend
