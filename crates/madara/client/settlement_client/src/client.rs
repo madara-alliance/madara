@@ -33,11 +33,6 @@ pub trait ClientTrait: Send + Sync {
     // Get client type
     fn get_client_type(&self) -> ClientType;
 
-    // Create a new instance of the client
-    async fn new(config: Self::Config) -> Result<Self, SettlementClientError>
-    where
-        Self: Sized;
-
     // Get the latest block number
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
 

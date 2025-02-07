@@ -242,17 +242,8 @@ mod messaging_module_tests {
         // Set up chain info
         let chain_config = Arc::new(ChainConfig::madara_test());
 
-        // Set up database paths
-        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
-        let base_path = temp_dir.path().join("data");
-        let backup_dir = Some(temp_dir.path().join("backups"));
-
         // Initialize database service
-        let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
-                .await
-                .expect("Failed to create database service"),
-        );
+        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
@@ -263,11 +254,13 @@ mod messaging_module_tests {
             MempoolLimits::for_testing(),
         ));
 
-        // Create a new context for mocking the static new() method
-        let ctx = MockClientTrait::new_context();
-        ctx.expect().returning(|_| Ok(MockClientTrait::default()));
-        let mock_client = MockClientTrait::new(DummyConfig).await.expect("Unable to init new mock client");
+        // Create a mock client directly
+        let mut mock_client = MockClientTrait::default();
 
+        // Configure basic mock expectations that all tests will need
+        mock_client.expect_get_client_type().returning(|| ClientType::ETH);
+
+        // Create a new service context for testing
         let ctx = ServiceContext::new_for_testing();
 
         MessagingTestRunner { client: mock_client, db, mempool, ctx, chain_config }
@@ -297,9 +290,6 @@ mod messaging_module_tests {
 
         // Mock get_messaging_hash
         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
-
-        // Mock get_client_type
-        client.expect_get_client_type().times(1).returning(|| ClientType::ETH);
 
         // Mock get_l1_to_l2_message_cancellations
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::ZERO));
@@ -343,9 +333,6 @@ mod messaging_module_tests {
 
         // Mock get_messaging_hash
         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
-
-        // Mock get_client_type
-        client.expect_get_client_type().times(1).returning(|| ClientType::ETH);
 
         // Mock get_l1_to_l2_message_cancellations - return non-zero to indicate cancellation
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::from(12345)));

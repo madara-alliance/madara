@@ -49,21 +49,9 @@ impl Clone for StarknetClient {
     }
 }
 
-// TODO : Remove github refs after implementing the zaun imports
-// Imp ⚠️ : zaun is not yet updated with latest app chain core contract implementations
-//          For this reason we are adding our own call implementations.
-#[async_trait]
-impl ClientTrait for StarknetClient {
-    type Config = StarknetClientConfig;
-
-    fn get_client_type(&self) -> ClientType {
-        ClientType::STARKNET
-    }
-
-    async fn new(config: Self::Config) -> Result<Self, SettlementClientError>
-    where
-        Self: Sized,
-    {
+// Add this new implementation block for constructor
+impl StarknetClient {
+    pub async fn new(config: StarknetClientConfig) -> Result<Self, SettlementClientError> {
         let provider = JsonRpcClient::new(HttpTransport::new(config.url));
         // Check if l2 contract exists
         provider
@@ -76,6 +64,18 @@ impl ClientTrait for StarknetClient {
             l2_core_contract: config.l2_contract_address,
             processed_update_state_block: AtomicU64::new(0), // Keeping this as 0 initially when client is initialized.
         })
+    }
+}
+
+// TODO : Remove github refs after implementing the zaun imports
+// Imp ⚠️ : zaun is not yet updated with latest app chain core contract implementations
+//          For this reason we are adding our own call implementations.
+#[async_trait]
+impl ClientTrait for StarknetClient {
+    type Config = StarknetClientConfig;
+
+    fn get_client_type(&self) -> ClientType {
+        ClientType::STARKNET
     }
 
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
@@ -499,7 +499,6 @@ pub mod starknet_client_tests {
 
 #[cfg(test)]
 mod l2_messaging_test {
-    use crate::client::ClientTrait;
     use crate::messaging::sync;
     use crate::starknet::utils::{
         cancel_messaging_event, fire_messaging_event, prepare_starknet_client_messaging_test, MadaraProcess,
@@ -762,7 +761,6 @@ mod l2_messaging_test {
 
 #[cfg(test)]
 mod starknet_client_event_subscription_test {
-    use crate::client::ClientTrait;
     use crate::gas_price::L1BlockMetrics;
     use crate::starknet::event::StarknetEventStream;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
