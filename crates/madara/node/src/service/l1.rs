@@ -4,7 +4,7 @@ use anyhow::Context;
 use futures::Stream;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_mempool::{GasPriceProvider, Mempool};
-use mc_settlement_client::client::ClientTrait;
+use mc_settlement_client::client::SettlementClientTrait;
 use mc_settlement_client::error::SettlementClientError;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
@@ -43,7 +43,7 @@ where
     S: Send + Stream<Item = Option<Result<CommonMessagingEventData, SettlementClientError>>>,
 {
     db_backend: Arc<MadaraBackend>,
-    settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>>,
+    settlement_client: Option<Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
     gas_price_sync_disabled: bool,
@@ -69,7 +69,7 @@ impl EthereumSyncService {
                 .context("Creating ethereum client")?;
 
                 let client_converted: Box<
-                    dyn ClientTrait<Config = EthereumClientConfig, StreamType = EthereumEventStream>,
+                    dyn SettlementClientTrait<Config = EthereumClientConfig, StreamType = EthereumEventStream>,
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
@@ -97,7 +97,7 @@ impl StarknetSyncService {
                 .context("Creating starknet client")?;
 
                 let client_converted: Box<
-                    dyn ClientTrait<Config = StarknetClientConfig, StreamType = StarknetEventStream>,
+                    dyn SettlementClientTrait<Config = StarknetClientConfig, StreamType = StarknetEventStream>,
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
@@ -120,7 +120,7 @@ where
     async fn create_service(
         config: &L1SyncParams,
         sync_config: L1SyncConfig<'_>,
-        settlement_client: Option<Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>>,
+        settlement_client: Option<Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>>,
     ) -> anyhow::Result<Self> {
         let gas_price_sync_enabled = sync_config.authority
             && !sync_config.devnet

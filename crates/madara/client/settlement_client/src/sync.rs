@@ -1,4 +1,4 @@
-use crate::client::ClientTrait;
+use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::{gas_price_worker, L1BlockMetrics};
 use crate::messaging::{sync, CommonMessagingEventData};
@@ -14,7 +14,7 @@ use std::time::Duration;
 #[allow(clippy::too_many_arguments)]
 pub async fn sync_worker<C: 'static, S>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     chain_id: ChainId,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,

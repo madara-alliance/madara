@@ -1,6 +1,6 @@
 pub mod event;
 
-use crate::client::{ClientTrait, ClientType};
+use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
 use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
@@ -72,7 +72,7 @@ impl EthereumClient {
 }
 
 #[async_trait]
-impl ClientTrait for EthereumClient {
+impl SettlementClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
 
     fn get_client_type(&self) -> ClientType {
@@ -367,7 +367,7 @@ mod l1_messaging_tests {
     use std::{sync::Arc, time::Duration};
 
     use self::DummyContract::DummyContractInstance;
-    use crate::client::ClientTrait;
+    use crate::client::SettlementClientTrait;
     use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::messaging::{sync, CommonMessagingEventData};
     use alloy::{

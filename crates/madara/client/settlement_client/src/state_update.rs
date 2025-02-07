@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::client::ClientTrait;
+use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
@@ -44,7 +44,7 @@ pub fn update_l1(
 
 pub async fn state_update_worker<C, S>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>

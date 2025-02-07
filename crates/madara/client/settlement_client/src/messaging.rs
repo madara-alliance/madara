@@ -1,4 +1,4 @@
-use crate::client::{ClientTrait, ClientType};
+use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
 use alloy::primitives::B256;
 use anyhow::Context;
@@ -28,7 +28,7 @@ pub struct CommonMessagingEventData {
 }
 
 pub async fn sync<C, S>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     backend: Arc<MadaraBackend>,
     chain_id: ChainId,
     mempool: Arc<Mempool>,
@@ -202,7 +202,7 @@ async fn process_message(
 #[cfg(test)]
 mod messaging_module_tests {
     use super::*;
-    use crate::client::{DummyConfig, DummyStream, MockClientTrait};
+    use crate::client::{DummyConfig, DummyStream, MockSettlementClientTrait};
     use futures::stream;
     use mc_db::DatabaseService;
     use mc_mempool::{GasPriceProvider, L1DataProvider, MempoolLimits};
@@ -230,7 +230,7 @@ mod messaging_module_tests {
     }
 
     struct MessagingTestRunner {
-        client: MockClientTrait,
+        client: MockSettlementClientTrait,
         db: Arc<DatabaseService>,
         mempool: Arc<Mempool>,
         ctx: ServiceContext,
@@ -255,7 +255,7 @@ mod messaging_module_tests {
         ));
 
         // Create a mock client directly
-        let mut mock_client = MockClientTrait::default();
+        let mut mock_client = MockSettlementClientTrait::default();
 
         // Configure basic mock expectations that all tests will need
         mock_client.expect_get_client_type().returning(|| ClientType::ETH);
@@ -294,7 +294,7 @@ mod messaging_module_tests {
         // Mock get_l1_to_l2_message_cancellations
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::ZERO));
 
-        let client: Arc<Box<dyn ClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
+        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
         timeout(
@@ -337,7 +337,7 @@ mod messaging_module_tests {
         // Mock get_l1_to_l2_message_cancellations - return non-zero to indicate cancellation
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::from(12345)));
 
-        let client: Arc<Box<dyn ClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
+        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
         timeout(
@@ -379,7 +379,7 @@ mod messaging_module_tests {
         // Mock get_messaging_hash - should not be called
         client.expect_get_messaging_hash().times(0);
 
-        let client: Arc<Box<dyn ClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
+        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
         timeout(
@@ -408,7 +408,7 @@ mod messaging_module_tests {
             Ok(Box::pin(stream::iter(vec![Some(Err(SettlementClientError::Other(anyhow::anyhow!("Stream error"))))])))
         });
 
-        let client: Arc<Box<dyn ClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
+        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
         let result = sync(client, backend.clone(), chain_config.chain_id.clone(), mempool.clone(), ctx).await;

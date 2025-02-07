@@ -1,4 +1,4 @@
-use crate::client::ClientTrait;
+use crate::client::SettlementClientTrait;
 use anyhow::Context;
 use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
@@ -60,7 +60,7 @@ impl L1BlockMetrics {
 }
 
 pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
     l1_block_metrics: Arc<L1BlockMetrics>,
@@ -97,7 +97,7 @@ where
 }
 
 pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -124,7 +124,7 @@ where
 }
 
 async fn update_gas_price<C, S>(
-    settlement_client: Arc<Box<dyn ClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>

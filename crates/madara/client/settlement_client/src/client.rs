@@ -26,7 +26,7 @@ pub type DummyStream = BoxStream<'static, Option<Result<CommonMessagingEventData
     type StreamType = DummyStream;
 )]
 #[async_trait]
-pub trait ClientTrait: Send + Sync {
+pub trait SettlementClientTrait: Send + Sync {
     // Configuration type used for initialization
     type Config;
 

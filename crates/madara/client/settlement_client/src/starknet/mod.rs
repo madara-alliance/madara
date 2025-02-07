@@ -1,4 +1,4 @@
-use crate::client::{ClientTrait, ClientType};
+use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::CommonMessagingEventData;
@@ -71,7 +71,7 @@ impl StarknetClient {
 // Imp ⚠️ : zaun is not yet updated with latest app chain core contract implementations
 //          For this reason we are adding our own call implementations.
 #[async_trait]
-impl ClientTrait for StarknetClient {
+impl SettlementClientTrait for StarknetClient {
     type Config = StarknetClientConfig;
 
     fn get_client_type(&self) -> ClientType {
@@ -312,7 +312,7 @@ impl StarknetClient {
 
 #[cfg(test)]
 pub mod starknet_client_tests {
-    use crate::client::ClientTrait;
+    use crate::client::SettlementClientTrait;
     use crate::starknet::utils::{prepare_starknet_client_test, send_state_update, MADARA_PORT};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
