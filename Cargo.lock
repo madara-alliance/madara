@@ -5168,7 +5168,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11012,7 +11012,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -11508,7 +11508,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -11523,7 +11523,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
@@ -12884,7 +12884,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -12933,13 +12933,14 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#58d1f11b59236f935a9c98191f46f650ed33d21a"
+source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-vm",
  "flate2",
  "num-bigint",
+ "once_cell",
  "serde",
  "serde_json",
  "serde_with 3.11.0",
