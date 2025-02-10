@@ -33,7 +33,6 @@ where
     Done(T),
 }
 
-#[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 pub struct OrderedStreamAccumulatorInner<T>
 where
@@ -45,6 +44,33 @@ where
     limits: OrderedStreamLimits,
     fin: Option<u64>,
     _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for OrderedStreamAccumulatorInner<T>
+where
+    T: prost::Message,
+    T: Default,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(stream_id) = &self.stream_id {
+            if let Ok(stream_id) = model::ConsensusStreamId::decode(stream_id.as_slice()) {
+                return f
+                    .debug_struct("OrderedStreamAccumulatorInner")
+                    .field("stream_id", &stream_id)
+                    .field("messages", &format!("... ({})", self.messages.len()))
+                    .field("limits", &self.limits)
+                    .field("fin", &self.fin)
+                    .finish();
+            }
+        }
+
+        f.debug_struct("OrderedStreamAccumulatorInner")
+            .field("stream_id", &"None")
+            .field("messages", &format!("... ({})", self.messages.len()))
+            .field("limits", &self.limits)
+            .field("fin", &self.fin)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -74,9 +100,9 @@ impl PartialOrd for OrderedStreamItem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Clone))]
-struct OrderedStreamLimits {
+pub struct OrderedStreamLimits {
     max: usize,
     current: usize,
 }
@@ -92,13 +118,19 @@ impl OrderedStreamLimits {
         Self { max, current: 0 }
     }
 
-    fn update(&mut self, increment: usize) -> Result<(), AccumulateError> {
-        if self.current + increment > self.max {
-            Err(AccumulateError::MaxBounds(self.current + increment, self.max))
+    // TODO: add test for overflow protection
+    pub fn update(&mut self, increment: usize) -> Result<(), AccumulateError> {
+        let new = self.current.saturating_add(increment);
+        if new > self.max {
+            Err(AccumulateError::MaxBounds(new, self.max))
         } else {
-            self.current += increment;
+            self.current = new;
             Ok(())
         }
+    }
+
+    pub fn has_space_left(&self) -> bool {
+        self.max > self.current
     }
 }
 
@@ -128,7 +160,7 @@ where
     }
 
     #[model_describe(model::StreamMessage)]
-    pub fn accumulate(self, stream_message: model::StreamMessage) -> Result<Self, AccumulateError> {
+    fn accumulate_with_force(self, stream_message: model::StreamMessage, force: bool) -> Result<Self, AccumulateError> {
         match self {
             Self::Accumulate(mut inner) => {
                 let stream_id = inner.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
@@ -137,11 +169,59 @@ where
                 Self::check_stream_id(&stream_message.stream_id, stream_id)?;
 
                 match model_field!(stream_message => message) {
-                    stream_message::Message::Content(bytes) => Self::update_content(inner, message_id, &bytes),
+                    stream_message::Message::Content(bytes) => Self::update_content(inner, message_id, &bytes, force),
                     stream_message::Message::Fin(_) => Self::update_fin(inner, message_id),
                 }
             }
             Self::Done(_) => Ok(self),
+        }
+    }
+
+    pub fn accumulate(self, stream_message: model::StreamMessage) -> Result<Self, AccumulateError> {
+        self.accumulate_with_force(stream_message, false)
+    }
+
+    pub fn len(&self) -> Option<usize> {
+        match self {
+            Self::Accumulate(inner) => Some(inner.messages.len()),
+            Self::Done(_) => None,
+        }
+    }
+
+    pub fn limits(&self) -> Option<&OrderedStreamLimits> {
+        match self {
+            Self::Accumulate(inner) => Some(&inner.limits),
+            Self::Done(_) => None,
+        }
+    }
+
+    pub fn has_space_left(&self) -> bool {
+        match self {
+            Self::Accumulate(ref inner) => inner.limits.has_space_left(),
+            Self::Done(_) => false,
+        }
+    }
+
+    pub fn has_fin(&self) -> bool {
+        match self {
+            Self::Accumulate(ref inner) => inner.fin.is_some(),
+            Self::Done(_) => true,
+        }
+    }
+
+    pub fn is_last_part(&self, stream_message: &model::StreamMessage) -> bool {
+        match self {
+            Self::Accumulate(inner) => match &stream_message.message {
+                Some(model::stream_message::Message::Fin(_)) => {
+                    inner.messages.len() as u64 == stream_message.message_id
+                }
+                Some(model::stream_message::Message::Content(_)) => match inner.fin {
+                    Some(fin) => inner.messages.len() as u64 + 1 == fin,
+                    None => false,
+                },
+                None => false,
+            },
+            Self::Done(_) => false,
         }
     }
 
@@ -170,8 +250,11 @@ where
         mut inner: OrderedStreamAccumulatorInner<T>,
         message_id: u64,
         bytes: &[u8],
+        force: bool,
     ) -> Result<Self, AccumulateError> {
-        inner.limits.update(bytes.len())?;
+        if !force {
+            inner.limits.update(bytes.len())?;
+        }
 
         let item = OrderedStreamItem { content: bytes.to_vec(), message_id };
         inner.messages.insert(item);
@@ -203,13 +286,15 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::collections::VecDeque;
+
     use prost::Message;
     use rand::{seq::SliceRandom, SeedableRng};
     use starknet_core::types::Felt;
 
     use crate::{
         model::{self},
-        proposal::{AccumulateError, OrderedStreamAccumulator},
+        proposal::{AccumulateError, OrderedStreamAccumulator, OrderedStreamLimits},
     };
 
     #[rstest::fixture]
@@ -377,6 +462,165 @@ mod test {
             Some(proposal_part),
             "Failed to reconstruct proposal part from message stream"
         );
+    }
+
+    /// An accumulator should always return the number of messages it has
+    /// received as its length
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_secs(1))]
+    fn ordered_stream_len(stream_message: impl Iterator<Item = model::StreamMessage>) {
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new();
+        let mut i = 0;
+
+        for message in stream_message {
+            accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
+            i += 1;
+
+            match accumulator {
+                OrderedStreamAccumulator::Accumulate(_) => {
+                    assert_eq!(Some(i), accumulator.len());
+                }
+                OrderedStreamAccumulator::Done(_) => {
+                    assert_eq!(None, accumulator.len())
+                }
+            }
+        }
+    }
+
+    /// An accumulator should always correctly return its limits
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_secs(1))]
+    fn ordered_stream_limits(
+        proposal_part: model::ProposalPart,
+        stream_message: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let limit = proposal_part.encode_to_vec().len();
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new_with_limits(limit);
+        let mut i = 0;
+
+        assert_eq!(accumulator.limits().cloned(), Some(OrderedStreamLimits { max: limit, current: 0 }));
+
+        for message in stream_message {
+            accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
+            i += 1;
+        }
+
+        assert!(i > 1, "Proposal part was streamed over a single message");
+        assert!(accumulator.is_done());
+        assert_eq!(accumulator.limits(), None);
+    }
+
+    /// Makes sure that incrementing a stream limit cannot result in an overflow
+    #[test]
+    fn ordered_stream_limits_overflow() {
+        let mut limits = OrderedStreamLimits::new(usize::MAX);
+        limits.update(usize::MAX).unwrap();
+
+        assert_eq!(limits, OrderedStreamLimits { max: usize::MAX, current: usize::MAX });
+        assert_matches::assert_matches!(limits.update(1), Ok(()));
+        assert_eq!(limits, OrderedStreamLimits { max: usize::MAX, current: usize::MAX });
+    }
+
+    /// Limits should correctly indicate when they have been reached
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_secs(1))]
+    fn ordered_stream_limits_has_space_left(
+        proposal_part: model::ProposalPart,
+        stream_message: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new_with_limits(0);
+        assert!(!accumulator.has_space_left());
+
+        let limit = proposal_part.encode_to_vec().len();
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new_with_limits(limit);
+        let mut i = 0;
+
+        assert!(accumulator.has_space_left());
+
+        for message in stream_message {
+            accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
+            i += 1;
+        }
+
+        assert!(i > 1, "Proposal part was streamed over a single message");
+        assert!(accumulator.is_done());
+        assert!(!accumulator.has_space_left());
+    }
+
+    /// An accumulator should correctly inform if it has received a FIN message.
+    /// By convention, all accumulators which are DONE are considered to have
+    /// received a FIN message.
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_secs(1))]
+    fn ordered_stream_has_fin(stream_message: impl Iterator<Item = model::StreamMessage>) {
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new();
+        let mut i = 0;
+
+        assert!(!accumulator.has_fin());
+
+        let mut messages_rev = VecDeque::new();
+        for message in stream_message {
+            accumulator = accumulator.accumulate(message.clone()).expect("Failed to accumulate message stream");
+            messages_rev.push_front(message);
+            i += 1;
+        }
+
+        assert!(i > 1, "Proposal part was streamed over a single message");
+        assert!(accumulator.is_done());
+        assert!(accumulator.has_fin());
+
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new();
+        assert!(!accumulator.has_fin());
+
+        accumulator =
+            accumulator.accumulate(messages_rev.pop_front().unwrap()).expect("Failed to accumulate message stream");
+        assert!(accumulator.has_fin());
+
+        for message in messages_rev {
+            accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
+        }
+
+        assert!(accumulator.is_done());
+        assert!(accumulator.has_fin());
+    }
+
+    /// Checks is a stream message could be the last part needed by an
+    /// accumulator. This is a very basic check and does not perform any stream
+    /// id or stream limit verification, so we do not test for that here either.
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_secs(1))]
+    fn ordered_stream_is_last_part(stream_message: impl Iterator<Item = model::StreamMessage>) {
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new();
+
+        let mut messages = stream_message.collect::<Vec<_>>();
+        let fin = messages.pop().unwrap();
+
+        for message in messages.iter() {
+            assert!(!accumulator.is_last_part(message));
+            assert!(!accumulator.is_last_part(&fin));
+            accumulator = accumulator.accumulate(message.clone()).expect("Failed to accumulate message stream");
+        }
+
+        assert!(accumulator.is_last_part(&fin));
+        accumulator = accumulator.accumulate(fin.clone()).expect("Failed to accumulate message stream");
+        assert!(accumulator.is_done());
+
+        let message_last = messages.pop().unwrap();
+        assert!(!messages.is_empty());
+
+        let mut accumulator = OrderedStreamAccumulator::<model::ProposalPart>::new();
+        accumulator = accumulator.accumulate(fin).expect("Failed to accumulate message stream");
+        assert!(!accumulator.is_last_part(&message_last));
+
+        for message in messages {
+            assert!(!accumulator.is_last_part(&message));
+            assert!(!accumulator.is_last_part(&message_last));
+            accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
+        }
+
+        assert!(accumulator.is_last_part(&message_last));
+        accumulator = accumulator.accumulate(message_last).expect("Failed to accumulate message stream");
+        assert!(accumulator.is_done());
     }
 
     /// Receives a proposal part with a bound to the number of bytes which can
@@ -568,14 +812,12 @@ mod proptest {
         fn ordered_stream_proptest(sequential 1..256 => SystemUnderTest);
     }
 
-    prop_compose! {
-        fn stream_id()(seed in 0..100u64) -> Vec<u8> {
-            let stream_id = model::ConsensusStreamId { height: seed, round: seed as u32 };
-            let mut buffer = Vec::new();
-            stream_id.encode(&mut buffer).expect("Failed to encode stream id");
+    fn stream_id() -> Vec<u8> {
+        let stream_id = model::ConsensusStreamId { height: 1, round: 1 };
+        let mut buffer = Vec::new();
+        stream_id.encode(&mut buffer).expect("Failed to encode stream id");
 
-            buffer
-        }
+        buffer
     }
 
     prop_compose! {
@@ -622,14 +864,12 @@ mod proptest {
 
     prop_compose! {
         fn reference_state_machine()(
-            stream_id in stream_id(),
             proposal_part in proposal_part()
         )(
-            stream_messages in stream_messages(stream_id.clone(), proposal_part.clone()),
-            stream_id in Just(stream_id),
+            stream_messages in stream_messages(stream_id(), proposal_part.clone()),
             proposal_part in Just(proposal_part),
             delta in 0..10_000usize
-        ) -> OrderedStreamAccumulatorStateMachine {
+        ) -> OrderedStreamAccumulatorReference {
             let size = proposal_part.encoded_len();
             let limit = if delta > 5_000 {
                 size.saturating_sub(delta)
@@ -637,13 +877,13 @@ mod proptest {
                 size.saturating_add(delta)
             };
 
-            OrderedStreamAccumulatorStateMachine {
+            OrderedStreamAccumulatorReference {
                 proposal_part,
                 stream_messages,
-                stream_id,
+                stream_id: stream_id(),
                 message_id: 0,
-                size,
                 limit,
+                error: ProptestError::None
             }
         }
     }
@@ -652,7 +892,7 @@ mod proptest {
     pub enum ProptestTransition {
         Accumulate(model::StreamMessage),
         ActMalicious(ProptestMaliciousTransition),
-        Collect,
+        Consume,
     }
 
     #[derive(Clone)]
@@ -666,9 +906,12 @@ mod proptest {
     impl std::fmt::Debug for ProptestTransition {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Accumulate(_) => f.debug_tuple("Accumulate").finish(),
+                Self::Accumulate(stream_message) => match stream_message.message.as_ref().unwrap() {
+                    model::stream_message::Message::Content(_) => f.debug_tuple("Accumulate (Content)").finish(),
+                    model::stream_message::Message::Fin(_) => f.debug_tuple("Accumulate (Fin)").finish(),
+                },
                 Self::ActMalicious(transition) => f.debug_tuple("ActMalicious").field(&transition).finish(),
-                Self::Collect => f.debug_tuple("Collect").finish(),
+                Self::Consume => f.debug_tuple("Collect").finish(),
             }
         }
     }
@@ -685,16 +928,22 @@ mod proptest {
     }
 
     #[derive(Clone)]
-    pub struct OrderedStreamAccumulatorStateMachine {
+    pub struct OrderedStreamAccumulatorReference {
         proposal_part: model::ProposalPart,
         stream_messages: VecDeque<model::StreamMessage>,
         stream_id: Vec<u8>,
         message_id: u64,
-        size: usize,
         limit: usize,
+        error: ProptestError,
     }
 
-    impl std::fmt::Debug for OrderedStreamAccumulatorStateMachine {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum ProptestError {
+        None,
+        Decode,
+    }
+
+    impl std::fmt::Debug for OrderedStreamAccumulatorReference {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let stream_messages = self
                 .stream_messages
@@ -718,14 +967,14 @@ mod proptest {
                 .field("stream_messages", &stream_messages)
                 .field("stream_id", &model::ConsensusStreamId::decode(self.stream_id.as_slice()).unwrap())
                 .field("message_id", &self.message_id)
-                .field("size", &self.size)
                 .field("limit", &self.limit)
+                .field("error", &self.error)
                 .finish()
         }
     }
 
-    impl ReferenceStateMachine for OrderedStreamAccumulatorStateMachine {
-        type State = OrderedStreamAccumulatorStateMachine;
+    impl ReferenceStateMachine for OrderedStreamAccumulatorReference {
+        type State = OrderedStreamAccumulatorReference;
         type Transition = ProptestTransition;
 
         fn init_state() -> BoxedStrategy<Self::State> {
@@ -745,7 +994,7 @@ mod proptest {
                 }
             } else {
                 prop_oneof! [
-                    1 => Just(ProptestTransition::Collect),
+                    1 => Just(ProptestTransition::Consume),
                     // 1 => Self::act_malicious(state)
                 ]
                 .boxed()
@@ -759,18 +1008,18 @@ mod proptest {
                     state.message_id += 1;
                 }
                 ProptestTransition::ActMalicious(transition) => {
-                    if let ProptestMaliciousTransition::InsertGarbageData(_) = transition {
-                        state.size += 1;
+                    if let ProptestMaliciousTransition::InsertGarbageData(stream_message) = transition {
+                        state.error = ProptestError::Decode;
                     }
                 }
-                ProptestTransition::Collect => (),
+                ProptestTransition::Consume => (),
             }
 
             state
         }
     }
 
-    impl OrderedStreamAccumulatorStateMachine {
+    impl OrderedStreamAccumulatorReference {
         fn act_malicious(state: &Self) -> impl Strategy<Value = ProptestTransition> {
             let invalid_stream_id = || {
                 let mut stream_id = model::ConsensusStreamId::decode(state.stream_id.as_slice()).unwrap();
@@ -795,7 +1044,7 @@ mod proptest {
                     .unwrap_or(model::stream_message::Message::Content(vec![]));
 
                 let content = if let model::stream_message::Message::Content(mut content) = content {
-                    content.push(42);
+                    content.insert(0, 42);
                     content
                 } else {
                     vec![42]
@@ -832,7 +1081,7 @@ mod proptest {
 
             prop_oneof![
                 Just(ProptestTransition::ActMalicious(invalid_stream_id())),
-                // Just(ProptestTransition::ActMalicious(insert_garbage_data())),
+                Just(ProptestTransition::ActMalicious(insert_garbage_data())),
                 // Just(ProptestTransition::ActMalicious(double_fin())),
                 // Just(ProptestTransition::ActMalicious(invalid_model()))
             ]
@@ -841,7 +1090,7 @@ mod proptest {
 
     impl StateMachineTest for OrderedStreamAccumulator<model::ProposalPart> {
         type SystemUnderTest = Self;
-        type Reference = OrderedStreamAccumulatorStateMachine;
+        type Reference = OrderedStreamAccumulatorReference;
 
         fn init_test(ref_state: &<Self::Reference as ReferenceStateMachine>::State) -> Self::SystemUnderTest {
             Self::new_with_limits(ref_state.limit)
@@ -855,15 +1104,41 @@ mod proptest {
             match transition {
                 ProptestTransition::Accumulate(stream_message) => {
                     let res = state.clone().accumulate(stream_message.clone());
-                    if !Self::check_limits(&res, stream_message.clone(), &state, ref_state) {
-                        assert_matches::assert_matches!(res, Ok(..));
+
+                    match stream_message.message {
+                        Some(model::stream_message::Message::Content(..)) => {
+                            if !Self::check_limits(&res, stream_message.clone(), &state) {
+                                assert_matches::assert_matches!(
+                                    res,
+                                    Ok(..),
+                                    "Accumulate error with valid bounds: {state:?}"
+                                );
+                            }
+                        }
+                        Some(model::stream_message::Message::Fin(..)) => {
+                            if ProptestError::None == ref_state.error {
+                                assert_matches::assert_matches!(
+                                    res,
+                                    Ok(..),
+                                    "Accumulate error when none expected: {state:?}"
+                                )
+                            }
+                        }
+                        _ => (),
                     }
 
-                    if matches!(stream_message.clone().message.unwrap(), model::stream_message::Message::Fin(_))
-                        && ref_state.limit >= ref_state.size
-                    {
-                        if let Ok(res) = &res {
-                            assert_matches::assert_matches!(res, OrderedStreamAccumulator::Done(_));
+                    if state.is_last_part(&stream_message) {
+                        match ref_state.error {
+                            ProptestError::None => {
+                                assert_matches::assert_matches!(
+                                    res,
+                                    Ok(OrderedStreamAccumulator::Done(_)),
+                                    "Accumulator is not Done after receiving Fin"
+                                )
+                            }
+                            ProptestError::Decode => {
+                                assert_matches::assert_matches!(res, Err(AccumulateError::DecodeError(_)))
+                            }
                         }
                     }
 
@@ -879,39 +1154,45 @@ mod proptest {
                 }
                 ProptestTransition::ActMalicious(transition) => match transition {
                     ProptestMaliciousTransition::InvalidStreamId(stream_message) => {
-                        // We always check for the stream id first! This means
-                        // limit checks will not take place on a stream message
-                        // with an invalid stream id
-                        let res = state.clone().accumulate(stream_message.clone());
-                        assert_matches::assert_matches!(res, Err(AccumulateError::InvalidStreamId(..)));
-                        res.unwrap_or(state)
+                        // We do not insert an invalid stream id as the first
+                        // transaction as otherwise the stream accumulator would
+                        // take that stream id for default
+                        if state.len() > Some(1) {
+                            let res = state.clone().accumulate(stream_message.clone());
+                            assert_matches::assert_matches!(res, Err(AccumulateError::InvalidStreamId(..)));
+                            res.unwrap_or(state)
+                        } else {
+                            state
+                        }
                     }
                     ProptestMaliciousTransition::InsertGarbageData(stream_message) => {
-                        let res = state.clone().accumulate(stream_message.clone());
-                        Self::check_limits(&res, stream_message, &state, ref_state);
+                        let res = state.clone().accumulate_with_force(stream_message.clone(), true);
                         res.unwrap_or(state)
                     }
                     ProptestMaliciousTransition::DoubleFin(stream_message) => {
-                        let res = state.clone().accumulate(stream_message.clone());
-                        if !Self::check_limits(&res, stream_message, &state, ref_state) {
+                        let res = state.clone().accumulate_with_force(stream_message.clone(), true);
+                        if state.has_fin() {
                             assert_matches::assert_matches!(res, Err(AccumulateError::DoubleFin(..)));
                         }
                         res.unwrap_or(state)
                     }
                     ProptestMaliciousTransition::InvalidModel(stream_message) => {
-                        let res = state.clone().accumulate(stream_message.clone());
-                        if !Self::check_limits(&res, stream_message, &state, ref_state) {
-                            assert_matches::assert_matches!(res, Err(AccumulateError::ModelError(..)));
-                        }
+                        let res = state.clone().accumulate_with_force(stream_message.clone(), true);
+                        assert_matches::assert_matches!(res, Err(AccumulateError::ModelError(..)));
                         res.unwrap_or(state)
                     }
                 },
-                ProptestTransition::Collect => {
-                    if ref_state.limit >= ref_state.size {
-                        let res = state.clone().consume();
-                        assert!(state.is_done(), "Called collect on incomplete stream");
-                        assert!(res.is_some(), "Complete stream returned none");
-                        assert_eq!(res, Some(ref_state.proposal_part.clone()), "Collected stream does not match");
+                ProptestTransition::Consume => {
+                    let res = state.clone().consume();
+                    if state.is_done() && ref_state.error == ProptestError::None {
+                        assert!(res.is_some(), "Complete stream returned None: {state:?}");
+                        assert_eq!(
+                            res,
+                            Some(ref_state.proposal_part.clone()),
+                            "Collected stream does not match: {state:?}"
+                        );
+                    } else {
+                        assert!(res.is_none(), "Incomplete stream returned Some: {state:?}")
                     }
                     state
                 }
@@ -924,11 +1205,10 @@ mod proptest {
             res: &Result<Self, AccumulateError>,
             stream_message: model::StreamMessage,
             state: &Self,
-            ref_state: &OrderedStreamAccumulatorStateMachine,
         ) -> bool {
             if let OrderedStreamAccumulator::Accumulate(inner) = &state {
                 if let model::stream_message::Message::Content(bytes) = stream_message.message.clone().unwrap() {
-                    if ref_state.limit < ref_state.size && inner.limits.clone().update(bytes.len()).is_err() {
+                    if inner.limits.clone().update(bytes.len()).is_err() {
                         assert_matches::assert_matches!(res, Err(AccumulateError::MaxBounds(..)));
                         return true;
                     }
