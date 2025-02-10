@@ -938,9 +938,17 @@ mod proptest {
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
+    #[repr(u8)]
     pub enum ProptestError {
-        None,
-        Decode,
+        None = 0,
+        Decode = 1,
+        DoubleFin = 2,
+    }
+
+    impl ProptestError {
+        fn priority(&self) -> u8 {
+            self.clone() as u8
+        }
     }
 
     impl std::fmt::Debug for OrderedStreamAccumulatorReference {
@@ -1007,12 +1015,20 @@ mod proptest {
                     state.stream_messages.pop_front();
                     state.message_id += 1;
                 }
-                ProptestTransition::ActMalicious(transition) => {
-                    if let ProptestMaliciousTransition::InsertGarbageData(stream_message) = transition {
-                        state.error = ProptestError::Decode;
+                ProptestTransition::ActMalicious(transition) => match transition {
+                    ProptestMaliciousTransition::InsertGarbageData(_) => {
+                        if state.error.priority() < ProptestError::Decode.priority() {
+                            state.error = ProptestError::Decode;
+                        }
                     }
-                }
-                ProptestTransition::Consume => (),
+                    ProptestMaliciousTransition::DoubleFin(_) => {
+                        if state.error.priority() < ProptestError::DoubleFin.priority() {
+                            state.error = ProptestError::DoubleFin;
+                        }
+                    }
+                    _ => (),
+                },
+                _ => (),
             }
 
             state
@@ -1082,7 +1098,7 @@ mod proptest {
             prop_oneof![
                 Just(ProptestTransition::ActMalicious(invalid_stream_id())),
                 Just(ProptestTransition::ActMalicious(insert_garbage_data())),
-                // Just(ProptestTransition::ActMalicious(double_fin())),
+                Just(ProptestTransition::ActMalicious(double_fin())),
                 // Just(ProptestTransition::ActMalicious(invalid_model()))
             ]
         }
@@ -1138,6 +1154,9 @@ mod proptest {
                             }
                             ProptestError::Decode => {
                                 assert_matches::assert_matches!(res, Err(AccumulateError::DecodeError(_)))
+                            }
+                            ProptestError::DoubleFin => {
+                                assert_matches::assert_matches!(res, Err(AccumulateError::DoubleFin(..)))
                             }
                         }
                     }
