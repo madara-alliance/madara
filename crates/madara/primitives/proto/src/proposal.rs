@@ -1099,7 +1099,7 @@ mod proptest {
                 Just(ProptestTransition::ActMalicious(invalid_stream_id())),
                 Just(ProptestTransition::ActMalicious(insert_garbage_data())),
                 Just(ProptestTransition::ActMalicious(double_fin())),
-                // Just(ProptestTransition::ActMalicious(invalid_model()))
+                Just(ProptestTransition::ActMalicious(invalid_model()))
             ]
         }
     }
@@ -1179,13 +1179,12 @@ mod proptest {
                         if state.len() > Some(1) {
                             let res = state.clone().accumulate(stream_message.clone());
                             assert_matches::assert_matches!(res, Err(AccumulateError::InvalidStreamId(..)));
-                            res.unwrap_or(state)
-                        } else {
-                            state
                         }
+                        state
                     }
                     ProptestMaliciousTransition::InsertGarbageData(stream_message) => {
                         let res = state.clone().accumulate_with_force(stream_message.clone(), true);
+                        assert_matches::assert_matches!(res, Ok(_));
                         res.unwrap_or(state)
                     }
                     ProptestMaliciousTransition::DoubleFin(stream_message) => {
@@ -1198,7 +1197,7 @@ mod proptest {
                     ProptestMaliciousTransition::InvalidModel(stream_message) => {
                         let res = state.clone().accumulate_with_force(stream_message.clone(), true);
                         assert_matches::assert_matches!(res, Err(AccumulateError::ModelError(..)));
-                        res.unwrap_or(state)
+                        state
                     }
                 },
                 ProptestTransition::Consume => {
