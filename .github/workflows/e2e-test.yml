@@ -93,4 +93,4 @@ jobs:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
-          RUST_LOG=info cargo test --features testing --workspace test_orchestrator_workflow -- --nocapture
+          RUST_LOG=info cargo +nightly test --features testing --workspace test_orchestrator_workflow -- --nocapture
