@@ -1,6 +1,4 @@
 [toolchain]
-# TODO: don't require nightly (see
-# https://github.com/keep-starknet-strange/snos/issues/462)
-channel = "nightly-2024-09-05"
+channel = "1.81"
 components = ["rust-src", "rustfmt", "clippy", "rust-analyzer"]
 profile = "minimal"
