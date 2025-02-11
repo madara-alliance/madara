@@ -39,7 +39,6 @@ testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 
 # Madara
 mc-analytics.workspace = true
-mc-block-import.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mp-block.workspace = true

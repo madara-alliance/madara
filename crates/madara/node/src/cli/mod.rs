@@ -1,3 +1,11 @@
+use anyhow::Context;
+use clap::ArgGroup;
+use l2::L2SyncParams;
+use mp_chain_config::ChainConfig;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
+
 pub mod analytics;
 pub mod block_production;
 pub mod chain_config_overrides;
@@ -5,24 +13,19 @@ pub mod db;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
+pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
-use crate::cli::l1::L1SyncParams;
-use analytics::AnalyticsParams;
-use anyhow::Context;
+
+pub use analytics::*;
 pub use block_production::*;
 pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
-pub use l2::*;
+pub use l1::*;
+pub use p2p::*;
 pub use rpc::*;
-use std::str::FromStr;
 pub use telemetry::*;
-
-use clap::ArgGroup;
-use mp_chain_config::ChainConfig;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Combines multiple cli args into a single easy to use preset
 ///
@@ -170,6 +173,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub rpc_params: RpcParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub p2p_params: P2pParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

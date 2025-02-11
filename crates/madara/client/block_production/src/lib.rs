@@ -15,13 +15,12 @@
 //! so that's where block-production integration tests are the simplest to add.
 //! L1-L2 testing is a bit harder to setup, but we should definitely make the testing more comprehensive here.
 
-use crate::close_block::close_block;
+use crate::close_block::close_and_save_block;
 use crate::metrics::BlockProductionMetrics;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
 use blockifier::bouncer::BouncerWeights;
 use blockifier::transaction::errors::TransactionExecutionError;
 use finalize_execution_state::StateDiffToStateMapError;
-use mc_block_import::{BlockImportError, BlockImporter};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
@@ -67,8 +66,6 @@ pub enum Error {
     Execution(#[from] TransactionExecutionError),
     #[error(transparent)]
     ExecutionContext(#[from] mc_exec::Error),
-    #[error("Import error: {0:#}")]
-    Import(#[from] mc_block_import::BlockImportError),
     #[error("Unexpected error: {0:#}")]
     Unexpected(Cow<'static, str>),
     #[error("Class compilation error when continuing the pending block: {0:#}")]
@@ -86,9 +83,11 @@ struct ContinueBlockResult {
     /// Tracks which segments of Cairo program code were accessed during transaction execution,
     /// organized by class hash. This information is used as input for SNOS (Starknet OS)
     /// when generating proofs of execution.
+    #[allow(unused)]
     visited_segments: VisitedSegments,
 
     /// The current state of resource consumption tracked by the bouncer
+    #[allow(unused)]
     bouncer_weights: BouncerWeights,
 
     /// Statistics about transaction processing during this continuation
@@ -106,7 +105,6 @@ struct ContinueBlockResult {
 /// To understand block production in madara, you should probably start with the [`mp_chain_config::ChainConfig`]
 /// documentation.
 pub struct BlockProductionTask<Mempool: MempoolProvider> {
-    importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     block: MadaraPendingBlock,
@@ -128,14 +126,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     ///
     /// This avoids re-executing transaction by re-adding them to the [Mempool],
     /// as was done before.
-    pub async fn close_pending_block(
+    pub fn close_pending_block(
         backend: &MadaraBackend,
-        importer: &BlockImporter,
         metrics: &BlockProductionMetrics,
     ) -> Result<(), Cow<'static, str>> {
         let err_pending_block = |err| format!("Getting pending block: {err:#}");
         let err_pending_state_diff = |err| format!("Getting pending state update: {err:#}");
-        let err_pending_visited_segments = |err| format!("Getting pending visited segments: {err:#}");
         let err_pending_clear = |err| format!("Clearing pending block: {err:#}");
         let err_latest_block_n = |err| format!("Failed to get latest block number: {err:#}");
 
@@ -155,8 +151,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .expect("Checked above");
 
         let pending_state_diff = backend.get_pending_block_state_update().map_err(err_pending_state_diff)?;
-        let pending_visited_segments =
-            backend.get_pending_block_segments().map_err(err_pending_visited_segments)?.unwrap_or_default();
 
         let mut classes = pending_state_diff
             .deprecated_declared_classes
@@ -186,17 +180,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let n_txs = pending_block.inner.transactions.len();
 
         // Close and import the pending block
-        close_block(
-            importer,
-            pending_block,
-            &pending_state_diff,
-            backend.chain_config().chain_id.clone(),
-            block_n,
-            declared_classes,
-            pending_visited_segments,
-        )
-        .await
-        .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
+        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes)
+            .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
 
         // Flush changes to disk, pending block removal and adding the next
         // block happens atomically
@@ -218,14 +203,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         Ok(())
     }
 
-    pub async fn new(
+    pub fn new(
         backend: Arc<MadaraBackend>,
-        importer: Arc<BlockImporter>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> Result<Self, Error> {
-        if let Err(err) = Self::close_pending_block(&backend, &importer, &metrics).await {
+        if let Err(err) = Self::close_pending_block(&backend, &metrics) {
             // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
             // a fresh one.
             tracing::error!("Failed to continue the pending block state: {err:#}");
@@ -245,7 +229,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .tx_executor();
 
         Ok(Self {
-            importer,
             backend,
             mempool,
             executor,
@@ -369,12 +352,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     /// Closes the current block and prepares for the next one
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    async fn close_and_prepare_next_block(
-        &mut self,
-        state_diff: StateDiff,
-        visited_segments: VisitedSegments,
-        start_time: Instant,
-    ) -> Result<(), Error> {
+    fn close_and_prepare_next_block(&mut self, state_diff: StateDiff, start_time: Instant) -> Result<(), Error> {
         let block_n = self.block_n();
         // Convert the pending block to a closed block and save to db
         let parent_block_hash = Felt::ZERO; // temp parent block hash
@@ -390,16 +368,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let n_txs = block_to_close.inner.transactions.len();
 
         // Close and import the block
-        let import_result = close_block(
-            &self.importer,
-            block_to_close,
-            &state_diff,
-            self.backend.chain_config().chain_id.clone(),
-            block_n,
-            declared_classes,
-            visited_segments,
-        )
-        .await?;
+        let block_hash =
+            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes)?;
 
         // Removes nonces in the mempool nonce cache which have been included
         // into the current block.
@@ -408,10 +378,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         // Flush changes to disk
-        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+        self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
 
         // Update parent hash for new pending block
-        self.block.info.header.parent_block_hash = import_result.block_hash;
+        self.block.info.header.parent_block_hash = block_hash;
 
         // Prepare executor for next block
         self.executor =
@@ -480,7 +450,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub async fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
+    pub fn on_pending_time_tick(&mut self) -> Result<bool, Error> {
         let current_pending_tick = self.current_pending_tick;
         if current_pending_tick == 0 {
             return Ok(false);
@@ -490,8 +460,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let ContinueBlockResult {
             state_diff: mut new_state_diff,
-            visited_segments,
-            bouncer_weights,
+            visited_segments: _,
+            bouncer_weights: _,
             stats,
             block_now_full,
         } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
@@ -511,44 +481,33 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
             tracing::info!("Resource limits reached, closing block early");
-            self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await?;
+            self.close_and_prepare_next_block(new_state_diff, start_time)?;
             return Ok(true);
         }
 
         // Store pending block
         // todo, prefer using the block import pipeline?
-        self.backend.store_block(
-            self.block.clone().into(),
-            new_state_diff,
-            self.declared_classes.clone(),
-            Some(visited_segments),
-            Some(bouncer_weights),
-        )?;
+        self.backend.store_block(self.block.clone().into(), new_state_diff, self.declared_classes.clone())?;
         // do not forget to flush :)
-        self.backend.flush().map_err(|err| BlockImportError::Internal(format!("DB flushing error: {err:#}").into()))?;
+        self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
 
         Ok(false)
     }
 
     /// This creates a block, continuing the current pending block state up to the full bouncer limit.
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    pub(crate) async fn on_block_time(&mut self) -> Result<(), Error> {
+    pub(crate) fn on_block_time(&mut self) -> Result<(), Error> {
         let block_n = self.block_n();
-        tracing::debug!("closing block #{}", block_n);
+        tracing::debug!("Closing block #{}", block_n);
 
         // Complete the block with full bouncer capacity
         let start_time = Instant::now();
-        let ContinueBlockResult {
-            state_diff: mut new_state_diff,
-            visited_segments,
-            bouncer_weights: _weights,
-            stats: _stats,
-            block_now_full: _block_now_full,
-        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+        let ContinueBlockResult { state_diff: mut new_state_diff, .. } =
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
         self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
-        self.close_and_prepare_next_block(new_state_diff, visited_segments, start_time).await
+        self.close_and_prepare_next_block(new_state_diff, start_time)
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
@@ -569,7 +528,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         loop {
             tokio::select! {
                 instant = interval_block_time.tick() => {
-                    if let Err(err) = self.on_block_time().await {
+                    if let Err(err) = self.on_block_time() {
                         tracing::error!("Block production task has errored: {err:#}");
                         // Clear pending block. The reason we do this is because
                         // if the error happened because the closed block is
@@ -595,7 +554,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         continue
                     }
 
-                    match self.on_pending_time_tick().await {
+                    match self.on_pending_time_tick() {
                         Ok(block_closed) => {
                             if block_closed {
                                 interval_pending_block_update.reset_at(instant + interval_pending_block_update.period());
@@ -624,14 +583,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
-
-    use blockifier::{
-        bouncer::BouncerWeights, compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key,
+    use crate::{
+        finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, BlockProductionTask,
     };
+    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
     use mc_db::MadaraBackend;
     use mc_mempool::Mempool;
-    use mp_block::VisitedSegments;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_state_update::{
@@ -644,10 +601,7 @@ mod tests {
         felt, patricia_key,
     };
     use starknet_types_core::felt::Felt;
-
-    use crate::{
-        finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, BlockProductionTask,
-    };
+    use std::{collections::HashMap, sync::Arc};
 
     type TxFixtureInfo = (mp_transactions::Transaction, mp_receipt::TransactionReceipt);
 
@@ -657,14 +611,8 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn setup(
-        backend: Arc<MadaraBackend>,
-    ) -> (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>) {
-        (
-            Arc::clone(&backend),
-            Arc::new(mc_block_import::BlockImporter::new(Arc::clone(&backend), None).unwrap()),
-            Arc::new(BlockProductionMetrics::register()),
-        )
+    fn setup(backend: Arc<MadaraBackend>) -> (Arc<MadaraBackend>, Arc<BlockProductionMetrics>) {
+        (Arc::clone(&backend), Arc::new(BlockProductionMetrics::register()))
     }
 
     #[rstest::fixture]
@@ -758,37 +706,37 @@ mod tests {
         })
     }
 
-    #[rstest::fixture]
-    fn visited_segments() -> mp_block::VisitedSegments {
-        mp_block::VisitedSegments(vec![
-            mp_block::VisitedSegmentEntry { class_hash: Felt::ONE, segments: vec![0, 1, 2] },
-            mp_block::VisitedSegmentEntry { class_hash: Felt::TWO, segments: vec![0, 1, 2] },
-            mp_block::VisitedSegmentEntry { class_hash: Felt::THREE, segments: vec![0, 1, 2] },
-        ])
-    }
+    // #[rstest::fixture]
+    // fn visited_segments() -> mp_block::VisitedSegments {
+    //     mp_block::VisitedSegments(vec![
+    //         mp_block::VisitedSegmentEntry { class_hash: Felt::ONE, segments: vec![0, 1, 2] },
+    //         mp_block::VisitedSegmentEntry { class_hash: Felt::TWO, segments: vec![0, 1, 2] },
+    //         mp_block::VisitedSegmentEntry { class_hash: Felt::THREE, segments: vec![0, 1, 2] },
+    //     ])
+    // }
 
-    #[rstest::fixture]
-    fn bouncer_weights() -> BouncerWeights {
-        BouncerWeights {
-            builtin_count: blockifier::bouncer::BuiltinCount {
-                add_mod: 0,
-                bitwise: 1,
-                ecdsa: 2,
-                ec_op: 3,
-                keccak: 4,
-                mul_mod: 5,
-                pedersen: 6,
-                poseidon: 7,
-                range_check: 8,
-                range_check96: 9,
-            },
-            gas: 10,
-            message_segment_length: 11,
-            n_events: 12,
-            n_steps: 13,
-            state_diff_size: 14,
-        }
-    }
+    // #[rstest::fixture]
+    // fn bouncer_weights() -> BouncerWeights {
+    //     BouncerWeights {
+    //         builtin_count: blockifier::bouncer::BuiltinCount {
+    //             add_mod: 0,
+    //             bitwise: 1,
+    //             ecdsa: 2,
+    //             ec_op: 3,
+    //             keccak: 4,
+    //             mul_mod: 5,
+    //             pedersen: 6,
+    //             poseidon: 7,
+    //             range_check: 8,
+    //             range_check96: 9,
+    //         },
+    //         gas: 10,
+    //         message_segment_length: 11,
+    //         n_events: 12,
+    //         n_steps: 13,
+    //         state_diff_size: 14,
+    //     }
+    // }
 
     #[rstest::rstest]
     fn block_prod_state_map_to_state_diff(backend: Arc<MadaraBackend>) {
@@ -916,10 +864,9 @@ mod tests {
     /// This happens if a full node is shutdown (gracefully or not) midway
     /// during block production.
     #[rstest::rstest]
-    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_pass(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    fn block_prod_pending_close_on_startup_pass(
+        setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
@@ -934,10 +881,8 @@ mod tests {
         #[from(converted_class_sierra)]
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
-        visited_segments: VisitedSegments,
-        bouncer_weights: BouncerWeights,
     ) {
-        let (backend, importer, metrics) = setup;
+        let (backend, metrics) = setup;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1028,8 +973,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
-                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1038,9 +981,7 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1084,10 +1025,9 @@ mod tests {
     /// at startup, then it is closed and stored in db on top of the latest
     /// block.
     #[rstest::rstest]
-    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_pass_on_top(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    fn block_prod_pending_close_on_startup_pass_on_top(
+        setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
 
         // Transactions
         #[from(tx_invoke_v0)]
@@ -1121,12 +1061,8 @@ mod tests {
         #[from(converted_class_sierra)]
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
-
-        // Pending data
-        visited_segments: VisitedSegments,
-        bouncer_weights: BouncerWeights,
     ) {
-        let (backend, importer, metrics) = setup;
+        let (backend, metrics) = setup;
 
         // ================================================================== //
         //                   PART 1: we prepare the ready block               //
@@ -1194,8 +1130,6 @@ mod tests {
                 },
                 ready_state_diff.clone(),
                 ready_converted_classes.clone(),
-                Some(visited_segments.clone()),
-                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1275,8 +1209,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 pending_converted_classes.clone(),
-                Some(visited_segments.clone()),
-                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1286,9 +1218,7 @@ mod tests {
 
         // This should load the pending block from db and close it on top of the
         // previous block.
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
@@ -1348,16 +1278,11 @@ mod tests {
     /// This test makes sure that it is possible to start the block production
     /// task even if there is no pending block in db at the time of startup.
     #[rstest::rstest]
-    #[tokio::test]
-    async fn block_prod_pending_close_on_startup_no_pending(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
-    ) {
-        let (backend, importer, metrics) = setup;
+    fn block_prod_pending_close_on_startup_no_pending(setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>)) {
+        let (backend, metrics) = setup;
 
         // Simulates starting block production without a pending block in db
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
 
         // Now we check no block was added to the db
         assert_eq!(backend.get_latest_block_n().unwrap(), None);
@@ -1370,10 +1295,9 @@ mod tests {
     /// This will arise if switching from a full node to a sequencer with the
     /// same db.
     #[rstest::rstest]
-    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_no_visited_segments(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    fn block_prod_pending_close_on_startup_no_visited_segments(
+        setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
@@ -1388,9 +1312,8 @@ mod tests {
         #[from(converted_class_sierra)]
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
-        bouncer_weights: BouncerWeights,
     ) {
-        let (backend, importer, metrics) = setup;
+        let (backend, metrics) = setup;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1462,8 +1385,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                None, // No visited segments!
-                Some(bouncer_weights),
+                // None, // No visited segments!
             )
             .expect("Failed to store pending block");
 
@@ -1472,9 +1394,7 @@ mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect("Failed to close pending block");
+        BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect("Failed to close pending block");
 
         // Now we check this was the case.
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1517,19 +1437,16 @@ mod tests {
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing class.
     #[rstest::rstest]
-    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_fail_missing_class(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    fn block_prod_pending_close_on_startup_fail_missing_class(
+        setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
-        visited_segments: VisitedSegments,
-        bouncer_weights: BouncerWeights,
     ) {
-        let (backend, importer, metrics) = setup;
+        let (backend, metrics) = setup;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1595,8 +1512,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
-                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1606,9 +1521,7 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x1
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect_err("Should error");
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));
@@ -1617,19 +1530,16 @@ mod tests {
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing legacy class.
     #[rstest::rstest]
-    #[tokio::test]
     #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
-        setup: (Arc<MadaraBackend>, Arc<mc_block_import::BlockImporter>, Arc<BlockProductionMetrics>),
+    fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
+        setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
         #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
         #[with(Felt::TWO)] tx_l1_handler: TxFixtureInfo,
         #[with(Felt::THREE)] tx_declare_v0: TxFixtureInfo,
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
-        visited_segments: VisitedSegments,
-        bouncer_weights: BouncerWeights,
     ) {
-        let (backend, importer, metrics) = setup;
+        let (backend, metrics) = setup;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1695,8 +1605,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                Some(visited_segments.clone()),
-                Some(bouncer_weights),
             )
             .expect("Failed to store pending block");
 
@@ -1706,9 +1614,7 @@ mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x0
-        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &importer, &metrics)
-            .await
-            .expect_err("Should error");
+        let err = BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).expect_err("Should error");
 
         assert!(err.contains("Failed to retrieve pending declared class at hash"));
         assert!(err.contains("not found in db"));

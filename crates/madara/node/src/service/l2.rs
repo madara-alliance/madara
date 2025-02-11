@@ -1,84 +1,96 @@
-use crate::cli::L2SyncParams;
-use mc_block_import::BlockImporter;
-use mc_db::{DatabaseService, MadaraBackend};
-use mc_sync::fetch::fetchers::{FetchConfig, WarpUpdateConfig};
-use mc_sync::SyncConfig;
-use mc_telemetry::TelemetryHandle;
-use mp_chain_config::ChainConfig;
+use mc_db::MadaraBackend;
+use mc_eth::state_update::L1HeadReceiver;
+use mc_p2p::P2pCommands;
+use mc_sync2::{
+    import::{BlockImporter, BlockValidationConfig},
+    SyncControllerConfig,
+};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
-use std::time::Duration;
+
+use crate::cli::l2::L2SyncParams;
 
 #[derive(Clone)]
-pub struct L2SyncService {
+struct StartArgs {
+    p2p_commands: Option<P2pCommands>,
+    l1_head_recv: L1HeadReceiver,
     db_backend: Arc<MadaraBackend>,
-    block_importer: Arc<BlockImporter>,
-    fetch_config: FetchConfig,
-    backup_every_n_blocks: Option<u64>,
-    starting_block: Option<u64>,
-    telemetry: Arc<TelemetryHandle>,
-    pending_block_poll_interval: Duration,
+    params: L2SyncParams,
 }
 
-impl L2SyncService {
+#[derive(Clone)]
+pub struct SyncService {
+    start_args: Option<StartArgs>,
+    disabled: bool,
+}
+
+impl SyncService {
     pub async fn new(
         config: &L2SyncParams,
-        chain_config: Arc<ChainConfig>,
-        db: &DatabaseService,
-        block_importer: Arc<BlockImporter>,
-        telemetry: TelemetryHandle,
-        warp_update: Option<WarpUpdateConfig>,
+        db: &Arc<MadaraBackend>,
+        mut p2p_commands: Option<P2pCommands>,
+        l1_head_recv: L1HeadReceiver,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
-
-        tracing::info!("🛰️ Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
-
+        if !config.p2p_sync {
+            p2p_commands = None;
+        }
         Ok(Self {
-            db_backend: Arc::clone(db.backend()),
-            fetch_config,
-            starting_block: config.unsafe_starting_block,
-            backup_every_n_blocks: config.backup_every_n_blocks,
-            block_importer,
-            telemetry: Arc::new(telemetry),
-            pending_block_poll_interval: config.pending_block_poll_interval,
+            start_args: (!config.l2_sync_disabled).then_some(StartArgs {
+                p2p_commands,
+                l1_head_recv,
+                db_backend: db.clone(),
+                params: config.clone(),
+            }),
+            disabled: config.l2_sync_disabled,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl Service for L2SyncService {
+impl Service for SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let L2SyncService {
-            db_backend,
-            fetch_config,
-            backup_every_n_blocks,
-            starting_block,
-            pending_block_poll_interval,
-            block_importer,
-            telemetry,
-        } = self.clone();
-        let telemetry = Arc::clone(&telemetry);
+        if self.disabled {
+            return Ok(());
+        }
+        let this = self.start_args.take().expect("Service already started");
+        let importer = Arc::new(BlockImporter::new(this.db_backend.clone(), BlockValidationConfig::default()));
 
-        runner.service_loop(move |ctx| {
-            mc_sync::l2_sync_worker(
-                db_backend,
-                ctx,
-                fetch_config,
-                SyncConfig {
-                    block_importer,
-                    starting_block,
-                    backup_every_n_blocks,
-                    telemetry,
-                    pending_block_poll_interval,
-                },
-            )
+        let config = SyncControllerConfig {
+            l1_head_recv: this.l1_head_recv,
+            stop_at_block_n: this.params.sync_stop_at,
+            stop_on_sync: this.params.stop_on_sync,
+        };
+
+        runner.service_loop(move |ctx| async move {
+            if this.params.p2p_sync {
+                use mc_sync2::p2p::{forward_sync, ForwardSyncConfig, P2pPipelineArguments};
+
+                let Some(p2p_commands) = this.p2p_commands else {
+                    anyhow::bail!("Cannot enable --p2p-sync without starting the peer-to-peer service using --p2p.")
+                };
+                let args = P2pPipelineArguments::new(this.db_backend, p2p_commands, importer);
+                forward_sync(args, config, ForwardSyncConfig::default().disable_tries(this.params.disable_tries))
+                    .run(ctx)
+                    .await
+            } else {
+                let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
+                mc_sync2::gateway::forward_sync(
+                    this.db_backend,
+                    importer,
+                    gateway,
+                    config,
+                    mc_sync2::gateway::ForwardSyncConfig::default().disable_tries(this.params.disable_tries),
+                )
+                .run(ctx)
+                .await
+            }
         });
 
         Ok(())
     }
 }
 
-impl ServiceId for L2SyncService {
+impl ServiceId for SyncService {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {
         MadaraServiceId::L2Sync.svc_id()

@@ -23,7 +23,6 @@ rstest.workspace = true
 regex.workspace = true
 
 mc-db = { workspace = true, features = ["testing"] }
-mc-block-import = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
 # Compile the test contracts in test cfg.
 m-cairo-test-contracts.workspace = true
@@ -32,7 +31,6 @@ m-cairo-test-contracts.workspace = true
 
 # Madara
 mc-analytics.workspace = true
-mc-block-import.workspace = true
 mc-db.workspace = true
 mc-gateway-client.workspace = true
 mc-rpc.workspace = true

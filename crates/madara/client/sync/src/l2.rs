@@ -236,6 +236,8 @@ pub struct L2SyncConfig {
     pub flush_every_n_seconds: u64,
     pub pending_block_poll_interval: Duration,
     pub ignore_block_order: bool,
+    /// See [`mp_block_import::BlockValidationContext::compute_v0_13_2_hashes`].
+    pub compute_v0_13_2_hashes: bool,
     pub chain_id: ChainId,
     pub telemetry: Arc<TelemetryHandle>,
     pub block_importer: Arc<BlockImporter>,
@@ -270,6 +272,7 @@ pub async fn sync(
         chain_id: config.chain_id,
         trust_class_hashes: false,
         ignore_block_order: config.ignore_block_order,
+        compute_v0_13_2_hashes: config.compute_v0_13_2_hashes,
     };
 
     let mut join_set = JoinSet::new();

@@ -1,17 +1,42 @@
 //! Starknet block primitives.
 
 use crate::header::GasPrices;
+use commitments::{BlockCommitments, CommitmentComputationContext};
 use header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader};
 use mp_chain_config::StarknetVersion;
-use mp_receipt::TransactionReceipt;
+use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
+use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
 use starknet_types_core::felt::Felt;
 
+pub mod commitments;
 pub mod header;
+
 pub use header::Header;
 pub use primitive_types::{H160, U256};
+
 pub type BlockId = starknet_types_rpc::BlockId<Felt>;
 pub type BlockTag = starknet_types_rpc::BlockTag;
+
+// TODO: where should we put that?
+#[derive(Debug, Clone)]
+pub struct TransactionWithReceipt {
+    pub transaction: Transaction,
+    pub receipt: TransactionReceipt,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConsensusSignature {
+    pub r: Felt,
+    pub s: Felt,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockHeaderWithSignatures {
+    pub header: Header,
+    pub block_hash: Felt,
+    pub consensus_signatures: Vec<ConsensusSignature>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -202,6 +227,7 @@ impl MadaraMaybePendingBlock {
 }
 
 /// Starknet block definition.
+#[cfg_attr(any(test, feature = "testing"), derive(PartialEq))]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MadaraBlock {
     pub info: MadaraBlockInfo,
@@ -216,6 +242,37 @@ impl MadaraBlock {
 
     pub fn version(&self) -> StarknetVersion {
         self.info.header.protocol_version
+    }
+}
+
+/// For testing we use a more rigorous impl of [PartialEq] which doesn't just
+/// check the block hash.
+#[cfg(not(any(test, feature = "testing")))]
+impl PartialEq for MadaraBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.info.block_hash == other.info.block_hash
+    }
+}
+
+impl Eq for MadaraBlock {}
+
+impl Ord for MadaraBlock {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.info.header.block_number.cmp(&other.info.header.block_number)
+    }
+}
+
+impl PartialOrd for MadaraBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl malachite_core_types::Value for MadaraBlock {
+    type Id = Felt;
+
+    fn id(&self) -> Self::Id {
+        self.info.block_hash
     }
 }
 
@@ -292,6 +349,43 @@ pub struct VisitedSegments(pub Vec<VisitedSegmentEntry>);
 pub struct VisitedSegmentEntry {
     pub class_hash: Felt,
     pub segments: Vec<usize>,
+}
+
+pub struct FullBlock {
+    pub block_hash: Felt,
+    pub header: Header,
+    pub state_diff: StateDiff,
+    pub transactions: Vec<TransactionWithReceipt>,
+    pub events: Vec<EventWithTransactionHash>,
+}
+
+/// A pending block is a block that has not yet been closed.
+pub struct PendingFullBlock {
+    pub header: PendingHeader,
+    pub state_diff: StateDiff,
+    pub transactions: Vec<TransactionWithReceipt>,
+    pub events: Vec<EventWithTransactionHash>,
+}
+
+impl PendingFullBlock {
+    /// Uses the rayon thread pool.
+    pub fn close_block(
+        self,
+        ctx: &CommitmentComputationContext,
+        block_number: u64,
+        new_global_state_root: Felt,
+        pre_v0_13_2_override: bool,
+    ) -> FullBlock {
+        let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
+        let header = self.header.to_closed_header(commitments, new_global_state_root, block_number);
+        FullBlock {
+            block_hash: header.compute_hash(ctx.chain_id, pre_v0_13_2_override),
+            header,
+            state_diff: self.state_diff,
+            transactions: self.transactions,
+            events: self.events,
+        }
+    }
 }
 
 #[cfg(test)]

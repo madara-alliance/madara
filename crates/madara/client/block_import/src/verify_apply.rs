@@ -9,6 +9,7 @@ use mp_block::{
     header::PendingHeader, BlockId, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
 };
+use mp_chain_config::StarknetVersion;
 use mp_convert::{FeltHexDisplay, ToFelt};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
@@ -40,13 +41,13 @@ impl VerifyApply {
         block: PreValidatedBlock,
         validation: BlockValidationContext,
     ) -> Result<BlockImportResult, BlockImportError> {
-        tracing::debug!("acquiring verify_apply exclusive");
+        tracing::trace!("acquiring verify_apply exclusive");
         let _exclusive = self.mutex.lock().await;
-        tracing::debug!("acquired verify_apply exclusive");
+        tracing::trace!("acquired verify_apply exclusive");
 
         let backend = Arc::clone(&self.backend);
         let res = global_spawn_rayon_task(move || verify_apply_inner(&backend, block, validation)).await;
-        tracing::debug!("releasing verify_apply exclusive");
+        tracing::trace!("releasing verify_apply exclusive");
         res
     }
 
@@ -56,13 +57,13 @@ impl VerifyApply {
         block: PreValidatedPendingBlock,
         validation: BlockValidationContext,
     ) -> Result<PendingBlockImportResult, BlockImportError> {
-        tracing::debug!("acquiring verify_apply exclusive (pending)");
+        tracing::trace!("acquiring verify_apply exclusive (pending)");
         let _exclusive = self.mutex.lock().await;
-        tracing::debug!("acquired verify_apply exclusive (pending)");
+        tracing::trace!("acquired verify_apply exclusive (pending)");
 
         let backend = Arc::clone(&self.backend);
         let res = global_spawn_rayon_task(move || verify_apply_pending_inner(&backend, block, validation)).await;
-        tracing::debug!("releasing verify_apply exclusive (pending)");
+        tracing::trace!("releasing verify_apply exclusive (pending)");
         res
     }
 }
@@ -85,7 +86,7 @@ pub fn verify_apply_inner(
     // Block hash
     let (block_hash, header) = block_hash(&block, &validation, block_number, parent_block_hash, global_state_root)?;
 
-    tracing::debug!("verify_apply_inner store block {}", header.block_number);
+    tracing::trace!("verify_apply_inner store block {}", header.block_number);
 
     // store block, also uses rayon heavily internally
     backend
@@ -101,8 +102,6 @@ pub fn verify_apply_inner(
             },
             block.state_diff,
             block.converted_classes,
-            block.visited_segments,
-            None,
         )
         .map_err(make_db_error("storing block in db"))?;
 
@@ -146,8 +145,6 @@ pub fn verify_apply_pending_inner(
             },
             block.state_diff,
             block.converted_classes,
-            block.visited_segments,
-            None,
         )
         .map_err(make_db_error("storing block in db"))?;
 
@@ -221,15 +218,15 @@ fn update_tries(
         return Ok(global_state_root);
     }
 
-    tracing::debug!(
+    tracing::trace!(
         "Deployed contracts: [{:?}]",
         block.state_diff.deployed_contracts.iter().map(|c| c.address.hex_display()).format(", ")
     );
-    tracing::debug!(
+    tracing::trace!(
         "Declared classes: [{:?}]",
         block.state_diff.declared_classes.iter().map(|c| c.class_hash.hex_display()).format(", ")
     );
-    tracing::debug!(
+    tracing::trace!(
         "Deprecated declared classes: [{:?}]",
         block.state_diff.deprecated_declared_classes.iter().map(|c| c.hex_display()).format(", ")
     );
@@ -308,10 +305,19 @@ fn block_hash(
         l1_gas_price,
         l1_da_mode,
     };
-    let block_hash = header.compute_hash(validation.chain_id.to_felt());
+    let block_hash = header.compute_hash(validation.chain_id.to_felt(), false);
+
+    let compute_v0_13_2_hashes_mode =
+        validation.compute_v0_13_2_hashes && header.protocol_version < StarknetVersion::V0_13_2;
 
     if let Some(expected) = block.unverified_block_hash {
+        // compute_v0_13_2_hashes: do not check block hash, return the old one.
+        if compute_v0_13_2_hashes_mode {
+            return Ok((expected, header));
+        }
+
         // mismatched block hash is allowed for blocks 1466..=2242 on mainnet
+        // compute_v0_13_2_hashes: we will remove this legacy check once we can verify <0.13.2 hashes.
         let is_special_trusted_case = validation.chain_id == ChainId::Mainnet && (1466..=2242).contains(&block_number);
         if is_special_trusted_case {
             return Ok((expected, header));
@@ -411,7 +417,7 @@ mod verify_apply_tests {
         if populate_db {
             let header = create_dummy_header();
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
         }
 
         // Create a validation context with the specified ignore_block_order flag
@@ -530,6 +536,7 @@ mod verify_apply_tests {
             trust_global_tries,
             trust_transaction_hashes: false,
             trust_class_hashes: false,
+            compute_v0_13_2_hashes: false,
         };
 
         // WHEN: We call update_tries with these parameters
@@ -593,6 +600,7 @@ mod verify_apply_tests {
                 trust_global_tries: false,
                 trust_transaction_hashes: false,
                 trust_class_hashes: false,
+                compute_v0_13_2_hashes: false,
             },
             1466,
             felt!("0x1"),
@@ -665,7 +673,7 @@ mod verify_apply_tests {
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -691,7 +699,7 @@ mod verify_apply_tests {
             let mut header = create_dummy_header();
             header.block_number = 0;
             let pending_block = finalized_block_zero(header);
-            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(pending_block.clone(), finalized_state_diff_zero(), vec![]).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -727,7 +735,7 @@ mod verify_apply_tests {
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());
-            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 
@@ -773,7 +781,7 @@ mod verify_apply_tests {
             let mut genesis_header = create_dummy_header();
             genesis_header.block_number = 0;
             let genesis_block = finalized_block_zero(genesis_header.clone());
-            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![], None, None).unwrap();
+            backend.store_block(genesis_block, finalized_state_diff_zero(), vec![]).unwrap();
 
             assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
 

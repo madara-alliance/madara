@@ -3,6 +3,7 @@
 pub mod crypto;
 pub mod hash;
 pub mod parsers;
+pub mod rayon;
 pub mod serde;
 pub mod service;
 use std::time::{Duration, Instant};
@@ -10,22 +11,6 @@ use std::time::{Duration, Instant};
 pub use hash::trim_hash;
 
 use tokio::sync::oneshot;
-
-/// Prefer this compared to [`tokio::spawn_blocking`], as spawn_blocking creates new OS threads and
-/// we don't really need that
-pub async fn spawn_rayon_task<F, R>(func: F) -> R
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    rayon::spawn(move || {
-        let _result = tx.send(func());
-    });
-
-    rx.await.expect("tokio channel closed")
-}
 
 #[derive(Debug, Default)]
 pub struct StopHandle(Option<oneshot::Sender<()>>);

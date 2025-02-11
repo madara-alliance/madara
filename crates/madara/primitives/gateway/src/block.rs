@@ -1,15 +1,28 @@
-use anyhow::Context;
-use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
-use mp_chain_config::StarknetVersion;
-use mp_convert::hex_serde::U128AsHex;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use starknet_types_core::felt::Felt;
-
 use super::{
     receipt::{ConfirmedReceipt, MsgToL2},
     transaction::Transaction,
 };
+use anyhow::Context;
+use mp_block::{
+    header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader},
+    FullBlock, PendingFullBlock, TransactionWithReceipt,
+};
+use mp_chain_config::StarknetVersion;
+use mp_convert::hex_serde::U128AsHex;
+use mp_receipt::EventWithTransactionHash;
+use mp_state_update::StateDiff;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use starknet_types_core::felt::Felt;
+use std::mem;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockHeader {
+    pub block_number: u64,
+    pub block_hash: Felt,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -110,6 +123,8 @@ impl ProviderBlock {
             Some(block.info.header.sequencer_address)
         };
 
+        // TODO(compute_v0_13_2_hashes): once `compute_v0_13_2_hashes` becomes the default, we should show all post-v0.13.2 commitments
+        // in the block including receipt and state_diff commitments.
         let (receipt_commitment, state_diff_commitment) =
             if block.info.header.protocol_version >= StarknetVersion::V0_13_2 {
                 (block.info.header.receipt_commitment, block.info.header.state_diff_commitment)
@@ -145,11 +160,18 @@ impl ProviderBlock {
         }
     }
 
-    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
-        Ok(mc_block_import::UnverifiedHeader {
-            parent_block_hash: Some(self.parent_block_hash),
+    pub fn into_full_block(self, state_diff: StateDiff) -> anyhow::Result<FullBlock> {
+        let header = self.header()?;
+        let TransactionsReceiptsAndEvents { transactions, events } =
+            convert_txs(self.transactions, self.transaction_receipts);
+        Ok(FullBlock { block_hash: self.block_hash, header, transactions, events, state_diff })
+    }
+
+    pub fn header(&self) -> anyhow::Result<mp_block::Header> {
+        Ok(mp_block::Header {
+            parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address.unwrap_or_default(),
-            block_timestamp: BlockTimestamp(self.timestamp),
+            block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: self
                 .starknet_version
                 .as_deref()
@@ -165,6 +187,15 @@ impl ProviderBlock {
                 strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
             },
             l1_da_mode: self.l1_da_mode,
+            block_number: self.block_number,
+            global_state_root: self.state_root,
+            transaction_count: self.transactions.len() as u64,
+            transaction_commitment: self.transaction_commitment,
+            event_count: self.transaction_receipts.iter().map(|tx| tx.events.len() as u64).sum(),
+            event_commitment: self.event_commitment,
+            state_diff_length: self.state_diff_length,
+            state_diff_commitment: self.state_diff_commitment,
+            receipt_commitment: self.receipt_commitment,
         })
     }
 }
@@ -224,9 +255,9 @@ impl ProviderBlockPending {
         }
     }
 
-    pub fn header(&self) -> anyhow::Result<mc_block_import::UnverifiedHeader> {
-        Ok(mc_block_import::UnverifiedHeader {
-            parent_block_hash: Some(self.parent_block_hash),
+    pub fn header(&self) -> anyhow::Result<PendingHeader> {
+        Ok(PendingHeader {
+            parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address,
             block_timestamp: BlockTimestamp(self.timestamp),
             protocol_version: self
@@ -246,6 +277,13 @@ impl ProviderBlockPending {
             },
             l1_da_mode: self.l1_da_mode,
         })
+    }
+
+    pub fn into_full_block(self, state_diff: StateDiff) -> anyhow::Result<PendingFullBlock> {
+        let header = self.header()?;
+        let TransactionsReceiptsAndEvents { transactions, events } =
+            convert_txs(self.transactions, self.transaction_receipts);
+        Ok(PendingFullBlock { header, transactions, events, state_diff })
     }
 }
 
@@ -299,4 +337,30 @@ fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transa
             ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
         })
         .collect()
+}
+
+struct TransactionsReceiptsAndEvents {
+    transactions: Vec<TransactionWithReceipt>,
+    events: Vec<EventWithTransactionHash>,
+}
+
+fn convert_txs(transactions: Vec<Transaction>, mut receipts: Vec<ConfirmedReceipt>) -> TransactionsReceiptsAndEvents {
+    TransactionsReceiptsAndEvents {
+        events: receipts
+            .iter_mut()
+            .flat_map(|receipt| {
+                mem::take(&mut receipt.events)
+                    .into_iter()
+                    .map(|event| EventWithTransactionHash { transaction_hash: receipt.transaction_hash, event })
+            })
+            .collect(),
+        transactions: transactions
+            .into_iter()
+            .zip(receipts)
+            .map(|(transaction, receipt)| TransactionWithReceipt {
+                receipt: receipt.into_mp(&transaction),
+                transaction: transaction.into(),
+            })
+            .collect(),
+    }
 }

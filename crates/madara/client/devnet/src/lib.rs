@@ -1,8 +1,13 @@
 use anyhow::Context;
 use blockifier::abi::abi_utils::get_storage_var_address;
-use mc_block_import::{UnverifiedFullBlock, UnverifiedHeader};
-use mp_block::header::{BlockTimestamp, GasPrices};
+use mc_db::MadaraBackend;
+use mp_block::{
+    commitments::CommitmentComputationContext,
+    header::{GasPrices, PendingHeader},
+    PendingFullBlock,
+};
 use mp_chain_config::ChainConfig;
+use mp_class::ClassInfoWithHash;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 use starknet_api::{core::ContractAddress, state::StorageKey};
@@ -11,7 +16,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, iter, time::SystemTime};
 
 mod balances;
 mod classes;
@@ -147,35 +152,67 @@ impl ChainGenesisDescription {
     }
 
     #[tracing::instrument(skip(self, chain_config), fields(module = "ChainGenesisDescription"))]
-    pub fn build(mut self, chain_config: &ChainConfig) -> anyhow::Result<UnverifiedFullBlock> {
+    pub fn into_block(
+        mut self,
+        chain_config: &ChainConfig,
+    ) -> anyhow::Result<(PendingFullBlock, Vec<ClassInfoWithHash>)> {
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
-        Ok(UnverifiedFullBlock {
-            header: UnverifiedHeader {
-                parent_block_hash: Some(Felt::ZERO),
-                sequencer_address: chain_config.sequencer_address.to_felt(),
-                block_timestamp: BlockTimestamp::now(),
-                protocol_version: chain_config.latest_protocol_version,
-                l1_gas_price: GasPrices {
-                    eth_l1_gas_price: 5,
-                    strk_l1_gas_price: 5,
-                    eth_l1_data_gas_price: 5,
-                    strk_l1_data_gas_price: 5,
+        Ok((
+            PendingFullBlock {
+                header: PendingHeader {
+                    parent_block_hash: Felt::ZERO,
+                    sequencer_address: chain_config.sequencer_address.to_felt(),
+                    block_timestamp: mp_block::header::BlockTimestamp(
+                        SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .expect("Current time is before unix epoch!")
+                            .as_secs(),
+                    ),
+                    protocol_version: chain_config.latest_protocol_version,
+                    l1_gas_price: GasPrices {
+                        eth_l1_gas_price: 5,
+                        strk_l1_gas_price: 5,
+                        eth_l1_data_gas_price: 5,
+                        strk_l1_data_gas_price: 5,
+                    },
+                    l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
                 },
-                l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+                state_diff: StateDiff {
+                    storage_diffs: self.initial_storage.as_state_diff(),
+                    deprecated_declared_classes: self.declared_classes.as_legacy_state_diff(),
+                    declared_classes: self.declared_classes.as_state_diff(),
+                    deployed_contracts: self.deployed_contracts.as_state_diff(),
+                    replaced_classes: vec![],
+                    nonces: vec![],
+                },
+                transactions: vec![],
+                events: vec![],
             },
-            state_diff: StateDiff {
-                storage_diffs: self.initial_storage.as_state_diff(),
-                deprecated_declared_classes: self.declared_classes.as_legacy_state_diff(),
-                declared_classes: self.declared_classes.as_state_diff(),
-                deployed_contracts: self.deployed_contracts.as_state_diff(),
-                replaced_classes: vec![],
-                nonces: vec![],
+            self.declared_classes.into_class_infos(),
+        ))
+    }
+
+    pub fn build_and_store(self, backend: &MadaraBackend) -> anyhow::Result<()> {
+        let (block, classes) = self.into_block(backend.chain_config()).unwrap();
+
+        let block_number = 0;
+        let new_global_state_root = backend.apply_state(block_number, iter::once(&block.state_diff))?;
+
+        let block = block.close_block(
+            &CommitmentComputationContext {
+                protocol_version: backend.chain_config().latest_protocol_version,
+                chain_id: backend.chain_config().chain_id.to_felt(),
             },
-            declared_classes: self.declared_classes.into_loaded_classes(),
-            unverified_block_number: Some(0),
-            ..Default::default()
-        })
+            block_number,
+            new_global_state_root,
+            true,
+        );
+        let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
+
+        backend.store_full_block(block)?;
+        backend.class_db_store_block(block_number, &classes)?;
+        Ok(())
     }
 }
 
@@ -183,7 +220,6 @@ impl ChainGenesisDescription {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use mc_block_import::{BlockImporter, BlockValidationContext};
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
@@ -193,7 +229,6 @@ mod tests {
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::{ClassInfo, FlattenedSierraClass};
-
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::BroadcastedTransactionExt;
@@ -305,23 +340,8 @@ mod tests {
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
 
-        let chain_config = Arc::new(ChainConfig::madara_devnet());
-        let block = g.build(&chain_config).unwrap();
-        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
-        let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None).unwrap());
-
-        tracing::debug!("{:?}", block.state_diff);
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-
-        runtime
-            .block_on(
-                importer.add_block(
-                    block,
-                    BlockValidationContext::new(chain_config.chain_id.clone()).trust_class_hashes(true),
-                ),
-            )
-            .unwrap();
-
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_devnet()));
+        g.build_and_store(&backend).unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
@@ -336,15 +356,13 @@ mod tests {
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider), mempool_limits));
         let metrics = BlockProductionMetrics::register();
 
-        let block_production = runtime
-            .block_on(BlockProductionTask::new(
-                Arc::clone(&backend),
-                Arc::clone(&importer),
-                Arc::clone(&mempool),
-                Arc::new(metrics),
-                Arc::clone(&l1_data_provider),
-            ))
-            .unwrap();
+        let block_production = BlockProductionTask::new(
+            Arc::clone(&backend),
+            Arc::clone(&mempool),
+            Arc::new(metrics),
+            Arc::clone(&l1_data_provider),
+        )
+        .unwrap();
 
         DevnetForTesting { backend, contracts, block_production, mempool }
     }
@@ -386,11 +404,8 @@ mod tests {
 
         assert_eq!(res.class_hash, calculated_class_hash);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            chain.block_production.set_current_pending_tick(1);
-            chain.block_production.on_pending_time_tick().await.unwrap();
-        });
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -458,11 +473,8 @@ mod tests {
             .unwrap();
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-            chain.block_production.on_pending_time_tick().await.unwrap();
-        });
+        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
+        chain.block_production.on_pending_time_tick().unwrap();
 
         // =====================================================================================
 
@@ -493,11 +505,8 @@ mod tests {
 
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-            chain.block_production.on_pending_time_tick().await.unwrap();
-        });
+        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
+        chain.block_production.on_pending_time_tick().unwrap();
 
         assert_eq!(res.contract_address, account.address);
 
@@ -557,11 +566,8 @@ mod tests {
 
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            chain.block_production.set_current_pending_tick(1);
-            chain.block_production.on_pending_time_tick().await.unwrap();
-        });
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -766,11 +772,8 @@ mod tests {
             .unwrap();
 
         std::thread::sleep(max_age); // max age reached
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            chain.block_production.set_current_pending_tick(1);
-            chain.block_production.on_pending_time_tick().await.unwrap();
-        });
+        chain.block_production.set_current_pending_tick(1);
+        chain.block_production.on_pending_time_tick().unwrap();
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 

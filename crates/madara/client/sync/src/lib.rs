@@ -71,6 +71,7 @@ pub async fn l2_sync_worker(
         telemetry: sync_config.telemetry,
         block_importer: sync_config.block_importer,
         warp_update: fetch_config.warp_update,
+        compute_v0_13_2_hashes: false,
     };
 
     l2::sync(backend, provider, ctx, l2_config).await?;

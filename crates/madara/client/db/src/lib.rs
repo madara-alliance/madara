@@ -1,9 +1,9 @@
 //! Madara database
 
 use anyhow::Context;
-use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
 
+mod chain_head;
 mod db_version;
 mod error;
 mod rocksdb_options;
@@ -37,7 +38,9 @@ pub mod devnet_db;
 pub mod l1_db;
 pub mod mempool_db;
 pub mod storage_updates;
+pub mod stream;
 pub mod tests;
+mod update_global_trie;
 
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
@@ -409,7 +412,6 @@ impl EventChannels {
     }
 }
 
-/// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -418,21 +420,28 @@ pub struct MadaraBackend {
     snapshots: Arc<Snapshots>,
     trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
+    head_status: ChainHead,
     sender_event: EventChannels,
-    write_opt_no_wal: WriteOptions,
+    /// WriteOptions with wal disabled
+    writeopts_no_wal: WriteOptions,
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 }
 
 impl fmt::Debug for MadaraBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MadaraBackend")
-            .field("backup_handle", &self.backup_handle)
+        let mut s = f.debug_struct("MadaraBackend");
+        s.field("backup_handle", &self.backup_handle)
             .field("db", &self.db)
             .field("chain_config", &self.chain_config)
             .field("db_metrics", &self.db_metrics)
-            .field("sender_block_info", &self.sender_block_info)
-            .finish()
+            .field("sender_block_info", &self.sender_block_info);
+
+        #[cfg(any(test, feature = "testing"))]
+        {
+            s.field("_temp_dir", &self._temp_dir);
+        }
+        s.finish()
     }
 }
 
@@ -471,6 +480,10 @@ impl DatabaseService {
             trie_log_config,
         )
         .await?;
+
+        if let Some(block_n) = handle.head_status().latest_full_block_n() {
+            tracing::info!("📦 Database latest block: #{block_n}");
+        }
 
         Ok(Self { handle })
     }
@@ -511,23 +524,41 @@ impl MadaraBackend {
         &self.chain_config
     }
 
+    fn new(
+        backup_handle: Option<mpsc::Sender<BackupRequest>>,
+        db: Arc<DB>,
+        chain_config: Arc<ChainConfig>,
+        trie_log_config: TrieLogConfig,
+    ) -> anyhow::Result<Self> {
+        let snapshots = Arc::new(Snapshots::new(
+            Arc::clone(&db),
+            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.get(),
+            Some(trie_log_config.max_kept_snapshots),
+            trie_log_config.snapshot_interval,
+        ));
+        Ok(Self {
+            writeopts_no_wal: make_write_opt_no_wal(),
+            db_metrics: DbMetrics::register().context("Registering db metrics")?,
+            backup_handle,
+            db,
+            chain_config,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
+            sender_event: EventChannels::new(100),
+            trie_log_config: Default::default(),
+            head_status: ChainHead::default(),
+            snapshots,
+            #[cfg(any(test, feature = "testing"))]
+            _temp_dir: None,
+        })
+    }
+
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref()).unwrap();
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), None, Some(0), 5));
-        Arc::new(Self {
-            backup_handle: None,
-            db,
-            chain_config,
-            db_metrics: DbMetrics::register().unwrap(),
-            snapshots,
-            trie_log_config: Default::default(),
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            sender_event: EventChannels::new(100),
-            write_opt_no_wal: make_write_opt_no_wal(),
-            _temp_dir: Some(temp_dir),
-        })
+        let mut backend = Self::new(None, db, chain_config, Default::default()).unwrap();
+        backend._temp_dir = Some(temp_dir);
+        Arc::new(backend)
     }
 
     /// Open the db.
@@ -568,30 +599,12 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path)?;
-        let current_block_n = get_latest_block_n(&db).context("Getting latest block_n from database")?;
-        let snapshots = Arc::new(Snapshots::new(
-            Arc::clone(&db),
-            current_block_n,
-            Some(trie_log_config.max_kept_snapshots),
-            trie_log_config.snapshot_interval,
-        ));
 
-        let backend = Arc::new(Self {
-            db_metrics: DbMetrics::register().context("Registering db metrics")?,
-            backup_handle,
-            db,
-            chain_config: Arc::clone(&chain_config),
-            snapshots,
-            trie_log_config,
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            sender_event: EventChannels::new(100),
-            write_opt_no_wal: make_write_opt_no_wal(),
-            #[cfg(any(test, feature = "testing"))]
-            _temp_dir: None,
-        });
+        let mut backend = Self::new(backup_handle, db, chain_config, trie_log_config)?;
         backend.check_configuration()?;
+        backend.load_head_status_from_db()?;
         backend.update_metrics();
-        Ok(backend)
+        Ok(Arc::new(backend))
     }
 
     pub fn flush(&self) -> anyhow::Result<()> {

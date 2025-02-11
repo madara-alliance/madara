@@ -14,20 +14,30 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+default = []
+testing = []
+
 [dependencies]
 
 # Madara
+bitvec = { workspace = true }
+bonsai-trie = { workspace = true }
 mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
 mp-receipt = { workspace = true }
+mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
+malachite-core-types.workspace = true
 
 # Other
 primitive-types.workspace = true
+rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 

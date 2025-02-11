@@ -1,14 +1,11 @@
-use std::sync::Arc;
-
-use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use rocksdb::WriteOptions;
-use starknet_types_core::felt::Felt;
-
 use crate::{
     db_block_id::{DbBlockId, DbBlockIdResolvable},
     Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
 };
+use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
 
@@ -28,7 +25,7 @@ impl MadaraBackend {
         nonpending_col: Column,
     ) -> Result<Option<V>, MadaraStorageError> {
         // todo: smallint here to avoid alloc
-        tracing::debug!("class db get encoded kv, key={key:#x}");
+        tracing::trace!("class db get encoded kv, key={key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
         // Get from pending db, then normal db if not found.
@@ -38,7 +35,7 @@ impl MadaraBackend {
                 return Ok(Some(bincode::deserialize(&res)?)); // found in pending
             }
         }
-        tracing::debug!("class db get encoded kv, state is not pending");
+        tracing::trace!("class db get encoded kv, state is not pending");
 
         let col = self.db.get_column(nonpending_col);
         let Some(val) = self.db.get_pinned_cf(&col, &key_encoded)? else { return Ok(None) };
@@ -64,6 +61,7 @@ impl MadaraBackend {
             Column::ClassInfo,
         )?
         else {
+            tracing::debug!("no class info");
             return Ok(None);
         };
 
@@ -75,6 +73,7 @@ impl MadaraBackend {
             _ => false,
         };
         if !valid {
+            tracing::debug!("rejected {:?}", (requested_id, info.block_id));
             return Ok(None);
         }
         tracing::debug!("class db get class info, state is valid");
@@ -97,7 +96,7 @@ impl MadaraBackend {
     ) -> Result<Option<CompiledSierra>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        tracing::debug!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
+        tracing::trace!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
 
         let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
             requested_id.is_pending(),
@@ -159,8 +158,10 @@ impl MadaraBackend {
         col_info: Column,
         col_compiled: Column,
     ) -> Result<(), MadaraStorageError> {
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        tracing::trace!(
+            "Store class {block_id:?} {:?}",
+            converted_classes.iter().map(|c| c.class_hash()).collect::<Vec<_>>()
+        );
 
         converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(col_info),
@@ -182,7 +183,7 @@ impl MadaraBackend {
                         );
                     }
                 }
-                self.db.write_opt(batch, &writeopts)?;
+                self.db.write_opt(batch, &self.writeopts_no_wal)?;
                 Ok::<_, MadaraStorageError>(())
             },
         )?;
@@ -205,7 +206,7 @@ impl MadaraBackend {
                         // TODO: find a way to avoid this allocation
                         batch.put_cf(col, &key_bin, bincode::serialize(&value)?);
                     }
-                    self.db.write_opt(batch, &writeopts)?;
+                    self.db.write_opt(batch, &self.writeopts_no_wal)?;
                     Ok::<_, MadaraStorageError>(())
                 },
             )?;
@@ -215,7 +216,7 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
-    pub(crate) fn class_db_store_block(
+    pub fn class_db_store_block(
         &self,
         block_number: u64,
         converted_classes: &[ConvertedClass],
@@ -239,15 +240,17 @@ impl MadaraBackend {
 
     #[tracing::instrument(fields(module = "ClassDB"))]
     pub(crate) fn class_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-
-        self.db.delete_range_cf_opt(&self.db.get_column(Column::PendingClassInfo), &[] as _, LAST_KEY, &writeopts)?;
+        self.db.delete_range_cf_opt(
+            &self.db.get_column(Column::PendingClassInfo),
+            &[] as _,
+            LAST_KEY,
+            &self.writeopts_no_wal,
+        )?;
         self.db.delete_range_cf_opt(
             &self.db.get_column(Column::PendingClassCompiled),
             &[] as _,
             LAST_KEY,
-            &writeopts,
+            &self.writeopts_no_wal,
         )?;
 
         Ok(())

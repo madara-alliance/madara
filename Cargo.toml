@@ -3,7 +3,7 @@ members = [
   # madara
   "crates/madara/client/db",
   "crates/madara/client/exec",
-  "crates/madara/client/sync",
+  "crates/madara/client/sync2",
   "crates/madara/client/eth",
   "crates/madara/client/rpc",
   "crates/madara/client/gateway/client",
@@ -12,7 +12,9 @@ members = [
   "crates/madara/client/telemetry",
   "crates/madara/client/devnet",
   "crates/madara/client/mempool",
-  "crates/madara/client/block_import",
+  "crates/madara/client/block_production",
+  "crates/madara/client/p2p",
+  "crates/madara/client/p2p_stream",
   "crates/madara/node",
   "crates/madara/primitives/block",
   "crates/madara/primitives/convert",
@@ -26,24 +28,26 @@ members = [
   "crates/madara/proc-macros",
   "crates/madara/tests",
   "crates/madara/cairo-test-contracts",
-  "crates/madara/client/block_production",
+  "crates/madara/primitives/malachite",
+  "crates/madara/primitives/proto",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
-  # madara
   "crates/madara/client/db",
   "crates/madara/client/exec",
-  "crates/madara/client/sync",
+  "crates/madara/client/sync2",
   "crates/madara/client/eth",
+  "crates/madara/client/rpc",
   "crates/madara/client/gateway/client",
   "crates/madara/client/gateway/server",
-  "crates/madara/client/rpc",
+  "crates/madara/client/analytics",
   "crates/madara/client/telemetry",
   "crates/madara/client/devnet",
   "crates/madara/client/mempool",
-  "crates/madara/client/block_import",
-  "crates/madara/client/analytics",
+  "crates/madara/client/block_production",
+  "crates/madara/client/p2p",
+  "crates/madara/client/p2p_stream",
   "crates/madara/node",
   "crates/madara/primitives/block",
   "crates/madara/primitives/convert",
@@ -119,6 +123,7 @@ mp-state-update = { path = "crates/madara/primitives/state_update", default-feat
 mp-utils = { path = "crates/madara/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/madara/primitives/chain_config", default-features = false }
 mp-oracle = { path = "crates/madara/primitives/oracle", default-features = false }
+mp-proto = { path = "crates/madara/primitives/proto", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/madara/client/analytics" }
@@ -128,15 +133,16 @@ mc-exec = { path = "crates/madara/client/exec" }
 mc-rpc = { path = "crates/madara/client/rpc" }
 mc-gateway-client = { path = "crates/madara/client/gateway/client" }
 mc-gateway-server = { path = "crates/madara/client/gateway/server" }
-mc-sync = { path = "crates/madara/client/sync" }
+mc-sync2 = { path = "crates/madara/client/sync2" }
+mc-p2p = { path = "crates/madara/client/p2p" }
 mc-eth = { path = "crates/madara/client/eth" }
 mc-mempool = { path = "crates/madara/client/mempool" }
 mc-block-production = { path = "crates/madara/client/block_production" }
-mc-block-import = { path = "crates/madara/client/block_import" }
 mc-devnet = { path = "crates/madara/client/devnet" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
+p2p_stream = { path = "crates/madara/client/p2p_stream" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
@@ -184,6 +190,10 @@ tracing-subscriber = { version = "0.3.18", features = [
 ] }
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.26.0"
+prost = "0.13.3"
+prost-build = "0.13.3"
+unsigned-varint = { version = "0.8.0", features = ["futures"] }
+tokio-stream = "0.1"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
@@ -201,6 +211,27 @@ http-body-util = "0.1.2"
 ip_network = "0.4"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 url = { version = "2.4", features = ["serde"] }
+libp2p-plaintext = "0.42.0"
+libp2p-swarm-test = "0.4.0"
+libp2p = { version = "0.54.1", features = [
+  "tokio",
+  # "quic",
+  "tcp",
+  "tls",
+  "noise",
+  "yamux",
+  "ping",
+  "kad",
+  "gossipsub",
+  "autonat",
+  "dcutr",
+  "relay",
+  "kad",
+  "identify",
+  "macros",
+] }
+multiaddr = "0.18"
+futures-bounded = "0.2.1"
 
 # Async
 tokio = { version = "1.34", features = ["signal", "rt"] }
@@ -266,6 +297,12 @@ flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
 
+# Starknet consensus
+
+[workspace.dependencies.malachite-core-types]
+git = "https://github.com/informalsystems/malachite.git"
+package = "informalsystems-malachitebft-core-types"
+
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -273,4 +310,4 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+# starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
