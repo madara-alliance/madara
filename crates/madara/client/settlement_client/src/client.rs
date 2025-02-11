@@ -1,11 +1,13 @@
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::StateUpdate;
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use futures::Stream;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
+use mockall::automock;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -22,7 +24,7 @@ pub mod test_types {
 
     #[derive(Debug, Default, PartialEq)]
     pub struct DummyConfig;
-    pub type DummyStream = BoxStream<'static, Result<CommonMessagingEventData, SettlementClientError>>;
+    pub type DummyStream = BoxStream<'static, Result<L1toL2MessagingEventData, SettlementClientError>>;
 }
 
 // Use different automock configurations based on the build type
@@ -46,7 +48,7 @@ pub mod test_types {
 /// # Stream Requirements
 ///
 /// The `StreamType` must be a stream that:
-/// - Produces `Option<Result<CommonMessagingEventData, SettlementClientError>>`
+/// - Produces `Option<Result<L1toL2MessagingEventData, SettlementClientError>>`
 /// - Handles gaps in event sequences (via `Option`)
 /// - Manages errors during event processing (via `Result`)
 /// - Implements `Send` for thread safety
@@ -70,7 +72,7 @@ pub trait SettlementClientTrait: Send + Sync {
     /// - Return None to indicate end of current batch
     /// - Return Some(Err) for processing/network errors
     /// - Return Some(Ok) for valid events
-    type StreamType: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send;
+    type StreamType: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send;
 
     fn get_client_type(&self) -> ClientType;
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
@@ -109,7 +111,7 @@ pub trait SettlementClientTrait: Send + Sync {
     async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError>;
 
     /// Computes the hash of a messaging event for verification purposes
-    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> Result<Vec<u8>, SettlementClientError>;
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError>;
 
     /// Get cancellation status of an L1 to L2 message
     ///

@@ -1,6 +1,6 @@
 use crate::error::SettlementClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use crate::utils::u256_to_felt;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
@@ -25,15 +25,15 @@ impl EthereumEventStream {
 }
 
 impl Stream for EthereumEventStream {
-    type Item = Result<CommonMessagingEventData, SettlementClientError>;
+    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(result)) => match result {
                 Ok((event, log)) => {
                     let event_data =
-                        (|| -> Result<CommonMessagingEventData, SettlementClientError> {
-                            Ok(CommonMessagingEventData {
+                        (|| -> Result<L1toL2MessagingEventData, SettlementClientError> {
+                            Ok(L1toL2MessagingEventData {
                                 from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
                                 to: u256_to_felt(event.toAddress)?,
                                 selector: u256_to_felt(event.selector)?,
@@ -120,9 +120,9 @@ pub mod eth_event_stream_tests {
     // Helper function to process stream into a vector
     async fn collect_stream_events(
         stream: &mut EthereumEventStream,
-    ) -> Vec<Result<CommonMessagingEventData, SettlementClientError>> {
+    ) -> Vec<Result<L1toL2MessagingEventData, SettlementClientError>> {
         stream
-            .take_while(|event| futures::future::ready(event.is_some()))
+            .take_while(|event| futures::future::ready(event.is_ok()))
             .fold(Vec::new(), |mut acc, event| async move {
                 acc.push(event);
                 acc
@@ -145,14 +145,14 @@ pub mod eth_event_stream_tests {
         assert_eq!(events.len(), 2);
 
         // Test first event
-        assert_matches!(events[0].as_ref(), Some(Ok(event_data)) => {
+        assert_matches!(events[0].as_ref(), Ok(event_data) => {
             assert_eq!(event_data.block_number, 100 + first_index);
             assert_eq!(event_data.event_index, Some(first_index));
             assert_eq!(event_data.nonce, Felt::from_bytes_be_slice(U256::from(first_index).to_be_bytes_vec().as_slice()));
         });
 
         // Test second event
-        assert_matches!(events[1].as_ref(), Some(Ok(event_data)) => {
+        assert_matches!(events[1].as_ref(), Ok(event_data) => {
             assert_eq!(event_data.block_number, 100 + second_index);
             assert_eq!(event_data.event_index, Some(second_index));
             assert_eq!(event_data.nonce, Felt::from_bytes_be_slice(U256::from(second_index).to_be_bytes_vec().as_slice()));
@@ -166,7 +166,7 @@ pub mod eth_event_stream_tests {
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let event = ethereum_stream.next().await;
-        assert_matches!(event, Some(None), "Expected end of stream");
+        assert_matches!(event, None, "Expected end of stream");
     }
 
     #[tokio::test]
@@ -176,7 +176,7 @@ pub mod eth_event_stream_tests {
         let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
 
         let event = ethereum_stream.next().await;
-        assert_matches!(event, Some(Some(Err(_))), "Expected error event");
+        assert_matches!(event, Some(Err(_)), "Expected error event");
     }
 
     #[rstest]
@@ -194,9 +194,9 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 3);
-        assert!(events[0].as_ref().unwrap().is_ok(), "First event should be successful");
-        assert!(events[1].as_ref().unwrap().is_err(), "Second event should be an error");
-        assert!(events[2].as_ref().unwrap().is_ok(), "Third event should be successful");
+        assert!(events[0].as_ref().is_ok(), "First event should be successful");
+        assert!(events[1].as_ref().is_err(), "Second event should be an error");
+        assert!(events[2].as_ref().is_ok(), "Third event should be successful");
     }
 
     #[rstest]
@@ -215,7 +215,7 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Some(Err(SettlementClientError::MissingField(field))) => {
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
             assert_eq!(*field, "block_number", "Error should mention missing block number");
         });
     }
@@ -236,7 +236,7 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Some(Err(SettlementClientError::MissingField(field))) => {
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
             assert_eq!(*field, "log_index", "Error should mention missing block number");
         });
     }
@@ -257,7 +257,7 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Some(Err(SettlementClientError::MissingField(field))) => {
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
             assert_eq!(*field, "transaction_hash", "Error should mention missing transaction hash");
         });
     }

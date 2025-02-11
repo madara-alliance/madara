@@ -7,13 +7,13 @@ use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
 use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
-use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub struct CommonMessagingEventData {
+pub struct L1toL2MessagingEventData {
     pub from: Felt,
     pub to: Felt,
     pub selector: Felt,
@@ -29,12 +29,11 @@ pub struct CommonMessagingEventData {
 pub async fn sync<C, S>(
     settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     backend: Arc<MadaraBackend>,
-    chain_id: ChainId,
     mempool: Arc<Mempool>,
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
 
@@ -71,8 +70,8 @@ where
             tracing::info!(
                 "Processing Message from block: {:?}, transaction_hash: {:?}, fromAddress: {:?}",
                 event_data.block_number,
-                format!("0x{}", event_data.transaction_hash.to_hex_string()),
-                format!("0x{}", event_data.transaction_hash.to_hex_string()),
+                format!("{}", event_data.transaction_hash.to_hex_string()),
+                format!("{}", event_data.from.to_hex_string()),
             );
 
             // Check message hash and cancellation
@@ -96,7 +95,7 @@ where
             }
 
             // Process message
-            match process_message(&backend, &event_data, &chain_id, mempool.clone()).await {
+            match process_message(&backend, &event_data, mempool.clone()).await {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
                         "Message from block: {:?} submitted, transaction hash: {:?}",
@@ -144,14 +143,10 @@ fn handle_cancelled_message(backend: Arc<MadaraBackend>, nonce: Nonce) -> Result
 }
 
 pub fn parse_handle_message_transaction(
-    event: &CommonMessagingEventData,
+    event: &L1toL2MessagingEventData,
 ) -> Result<L1HandlerTransaction, SettlementClientError> {
-    let calldata: Calldata = {
-        let mut calldata: Vec<_> = Vec::with_capacity(event.payload.len() + 1);
-        calldata.push(event.from);
-        calldata.extend(event.payload.clone());
-        Calldata(Arc::new(calldata))
-    };
+    let calldata =
+        Calldata(Arc::new(std::iter::once(event.from).chain(event.payload.iter().cloned()).collect::<Vec<_>>()));
 
     Ok(L1HandlerTransaction {
         nonce: Nonce(event.nonce),
@@ -166,8 +161,7 @@ pub fn parse_handle_message_transaction(
 
 async fn process_message(
     backend: &MadaraBackend,
-    event: &CommonMessagingEventData,
-    _chain_id: &ChainId,
+    event: &L1toL2MessagingEventData,
     mempool: Arc<Mempool>,
 ) -> Result<Option<Felt>, SettlementClientError> {
     let transaction = parse_handle_message_transaction(event)?;
@@ -218,8 +212,8 @@ mod messaging_module_tests {
     use tokio::time::timeout;
 
     // Helper function to create a mock event
-    fn create_mock_event(block_number: u64, nonce: u64) -> CommonMessagingEventData {
-        CommonMessagingEventData {
+    fn create_mock_event(block_number: u64, nonce: u64) -> L1toL2MessagingEventData {
+        L1toL2MessagingEventData {
             block_number,
             transaction_hash: Felt::from(1),
             event_index: Some(0),
@@ -238,7 +232,6 @@ mod messaging_module_tests {
         db: Arc<DatabaseService>,
         mempool: Arc<Mempool>,
         ctx: ServiceContext,
-        chain_config: Arc<ChainConfig>,
     }
 
     #[fixture]
@@ -267,7 +260,7 @@ mod messaging_module_tests {
         // Create a new service context for testing
         let ctx = ServiceContext::new_for_testing();
 
-        MessagingTestRunner { client: mock_client, db, mempool, ctx, chain_config }
+        MessagingTestRunner { client: mock_client, db, mempool, ctx }
     }
 
     #[rstest]
@@ -275,7 +268,7 @@ mod messaging_module_tests {
     async fn test_sync_processes_new_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
-        let MessagingTestRunner { mut client, db, mempool, ctx, chain_config } = setup_messaging_tests.await;
+        let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
 
         // Setup mock event
         let mock_event = create_mock_event(100, 1);
@@ -290,7 +283,7 @@ mod messaging_module_tests {
         client
             .expect_get_messaging_stream()
             .times(1)
-            .returning(move |_| Ok(Box::pin(stream::iter(vec![Some(Ok(mock_event.clone()))]))));
+            .returning(|_| Ok(Box::pin(stream::once(async move { Ok(create_mock_event(100, 1)) }))));
 
         // Mock get_messaging_hash
         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
@@ -301,11 +294,7 @@ mod messaging_module_tests {
         let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
-        timeout(
-            Duration::from_secs(1),
-            sync(client, backend.clone(), chain_config.chain_id.clone(), mempool.clone(), ctx),
-        )
-        .await??;
+        timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
         // Verify the message was processed
         assert!(backend.has_l1_messaging_nonce(Nonce(event_clone.nonce))?);
@@ -318,7 +307,7 @@ mod messaging_module_tests {
     async fn test_sync_handles_cancelled_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
-        let MessagingTestRunner { mut client, db, mempool, ctx, chain_config } = setup_messaging_tests.await;
+        let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
 
         let backend = db.backend();
 
@@ -333,7 +322,7 @@ mod messaging_module_tests {
         client
             .expect_get_messaging_stream()
             .times(1)
-            .returning(move |_| Ok(Box::pin(stream::iter(vec![Some(Ok(mock_event.clone()))]))));
+            .returning(move |_| Ok(Box::pin(stream::iter(vec![Ok(mock_event.clone())]))));
 
         // Mock get_messaging_hash
         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
@@ -344,11 +333,7 @@ mod messaging_module_tests {
         let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
-        timeout(
-            Duration::from_secs(1),
-            sync(client, backend.clone(), chain_config.chain_id.clone(), mempool.clone(), ctx),
-        )
-        .await??;
+        timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
         // Verify the cancelled message was handled correctly
         assert!(backend.has_l1_messaging_nonce(Nonce(event_clone.nonce))?);
@@ -361,7 +346,7 @@ mod messaging_module_tests {
     async fn test_sync_skips_already_processed_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
-        let MessagingTestRunner { mut client, db, mempool, ctx, chain_config } = setup_messaging_tests.await;
+        let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
 
         let backend = db.backend();
 
@@ -378,7 +363,7 @@ mod messaging_module_tests {
         client
             .expect_get_messaging_stream()
             .times(1)
-            .returning(move |_| Ok(Box::pin(stream::iter(vec![Some(Ok(mock_event.clone()))]))));
+            .returning(move |_| Ok(Box::pin(stream::iter(vec![Ok(mock_event.clone())]))));
 
         // Mock get_messaging_hash - should not be called
         client.expect_get_messaging_hash().times(0);
@@ -386,11 +371,7 @@ mod messaging_module_tests {
         let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
-        timeout(
-            Duration::from_secs(1),
-            sync(client, backend.clone(), chain_config.chain_id.clone(), mempool.clone(), ctx),
-        )
-        .await??;
+        timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
         Ok(())
     }
@@ -400,7 +381,7 @@ mod messaging_module_tests {
     async fn test_sync_handles_stream_errors(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
-        let MessagingTestRunner { mut client, db, mempool, ctx, chain_config } = setup_messaging_tests.await;
+        let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
 
         let backend = db.backend();
 
@@ -409,13 +390,13 @@ mod messaging_module_tests {
 
         // Mock get_messaging_stream to return error
         client.expect_get_messaging_stream().times(1).returning(move |_| {
-            Ok(Box::pin(stream::iter(vec![Some(Err(SettlementClientError::Other(anyhow::anyhow!("Stream error"))))])))
+            Ok(Box::pin(stream::iter(vec![Err(SettlementClientError::Other(anyhow::anyhow!("Stream error")))])))
         });
 
         let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
             Arc::new(Box::new(client));
 
-        let result = sync(client, backend.clone(), chain_config.chain_id.clone(), mempool.clone(), ctx).await;
+        let result = sync(client, backend.clone(), mempool.clone(), ctx).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Stream error"));
 

@@ -177,7 +177,6 @@ async fn main() -> anyhow::Result<()> {
             L1SyncConfig {
                 db: &service_db,
                 l1_gas_provider: l1_gas_setter,
-                chain_id: chain_config.chain_id.clone(),
                 l1_core_address: chain_config.eth_core_contract_address.clone(),
                 authority: run_cmd.is_sequencer(),
                 devnet: run_cmd.is_devnet(),
@@ -192,7 +191,6 @@ async fn main() -> anyhow::Result<()> {
             L1SyncConfig {
                 db: &service_db,
                 l1_gas_provider: l1_gas_setter,
-                chain_id: chain_config.chain_id.clone(),
                 l1_core_address: chain_config.eth_core_contract_address.clone(),
                 authority: run_cmd.is_sequencer(),
                 devnet: run_cmd.is_devnet(),

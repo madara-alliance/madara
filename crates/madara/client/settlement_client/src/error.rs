@@ -41,4 +41,7 @@ pub enum SettlementClientError {
 
     #[error("Database error: {0}")]
     DatabaseError(String),
+
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
 }

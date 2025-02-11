@@ -9,11 +9,10 @@ use mc_settlement_client::error::SettlementClientError;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::messaging::CommonMessagingEventData;
+use mc_settlement_client::messaging::L1toL2MessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -23,7 +22,6 @@ use std::time::Duration;
 pub struct L1SyncConfig<'a> {
     pub db: &'a DatabaseService,
     pub l1_gas_provider: GasPriceProvider,
-    pub chain_id: ChainId,
     pub l1_core_address: String,
     pub authority: bool,
     pub devnet: bool,
@@ -31,21 +29,14 @@ pub struct L1SyncConfig<'a> {
     pub l1_block_metrics: Arc<L1BlockMetrics>,
 }
 
-impl<'a> L1SyncConfig<'a> {
-    pub fn should_enable_sync(&self, config: &L1SyncParams) -> bool {
-        !config.l1_sync_disabled && (config.l1_endpoint.is_some() || !self.devnet)
-    }
-}
-
 pub struct L1SyncService<C: 'static, S: 'static>
 where
     C: Clone,
-    S: Send + Stream<Item = Result<CommonMessagingEventData, SettlementClientError>>,
+    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
 {
     db_backend: Arc<MadaraBackend>,
     settlement_client: Option<Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>>,
     l1_gas_provider: GasPriceProvider,
-    chain_id: ChainId,
     gas_price_sync_disabled: bool,
     gas_price_poll: Duration,
     mempool: Arc<Mempool>,
@@ -73,9 +64,7 @@ impl EthereumSyncService {
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
-                anyhow::bail!(
-                    "No Ethereum endpoint provided. Use --l1-endpoint <RPC URL> or disable with --no-l1-sync."
-                );
+                None
             }
         };
 
@@ -101,9 +90,7 @@ impl StarknetSyncService {
                 > = Box::new(client);
                 Some(Arc::new(client_converted))
             } else {
-                anyhow::bail!(
-                    "No Starknet endpoint provided. Use --l1-endpoint <RPC URL> or disable with --no-l1-sync."
-                );
+                None
             }
         };
 
@@ -115,7 +102,7 @@ impl StarknetSyncService {
 impl<C: Clone, S> L1SyncService<C, S>
 where
     C: Clone + 'static,
-    S: Send + Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + 'static,
+    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + 'static,
 {
     async fn create_service(
         config: &L1SyncParams,
@@ -145,7 +132,6 @@ where
             db_backend: Arc::clone(sync_config.db.backend()),
             settlement_client,
             l1_gas_provider: sync_config.l1_gas_provider,
-            chain_id: sync_config.chain_id,
             gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll,
             mempool: sync_config.mempool,
@@ -155,13 +141,9 @@ where
 
     // Factory method to create the appropriate service
     pub async fn create(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Box<dyn Service>> {
-        if sync_config.should_enable_sync(config) {
-            match config.settlement_layer {
-                MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),
-                MadaraSettlementLayer::Starknet => Ok(Box::new(StarknetSyncService::new(config, sync_config).await?)),
-            }
-        } else {
-            Err(anyhow::anyhow!("❗ L1 Sync is disabled"))
+        match config.settlement_layer {
+            MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),
+            MadaraSettlementLayer::Starknet => Ok(Box::new(StarknetSyncService::new(config, sync_config).await?)),
         }
     }
 }
@@ -170,13 +152,12 @@ where
 impl<C, S> Service for L1SyncService<C, S>
 where
     C: Clone,
-    S: Send + Stream<Item = Result<CommonMessagingEventData, SettlementClientError>>,
+    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
 {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if let Some(settlement_client) = &self.settlement_client {
             let db_backend = Arc::clone(&self.db_backend);
             let settlement_client = Arc::clone(settlement_client);
-            let chain_id = self.chain_id.clone();
             let l1_gas_provider = self.l1_gas_provider.clone();
             let gas_price_sync_disabled = self.gas_price_sync_disabled;
             let gas_price_poll = self.gas_price_poll;
@@ -187,7 +168,6 @@ where
                 mc_settlement_client::sync::sync_worker(
                     db_backend,
                     settlement_client,
-                    chain_id,
                     l1_gas_provider,
                     gas_price_sync_disabled,
                     gas_price_poll,
@@ -207,7 +187,7 @@ where
 impl<C, S> ServiceId for L1SyncService<C, S>
 where
     C: Clone,
-    S: Send + Stream<Item = Result<CommonMessagingEventData, SettlementClientError>>,
+    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
 {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {

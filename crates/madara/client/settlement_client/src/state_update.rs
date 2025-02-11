@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use anyhow::Context;
 use futures::Stream;
 use mc_db::MadaraBackend;
@@ -49,7 +49,7 @@ pub async fn state_update_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
     backend

@@ -35,14 +35,14 @@ starknet_api.workspace = true
 # Other
 alloy.workspace = true
 anyhow.workspace = true
-assert_matches = "1.5.0"
+assert_matches.workspace = true
 bigdecimal.workspace = true
 bitvec.workspace = true
 futures = { workspace = true, default-features = true }
 mockall.workspace = true
-regex = "1.10.5"
+regex.workspace = true
 serde = { workspace = true, default-features = true }
-serde_json = "1"
+serde_json.workspace = true
 starknet-accounts = "0.11.0"
 starknet-contract = "0.11.0"
 starknet-core = { workspace = true }
@@ -75,7 +75,7 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
-reqwest = "0.11.27"
+reqwest.workspace = true
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }

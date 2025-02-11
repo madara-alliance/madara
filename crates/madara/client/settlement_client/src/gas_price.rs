@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use crate::error::SettlementClientError;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use futures::Stream;
 use mc_analytics::register_gauge_metric_instrument;
 use mp_utils::service::ServiceContext;
-use opentelemetry::global::Error;
+use opentelemetry::global::Error as OtelError;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 use std::time::SystemTime;
@@ -25,7 +25,7 @@ pub struct L1BlockMetrics {
 }
 
 impl L1BlockMetrics {
-    pub fn register() -> Result<Self, Error> {
+    pub fn register() -> Result<Self, OtelError> {
         let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
         let eth_meter = global::meter_with_version(
             "crates.l1block.opentelemetry",
@@ -66,7 +66,7 @@ pub async fn gas_price_worker_once<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
@@ -104,7 +104,7 @@ pub async fn gas_price_worker<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
@@ -129,7 +129,7 @@ async fn update_gas_price<C, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let (eth_gas_price, avg_blob_base_fee) = settlement_client
         .get_gas_prices()
@@ -214,18 +214,19 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::eth::eth_client_getter_test::create_ethereum_client;
+    use crate::eth::eth_client_getter_test::{create_ethereum_client, eth_client};
     use crate::eth::event::EthereumEventStream;
-    use crate::eth::EthereumClientConfig;
+    use crate::eth::{EthereumClient, EthereumClientConfig};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
+    use rstest::*;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
+    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_true_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn gas_price_worker_when_infinite_loop_true_works(eth_client: EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -268,9 +269,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_false_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn gas_price_worker_when_infinite_loop_false_works(eth_client: EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -292,9 +293,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_gas_price_fix_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn gas_price_worker_when_gas_price_fix_works(eth_client: EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
         l1_gas_provider.set_gas_price_sync_enabled(false);
@@ -318,9 +319,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn gas_price_worker_when_data_gas_price_fix_works(eth_client: EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
@@ -411,9 +412,9 @@ mod eth_client_gas_price_worker_test {
         mock.assert();
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn update_gas_price_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn update_gas_price_works(eth_client: EthereumClient) {
         let l1_gas_provider = GasPriceProvider::new();
 
         l1_gas_provider.update_last_update_timestamp();

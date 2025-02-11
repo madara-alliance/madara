@@ -5,7 +5,7 @@ use crate::error::SettlementClientError;
 use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::{update_l1, StateUpdate};
 use crate::utils::{convert_log_state_update, felt_to_u256, u256_to_felt};
 use alloy::eips::BlockNumberOrTag;
@@ -55,7 +55,6 @@ impl Clone for EthereumClient {
 }
 
 impl EthereumClient {
-    /// Create a new EthereumClient instance with the given RPC URL
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
         let provider = ProviderBuilder::new().on_http(config.url);
         // Checking if core contract exists on l1
@@ -90,21 +89,19 @@ impl SettlementClientTrait for EthereumClient {
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
         let filter = Filter::new()
-            .from_block(latest_block - 6000)
+            .from_block(latest_block.saturating_sub(6000))
             .to_block(latest_block)
             .address(*self.l1_core_contract.address());
 
         let logs = self.provider.get_logs(&filter).await.map_err(|e| SettlementClientError::Other(e.into()))?;
 
-        let filtered_logs = logs
-            .into_iter()
-            .filter_map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>().ok())
-            .collect::<Vec<_>>();
+        let filtered_logs =
+            logs.into_iter().rev().map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>()).next();
 
-        if let Some(last_log) = filtered_logs.last() {
-            last_log.block_number.ok_or_else(|| SettlementClientError::MissingField("block_number"))
-        } else {
-            Err(SettlementClientError::Other(anyhow::anyhow!("no event found").into()))
+        match filtered_logs {
+            Some(Ok(log)) => log.block_number.ok_or_else(|| SettlementClientError::MissingField("block_number")),
+            Some(Err(e)) => Err(SettlementClientError::Other(e.into())),
+            None => Err(SettlementClientError::Other(anyhow::anyhow!("no event found").into())),
         }
     }
 
@@ -179,10 +176,16 @@ impl SettlementClientTrait for EthereumClient {
             .map_err(|e| SettlementClientError::Other(e.into()))?;
 
         // The RPC responds with 301 elements for some reason. It's also just safer to manually
-        // take the last 300. We choose 300 to get average gas caprice for last one hour (300 * 12 sec block
+        // take the last 300. We choose 300 to get average gas price for last one hour (300 * 12 sec block
         // time).
-        let (_, blob_fee_history_one_hour) =
-            fee_history.base_fee_per_blob_gas.split_at(fee_history.base_fee_per_blob_gas.len().max(300) - 300);
+        let blob_fee_history_one_hour = if fee_history.base_fee_per_blob_gas.len() > 300 {
+            // If we have more than 300 entries, take the last 300
+            &fee_history.base_fee_per_blob_gas[fee_history.base_fee_per_blob_gas.len() - 300..]
+        } else {
+            // If we have less than 300 entries, take all of them
+            // This handles cases where the chain might be new or the RPC returns fewer entries
+            &fee_history.base_fee_per_blob_gas[..]
+        };
 
         let avg_blob_base_fee = if !blob_fee_history_one_hour.is_empty() {
             blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128
@@ -196,13 +199,15 @@ impl SettlementClientTrait for EthereumClient {
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
-    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
-        let mut payload_vec = Vec::with_capacity(event.payload.len());
-        for felt in &event.payload {
-            payload_vec.push(felt_to_u256(*felt).map_err(|e| SettlementClientError::ConversionError(e.to_string()))?);
-        }
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
+        let payload_vec = event.payload.iter().try_fold(Vec::with_capacity(event.payload.len()), |mut acc, felt| {
+            let u256 = felt_to_u256(*felt).map_err(|e| SettlementClientError::ConversionError(e.to_string()))?;
+            acc.push(u256);
+            Ok::<_, SettlementClientError>(acc)
+        })?;
 
         let from_address_start_index = event.from.to_bytes_be().as_slice().len().saturating_sub(20);
+        // encoding used here is taken from: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#l1_l2_message_structure
         let data = (
             [0u8; 12],
             Address::from_slice(&event.from.to_bytes_be().as_slice()[from_address_start_index..]),
@@ -264,6 +269,7 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
     use once_cell::sync::OnceCell;
+    use rstest::*;
     use std::sync::Arc;
     use tokio;
 
@@ -307,6 +313,11 @@ pub mod eth_client_getter_test {
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract }
     }
 
+    #[fixture]
+    pub fn eth_client() -> EthereumClient {
+        create_ethereum_client(None)
+    }
+
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
         let anvil = get_anvil();
@@ -318,17 +329,17 @@ pub mod eth_client_getter_test {
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn get_latest_block_number_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn get_latest_block_number_works(eth_client: EthereumClient) {
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn get_last_event_block_number_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn get_last_event_block_number_works(eth_client: EthereumClient) {
         let block_number = eth_client
             .get_last_event_block_number()
             .await
@@ -336,26 +347,26 @@ pub mod eth_client_getter_test {
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_hash_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn get_last_verified_block_hash_works(eth_client: EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn get_last_state_root_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn get_last_state_root_works(eth_client: EthereumClient) {
         let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_number_works() {
-        let eth_client = create_ethereum_client(None);
+    async fn get_last_verified_block_number_works(eth_client: EthereumClient) {
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
@@ -369,7 +380,7 @@ mod l1_messaging_tests {
     use self::DummyContract::DummyContractInstance;
     use crate::client::SettlementClientTrait;
     use crate::eth::{EthereumClient, StarknetCoreContract};
-    use crate::messaging::{sync, CommonMessagingEventData};
+    use crate::messaging::{sync, L1toL2MessagingEventData};
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -392,7 +403,6 @@ mod l1_messaging_tests {
     struct TestRunner {
         #[allow(dead_code)]
         anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
-        chain_config: Arc<ChainConfig>,
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
         eth_client: EthereumClient,
@@ -403,7 +413,7 @@ mod l1_messaging_tests {
     // bytecode is compiled DummyContractBasicTestCase
     sol!(
         #[derive(Debug)]
-        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506108258061001c5f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c80634185df151461004e57806390985ef9146100585780639be446bf14610076578063af56443a146100a6575b5f80fd5b6100566100c2565b005b61006061013b565b60405161006d9190610488565b60405180910390f35b610090600480360381019061008b91906104cf565b6101ac565b60405161009d9190610512565b60405180910390f35b6100c060048036038101906100bb9190610560565b6101d8565b005b5f6100cb6101f3565b905080604001518160200151825f015173ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b846060015185608001518660a0015160405161013093929190610642565b60405180910390a450565b5f806101456101f3565b9050805f015173ffffffffffffffffffffffffffffffffffffffff1681602001518260800151836040015184606001515185606001516040516020016101909695949392919061072a565b6040516020818303038152906040528051906020012091505090565b5f805f9054906101000a900460ff166101c5575f6101cb565b6366b4f1055b63ffffffff169050919050565b805f806101000a81548160ff02191690831515021790555050565b6101fb610429565b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff81111561027757610276610795565b5b6040519080825280602002602001820160405280156102a55781602001602082028036833780820191505090505b5090506060815f815181106102bd576102bc6107c2565b5b60200260200101818152505062195091816001815181106102e1576102e06107c2565b5b60200260200101818152505065231594f0c7ea81600281518110610308576103076107c2565b5b60200260200101818152505060058160038151811061032a576103296107c2565b5b602002602001018181525050624554488160048151811061034e5761034d6107c2565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb81600581518110610383576103826107c2565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106103c3576103c26107c2565b5b6020026020010181815250505f662386f26fc1000090505f6040518060c001604052808773ffffffffffffffffffffffffffffffffffffffff16815260200186815260200185815260200184815260200183815260200182815250965050505050505090565b6040518060c001604052805f73ffffffffffffffffffffffffffffffffffffffff1681526020015f81526020015f8152602001606081526020015f81526020015f81525090565b5f819050919050565b61048281610470565b82525050565b5f60208201905061049b5f830184610479565b92915050565b5f80fd5b6104ae81610470565b81146104b8575f80fd5b50565b5f813590506104c9816104a5565b92915050565b5f602082840312156104e4576104e36104a1565b5b5f6104f1848285016104bb565b91505092915050565b5f819050919050565b61050c816104fa565b82525050565b5f6020820190506105255f830184610503565b92915050565b5f8115159050919050565b61053f8161052b565b8114610549575f80fd5b50565b5f8135905061055a81610536565b92915050565b5f60208284031215610575576105746104a1565b5b5f6105828482850161054c565b91505092915050565b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b6105bd816104fa565b82525050565b5f6105ce83836105b4565b60208301905092915050565b5f602082019050919050565b5f6105f08261058b565b6105fa8185610595565b9350610605836105a5565b805f5b8381101561063557815161061c88826105c356b9750610627836105da56b92505060018101905061060856b508593505050509291505056b5f6060820190508181035f83015261065a81866105e656b9050610669602083018561050356b1610676604083018461050356b94935050505056b5f81905091905056b610698610693826104fa56b61067e56b8252505056b5f8190509291505056b6106b1816104fa56b8252505056b5f6106c283836106a856b6020830190509291505056b5f6106d88261058b56b6106e2818561069e56b93506106ed836105a556b805f5b8381101561071d57815161070488826106b756b975061070f836105da56b9250506001810190506106f056b508593505050509291505056b5f610735828961068756b602082019150610745828861068756b602082019150610755828761068756b602082019150610765828661068756b602082019150610775828561068756b60208201915061078582846106ce56b915081905097965050505050505056b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffdfea2646970667358221220ddc41ccc2cc8b33e1f608fb6cabf9ead1150daa8798e94e03ce9cd61e0d9389164736f6c634300081a0033")]
+        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506108258061001c5f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c80634185df151461004e57806390985ef9146100585780639be446bf14610076578063af56443a146100a6575b5f80fd5b6100566100c2565b005b61006061013b565b60405161006d9190610488565b60405180910390f35b610090600480360381019061008b91906104cf565b6101ac565b60405161009d9190610512565b60405180910390f35b6100c060048036038101906100bb9190610560565b6101d8565b005b5f6100cb6101f3565b905080604001518160200151825f015173ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b846060015185608001518660a0015160405161013093929190610642565b60405180910390a450565b5f806101456101f3565b9050805f015173ffffffffffffffffffffffffffffffffffffffff1681602001518260800151836040015184606001515185606001516040516020016101909695949392919061072a565b6040516020818303038152906040528051906020012091505090565b5f805f9054906101000a900460ff166101c5575f6101cb565b6366b4f1055b63ffffffff169050919050565b805f806101000a81548160ff02191690831515021790555050565b6101fb610429565b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff81111561027757610276610795565b5b6040519080825280602002602001820160405280156102a55781602001602082028036833780820191505090505b5090506060815f815181106102bd576102bc6107c2565b5b60200260200101818152505062195091816001815181106102e1576102e06107c2565b5b60200260200101818152505065231594f0c7ea81600281518110610308576103076107c2565b5b60200260200101818152505060058160038151811061032a576103296107c2565b5b602002602001018181525050624554488160048151811061034e5761034d6107c2565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb81600581518110610383576103826107c2565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106103c3576103c26107c2565b5b6020026020010181815250505f662386f26fc1000090505f6040518060c001604052808773ffffffffffffffffffffffffffffffffffffffff16815260200186815260200185815260200184815260200183815260200182815250965050505050505090565b6040518060c001604052805f73ffffffffffffffffffffffffffffffffffffffff1681526020015f81526020015f8152602001606081526020015f81526020015f81525090565b5f819050919050565b61048281610470565b82525050565b5f60208201905061049b5f830184610479565b92915050565b5f80fd5b6104ae81610470565b81146104b8575f80fd5b50565b5f813590506104c9816104a5565b92915050565b5f602082840312156104e4576104e36104a1565b5b5f6104f1848285016104bb565b91505092915050565b5f819050919050565b61050c816104fa565b82525050565b5f6020820190506105255f830184610503565b92915050565b5f8115159050919050565b61053f8161052b565b8114610549575f80fd5b50565b5f8135905061055a81610536565b92915050565b5f60208284031215610575576105746104a1565b5b5f6105828482850161054c565b91505092915050565b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b6105bd816104fa565b82525050565b5f6105ce83836105b4565b60208301905092915050565b5f602082019050919050565b5f6105f08261058b565b6105fa8185610595565b9350610605836105a5565b805f5b8381101561063557815161061c88826105c3565b9750610627836105da565b925050600181019050610608565b5085935050505092915050565b5f6060820190508181035f83015261065a81866105e6565b90506106696020830185610503565b6106766040830184610503565b949350505050565b5f819050919050565b610698610693826104fa565b61067e565b82525050565b5f81905092915050565b6106b1816104fa565b82525050565b5f6106c283836106a8565b60208301905092915050565b5f6106d88261058b565b6106e2818561069e565b93506106ed836105a5565b805f5b8381101561071d57815161070488826106b7565b975061070f836105da565b9250506001810190506106f0565b5085935050505092915050565b5f6107358289610687565b6020820191506107458288610687565b6020820191506107558287610687565b6020820191506107658286610687565b6020820191506107758285610687565b60208201915061078582846106ce565b9150819050979650505050505050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffdfea2646970667358221220ddc41ccc2cc8b33e1f608fb6cabf9ead1150daa8798e94e03ce9cd61e0d9389164736f6c634300081a0033")]
         contract DummyContract {
             bool isCanceled;
             event LogMessageToL2(address indexed _fromAddress, uint256 indexed _toAddress, uint256 indexed _selector, uint256[] payload, uint256 nonce, uint256 fee);
@@ -480,22 +490,9 @@ mod l1_messaging_tests {
     async fn setup_test_env() -> TestRunner {
         // Start Anvil instance
         let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
-        println!("Anvil started and running at `{}`", anvil.endpoint());
-
-        // Set up chain info
         let chain_config = Arc::new(ChainConfig::madara_test());
-
-        // Set up database paths
-        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
-        let base_path = temp_dir.path().join("data");
-        let backup_dir = Some(temp_dir.path().join("backups"));
-
         // Initialize database service
-        let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
-                .await
-                .expect("Failed to create database service"),
-        );
+        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
@@ -518,7 +515,7 @@ mod l1_messaging_tests {
         let eth_client =
             EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
 
-        TestRunner { anvil, chain_config, db_service: db, dummy_contract: contract, eth_client, mempool }
+        TestRunner { anvil, db_service: db, dummy_contract: contract, eth_client, mempool }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -537,7 +534,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
@@ -547,7 +544,6 @@ mod l1_messaging_tests {
                 sync(
                     Arc::new(Box::new(eth_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
@@ -555,9 +551,11 @@ mod l1_messaging_tests {
             })
         };
 
-        let _ = contract.setIsCanceled(false).send().await;
-        // Send a Event and wait for processing, Panic if fail
+        // Set canceled status and fire event
+        let _ = contract.setIsCanceled(false).send().await.expect("Failed to set canceled status");
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+
+        // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // Assert that event was caught by the worker with correct data
@@ -596,7 +594,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
@@ -606,7 +604,6 @@ mod l1_messaging_tests {
                 sync(
                     Arc::new(Box::new(eth_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
@@ -614,8 +611,11 @@ mod l1_messaging_tests {
             })
         };
 
-        let _ = contract.setIsCanceled(false).send().await;
-        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+        // Set canceled status and fire first event
+        let _ = contract.setIsCanceled(false).send().await.expect("Failed to set canceled status");
+        let _ = contract.fireEvent().send().await.expect("Failed to fire first event");
+
+        // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
@@ -623,8 +623,10 @@ mod l1_messaging_tests {
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
 
-        // Send the event a second time
-        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+        // Fire second event
+        let _ = contract.fireEvent().send().await.expect("Failed to fire second event");
+
+        // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
         // Assert that the last event in db is still the same as it is already processed (same nonce)
         assert_eq!(
@@ -652,7 +654,7 @@ mod l1_messaging_tests {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
-        let TestRunner { chain_config, db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
         // Start worker
@@ -662,7 +664,6 @@ mod l1_messaging_tests {
                 sync(
                     Arc::new(Box::new(eth_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
@@ -671,8 +672,10 @@ mod l1_messaging_tests {
         };
 
         // Mock cancelled message
-        let _ = contract.setIsCanceled(true).send().await;
+        let _ = contract.setIsCanceled(true).send().await.expect("Failed to set canceled status");
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+
+        // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
@@ -690,17 +693,11 @@ mod l1_messaging_tests {
     #[rstest]
     #[tokio::test]
     async fn test_msg_to_l2_hash() {
-        let TestRunner {
-            chain_config: _chain_config,
-            db_service: _db,
-            dummy_contract: _contract,
-            eth_client,
-            anvil: _anvil,
-            mempool: _mempool,
-        } = setup_test_env().await;
+        let TestRunner { db_service: _db, dummy_contract: _contract, eth_client, anvil: _anvil, mempool: _mempool } =
+            setup_test_env().await;
 
         let msg = eth_client
-            .get_messaging_hash(&CommonMessagingEventData {
+            .get_messaging_hash(&L1toL2MessagingEventData {
                 from: Felt::from_bytes_be_slice(
                     Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap().0 .0.to_vec().as_slice(),
                 ),
@@ -780,22 +777,12 @@ mod eth_client_event_subscription_test {
             .port(ANOTHER_ANVIL_PORT)
             .try_spawn()
             .expect("failed to spawn anvil instance");
-        println!("Anvil started and running at `{}`", anvil.endpoint());
 
         // Set up chain info
-        let chain_info = Arc::new(ChainConfig::madara_test());
-
-        // Set up database paths
-        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
-        let base_path = temp_dir.path().join("data");
-        let backup_dir = Some(temp_dir.path().join("backups"));
+        let chain_config = Arc::new(ChainConfig::madara_test());
 
         // Initialize database service
-        let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_info.clone(), Default::default())
-                .await
-                .expect("Failed to create database service"),
-        );
+        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);

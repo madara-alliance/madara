@@ -1,13 +1,12 @@
 use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::{gas_price_worker, L1BlockMetrics};
-use crate::messaging::{sync, CommonMessagingEventData};
+use crate::messaging::{sync, L1toL2MessagingEventData};
 use crate::state_update::state_update_worker;
 use futures::Stream;
 use mc_db::MadaraBackend;
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_utils::service::ServiceContext;
-use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,7 +14,6 @@ use std::time::Duration;
 pub async fn sync_worker<C: 'static, S>(
     backend: Arc<MadaraBackend>,
     settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
-    chain_id: ChainId,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,
     gas_price_poll_ms: Duration,
@@ -24,7 +22,7 @@ pub async fn sync_worker<C: 'static, S>(
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = Result<CommonMessagingEventData, SettlementClientError>> + Send + 'static,
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let mut join_set = tokio::task::JoinSet::new();
 
@@ -35,7 +33,7 @@ where
         l1_block_metrics.clone(),
     ));
 
-    join_set.spawn(sync(settlement_client.clone(), Arc::clone(&backend), chain_id, mempool, ctx.clone()));
+    join_set.spawn(sync(settlement_client.clone(), Arc::clone(&backend), mempool, ctx.clone()));
 
     if !gas_price_sync_disabled {
         join_set.spawn(gas_price_worker(

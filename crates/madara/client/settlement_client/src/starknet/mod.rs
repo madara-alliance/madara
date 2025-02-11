@@ -1,7 +1,7 @@
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
-use crate::messaging::CommonMessagingEventData;
+use crate::messaging::L1toL2MessagingEventData;
 use crate::starknet::event::StarknetEventStream;
 use crate::state_update::{update_l1, StateUpdate};
 use anyhow::anyhow;
@@ -85,7 +85,7 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
         // If block on l2 is not greater than or equal to 6000 we will consider the last block to 0.
-        let last_block = if latest_block <= 6000 { 0 } else { latest_block - 6000 };
+        let last_block = latest_block.saturating_sub(6000);
         let last_events = self
             .get_events(
                 BlockId::Number(last_block),
@@ -164,14 +164,25 @@ impl SettlementClientTrait for StarknetClient {
             let events_fetched = events?;
             if let Some(event) = events_fetched.last() {
                 let data = event;
-                let block_number = data.data[1]
+                let block_number = data
+                    .data
+                    .get(1)
+                    .ok_or_else(|| SettlementClientError::InvalidData("Missing block number in event data".into()))?
                     .to_u64()
                     .ok_or_else(|| SettlementClientError::ConversionError("Block number conversion failed".into()))?;
 
                 let current_processed = self.processed_update_state_block.load(Ordering::Relaxed);
                 if current_processed < block_number {
+                    let global_root = data.data.get(0).ok_or_else(|| {
+                        SettlementClientError::InvalidData("Missing global root in event data".into())
+                    })?;
+                    let block_hash = data
+                        .data
+                        .get(2)
+                        .ok_or_else(|| SettlementClientError::InvalidData("Missing block hash in event data".into()))?;
+
                     let formatted_event =
-                        StateUpdate { block_number, global_root: data.data[0], block_hash: data.data[2] };
+                        StateUpdate { block_number, global_root: *global_root, block_hash: *block_hash };
                     update_l1(&backend, formatted_event, l1_block_metrics.clone())
                         .map_err(|e| SettlementClientError::Other(e.into()))?;
                     self.processed_update_state_block.store(block_number, Ordering::Relaxed);
@@ -191,7 +202,7 @@ impl SettlementClientTrait for StarknetClient {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &CommonMessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
     }
 
@@ -275,14 +286,14 @@ impl StarknetClient {
         Ok(event_vec)
     }
 
-    fn event_to_felt_array(&self, event: &CommonMessagingEventData) -> Vec<Felt> {
-        let mut felt_vec = vec![event.from, event.to, event.selector, event.nonce];
-        felt_vec.push(Felt::from(event.payload.len()));
-        event.payload.clone().into_iter().for_each(|felt| {
-            felt_vec.push(felt);
-        });
-
-        felt_vec
+    fn event_to_felt_array(&self, event: &L1toL2MessagingEventData) -> Vec<Felt> {
+        std::iter::once(event.from)
+            .chain(std::iter::once(event.to))
+            .chain(std::iter::once(event.selector))
+            .chain(std::iter::once(event.nonce))
+            .chain(std::iter::once(Felt::from(event.payload.len())))
+            .chain(event.payload.iter().cloned())
+            .collect()
     }
 
     pub async fn get_state_call(&self) -> Result<Vec<Felt>, SettlementClientError> {
@@ -522,7 +533,6 @@ mod l2_messaging_test {
         #[allow(dead_code)]
         madara: MadaraProcess, // Not used but needs to stay in scope otherwise it will be dropped
         account: StarknetAccount,
-        chain_config: Arc<ChainConfig>,
         db_service: Arc<DatabaseService>,
         deployed_address: Felt,
         starknet_client: StarknetClient,
@@ -536,17 +546,8 @@ mod l2_messaging_test {
         // Set up chain info
         let chain_config = Arc::new(ChainConfig::madara_test());
 
-        // Set up database paths
-        let temp_dir = TempDir::new().expect("issue while creating temporary directory");
-        let base_path = temp_dir.path().join("data");
-        let backup_dir = Some(temp_dir.path().join("backups"));
-
         // Initialize database service
-        let db = Arc::new(
-            DatabaseService::new(&base_path, backup_dir, false, chain_config.clone(), Default::default())
-                .await
-                .expect("Failed to create database service"),
-        );
+        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str()).unwrap(),
@@ -567,7 +568,6 @@ mod l2_messaging_test {
         TestRunnerStarknet {
             madara,
             account,
-            chain_config,
             db_service: db,
             deployed_address: deployed_contract_address,
             starknet_client,
@@ -586,7 +586,6 @@ mod l2_messaging_test {
         let TestRunnerStarknet {
             madara: _madara,
             account,
-            chain_config,
             db_service: db,
             deployed_address: deployed_contract_address,
             starknet_client,
@@ -601,7 +600,6 @@ mod l2_messaging_test {
                 sync(
                     Arc::new(Box::new(starknet_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
@@ -646,7 +644,6 @@ mod l2_messaging_test {
         let TestRunnerStarknet {
             madara: _madara,
             account,
-            chain_config,
             db_service: db,
             deployed_address: deployed_contract_address,
             starknet_client,
@@ -661,7 +658,6 @@ mod l2_messaging_test {
                 sync(
                     Arc::new(Box::new(starknet_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
@@ -717,7 +713,6 @@ mod l2_messaging_test {
         let TestRunnerStarknet {
             madara: _madara,
             account,
-            chain_config,
             db_service: db,
             deployed_address: deployed_contract_address,
             starknet_client,
@@ -732,7 +727,6 @@ mod l2_messaging_test {
                 sync(
                     Arc::new(Box::new(starknet_client)),
                     Arc::clone(db.backend()),
-                    chain_config.chain_id.clone(),
                     mempool,
                     ServiceContext::new_for_testing(),
                 )
