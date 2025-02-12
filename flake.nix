@@ -36,6 +36,7 @@
             pkg-config
             protobuf
             nodePackages.prettier
+            nodePackages.markdownlint-cli
             taplo-cli
             yq
             scarb

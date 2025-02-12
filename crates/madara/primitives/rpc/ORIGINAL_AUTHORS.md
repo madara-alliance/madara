@@ -16,6 +16,6 @@ Original authors:
 - Jonathan Lei (@xJonathanLEI)
 - Maciej Kamiński (@maciejka)
 
-Original repository: https://github.com/starknet-io/types-rs
+Original repository: [https://github.com/starknet-io/types-rs]
 Original version: 0.7.1
 License: MIT
