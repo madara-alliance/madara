@@ -1,5 +1,6 @@
 use crate::state_update::StateUpdate;
 use assert_matches::assert_matches;
+use lazy_static::lazy_static;
 use starknet_accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet_core::types::contract::SierraClass;
 use starknet_core::types::{BlockId, BlockTag, Call, TransactionReceipt, TransactionReceiptWithBlockInfo};
@@ -14,17 +15,19 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Once;
 use std::thread;
+use tokio::sync::Mutex;
+use url::Url;
 
 use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
 use std::time::Duration;
-use url::Url;
 
 pub const DEPLOYER_ADDRESS: &str = "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
 pub const DEPLOYER_PRIVATE_KEY: &str = "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07";
 pub const UDC_ADDRESS: &str = "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf";
 pub const MADARA_PORT: &str = "19944";
-pub const MADARA_BINARY_PATH: &str = "../../../../test-artifacts/madara";
+pub const MADARA_BINARY_PATH: &str = "../../../../target/debug/madara";
 pub const MADARA_CONFIG_PATH: &str = "../../../../configs/presets/devnet.yaml";
 
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
@@ -82,19 +85,95 @@ impl Drop for MadaraProcess {
     }
 }
 
+// TestContext now only contains what tests need
+pub struct TestContext {
+    pub url: Url,
+    pub account: StarknetAccount,
+    pub deployed_appchain_contract_address: Felt,
+}
+
+// Separate struct to hold the Madara process
+struct MadaraInstance {
+    process: MadaraProcess,
+}
+
+lazy_static! {
+    static ref MADARA: Mutex<Option<MadaraInstance>> = Mutex::new(None);
+    static ref TEST_CONTEXT: Mutex<Option<TestContext>> = Mutex::new(None);
+    static ref INIT: Once = Once::new();
+    static ref STATE_UPDATE_LOCK: Mutex<()> = Mutex::new(());
+}
+
+// Initialize shared test context
+pub async fn init_test_context() -> anyhow::Result<()> {
+    // First, ensure Madara is running
+    let mut madara_guard = MADARA.lock().await;
+    if madara_guard.is_none() {
+        *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
+    }
+
+    // Then initialize the test context if needed
+    let mut context = TEST_CONTEXT.lock().await;
+    if context.is_none() {
+        let account = starknet_account()?;
+        let deployed_appchain_contract_address =
+            deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA, APPCHAIN_CONTRACT_CASM_HASH).await?;
+
+        *context = Some(TestContext {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            account,
+            deployed_appchain_contract_address,
+        });
+    }
+
+    Ok(())
+}
+
+// Helper to get test context
+pub async fn get_test_context() -> anyhow::Result<TestContext> {
+    let context = TEST_CONTEXT.lock().await;
+    match context.as_ref() {
+        Some(ctx) => Ok(TestContext {
+            url: ctx.url.clone(),
+            account: starknet_account()?,
+            deployed_appchain_contract_address: ctx.deployed_appchain_contract_address,
+        }),
+        None => Err(anyhow::anyhow!("Test context not initialized")),
+    }
+}
+
+// Initialize shared test context for messaging tests
+pub async fn init_messaging_test_context() -> anyhow::Result<()> {
+    // First, ensure Madara is running
+    let mut madara_guard = MADARA.lock().await;
+    if madara_guard.is_none() {
+        *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
+    }
+
+    // Then initialize the test context if needed
+    let mut context = TEST_CONTEXT.lock().await;
+    if context.is_none() {
+        let account = starknet_account()?;
+        let deployed_appchain_contract_address =
+            deploy_contract(&account, MESSAGING_CONTRACT_SIERRA, MESSAGING_CONTRACT_CASM_HASH).await?;
+
+        *context = Some(TestContext {
+            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            account,
+            deployed_appchain_contract_address,
+        });
+    }
+
+    Ok(())
+}
+
+// These functions can now be marked as deprecated as they're replaced by the context system
+#[deprecated(note = "Use init_test_context() instead")]
 pub async fn prepare_starknet_client_test() -> anyhow::Result<(StarknetAccount, Felt, MadaraProcess)> {
     let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
     let account = starknet_account()?;
     let deployed_appchain_contract_address =
         deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA, APPCHAIN_CONTRACT_CASM_HASH).await?;
-    Ok((account, deployed_appchain_contract_address, madara))
-}
-
-pub async fn prepare_starknet_client_messaging_test() -> anyhow::Result<(StarknetAccount, Felt, MadaraProcess)> {
-    let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
-    let account = starknet_account()?;
-    let deployed_appchain_contract_address =
-        deploy_contract(&account, MESSAGING_CONTRACT_SIERRA, MESSAGING_CONTRACT_CASM_HASH).await?;
     Ok((account, deployed_appchain_contract_address, madara))
 }
 
@@ -256,4 +335,9 @@ fn wait_for_port(port: u16, timeout_secs: u64, max_retries: u32) -> bool {
 fn check_port(port: u16, timeout_secs: u64) -> bool {
     TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_secs(timeout_secs))
         .is_ok()
+}
+
+// Export the lock for tests to use
+pub fn get_state_update_lock() -> &'static Mutex<()> {
+    &STATE_UPDATE_LOCK
 }

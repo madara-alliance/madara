@@ -198,6 +198,7 @@ mod starknet_event_stream_tests {
     use rstest::*;
     use serde_json::json;
     use std::str::FromStr;
+    use url::Url;
 
     struct MockStarknetServer {
         server: MockServer,

@@ -7,7 +7,7 @@ use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
 use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
-use starknet_api::core::{ ContractAddress, EntryPointSelector, Nonce};
+use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
