@@ -1,5 +1,3 @@
-use starknet_types_core::felt::Felt;
-
 use crate::{
     DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3,
     DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction,
@@ -7,29 +5,29 @@ use crate::{
     Transaction,
 };
 
-impl From<Transaction> for starknet_types_rpc::Txn<Felt> {
+impl From<Transaction> for mp_rpc::Txn {
     fn from(tx: Transaction) -> Self {
         match tx {
-            Transaction::Invoke(tx) => starknet_types_rpc::Txn::Invoke(tx.into()),
-            Transaction::L1Handler(tx) => starknet_types_rpc::Txn::L1Handler(tx.into()),
-            Transaction::Declare(tx) => starknet_types_rpc::Txn::Declare(tx.into()),
-            Transaction::Deploy(tx) => starknet_types_rpc::Txn::Deploy(tx.into()),
-            Transaction::DeployAccount(tx) => starknet_types_rpc::Txn::DeployAccount(tx.into()),
+            Transaction::Invoke(tx) => mp_rpc::Txn::Invoke(tx.into()),
+            Transaction::L1Handler(tx) => mp_rpc::Txn::L1Handler(tx.into()),
+            Transaction::Declare(tx) => mp_rpc::Txn::Declare(tx.into()),
+            Transaction::Deploy(tx) => mp_rpc::Txn::Deploy(tx.into()),
+            Transaction::DeployAccount(tx) => mp_rpc::Txn::DeployAccount(tx.into()),
         }
     }
 }
 
-impl From<InvokeTransaction> for starknet_types_rpc::InvokeTxn<Felt> {
+impl From<InvokeTransaction> for mp_rpc::InvokeTxn {
     fn from(tx: InvokeTransaction) -> Self {
         match tx {
-            InvokeTransaction::V0(tx) => starknet_types_rpc::InvokeTxn::V0(tx.into()),
-            InvokeTransaction::V1(tx) => starknet_types_rpc::InvokeTxn::V1(tx.into()),
-            InvokeTransaction::V3(tx) => starknet_types_rpc::InvokeTxn::V3(tx.into()),
+            InvokeTransaction::V0(tx) => mp_rpc::InvokeTxn::V0(tx.into()),
+            InvokeTransaction::V1(tx) => mp_rpc::InvokeTxn::V1(tx.into()),
+            InvokeTransaction::V3(tx) => mp_rpc::InvokeTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<InvokeTransactionV0> for starknet_types_rpc::InvokeTxnV0<Felt> {
+impl From<InvokeTransactionV0> for mp_rpc::InvokeTxnV0 {
     fn from(tx: InvokeTransactionV0) -> Self {
         Self {
             calldata: tx.calldata,
@@ -41,7 +39,7 @@ impl From<InvokeTransactionV0> for starknet_types_rpc::InvokeTxnV0<Felt> {
     }
 }
 
-impl From<InvokeTransactionV1> for starknet_types_rpc::InvokeTxnV1<Felt> {
+impl From<InvokeTransactionV1> for mp_rpc::InvokeTxnV1 {
     fn from(tx: InvokeTransactionV1) -> Self {
         Self {
             calldata: tx.calldata,
@@ -53,7 +51,7 @@ impl From<InvokeTransactionV1> for starknet_types_rpc::InvokeTxnV1<Felt> {
     }
 }
 
-impl From<InvokeTransactionV3> for starknet_types_rpc::InvokeTxnV3<Felt> {
+impl From<InvokeTransactionV3> for mp_rpc::InvokeTxnV3 {
     fn from(tx: InvokeTransactionV3) -> Self {
         Self {
             account_deployment_data: tx.account_deployment_data,
@@ -70,12 +68,12 @@ impl From<InvokeTransactionV3> for starknet_types_rpc::InvokeTxnV3<Felt> {
     }
 }
 
-impl From<L1HandlerTransaction> for starknet_types_rpc::L1HandlerTxn<Felt> {
+impl From<L1HandlerTransaction> for mp_rpc::L1HandlerTxn {
     fn from(tx: L1HandlerTransaction) -> Self {
         Self {
             nonce: tx.nonce,
             version: tx.version.to_hex_string(),
-            function_call: starknet_types_rpc::FunctionCall {
+            function_call: mp_rpc::FunctionCall {
                 calldata: tx.calldata,
                 contract_address: tx.contract_address,
                 entry_point_selector: tx.entry_point_selector,
@@ -84,18 +82,18 @@ impl From<L1HandlerTransaction> for starknet_types_rpc::L1HandlerTxn<Felt> {
     }
 }
 
-impl From<DeclareTransaction> for starknet_types_rpc::DeclareTxn<Felt> {
+impl From<DeclareTransaction> for mp_rpc::DeclareTxn {
     fn from(tx: DeclareTransaction) -> Self {
         match tx {
-            DeclareTransaction::V0(tx) => starknet_types_rpc::DeclareTxn::V0(tx.into()),
-            DeclareTransaction::V1(tx) => starknet_types_rpc::DeclareTxn::V1(tx.into()),
-            DeclareTransaction::V2(tx) => starknet_types_rpc::DeclareTxn::V2(tx.into()),
-            DeclareTransaction::V3(tx) => starknet_types_rpc::DeclareTxn::V3(tx.into()),
+            DeclareTransaction::V0(tx) => mp_rpc::DeclareTxn::V0(tx.into()),
+            DeclareTransaction::V1(tx) => mp_rpc::DeclareTxn::V1(tx.into()),
+            DeclareTransaction::V2(tx) => mp_rpc::DeclareTxn::V2(tx.into()),
+            DeclareTransaction::V3(tx) => mp_rpc::DeclareTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<DeclareTransactionV0> for starknet_types_rpc::DeclareTxnV0<Felt> {
+impl From<DeclareTransactionV0> for mp_rpc::DeclareTxnV0 {
     fn from(tx: DeclareTransactionV0) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -106,7 +104,7 @@ impl From<DeclareTransactionV0> for starknet_types_rpc::DeclareTxnV0<Felt> {
     }
 }
 
-impl From<DeclareTransactionV1> for starknet_types_rpc::DeclareTxnV1<Felt> {
+impl From<DeclareTransactionV1> for mp_rpc::DeclareTxnV1 {
     fn from(tx: DeclareTransactionV1) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -118,7 +116,7 @@ impl From<DeclareTransactionV1> for starknet_types_rpc::DeclareTxnV1<Felt> {
     }
 }
 
-impl From<DeclareTransactionV2> for starknet_types_rpc::DeclareTxnV2<Felt> {
+impl From<DeclareTransactionV2> for mp_rpc::DeclareTxnV2 {
     fn from(tx: DeclareTransactionV2) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -131,7 +129,7 @@ impl From<DeclareTransactionV2> for starknet_types_rpc::DeclareTxnV2<Felt> {
     }
 }
 
-impl From<DeclareTransactionV3> for starknet_types_rpc::DeclareTxnV3<Felt> {
+impl From<DeclareTransactionV3> for mp_rpc::DeclareTxnV3 {
     fn from(tx: DeclareTransactionV3) -> Self {
         Self {
             account_deployment_data: tx.account_deployment_data,
@@ -149,7 +147,7 @@ impl From<DeclareTransactionV3> for starknet_types_rpc::DeclareTxnV3<Felt> {
     }
 }
 
-impl From<DeployTransaction> for starknet_types_rpc::DeployTxn<Felt> {
+impl From<DeployTransaction> for mp_rpc::DeployTxn {
     fn from(tx: DeployTransaction) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -160,16 +158,16 @@ impl From<DeployTransaction> for starknet_types_rpc::DeployTxn<Felt> {
     }
 }
 
-impl From<DeployAccountTransaction> for starknet_types_rpc::DeployAccountTxn<Felt> {
+impl From<DeployAccountTransaction> for mp_rpc::DeployAccountTxn {
     fn from(tx: DeployAccountTransaction) -> Self {
         match tx {
-            DeployAccountTransaction::V1(tx) => starknet_types_rpc::DeployAccountTxn::V1(tx.into()),
-            DeployAccountTransaction::V3(tx) => starknet_types_rpc::DeployAccountTxn::V3(tx.into()),
+            DeployAccountTransaction::V1(tx) => mp_rpc::DeployAccountTxn::V1(tx.into()),
+            DeployAccountTransaction::V3(tx) => mp_rpc::DeployAccountTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<DeployAccountTransactionV1> for starknet_types_rpc::DeployAccountTxnV1<Felt> {
+impl From<DeployAccountTransactionV1> for mp_rpc::DeployAccountTxnV1 {
     fn from(tx: DeployAccountTransactionV1) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -182,7 +180,7 @@ impl From<DeployAccountTransactionV1> for starknet_types_rpc::DeployAccountTxnV1
     }
 }
 
-impl From<DeployAccountTransactionV3> for starknet_types_rpc::DeployAccountTxnV3<Felt> {
+impl From<DeployAccountTransactionV3> for mp_rpc::DeployAccountTxnV3 {
     fn from(tx: DeployAccountTransactionV3) -> Self {
         Self {
             class_hash: tx.class_hash,

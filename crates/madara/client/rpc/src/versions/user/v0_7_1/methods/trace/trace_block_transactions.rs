@@ -2,9 +2,8 @@ use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_convert::ToFelt;
+use mp_rpc::TraceBlockTransactionsResult;
 use starknet_api::transaction::TransactionHash;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::TraceBlockTransactionsResult;
 use std::sync::Arc;
 
 use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
@@ -15,7 +14,7 @@ use crate::Starknet;
 pub async fn trace_block_transactions(
     starknet: &Starknet,
     block_id: BlockId,
-) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult<Felt>>> {
+) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult>> {
     let block = starknet.get_block(&block_id)?;
 
     if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {

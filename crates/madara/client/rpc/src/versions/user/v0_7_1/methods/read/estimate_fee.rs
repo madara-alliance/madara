@@ -5,9 +5,8 @@ use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_
 use crate::Starknet;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
+use mp_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use mp_transactions::BroadcastedTransactionExt;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use std::sync::Arc;
 
 /// Estimate the fee associated with transaction
@@ -22,10 +21,10 @@ use std::sync::Arc;
 /// * `fee_estimate` - fee estimate in gwei
 pub async fn estimate_fee(
     starknet: &Starknet,
-    request: Vec<BroadcastedTxn<Felt>>,
+    request: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlagForEstimateFee>,
     block_id: BlockId,
-) -> StarknetRpcResult<Vec<FeeEstimate<Felt>>> {
+) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();

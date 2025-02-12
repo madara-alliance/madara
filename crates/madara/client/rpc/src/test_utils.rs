@@ -9,6 +9,10 @@ use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
+use mp_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+};
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
@@ -17,10 +21,6 @@ use mp_transactions::{BroadcastedDeclareTransactionV0, InvokeTransaction, Invoke
 use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
-};
 use std::sync::Arc;
 
 use crate::{providers::AddTransactionProvider, Starknet};
@@ -34,25 +34,22 @@ impl AddTransactionProvider for TestTransactionProvider {
     async fn add_declare_v0_transaction(
         &self,
         _declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    ) -> RpcResult<ClassAndTxnHash> {
         unimplemented!()
     }
-    async fn add_declare_transaction(
-        &self,
-        _declare_transaction: BroadcastedDeclareTxn<Felt>,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    async fn add_declare_transaction(&self, _declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
         unimplemented!()
     }
     async fn add_deploy_account_transaction(
         &self,
-        _deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
-    ) -> RpcResult<ContractAndTxnHash<Felt>> {
+        _deploy_account_transaction: BroadcastedDeployAccountTxn,
+    ) -> RpcResult<ContractAndTxnHash> {
         unimplemented!()
     }
     async fn add_invoke_transaction(
         &self,
-        _invoke_transaction: BroadcastedInvokeTxn<Felt>,
-    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
+        _invoke_transaction: BroadcastedInvokeTxn,
+    ) -> RpcResult<AddInvokeTransactionResult> {
         unimplemented!()
     }
 }
@@ -74,8 +71,8 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
 pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
-    pub expected_txs: Vec<starknet_types_rpc::TxnWithHash<Felt>>,
-    pub expected_receipts: Vec<TxnReceipt<Felt>>,
+    pub expected_txs: Vec<mp_rpc::TxnWithHash>,
+    pub expected_receipts: Vec<TxnReceipt>,
 }
 
 #[fixture]
@@ -96,7 +93,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         Felt::from_hex_unchecked("0xdd84847784"),
     ];
     let expected_txs = {
-        use starknet_types_rpc::{InvokeTxn, InvokeTxnV0, Txn};
+        use mp_rpc::{InvokeTxn, InvokeTxnV0, Txn};
         vec![
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
@@ -141,11 +138,9 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         ]
     };
     let expected_receipts = {
-        use starknet_types_rpc::{
-            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
-        };
+        use mp_rpc::{CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt};
         vec![
-            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+            TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
                     transaction_hash: Felt::from_hex_unchecked("0x8888888"),
                     actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
@@ -153,10 +148,10 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L1,
-                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::ExecutionStatus::Successful,
                 },
             }),
-            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+            TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
                     transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
                     actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
@@ -164,10 +159,10 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::ExecutionStatus::Successful,
                 },
             }),
-            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+            TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
                     transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
                     actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94dd"), unit: PriceUnit::Fri },
@@ -175,10 +170,10 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: starknet_types_rpc::ExecutionStatus::Reverted("too bad".into()),
+                    execution_status: mp_rpc::ExecutionStatus::Reverted("too bad".into()),
                 },
             }),
-            TxnReceipt::<Felt>::Invoke(InvokeTxnReceipt {
+            TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
                     transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
                     actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
@@ -186,7 +181,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: starknet_types_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::ExecutionStatus::Successful,
                 },
             }),
         ]
@@ -384,8 +379,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-fn defaut_execution_resources() -> starknet_types_rpc::ExecutionResources {
-    starknet_types_rpc::ExecutionResources {
+fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
+    mp_rpc::ExecutionResources {
         bitwise_builtin_applications: None,
         ec_op_builtin_applications: None,
         ecdsa_builtin_applications: None,
@@ -396,7 +391,7 @@ fn defaut_execution_resources() -> starknet_types_rpc::ExecutionResources {
         range_check_builtin_applications: None,
         segment_arena_builtin: None,
         steps: 0,
-        data_availability: starknet_types_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
+        data_availability: mp_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
     }
 }
 

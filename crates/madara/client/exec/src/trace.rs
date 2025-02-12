@@ -4,8 +4,7 @@ use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::{execution::call_info::CallInfo, transaction::transaction_types::TransactionType};
 use cairo_vm::types::builtin_name::BuiltinName;
 use mp_convert::ToFelt;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{FunctionCall, MsgToL1};
+use mp_rpc::{FunctionCall, MsgToL1};
 
 use crate::{ExecutionResult, TransactionExecutionError};
 
@@ -29,7 +28,7 @@ pub enum TryFuntionInvocationFromCallInfoError {
 
 pub fn execution_result_to_tx_trace(
     executions_result: &ExecutionResult,
-) -> Result<starknet_types_rpc::TransactionTrace<Felt>, ConvertCallInfoToExecuteInvocationError> {
+) -> Result<mp_rpc::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
     let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
@@ -50,7 +49,7 @@ pub fn execution_result_to_tx_trace(
         fee_transfer_invocation.as_ref().map(|value| value.execution_resources.clone()).as_ref(),
     );
 
-    let execution_resources = starknet_types_rpc::ExecutionResources {
+    let execution_resources = mp_rpc::ExecutionResources {
         bitwise_builtin_applications: computation_resources.bitwise_builtin_applications,
         ec_op_builtin_applications: computation_resources.ec_op_builtin_applications,
         ecdsa_builtin_applications: computation_resources.ecdsa_builtin_applications,
@@ -61,23 +60,21 @@ pub fn execution_result_to_tx_trace(
         range_check_builtin_applications: computation_resources.range_check_builtin_applications,
         segment_arena_builtin: computation_resources.segment_arena_builtin,
         steps: computation_resources.steps,
-        data_availability: starknet_types_rpc::DataAvailability {
+        data_availability: mp_rpc::DataAvailability {
             l1_gas: execution_info.transaction_receipt.da_gas.l1_gas,
             l1_data_gas: execution_info.transaction_receipt.da_gas.l1_data_gas,
         },
     };
 
     let tx_trace = match tx_type {
-        TransactionType::Declare => {
-            starknet_types_rpc::TransactionTrace::Declare(starknet_types_rpc::DeclareTransactionTrace {
-                validate_invocation,
-                fee_transfer_invocation,
-                state_diff,
-                execution_resources,
-            })
-        }
+        TransactionType::Declare => mp_rpc::TransactionTrace::Declare(mp_rpc::DeclareTransactionTrace {
+            validate_invocation,
+            fee_transfer_invocation,
+            state_diff,
+            execution_resources,
+        }),
         TransactionType::DeployAccount => {
-            starknet_types_rpc::TransactionTrace::DeployAccount(starknet_types_rpc::DeployAccountTransactionTrace {
+            mp_rpc::TransactionTrace::DeployAccount(mp_rpc::DeployAccountTransactionTrace {
                 validate_invocation,
                 constructor_invocation: execute_function_invocation
                     .ok_or(ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation)?,
@@ -86,32 +83,26 @@ pub fn execution_result_to_tx_trace(
                 execution_resources,
             })
         }
-        TransactionType::InvokeFunction => {
-            starknet_types_rpc::TransactionTrace::Invoke(starknet_types_rpc::InvokeTransactionTrace {
-                validate_invocation,
-                execute_invocation: if let Some(e) = &execution_info.revert_error {
-                    starknet_types_rpc::ExecuteInvocation::Anon(starknet_types_rpc::RevertedInvocation {
-                        revert_reason: e.clone(),
-                    })
-                } else {
-                    starknet_types_rpc::ExecuteInvocation::FunctionInvocation(
-                        execute_function_invocation
-                            .ok_or(ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation)?,
-                    )
-                },
-                fee_transfer_invocation,
-                state_diff,
-                execution_resources,
-            })
-        }
-        TransactionType::L1Handler => {
-            starknet_types_rpc::TransactionTrace::L1Handler(starknet_types_rpc::L1HandlerTransactionTrace {
-                function_invocation: execute_function_invocation
-                    .ok_or(ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation)?,
-                state_diff,
-                execution_resources,
-            })
-        }
+        TransactionType::InvokeFunction => mp_rpc::TransactionTrace::Invoke(mp_rpc::InvokeTransactionTrace {
+            validate_invocation,
+            execute_invocation: if let Some(e) = &execution_info.revert_error {
+                mp_rpc::ExecuteInvocation::Anon(mp_rpc::RevertedInvocation { revert_reason: e.clone() })
+            } else {
+                mp_rpc::ExecuteInvocation::FunctionInvocation(
+                    execute_function_invocation
+                        .ok_or(ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation)?,
+                )
+            },
+            fee_transfer_invocation,
+            state_diff,
+            execution_resources,
+        }),
+        TransactionType::L1Handler => mp_rpc::TransactionTrace::L1Handler(mp_rpc::L1HandlerTransactionTrace {
+            function_invocation: execute_function_invocation
+                .ok_or(ConvertCallInfoToExecuteInvocationError::MissingFunctionInvocation)?,
+            state_diff,
+            execution_resources,
+        }),
     };
 
     Ok(tx_trace)
@@ -119,7 +110,7 @@ pub fn execution_result_to_tx_trace(
 
 fn try_get_funtion_invocation_from_call_info(
     call_info: &CallInfo,
-) -> Result<starknet_types_rpc::FunctionInvocation<Felt>, TryFuntionInvocationFromCallInfoError> {
+) -> Result<mp_rpc::FunctionInvocation, TryFuntionInvocationFromCallInfoError> {
     let messages = collect_call_info_ordered_messages(call_info);
     let events = collect_call_info_ordered_events(&call_info.execution.events);
 
@@ -127,27 +118,21 @@ fn try_get_funtion_invocation_from_call_info(
         call_info.inner_calls.iter().map(try_get_funtion_invocation_from_call_info).collect::<Result<_, _>>()?;
 
     let entry_point_type = match call_info.call.entry_point_type {
-        starknet_api::deprecated_contract_class::EntryPointType::Constructor => {
-            starknet_types_rpc::EntryPointType::Constructor
-        }
-        starknet_api::deprecated_contract_class::EntryPointType::External => {
-            starknet_types_rpc::EntryPointType::External
-        }
-        starknet_api::deprecated_contract_class::EntryPointType::L1Handler => {
-            starknet_types_rpc::EntryPointType::L1Handler
-        }
+        starknet_api::deprecated_contract_class::EntryPointType::Constructor => mp_rpc::EntryPointType::Constructor,
+        starknet_api::deprecated_contract_class::EntryPointType::External => mp_rpc::EntryPointType::External,
+        starknet_api::deprecated_contract_class::EntryPointType::L1Handler => mp_rpc::EntryPointType::L1Handler,
     };
 
     let call_type = match call_info.call.call_type {
-        blockifier::execution::entry_point::CallType::Call => starknet_types_rpc::CallType::Regular,
-        blockifier::execution::entry_point::CallType::Delegate => starknet_types_rpc::CallType::Delegate,
+        blockifier::execution::entry_point::CallType::Call => mp_rpc::CallType::Regular,
+        blockifier::execution::entry_point::CallType::Delegate => mp_rpc::CallType::Delegate,
     };
 
     // Field `class_hash` into `FunctionInvocation` should be an Option
     let class_hash = call_info.call.class_hash.map(ToFelt::to_felt).unwrap_or_default();
     let computation_resources = computation_resources(&call_info.resources);
 
-    Ok(starknet_types_rpc::FunctionInvocation {
+    Ok(mp_rpc::FunctionInvocation {
         function_call: FunctionCall {
             contract_address: call_info.call.storage_address.0.to_felt(),
             entry_point_selector: call_info.call.entry_point_selector.0,
@@ -165,13 +150,13 @@ fn try_get_funtion_invocation_from_call_info(
     })
 }
 
-fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_types_rpc::OrderedMessage<Felt>> {
+fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<mp_rpc::OrderedMessage> {
     call_info
         .execution
         .l2_to_l1_messages
         .iter()
         .enumerate()
-        .map(|(index, message)| starknet_types_rpc::OrderedMessage {
+        .map(|(index, message)| mp_rpc::OrderedMessage {
             order: index as u64,
             msg_to_l_1: MsgToL1 {
                 payload: message.message.payload.0.to_vec(),
@@ -184,12 +169,12 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<starknet_type
 
 fn collect_call_info_ordered_events(
     ordered_events: &[blockifier::execution::call_info::OrderedEvent],
-) -> Vec<starknet_types_rpc::OrderedEvent<Felt>> {
+) -> Vec<mp_rpc::OrderedEvent> {
     ordered_events
         .iter()
-        .map(|event| starknet_types_rpc::OrderedEvent {
+        .map(|event| mp_rpc::OrderedEvent {
             order: event.order as u64,
-            event: starknet_types_rpc::EventContent {
+            event: mp_rpc::EventContent {
                 keys: event.event.keys.iter().map(ToFelt::to_felt).collect(),
                 data: event.event.data.0.to_vec(),
             },
@@ -199,7 +184,7 @@ fn collect_call_info_ordered_events(
 
 fn computation_resources(
     vm_resources: &cairo_vm::vm::runners::cairo_runner::ExecutionResources,
-) -> starknet_types_rpc::ComputationResources {
+) -> mp_rpc::ComputationResources {
     let steps = vm_resources.n_steps as u64;
     let memory_holes = vm_resources.n_memory_holes as u64;
     resources_mapping(&vm_resources.builtin_instance_counter, steps, memory_holes)
@@ -209,7 +194,7 @@ fn resources_mapping(
     builtin_mapping: &HashMap<BuiltinName, usize>,
     steps: u64,
     memory_holes: u64,
-) -> starknet_types_rpc::ComputationResources {
+) -> mp_rpc::ComputationResources {
     let memory_holes = match memory_holes {
         0 => None,
         n => Some(n),
@@ -224,7 +209,7 @@ fn resources_mapping(
     let keccak_builtin_applications = builtin_mapping.get(&BuiltinName::keccak).map(|&value| value as u64);
     let segment_arena_builtin = builtin_mapping.get(&BuiltinName::segment_arena).map(|&value| value as u64);
 
-    starknet_types_rpc::ComputationResources {
+    mp_rpc::ComputationResources {
         steps,
         memory_holes,
         range_check_builtin_applications,
@@ -238,17 +223,17 @@ fn resources_mapping(
     }
 }
 
-fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> starknet_types_rpc::StateDiff<Felt> {
-    starknet_types_rpc::StateDiff {
+fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> mp_rpc::StateDiff {
+    mp_rpc::StateDiff {
         storage_diffs: commitment_state_diff
             .storage_updates
             .iter()
             .map(|(address, updates)| {
                 let storage_entries = updates
                     .into_iter()
-                    .map(|(key, value)| starknet_types_rpc::KeyValuePair { key: key.to_felt(), value: *value })
+                    .map(|(key, value)| mp_rpc::KeyValuePair { key: key.to_felt(), value: *value })
                     .collect();
-                starknet_types_rpc::ContractStorageDiffItem { address: address.to_felt(), storage_entries }
+                mp_rpc::ContractStorageDiffItem { address: address.to_felt(), storage_entries }
             })
             .collect(),
         deprecated_declared_classes: vec![],
@@ -258,10 +243,7 @@ fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> starknet_types_
         nonces: commitment_state_diff
             .address_to_nonce
             .iter()
-            .map(|(address, nonce)| starknet_types_rpc::NonceUpdate {
-                contract_address: address.to_felt(),
-                nonce: nonce.to_felt(),
-            })
+            .map(|(address, nonce)| mp_rpc::NonceUpdate { contract_address: address.to_felt(), nonce: nonce.to_felt() })
             .collect(),
     }
 }
@@ -274,11 +256,11 @@ fn state_diff_is_empty(commitment_state_diff: &CommitmentStateDiff) -> bool {
 }
 
 fn agregate_execution_ressources(
-    a: Option<&starknet_types_rpc::ComputationResources>,
-    b: Option<&starknet_types_rpc::ComputationResources>,
-    c: Option<&starknet_types_rpc::ComputationResources>,
-) -> starknet_types_rpc::ComputationResources {
-    starknet_types_rpc::ComputationResources {
+    a: Option<&mp_rpc::ComputationResources>,
+    b: Option<&mp_rpc::ComputationResources>,
+    c: Option<&mp_rpc::ComputationResources>,
+) -> mp_rpc::ComputationResources {
+    mp_rpc::ComputationResources {
         steps: a.map_or(0, |x| x.steps) + b.map_or(0, |x| x.steps) + c.map_or(0, |x| x.steps),
         memory_holes: {
             let sum = a.and_then(|x| x.memory_holes).unwrap_or_default()

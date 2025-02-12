@@ -1,10 +1,9 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mp_rpc::ClassAndTxnHash;
 use mp_transactions::BroadcastedDeclareTransactionV0;
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::ClassAndTxnHash;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -22,7 +21,7 @@ pub trait MadaraWriteRpcApi {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>>;
+    ) -> RpcResult<ClassAndTxnHash>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
