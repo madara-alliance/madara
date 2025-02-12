@@ -28,6 +28,10 @@ starknet-types-core.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 
+# Async
+futures.workspace = true
+tokio.workspace = true
+
 # Protobuf
 base64.workspace = true
 bytes.workspace = true
