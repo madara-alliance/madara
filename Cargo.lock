@@ -7316,6 +7316,7 @@ dependencies = [
  "assert_matches",
  "base64 0.22.1",
  "bytes",
+ "futures",
  "m-proc-macros",
  "mc-db",
  "mp-block",
@@ -7337,6 +7338,7 @@ dependencies = [
  "starknet-core",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
  "unsigned-varint 0.8.0",
 ]
