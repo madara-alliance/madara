@@ -67,3 +67,6 @@ tmp/
 # Running madara with make and docker compose
 .secrets
 image.tar.gz
+
+orchestrator_venv
+
