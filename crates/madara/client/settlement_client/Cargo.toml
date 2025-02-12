@@ -43,14 +43,13 @@ mockall.workspace = true
 regex.workspace = true
 serde = { workspace = true, default-features = true }
 serde_json.workspace = true
-starknet-accounts = "0.11.0"
-starknet-contract = "0.11.0"
-starknet-core = { workspace = true }
-starknet-crypto = { workspace = true }
-starknet-providers = { workspace = true }
-starknet-signers = { workspace = true }
+starknet-accounts.workspace = true
+starknet-contract.workspace = true
+starknet-core.workspace = true
+starknet-crypto.workspace = true
+starknet-providers.workspace = true
+starknet-signers.workspace = true
 thiserror.workspace = true
-time = "0.3.36"
 tokio = { workspace = true, features = [
   "macros",
   "parking_lot",
@@ -62,9 +61,6 @@ url.workspace = true
 
 #Instrumentation
 async-trait = { workspace = true }
-hex = "0.4.3"
-log = "0.4.22"
-matchers = "0.1.0"
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -91,7 +87,7 @@ once_cell.workspace = true
 tempfile.workspace = true
 dotenv.workspace = true
 httpmock.workspace = true
-tracing-test = "0.2.5"
+tracing-test.workspace = true
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }

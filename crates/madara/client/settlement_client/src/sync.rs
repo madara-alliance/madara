@@ -10,38 +10,44 @@ use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn sync_worker<C: 'static, S>(
-    backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
-    l1_gas_provider: GasPriceProvider,
-    gas_price_sync_disabled: bool,
-    gas_price_poll_ms: Duration,
-    mempool: Arc<Mempool>,
-    ctx: ServiceContext,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> anyhow::Result<()>
+pub struct SyncWorkerConfig<C: 'static, S> {
+    pub backend: Arc<MadaraBackend>,
+    pub settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    pub l1_gas_provider: GasPriceProvider,
+    pub gas_price_sync_disabled: bool,
+    pub gas_price_poll_ms: Duration,
+    pub mempool: Arc<Mempool>,
+    pub ctx: ServiceContext,
+    pub l1_block_metrics: Arc<L1BlockMetrics>,
+}
+
+pub async fn sync_worker<C: 'static, S>(config: SyncWorkerConfig<C, S>) -> anyhow::Result<()>
 where
     S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let mut join_set = tokio::task::JoinSet::new();
 
     join_set.spawn(state_update_worker(
-        Arc::clone(&backend),
-        settlement_client.clone(),
-        ctx.clone(),
-        l1_block_metrics.clone(),
+        Arc::clone(&config.backend),
+        config.settlement_client.clone(),
+        config.ctx.clone(),
+        config.l1_block_metrics.clone(),
     ));
 
-    join_set.spawn(sync(settlement_client.clone(), Arc::clone(&backend), mempool, ctx.clone()));
+    join_set.spawn(sync(
+        config.settlement_client.clone(),
+        Arc::clone(&config.backend),
+        config.mempool,
+        config.ctx.clone(),
+    ));
 
-    if !gas_price_sync_disabled {
+    if !config.gas_price_sync_disabled {
         join_set.spawn(gas_price_worker(
-            settlement_client.clone(),
-            l1_gas_provider,
-            gas_price_poll_ms,
-            ctx.clone(),
-            l1_block_metrics,
+            config.settlement_client.clone(),
+            config.l1_gas_provider,
+            config.gas_price_poll_ms,
+            config.ctx.clone(),
+            config.l1_block_metrics,
         ));
     }
 

@@ -12,6 +12,7 @@ use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_settlement_client::messaging::L1toL2MessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
+use mc_settlement_client::sync::SyncWorkerConfig;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_core::types::Felt;
 use std::str::FromStr;
@@ -165,16 +166,16 @@ where
             let l1_block_metrics = self.l1_block_metrics.clone();
 
             runner.service_loop(move |ctx| {
-                mc_settlement_client::sync::sync_worker(
-                    db_backend,
+                mc_settlement_client::sync::sync_worker(SyncWorkerConfig {
+                    backend: db_backend,
                     settlement_client,
                     l1_gas_provider,
                     gas_price_sync_disabled,
-                    gas_price_poll,
+                    gas_price_poll_ms: gas_price_poll,
                     mempool,
                     ctx,
                     l1_block_metrics,
-                )
+                })
             });
         } else {
             tracing::error!("❗ Tried to start L1 Sync but no l1 endpoint was provided to the node on startup");
