@@ -7,13 +7,12 @@ pub use forward_to_provider::*;
 pub use mempool::*;
 
 use jsonrpsee::core::{async_trait, RpcResult};
-use mp_transactions::BroadcastedDeclareTransactionV0;
-use mp_utils::service::{MadaraServiceId, ServiceContext};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
+use mp_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
+use mp_transactions::BroadcastedDeclareTransactionV0;
+use mp_utils::service::{MadaraServiceId, ServiceContext};
 
 use crate::utils::OptionExt;
 
@@ -22,21 +21,18 @@ pub trait AddTransactionProvider: Send + Sync {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>>;
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTxn<Felt>,
-    ) -> RpcResult<ClassAndTxnHash<Felt>>;
+    ) -> RpcResult<ClassAndTxnHash>;
+    async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash>;
 
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
-    ) -> RpcResult<ContractAndTxnHash<Felt>>;
+        deploy_account_transaction: BroadcastedDeployAccountTxn,
+    ) -> RpcResult<ContractAndTxnHash>;
 
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTxn<Felt>,
-    ) -> RpcResult<AddInvokeTransactionResult<Felt>>;
+        invoke_transaction: BroadcastedInvokeTxn,
+    ) -> RpcResult<AddInvokeTransactionResult>;
 }
 
 /// A simple struct whose sole purpose is to toggle between a L2 sync and local
@@ -87,24 +83,21 @@ impl AddTransactionProvider for AddTransactionProviderGroup {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    ) -> RpcResult<ClassAndTxnHash> {
         self.provider()
             .ok_or_internal_server_error(Self::ERROR)?
             .add_declare_v0_transaction(declare_v0_transaction)
             .await
     }
 
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTxn<Felt>,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
         self.provider().ok_or_internal_server_error(Self::ERROR)?.add_declare_transaction(declare_transaction).await
     }
 
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
-    ) -> RpcResult<ContractAndTxnHash<Felt>> {
+        deploy_account_transaction: BroadcastedDeployAccountTxn,
+    ) -> RpcResult<ContractAndTxnHash> {
         self.provider()
             .ok_or_internal_server_error(Self::ERROR)?
             .add_deploy_account_transaction(deploy_account_transaction)
@@ -113,8 +106,8 @@ impl AddTransactionProvider for AddTransactionProviderGroup {
 
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTxn<Felt>,
-    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
+        invoke_transaction: BroadcastedInvokeTxn,
+    ) -> RpcResult<AddInvokeTransactionResult> {
         self.provider().ok_or_internal_server_error(Self::ERROR)?.add_invoke_transaction(invoke_transaction).await
     }
 }

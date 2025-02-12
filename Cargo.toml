@@ -19,6 +19,7 @@ members = [
   "madara/crates/primitives/transactions",
   "madara/crates/primitives/class",
   "madara/crates/primitives/gateway",
+  "madara/crates/primitives/rpc",
   "madara/crates/primitives/receipt",
   "madara/crates/primitives/state_update",
   "madara/crates/primitives/chain_config",
@@ -64,6 +65,7 @@ default-members = [
   "madara/crates/primitives/transactions",
   "madara/crates/primitives/class",
   "madara/crates/primitives/gateway",
+  "madara/crates/primitives/rpc",
   "madara/crates/primitives/receipt",
   "madara/crates/primitives/state_update",
   "madara/crates/primitives/chain_config",
@@ -140,6 +142,7 @@ mp-convert = { path = "madara/crates/primitives/convert", default-features = fal
 mp-transactions = { path = "madara/crates/primitives/transactions", default-features = false }
 mp-class = { path = "madara/crates/primitives/class", default-features = false }
 mp-gateway = { path = "madara/crates/primitives/gateway", default-features = false }
+mp-rpc = { path = "madara/crates/primitives/rpc", default-features = false }
 mp-receipt = { path = "madara/crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "madara/crates/primitives/state_update", default-features = false }
 mp-utils = { path = "madara/crates/primitives/utils", default-features = false }
@@ -175,7 +178,6 @@ starknet = "0.12.0"
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
-starknet-types-rpc = "0.7.1"
 
 blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
   "testing",
@@ -360,7 +362,6 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "r
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
-starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
 starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
   "testing",

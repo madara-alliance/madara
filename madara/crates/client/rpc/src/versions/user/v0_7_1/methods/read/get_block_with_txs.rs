@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
+use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
     TxnWithHash,
 };
@@ -26,7 +25,7 @@ use crate::Starknet;
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs<Felt>> {
+pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
     let block = starknet.get_block(&block_id)?;
 
     let transactions_with_hash = Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes())
@@ -80,8 +79,9 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
+    use mp_rpc::{L1DaMode, ResourcePrice};
     use rstest::rstest;
-    use starknet_types_rpc::{L1DaMode, ResourcePrice};
+    use starknet_types_core::felt::Felt;
 
     #[rstest]
     fn test_get_block_with_txs(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {

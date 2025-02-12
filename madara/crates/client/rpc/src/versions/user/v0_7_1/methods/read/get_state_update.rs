@@ -1,6 +1,6 @@
 use mp_block::{BlockId, BlockTag};
+use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;
@@ -26,7 +26,7 @@ use mc_db::db_block_id::DbBlockId;
 /// the state of the network as a result of the block's execution. This can include a confirmed
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
-pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate<Felt>> {
+pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
     let resolved_block_id = starknet
         .backend
         .resolve_block_id(&block_id)

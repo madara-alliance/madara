@@ -1,6 +1,5 @@
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
+use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -28,10 +27,7 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events(
-    starknet: &Starknet,
-    filter: EventFilterWithPageRequest<Felt>,
-) -> StarknetRpcResult<EventsChunk<Felt>> {
+pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size;
@@ -59,7 +55,7 @@ pub async fn get_events(
     }
 
     let from_block = continuation_token.block_n;
-    let mut filtered_events: Vec<EmittedEvent<Felt>> = Vec::new();
+    let mut filtered_events: Vec<EmittedEvent> = Vec::new();
 
     for current_block in from_block..=to_block {
         let (_pending, block) = if current_block <= latest_block {
@@ -68,7 +64,7 @@ pub async fn get_events(
             (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
         };
 
-        let block_filtered_events: Vec<EmittedEvent<Felt>> = drain_block_events(block)
+        let block_filtered_events: Vec<EmittedEvent> = drain_block_events(block)
             .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             .collect();
 
@@ -77,7 +73,7 @@ pub async fn get_events(
         }
 
         #[allow(clippy::iter_skip_zero)]
-        let block_filtered_reduced_events: Vec<EmittedEvent<Felt>> = block_filtered_events
+        let block_filtered_reduced_events: Vec<EmittedEvent> = block_filtered_events
             .into_iter()
             .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
             .take(chunk_size as usize - filtered_events.len())
@@ -129,11 +125,11 @@ fn block_range(
 ///
 /// # Returns
 ///
-/// Returns an iterator yielding `EmittedEvent<Felt>` items. Each item contains:
+/// Returns an iterator yielding `EmittedEvent` items. Each item contains:
 /// - The event data (from address, keys, and associated data)
 /// - Block context (hash and number, if the block is confirmed)
 /// - Transaction hash that generated the event
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent<Felt>> {
+pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent> {
     let (block_hash, block_number) = match &block.info {
         MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
