@@ -94,6 +94,7 @@ pub struct TestContext {
 
 // Separate struct to hold the Madara process
 struct MadaraInstance {
+    #[allow(dead_code)]
     process: MadaraProcess,
 }
 
@@ -106,13 +107,19 @@ lazy_static! {
 
 // Initialize shared test context
 pub async fn init_test_context() -> anyhow::Result<()> {
-    // First, ensure Madara is running
+    // First, ensure any existing Madara instance is dropped
+    {
+        let mut madara_guard = MADARA.lock().await;
+        *madara_guard = None;
+    }
+
+    // Then initialize new instance
     let mut madara_guard = MADARA.lock().await;
     if madara_guard.is_none() {
         *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
     }
 
-    // Then initialize the test context if needed
+    // Initialize test context
     let mut context = TEST_CONTEXT.lock().await;
     if context.is_none() {
         let account = starknet_account()?;
@@ -340,4 +347,12 @@ fn check_port(port: u16, timeout_secs: u64) -> bool {
 // Export the lock for tests to use
 pub fn get_state_update_lock() -> &'static Mutex<()> {
     &STATE_UPDATE_LOCK
+}
+
+pub async fn cleanup_test_context() {
+    let mut madara_guard = MADARA.lock().await;
+    *madara_guard = None;
+
+    let mut context = TEST_CONTEXT.lock().await;
+    *context = None;
 }

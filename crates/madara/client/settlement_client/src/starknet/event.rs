@@ -119,7 +119,7 @@ impl Stream for StarknetEventStream {
                                 })
                                 .map(|block_number| {
                                     // Get required fields safely
-                                    let selector = event.data.get(0).ok_or_else(|| {
+                                    let selector = event.data.first().ok_or_else(|| {
                                         SettlementClientError::InvalidData("Missing selector in event data".to_string())
                                     })?;
                                     let from = event.keys.get(2).ok_or_else(|| {

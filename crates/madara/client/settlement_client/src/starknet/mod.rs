@@ -173,7 +173,7 @@ impl SettlementClientTrait for StarknetClient {
 
                 let current_processed = self.processed_update_state_block.load(Ordering::Relaxed);
                 if current_processed < block_number {
-                    let global_root = data.data.get(0).ok_or_else(|| {
+                    let global_root = data.data.first().ok_or_else(|| {
                         SettlementClientError::InvalidData("Missing global root in event data".into())
                     })?;
                     let block_hash = data
@@ -325,7 +325,7 @@ impl StarknetClient {
 pub mod starknet_client_tests {
     use crate::client::SettlementClientTrait;
     use crate::starknet::utils::{
-        get_state_update_lock, get_test_context, init_test_context, send_state_update, MADARA_PORT,
+        cleanup_test_context, get_state_update_lock, get_test_context, init_test_context, send_state_update,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
@@ -340,7 +340,6 @@ pub mod starknet_client_tests {
     use std::str::FromStr;
     use std::time::Duration;
     use tokio::time::sleep;
-    use url::Url;
 
     struct TestContext {
         context: crate::starknet::utils::TestContext,
@@ -366,6 +365,7 @@ pub mod starknet_client_tests {
     async fn fail_create_new_client_contract_does_not_exists(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let context = test_context.await?.context;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
@@ -374,6 +374,7 @@ pub mod starknet_client_tests {
         })
         .await;
         assert!(starknet_client.is_err(), "Should fail to create a new client");
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -382,8 +383,10 @@ pub mod starknet_client_tests {
     async fn create_new_client_contract_exists_starknet_client(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let TestContext { client, .. } = test_context.await?;
         assert!(client.get_latest_block_number().await.is_ok(), "Should not fail to create a new client");
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -392,10 +395,10 @@ pub mod starknet_client_tests {
     async fn get_last_event_block_number_works_starknet_client(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let TestContext { context, client } = test_context.await?;
 
         // Acquire lock before state update
-        let _guard = get_state_update_lock().lock().await;
 
         // sending state updates using the shared account:
         send_state_update(
@@ -424,6 +427,7 @@ pub mod starknet_client_tests {
 
         let latest_event_block_number = client.get_last_event_block_number().await?;
         assert_eq!(latest_event_block_number, last_event_block_number, "Latest event should have block number 100");
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -432,10 +436,10 @@ pub mod starknet_client_tests {
     async fn get_last_verified_block_hash_works_starknet_client(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let TestContext { context, client } = test_context.await?;
 
         // Acquire lock before state update
-        let _guard = get_state_update_lock().lock().await;
 
         // sending state updates:
         let block_hash_event = Felt::from_hex("0xdeadbeef")?;
@@ -452,6 +456,7 @@ pub mod starknet_client_tests {
         assert_eq!(last_verified_block_hash, block_hash_event, "Block hash should match");
 
         // Lock is released when _guard is dropped at end of function
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -460,10 +465,10 @@ pub mod starknet_client_tests {
     async fn get_last_state_root_works_starknet_client(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let TestContext { context, client } = test_context.await?;
 
         // Acquire lock before state update
-        let _guard = get_state_update_lock().lock().await;
 
         // sending state updates:
         let block_hash_event = Felt::from_hex("0xdeadbeef")?;
@@ -480,6 +485,7 @@ pub mod starknet_client_tests {
         assert_eq!(last_verified_state_root, global_root_event, "Last state root should match");
 
         // Lock is released when _guard is dropped at end of function
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -488,10 +494,10 @@ pub mod starknet_client_tests {
     async fn get_last_verified_block_number_works_starknet_client(
         #[future] test_context: anyhow::Result<TestContext>,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         let TestContext { context, client } = test_context.await?;
 
         // Acquire lock before state update
-        let _guard = get_state_update_lock().lock().await;
 
         // sending state updates:
         let data_felt = Felt::from_hex("0xdeadbeef")?;
@@ -508,6 +514,7 @@ pub mod starknet_client_tests {
         assert_eq!(last_verified_block_number, block_number, "Last verified block should match");
 
         // Lock is released when _guard is dropped at end of function
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -542,11 +549,10 @@ pub mod starknet_client_tests {
 
 #[cfg(test)]
 mod l2_messaging_test {
-    use super::LastSyncedEventBlock;
     use crate::messaging::sync;
     use crate::starknet::utils::{
-        cancel_messaging_event, fire_messaging_event, get_state_update_lock, get_test_context,
-        init_messaging_test_context, MADARA_PORT,
+        cancel_messaging_event, cleanup_test_context, fire_messaging_event, get_state_update_lock, get_test_context,
+        init_messaging_test_context,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::DatabaseService;
@@ -602,11 +608,11 @@ mod l2_messaging_test {
     async fn e2e_test_basic_workflow_starknet(
         #[future] setup_test_env_starknet: TestRunnerStarknet,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         init_messaging_test_context().await?;
         let context = get_test_context().await?;
         let TestRunnerStarknet { db_service: db, starknet_client, mempool } = setup_test_env_starknet.await;
 
-        let _guard = get_state_update_lock().lock().await;
         // Start worker handle
         // ==================================
         let worker_handle = {
@@ -642,6 +648,7 @@ mod l2_messaging_test {
         assert!(db.backend().has_l1_messaging_nonce(nonce)?);
         // Cancelling worker
         worker_handle.abort();
+        cleanup_test_context().await;
         Ok(())
     }
 
@@ -651,10 +658,10 @@ mod l2_messaging_test {
     async fn e2e_test_message_canceled_starknet(
         #[future] setup_test_env_starknet: TestRunnerStarknet,
     ) -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         init_messaging_test_context().await?;
         let context = get_test_context().await?;
         let TestRunnerStarknet { db_service: db, starknet_client, mempool } = setup_test_env_starknet.await;
-        let _guard = get_state_update_lock().lock().await;
         // Start worker handle
         // ==================================
         let worker_handle = {
@@ -688,6 +695,7 @@ mod l2_messaging_test {
 
         // Cancelling worker
         worker_handle.abort();
+        cleanup_test_context().await;
         Ok(())
     }
 }
@@ -696,20 +704,21 @@ mod l2_messaging_test {
 mod starknet_client_event_subscription_test {
     use crate::gas_price::L1BlockMetrics;
     use crate::starknet::event::StarknetEventStream;
-    use crate::starknet::utils::{get_state_update_lock, get_test_context, init_test_context, send_state_update};
+    use crate::starknet::utils::{
+        cleanup_test_context, get_state_update_lock, get_test_context, init_test_context, send_state_update,
+    };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
     use mc_db::DatabaseService;
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
-    use rstest::rstest;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
     use std::time::Duration;
-    use tempfile::TempDir;
 
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
+        let _guard = get_state_update_lock().lock().await;
         // Setting up the DB and l1 block metrics
         // ================================================
         let chain_config = Arc::new(ChainConfig::madara_test());
@@ -745,7 +754,6 @@ mod starknet_client_event_subscription_test {
         };
 
         // Acquire lock before state update
-        let _guard = get_state_update_lock().lock().await;
 
         // Firing the state update event
         send_state_update(
@@ -768,6 +776,7 @@ mod starknet_client_event_subscription_test {
         // Lock is released when _guard is dropped
         listen_handle.abort();
         assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
+        cleanup_test_context().await;
         Ok(())
     }
 }

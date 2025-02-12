@@ -208,7 +208,6 @@ mod messaging_module_tests {
     use rstest::{fixture, rstest};
     use starknet_types_core::felt::Felt;
     use std::time::Duration;
-    use tempfile::TempDir;
     use tokio::time::timeout;
 
     // Helper function to create a mock event

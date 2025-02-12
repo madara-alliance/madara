@@ -3,15 +3,14 @@ use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::StateUpdate;
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 use futures::Stream;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
+#[cfg(test)]
 use mockall::automock;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-
 pub enum ClientType {
     ETH,
     STARKNET,
@@ -21,6 +20,7 @@ pub enum ClientType {
 #[cfg(test)]
 pub mod test_types {
     use super::*;
+    use futures::stream::BoxStream;
 
     #[derive(Debug, Default, PartialEq)]
     pub struct DummyConfig;
@@ -29,6 +29,7 @@ pub mod test_types {
 
 // Use different automock configurations based on the build type
 #[cfg_attr(test, automock(
+
     type Config = test_types::DummyConfig;
     type StreamType = test_types::DummyStream;
 ))]

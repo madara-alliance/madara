@@ -101,7 +101,7 @@ impl SettlementClientTrait for EthereumClient {
         match filtered_logs {
             Some(Ok(log)) => log.block_number.ok_or_else(|| SettlementClientError::MissingField("block_number")),
             Some(Err(e)) => Err(SettlementClientError::Other(e.into())),
-            None => Err(SettlementClientError::Other(anyhow::anyhow!("no event found").into())),
+            None => Err(SettlementClientError::Other(anyhow::anyhow!("no event found"))),
         }
     }
 
@@ -396,7 +396,6 @@ mod l1_messaging_tests {
     use rstest::*;
     use starknet_api::core::Nonce;
     use starknet_types_core::felt::Felt;
-    use tempfile::TempDir;
     use tracing_test::traced_test;
     use url::Url;
 
@@ -736,7 +735,6 @@ mod eth_client_event_subscription_test {
     use mc_db::DatabaseService;
     use mp_chain_config::ChainConfig;
     use rstest::*;
-    use tempfile::TempDir;
     use url::Url;
 
     sol!(
