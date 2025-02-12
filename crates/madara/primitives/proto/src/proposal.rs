@@ -216,16 +216,18 @@ where
                     return Poll::Ready(Some(Ok(message)));
                 }
 
-                let stream_message = match self.receiver.poll_recv(cx) {
-                    Poll::Ready(Some(stream_mesage)) => stream_mesage,
-                    Poll::Ready(None) => return Poll::Ready(Some(Err(StreamReceiverError::ChannelError))),
-                    Poll::Pending => return Poll::Pending,
-                };
+                loop {
+                    let stream_message = match self.receiver.poll_recv(cx) {
+                        Poll::Ready(Some(stream_mesage)) => stream_mesage,
+                        Poll::Ready(None) => return Poll::Ready(Some(Err(StreamReceiverError::ChannelError))),
+                        Poll::Pending => break,
+                    };
 
-                inner = match inner.accumulate(stream_message) {
-                    Ok(inner) => inner,
-                    Err(e) => return Poll::Ready(Some(Err(e))),
-                };
+                    inner = match inner.accumulate(stream_message) {
+                        Ok(inner) => inner,
+                        Err(e) => return Poll::Ready(Some(Err(e))),
+                    };
+                }
 
                 if inner.is_done() {
                     self.receiver.close();
@@ -472,6 +474,13 @@ mod test {
         })
     }
 
+    #[rstest::fixture]
+    fn stream_messages_rev(
+        stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) -> impl Iterator<Item = model::StreamMessage> {
+        stream_messages.collect::<Vec<_>>().into_iter().rev()
+    }
+
     //     #[rstest::fixture]
     //     fn stream_message_shuffled(
     //         stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
@@ -559,13 +568,51 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_simple(stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, mut stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(STREAM_LEN as u64).with_channel_cap(STREAM_LEN as usize).build();
+        let (mut stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(STREAM_LEN as u64)
+            .with_channel_cap((STREAM_LEN + 1) as usize)
+            .build();
 
         for message in stream_messages {
             stream_sender.send(message.clone()).await.expect("Failed to send stream message");
             let next = stream_receiver.next().await;
 
+            match message.message.unwrap() {
+                model::stream_message::Message::Content(bytes) => {
+                    let proposal_part =
+                        model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+                    assert_matches::assert_matches!(next, Some(Ok(..)));
+                    assert_eq!(proposal_part, next.unwrap().unwrap());
+                }
+                model::stream_message::Message::Fin(_) => {
+                    assert!(next.is_none());
+                }
+            }
+        }
+
+        assert!(stream_receiver.next().await.is_none());
+    }
+
+    /// Receives a proposal part in a single, reversed stream. All should work as
+    /// expected
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_reversed(
+        stream_messages: impl Iterator<Item = model::StreamMessage>,
+        stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(STREAM_LEN as u64)
+            .with_channel_cap((STREAM_LEN + 1) as usize)
+            .build();
+
+        for message in stream_messages_rev {
+            stream_sender.send(message.clone()).await.expect("Failed to send stream message");
+        }
+
+        for message in stream_messages {
+            let next = stream_receiver.next().await;
             match message.message.unwrap() {
                 model::stream_message::Message::Content(bytes) => {
                     let proposal_part =
