@@ -39,14 +39,15 @@ jobs:
         with:
           version: nightly
 
-      # TODO : For now madara binary is stored in aws s3 bucket :
-      #        After the proper release binaries are implemented
-      #        We can directly use that and we can remove this
-      #        temporary AWS implementation
-      - name: Download madara binary for l2 client testing
-        run: |
-          curl -L https://madara-test-binary.s3.us-west-1.amazonaws.com/madara-linux -o ./test-artifacts/madara
-          chmod +x ./test-artifacts/madara
+      - name: Restore Madara binary
+        uses: actions/cache@v3
+        id: cache-madara
+        with:
+          path: test-artifacts/madara
+          key: ${{ runner.os }}-madara-bin-
+          restore-keys: |
+            ${{ runner.os }}-madara-bin-
+          fail-on-cache-miss: true
 
       - name: Build and run tests
         env:
