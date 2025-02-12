@@ -1,6 +1,3 @@
-// query offset:
-//     0x0000000000000000000000000000000100000000000000000000000000000000
-
 use serde::{Deserialize, Serialize};
 
 use crate::{
