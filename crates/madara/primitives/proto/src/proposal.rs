@@ -16,11 +16,9 @@ pub enum StreamReceiverError<StreamId>
 where
     StreamId: std::fmt::Debug,
 {
-    #[error("Invalid stream id: expected {0:?}, got {1:?}")]
+    #[error("Invalid stream id: expected {1:?}, got {0:?}")]
     InvalidStreamId(StreamId, StreamId),
-    #[error("The stream has lagged too far behind")]
-    LagCap, // TODO: implement this
-    #[error("Received message but already received Fin before it")]
+    #[error("Already received a Fin before this message")]
     SendAfterFin,
     #[error("New Fin with id {0} but already received Fin at message id {1}")]
     DoubleFin(u64, u64),
@@ -32,6 +30,8 @@ where
     ModelError(#[from] crate::FromModelError),
     #[error("Channel was closed over an unfinished stream")]
     ChannelError,
+    #[error("The stream has lagged too far behind")]
+    LagCap,
 }
 
 type Never = Option<std::convert::Infallible>;
@@ -211,11 +211,6 @@ where
     fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
         match std::mem::take(&mut self.state) {
             AccumulatorStateMachine::Accumulate(mut inner) => {
-                if let Some(message) = inner.next_ordered() {
-                    self.update(inner);
-                    return Poll::Ready(Some(Ok(message)));
-                }
-
                 loop {
                     let stream_message = match self.receiver.poll_recv(cx) {
                         Poll::Ready(Some(stream_mesage)) => stream_mesage,
@@ -234,12 +229,14 @@ where
                     return Poll::Ready(None);
                 }
 
-                let Some(message) = inner.next_ordered() else {
+                let message = inner.next_ordered();
+                self.state = AccumulatorStateMachine::Accumulate(inner);
+
+                let Some(message) = message else {
                     let _ = self.waker.lock().expect("Poisoned lock").insert(cx.waker().clone());
                     return Poll::Pending;
                 };
 
-                self.state = AccumulatorStateMachine::Accumulate(inner);
                 Poll::Ready(Some(Ok(message)))
             }
             AccumulatorStateMachine::Done => Poll::Ready(None),
@@ -254,20 +251,6 @@ where
                 (lo, hi)
             }
             AccumulatorStateMachine::Done => (0, Some(0)),
-        }
-    }
-}
-
-impl<Message, StreamId> OrderedStreamReceiver<Message, StreamId>
-where
-    Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default,
-{
-    fn update(&mut self, inner: AccumulatorStateInner<Message, StreamId>) {
-        if !inner.is_done() {
-            self.state = AccumulatorStateMachine::Accumulate(inner)
-        } else {
-            self.receiver.close()
         }
     }
 }
@@ -295,6 +278,8 @@ where
     StreamId: prost::Message + Default + std::fmt::Debug,
 {
     #[model_describe(model::StreamMessage)]
+    // TODO: this needs some more care in regards to DOS migitation:
+    //  - limits on the total number of messsages
     fn accumulate_with_force(
         mut self,
         stream_message: model::StreamMessage,
@@ -302,18 +287,22 @@ where
     ) -> Result<Self, StreamReceiverError<StreamId>> {
         let stream_id = self.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
         let message_id = stream_message.message_id;
+        let last_id = self.messages.last_key_value().map(|(k, _)| *k);
 
-        Self::check_stream_id(&stream_message.stream_id, stream_id)?;
-        Self::check_message_id(stream_message.message_id, self.fin)?;
+        if !force {
+            Self::check_stream_id(&stream_message.stream_id, stream_id)?;
+            Self::check_message_id(stream_message.message_id, self.id_low, self.fin)?;
+            Self::check_limit(message_id, last_id, self.fin, self.lag_cap)?;
+        }
 
         match model_field!(stream_message => message) {
-            stream_message::Message::Content(bytes) => self.update_content(message_id, &bytes, force),
+            stream_message::Message::Content(bytes) => self.update_content(message_id, &bytes),
             stream_message::Message::Fin(..) => self.update_fin(message_id),
         }
     }
 
     fn accumulate(self, stream_message: model::StreamMessage) -> Result<Self, StreamReceiverError<StreamId>> {
-        self.accumulate_with_force(stream_message, true)
+        self.accumulate_with_force(stream_message, false)
     }
 
     fn check_stream_id(actual: &[u8], expected: &[u8]) -> Result<(), StreamReceiverError<StreamId>> {
@@ -326,7 +315,11 @@ where
         }
     }
 
-    fn check_message_id(message_id: u64, fin: Option<u64>) -> Result<(), StreamReceiverError<StreamId>> {
+    fn check_message_id(message_id: u64, id_low: u64, fin: Option<u64>) -> Result<(), StreamReceiverError<StreamId>> {
+        if message_id < id_low {
+            return Err(StreamReceiverError::DoubleSend(message_id));
+        }
+
         if let Some(fin) = fin {
             if message_id >= fin {
                 return Err(StreamReceiverError::SendAfterFin);
@@ -335,27 +328,30 @@ where
         Ok(())
     }
 
-    fn check_limit(message_id: u64, last_id: Option<u64>, lag_cap: u64) -> Result<(), StreamReceiverError<StreamId>> {
+    fn check_limit(
+        message_id: u64,
+        last_id: Option<u64>,
+        fin: Option<u64>,
+        lag_cap: u64,
+    ) -> Result<(), StreamReceiverError<StreamId>> {
         if let Some(last_id) = last_id {
             let lag = message_id.abs_diff(last_id);
             if lag > lag_cap {
                 return Err(StreamReceiverError::LagCap);
             }
         }
+
+        if let Some(fin) = fin {
+            let lag = message_id.abs_diff(fin);
+            if lag > lag_cap {
+                return Err(StreamReceiverError::LagCap);
+            }
+        }
+
         Ok(())
     }
 
-    fn update_content(
-        mut self,
-        message_id: u64,
-        bytes: &[u8],
-        force: bool,
-    ) -> Result<Self, StreamReceiverError<StreamId>> {
-        if !force {
-            let last_id = self.messages.last_key_value().map(|(k, _)| *k);
-            Self::check_limit(message_id, last_id, self.lag_cap)?;
-        }
-
+    fn update_content(mut self, message_id: u64, bytes: &[u8]) -> Result<Self, StreamReceiverError<StreamId>> {
         match self.messages.entry(message_id) {
             btree_map::Entry::Vacant(entry) => entry.insert(Message::decode(bytes)?),
             btree_map::Entry::Occupied(_) => return Err(StreamReceiverError::DoubleSend(message_id)),
@@ -366,8 +362,8 @@ where
 
     fn update_fin(mut self, fin_id: u64) -> Result<Self, StreamReceiverError<StreamId>> {
         self.fin = match self.fin {
-            Some(fin_id_old) if fin_id_old != fin_id => return Err(StreamReceiverError::DoubleFin(fin_id, fin_id_old)),
-            _ => Some(fin_id),
+            Some(fin_id_old) => return Err(StreamReceiverError::DoubleFin(fin_id, fin_id_old)),
+            None => Some(fin_id),
         };
 
         if let Some((last_id, _)) = self.messages.last_key_value() {
@@ -404,16 +400,16 @@ where
 
 #[cfg(test)]
 mod test {
-    use futures::StreamExt;
+    use futures::{Stream, StreamExt};
     use prost::Message;
     use starknet_core::types::Felt;
 
     use crate::{
         model::{self},
-        proposal::ConsensusStreamBuilder,
+        proposal::{ConsensusStreamBuilder, StreamReceiverError},
     };
 
-    const STREAM_LEN: u32 = 10;
+    const STREAM_LEN_DEFAULT: u32 = 10;
 
     fn model_encode<M>(proposal_part: M) -> Vec<u8>
     where
@@ -446,16 +442,6 @@ mod test {
             .chain(std::iter::once(model::stream_message::Message::Fin(model::Fin {})))
     }
 
-    //     #[rstest::fixture]
-    //     fn stream_proposal_part_shuffled(
-    //         stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
-    //     ) -> impl Iterator<Item = model::stream_message::Message> {
-    //         let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-    //         let mut messages = stream_proposal_part.collect::<Vec<_>>();
-    //         messages.shuffle(&mut rng);
-    //         return messages.into_iter();
-    //     }
-
     #[rstest::fixture]
     fn stream_id(#[default(0)] seed: u32) -> Vec<u8> {
         let stream_id = model::ConsensusStreamId { height: seed as u64, round: seed + 1 };
@@ -464,7 +450,8 @@ mod test {
 
     #[rstest::fixture]
     fn stream_messages(
-        #[with(STREAM_LEN)] stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
+        #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
+        #[with(_stream_len)] stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
         #[with(1)] stream_id: Vec<u8>,
     ) -> impl Iterator<Item = model::StreamMessage> {
         stream_proposal_part.enumerate().map(move |(i, message)| model::StreamMessage {
@@ -476,91 +463,11 @@ mod test {
 
     #[rstest::fixture]
     fn stream_messages_rev(
-        stream_messages: impl Iterator<Item = model::StreamMessage>,
+        #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
+        #[with(_stream_len)] stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) -> impl Iterator<Item = model::StreamMessage> {
         stream_messages.collect::<Vec<_>>().into_iter().rev()
     }
-
-    //     #[rstest::fixture]
-    //     fn stream_message_shuffled(
-    //         stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
-    //         #[with(1)] stream_id: Vec<u8>,
-    //     ) -> impl Iterator<Item = model::StreamMessage> {
-    //         let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-    //         let mut stream_messages = stream_proposal_part
-    //             .enumerate()
-    //             .map(move |(i, message)| model::StreamMessage {
-    //                 message: Some(message),
-    //                 stream_id: stream_id.clone(),
-    //                 message_id: i as u64,
-    //             })
-    //             .collect::<Vec<_>>();
-    //         stream_messages.shuffle(&mut rng);
-    //
-    //         stream_messages.into_iter()
-    //     }
-    //
-    //     #[rstest::fixture]
-    //     fn stream_message_invalid_stream_id(
-    //         mut stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
-    //         #[from(stream_id)]
-    //         #[with(1)]
-    //         stream_id_1: Vec<u8>,
-    //         #[from(stream_id)]
-    //         #[with(2)]
-    //         stream_id_2: Vec<u8>,
-    //     ) -> impl Iterator<Item = model::StreamMessage> {
-    //         vec![
-    //             stream_proposal_part
-    //                 .next()
-    //                 .map(|message| model::StreamMessage { message: Some(message), stream_id: stream_id_1, message_id: 0 })
-    //                 .expect("Failed to generate stream message"),
-    //             stream_proposal_part
-    //                 .next()
-    //                 .map(|message| model::StreamMessage { message: Some(message), stream_id: stream_id_2, message_id: 0 })
-    //                 .expect("Failed to generate stream message"),
-    //         ]
-    //         .into_iter()
-    //     }
-    //
-    //     #[rstest::fixture]
-    //     fn stream_message_double_fin(
-    //         stream_message: impl Iterator<Item = model::StreamMessage>,
-    //         #[with(1)] stream_id: Vec<u8>,
-    //     ) -> impl Iterator<Item = model::StreamMessage> {
-    //         std::iter::once(model::StreamMessage {
-    //             message: Some(model::stream_message::Message::Fin(model::Fin {})),
-    //             stream_id: stream_id.clone(),
-    //             message_id: u64::MAX,
-    //         })
-    //         .chain(stream_message)
-    //         .map(move |mut stream_message| {
-    //             stream_message.stream_id = stream_id.clone();
-    //             stream_message
-    //         })
-    //     }
-    //
-    //     #[rstest::fixture]
-    //     fn stream_message_decode_error(
-    //         mut stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
-    //         #[with(1)] stream_id: Vec<u8>,
-    //     ) -> impl Iterator<Item = model::StreamMessage> {
-    //         std::iter::once(model::StreamMessage {
-    //             message: Some(stream_proposal_part.next().unwrap()),
-    //             stream_id: stream_id.clone(),
-    //             message_id: 0,
-    //         })
-    //         .chain(std::iter::once(model::StreamMessage {
-    //             message: Some(model::stream_message::Message::Fin(model::Fin {})),
-    //             stream_id: stream_id.clone(),
-    //             message_id: 0,
-    //         }))
-    //     }
-    //
-    //     #[rstest::fixture]
-    //     fn stream_message_model_error(#[with(1)] stream_id: Vec<u8>) -> impl Iterator<Item = model::StreamMessage> {
-    //         std::iter::once(model::StreamMessage { message: None, stream_id, message_id: 0 })
-    //     }
 
     /// Receives a proposal part in a single, ordered stream. All should work as
     /// expected
@@ -568,10 +475,8 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_simple(stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
-            .with_lag_cap(STREAM_LEN as u64)
-            .with_channel_cap((STREAM_LEN + 1) as usize)
-            .build();
+        let (mut stream_sender, mut stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         for message in stream_messages {
             stream_sender.send(message.clone()).await.expect("Failed to send stream message");
@@ -602,13 +507,11 @@ mod test {
         stream_messages: impl Iterator<Item = model::StreamMessage>,
         stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
-            .with_lag_cap(STREAM_LEN as u64)
-            .with_channel_cap((STREAM_LEN + 1) as usize)
-            .build();
+        let (mut stream_sender, mut stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         for message in stream_messages_rev {
-            stream_sender.send(message.clone()).await.expect("Failed to send stream message");
+            stream_sender.send(message).await.expect("Failed to send stream message");
         }
 
         for message in stream_messages {
@@ -629,318 +532,408 @@ mod test {
         assert!(stream_receiver.next().await.is_none());
     }
 
-    //     /// An accumulator should always return the number of messages it has
-    //     /// received as its length
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_len(stream_message: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //         let mut i = 0;
-    //
-    //         for message in stream_message {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //             i += 1;
-    //
-    //             match accumulator {
-    //                 AccumulatorStateMachine::Accumulate(..) => {
-    //                     assert_eq!(Some(i), accumulator.len());
-    //                 }
-    //                 AccumulatorStateMachine::Done { .. } => {
-    //                     assert_eq!(None, accumulator.len())
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     /// An accumulator should always correctly return its limits
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_limits(
-    //         proposal_part: model::ProposalPart,
-    //         stream_message: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let limit = proposal_part.encode_to_vec().len();
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new_with_limits(limit);
-    //         let mut i = 0;
-    //
-    //         assert_eq!(accumulator.limits().cloned(), Some(OrderedStreamLimits { max: limit, current: 0 }));
-    //
-    //         for message in stream_message {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //             i += 1;
-    //         }
-    //
-    //         assert!(i > 1, "Proposal part was streamed over a single message");
-    //         assert!(accumulator.is_done());
-    //         assert_eq!(accumulator.limits(), None);
-    //     }
-    //
-    //     /// Makes sure that incrementing a stream limit cannot result in an overflow
-    //     #[test]
-    //     fn ordered_stream_limits_overflow() {
-    //         let mut limits = OrderedStreamLimits::new(usize::MAX);
-    //         limits.update(usize::MAX).unwrap();
-    //
-    //         assert_eq!(limits, OrderedStreamLimits { max: usize::MAX, current: usize::MAX });
-    //         assert_matches::assert_matches!(limits.update(1), Ok(()));
-    //         assert_eq!(limits, OrderedStreamLimits { max: usize::MAX, current: usize::MAX });
-    //     }
-    //
-    //     /// Limits should correctly indicate when they have been reached
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_limits_has_space_left(
-    //         proposal_part: model::ProposalPart,
-    //         stream_message: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let accumulator = AccumulatorStateMachine::<model::ProposalPart>::new_with_limits(0);
-    //         assert!(!accumulator.has_space_left());
-    //
-    //         let limit = proposal_part.encode_to_vec().len();
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new_with_limits(limit);
-    //         let mut i = 0;
-    //
-    //         assert!(accumulator.has_space_left());
-    //
-    //         for message in stream_message {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //             i += 1;
-    //         }
-    //
-    //         assert!(i > 1, "Proposal part was streamed over a single message");
-    //         assert!(accumulator.is_done());
-    //         assert!(!accumulator.has_space_left());
-    //     }
-    //
-    //     /// An accumulator should correctly inform if it has received a FIN message.
-    //     /// By convention, all accumulators which are DONE are considered to have
-    //     /// received a FIN message.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_has_fin(stream_message: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //         let mut i = 0;
-    //
-    //         assert!(!accumulator.has_fin());
-    //
-    //         let mut messages_rev = VecDeque::new();
-    //         for message in stream_message {
-    //             accumulator = accumulator.accumulate(message.clone()).expect("Failed to accumulate message stream");
-    //             messages_rev.push_front(message);
-    //             i += 1;
-    //         }
-    //
-    //         assert!(i > 1, "Proposal part was streamed over a single message");
-    //         assert!(accumulator.is_done());
-    //         assert!(accumulator.has_fin());
-    //
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //         assert!(!accumulator.has_fin());
-    //
-    //         accumulator =
-    //             accumulator.accumulate(messages_rev.pop_front().unwrap()).expect("Failed to accumulate message stream");
-    //         assert!(accumulator.has_fin());
-    //
-    //         for message in messages_rev {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //         }
-    //
-    //         assert!(accumulator.is_done());
-    //         assert!(accumulator.has_fin());
-    //     }
-    //
-    //     /// Checks is a stream message could be the last part needed by an
-    //     /// accumulator. This is a very basic check and does not perform any stream
-    //     /// id or stream limit verification, so we do not test for that here either.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_is_last_part(stream_message: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //
-    //         let mut messages = stream_message.collect::<Vec<_>>();
-    //         let fin = messages.pop().unwrap();
-    //
-    //         for message in messages.iter() {
-    //             assert!(!accumulator.is_last_part(message));
-    //             assert!(!accumulator.is_last_part(&fin));
-    //             accumulator = accumulator.accumulate(message.clone()).expect("Failed to accumulate message stream");
-    //         }
-    //
-    //         assert!(accumulator.is_last_part(&fin));
-    //         accumulator = accumulator.accumulate(fin.clone()).expect("Failed to accumulate message stream");
-    //         assert!(accumulator.is_done());
-    //
-    //         let message_last = messages.pop().unwrap();
-    //         assert!(!messages.is_empty());
-    //
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //         accumulator = accumulator.accumulate(fin).expect("Failed to accumulate message stream");
-    //         assert!(!accumulator.is_last_part(&message_last));
-    //
-    //         for message in messages {
-    //             assert!(!accumulator.is_last_part(&message));
-    //             assert!(!accumulator.is_last_part(&message_last));
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //         }
-    //
-    //         assert!(accumulator.is_last_part(&message_last));
-    //         accumulator = accumulator.accumulate(message_last).expect("Failed to accumulate message stream");
-    //         assert!(accumulator.is_done());
-    //     }
-    //
-    //     /// Receives a proposal part with a bound to the number of bytes which can
-    //     /// be received.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_bounded(
-    //         proposal_part: model::ProposalPart,
-    //         stream_message: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let limit = proposal_part.encode_to_vec().len();
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new_with_limits(limit);
-    //         let mut i = 0;
-    //
-    //         for message in stream_message {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //             i += 1;
-    //         }
-    //
-    //         assert!(i > 1, "Proposal part was streamed over a single message");
-    //         assert!(accumulator.is_done());
-    //
-    //         let proposal_part_actual = accumulator.consume();
-    //         assert_eq!(
-    //             proposal_part_actual,
-    //             Some(proposal_part),
-    //             "Failed to reconstruct proposal part from message stream"
-    //         );
-    //     }
-    //
-    //     /// Receives a proposal part in an _unordered_ stream. The
-    //     /// [OrderedStreamAccumulator] has to sort the inputs and decode them
-    //     /// correctly.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_shuffled(
-    //         proposal_part: model::ProposalPart,
-    //         stream_message_shuffled: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //         let mut i = 0;
-    //
-    //         for message in stream_message_shuffled {
-    //             accumulator = accumulator.accumulate(message).expect("Failed to accumulate message stream");
-    //             i += 1;
-    //         }
-    //
-    //         assert!(i > 1, "Proposal part was streamed over a single message");
-    //         assert!(accumulator.is_done());
-    //
-    //         let proposal_part_actual = accumulator.consume();
-    //         assert_eq!(
-    //             proposal_part_actual,
-    //             Some(proposal_part),
-    //             "Failed to reconstruct proposal part from message stream"
-    //         );
-    //     }
-    //
-    //     /// Receives a proposal part with different stream ids. This is indicative
-    //     /// of multiple streams overlapping and should not happen if the sender is
-    //     /// not malfunctioning.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_fail_invalid_stream_id(
-    //         mut stream_message_invalid_stream_id: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //
-    //         accumulator = accumulator
-    //             .accumulate(stream_message_invalid_stream_id.next().unwrap())
-    //             .expect("Failed on first message reception: this should not happen");
-    //
-    //         assert_matches::assert_matches!(
-    //             accumulator.accumulate(stream_message_invalid_stream_id.next().unwrap()),
-    //             Err(AccumulateError::InvalidStreamId(..))
-    //         );
-    //     }
-    //
-    //     /// Receives a proposal part in a stream with more bytes than is allowed in
-    //     /// the stream limits.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_fail_max_bounds(
-    //         proposal_part: model::ProposalPart,
-    //         stream_message: impl Iterator<Item = model::StreamMessage>,
-    //     ) {
-    //         let limit = proposal_part.encode_to_vec().len();
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new_with_limits(limit - 1);
-    //
-    //         for message in stream_message {
-    //             accumulator = match accumulator.accumulate(message) {
-    //                 Ok(accumulator) => accumulator,
-    //                 Err(e) => {
-    //                     assert_matches::assert_matches!(e, AccumulateError::MaxBounds(..));
-    //                     break;
-    //                 }
-    //             };
-    //         }
-    //     }
-    //
-    //     /// Receives a proposal part in a stream with multiple FIN messages. This is
-    //     /// considered malicious.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_fail_double_fin(stream_message_double_fin: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //
-    //         for message in stream_message_double_fin {
-    //             accumulator = match accumulator.accumulate(message) {
-    //                 Ok(accumulator) => accumulator,
-    //                 Err(e) => {
-    //                     assert_matches::assert_matches!(e, AccumulateError::DoubleFin(..));
-    //                     break;
-    //                 }
-    //             };
-    //         }
-    //     }
-    //
-    //     /// Receives a proposal part in a stream. The proposal part is only
-    //     /// partially sent before the FIN, so this should result in a decode error.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_fail_decode_error(stream_message_decode_error: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //
-    //         for message in stream_message_decode_error {
-    //             accumulator = match accumulator.accumulate(message) {
-    //                 Ok(accumulator) => accumulator,
-    //                 Err(e) => {
-    //                     assert_matches::assert_matches!(e, AccumulateError::DecodeError(..));
-    //                     break;
-    //                 }
-    //             };
-    //         }
-    //     }
-    //
-    //     /// Receives a proposal part in a stream. Protobuf allows for all message
-    //     /// fields to be optional. In our case, we consider any missing field which
-    //     /// is not explicitly marked as `optional` to be required, and return an
-    //     /// error if this is the case.
-    //     #[rstest::rstest]
-    //     #[timeout(std::time::Duration::from_secs(1))]
-    //     fn ordered_stream_fail_model_error(stream_message_model_error: impl Iterator<Item = model::StreamMessage>) {
-    //         let mut accumulator = AccumulatorStateMachine::<model::ProposalPart>::new();
-    //
-    //         for message in stream_message_model_error {
-    //             accumulator = match accumulator.accumulate(message) {
-    //                 Ok(accumulator) => accumulator,
-    //                 Err(e) => {
-    //                     assert_matches::assert_matches!(e, AccumulateError::ModelError(..));
-    //                     break;
-    //                 }
-    //             };
-    //         }
-    //     }
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_pending(
+        stream_messages: impl Iterator<Item = model::StreamMessage>,
+        stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+        for message in stream_messages_rev {
+            let message_id = message.message_id;
+            stream_sender.send(message).await.expect("Failed to send stream message");
+
+            if message_id != 0 {
+                assert_matches::assert_matches!(fut.enter(|cx, rx| rx.poll_next(cx)), std::task::Poll::Pending);
+            } else {
+                assert!(fut.is_woken());
+            }
+        }
+
+        for message in stream_messages {
+            if let model::stream_message::Message::Content(bytes) = message.message.unwrap() {
+                let proposal_part =
+                    model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+                assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+                    assert_eq!(p, proposal_part);
+                });
+            } else {
+                assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None))
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_wake(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let message_first = stream_messages.next().unwrap();
+        let message_second = stream_messages.next().unwrap();
+        let fin = stream_messages.next().unwrap();
+
+        let message = message_first.message.clone().unwrap();
+        let model::stream_message::Message::Content(bytes) = message else { unreachable!() };
+        let proposal_first = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        let message = message_second.message.clone().unwrap();
+        let model::stream_message::Message::Content(bytes) = message else { unreachable!() };
+        let proposal_second = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        stream_sender.send(message_second).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.enter(|cx, rx| rx.poll_next(cx)), std::task::Poll::Pending);
+
+        stream_sender.send(message_first).await.expect("Failed to send stream message");
+        assert!(fut.is_woken());
+
+        stream_sender.send(fin).await.expect("Failed to send stream message");
+
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal_first);
+        });
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal_second);
+        });
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_lag(#[with(5)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(3).with_channel_cap(6).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        for message in stream_messages_rev.by_ref().take(4) {
+            stream_sender.send(message).await.expect("Failed to send stream message");
+            assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+        }
+
+        let lag = stream_messages_rev.next().unwrap();
+        stream_sender.send(lag).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::LagCap)))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_channel_close(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let message = stream_messages.next().unwrap();
+        let model::stream_message::Message::Content(bytes) = message.message.clone().unwrap() else { unreachable!() };
+        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        stream_sender.send(message).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal);
+        });
+
+        // In any sane environment this should not be possible
+        fut.enter(|_, mut rx| rx.receiver.close());
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::ChannelError)))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_done(#[with(0)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+        let fin = stream_messages.next().unwrap();
+
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+        stream_sender.send(fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_invalid_stream_id_1(
+        #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let first = stream_messages.next().unwrap();
+        let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
+        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        stream_sender.send(first).await.expect("Failed to send proposal part");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal);
+        });
+
+        let mut second = stream_messages.next().unwrap();
+        let bytes = second.stream_id.as_slice();
+        let mut stream_id = model::ConsensusStreamId::decode(bytes).expect("Failed to decode stream id");
+        let stream_id_expected = stream_id;
+
+        stream_id.round += 1;
+        stream_id.height += 1;
+
+        second.stream_id = model_encode(stream_id);
+
+        stream_sender.send(second).await.expect("Failed to send proposal part");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::InvalidStreamId(s1, s2)))) => {
+                assert_eq!(s1, stream_id);
+                assert_eq!(s2, stream_id_expected);
+            }
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_invalid_stream_id_2(
+        #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let first = stream_messages.next().unwrap();
+        let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
+        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        stream_sender.send(first).await.expect("Failed to send proposal part");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal);
+        });
+
+        let mut second = stream_messages.next().unwrap();
+        let bytes = second.stream_id.as_slice();
+        let stream_id = model::ConsensusStreamId::decode(bytes).expect("Failed to decode stream id");
+
+        let mut bytes = model_encode(stream_id);
+        bytes.push(1);
+        second.stream_id = bytes;
+
+        stream_sender.send(second).await.expect("Failed to send proposal part");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::DecodeError(_))))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_send_after_fin_1(
+        #[with(1)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let fin = stream_messages_rev.next().unwrap();
+        stream_sender.send(fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+
+        let mut send_after_fin = stream_messages_rev.next().unwrap();
+        send_after_fin.message_id = u64::MAX;
+
+        stream_sender.send(send_after_fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::SendAfterFin)))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_send_after_fin_2(
+        #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let mut send_after_fin = stream_messages.next().unwrap();
+        send_after_fin.message_id = 2;
+
+        stream_sender.send(send_after_fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+
+        let fin = stream_messages.next().unwrap();
+        stream_sender.send(fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::SendAfterFin)))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_double_fin(
+        #[from(stream_messages)]
+        #[with(0)]
+        mut fin: impl Iterator<Item = model::StreamMessage>,
+        #[from(stream_messages)]
+        #[with(0)]
+        mut double_fin: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let mut fin = fin.next().unwrap();
+        fin.message_id = u64::MAX;
+        stream_sender.send(fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+
+        let double_fin = double_fin.next().unwrap();
+        stream_sender.send(double_fin).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::DoubleFin(f1, f2)))) => {
+                assert_eq!(f1, 0);
+                assert_eq!(f2, u64::MAX);
+            }
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_double_send_1(
+        #[with(2)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+        let _fin = stream_messages_rev.next().unwrap();
+
+        let first = stream_messages_rev.next().unwrap();
+        stream_sender.send(first).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Pending);
+
+        let mut double_send = stream_messages_rev.next().unwrap();
+        double_send.message_id = 1;
+
+        stream_sender.send(double_send).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::DoubleSend(id)))) => {
+                assert_eq!(id, 1);
+            }
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_double_send_2(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let first = stream_messages.next().unwrap();
+        let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
+        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+
+        stream_sender.send(first).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
+            assert_eq!(p, proposal);
+        });
+
+        let mut double_send = stream_messages.next().unwrap();
+        double_send.message_id = 0;
+
+        stream_sender.send(double_send).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::DoubleSend(id)))) => {
+                assert_eq!(id, 0);
+            }
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_decode_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let mut decode_error = stream_messages.next().unwrap();
+        let Some(model::stream_message::Message::Content(ref mut bytes)) = decode_error.message else { unreachable!() };
+        bytes.push(1);
+
+        stream_sender.send(decode_error).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::DecodeError(_))))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn ordered_stream_model_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let (mut stream_sender, stream_receiver) =
+            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+
+        let mut fut = tokio_test::task::spawn(stream_receiver);
+
+        let mut model_error = stream_messages.next().unwrap();
+        model_error.message = None;
+
+        stream_sender.send(model_error).await.expect("Failed to send stream message");
+        assert_matches::assert_matches!(
+            fut.poll_next(),
+            std::task::Poll::Ready(Some(Err(StreamReceiverError::ModelError(_))))
+        );
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
+    }
 }
 
 // #[cfg(test)]
