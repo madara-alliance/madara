@@ -1,10 +1,9 @@
 [workspace]
 members = [
-  # madara
   "crates/madara/client/db",
   "crates/madara/client/exec",
   "crates/madara/client/sync",
-  "crates/madara/client/eth",
+  "crates/madara/client/settlement_client",
   "crates/madara/client/rpc",
   "crates/madara/client/gateway/client",
   "crates/madara/client/gateway/server",
@@ -32,11 +31,10 @@ members = [
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
-  # madara
   "crates/madara/client/db",
   "crates/madara/client/exec",
   "crates/madara/client/sync",
-  "crates/madara/client/eth",
+  "crates/madara/client/settlement_client",
   "crates/madara/client/gateway/client",
   "crates/madara/client/gateway/server",
   "crates/madara/client/rpc",
@@ -132,7 +130,7 @@ mc-rpc = { path = "crates/madara/client/rpc" }
 mc-gateway-client = { path = "crates/madara/client/gateway/client" }
 mc-gateway-server = { path = "crates/madara/client/gateway/server" }
 mc-sync = { path = "crates/madara/client/sync" }
-mc-eth = { path = "crates/madara/client/eth" }
+mc-settlement-client = { path = "crates/madara/client/settlement_client" }
 mc-mempool = { path = "crates/madara/client/mempool" }
 mc-block-production = { path = "crates/madara/client/block_production" }
 mc-block-import = { path = "crates/madara/client/block_import" }
@@ -143,6 +141,8 @@ m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
+starknet-accounts = "0.11.0"
+starknet-contract = "0.11.0"
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"

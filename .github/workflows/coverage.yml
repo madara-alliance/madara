@@ -39,6 +39,16 @@ jobs:
         with:
           version: nightly
 
+      - name: Restore Madara binary
+        uses: actions/cache@v3
+        id: cache-madara
+        with:
+          path: test-artifacts/madara
+          key: ${{ runner.os }}-madara-bin-
+          restore-keys: |
+            ${{ runner.os }}-madara-bin-
+          fail-on-cache-miss: true
+
       - name: Build and run tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}

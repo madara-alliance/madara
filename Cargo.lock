@@ -5383,11 +5383,11 @@ dependencies = [
  "mc-block-production",
  "mc-db",
  "mc-devnet",
- "mc-eth",
  "mc-gateway-client",
  "mc-gateway-server",
  "mc-mempool",
  "mc-rpc",
+ "mc-settlement-client",
  "mc-sync",
  "mc-telemetry",
  "mp-block",
@@ -5406,6 +5406,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "starknet-core",
+ "starknet-providers",
  "starknet_api",
  "thiserror 2.0.3",
  "tokio",
@@ -5650,50 +5652,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-eth"
-version = "0.7.0"
-dependencies = [
- "alloy",
- "anyhow",
- "bigdecimal",
- "bitvec",
- "dotenv",
- "futures",
- "httpmock",
- "lazy_static",
- "mc-analytics",
- "mc-db",
- "mc-mempool",
- "mp-chain-config",
- "mp-convert",
- "mp-transactions",
- "mp-utils",
- "once_cell",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "regex",
- "rstest 0.18.2",
- "serde",
- "serde_json",
- "starknet-types-core",
- "starknet_api",
- "tempfile",
- "thiserror 2.0.3",
- "time",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "tracing-test",
- "url",
-]
-
-[[package]]
 name = "mc-exec"
 version = "0.7.0"
 dependencies = [
@@ -5862,6 +5820,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-settlement-client"
+version = "0.7.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "assert_matches",
+ "async-trait",
+ "bigdecimal",
+ "bitvec",
+ "dotenv",
+ "futures",
+ "httpmock",
+ "lazy_static",
+ "m-cairo-test-contracts",
+ "mc-analytics",
+ "mc-db",
+ "mc-mempool",
+ "mockall",
+ "mp-chain-config",
+ "mp-convert",
+ "mp-transactions",
+ "mp-utils",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "regex",
+ "reqwest 0.12.8",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-accounts",
+ "starknet-contract",
+ "starknet-core",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-providers",
+ "starknet-signers",
+ "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
+ "starknet_api",
+ "tempfile",
+ "thiserror 2.0.3",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "tracing-test",
+ "url",
+]
+
+[[package]]
 name = "mc-sync"
 version = "0.7.0"
 dependencies = [
@@ -5971,9 +5983,9 @@ dependencies = [
 
 [[package]]
 name = "mockall"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4c28b3fb6d753d28c20e826cd46ee611fda1cf3cde03a443a974043247c065a"
+checksum = "39a6bfcc6c8c7eed5ee98b9c3e33adc726054389233e201c95dab2d41a3839d2"
 dependencies = [
  "cfg-if",
  "downcast",
@@ -5985,9 +5997,9 @@ dependencies = [
 
 [[package]]
 name = "mockall_derive"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "341014e7f530314e9a1fdbc7400b244efea7122662c96bfa248c31da5bfb2020"
+checksum = "25ca3004c2efe9011bd4e461bd8256445052b9615405b4f7ea43fc8ca5c20898"
 dependencies = [
  "cfg-if",
  "proc-macro2",

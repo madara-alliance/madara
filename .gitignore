@@ -65,3 +65,6 @@ tmp/
 # Running madara with make and docker compose
 .secrets
 image.tar.gz
+
+# madara test artifacts for testing l2 clients for appchains
+test-artifacts/madara
