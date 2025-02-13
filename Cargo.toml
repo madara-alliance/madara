@@ -298,6 +298,7 @@ paste = "1.0.15"
 # Setup
 clap = { version = "4.4", features = ["derive", "env"] }
 dotenv = "0.15.0"
+figment = "0.10.19"
 
 # Misc
 flate2 = "1.0"
