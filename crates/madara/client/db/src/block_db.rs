@@ -8,11 +8,11 @@ use mp_block::{
     BlockId, BlockTag, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
     MadaraMaybePendingBlockInfo, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments,
 };
+use mp_rpc::EmittedEvent;
 use mp_state_update::StateDiff;
 use rocksdb::WriteOptions;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::EmittedEvent;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -431,7 +431,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
+    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
         self.sender_event.subscribe(from_address)
     }
 

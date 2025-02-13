@@ -3,12 +3,11 @@ use crate::{errors::StarknetRpcApiError, utils::display_internal_server_error};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_mempool::Mempool;
 use mc_mempool::MempoolProvider;
-use mp_transactions::BroadcastedDeclareTransactionV0;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::AddInvokeTransactionResult;
-use starknet_types_rpc::{
+use mp_rpc::AddInvokeTransactionResult;
+use mp_rpc::{
     BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
+use mp_transactions::BroadcastedDeclareTransactionV0;
 use std::sync::Arc;
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.
@@ -57,25 +56,22 @@ impl AddTransactionProvider for MempoolAddTxProvider {
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    ) -> RpcResult<ClassAndTxnHash> {
         Ok(self.mempool.tx_accept_declare_v0(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
     }
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTxn<Felt>,
-    ) -> RpcResult<ClassAndTxnHash<Felt>> {
+    async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
         Ok(self.mempool.tx_accept_declare(declare_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_deploy_account_transaction(
         &self,
-        deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
-    ) -> RpcResult<ContractAndTxnHash<Felt>> {
+        deploy_account_transaction: BroadcastedDeployAccountTxn,
+    ) -> RpcResult<ContractAndTxnHash> {
         Ok(self.mempool.tx_accept_deploy_account(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
     }
     async fn add_invoke_transaction(
         &self,
-        invoke_transaction: BroadcastedInvokeTxn<Felt>,
-    ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
+        invoke_transaction: BroadcastedInvokeTxn,
+    ) -> RpcResult<AddInvokeTransactionResult> {
         Ok(self.mempool.tx_accept_invoke(invoke_transaction).map_err(StarknetRpcApiError::from)?)
     }
 }

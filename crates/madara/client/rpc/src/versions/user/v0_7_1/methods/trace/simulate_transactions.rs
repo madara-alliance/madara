@@ -4,17 +4,16 @@ use crate::utils::ResultExt;
 use crate::Starknet;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
+use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::BroadcastedTransactionExt;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
 use std::sync::Arc;
 
 pub async fn simulate_transactions(
     starknet: &Starknet,
     block_id: BlockId,
-    transactions: Vec<BroadcastedTxn<Felt>>,
+    transactions: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlag>,
-) -> StarknetRpcResult<Vec<SimulateTransactionsResult<Felt>>> {
+) -> StarknetRpcResult<Vec<SimulateTransactionsResult>> {
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 

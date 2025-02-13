@@ -1,6 +1,6 @@
 use mp_block::MadaraMaybePendingBlockInfo;
+use mp_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -32,7 +32,7 @@ use crate::Starknet;
 pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
-) -> StarknetRpcResult<TxnReceiptWithBlockInfo<Felt>> {
+) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
@@ -60,7 +60,7 @@ pub fn get_transaction_receipt(
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.header.block_number), Some(block.block_hash)),
     };
 
-    Ok(TxnReceiptWithBlockInfo::<Felt> { transaction_receipt, block_hash, block_number })
+    Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number })
 }
 
 #[cfg(test)]
@@ -75,7 +75,7 @@ mod tests {
             sample_chain_for_block_getters;
 
         // Block 0
-        let res = TxnReceiptWithBlockInfo::<Felt> {
+        let res = TxnReceiptWithBlockInfo {
             transaction_receipt: expected_receipts[0].clone(),
             block_hash: Some(block_hashes[0]),
             block_number: Some(0),
@@ -85,13 +85,13 @@ mod tests {
         // Block 1
 
         // Block 2
-        let res = TxnReceiptWithBlockInfo::<Felt> {
+        let res = TxnReceiptWithBlockInfo {
             transaction_receipt: expected_receipts[1].clone(),
             block_hash: Some(block_hashes[2]),
             block_number: Some(2),
         };
         assert_eq!(get_transaction_receipt(&rpc, tx_hashes[1]).unwrap(), res);
-        let res = TxnReceiptWithBlockInfo::<Felt> {
+        let res = TxnReceiptWithBlockInfo {
             transaction_receipt: expected_receipts[2].clone(),
             block_hash: Some(block_hashes[2]),
             block_number: Some(2),
@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(get_transaction_receipt(&rpc, tx_hashes[2]).unwrap(), res);
 
         // Pending
-        let res = TxnReceiptWithBlockInfo::<Felt> {
+        let res = TxnReceiptWithBlockInfo {
             transaction_receipt: expected_receipts[3].clone(),
             block_hash: None,
             block_number: None,

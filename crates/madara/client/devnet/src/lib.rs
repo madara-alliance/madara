@@ -195,15 +195,15 @@ mod tests {
     use mp_class::{ClassInfo, FlattenedSierraClass};
 
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_transactions::compute_hash::calculate_contract_address;
-    use mp_transactions::BroadcastedTransactionExt;
-    use rstest::{fixture, rstest};
-    use starknet_core::types::contract::SierraClass;
-    use starknet_types_rpc::{
+    use mp_rpc::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
+    use mp_transactions::compute_hash::calculate_contract_address;
+    use mp_transactions::BroadcastedTransactionExt;
+    use rstest::{fixture, rstest};
+    use starknet_core::types::contract::SierraClass;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -217,9 +217,9 @@ mod tests {
     impl DevnetForTesting {
         pub fn sign_and_add_invoke_tx(
             &self,
-            mut tx: BroadcastedInvokeTxn<Felt>,
+            mut tx: BroadcastedInvokeTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<AddInvokeTransactionResult<Felt>, mc_mempool::MempoolError> {
+        ) -> Result<AddInvokeTransactionResult, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -243,9 +243,9 @@ mod tests {
 
         pub fn sign_and_add_declare_tx(
             &self,
-            mut tx: BroadcastedDeclareTxn<Felt>,
+            mut tx: BroadcastedDeclareTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ClassAndTxnHash<Felt>, mc_mempool::MempoolError> {
+        ) -> Result<ClassAndTxnHash, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -267,9 +267,9 @@ mod tests {
 
         pub fn sign_and_add_deploy_account_tx(
             &self,
-            mut tx: BroadcastedDeployAccountTxn<Felt>,
+            mut tx: BroadcastedDeployAccountTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ContractAndTxnHash<Felt>, mc_mempool::MempoolError> {
+        ) -> Result<ContractAndTxnHash, mc_mempool::MempoolError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -363,7 +363,7 @@ mod tests {
         let compiled_contract_class_hash =
             Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
 
-        let declare_txn: BroadcastedDeclareTxn<Felt> = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
+        let declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: sender_address.address,
             compiled_class_hash: compiled_contract_class_hash,
             signature: vec![],

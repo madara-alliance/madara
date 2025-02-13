@@ -4,8 +4,8 @@ use mp_block::BlockId;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
-pub(crate) type NewHead = starknet_types_rpc::BlockHeader<Felt>;
-pub(crate) type EmittedEvent = starknet_types_rpc::EmittedEvent<Felt>;
+pub(crate) type NewHead = mp_rpc::BlockHeader;
+pub(crate) type EmittedEvent = mp_rpc::EmittedEvent;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractStorageKeysItem {

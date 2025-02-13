@@ -11,9 +11,9 @@ use mp_class::{
     class_hash, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
+use mp_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
 use std::sync::Arc;
 
 impl TransactionWithHash {
@@ -72,7 +72,7 @@ pub trait BroadcastedTransactionExt {
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
 }
 
-impl BroadcastedTransactionExt for BroadcastedTxn<Felt> {
+impl BroadcastedTransactionExt for BroadcastedTxn {
     fn into_blockifier(
         self,
         chain_id: Felt,

@@ -1,6 +1,5 @@
 use mp_block::{BlockId, BlockTag};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{SyncStatus, SyncingStatus};
+use mp_rpc::{SyncStatus, SyncingStatus};
 
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
@@ -16,7 +15,7 @@ use crate::Starknet;
 ///
 /// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
-pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus<Felt>> {
+pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     // obtain best seen (highest) block number
     let Some(current_block_info) = starknet
         .backend
