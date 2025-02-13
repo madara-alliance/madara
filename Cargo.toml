@@ -236,6 +236,7 @@ futures-bounded = "0.2.1"
 # Async
 tokio = { version = "1.34", features = ["signal", "rt"] }
 tokio-util = "0.7.12"
+tokio-test = "0.4.4"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
