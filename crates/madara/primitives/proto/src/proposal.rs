@@ -91,6 +91,16 @@ where
     _phantom: std::marker::PhantomData<StreamId>,
 }
 
+impl std::fmt::Debug for OrderedStreamSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.sender.is_closed() {
+            f.debug_tuple("OrderedStreamSender").field(&"open").finish()
+        } else {
+            f.debug_tuple("OrderedStreamSender").field(&"closed").finish()
+        }
+    }
+}
+
 impl<Message, StreamId> std::fmt::Debug for OrderedStreamReceiver<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
@@ -292,7 +302,7 @@ where
         if !force {
             Self::check_stream_id(&stream_message.stream_id, stream_id)?;
             Self::check_message_id(stream_message.message_id, self.id_low, self.fin)?;
-            Self::check_limit(message_id, last_id, self.fin, self.lag_cap)?;
+            Self::check_lag_cap(message_id, last_id, self.fin, self.lag_cap)?;
         }
 
         match model_field!(stream_message => message) {
@@ -328,7 +338,7 @@ where
         Ok(())
     }
 
-    fn check_limit(
+    fn check_lag_cap(
         message_id: u64,
         last_id: Option<u64>,
         fin: Option<u64>,
@@ -399,19 +409,16 @@ where
 }
 
 #[cfg(test)]
-mod test {
-    use futures::{Stream, StreamExt};
-    use prost::Message;
+mod fixtures {
+
     use starknet_core::types::Felt;
 
-    use crate::{
-        model::{self},
-        proposal::{ConsensusStreamBuilder, StreamReceiverError},
-    };
+    use crate::model::{self};
 
     const STREAM_LEN_DEFAULT: u32 = 10;
 
-    fn model_encode<M>(proposal_part: M) -> Vec<u8>
+    #[cfg(test)]
+    pub(crate) fn model_encode<M>(proposal_part: M) -> Vec<u8>
     where
         M: prost::Message + Default,
     {
@@ -420,9 +427,8 @@ mod test {
 
         buffer
     }
-
     #[rstest::fixture]
-    fn proposal_part(#[default(0)] seed: u32) -> model::ProposalPart {
+    pub(crate) fn proposal_part(#[default(0)] seed: u32) -> model::ProposalPart {
         model::ProposalPart {
             messages: Some(model::proposal_part::Messages::Init(model::ProposalInit {
                 height: seed as u64,
@@ -434,7 +440,7 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn stream_proposal_part(#[default(1)] len: u32) -> impl Iterator<Item = model::stream_message::Message> {
+    pub(crate) fn stream_proposal_part(#[default(1)] len: u32) -> impl Iterator<Item = model::stream_message::Message> {
         (0..len)
             .map(proposal_part)
             .map(model_encode)
@@ -443,13 +449,13 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn stream_id(#[default(0)] seed: u32) -> Vec<u8> {
+    pub(crate) fn stream_id(#[default(0)] seed: u32) -> Vec<u8> {
         let stream_id = model::ConsensusStreamId { height: seed as u64, round: seed + 1 };
         model_encode(stream_id)
     }
 
     #[rstest::fixture]
-    fn stream_messages(
+    pub(crate) fn stream_messages(
         #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
         #[with(_stream_len)] stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
         #[with(1)] stream_id: Vec<u8>,
@@ -462,12 +468,23 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn stream_messages_rev(
+    pub(crate) fn stream_messages_rev(
         #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
         #[with(_stream_len)] stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) -> impl Iterator<Item = model::StreamMessage> {
         stream_messages.collect::<Vec<_>>().into_iter().rev()
     }
+}
+
+#[cfg(test)]
+mod test {
+    use futures::{Stream, StreamExt};
+    use prost::Message;
+
+    use crate::{
+        model::{self},
+        proposal::{fixtures::*, ConsensusStreamBuilder, StreamReceiverError},
+    };
 
     /// Receives a proposal part in a single, ordered stream. All should work as
     /// expected
@@ -936,495 +953,235 @@ mod test {
     }
 }
 
-// #[cfg(test)]
-// mod proptest {
-//     use std::collections::VecDeque;
-//
-//     use proptest::prelude::*;
-//     use proptest::prop_compose;
-//     use proptest_state_machine::ReferenceStateMachine;
-//     use proptest_state_machine::StateMachineTest;
-//     use prost::Message;
-//     use starknet_core::types::Felt;
-//
-//     use crate::model;
-//
-//     use super::AccumulateError;
-//     use super::AccumulatorStateMachine;
-//
-//     type SystemUnderTest = AccumulatorStateMachine<model::ProposalPart>;
-//
-//     proptest_state_machine::prop_state_machine! {
-//         #![proptest_config(proptest::prelude::ProptestConfig {
-//             // Enable verbose mode to make the state machine test print the
-//             // transitions for each case.
-//             verbose: 1,
-//             // The number of tests which need to be valid for this to pass.
-//             cases: 512,
-//             // Max duration (in milliseconds) for each generated case.
-//             timeout: 1_000,
-//             ..Default::default()
-//         })]
-//
-//         #[test]
-//         fn ordered_stream_proptest(sequential 1..256 => SystemUnderTest);
-//     }
-//
-//     fn stream_id() -> Vec<u8> {
-//         let stream_id = model::ConsensusStreamId { height: 1, round: 1 };
-//         let mut buffer = Vec::new();
-//         stream_id.encode(&mut buffer).expect("Failed to encode stream id");
-//
-//         buffer
-//     }
-//
-//     prop_compose! {
-//         fn proposal_part()(len in 10..100usize) -> model::ProposalPart {
-//             let tx = model::ConsensusTransaction {
-//                 transaction_hash: Some(model::Hash(Felt::ONE)),
-//                 txn: Some(model::consensus_transaction::Txn::L1Handler(model::L1HandlerV0 {
-//                     nonce: Some(model::Felt252(Felt::ZERO)),
-//                     address: Some(model::Address(Felt::ONE)),
-//                     entry_point_selector: Some(model::Felt252(Felt::TWO)),
-//                     calldata: vec![model::Felt252(Felt::THREE); 12]
-//                 }))
-//             };
-//
-//             model::ProposalPart {
-//                 messages: Some(model::proposal_part::Messages::Transactions(model::TransactionBatch {
-//                     transactions: vec![tx; len]
-//                 }))
-//             }
-//         }
-//     }
-//
-//     prop_compose! {
-//         fn stream_messages(stream_id: Vec<u8>, proposal_part: model::ProposalPart)(
-//             split_into in 1..256usize
-//         ) -> VecDeque<model::StreamMessage> {
-//             let mut buffer = Vec::new();
-//             proposal_part.encode(&mut buffer).expect("Failed to encode proposal part");
-//
-//             buffer
-//                 .chunks(buffer.len() / split_into)
-//                 .map(Vec::from)
-//                 .map(model::stream_message::Message::Content)
-//                 .chain(std::iter::once(model::stream_message::Message::Fin(model::Fin {})))
-//                 .enumerate()
-//                 .map(|(i, message)| model::StreamMessage {
-//                     message: Some(message),
-//                     stream_id: stream_id.clone(),
-//                     message_id: i as u64
-//                 })
-//                 .collect()
-//         }
-//     }
-//
-//     prop_compose! {
-//         fn reference_state_machine()(
-//             proposal_part in proposal_part()
-//         )(
-//             stream_messages in stream_messages(stream_id(), proposal_part.clone()),
-//             proposal_part in Just(proposal_part),
-//             delta in 0..10_000usize
-//         ) -> OrderedStreamAccumulatorReference {
-//             let size = proposal_part.encoded_len();
-//             let limit = if delta > 5_000 {
-//                 size.saturating_sub(delta)
-//             } else {
-//                 size.saturating_add(delta)
-//             };
-//
-//             OrderedStreamAccumulatorReference {
-//                 proposal_part,
-//                 stream_messages,
-//                 accumulator: AccumulatorStateMachine::new_with_stream_id_and_limits(
-//                     stream_id().as_slice(),
-//                     limit,
-//                 ),
-//                 error: ProptestError::None
-//             }
-//         }
-//     }
-//
-//     #[derive(Clone)]
-//     pub enum ProptestTransition {
-//         Accumulate(model::StreamMessage),
-//         ActMalicious(ProptestMaliciousTransition),
-//         Consume,
-//     }
-//
-//     #[derive(Clone)]
-//     pub enum ProptestMaliciousTransition {
-//         InvalidStreamId(model::StreamMessage),
-//         InsertGarbageData(model::StreamMessage),
-//         DoubleFin(model::StreamMessage),
-//         InvalidModel(model::StreamMessage),
-//     }
-//
-//     impl std::fmt::Debug for ProptestTransition {
-//         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//             match self {
-//                 Self::Accumulate(stream_message) => match stream_message.message.as_ref().unwrap() {
-//                     model::stream_message::Message::Content(..) => f.debug_tuple("Accumulate (Content)").finish(),
-//                     model::stream_message::Message::Fin(..) => f.debug_tuple("Accumulate (Fin)").finish(),
-//                 },
-//                 Self::ActMalicious(transition) => f.debug_tuple("ActMalicious").field(&transition).finish(),
-//                 Self::Consume => f.debug_tuple("Collect").finish(),
-//             }
-//         }
-//     }
-//
-//     impl std::fmt::Debug for ProptestMaliciousTransition {
-//         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//             match self {
-//                 Self::InvalidStreamId(..) => f.debug_tuple("InvalidStreamId").finish(),
-//                 Self::InsertGarbageData(..) => f.debug_tuple("InsertGarbageData").finish(),
-//                 Self::DoubleFin(..) => f.debug_tuple("DoubleFin").finish(),
-//                 Self::InvalidModel(..) => f.debug_tuple("InvalidModel").finish(),
-//             }
-//         }
-//     }
-//
-//     #[derive(Clone)]
-//     pub struct OrderedStreamAccumulatorReference {
-//         proposal_part: model::ProposalPart,
-//         stream_messages: VecDeque<model::StreamMessage>,
-//         accumulator: AccumulatorStateMachine<model::ProposalPart>,
-//         error: ProptestError,
-//     }
-//
-//     #[derive(Clone, Debug, PartialEq, Eq)]
-//     #[repr(u8)]
-//     pub enum ProptestError {
-//         None = 0,
-//         Decode = 1,
-//         DoubleFin = 2,
-//     }
-//
-//     impl ProptestError {
-//         fn priority(&self) -> u8 {
-//             self.clone() as u8
-//         }
-//     }
-//
-//     impl std::fmt::Debug for OrderedStreamAccumulatorReference {
-//         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//             let stream_messages = self
-//                 .stream_messages
-//                 .iter()
-//                 .map(|m| {
-//                     m.message.clone().map(|m| match m {
-//                         model::stream_message::Message::Content(..) => "Content(...)",
-//                         model::stream_message::Message::Fin(..) => "Fin",
-//                     })
-//                 })
-//                 .take(5)
-//                 .collect::<Vec<_>>();
-//
-//             let stream_messages = if stream_messages.len() < self.stream_messages.len() {
-//                 format!("{stream_messages:?}... ({} items)", self.stream_messages.len())
-//             } else {
-//                 format!("{stream_messages:?} ({} items)", self.stream_messages.len())
-//             };
-//
-//             f.debug_struct("OrderedStreamAccumulatorStateMachine")
-//                 .field("stream_messages", &stream_messages)
-//                 .field("error", &self.error)
-//                 .finish()
-//         }
-//     }
-//
-//     impl ReferenceStateMachine for OrderedStreamAccumulatorReference {
-//         type State = OrderedStreamAccumulatorReference;
-//         type Transition = ProptestTransition;
-//
-//         fn init_state() -> BoxedStrategy<Self::State> {
-//             reference_state_machine().boxed()
-//         }
-//
-//         fn transitions(state: &Self::State) -> BoxedStrategy<Self::Transition> {
-//             if let Some(stream_message) = state.stream_messages.front() {
-//                 if !state.accumulator.is_empty() {
-//                     Just(ProptestTransition::Accumulate(stream_message.clone())).boxed()
-//                 } else {
-//                     prop_oneof![
-//                         4 => Just(ProptestTransition::Accumulate(stream_message.clone())),
-//                         1 => Self::act_malicious(state)
-//                     ]
-//                     .boxed()
-//                 }
-//             } else {
-//                 prop_oneof! [
-//                     3 => Just(ProptestTransition::Consume),
-//                     1 => Self::act_malicious(state)
-//                 ]
-//                 .boxed()
-//             }
-//         }
-//
-//         fn apply(mut state: Self::State, transition: &Self::Transition) -> Self::State {
-//             match transition {
-//                 ProptestTransition::Accumulate(stream_message) => {
-//                     state.stream_messages.pop_front();
-//                     state.accumulator =
-//                         state.accumulator.clone().accumulate(stream_message.clone()).unwrap_or(state.accumulator);
-//                 }
-//                 ProptestTransition::ActMalicious(transition) => match transition {
-//                     ProptestMaliciousTransition::InsertGarbageData(stream_message) => {
-//                         if state.error.priority() < ProptestError::Decode.priority() && !state.accumulator.is_done() {
-//                             state.error = ProptestError::Decode;
-//                         }
-//
-//                         state.accumulator = state
-//                             .accumulator
-//                             .clone()
-//                             .accumulate(stream_message.clone(), true)
-//                             .unwrap_or(state.accumulator);
-//                     }
-//                     ProptestMaliciousTransition::DoubleFin(stream_message) => {
-//                         if state.error.priority() < ProptestError::DoubleFin.priority() && !state.accumulator.has_fin()
-//                         {
-//                             state.error = ProptestError::DoubleFin;
-//                         }
-//                         state.accumulator =
-//                             state.accumulator.clone().accumulate(stream_message.clone()).unwrap_or(state.accumulator);
-//                     }
-//                     _ => (),
-//                 },
-//                 _ => (),
-//             }
-//
-//             state
-//         }
-//     }
-//
-//     impl OrderedStreamAccumulatorReference {
-//         fn act_malicious(state: &Self) -> impl Strategy<Value = ProptestTransition> {
-//             let invalid_stream_id = || {
-//                 let stream_id = state.accumulator.stream_id().unwrap();
-//                 let mut stream_id = model::ConsensusStreamId::decode(stream_id).unwrap();
-//                 stream_id.height += 1;
-//                 stream_id.round += 1;
-//
-//                 let mut stream_message = state.stream_messages.front().cloned().unwrap_or_default();
-//                 let mut buffer = Vec::new();
-//                 stream_id.encode(&mut buffer).unwrap();
-//                 stream_message.stream_id = buffer;
-//
-//                 ProptestMaliciousTransition::InvalidStreamId(stream_message)
-//             };
-//
-//             let insert_garbage_data = || {
-//                 let content = state
-//                     .stream_messages
-//                     .front()
-//                     .cloned()
-//                     .unwrap_or_default()
-//                     .message
-//                     .unwrap_or(model::stream_message::Message::Content(vec![]));
-//
-//                 let content = if let model::stream_message::Message::Content(mut content) = content {
-//                     content.insert(0, 42);
-//                     content
-//                 } else {
-//                     vec![42]
-//                 };
-//
-//                 let stream_message = model::StreamMessage {
-//                     message: Some(model::stream_message::Message::Content(content)),
-//                     stream_id: state.accumulator.stream_id().unwrap().to_vec(),
-//                     message_id: state.accumulator.len().unwrap_or(0) as u64,
-//                 };
-//
-//                 ProptestMaliciousTransition::InsertGarbageData(stream_message)
-//             };
-//
-//             let double_fin = || {
-//                 let stream_message = model::StreamMessage {
-//                     message: Some(model::stream_message::Message::Fin(model::Fin {})),
-//                     stream_id: state.accumulator.stream_id().unwrap().to_vec(),
-//                     message_id: u64::MAX - state.accumulator.len().unwrap_or(0) as u64,
-//                 };
-//
-//                 ProptestMaliciousTransition::DoubleFin(stream_message)
-//             };
-//
-//             let invalid_model = || {
-//                 let stream_mesage = model::StreamMessage {
-//                     message: None,
-//                     stream_id: state.accumulator.stream_id().unwrap().to_vec(),
-//                     message_id: u64::MAX / 2 - state.accumulator.len().unwrap_or(0) as u64,
-//                 };
-//
-//                 ProptestMaliciousTransition::InvalidModel(stream_mesage)
-//             };
-//
-//             prop_oneof![
-//                 Just(ProptestTransition::ActMalicious(invalid_stream_id())),
-//                 Just(ProptestTransition::ActMalicious(insert_garbage_data())),
-//                 Just(ProptestTransition::ActMalicious(double_fin())),
-//                 Just(ProptestTransition::ActMalicious(invalid_model()))
-//             ]
-//         }
-//     }
-//
-//     impl StateMachineTest for AccumulatorStateMachine<model::ProposalPart> {
-//         type SystemUnderTest = Self;
-//         type Reference = OrderedStreamAccumulatorReference;
-//
-//         fn init_test(ref_state: &<Self::Reference as ReferenceStateMachine>::State) -> Self::SystemUnderTest {
-//             Self::new_with_limits(ref_state.accumulator.limits().unwrap().max)
-//         }
-//
-//         fn apply(
-//             mut state: Self::SystemUnderTest,
-//             ref_state: &<Self::Reference as ReferenceStateMachine>::State,
-//             transition: <Self::Reference as ReferenceStateMachine>::Transition,
-//         ) -> Self::SystemUnderTest {
-//             match transition {
-//                 ProptestTransition::Accumulate(stream_message) => {
-//                     let res = state.clone().accumulate(stream_message.clone());
-//
-//                     if state.is_done() {
-//                         assert_matches::assert_matches!(res, Ok(..));
-//                         return res.unwrap();
-//                     }
-//
-//                     match stream_message.message {
-//                         Some(model::stream_message::Message::Content(..)) => {
-//                             if !Self::check_limits(&res, stream_message.clone(), &state) {
-//                                 assert_matches::assert_matches!(
-//                                     res,
-//                                     Ok(..),
-//                                     "Accumulate error with valid bounds: {state:?}"
-//                                 );
-//                             }
-//                         }
-//                         Some(model::stream_message::Message::Fin(..)) => {
-//                             if ProptestError::None == ref_state.error {
-//                                 assert_matches::assert_matches!(
-//                                     res,
-//                                     Ok(..),
-//                                     "Accumulate error when none expected: {state:?}"
-//                                 )
-//                             }
-//                         }
-//                         _ => (),
-//                     }
-//
-//                     Self::check_last_part(&res, &stream_message, &state, ref_state);
-//
-//                     // We always set the stream id even in the case of an error.
-//                     // This insures that subsequent invalid streams ids are seen
-//                     // as such.
-//                     if let AccumulatorStateMachine::Accumulate(mut inner) = state {
-//                         inner.stream_id = Some(stream_message.stream_id);
-//                         state = AccumulatorStateMachine::Accumulate(inner);
-//                     }
-//
-//                     res.unwrap_or(state)
-//                 }
-//                 ProptestTransition::ActMalicious(transition) => match transition {
-//                     ProptestMaliciousTransition::InvalidStreamId(stream_message) => {
-//                         let res = state.clone().accumulate(stream_message.clone());
-//                         assert_matches::assert_matches!(res, Err(AccumulateError::InvalidStreamId(..)));
-//                         state
-//                     }
-//                     ProptestMaliciousTransition::InsertGarbageData(stream_message) => {
-//                         let res = state.clone().accumulate(stream_message.clone(), true);
-//
-//                         if !Self::check_last_part(&res, &stream_message, &state, ref_state) {
-//                             assert_matches::assert_matches!(res, Ok(..));
-//                         }
-//
-//                         res.unwrap_or(state)
-//                     }
-//                     ProptestMaliciousTransition::DoubleFin(stream_message) => {
-//                         let res = state.clone().accumulate(stream_message.clone(), true);
-//
-//                         if state.is_done() {
-//                             assert_matches::assert_matches!(res, Ok(..));
-//                             return res.unwrap();
-//                         } else if state.has_fin() {
-//                             assert_matches::assert_matches!(res, Err(AccumulateError::DoubleFin(..)));
-//                         }
-//
-//                         res.unwrap_or(state)
-//                     }
-//                     ProptestMaliciousTransition::InvalidModel(stream_message) => {
-//                         let res = state.clone().accumulate(stream_message.clone(), true);
-//
-//                         if state.is_done() {
-//                             assert_matches::assert_matches!(res, Ok(..));
-//                             return res.unwrap();
-//                         }
-//
-//                         assert_matches::assert_matches!(res, Err(AccumulateError::ModelError(..)));
-//                         state
-//                     }
-//                 },
-//                 ProptestTransition::Consume => {
-//                     let res = state.clone().consume();
-//                     if state.is_done() && ref_state.error == ProptestError::None {
-//                         assert!(res.is_some(), "Complete stream returned None: {state:?}");
-//                         assert_eq!(
-//                             res,
-//                             Some(ref_state.proposal_part.clone()),
-//                             "Collected stream does not match: {state:?}"
-//                         );
-//                     } else {
-//                         assert!(res.is_none(), "Incomplete stream returned Some: {state:?}")
-//                     }
-//                     state
-//                 }
-//             }
-//         }
-//     }
-//
-//     impl AccumulatorStateMachine<model::ProposalPart> {
-//         fn check_limits(
-//             res: &Result<Self, AccumulateError>,
-//             stream_message: model::StreamMessage,
-//             state: &Self,
-//         ) -> bool {
-//             if let AccumulatorStateMachine::Accumulate(inner) = &state {
-//                 if let model::stream_message::Message::Content(bytes) = stream_message.message.clone().unwrap() {
-//                     if inner.limits.clone().update(bytes.len()).is_err() {
-//                         assert_matches::assert_matches!(res, Err(AccumulateError::MaxBounds(..)));
-//                         return true;
-//                     }
-//                 }
-//             }
-//             false
-//         }
-//
-//         fn check_last_part(
-//             res: &Result<Self, AccumulateError>,
-//             stream_message: &model::StreamMessage,
-//             state: &Self,
-//             ref_state: &OrderedStreamAccumulatorReference,
-//         ) -> bool {
-//             if state.is_last_part(stream_message) {
-//                 match ref_state.error {
-//                     ProptestError::None => {
-//                         assert_matches::assert_matches!(
-//                             res,
-//                             Ok(AccumulatorStateMachine::Done { .. }),
-//                             "Accumulator is not Done after receiving Fin"
-//                         )
-//                     }
-//                     ProptestError::Decode => {
-//                         assert_matches::assert_matches!(res, Err(AccumulateError::DecodeError(..)))
-//                     }
-//                     ProptestError::DoubleFin => {
-//                         assert_matches::assert_matches!(res, Err(AccumulateError::DoubleFin(..)))
-//                     }
-//                 }
-//                 true
-//             } else {
-//                 false
-//             }
-//         }
-//     }
-// }
+#[cfg(test)]
+mod proptest {
+    use std::collections::BTreeMap;
+    use std::collections::VecDeque;
+
+    use proptest::prelude::*;
+    use proptest::prop_compose;
+    use proptest_state_machine::ReferenceStateMachine;
+    use proptest_state_machine::StateMachineTest;
+    use prost::Message;
+
+    use crate::{
+        model,
+        proposal::{fixtures, OrderedStreamReceiver},
+    };
+
+    use super::AccumulatorStateInner;
+    use super::AccumulatorStateMachine;
+    use super::ConsensusStreamBuilder;
+    use super::OrderedStreamSender;
+
+    struct SystemUnderTest {
+        stream_sender: OrderedStreamSender,
+        stream_receiver: OrderedStreamReceiver<model::ProposalPart, model::ConsensusStreamId>,
+        messages_processed: Vec<model::ProposalPart>,
+    }
+
+    proptest_state_machine::prop_state_machine! {
+        #![proptest_config(proptest::prelude::ProptestConfig {
+            // Enable verbose mode to make the state machine test print the
+            // transitions for each case.
+            verbose: 1,
+            // The number of tests which need to be valid for this to pass.
+            cases: 256,
+            // Max duration (in milliseconds) for each generated case.
+            timeout: 1_000,
+            ..Default::default()
+        })]
+
+        #[test]
+        fn ordered_stream_proptest(sequential 1..160 => SystemUnderTest);
+    }
+
+    prop_compose! {
+        fn stream_messages()(len in 1..128u32) -> VecDeque<model::StreamMessage> {
+            let proposals = fixtures::stream_proposal_part(len);
+            let stream_id = fixtures::stream_id(0);
+            let messages = fixtures::stream_messages(len, proposals, stream_id);
+
+            return messages.collect()
+        }
+    }
+
+    prop_compose! {
+        fn reference_state_machine()(
+            messages_to_send in stream_messages(),
+            // lag_cap in 0..256u64
+        ) -> OrderedStreamReference {
+            OrderedStreamReference {
+                messages_to_send,
+                messages_processed: Default::default(),
+                stream_id: fixtures::stream_id(0),
+                lag_cap: 1_000,
+                fin: None,
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct OrderedStreamReference {
+        messages_to_send: VecDeque<model::StreamMessage>,
+        messages_processed: BTreeMap<u64, model::StreamMessage>,
+        stream_id: Vec<u8>,
+        lag_cap: u64,
+        fin: Option<u64>,
+    }
+
+    #[derive(Clone)]
+    enum OrderedStreamTransition {
+        Send(model::StreamMessage),
+        Receive,
+    }
+
+    impl std::fmt::Debug for OrderedStreamReference {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let stream_id =
+                model::ConsensusStreamId::decode(self.stream_id.as_slice()).expect("Failed to decode stream id");
+
+            f.debug_struct("OrderedStreamReference")
+                .field("messsages_to_send", &format!("... ({})", self.messages_to_send.len()))
+                .field("messages_processed", &format!("... ({})", self.messages_processed.len()))
+                .field("stream_id", &stream_id)
+                .field("lag_cap", &self.lag_cap)
+                .field("fin", &self.fin)
+                .finish()
+        }
+    }
+
+    impl std::fmt::Debug for OrderedStreamTransition {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Send(ref stream_message) => match stream_message.message {
+                    Some(model::stream_message::Message::Content(_)) => {
+                        f.debug_tuple("Send").field(&"Content").finish()
+                    }
+                    Some(model::stream_message::Message::Fin(_)) => f.debug_tuple("Send").field(&"Fin").finish(),
+                    None => panic!("Stream message with None"),
+                },
+                Self::Receive => f.debug_tuple("Receive").finish(),
+            }
+        }
+    }
+
+    impl ReferenceStateMachine for OrderedStreamReference {
+        type State = Self;
+        type Transition = OrderedStreamTransition;
+
+        fn init_state() -> BoxedStrategy<Self::State> {
+            reference_state_machine().boxed()
+        }
+
+        fn transitions(state: &Self::State) -> BoxedStrategy<Self::Transition> {
+            if let Some(stream_message) = state.messages_to_send.front() {
+                prop_oneof![
+                    2 => Just(Self::Transition::Send(stream_message.clone())),
+                    1 => Just(Self::Transition::Receive),
+                ]
+                .boxed()
+            } else {
+                Just(Self::Transition::Receive).boxed()
+            }
+        }
+
+        fn apply(mut state: Self::State, transition: &Self::Transition) -> Self::State {
+            match transition {
+                Self::Transition::Send(stream_message) => {
+                    assert!(state
+                        .messages_processed
+                        .insert(stream_message.message_id, stream_message.clone())
+                        .is_none());
+                    assert!(state.messages_to_send.pop_front().is_some());
+
+                    if let model::stream_message::Message::Fin(_) = stream_message.message.clone().unwrap() {
+                        state.fin = Some(stream_message.message_id)
+                    };
+                }
+                Self::Transition::Receive => (),
+            }
+
+            state
+        }
+    }
+
+    impl OrderedStreamReference {
+        fn messages_ordered(&self) -> Vec<model::ProposalPart> {
+            self.messages_processed
+                .values()
+                .cloned()
+                .filter_map(|m| match m.message.unwrap() {
+                    model::stream_message::Message::Content(bytes) => {
+                        Some(model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part"))
+                    }
+                    model::stream_message::Message::Fin(_) => None,
+                })
+                .collect()
+        }
+
+        fn check_lag_cap(&self, message_id: u64) -> bool {
+            let last_id = self.messages_processed.last_key_value().map(|(k, _)| *k);
+            AccumulatorStateInner::<model::ProposalPart, model::ConsensusStreamId>::check_lag_cap(
+                message_id,
+                last_id,
+                self.fin,
+                self.lag_cap,
+            )
+            .is_ok()
+        }
+    }
+
+    impl StateMachineTest for SystemUnderTest {
+        type SystemUnderTest = Self;
+        type Reference = OrderedStreamReference;
+
+        fn init_test(ref_state: &<Self::Reference as ReferenceStateMachine>::State) -> Self::SystemUnderTest {
+            let (sx, rx) = ConsensusStreamBuilder::new()
+                .with_lag_cap(ref_state.lag_cap)
+                .with_channel_cap(1_000)
+                .with_stream_id(&ref_state.stream_id)
+                .build();
+
+            Self { stream_sender: sx, stream_receiver: rx, messages_processed: Default::default() }
+        }
+
+        fn apply(
+            mut state: Self::SystemUnderTest,
+            ref_state: &<Self::Reference as ReferenceStateMachine>::State,
+            transition: <Self::Reference as ReferenceStateMachine>::Transition,
+        ) -> Self::SystemUnderTest {
+            match transition {
+                OrderedStreamTransition::Send(stream_message) => {
+                    assert_matches::assert_matches!(
+                        tokio_test::task::spawn(state.stream_sender.send(stream_message.clone())).poll(),
+                        std::task::Poll::Ready(r) => {
+                            assert!(r.is_ok());
+                        }
+                    );
+                }
+                OrderedStreamTransition::Receive => {
+                    let mut fut = tokio_test::task::spawn(state.stream_receiver);
+                    while let std::task::Poll::Ready(r) = fut.poll_next() {
+                        match r {
+                            Some(Ok(proposal)) => state.messages_processed.push(proposal),
+                            Some(Err(e)) => panic!("{e}"),
+                            None => break,
+                        }
+                    }
+
+                    let next = fut.poll_next();
+                    state.stream_receiver = fut.into_inner();
+
+                    if let std::task::Poll::Ready(None) = next {
+                        assert_eq!(state.messages_processed, ref_state.messages_ordered());
+                        assert_matches::assert_matches!(state.stream_receiver.state, AccumulatorStateMachine::Done);
+                        assert!(state.stream_sender.sender.is_closed());
+                    }
+                }
+            }
+
+            state
+        }
+    }
+}
