@@ -1,6 +1,5 @@
 use std::{
     collections::{btree_map, BTreeMap},
-    sync::{Arc, Mutex},
     task::Poll,
 };
 
@@ -51,7 +50,6 @@ where
 
 pub struct OrderedStreamSender {
     sender: tokio::sync::mpsc::Sender<model::StreamMessage>,
-    waker: Arc<Mutex<Option<std::task::Waker>>>,
 }
 
 pub struct OrderedStreamReceiver<Message, StreamId>
@@ -61,7 +59,6 @@ where
 {
     receiver: tokio::sync::mpsc::Receiver<model::StreamMessage>,
     state: AccumulatorStateMachine<Message, StreamId>,
-    waker: Arc<Mutex<Option<std::task::Waker>>>,
 }
 
 #[derive(Debug, Default)]
@@ -186,11 +183,10 @@ where
     pub fn build(self) -> (OrderedStreamSender, OrderedStreamReceiver<Message, StreamId>) {
         let Self { lag_cap, channel_cap, stream_id, .. } = self;
         let (sx, rx) = tokio::sync::mpsc::channel(channel_cap);
-        let waker = Arc::new(Mutex::new(None));
         let state = AccumulatorStateMachine::new(lag_cap, stream_id);
 
-        let sender = OrderedStreamSender { sender: sx, waker: Arc::clone(&waker) };
-        let receiver = OrderedStreamReceiver { receiver: rx, state, waker };
+        let sender = OrderedStreamSender { sender: sx };
+        let receiver = OrderedStreamReceiver { receiver: rx, state };
 
         (sender, receiver)
     }
@@ -202,10 +198,6 @@ impl OrderedStreamSender {
         message: model::StreamMessage,
     ) -> Result<(), tokio::sync::mpsc::error::SendError<model::StreamMessage>> {
         self.sender.send(message).await?;
-
-        if let Some(waker) = self.waker.lock().expect("Poisoned lock").take() {
-            waker.wake();
-        }
 
         Ok(())
     }
@@ -243,7 +235,6 @@ where
                 self.state = AccumulatorStateMachine::Accumulate(inner);
 
                 let Some(message) = message else {
-                    let _ = self.waker.lock().expect("Poisoned lock").insert(cx.waker().clone());
                     return Poll::Pending;
                 };
 
