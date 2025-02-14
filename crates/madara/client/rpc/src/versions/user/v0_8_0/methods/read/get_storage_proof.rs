@@ -22,7 +22,8 @@ fn saturating_sum(iter: impl IntoIterator<Item = usize>) -> usize {
 fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
     let mut arr = [0u8; 32];
     let slice = &mut BitSlice::from_slice_mut(&mut arr)[5..];
-    slice[..path.len()].copy_from_bitslice(path);
+    let slice_len = slice.len();
+    slice[slice_len - path.len()..].copy_from_bitslice(path);
     Felt::from_bytes_be(&arr)
 }
 
@@ -150,6 +151,24 @@ pub fn get_storage_proof(
         bonsai_identifier::CLASS,
         class_hashes,
     )?;
+
+    let mut contract_root_hashes = std::collections::HashMap::new();
+    let contracts_storage_proofs = contracts_storage_keys
+        .into_iter()
+        .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
+            let identifier = contract_address.to_bytes_be();
+            let (root_hash, proof) = make_trie_proof(
+                block_n,
+                &mut starknet.backend.contract_storage_trie(),
+                StorageProofTrie::ContractStorage(contract_address),
+                &identifier,
+                storage_keys,
+            )?;
+            contract_root_hashes.insert(contract_address, root_hash);
+            Ok(proof)
+        })
+        .collect::<RpcResult<_>>()?;
+
     // contract leaves data
     let contract_leaves_data = contract_addresses
         .iter()
@@ -165,6 +184,9 @@ pub fn get_storage_proof(
                     .get_contract_class_hash_at(&DbBlockId::Number(block_n), contract_addr)
                     .or_internal_server_error("Getting contract class hash")?
                     .unwrap_or(Felt::ZERO),
+                storage_root: *contract_root_hashes
+                    .get(contract_addr)
+                    .unwrap_or(&Felt::ZERO),
             })
         })
         .collect::<RpcResult<_>>()?;
@@ -178,25 +200,30 @@ pub fn get_storage_proof(
 
     let contracts_proof = ContractsProof { nodes: contracts_proof_nodes, contract_leaves_data };
 
-    let contracts_storage_proofs = contracts_storage_keys
-        .into_iter()
-        .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
-            let identifier = contract_address.to_bytes_be();
-            let (_root_hash, proof) = make_trie_proof(
-                block_n,
-                &mut starknet.backend.contract_storage_trie(),
-                StorageProofTrie::ContractStorage(contract_address),
-                &identifier,
-                storage_keys,
-            )?;
-            Ok(proof)
-        })
-        .collect::<RpcResult<_>>()?;
-
     Ok(GetStorageProofResult {
         classes_proof,
         contracts_proof,
         contracts_storage_proofs,
         global_roots: GlobalRoots { contracts_tree_root, classes_tree_root, block_hash },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use bitvec::bits;
+
+    use super::*;
+
+    #[test]
+    fn test_path_to_felt() {
+        let path = bits![u8, Msb0; 0, 0];
+        assert_eq!(path.len(), 2);
+        let felt = path_to_felt(path);
+        assert_eq!(felt, Felt::ZERO);
+
+        let path = bits![u8, Msb0; 1];
+        assert_eq!(path.len(), 1);
+        let felt = path_to_felt(path);
+        assert_eq!(felt, Felt::ONE);
+    }
 }
