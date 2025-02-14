@@ -185,3 +185,58 @@ pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator
     bonsai_storage.commit(id).expect("Failed to commit to bonsai storage");
     bonsai_storage.root_hash(IDENTIFIER).expect("Failed to get root hash")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode};
+    use mp_convert::ToFelt;
+    use rstest::*;
+    use starknet_api::{core::ChainId, felt};
+
+    #[test]
+    fn test_compute_root() {
+        let values = vec![Felt::ONE, Felt::TWO, Felt::THREE];
+        let root = compute_merkle_root::<Poseidon>(values);
+
+        assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
+    }
+
+    fn dummy_header() -> PendingHeader {
+        PendingHeader {
+            parent_block_hash: Felt::ZERO,
+            sequencer_address: Felt::ZERO,
+            block_timestamp: BlockTimestamp(0),
+            protocol_version: StarknetVersion::V0_13_2,
+            l1_gas_price: GasPrices::default(),
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+        }
+    }
+
+    // TODO: need more tests here.
+    #[rstest]
+    #[case::success(
+        dummy_header(),
+        1,
+        felt!("0x123"),
+        ChainId::Sepolia,
+        false,
+        felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
+    )]
+    fn test_block_hash(
+        #[case] header: PendingHeader,
+        #[case] block_number: u64,
+        #[case] global_state_root: Felt,
+        #[case] chain_id: ChainId,
+        #[case] pre_v0_13_2_override: bool,
+        #[case] expected: Felt,
+    ) {
+        let ctx =
+            CommitmentComputationContext { protocol_version: header.protocol_version, chain_id: chain_id.to_felt() };
+        let commitments = BlockCommitments::compute(&ctx, &[], &StateDiff::default(), &[]);
+
+        let closed_header = header.to_closed_header(commitments, global_state_root, block_number);
+        let block_hash = closed_header.compute_hash(chain_id.to_felt(), pre_v0_13_2_override);
+        assert_eq!(expected, block_hash);
+    }
+}

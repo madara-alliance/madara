@@ -2,7 +2,6 @@ use anyhow::Context;
 use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_db::MadaraBackend;
 use mp_block::{
-    commitments::CommitmentComputationContext,
     header::{GasPrices, PendingHeader},
     PendingFullBlock,
 };
@@ -16,7 +15,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::{collections::HashMap, iter, time::SystemTime};
+use std::{collections::HashMap, time::SystemTime};
 
 mod balances;
 mod classes;
@@ -193,25 +192,15 @@ impl ChainGenesisDescription {
         ))
     }
 
-    pub fn build_and_store(self, backend: &MadaraBackend) -> anyhow::Result<()> {
+    pub async fn build_and_store(self, backend: &MadaraBackend) -> anyhow::Result<()> {
         let (block, classes) = self.into_block(backend.chain_config()).unwrap();
 
         let block_number = 0;
-        let new_global_state_root = backend.apply_state(block_number, iter::once(&block.state_diff))?;
-
-        let block = block.close_block(
-            &CommitmentComputationContext {
-                protocol_version: backend.chain_config().latest_protocol_version,
-                chain_id: backend.chain_config().chain_id.to_felt(),
-            },
-            block_number,
-            new_global_state_root,
-            true,
-        );
         let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
 
-        backend.store_full_block(block)?;
-        backend.class_db_store_block(block_number, &classes)?;
+        let _block_hash = backend
+            .add_full_block_with_classes(block, block_number, &classes, /* pre_v0_13_2_hash_override */ true)
+            .await?;
         Ok(())
     }
 }
@@ -232,14 +221,13 @@ mod tests {
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::BroadcastedTransactionExt;
-    use rstest::{fixture, rstest};
+    use rstest::rstest;
     use starknet_core::types::contract::SierraClass;
     use starknet_types_rpc::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
-
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -330,19 +318,14 @@ mod tests {
         }
     }
 
-    #[fixture]
-    fn chain() -> DevnetForTesting {
-        chain_with_mempool_limits(MempoolLimits::for_testing())
-    }
-
-    fn chain_with_mempool_limits(mempool_limits: MempoolLimits) -> DevnetForTesting {
+    async fn chain_with_mempool_limits(mempool_limits: MempoolLimits) -> DevnetForTesting {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
 
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_devnet()));
-        g.build_and_store(&backend).unwrap();
+        g.build_and_store(&backend).await.unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
@@ -357,15 +340,14 @@ mod tests {
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider), mempool_limits));
         let metrics = BlockProductionMetrics::register();
 
-        let block_production = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(BlockProductionTask::new(
-                Arc::clone(&backend),
-                Arc::clone(&mempool),
-                Arc::new(metrics),
-                Arc::clone(&l1_data_provider),
-            ))
-            .unwrap();
+        let block_production = BlockProductionTask::new(
+            Arc::clone(&backend),
+            Arc::clone(&mempool),
+            Arc::new(metrics),
+            Arc::clone(&l1_data_provider),
+        )
+        .await
+        .unwrap();
 
         DevnetForTesting { backend, contracts, block_production, mempool }
     }
@@ -373,7 +355,8 @@ mod tests {
     #[rstest]
     #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
     #[tokio::test]
-    async fn test_erc_20_declare(mut chain: DevnetForTesting, #[case] contract: &[u8]) {
+    async fn test_erc_20_declare(#[case] contract: &[u8]) {
+        let mut chain = chain_with_mempool_limits(MempoolLimits::for_testing()).await;
         tracing::info!("{}", chain.contracts);
 
         let sender_address = &chain.contracts.0[0];
@@ -432,7 +415,8 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_account_deploy(mut chain: DevnetForTesting) {
+    async fn test_account_deploy() {
+        let mut chain = chain_with_mempool_limits(MempoolLimits::for_testing()).await;
         let key = SigningKey::from_random();
         tracing::debug!("Secret Key : {:?}", key.secret_scalar());
 
@@ -531,11 +515,8 @@ mod tests {
     #[case(9_999u128 * STRK_FRI_DECIMALS, false)]
     #[case(10_001u128 * STRK_FRI_DECIMALS, true)]
     #[tokio::test]
-    async fn test_basic_transfer(
-        mut chain: DevnetForTesting,
-        #[case] transfer_amount: u128,
-        #[case] expect_reverted: bool,
-    ) {
+    async fn test_basic_transfer(#[case] transfer_amount: u128, #[case] expect_reverted: bool) {
+        let mut chain = chain_with_mempool_limits(MempoolLimits::for_testing()).await;
         tracing::info!("{}", chain.contracts);
 
         let sequencer_address = chain.backend.chain_config().sequencer_address.to_felt();
@@ -665,12 +646,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mempool_tx_limit() {
+    #[tokio::test]
+    async fn test_mempool_tx_limit() {
         let chain = chain_with_mempool_limits(MempoolLimits {
             max_age: None,
             max_declare_transactions: 2,
             max_transactions: 5,
-        });
+        })
+        .await;
         tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];
@@ -748,7 +731,8 @@ mod tests {
             max_age: Some(max_age),
             max_declare_transactions: 2,
             max_transactions: 5,
-        });
+        })
+        .await;
         tracing::info!("{}", chain.contracts);
 
         let contract_0 = &chain.contracts.0[0];

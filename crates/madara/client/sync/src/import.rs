@@ -1,4 +1,5 @@
-use mc_db::{MadaraBackend, MadaraStorageError};
+use anyhow::Context;
+use mc_db::{db_block_id::RawDbBlockId, MadaraBackend, MadaraStorageError};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, PendingFullBlock, TransactionWithReceipt,
@@ -464,9 +465,112 @@ impl BlockImporter {
         block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
     ) -> anyhow::Result<()> {
+        if block_range.is_empty() {
+            return Ok(());
+        }
+
         let this = self.clone();
         // do not use the shared permits for a sequential step
-        global_spawn_rayon_task(move || this.db.apply_state(block_range.start, state_diffs.iter())).await?;
-        Ok(())
+        global_spawn_rayon_task(move || {
+            let got = this.db.apply_to_global_trie(block_range.start, state_diffs.iter())?;
+            // Sanity check: verify state root.
+            let expected = this
+                .db
+                .get_block_info(&RawDbBlockId::Number(block_range.last().expect("Range checked for empty earlier.")))?
+                .context("Block header cannot be found")?
+                .as_nonpending_owned()
+                .context("Block is pending")?
+                .header
+                .global_state_root;
+
+            if expected != got {
+                return Err(BlockImportError::GlobalStateRoot { got, expected }.into());
+            }
+
+            Ok(())
+        })
+        .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BlockImportError, BlockImporter, BlockValidationConfig};
+    use mc_db::MadaraBackend;
+    use mp_block::{BlockHeaderWithSignatures, Header};
+    use mp_chain_config::ChainConfig;
+    use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
+    use rstest::*;
+    use starknet_api::felt;
+    use starknet_core::types::Felt;
+    use std::sync::Arc;
+
+    /// Test cases for the `update_tries` function.
+    ///
+    /// This test uses `rstest` to parameterize different scenarios for updating the tries.
+    /// It verifies that the function correctly handles various input combinations and
+    /// produces the expected results or errors.
+    #[rstest]
+    #[case::success(
+            // A non-zero global state root
+            felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"),
+            // A non-empty state diff with deployed contracts and storage changes
+            StateDiff {
+                deployed_contracts: vec![(DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") })],
+                storage_diffs: vec![
+                    (ContractStorageDiffItem {
+                        address: felt!("0x1"),
+                        storage_entries: vec![(StorageEntry { key: felt!("0x1"), value: felt!("0x1") })],
+                    }),
+                ],
+                ..Default::default()
+            },
+            Ok(())
+        )]
+    #[case::trust_global_tries(
+            felt!("0xa"), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            Ok(())
+        )]
+    #[case::mismatch_global_state_root(
+            felt!("0xb"), // A non-zero global state root
+            StateDiff::default(), // Empty state diff
+            // Expected result: a GlobalStateRoot error due to mismatch
+            Err(BlockImportError::GlobalStateRoot { expected: felt!("0xb"), got: felt!("0x0") })
+        )]
+    #[case::empty_state_diff(
+            felt!("0x0"), // Zero global state root
+            StateDiff::default(), // Empty state diff
+            Ok(())
+        )]
+    #[tokio::test]
+    async fn test_update_tries(
+        #[case] unverified_global_state_root: Felt,
+        #[case] state_diff: StateDiff,
+        #[case] expected_result: Result<(), BlockImportError>,
+    ) {
+        // GIVEN: We have a test backend and a block with specified parameters
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend
+            .store_block_header(BlockHeaderWithSignatures {
+                block_hash: felt!("0x123123"),
+                consensus_signatures: vec![],
+                header: Header {
+                    global_state_root: unverified_global_state_root,
+                    block_number: 0,
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+
+        // AND: We have a validation context with specified trust_global_tries
+        let validation = BlockValidationConfig::default();
+        let importer = BlockImporter::new(backend, validation);
+
+        // WHEN: We call update_tries with these parameters
+        let result: Result<(), BlockImportError> =
+            importer.apply_to_global_trie(0..1, vec![state_diff]).await.map_err(|e| e.downcast().unwrap());
+
+        assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }
 }

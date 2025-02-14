@@ -24,7 +24,6 @@ const ROW_CHAIN_INFO: &[u8] = b"chain_info";
 const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
 const ROW_PENDING_INNER: &[u8] = b"pending";
-const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -259,7 +258,6 @@ impl MadaraBackend {
         tx.put_cf(&block_hash_to_block_n, block_hash_encoded, &block_n_encoded);
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, bincode::serialize(&block.inner)?);
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
-        tx.put_cf(&meta, ROW_SYNC_TIP, block_n_encoded);
 
         // susbcribers
         if self.sender_block_info.receiver_count() > 0 {

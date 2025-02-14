@@ -1,13 +1,11 @@
 use mc_db::MadaraBackend;
 use mp_block::{
-    commitments::CommitmentComputationContext, MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt,
+    MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt,
 };
 use mp_class::ConvertedClass;
-use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use starknet_core::types::Felt;
-use std::iter;
 
 /// Returns the block_hash of the saved block.
 #[tracing::instrument(skip(backend, state_diff, declared_classes), fields(module = "BlockProductionTask"))]
@@ -42,25 +40,9 @@ pub async fn close_and_save_block(
             .collect(),
     };
 
-    // Apply state, compute state root
-    let new_global_state_root = backend.apply_state(block_number, iter::once(&block.state_diff))?;
-
-    // Compute the block merkle commitments.
-    let block = block.close_block(
-        &CommitmentComputationContext {
-            protocol_version: backend.chain_config().latest_protocol_version,
-            chain_id: backend.chain_config().chain_id.to_felt(),
-        },
-        block_number,
-        new_global_state_root,
-        true,
-    );
-    let block_hash = block.block_hash;
-
-    backend.store_full_block(block)?;
-    backend.class_db_store_block(block_number, &declared_classes)?;
-
-    backend.on_block(block_number).await?;
+    let block_hash = backend
+        .add_full_block_with_classes(block, block_number, &declared_classes, /* pre_v0_13_2_hash_override */ true)
+        .await?;
 
     Ok(block_hash)
 }

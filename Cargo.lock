@@ -6515,7 +6515,7 @@ dependencies = [
  "mc-mempool",
  "mc-p2p",
  "mc-rpc",
- "mc-sync2",
+ "mc-sync",
  "mc-telemetry",
  "mp-block",
  "mp-chain-config",
@@ -6659,6 +6659,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-class",
+ "mp-convert",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -6692,6 +6693,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "blockifier",
+ "futures",
  "m-cairo-test-contracts",
  "mc-block-production",
  "mc-db",
@@ -6994,7 +6996,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-sync2"
+name = "mc-sync"
 version = "0.7.0"
 dependencies = [
  "anyhow",
@@ -7145,6 +7147,7 @@ dependencies = [
  "bonsai-trie",
  "mp-chain-config",
  "mp-class",
+ "mp-convert",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -7156,9 +7159,11 @@ dependencies = [
  "opentelemetry_sdk",
  "primitive-types",
  "rayon",
+ "rstest 0.18.2",
  "serde",
  "starknet-types-core 0.1.7 (git+https://github.com/kasarlabs/types-rs.git?branch=feat-deserialize-v0.1.7)",
  "starknet-types-rpc",
+ "starknet_api",
  "thiserror 2.0.3",
  "tracing",
  "tracing-core",

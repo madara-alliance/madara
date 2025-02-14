@@ -81,8 +81,10 @@ impl BlockProductionService {
             let contracts =
                 genesis_config.add_devnet_contracts(*n_devnet_contracts).context("Failed to add devnet contracts")?;
 
+            contracts.save_to_db(backend)?;
+
             // Deploy genesis block
-            genesis_config.build_and_store(backend).context("Building and storing genesis block")?;
+            genesis_config.build_and_store(backend).await.context("Building and storing genesis block")?;
 
             contracts
         } else {

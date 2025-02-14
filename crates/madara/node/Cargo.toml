@@ -31,7 +31,7 @@ mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
 mc-p2p = { workspace = true }
 mc-rpc = { workspace = true }
-mc-sync2 = { workspace = true }
+mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }

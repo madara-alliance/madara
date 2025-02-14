@@ -23,12 +23,14 @@ mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-receipt = { workspace = true }
 mp-state-update = { workspace = true }
+mp-convert = { workspace = true }
 mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet-types-rpc = { workspace = true }
+starknet_api.workspace = true
 
 # Other
 primitive-types.workspace = true
@@ -51,3 +53,7 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+
+rstest.workspace = true

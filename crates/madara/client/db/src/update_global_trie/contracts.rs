@@ -1,10 +1,10 @@
+use crate::db_block_id::RawDbBlockId;
 use crate::MadaraBackend;
 use crate::{bonsai_identifier, MadaraStorageError};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
-use mp_block::BlockId;
 use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
@@ -116,11 +116,11 @@ fn contract_state_leaf_hash(
     block_number: u64,
 ) -> Result<Felt, MadaraStorageError> {
     let nonce = contract_leaf.nonce.unwrap_or(
-        backend.get_contract_nonce_at(&BlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO),
+        backend.get_contract_nonce_at(&RawDbBlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO),
     );
 
     let class_hash = contract_leaf.class_hash.unwrap_or(
-        backend.get_contract_class_hash_at(&BlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
+        backend.get_contract_class_hash_at(&RawDbBlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
     );
 
     let storage_root = contract_leaf
@@ -133,80 +133,82 @@ fn contract_state_leaf_hash(
     Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
 
-// #[cfg(test)]
-// mod contract_trie_root_tests {
-//     use super::*;
-//     use crate::verify_apply::verify_apply_tests::setup_test_backend;
-//     use rstest::*;
-//     use std::sync::Arc;
+#[cfg(test)]
+mod contract_trie_root_tests {
+    use mp_chain_config::ChainConfig;
+    use crate::update_global_trie::tests::setup_test_backend;
 
-//     #[rstest]
-//     fn test_contract_trie_root_success(setup_test_backend: Arc<MadaraBackend>) {
-//         let backend = setup_test_backend;
+    use super::*;
+    use std::sync::Arc;
+    use rstest::*;
 
-//         // Create dummy data
-//         let deployed_contracts = vec![DeployedContractItem {
-//             address: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
-//             class_hash: Felt::from_hex_unchecked("0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
-//         }];
+    #[rstest]
+    fn test_contract_trie_root_success(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        // Create dummy data
+        let deployed_contracts = vec![DeployedContractItem {
+            address: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
+            class_hash: Felt::from_hex_unchecked("0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
+        }];
 
-//         let replaced_classes = vec![ReplacedClassItem {
-//             contract_address: Felt::from_hex_unchecked(
-//                 "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-//             ),
-//             class_hash: Felt::from_hex_unchecked("0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321"),
-//         }];
+        let replaced_classes = vec![ReplacedClassItem {
+            contract_address: Felt::from_hex_unchecked(
+                "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            ),
+            class_hash: Felt::from_hex_unchecked("0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321"),
+        }];
 
-//         let nonces = vec![NonceUpdate {
-//             contract_address: Felt::from_hex_unchecked(
-//                 "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-//             ),
-//             nonce: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"),
-//         }];
+        let nonces = vec![NonceUpdate {
+            contract_address: Felt::from_hex_unchecked(
+                "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            ),
+            nonce: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"),
+        }];
 
-//         let storage_diffs = vec![ContractStorageDiffItem {
-//             address: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
-//             storage_entries: vec![StorageEntry {
-//                 key: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"),
-//                 value: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000002"),
-//             }],
-//         }];
+        let storage_diffs = vec![ContractStorageDiffItem {
+            address: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
+            storage_entries: vec![StorageEntry {
+                key: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"),
+                value: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000002"),
+            }],
+        }];
 
-//         let block_number = 1;
+        let block_number = 1;
 
-//         // Call the function and print the result
-//         let result =
-//             contract_trie_root(&backend, &deployed_contracts, &replaced_classes, &nonces, &storage_diffs, block_number)
-//                 .unwrap();
+        // Call the function and print the result
+        let result =
+            contract_trie_root(&backend, &deployed_contracts, &replaced_classes, &nonces, &storage_diffs, block_number)
+                .unwrap();
 
-//         assert_eq!(
-//             result,
-//             Felt::from_hex_unchecked("0x59b89ceac43986727fb4a57bd9f74690b5b3b0e976e7af0b10213c3d4392ef2")
-//         );
-//     }
+        assert_eq!(
+            result,
+            Felt::from_hex_unchecked("0x59b89ceac43986727fb4a57bd9f74690b5b3b0e976e7af0b10213c3d4392ef2")
+        );
+    }
 
-//     #[rstest]
-//     fn test_contract_state_leaf_hash_success(setup_test_backend: Arc<MadaraBackend>) {
-//         let backend = setup_test_backend;
+    #[test]
+    fn test_contract_state_leaf_hash_success() {
+        let chain_config = Arc::new(ChainConfig::madara_test());
+        let backend = MadaraBackend::open_for_testing(chain_config.clone());
 
-//         // Create dummy data
-//         let contract_address =
-//             Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
-//         let contract_leaf = ContractLeaf {
-//             class_hash: Some(Felt::from_hex_unchecked(
-//                 "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-//             )),
-//             storage_root: Some(Felt::from_hex_unchecked(
-//                 "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-//             )),
-//             nonce: Some(Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001")),
-//         };
+        // Create dummy data
+        let contract_address =
+            Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+        let contract_leaf = ContractLeaf {
+            class_hash: Some(Felt::from_hex_unchecked(
+                "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+            )),
+            storage_root: Some(Felt::from_hex_unchecked(
+                "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            )),
+            nonce: Some(Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001")),
+        };
 
-//         // Call the function and print the result
-//         let result = contract_state_leaf_hash(&backend, &contract_address, &contract_leaf).unwrap();
-//         assert_eq!(
-//             result,
-//             Felt::from_hex_unchecked("0x6bbd8d4b5692148f83c38e19091f64381b5239e2a73f53b59be3ec3efb41143")
-//         );
-//     }
-// }
+        // Call the function and print the result
+        let result = contract_state_leaf_hash(&backend, &contract_address, &contract_leaf, /* block_number */ 0).unwrap();
+        assert_eq!(
+            result,
+            Felt::from_hex_unchecked("0x6bbd8d4b5692148f83c38e19091f64381b5239e2a73f53b59be3ec3efb41143")
+        );
+    }
+}

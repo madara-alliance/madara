@@ -13,6 +13,7 @@ use serde::Serialize;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashMap, sync::Arc};
 
+#[derive(Debug)]
 pub(crate) struct ContractDbBlockUpdate {
     contract_class_updates: Vec<(Felt, Felt)>,
     contract_nonces_updates: Vec<(Felt, Felt)>,

@@ -13,8 +13,8 @@ use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockId, BlockTag};
 use std::{iter, sync::Arc, time::Duration};
 
-mod blocks;
-mod classes;
+pub(crate) mod blocks;
+pub(crate) mod classes;
 
 pub struct ForwardSyncConfig {
     pub block_parallelization: usize,

@@ -54,6 +54,7 @@ starknet_api.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+futures.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

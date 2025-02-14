@@ -654,6 +654,7 @@ impl MadaraBackend {
         {
             self.backup().await.context("Making DB backup")?;
         }
+        self.save_head_status_to_db()?;
         Ok(())
     }
 

@@ -1,6 +1,7 @@
 use crate::{metrics::SyncMetrics, probe::ProbeState};
 use futures::{future::OptionFuture, Future};
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
+use tokio::time::Instant;
 use std::{cmp, time::Duration};
 
 pub trait ForwardPipeline {
@@ -44,7 +45,8 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
-        let mut interval = tokio::time::interval(Duration::from_secs(3));
+        let interval_duration = Duration::from_secs(3);
+        let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {

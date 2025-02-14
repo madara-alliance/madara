@@ -4,7 +4,7 @@ use mc_eth::state_update::L1HeadReceiver;
 use mc_gateway_client::GatewayProvider;
 use mc_p2p::P2pCommands;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
-use mc_sync2::{
+use mc_sync::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
@@ -121,7 +121,7 @@ impl Service for SyncService {
                         .expect("Failed to parse warp update sender feeder gateway url. This should not fail in prod"),
                 ));
 
-                mc_sync2::gateway::forward_sync(
+                mc_sync::gateway::forward_sync(
                     this.db_backend.clone(),
                     importer.clone(),
                     gateway,
@@ -131,7 +131,7 @@ impl Service for SyncService {
                         global_stop_on_sync: false,
                         stop_on_sync: true,
                     },
-                    mc_sync2::gateway::ForwardSyncConfig::default()
+                    mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .no_sync_pending_block(true)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes),
@@ -161,7 +161,7 @@ impl Service for SyncService {
             }
 
             if this.params.p2p_sync {
-                use mc_sync2::p2p::{forward_sync, ForwardSyncConfig, P2pPipelineArguments};
+                use mc_sync::p2p::{forward_sync, ForwardSyncConfig, P2pPipelineArguments};
 
                 let ctx_ = ctx.clone();
                 tokio::spawn(async move {
@@ -178,12 +178,12 @@ impl Service for SyncService {
                     .await
             } else {
                 let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
-                mc_sync2::gateway::forward_sync(
+                mc_sync::gateway::forward_sync(
                     this.db_backend,
                     importer,
                     gateway,
                     config,
-                    mc_sync2::gateway::ForwardSyncConfig::default()
+                    mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .no_sync_pending_block(this.params.no_pending_sync)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes),

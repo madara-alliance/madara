@@ -3,7 +3,7 @@ members = [
   # madara
   "crates/madara/client/db",
   "crates/madara/client/exec",
-  "crates/madara/client/sync2",
+  "crates/madara/client/sync",
   "crates/madara/client/eth",
   "crates/madara/client/rpc",
   "crates/madara/client/gateway/client",
@@ -34,7 +34,7 @@ resolver = "2"
 default-members = [
   "crates/madara/client/db",
   "crates/madara/client/exec",
-  "crates/madara/client/sync2",
+  "crates/madara/client/sync",
   "crates/madara/client/eth",
   "crates/madara/client/rpc",
   "crates/madara/client/gateway/client",
@@ -130,7 +130,7 @@ mc-exec = { path = "crates/madara/client/exec" }
 mc-rpc = { path = "crates/madara/client/rpc" }
 mc-gateway-client = { path = "crates/madara/client/gateway/client" }
 mc-gateway-server = { path = "crates/madara/client/gateway/server" }
-mc-sync2 = { path = "crates/madara/client/sync2" }
+mc-sync = { path = "crates/madara/client/sync" }
 mc-p2p = { path = "crates/madara/client/p2p" }
 mc-eth = { path = "crates/madara/client/eth" }
 mc-mempool = { path = "crates/madara/client/mempool" }

@@ -47,7 +47,6 @@ impl PipelineSteps for ApplyStateSteps {
             tracing::debug!("Apply state sequential step {block_range:?}");
             self.importer.apply_to_global_trie(block_range, input).await?;
             self.backend.head_status().global_trie.set(Some(last_block_n));
-            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
     }

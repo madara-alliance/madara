@@ -165,9 +165,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     Ok(acc)
                 }
                 Ok(None) => {
-                    Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: not found in db"))
+                    Err(format!("Failed to retrieve pending declared class at hash {class_hash:#x}: not found in db"))
                 }
-                Err(err) => Err(format!("Failed to retrieve pending declared class at hash {class_hash:x?}: {err:#}")),
+                Err(err) => Err(format!("Failed to retrieve pending declared class at hash {class_hash:#x}: {err:#}")),
             }
         })?;
 
@@ -489,7 +489,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         // Store pending block
-        // todo, prefer using the block import pipeline?
         self.backend.store_block(self.block.clone().into(), new_state_diff, self.declared_classes.clone())?;
         // do not forget to flush :)
         self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;

@@ -1,20 +1,19 @@
 use crate::contract_db::ContractDbBlockUpdate;
-use crate::db_block_id::DbBlockId;
 use crate::Column;
 use crate::DatabaseExt;
 use crate::MadaraBackend;
 use crate::MadaraStorageError;
 use crate::WriteBatchWithTransaction;
+use mp_block::commitments::CommitmentComputationContext;
 use mp_block::FullBlock;
 use mp_block::MadaraBlockInfo;
 use mp_block::MadaraBlockInner;
 use mp_block::MadaraPendingBlockInfo;
 use mp_block::PendingFullBlock;
 use mp_block::TransactionWithReceipt;
-use mp_block::{
-    BlockHeaderWithSignatures, MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock,
-};
+use mp_block::{BlockHeaderWithSignatures, MadaraPendingBlock};
 use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
@@ -65,7 +64,56 @@ fn store_events_to_receipts(
 }
 
 impl MadaraBackend {
-    pub fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
+    /// Add a new block to the db, calling the `on_block` handler that handles flushes and backups when they are enabled,
+    /// and update all the statuses.
+    /// When using the MadaraBackend API to store new blocks, you either have the choice of using this simple function to store
+    /// an entire new block, or, you are responsible for calling the `store_xxx`, applying global state, and calling the on_block
+    /// function when the full block is stored in the backend.
+    ///
+    /// This function takes a PendingFullBlock because the commitments can only be computed once we applied the state to the global
+    /// tries. This function will close the block and compute the commitments.
+    ///
+    /// The function returnes the new computed block_hash.
+    pub async fn add_full_block_with_classes(
+        &self,
+        block: PendingFullBlock,
+        block_n: u64,
+        converted_classes: &[ConvertedClass],
+        pre_v0_13_2_hash_override: bool,
+    ) -> anyhow::Result<Felt> {
+        let state_diff = block.state_diff.clone();
+
+        let new_global_state_root = self.apply_to_global_trie(block_n, [&state_diff])?;
+
+        let block = block.close_block(
+            &CommitmentComputationContext {
+                protocol_version: self.chain_config.latest_protocol_version,
+                chain_id: self.chain_config.chain_id.to_felt(),
+            },
+            block_n,
+            new_global_state_root,
+            pre_v0_13_2_hash_override,
+        );
+        let block_hash = block.block_hash;
+
+        self.store_full_block(block)?;
+        self.head_status.headers.set(Some(block_n));
+        self.head_status.transactions.set(Some(block_n));
+        self.head_status.state_diffs.set(Some(block_n));
+        self.head_status.events.set(Some(block_n));
+
+        self.class_db_store_block(block_n, converted_classes)?;
+        self.head_status.classes.set(Some(block_n));
+
+        self.head_status.global_trie.set(Some(block_n));
+
+        self.on_block(block_n).await?;
+        self.flush()?;
+
+        Ok(block_hash)
+    }
+
+    fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
         let block_n = block.header.block_number;
         self.store_block_header(BlockHeaderWithSignatures {
             header: block.header,
@@ -118,8 +166,17 @@ impl MadaraBackend {
 
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
 
         let block_n_encoded = bincode::serialize(&block_n)?;
+
+        for transction in &value {
+            tx.put_cf(
+                &tx_hash_to_block_n,
+                bincode::serialize(&transction.receipt.transaction_hash())?,
+                &block_n_encoded,
+            );
+        }
 
         // update block info tx hashes (we should get rid of this field at some point IMO)
         let mut block_info: MadaraBlockInfo =
@@ -130,8 +187,6 @@ impl MadaraBackend {
         let (transactions, receipts) = value.into_iter().map(|t| (t.transaction, t.receipt)).unzip();
         let block_inner = MadaraBlockInner { transactions, receipts };
         tx.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&block_inner)?);
-
-        // TODO: other columns
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
@@ -168,45 +223,17 @@ impl MadaraBackend {
         Ok(())
     }
 
-    /// Returns the new global state root. Multiple state diffs can be applied at once, only the latest state root will
-    /// be returned.
-    /// Errors if the batch is empty.
-    pub fn apply_state<'a>(
-        &self,
-        start_block_n: u64,
-        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt, MadaraStorageError> {
-        let mut state_root = None;
-        for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
-            tracing::debug!("applying state_diff block_n={block_n}");
-            let (contract_trie_root, class_trie_root) = rayon::join(
-                || {
-                    crate::update_global_trie::contracts::contract_trie_root(
-                        self,
-                        &state_diff.deployed_contracts,
-                        &state_diff.replaced_classes,
-                        &state_diff.nonces,
-                        &state_diff.storage_diffs,
-                        block_n,
-                    )
-                },
-                || crate::update_global_trie::classes::class_trie_root(self, &state_diff.declared_classes, block_n),
-            );
-
-            state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
-        }
-        state_root.ok_or_else(|| MadaraStorageError::EmptyBatch)
-    }
-}
-
-impl MadaraBackend {
     /// NB: This functions needs to run on the rayon thread pool
+    /// todo: depreacate this function. It is only used in tests.
+    // #[cfg(any(test, feature = "testing"))]
     pub fn store_block(
         &self,
-        block: MadaraMaybePendingBlock,
+        block: mp_block::MadaraMaybePendingBlock,
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
     ) -> Result<(), MadaraStorageError> {
+        use mp_block::{MadaraBlock, MadaraMaybePendingBlockInfo};
+
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
 
@@ -240,15 +267,17 @@ impl MadaraBackend {
 
         r1.and(r2).and(r3)?;
 
-        self.snapshots.set_new_head(DbBlockId::from_block_n(block_n));
+        self.snapshots.set_new_head(crate::db_block_id::DbBlockId::from_block_n(block_n));
 
         if let Some(block_n) = block_n {
+            self.head_status.full_block.set(Some(block_n));
             self.head_status.headers.set(Some(block_n));
             self.head_status.state_diffs.set(Some(block_n));
             self.head_status.transactions.set(Some(block_n));
             self.head_status.classes.set(Some(block_n));
             self.head_status.events.set(Some(block_n));
             self.head_status.global_trie.set(Some(block_n));
+            self.save_head_status_to_db()?;
         }
 
         Ok(())

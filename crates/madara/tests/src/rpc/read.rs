@@ -60,9 +60,8 @@ mod test_rpc_read_calls {
                     "--full",
                     "--network",
                     "sepolia",
-                    "--no-sync-polling",
-                    "--n-blocks-to-sync",
-                    "20",
+                    "--sync-stop-at",
+                    "19",
                     "--no-l1-sync",
                 ])
                 .run();

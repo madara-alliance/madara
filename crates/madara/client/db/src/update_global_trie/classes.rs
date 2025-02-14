@@ -44,50 +44,51 @@ pub fn class_trie_root(
     Ok(root_hash)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::verify_apply::verify_apply_tests::setup_test_backend;
-//     use rstest::*;
-//     use std::sync::Arc;
-//     #[test]
-//     fn test_contract_class_hash_version() {
-//         assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
-//     }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::update_global_trie::tests::setup_test_backend;
+    use rstest::*;
+    use std::sync::Arc;
 
-//     #[rstest]
-//     fn test_class_trie_root(setup_test_backend: Arc<MadaraBackend>) {
-//         let backend = setup_test_backend;
-//         // Create sample DeclaredClassItems with predefined class and compiled class hashes
-//         let declared_classes = vec![
-//             DeclaredClassItem {
-//                 class_hash: Felt::from_hex_unchecked(
-//                     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-//                 ),
-//                 compiled_class_hash: Felt::from_hex_unchecked(
-//                     "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-//                 ),
-//             },
-//             DeclaredClassItem {
-//                 class_hash: Felt::from_hex_unchecked(
-//                     "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-//                 ),
-//                 compiled_class_hash: Felt::from_hex_unchecked(
-//                     "0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321",
-//                 ),
-//             },
-//         ];
+    #[test]
+    fn test_contract_class_hash_version() {
+        assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
+    }
 
-//         // Set the block number for the test
-//         let block_number = 1;
+    #[rstest]
+    fn test_class_trie_root(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        // Create sample DeclaredClassItems with predefined class and compiled class hashes
+        let declared_classes = vec![
+            DeclaredClassItem {
+                class_hash: Felt::from_hex_unchecked(
+                    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                ),
+                compiled_class_hash: Felt::from_hex_unchecked(
+                    "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+                ),
+            },
+            DeclaredClassItem {
+                class_hash: Felt::from_hex_unchecked(
+                    "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                ),
+                compiled_class_hash: Felt::from_hex_unchecked(
+                    "0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321",
+                ),
+            },
+        ];
 
-//         // Call the class_trie_root function with the test data
-//         let result = class_trie_root(&backend, &declared_classes, block_number).unwrap();
+        // Set the block number for the test
+        let block_number = 1;
 
-//         // Assert that the resulting root hash matches the expected value
-//         assert_eq!(
-//             result,
-//             Felt::from_hex_unchecked("0x9e521cb5e73189fe985db9dfd50b1dcdefc95ca4e1ebf23b0a4408a81bb610")
-//         );
-//     }
-// }
+        // Call the class_trie_root function with the test data
+        let result = class_trie_root(&backend, &declared_classes, block_number).unwrap();
+
+        // Assert that the resulting root hash matches the expected value
+        assert_eq!(
+            result,
+            Felt::from_hex_unchecked("0x9e521cb5e73189fe985db9dfd50b1dcdefc95ca4e1ebf23b0a4408a81bb610")
+        );
+    }
+}

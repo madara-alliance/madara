@@ -135,7 +135,6 @@ impl PipelineSteps for GatewaySyncSteps {
             self.backend.head_status().state_diffs.set(Some(block_n));
             self.backend.head_status().transactions.set(Some(block_n));
             self.backend.head_status().events.set(Some(block_n));
-            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(input))
     }
