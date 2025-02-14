@@ -5351,11 +5351,11 @@ dependencies = [
 
 [[package]]
 name = "m-cairo-test-contracts"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "m-proc-macros"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "indoc 2.0.5",
  "jsonrpsee",
@@ -5366,7 +5366,7 @@ dependencies = [
 
 [[package]]
 name = "madara"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5444,7 +5444,7 @@ dependencies = [
 
 [[package]]
 name = "mc-analytics"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5467,7 +5467,7 @@ dependencies = [
 
 [[package]]
 name = "mc-block-import"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -5505,7 +5505,7 @@ dependencies = [
 
 [[package]]
 name = "mc-block-production"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -5550,7 +5550,7 @@ dependencies = [
 
 [[package]]
 name = "mc-db"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
@@ -5589,7 +5589,7 @@ dependencies = [
 
 [[package]]
 name = "mc-devnet"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -5631,7 +5631,7 @@ dependencies = [
 
 [[package]]
 name = "mc-e2e-tests"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "flate2",
@@ -5651,7 +5651,7 @@ dependencies = [
 
 [[package]]
 name = "mc-eth"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5695,7 +5695,7 @@ dependencies = [
 
 [[package]]
 name = "mc-exec"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "blockifier",
  "cairo-vm",
@@ -5726,7 +5726,7 @@ dependencies = [
 
 [[package]]
 name = "mc-gateway-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5754,7 +5754,7 @@ dependencies = [
 
 [[package]]
 name = "mc-gateway-server"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5781,7 +5781,7 @@ dependencies = [
 
 [[package]]
 name = "mc-mempool"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -5830,7 +5830,7 @@ dependencies = [
 
 [[package]]
 name = "mc-rpc"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -5863,7 +5863,7 @@ dependencies = [
 
 [[package]]
 name = "mc-sync"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5906,7 +5906,7 @@ dependencies = [
 
 [[package]]
 name = "mc-telemetry"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5997,7 +5997,7 @@ dependencies = [
 
 [[package]]
 name = "mp-block"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "blockifier",
  "mp-chain-config",
@@ -6022,7 +6022,7 @@ dependencies = [
 
 [[package]]
 name = "mp-chain-config"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -6042,7 +6042,7 @@ dependencies = [
 
 [[package]]
 name = "mp-class"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "blockifier",
@@ -6071,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "mp-convert"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "assert_matches",
  "primitive-types",
@@ -6086,7 +6086,7 @@ dependencies = [
 
 [[package]]
 name = "mp-gateway"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -6114,7 +6114,7 @@ dependencies = [
 
 [[package]]
 name = "mp-oracle"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6125,7 +6125,7 @@ dependencies = [
 
 [[package]]
 name = "mp-receipt"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bincode 1.3.3",
  "blockifier",
@@ -6143,7 +6143,7 @@ dependencies = [
 
 [[package]]
 name = "mp-rpc"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "primitive-types",
  "serde",
@@ -6153,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "mp-state-update"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bincode 1.3.3",
  "mp-convert",
@@ -6164,7 +6164,7 @@ dependencies = [
 
 [[package]]
 name = "mp-transactions"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6190,7 +6190,7 @@ dependencies = [
 
 [[package]]
 name = "mp-utils"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
