@@ -1,7 +1,5 @@
 use mc_db::MadaraBackend;
-use mp_block::{
-    MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt,
-};
+use mp_block::{MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;

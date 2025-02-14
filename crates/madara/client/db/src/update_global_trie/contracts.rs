@@ -120,7 +120,9 @@ fn contract_state_leaf_hash(
     );
 
     let class_hash = contract_leaf.class_hash.unwrap_or(
-        backend.get_contract_class_hash_at(&RawDbBlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
+        backend
+            .get_contract_class_hash_at(&RawDbBlockId::Number(block_number), contract_address)?
+            .unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
     );
 
     let storage_root = contract_leaf
@@ -135,12 +137,12 @@ fn contract_state_leaf_hash(
 
 #[cfg(test)]
 mod contract_trie_root_tests {
-    use mp_chain_config::ChainConfig;
     use crate::update_global_trie::tests::setup_test_backend;
+    use mp_chain_config::ChainConfig;
 
     use super::*;
-    use std::sync::Arc;
     use rstest::*;
+    use std::sync::Arc;
 
     #[rstest]
     fn test_contract_trie_root_success(setup_test_backend: Arc<MadaraBackend>) {
@@ -205,7 +207,8 @@ mod contract_trie_root_tests {
         };
 
         // Call the function and print the result
-        let result = contract_state_leaf_hash(&backend, &contract_address, &contract_leaf, /* block_number */ 0).unwrap();
+        let result =
+            contract_state_leaf_hash(&backend, &contract_address, &contract_leaf, /* block_number */ 0).unwrap();
         assert_eq!(
             result,
             Felt::from_hex_unchecked("0x6bbd8d4b5692148f83c38e19091f64381b5239e2a73f53b59be3ec3efb41143")

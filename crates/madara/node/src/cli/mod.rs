@@ -13,7 +13,6 @@ pub mod db;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
-pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
 
@@ -23,7 +22,6 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
 pub use l1::*;
-pub use p2p::*;
 pub use rpc::*;
 pub use telemetry::*;
 
@@ -173,10 +171,6 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub rpc_params: RpcParams,
-
-    #[allow(missing_docs)]
-    #[clap(flatten)]
-    pub p2p_params: P2pParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

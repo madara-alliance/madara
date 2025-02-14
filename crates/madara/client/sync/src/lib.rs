@@ -10,4 +10,3 @@ pub use sync::SyncControllerConfig;
 
 pub mod gateway;
 pub mod import;
-pub mod p2p;

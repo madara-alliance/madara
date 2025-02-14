@@ -93,7 +93,7 @@ impl BlockImportError {
     }
 }
 
-/// Shared verification & saving logic between gateway and p2p.
+/// Shared verification & saving logic between gateway and (yet-to-be-merged) p2p.
 #[derive(Clone)]
 pub struct BlockImporter {
     db: Arc<MadaraBackend>,
