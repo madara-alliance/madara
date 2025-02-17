@@ -2,11 +2,11 @@ fn main() -> std::io::Result<()> {
     let files: Vec<_> = collect_files("starknet-p2p-specs/p2p/proto/", "proto")?;
 
     prost_build::Config::new()
-        .extern_path(".Felt252", "crate::model_primitives::Felt252")
-        .extern_path(".Hash", "crate::model_primitives::Hash")
-        .extern_path(".EthereumAddress", "crate::model_primitives::EthereumAddress")
-        .extern_path(".Hash256", "crate::model_primitives::Hash256")
-        .extern_path(".Address", "crate::model_primitives::Address")
+        .extern_path(".Felt252", "crate::proto::model_primitives::Felt252")
+        .extern_path(".Hash", "crate::proto::model_primitives::Hash")
+        .extern_path(".EthereumAddress", "crate::proto::model_primitives::EthereumAddress")
+        .extern_path(".Hash256", "crate::proto::model_primitives::Hash256")
+        .extern_path(".Address", "crate::proto::model_primitives::Address")
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(&files, &["starknet-p2p-specs/"])?;
     Ok(())

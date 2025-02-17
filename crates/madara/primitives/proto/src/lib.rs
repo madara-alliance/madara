@@ -3,16 +3,12 @@ use std::borrow::Cow;
 
 #[allow(clippy::all)]
 pub mod model {
-    pub use crate::model_primitives::*;
+    pub use crate::proto::model_primitives::*;
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
-mod classes;
-mod events;
-mod headers;
-mod model_primitives;
-mod proposal;
-mod transactions;
+mod proto;
+mod stream;
 
 #[derive(thiserror::Error, Debug)]
 pub enum FromModelError {
@@ -40,6 +36,26 @@ impl FromModelError {
     }
 }
 
+/// Extracts a field from a protobuf [model].
+///
+/// > Must be used in combination with [model_describe].
+///
+/// ```rust
+/// # use mp_proto::{FromModelError, model_field};
+/// # use m_proc_macros::model_describe;
+///
+/// struct ProtobufModel {
+///     id: Option<u64>
+/// }
+///
+/// #[model_describe(ProtobufModel)]
+/// fn extract_id(model: ProtobufModel) -> Result<u64, FromModelError> {
+///     Ok(model_field!(model => id))
+/// }
+/// ```
+///
+/// [model]: crate::model
+/// [model_describe]: m_proc_macros::model_describe
 #[macro_export]
 macro_rules! model_field {
     ($struct:expr => $value:ident) => {
