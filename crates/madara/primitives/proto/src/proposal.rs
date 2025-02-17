@@ -183,34 +183,28 @@ where
 {
     type Item = Result<Message, StreamReceiverError<StreamId>>;
 
-    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
-        let Self { receiver, state } = self.get_mut();
-        let AccumulatorStateMachine::Accumulate(mut inner) = std::mem::take(state) else {
+    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
+        let Self { receiver, state: AccumulatorStateMachine::Accumulate(inner) } = self.as_mut().get_mut() else {
             return Poll::Ready(None);
         };
 
         loop {
             if let Some(message) = inner.next_ordered() {
-                *state = AccumulatorStateMachine::Accumulate(inner);
                 return Poll::Ready(Some(Ok(message)));
             }
 
             if inner.is_done() {
                 receiver.close();
-                return Poll::Ready(None);
+                return self.done(Poll::Ready(None));
             }
 
-            let stream_message = match receiver.poll_recv(cx) {
-                Poll::Ready(Some(stream_message)) => stream_message,
-                Poll::Ready(None) => return Poll::Ready(Some(Err(StreamReceiverError::ChannelError))),
-                Poll::Pending => {
-                    *state = AccumulatorStateMachine::Accumulate(inner);
-                    return Poll::Pending;
-                }
+            let stream_message = match std::task::ready!(receiver.poll_recv(cx)) {
+                Some(stream_message) => stream_message,
+                None => return self.done(Poll::Ready(Some(Err(StreamReceiverError::ChannelError)))),
             };
 
             if let Err(e) = inner.accumulate(stream_message) {
-                return Poll::Ready(Some(Err(e)));
+                return self.done(Poll::Ready(Some(Err(e))));
             };
         }
     }
@@ -224,6 +218,17 @@ where
             }
             AccumulatorStateMachine::Done => (0, Some(0)),
         }
+    }
+}
+
+impl<Message, StreamId> OrderedStreamReceiver<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default,
+{
+    fn done<T>(&mut self, t: T) -> T {
+        self.state = AccumulatorStateMachine::Done;
+        t
     }
 }
 
