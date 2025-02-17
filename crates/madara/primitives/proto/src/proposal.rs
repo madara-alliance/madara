@@ -48,10 +48,6 @@ where
     _phantom2: std::marker::PhantomData<StreamId>,
 }
 
-pub struct OrderedStreamSender {
-    sender: tokio::sync::mpsc::Sender<model::StreamMessage>,
-}
-
 pub struct OrderedStreamReceiver<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
@@ -83,19 +79,8 @@ where
     stream_id: Option<Vec<u8>>,
     fin: Option<u64>,
     id_low: u64,
-    // TODO: implement this
     lag_cap: u64,
     _phantom: std::marker::PhantomData<StreamId>,
-}
-
-impl std::fmt::Debug for OrderedStreamSender {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.sender.is_closed() {
-            f.debug_tuple("OrderedStreamSender").field(&"open").finish()
-        } else {
-            f.debug_tuple("OrderedStreamSender").field(&"closed").finish()
-        }
-    }
 }
 
 impl<Message, StreamId> std::fmt::Debug for OrderedStreamReceiver<Message, StreamId>
@@ -180,26 +165,14 @@ where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
 {
-    pub fn build(self) -> (OrderedStreamSender, OrderedStreamReceiver<Message, StreamId>) {
+    pub fn build(self) -> (tokio::sync::mpsc::Sender<model::StreamMessage>, OrderedStreamReceiver<Message, StreamId>) {
         let Self { lag_cap, channel_cap, stream_id, .. } = self;
         let (sx, rx) = tokio::sync::mpsc::channel(channel_cap);
         let state = AccumulatorStateMachine::new(lag_cap, stream_id);
 
-        let sender = OrderedStreamSender { sender: sx };
         let receiver = OrderedStreamReceiver { receiver: rx, state };
 
-        (sender, receiver)
-    }
-}
-
-impl OrderedStreamSender {
-    pub async fn send(
-        &mut self,
-        message: model::StreamMessage,
-    ) -> Result<(), tokio::sync::mpsc::error::SendError<model::StreamMessage>> {
-        self.sender.send(message).await?;
-
-        Ok(())
+        (sx, receiver)
     }
 }
 
@@ -210,37 +183,35 @@ where
 {
     type Item = Result<Message, StreamReceiverError<StreamId>>;
 
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
-        match std::mem::take(&mut self.state) {
-            AccumulatorStateMachine::Accumulate(mut inner) => {
-                loop {
-                    let stream_message = match self.receiver.poll_recv(cx) {
-                        Poll::Ready(Some(stream_mesage)) => stream_mesage,
-                        Poll::Ready(None) => return Poll::Ready(Some(Err(StreamReceiverError::ChannelError))),
-                        Poll::Pending => break,
-                    };
+    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
+        let Self { receiver, state } = self.get_mut();
+        let AccumulatorStateMachine::Accumulate(mut inner) = std::mem::take(state) else {
+            return Poll::Ready(None);
+        };
 
-                    inner = match inner.accumulate(stream_message) {
-                        Ok(inner) => inner,
-                        Err(e) => return Poll::Ready(Some(Err(e))),
-                    };
-                }
-
-                if inner.is_done() {
-                    self.receiver.close();
-                    return Poll::Ready(None);
-                }
-
-                let message = inner.next_ordered();
-                self.state = AccumulatorStateMachine::Accumulate(inner);
-
-                let Some(message) = message else {
-                    return Poll::Pending;
-                };
-
-                Poll::Ready(Some(Ok(message)))
+        loop {
+            if let Some(message) = inner.next_ordered() {
+                *state = AccumulatorStateMachine::Accumulate(inner);
+                return Poll::Ready(Some(Ok(message)));
             }
-            AccumulatorStateMachine::Done => Poll::Ready(None),
+
+            if inner.is_done() {
+                receiver.close();
+                return Poll::Ready(None);
+            }
+
+            let stream_message = match receiver.poll_recv(cx) {
+                Poll::Ready(Some(stream_message)) => stream_message,
+                Poll::Ready(None) => return Poll::Ready(Some(Err(StreamReceiverError::ChannelError))),
+                Poll::Pending => {
+                    *state = AccumulatorStateMachine::Accumulate(inner);
+                    return Poll::Pending;
+                }
+            };
+
+            if let Err(e) = inner.accumulate(stream_message) {
+                return Poll::Ready(Some(Err(e)));
+            };
         }
     }
 
@@ -282,10 +253,10 @@ where
     // TODO: this needs some more care in regards to DOS migitation:
     //  - limits on the total number of messsages
     fn accumulate_with_force(
-        mut self,
+        &mut self,
         stream_message: model::StreamMessage,
         force: bool,
-    ) -> Result<Self, StreamReceiverError<StreamId>> {
+    ) -> Result<(), StreamReceiverError<StreamId>> {
         let stream_id = self.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
         let message_id = stream_message.message_id;
         let last_id = self.messages.last_key_value().map(|(k, _)| *k);
@@ -302,7 +273,7 @@ where
         }
     }
 
-    fn accumulate(self, stream_message: model::StreamMessage) -> Result<Self, StreamReceiverError<StreamId>> {
+    fn accumulate(&mut self, stream_message: model::StreamMessage) -> Result<(), StreamReceiverError<StreamId>> {
         self.accumulate_with_force(stream_message, false)
     }
 
@@ -352,16 +323,16 @@ where
         Ok(())
     }
 
-    fn update_content(mut self, message_id: u64, bytes: &[u8]) -> Result<Self, StreamReceiverError<StreamId>> {
+    fn update_content(&mut self, message_id: u64, bytes: &[u8]) -> Result<(), StreamReceiverError<StreamId>> {
         match self.messages.entry(message_id) {
             btree_map::Entry::Vacant(entry) => entry.insert(Message::decode(bytes)?),
             btree_map::Entry::Occupied(_) => return Err(StreamReceiverError::DoubleSend(message_id)),
         };
 
-        Ok(self)
+        Ok(())
     }
 
-    fn update_fin(mut self, fin_id: u64) -> Result<Self, StreamReceiverError<StreamId>> {
+    fn update_fin(&mut self, fin_id: u64) -> Result<(), StreamReceiverError<StreamId>> {
         self.fin = match self.fin {
             Some(fin_id_old) => return Err(StreamReceiverError::DoubleFin(fin_id, fin_id_old)),
             None => Some(fin_id),
@@ -373,7 +344,7 @@ where
             }
         }
 
-        Ok(self)
+        Ok(())
     }
 
     fn next_ordered(&mut self) -> Option<Message> {
@@ -483,7 +454,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_simple(stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, mut stream_receiver) =
+        let (stream_sender, mut stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         for message in stream_messages {
@@ -515,7 +486,7 @@ mod test {
         stream_messages: impl Iterator<Item = model::StreamMessage>,
         stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, mut stream_receiver) =
+        let (stream_sender, mut stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         for message in stream_messages_rev {
@@ -547,7 +518,7 @@ mod test {
         stream_messages: impl Iterator<Item = model::StreamMessage>,
         stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -580,7 +551,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_wake(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -618,7 +589,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_lag(#[with(5)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(3).with_channel_cap(6).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -641,7 +612,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_channel_close(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -668,7 +639,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_done(#[with(0)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -686,7 +657,7 @@ mod test {
     async fn ordered_stream_invalid_stream_id_1(
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -727,7 +698,7 @@ mod test {
     async fn ordered_stream_invalid_stream_id_2(
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -763,7 +734,7 @@ mod test {
     async fn ordered_stream_send_after_fin_1(
         #[with(1)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -789,7 +760,7 @@ mod test {
     async fn ordered_stream_send_after_fin_2(
         #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -820,7 +791,7 @@ mod test {
         #[with(0)]
         mut double_fin: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -848,7 +819,7 @@ mod test {
     async fn ordered_stream_double_send_1(
         #[with(2)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -875,7 +846,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_double_send_2(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -906,7 +877,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_decode_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -927,7 +898,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_model_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (mut stream_sender, stream_receiver) =
+        let (stream_sender, stream_receiver) =
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
@@ -963,10 +934,9 @@ mod proptest {
     use super::AccumulatorStateInner;
     use super::AccumulatorStateMachine;
     use super::ConsensusStreamBuilder;
-    use super::OrderedStreamSender;
 
     struct SystemUnderTest {
-        stream_sender: OrderedStreamSender,
+        stream_sender: tokio::sync::mpsc::Sender<model::StreamMessage>,
         stream_receiver: OrderedStreamReceiver<model::ProposalPart, model::ConsensusStreamId>,
         messages_processed: Vec<model::ProposalPart>,
     }
@@ -1167,7 +1137,7 @@ mod proptest {
                     if let std::task::Poll::Ready(None) = next {
                         assert_eq!(state.messages_processed, ref_state.messages_ordered());
                         assert_matches::assert_matches!(state.stream_receiver.state, AccumulatorStateMachine::Done);
-                        assert!(state.stream_sender.sender.is_closed());
+                        assert!(state.stream_sender.is_closed());
                     }
                 }
             }
