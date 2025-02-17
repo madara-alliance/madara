@@ -386,14 +386,14 @@ impl L1HandlerTransaction {
     }
 }
 
-impl From<starknet_types_rpc::MsgFromL1<Felt>> for L1HandlerTransaction {
-    fn from(msg: starknet_types_rpc::MsgFromL1<Felt>) -> Self {
+impl From<mp_rpc::MsgFromL1> for L1HandlerTransaction {
+    fn from(msg: mp_rpc::MsgFromL1) -> Self {
         Self {
             version: Felt::ZERO,
             nonce: 0,
             contract_address: msg.to_address,
             entry_point_selector: msg.entry_point_selector,
-            // TODO: fix type from_address on starknet_types_rpc::MsgFromL1
+            // TODO: fix type from_address on mp_rpc::MsgFromL1
             calldata: std::iter::once(Felt::from_hex(&msg.from_address).unwrap()).chain(msg.payload).collect(),
         }
     }
@@ -706,31 +706,31 @@ pub struct ResourceBounds {
     pub max_price_per_unit: u128,
 }
 
-impl From<ResourceBoundsMapping> for starknet_types_rpc::ResourceBoundsMapping {
+impl From<ResourceBoundsMapping> for mp_rpc::ResourceBoundsMapping {
     fn from(resource: ResourceBoundsMapping) -> Self {
         Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<starknet_types_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
-    fn from(resource: starknet_types_rpc::ResourceBoundsMapping) -> Self {
+impl From<mp_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(resource: mp_rpc::ResourceBoundsMapping) -> Self {
         Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<ResourceBounds> for starknet_types_rpc::ResourceBounds {
+impl From<ResourceBounds> for mp_rpc::ResourceBounds {
     fn from(resource: ResourceBounds) -> Self {
         Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
     }
 }
 
-impl From<starknet_types_rpc::ResourceBounds> for ResourceBounds {
-    fn from(resource: starknet_types_rpc::ResourceBounds) -> Self {
+impl From<mp_rpc::ResourceBounds> for ResourceBounds {
+    fn from(resource: mp_rpc::ResourceBounds) -> Self {
         Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
     }
 }
 
-impl From<DataAvailabilityMode> for starknet_types_rpc::DaMode {
+impl From<DataAvailabilityMode> for mp_rpc::DaMode {
     fn from(da_mode: DataAvailabilityMode) -> Self {
         match da_mode {
             DataAvailabilityMode::L1 => Self::L1,
@@ -739,11 +739,11 @@ impl From<DataAvailabilityMode> for starknet_types_rpc::DaMode {
     }
 }
 
-impl From<starknet_types_rpc::DaMode> for DataAvailabilityMode {
-    fn from(da_mode: starknet_types_rpc::DaMode) -> Self {
+impl From<mp_rpc::DaMode> for DataAvailabilityMode {
+    fn from(da_mode: mp_rpc::DaMode) -> Self {
         match da_mode {
-            starknet_types_rpc::DaMode::L1 => Self::L1,
-            starknet_types_rpc::DaMode::L2 => Self::L2,
+            mp_rpc::DaMode::L1 => Self::L1,
+            mp_rpc::DaMode::L2 => Self::L2,
         }
     }
 }
@@ -983,7 +983,7 @@ mod tests {
 
     #[test]
     fn test_msg_to_l1_handler() {
-        let msg = starknet_types_rpc::MsgFromL1 {
+        let msg = mp_rpc::MsgFromL1 {
             from_address: "0x0000000000000000000000000000000000000001".to_string(),
             to_address: Felt::from(2),
             entry_point_selector: Felt::from(3),
@@ -1008,7 +1008,7 @@ mod tests {
             l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
         };
 
-        let starknet_resource_mapping: starknet_types_rpc::ResourceBoundsMapping = resource_mapping.clone().into();
+        let starknet_resource_mapping: mp_rpc::ResourceBoundsMapping = resource_mapping.clone().into();
         let resource_mapping_back: ResourceBoundsMapping = starknet_resource_mapping.into();
 
         assert_eq!(resource_mapping, resource_mapping_back);
@@ -1017,7 +1017,7 @@ mod tests {
     #[test]
     fn test_data_availability_mode_conversion() {
         let da_mode = DataAvailabilityMode::L1;
-        let starknet_da_mode: starknet_types_rpc::DaMode = da_mode.into();
+        let starknet_da_mode: mp_rpc::DaMode = da_mode.into();
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);

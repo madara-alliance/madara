@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
+use mp_rpc::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{FeeEstimate, MsgFromL1};
 
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
@@ -31,9 +31,9 @@ use crate::Starknet;
 /// ContractError : If there is an error with the contract.
 pub async fn estimate_message_fee(
     starknet: &Starknet,
-    message: MsgFromL1<Felt>,
+    message: MsgFromL1,
     block_id: BlockId,
-) -> StarknetRpcResult<FeeEstimate<Felt>> {
+) -> StarknetRpcResult<FeeEstimate> {
     let block_info = starknet.get_block_info(&block_id)?;
 
     if block_info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
@@ -54,7 +54,7 @@ pub async fn estimate_message_fee(
 }
 
 pub fn convert_message_into_transaction(
-    message: MsgFromL1<Felt>,
+    message: MsgFromL1,
     chain_id: Felt,
 ) -> blockifier::transaction::transaction_execution::Transaction {
     let l1_handler: L1HandlerTransaction = message.into();

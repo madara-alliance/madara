@@ -1,6 +1,5 @@
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
+use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
     PendingBlockWithTxHashes,
 };
@@ -23,7 +22,7 @@ use crate::Starknet;
 pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,
-) -> StarknetRpcResult<MaybePendingBlockWithTxHashes<Felt>> {
+) -> StarknetRpcResult<MaybePendingBlockWithTxHashes> {
     let block = starknet.get_block_info(&block_id)?;
 
     let block_txs_hashes = block.tx_hashes().to_vec();
@@ -77,9 +76,9 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
+    use mp_rpc::{BlockHeader, L1DaMode, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
-    use starknet_types_rpc::{BlockHeader, L1DaMode, ResourcePrice};
 
     #[rstest]
     fn test_get_block_with_tx_hashes(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {

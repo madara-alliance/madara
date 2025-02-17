@@ -19,12 +19,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mp-chain-config = { workspace = true }
 mp-receipt = { workspace = true }
+mp-rpc = { workspace = true }
 mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet-types-rpc = { workspace = true }
 
 # Other
 primitive-types.workspace = true

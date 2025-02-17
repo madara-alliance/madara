@@ -21,6 +21,7 @@ members = [
   "crates/madara/primitives/transactions",
   "crates/madara/primitives/class",
   "crates/madara/primitives/gateway",
+  "crates/madara/primitives/rpc",
   "crates/madara/primitives/receipt",
   "crates/madara/primitives/state_update",
   "crates/madara/primitives/chain_config",
@@ -54,6 +55,7 @@ default-members = [
   "crates/madara/primitives/transactions",
   "crates/madara/primitives/class",
   "crates/madara/primitives/gateway",
+  "crates/madara/primitives/rpc",
   "crates/madara/primitives/receipt",
   "crates/madara/primitives/state_update",
   "crates/madara/primitives/chain_config",
@@ -119,6 +121,7 @@ mp-convert = { path = "crates/madara/primitives/convert", default-features = fal
 mp-transactions = { path = "crates/madara/primitives/transactions", default-features = false }
 mp-class = { path = "crates/madara/primitives/class", default-features = false }
 mp-gateway = { path = "crates/madara/primitives/gateway", default-features = false }
+mp-rpc = { path = "crates/madara/primitives/rpc", default-features = false }
 mp-receipt = { path = "crates/madara/primitives/receipt", default-features = false }
 mp-state-update = { path = "crates/madara/primitives/state_update", default-features = false }
 mp-utils = { path = "crates/madara/primitives/utils", default-features = false }
@@ -154,7 +157,6 @@ starknet = "0.12.0"
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
-starknet-types-rpc = "0.7.1"
 
 blockifier = "=0.8.0"
 starknet_api = "=0.13.0-rc.1"
@@ -279,6 +281,5 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "r
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
-starknet-types-rpc = { git = "https://github.com/jbcaron/types-rs.git", branch = "fork" }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }

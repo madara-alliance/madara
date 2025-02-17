@@ -14,6 +14,10 @@ use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
+use mp_rpc::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
+};
 use mp_transactions::BroadcastedDeclareTransactionV0;
 use mp_transactions::BroadcastedTransactionExt;
 use mp_transactions::L1HandlerTransaction;
@@ -23,10 +27,6 @@ use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
 use starknet_api::StarknetApiError;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
-};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
@@ -77,16 +77,10 @@ pub(crate) trait CheckInvariants {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
-    fn tx_accept_invoke(
-        &self,
-        tx: BroadcastedInvokeTxn<Felt>,
-    ) -> Result<AddInvokeTransactionResult<Felt>, MempoolError>;
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
-    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError>;
-    fn tx_accept_deploy_account(
-        &self,
-        tx: BroadcastedDeployAccountTxn<Felt>,
-    ) -> Result<ContractAndTxnHash<Felt>, MempoolError>;
+    fn tx_accept_invoke(&self, tx: BroadcastedInvokeTxn) -> Result<AddInvokeTransactionResult, MempoolError>;
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError>;
+    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn) -> Result<ClassAndTxnHash, MempoolError>;
+    fn tx_accept_deploy_account(&self, tx: BroadcastedDeployAccountTxn) -> Result<ContractAndTxnHash, MempoolError>;
     fn tx_accept_l1_handler(
         &self,
         tx: L1HandlerTransaction,
@@ -309,10 +303,7 @@ fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
 
 impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_invoke(
-        &self,
-        tx: BroadcastedInvokeTxn<Felt>,
-    ) -> Result<AddInvokeTransactionResult<Felt>, MempoolError> {
+    fn tx_accept_invoke(&self, tx: BroadcastedInvokeTxn) -> Result<AddInvokeTransactionResult, MempoolError> {
         let nonce_info = match &tx {
             BroadcastedInvokeTxn::V1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
             BroadcastedInvokeTxn::V3(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
@@ -330,7 +321,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError> {
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = ClassAndTxnHash {
@@ -376,7 +367,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn<Felt>) -> Result<ClassAndTxnHash<Felt>, MempoolError> {
+    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn) -> Result<ClassAndTxnHash, MempoolError> {
         let nonce_info = match &tx {
             BroadcastedDeclareTxn::V1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
             BroadcastedDeclareTxn::V2(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
@@ -398,10 +389,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_deploy_account(
-        &self,
-        tx: BroadcastedDeployAccountTxn<Felt>,
-    ) -> Result<ContractAndTxnHash<Felt>, MempoolError> {
+    fn tx_accept_deploy_account(&self, tx: BroadcastedDeployAccountTxn) -> Result<ContractAndTxnHash, MempoolError> {
         let tx = BroadcastedTxn::DeployAccount(tx);
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 

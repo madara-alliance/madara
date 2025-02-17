@@ -1,7 +1,6 @@
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_bloom_filter::EventBloomSearcher;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
+use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -30,10 +29,7 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events(
-    starknet: &Starknet,
-    filter: EventFilterWithPageRequest<Felt>,
-) -> StarknetRpcResult<EventsChunk<Felt>> {
+pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size;
@@ -61,7 +57,7 @@ pub async fn get_events(
     }
 
     let from_block = continuation_token.block_n;
-    let mut events_chunk: Vec<EmittedEvent<Felt>> = Vec::with_capacity(chunk_size as usize);
+    let mut events_chunk: Vec<EmittedEvent> = Vec::with_capacity(chunk_size as usize);
 
     let key_filter = EventBloomSearcher::new(from_address.as_ref(), keys.as_deref());
 
@@ -160,11 +156,11 @@ fn block_range(
 ///
 /// # Returns
 ///
-/// Returns an iterator yielding `EmittedEvent<Felt>` items. Each item contains:
+/// Returns an iterator yielding `EmittedEvent` items. Each item contains:
 /// - The event data (from address, keys, and associated data)
 /// - Block context (hash and number, if the block is confirmed)
 /// - Transaction hash that generated the event
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent<Felt>> {
+pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent> {
     let (block_hash, block_number) = match &block.info {
         MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
         MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),

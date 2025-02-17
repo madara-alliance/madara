@@ -80,7 +80,7 @@ mod test {
     use crate::test_utils::rpc_test_setup;
     use jsonrpsee::ws_client::WsClientBuilder;
     use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
-    use starknet_types_rpc::{EmittedEvent, Event, EventContent};
+    use mp_rpc::{EmittedEvent, Event, EventContent};
 
     /// Generates a transaction receipt with predictable event values for testing purposes.
     /// Values are generated using binary patterns for easy verification.
@@ -129,7 +129,7 @@ mod test {
     // Each block contains two receipts:
     // 1. First receipt with 1 event and 1 key
     // 2. Second receipt with 2 events and 2 keys
-    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = Vec<EmittedEvent<Felt>>> + '_ {
+    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = Vec<EmittedEvent>> + '_ {
         (0..).map(|n| {
             let block_info = mp_block::MadaraBlockInfo {
                 header: mp_block::Header { parent_block_hash: Felt::from(n), block_number: n, ..Default::default() },

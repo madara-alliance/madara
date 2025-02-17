@@ -1,7 +1,7 @@
 use std::fmt;
 
+use mp_rpc::Event;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::Event;
 
 use crate::StarknetRpcApiError;
 
@@ -131,7 +131,7 @@ impl<T> OptionExt<T> for Option<T> {
 /// * `true` if the event matches the address and keys pattern.
 /// * `false` otherwise.
 #[inline]
-pub fn event_match_filter(event: &Event<Felt>, address: Option<&Felt>, keys: Option<&[Vec<Felt>]>) -> bool {
+pub fn event_match_filter(event: &Event, address: Option<&Felt>, keys: Option<&[Vec<Felt>]>) -> bool {
     // Check if the event's address matches the provided address, if any.
     if let Some(addr) = address {
         if addr != &event.from_address {
@@ -161,11 +161,11 @@ pub fn event_match_filter(event: &Event<Felt>, address: Option<&Felt>, keys: Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mp_rpc::EventContent;
     use rstest::*;
-    use starknet_types_rpc::EventContent;
 
     #[fixture]
-    fn base_event() -> Event<Felt> {
+    fn base_event() -> Event {
         Event {
             from_address: Felt::from_hex_unchecked("0x1234"),
             event_content: EventContent {
@@ -201,13 +201,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_address_and_keys_match(base_event: Event<Felt>, matching_address: Felt, matching_keys: Vec<Vec<Felt>>) {
+    fn test_address_and_keys_match(base_event: Event, matching_address: Felt, matching_keys: Vec<Vec<Felt>>) {
         assert!(event_match_filter(&base_event, Some(&matching_address), Some(&matching_keys)));
     }
 
     #[rstest]
     fn test_address_and_empty_keys_match(
-        base_event: Event<Felt>,
+        base_event: Event,
         matching_address: Felt,
         matching_keys_empty: Vec<Vec<Felt>>,
     ) {
@@ -215,27 +215,27 @@ mod tests {
     }
 
     #[rstest]
-    fn test_address_does_not_match(base_event: Event<Felt>, non_matching_address: Felt, matching_keys: Vec<Vec<Felt>>) {
+    fn test_address_does_not_match(base_event: Event, non_matching_address: Felt, matching_keys: Vec<Vec<Felt>>) {
         assert!(!event_match_filter(&base_event, Some(&non_matching_address), Some(&matching_keys)));
     }
 
     #[rstest]
-    fn test_keys_do_not_match(base_event: Event<Felt>, matching_address: Felt, non_matching_keys: Vec<Vec<Felt>>) {
+    fn test_keys_do_not_match(base_event: Event, matching_address: Felt, non_matching_keys: Vec<Vec<Felt>>) {
         assert!(!event_match_filter(&base_event, Some(&matching_address), Some(&non_matching_keys)));
     }
 
     #[rstest]
-    fn test_no_address_provided(base_event: Event<Felt>, matching_keys: Vec<Vec<Felt>>) {
+    fn test_no_address_provided(base_event: Event, matching_keys: Vec<Vec<Felt>>) {
         assert!(event_match_filter(&base_event, None, Some(&matching_keys)));
     }
 
     #[rstest]
-    fn test_no_keys_provided(base_event: Event<Felt>, matching_address: Felt) {
+    fn test_no_keys_provided(base_event: Event, matching_address: Felt) {
         assert!(event_match_filter(&base_event, Some(&matching_address), None));
     }
 
     #[rstest]
-    fn test_keys_with_pattern(base_event: Event<Felt>, matching_address: Felt) {
+    fn test_keys_with_pattern(base_event: Event, matching_address: Felt) {
         // [0x1 | 0x2, 0x2]
         let keys = vec![
             vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")],

@@ -35,16 +35,16 @@
 
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
-use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
+use mp_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
     BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn,
     ClassAndTxnHash as AddDeclareTransactionResult, ContractAndTxnHash as AddDeployAccountTransactionResult,
     DeployAccountTxnV1, DeployAccountTxnV3, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };
+use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use starknet_types_core::felt::Felt;
 
 /// Gateway response when a transaction is successfully added to the mempool.
 /// Generic type T represents the specific transaction result type
@@ -63,9 +63,9 @@ pub struct AddTransactionResult<T> {
 pub trait ValidTransactionResult {}
 
 // Implement the marker trait for the three valid transaction result types
-impl<T> ValidTransactionResult for AddInvokeTransactionResult<T> {}
-impl<T> ValidTransactionResult for AddDeclareTransactionResult<T> {}
-impl<T> ValidTransactionResult for AddDeployAccountTransactionResult<T> {}
+impl ValidTransactionResult for AddInvokeTransactionResult {}
+impl ValidTransactionResult for AddDeclareTransactionResult {}
+impl ValidTransactionResult for AddDeployAccountTransactionResult {}
 
 // Conversion from a valid transaction result into a gateway response.
 /// This ensures the response can only be created from permitted transaction types.
@@ -103,7 +103,7 @@ pub enum UserTransaction {
     DeployAccount(UserDeployAccountTransaction),
 }
 
-impl TryFrom<UserTransaction> for BroadcastedTxn<Felt> {
+impl TryFrom<UserTransaction> for BroadcastedTxn {
     type Error = UserTransactionConversionError;
 
     fn try_from(transaction: UserTransaction) -> Result<Self, Self::Error> {
@@ -115,10 +115,10 @@ impl TryFrom<UserTransaction> for BroadcastedTxn<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedTxn<Felt>> for UserTransaction {
+impl TryFrom<BroadcastedTxn> for UserTransaction {
     type Error = UserTransactionConversionError;
 
-    fn try_from(transaction: BroadcastedTxn<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedTxn) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedTxn::Declare(tx) => Ok(UserTransaction::Declare(tx.try_into()?)),
             BroadcastedTxn::Invoke(tx) => Ok(UserTransaction::InvokeFunction(tx.try_into()?)),
@@ -138,7 +138,7 @@ pub enum UserDeclareTransaction {
     V3(UserDeclareV3Transaction),
 }
 
-impl TryFrom<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
+impl TryFrom<UserDeclareTransaction> for BroadcastedDeclareTxn {
     type Error = UserTransactionConversionError;
 
     fn try_from(transaction: UserDeclareTransaction) -> Result<Self, Self::Error> {
@@ -150,10 +150,10 @@ impl TryFrom<UserDeclareTransaction> for BroadcastedDeclareTxn<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedDeclareTxn<Felt>> for UserDeclareTransaction {
+impl TryFrom<BroadcastedDeclareTxn> for UserDeclareTransaction {
     type Error = UserTransactionConversionError;
 
-    fn try_from(transaction: BroadcastedDeclareTxn<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedDeclareTxn) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedDeclareTxn::V1(tx) => Ok(UserDeclareTransaction::V1(tx.try_into()?)),
             BroadcastedDeclareTxn::V2(tx) => Ok(UserDeclareTransaction::V2(tx.try_into()?)),
@@ -174,7 +174,7 @@ pub struct UserDeclareV1Transaction {
     pub nonce: Felt,
 }
 
-impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
+impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1 {
     fn from(transaction: UserDeclareV1Transaction) -> Self {
         Self {
             sender_address: transaction.sender_address,
@@ -186,10 +186,10 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedDeclareTxnV1<Felt>> for UserDeclareV1Transaction {
+impl TryFrom<BroadcastedDeclareTxnV1> for UserDeclareV1Transaction {
     type Error = std::io::Error;
 
-    fn try_from(transaction: BroadcastedDeclareTxnV1<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedDeclareTxnV1) -> Result<Self, Self::Error> {
         Ok(Self {
             sender_address: transaction.sender_address,
             max_fee: transaction.max_fee,
@@ -210,7 +210,7 @@ pub struct UserDeclareV2Transaction {
     pub nonce: Felt,
 }
 
-impl TryFrom<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
+impl TryFrom<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2 {
     type Error = std::io::Error;
 
     fn try_from(transaction: UserDeclareV2Transaction) -> Result<Self, Self::Error> {
@@ -227,10 +227,10 @@ impl TryFrom<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedDeclareTxnV2<Felt>> for UserDeclareV2Transaction {
+impl TryFrom<BroadcastedDeclareTxnV2> for UserDeclareV2Transaction {
     type Error = std::io::Error;
 
-    fn try_from(transaction: BroadcastedDeclareTxnV2<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedDeclareTxnV2) -> Result<Self, Self::Error> {
         let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.into();
 
         Ok(Self {
@@ -261,7 +261,7 @@ pub struct UserDeclareV3Transaction {
     pub account_deployment_data: Vec<Felt>,
 }
 
-impl TryFrom<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
+impl TryFrom<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3 {
     type Error = std::io::Error;
 
     fn try_from(transaction: UserDeclareV3Transaction) -> Result<Self, Self::Error> {
@@ -283,10 +283,10 @@ impl TryFrom<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedDeclareTxnV3<Felt>> for UserDeclareV3Transaction {
+impl TryFrom<BroadcastedDeclareTxnV3> for UserDeclareV3Transaction {
     type Error = std::io::Error;
 
-    fn try_from(transaction: BroadcastedDeclareTxnV3<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedDeclareTxnV3) -> Result<Self, Self::Error> {
         let flattened_sierra_class: FlattenedSierraClass = transaction.contract_class.into();
 
         Ok(Self {
@@ -316,7 +316,7 @@ pub enum UserInvokeFunctionTransaction {
     V3(UserInvokeFunctionV3Transaction),
 }
 
-impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxn<Felt> {
+impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxn {
     fn from(transaction: UserInvokeFunctionTransaction) -> Self {
         match transaction {
             UserInvokeFunctionTransaction::V0(tx) => BroadcastedInvokeTxn::V0(tx.into()),
@@ -326,10 +326,10 @@ impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxn<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedInvokeTxn<Felt>> for UserInvokeFunctionTransaction {
+impl TryFrom<BroadcastedInvokeTxn> for UserInvokeFunctionTransaction {
     type Error = UserTransactionConversionError;
 
-    fn try_from(transaction: BroadcastedInvokeTxn<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedInvokeTxn) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedInvokeTxn::V0(tx) => Ok(UserInvokeFunctionTransaction::V0(tx.into())),
             BroadcastedInvokeTxn::V1(tx) => Ok(UserInvokeFunctionTransaction::V1(tx.into())),
@@ -350,7 +350,7 @@ pub struct UserInvokeFunctionV0Transaction {
     pub max_fee: Felt,
 }
 
-impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0<Felt> {
+impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0 {
     fn from(transaction: UserInvokeFunctionV0Transaction) -> Self {
         Self {
             contract_address: transaction.sender_address,
@@ -362,8 +362,8 @@ impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0<Felt> {
     }
 }
 
-impl From<InvokeTxnV0<Felt>> for UserInvokeFunctionV0Transaction {
-    fn from(transaction: InvokeTxnV0<Felt>) -> Self {
+impl From<InvokeTxnV0> for UserInvokeFunctionV0Transaction {
+    fn from(transaction: InvokeTxnV0) -> Self {
         Self {
             sender_address: transaction.contract_address,
             entry_point_selector: transaction.entry_point_selector,
@@ -383,7 +383,7 @@ pub struct UserInvokeFunctionV1Transaction {
     pub nonce: Felt,
 }
 
-impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1<Felt> {
+impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1 {
     fn from(transaction: UserInvokeFunctionV1Transaction) -> Self {
         Self {
             sender_address: transaction.sender_address,
@@ -395,8 +395,8 @@ impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1<Felt> {
     }
 }
 
-impl From<InvokeTxnV1<Felt>> for UserInvokeFunctionV1Transaction {
-    fn from(transaction: InvokeTxnV1<Felt>) -> Self {
+impl From<InvokeTxnV1> for UserInvokeFunctionV1Transaction {
+    fn from(transaction: InvokeTxnV1) -> Self {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
@@ -423,7 +423,7 @@ pub struct UserInvokeFunctionV3Transaction {
     pub account_deployment_data: Vec<Felt>,
 }
 
-impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3<Felt> {
+impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3 {
     fn from(transaction: UserInvokeFunctionV3Transaction) -> Self {
         Self {
             sender_address: transaction.sender_address,
@@ -440,8 +440,8 @@ impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3<Felt> {
     }
 }
 
-impl From<InvokeTxnV3<Felt>> for UserInvokeFunctionV3Transaction {
-    fn from(transaction: InvokeTxnV3<Felt>) -> Self {
+impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
+    fn from(transaction: InvokeTxnV3) -> Self {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
@@ -466,7 +466,7 @@ pub enum UserDeployAccountTransaction {
     V3(UserDeployAccountV3Transaction),
 }
 
-impl From<UserDeployAccountTransaction> for BroadcastedDeployAccountTxn<Felt> {
+impl From<UserDeployAccountTransaction> for BroadcastedDeployAccountTxn {
     fn from(transaction: UserDeployAccountTransaction) -> Self {
         match transaction {
             UserDeployAccountTransaction::V1(tx) => BroadcastedDeployAccountTxn::V1(tx.into()),
@@ -475,10 +475,10 @@ impl From<UserDeployAccountTransaction> for BroadcastedDeployAccountTxn<Felt> {
     }
 }
 
-impl TryFrom<BroadcastedDeployAccountTxn<Felt>> for UserDeployAccountTransaction {
+impl TryFrom<BroadcastedDeployAccountTxn> for UserDeployAccountTransaction {
     type Error = UserTransactionConversionError;
 
-    fn try_from(transaction: BroadcastedDeployAccountTxn<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedDeployAccountTxn) -> Result<Self, Self::Error> {
         match transaction {
             BroadcastedDeployAccountTxn::V1(tx) => Ok(UserDeployAccountTransaction::V1(tx.into())),
             BroadcastedDeployAccountTxn::V3(tx) => Ok(UserDeployAccountTransaction::V3(tx.into())),
@@ -499,7 +499,7 @@ pub struct UserDeployAccountV1Transaction {
     pub nonce: Felt,
 }
 
-impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1<Felt> {
+impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1 {
     fn from(transaction: UserDeployAccountV1Transaction) -> Self {
         Self {
             class_hash: transaction.class_hash,
@@ -512,8 +512,8 @@ impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1<Felt> {
     }
 }
 
-impl From<DeployAccountTxnV1<Felt>> for UserDeployAccountV1Transaction {
-    fn from(transaction: DeployAccountTxnV1<Felt>) -> Self {
+impl From<DeployAccountTxnV1> for UserDeployAccountV1Transaction {
+    fn from(transaction: DeployAccountTxnV1) -> Self {
         Self {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
@@ -541,7 +541,7 @@ pub struct UserDeployAccountV3Transaction {
     pub paymaster_data: Vec<Felt>,
 }
 
-impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3<Felt> {
+impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3 {
     fn from(transaction: UserDeployAccountV3Transaction) -> Self {
         Self {
             class_hash: transaction.class_hash,
@@ -558,8 +558,8 @@ impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3<Felt> {
     }
 }
 
-impl From<DeployAccountTxnV3<Felt>> for UserDeployAccountV3Transaction {
-    fn from(transaction: DeployAccountTxnV3<Felt>) -> Self {
+impl From<DeployAccountTxnV3> for UserDeployAccountV3Transaction {
+    fn from(transaction: DeployAccountTxnV3) -> Self {
         Self {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
