@@ -1,4 +1,4 @@
-use super::FromModelError;
+use crate::FromModelError;
 use crate::{
     model::{self, receipt::execution_resources::BuiltinCounter},
     model_field, model_field_variant, CollectInto, TryIntoField,

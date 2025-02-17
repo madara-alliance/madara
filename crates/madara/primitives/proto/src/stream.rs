@@ -3,6 +3,7 @@ use std::{
     task::Poll,
 };
 
+use fixtures::stream_id;
 use m_proc_macros::model_describe;
 
 use crate::{
@@ -58,17 +59,19 @@ where
 }
 
 type Never = Option<std::convert::Infallible>;
+
 pub type ConsensusStreamBuilder = StreamBuilder<model::ProposalPart, model::ConsensusStreamId>;
 pub type ConsensusStream = OrderedMessageStream<model::ProposalPart, model::ConsensusStreamId>;
+pub type ConsensusStreamItem = StreamItem<model::ProposalPart, model::ConsensusStreamId>;
 
-pub struct StreamBuilder<Message, StreamId, T = Never, V = Never>
+pub struct StreamBuilder<Message, StreamId, T = Never, U = Never, V = Never>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
 {
     lag_cap: T,
-    channel_cap: V,
-    stream_id: Option<Vec<u8>>,
+    channel_cap: U,
+    id_stream: V,
     _phantom1: std::marker::PhantomData<Message>,
     _phantom2: std::marker::PhantomData<StreamId>,
 }
@@ -138,6 +141,17 @@ where
     state: AccumulatorStateMachine<Message, StreamId>,
 }
 
+#[cfg_attr(test, derive(Clone, Debug))]
+pub struct StreamItem<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+{
+    pub message: Message,
+    pub id_message: u64,
+    pub id_stream: StreamId,
+}
+
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 enum AccumulatorStateMachine<Message, StreamId>
@@ -145,6 +159,7 @@ where
     Message: prost::Message + Default,
     StreamId: prost::Message + Default + std::fmt::Debug,
 {
+    Init { lag_cap: u64 },
     Accumulate(AccumulatorStateInner<Message, StreamId>),
     Done,
 }
@@ -156,9 +171,10 @@ where
     StreamId: prost::Message + Default + std::fmt::Debug,
 {
     messages: BTreeMap<u64, Message>,
-    stream_id: Option<Vec<u8>>,
-    fin: Option<u64>,
+    id_stream_decode: StreamId,
+    id_stream: Vec<u8>,
     id_low: u64,
+    fin: Option<u64>,
     lag_cap: u64,
     _phantom: std::marker::PhantomData<StreamId>,
 }
@@ -170,6 +186,9 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.state {
+            AccumulatorStateMachine::Init { .. } => {
+                f.debug_struct("OrderedStreamAccumulator").field("state", &"Init").finish()
+            }
             AccumulatorStateMachine::Accumulate(..) => {
                 f.debug_struct("OrderedStreamAccumulator").field("state", &"Accumulating").finish()
             }
@@ -186,22 +205,9 @@ where
     StreamId: prost::Message + Default + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(stream_id) = &self.stream_id {
-            if let Ok(stream_id) = StreamId::decode(stream_id.as_slice()) {
-                return f
-                    .debug_struct("AccumulatorStateInner")
-                    .field("messages", &format!("... ({})", self.messages.len()))
-                    .field("stream_id", &stream_id)
-                    .field("id_low", &self.id_low)
-                    .field("lag_cap", &self.lag_cap)
-                    .field("fin", &self.fin)
-                    .finish();
-            }
-        }
-
         f.debug_struct("AccumulatorStateInner")
             .field("messages", &format!("... ({})", self.messages.len()))
-            .field("stream_id", &"None")
+            .field("stream_id", &self.id_stream_decode)
             .field("id_low", &self.id_low)
             .field("lag_cap", &self.lag_cap)
             .field("fin", &self.fin)
@@ -209,59 +215,64 @@ where
     }
 }
 
-impl<T, V, Message, StreamId> StreamBuilder<Message, StreamId, T, V>
+impl<T, U, V, Message, StreamId> StreamBuilder<Message, StreamId, T, U, V>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
 {
-    pub fn new() -> StreamBuilder<Message, StreamId, Never, Never> {
+    pub fn new() -> StreamBuilder<Message, StreamId, Never, Never, Never> {
         StreamBuilder {
             lag_cap: None,
             channel_cap: None,
-            stream_id: None,
+            id_stream: None,
             _phantom1: std::marker::PhantomData,
             _phantom2: std::marker::PhantomData,
         }
     }
 
-    pub fn with_lag_cap(self, lag_cap: u64) -> StreamBuilder<Message, StreamId, u64, V> {
-        let Self { channel_cap, stream_id, _phantom1, _phantom2, .. } = self;
-        StreamBuilder { lag_cap, channel_cap, stream_id, _phantom1, _phantom2 }
+    pub fn with_lag_cap(self, lag_cap: u64) -> StreamBuilder<Message, StreamId, u64, U, V> {
+        let Self { channel_cap, id_stream: stream_id, _phantom1, _phantom2, .. } = self;
+        StreamBuilder { lag_cap, channel_cap, id_stream: stream_id, _phantom1, _phantom2 }
     }
 
-    pub fn with_channel_cap(self, channel_cap: usize) -> StreamBuilder<Message, StreamId, T, usize> {
-        let Self { lag_cap, stream_id, _phantom1, _phantom2, .. } = self;
-        StreamBuilder { lag_cap, channel_cap, stream_id, _phantom1, _phantom2 }
+    pub fn with_channel_cap(self, channel_cap: usize) -> StreamBuilder<Message, StreamId, T, usize, V> {
+        let Self { lag_cap, id_stream: stream_id, _phantom1, _phantom2, .. } = self;
+        StreamBuilder { lag_cap, channel_cap, id_stream: stream_id, _phantom1, _phantom2 }
     }
 
-    pub fn with_stream_id(self, stream_id: &[u8]) -> StreamBuilder<Message, StreamId, T, V> {
+    pub fn with_id_stream(self, id_stream: &[u8]) -> StreamBuilder<Message, StreamId, T, U, Vec<u8>> {
         let Self { lag_cap, channel_cap, _phantom1, _phantom2, .. } = self;
-        Self { stream_id: Some(stream_id.to_vec()), lag_cap, channel_cap, _phantom1, _phantom2 }
+        StreamBuilder { lag_cap, channel_cap, id_stream: id_stream.to_vec(), _phantom1, _phantom2 }
     }
 }
 
-impl<Message, StreamId> StreamBuilder<Message, StreamId, u64, usize>
+impl<Message, StreamId> StreamBuilder<Message, StreamId, u64, usize, Vec<u8>>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + Default + Clone + std::fmt::Debug,
 {
-    pub fn build(self) -> (tokio::sync::mpsc::Sender<model::StreamMessage>, OrderedMessageStream<Message, StreamId>) {
-        let Self { lag_cap, channel_cap, stream_id, .. } = self;
+    pub fn build(
+        self,
+    ) -> Result<
+        (tokio::sync::mpsc::Sender<model::StreamMessage>, OrderedMessageStream<Message, StreamId>),
+        StreamReceiverError<StreamId>,
+    > {
+        let Self { lag_cap, channel_cap, id_stream, .. } = self;
         let (sx, rx) = tokio::sync::mpsc::channel(channel_cap);
-        let state = AccumulatorStateMachine::new(lag_cap, stream_id);
+        let state = AccumulatorStateMachine::new(lag_cap, &id_stream)?;
 
         let receiver = OrderedMessageStream { receiver: rx, state };
 
-        (sx, receiver)
+        Ok((sx, receiver))
     }
 }
 
 impl<Message, StreamId> futures::Stream for OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
 {
-    type Item = Result<Message, StreamReceiverError<StreamId>>;
+    type Item = Result<StreamItem<Message, StreamId>, StreamReceiverError<StreamId>>;
 
     fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
         let Self { receiver, state: AccumulatorStateMachine::Accumulate(inner) } = self.as_mut().get_mut() else {
@@ -269,8 +280,8 @@ where
         };
 
         loop {
-            if let Some(message) = inner.next_ordered() {
-                return Poll::Ready(Some(Ok(message)));
+            if let Some(item) = inner.next_ordered() {
+                return Poll::Ready(Some(Ok(item)));
             }
 
             if inner.is_done() {
@@ -290,6 +301,7 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self.state {
+            AccumulatorStateMachine::Init { .. } => (0, None),
             AccumulatorStateMachine::Accumulate(ref inner) => {
                 let lo = inner.messages.last_key_value().map(|(id, _)| *id - inner.id_low + 1).unwrap_or(1) as usize;
                 let hi = inner.fin.map(|id| id as usize);
@@ -303,7 +315,7 @@ where
 impl<Message, StreamId> OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
 {
     fn done<T>(&mut self, t: T) -> T {
         self.receiver.close();
@@ -314,36 +326,40 @@ where
 
 impl<Message, StreamId> AccumulatorStateMachine<Message, StreamId>
 where
-    Message: prost::Message + Default,
-    StreamId: prost::Message + Default,
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
 {
-    fn new(lag_cap: u64, stream_id: Option<Vec<u8>>) -> Self {
-        Self::Accumulate(AccumulatorStateInner {
+    fn new(lag_cap: u64, id_stream: &[u8]) -> Result<Self, StreamReceiverError<StreamId>> {
+        Ok(Self::Accumulate(AccumulatorStateInner::new(id_stream, lag_cap)?))
+    }
+}
+
+impl<Message, StreamId> AccumulatorStateInner<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + Default + Clone + std::fmt::Debug,
+{
+    fn new(id_stream: &[u8], lag_cap: u64) -> Result<Self, StreamReceiverError<StreamId>> {
+        Ok(Self {
             messages: Default::default(),
-            stream_id,
+            id_stream_decode: StreamId::decode(id_stream)?,
+            id_stream: id_stream.to_vec(),
             fin: None,
             id_low: 0,
             lag_cap,
             _phantom: std::marker::PhantomData,
         })
     }
-}
 
-impl<Message, StreamId> AccumulatorStateInner<Message, StreamId>
-where
-    Message: prost::Message + Default,
-    StreamId: prost::Message + Default + std::fmt::Debug,
-{
     #[model_describe(model::StreamMessage)]
     // TODO: this needs some more care in regards to DOS migitation:
     //  - limits on the total number of messsages
     fn accumulate(&mut self, stream_message: model::StreamMessage) -> Result<(), StreamReceiverError<StreamId>> {
-        let id_stream = self.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
-        let id_message = stream_message.message_id;
         let id_first = self.messages.first_key_value().map(|(k, _)| *k);
         let id_last = self.messages.last_key_value().map(|(k, _)| *k);
+        let id_message = stream_message.message_id;
 
-        Self::check_stream_id(&stream_message.stream_id, id_stream)?;
+        Self::check_stream_id(&stream_message.stream_id, &self.id_stream)?;
         Self::check_id_message(stream_message.message_id, self.id_low, self.fin)?;
         Self::check_lag_cap(id_message, id_first, id_last, self.fin, self.lag_cap)?;
 
@@ -415,18 +431,19 @@ where
         Ok(())
     }
 
-    fn next_ordered(&mut self) -> Option<Message> {
-        match self.messages.first_entry() {
-            Some(entry) => {
-                if *entry.key() == self.id_low {
-                    self.id_low += 1;
-                    Some(entry.remove())
-                } else {
-                    None
-                }
+    fn next_ordered(&mut self) -> Option<StreamItem<Message, StreamId>> {
+        self.messages.first_entry().and_then(|entry| {
+            let id_message = *entry.key();
+
+            if id_message == self.id_low {
+                self.id_low += 1;
+                let message = entry.remove();
+                let id_stream = self.id_stream_decode.clone();
+                Some(StreamItem { message, id_message, id_stream })
+            } else {
+                None
             }
-            None => None,
-        }
+        })
     }
 
     fn is_done(&self) -> bool {
@@ -521,9 +538,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_simple(stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, mut stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+    async fn ordered_stream_simple(#[with(10)] stream_messages: impl Iterator<Item = model::StreamMessage>) {
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         for message in stream_messages {
             stream_sender.send(message.clone()).await.expect("Failed to send stream message");
@@ -554,8 +576,13 @@ mod test {
         stream_messages: impl Iterator<Item = model::StreamMessage>,
         stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, mut stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         for message in stream_messages_rev {
             stream_sender.send(message).await.expect("Failed to send stream message");
@@ -586,8 +613,13 @@ mod test {
         stream_messages: impl Iterator<Item = model::StreamMessage>,
         stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
         for stream_message in stream_messages_rev {
@@ -619,8 +651,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_wake(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -657,8 +694,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_lag(#[with(5)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(3).with_channel_cap(6).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(3)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -680,8 +722,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_channel_close(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -707,8 +754,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_done(#[with(0)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
         let fin = stream_messages.next().unwrap();
@@ -725,8 +777,13 @@ mod test {
     async fn ordered_stream_invalid_stream_id_1(
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -766,8 +823,13 @@ mod test {
     async fn ordered_stream_invalid_stream_id_2(
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -802,8 +864,13 @@ mod test {
     async fn ordered_stream_send_after_fin_1(
         #[with(1)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -828,8 +895,13 @@ mod test {
     async fn ordered_stream_send_after_fin_2(
         #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -859,8 +931,13 @@ mod test {
         #[with(0)]
         mut double_fin: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -887,8 +964,13 @@ mod test {
     async fn ordered_stream_double_send_1(
         #[with(2)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
         let _fin = stream_messages_rev.next().unwrap();
@@ -914,8 +996,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_double_send_2(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -945,8 +1032,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_decode_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -966,8 +1058,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_model_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let (stream_sender, stream_receiver) =
-            ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
+        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+            .with_lag_cap(u64::MAX)
+            .with_channel_cap(1_000)
+            .with_id_stream(&id_stream)
+            .build()
+            .expect("Failed to create consensus stream");
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
 
@@ -994,7 +1091,7 @@ mod proptest {
     use proptest_state_machine::StateMachineTest;
     use prost::Message;
 
-    use crate::{model, stream::fixtures};
+    use crate::{model, proposal::fixtures};
 
     use super::AccumulatorStateMachine;
     use super::ConsensusStream;
@@ -1166,7 +1263,7 @@ mod proptest {
             let (sx, rx) = ConsensusStreamBuilder::new()
                 .with_lag_cap(ref_state.lag_cap)
                 .with_channel_cap(1_000)
-                .with_stream_id(&ref_state.stream_id)
+                .with_id_stream(&ref_state.stream_id)
                 .build();
 
             Self { stream_sender: sx, stream_receiver: rx, messages_processed: Default::default() }
