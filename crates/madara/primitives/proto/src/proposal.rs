@@ -931,7 +931,6 @@ mod proptest {
         proposal::{fixtures, OrderedStreamReceiver},
     };
 
-    use super::AccumulatorStateInner;
     use super::AccumulatorStateMachine;
     use super::ConsensusStreamBuilder;
 
@@ -1079,17 +1078,6 @@ mod proptest {
                     model::stream_message::Message::Fin(_) => None,
                 })
                 .collect()
-        }
-
-        fn check_lag_cap(&self, message_id: u64) -> bool {
-            let last_id = self.messages_processed.last_key_value().map(|(k, _)| *k);
-            AccumulatorStateInner::<model::ProposalPart, model::ConsensusStreamId>::check_lag_cap(
-                message_id,
-                last_id,
-                self.fin,
-                self.lag_cap,
-            )
-            .is_ok()
         }
     }
 
