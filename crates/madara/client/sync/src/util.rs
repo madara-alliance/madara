@@ -37,3 +37,25 @@ impl<T> From<JoinHandle<T>> for AbortOnDrop<T> {
         Self(value)
     }
 }
+
+pub struct ServiceStateSender<T>(Option<tokio::sync::mpsc::UnboundedSender<T>>);
+
+impl<T> Default for ServiceStateSender<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl<T> ServiceStateSender<T> {
+    pub fn send(&self, val: T) {
+        if let Some(sender) = &self.0 {
+            let _res = sender.send(val);
+        }
+    }
+}
+
+#[allow(unused)] // only used in tests
+pub fn service_state_channel<T>() -> (ServiceStateSender<T>, tokio::sync::mpsc::UnboundedReceiver<T>) {
+    let (sender, recv) = tokio::sync::mpsc::unbounded_channel();
+    (ServiceStateSender(Some(sender)), recv)
+}

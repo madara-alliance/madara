@@ -175,6 +175,9 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    /// Returns true if the database has a pending block. Note getting a pending block will always succeed, because if there is
+    /// no pending block we will return a virtual one which has no in it transaction.
+    /// This function returns `false` in the case where getting a pending block will return a virtual one.
     pub fn has_pending_block(&self) -> Result<bool> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         Ok(self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)?.is_some())

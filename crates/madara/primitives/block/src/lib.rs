@@ -211,6 +211,15 @@ impl MadaraBlockInner {
     pub fn new(transactions: Vec<Transaction>, receipts: Vec<TransactionReceipt>) -> Self {
         Self { transactions, receipts }
     }
+
+    pub fn events(&self) -> impl Iterator<Item = EventWithTransactionHash> + '_ {
+        self.receipts.iter().flat_map(|r| {
+            r.events()
+                .iter()
+                .cloned()
+                .map(|event| EventWithTransactionHash { transaction_hash: r.transaction_hash(), event })
+        })
+    }
 }
 
 /// Starknet block definition.

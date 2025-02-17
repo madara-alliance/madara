@@ -4,7 +4,7 @@ use crate::{
     util::AbortOnDrop,
 };
 use anyhow::Context;
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PendingFullBlock};
 use mp_gateway::{
@@ -161,7 +161,7 @@ impl GatewayPendingSync {
     ) -> Self {
         Self { client, importer, backend, wait_deadline: None, wait_duration }
     }
-    async fn run_once(&mut self, probe_height: Option<u64>) -> anyhow::Result<()> {
+    async fn run_once(&mut self) -> anyhow::Result<()> {
         if let Some(deadline) = self.wait_deadline {
             tokio::time::sleep_until(deadline).await;
         }
@@ -169,7 +169,8 @@ impl GatewayPendingSync {
 
         let block = match self.client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
             Ok(block) => block,
-            // Sometimes the gateway returns a closed block instead of a pending one. Deserialization fails in this case.
+            // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
+            // Deserialization fails in this case.
             Err(SequencerError::DeserializeBody { .. }) => return Ok(()),
             Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => return Ok(()),
             Err(other) => Err(other)?,
@@ -180,19 +181,19 @@ impl GatewayPendingSync {
             return Ok(());
         };
 
-        let parent_hash = if let Some(probe_height) = probe_height {
-            self.backend
-                .get_block_hash(&DbBlockId::Number(probe_height))
-                .context("Getting latest block hash")?
-                .context("Block at probe not found")?
-        } else {
-            Felt::ZERO
-        };
+        let parent_hash = self.backend
+            .get_block_hash(&BlockId::Tag(BlockTag::Latest))
+            .context("Getting latest block hash")?
+            .unwrap_or(Felt::ZERO);
 
         if block.block.parent_block_hash != parent_hash {
             tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
             return Ok(());
         }
+
+        
+
+        tracing::info!("BLOCK = {block:?}, {parent_hash:#x}");
 
         let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
 
@@ -216,9 +217,9 @@ impl GatewayPendingSync {
         Ok(())
     }
 
-    pub async fn run(&mut self, probe_height: Option<u64>) -> anyhow::Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         loop {
-            self.run_once(probe_height).await?;
+            self.run_once().await?;
         }
     }
 }

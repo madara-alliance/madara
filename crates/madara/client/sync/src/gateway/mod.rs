@@ -148,7 +148,7 @@ impl ForwardPipeline for GatewayForwardSync {
     async fn run(
         &mut self,
         target_height: u64,
-        probe_height: Option<u64>,
+        _probe_height: Option<u64>,
         metrics: &mut SyncMetrics,
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
@@ -188,7 +188,7 @@ impl ForwardPipeline for GatewayForwardSync {
         }
 
         if let Some(pending_sync) = self.pending_sync.as_mut() {
-            pending_sync.run(probe_height).await?;
+            pending_sync.run().await?;
         }
 
         Ok(())

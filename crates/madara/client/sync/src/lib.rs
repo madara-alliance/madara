@@ -5,6 +5,7 @@ mod pipeline;
 mod probe;
 mod sync;
 mod util;
+mod tests;
 
 pub use sync::SyncControllerConfig;
 

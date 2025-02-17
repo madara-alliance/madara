@@ -141,6 +141,11 @@ impl MadaraBackend {
     }
 
     pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
+        // Clear pending block when storing a new block header. This is the best place to do it IMO since
+        // it would make no sense to be able to store a block header if there is also a pending block, and
+        // we want to be sure to clear the pending block if we restart the sync pipeline.
+        self.clear_pending_block()?;
+
         let mut tx = WriteBatchWithTransaction::default();
         let block_n = header.header.block_number;
 

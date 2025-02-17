@@ -23,11 +23,17 @@ pub struct BlockValidationConfig {
     pub trust_class_hashes: bool,
     /// Ignore the order of the blocks to allow starting at some height.
     pub trust_parent_hash: bool,
+
+    /// For testing purposes, do not check anything.
+    pub no_check: bool,
 }
 
 impl BlockValidationConfig {
     pub fn trust_parent_hash(self, trust_parent_hash: bool) -> Self {
         Self { trust_parent_hash, ..self }
+    }
+    pub fn all_verifications_disabled(self, no_check: bool) -> Self {
+        Self { no_check, ..self }
     }
 }
 
@@ -147,7 +153,7 @@ impl BlockImporter {
         // TODO: verify signatures
 
         // verify block_number
-        if block_n != signed_header.header.block_number {
+        if !self.config.no_check && block_n != signed_header.header.block_number {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
         }
 
@@ -212,7 +218,7 @@ impl BlockImporter {
         // Verify transaction count (we want to check it when the block does not come from p2p).
         let expected = check_against.transaction_count;
         let got = transactions.len() as _;
-        if expected != got {
+        if !self.config.no_check && expected != got {
             return Err(BlockImportError::TransactionCount { got, expected });
         }
 
@@ -222,7 +228,7 @@ impl BlockImporter {
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
             starknet_version,
         );
-        if !is_pre_v0_13_2_special_case && expected != transaction_commitment {
+        if !self.config.no_check && !is_pre_v0_13_2_special_case && expected != transaction_commitment {
             return Err(BlockImportError::TransactionCommitment { got: transaction_commitment, expected });
         }
 
@@ -232,7 +238,7 @@ impl BlockImporter {
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
             starknet_version,
         );
-        if !is_pre_v0_13_2_special_case && expected != receipt_commitment {
+        if !self.config.no_check && !is_pre_v0_13_2_special_case && expected != receipt_commitment {
             return Err(BlockImportError::ReceiptCommitment { got: receipt_commitment, expected });
         }
 
@@ -295,7 +301,7 @@ impl BlockImporter {
                         expected: ClassType::Sierra,
                     });
                 };
-                if sierra.compiled_class_hash != expected {
+                if !self.config.no_check && sierra.compiled_class_hash != expected {
                     return Err(BlockImportError::CompiledClassHash {
                         class_hash,
                         got: sierra.compiled_class_hash,
@@ -304,12 +310,12 @@ impl BlockImporter {
                 }
 
                 // Verify class hash
-                if !self.config.trust_class_hashes {
+                if !self.config.no_check && !self.config.trust_class_hashes {
                     let expected = sierra
                         .contract_class
                         .compute_class_hash()
                         .map_err(|error| BlockImportError::ComputeClassHash { class_hash, error })?;
-                    if class_hash != expected {
+                    if !self.config.no_check && class_hash != expected {
                         return Err(BlockImportError::ClassHash { got: class_hash, expected });
                     }
                 }
@@ -321,7 +327,7 @@ impl BlockImporter {
                     .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
 
                 // Verify compiled class hash
-                if compiled_class_hash != sierra.compiled_class_hash {
+                if !self.config.no_check && compiled_class_hash != sierra.compiled_class_hash {
                     return Err(BlockImportError::CompiledClassHash {
                         class_hash,
                         got: sierra.compiled_class_hash,
@@ -337,7 +343,7 @@ impl BlockImporter {
             ClassInfo::Legacy(legacy) => {
                 tracing::trace!("Converting legacy class with hash {:#x}", class_hash);
 
-                if check_against != DeclaredClassCompiledClass::Legacy {
+                if !self.config.no_check && check_against != DeclaredClassCompiledClass::Legacy {
                     return Err(BlockImportError::ClassType {
                         class_hash,
                         got: ClassType::Sierra,
@@ -352,7 +358,7 @@ impl BlockImporter {
                         .compute_class_hash()
                         .map_err(|e| BlockImportError::ComputeClassHash { class_hash, error: e })?;
 
-                    if class_hash != expected {
+                    if !self.config.no_check && class_hash != expected {
                         return Err(BlockImportError::ClassHash { got: class_hash, expected });
                     }
                 }
@@ -391,14 +397,14 @@ impl BlockImporter {
         // Verify state diff length (we want to check it when the block does not come from p2p).
         let expected = check_against.state_diff_length.unwrap_or_default();
         let got = state_diff.len() as _;
-        if expected != got {
+        if !self.config.no_check && expected != got {
             return Err(BlockImportError::StateDiffLength { got, expected });
         }
 
         // Verify state diff commitment.
         let expected = check_against.state_diff_commitment.unwrap_or_default();
         let got = state_diff.compute_hash();
-        if !is_pre_v0_13_2_special_case && expected != got {
+        if !self.config.no_check && !is_pre_v0_13_2_special_case && expected != got {
             return Err(BlockImportError::StateDiffCommitment { got, expected });
         }
         Ok(got)
@@ -435,14 +441,14 @@ impl BlockImporter {
         // Verify event count (we want to check it when the block does not come from p2p).
         let expected = check_against.event_count;
         let got = events.len() as _;
-        if expected != got {
+        if !self.config.no_check && expected != got {
             return Err(BlockImportError::EventCount { got, expected });
         }
 
         // Verify events commitment.
         let expected = check_against.event_commitment;
         let got = compute_event_commitment(event_hashes, starknet_version);
-        if !is_pre_v0_13_2_special_case && expected != got {
+        if !self.config.no_check && !is_pre_v0_13_2_special_case && expected != got {
             return Err(BlockImportError::EventCommitment { got, expected });
         }
 
@@ -483,7 +489,7 @@ impl BlockImporter {
                 .header
                 .global_state_root;
 
-            if expected != got {
+            if !this.config.no_check && expected != got {
                 return Err(BlockImportError::GlobalStateRoot { got, expected }.into());
             }
 

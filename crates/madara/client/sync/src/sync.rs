@@ -1,4 +1,4 @@
-use crate::{metrics::SyncMetrics, probe::ProbeState};
+use crate::{metrics::SyncMetrics, probe::ProbeState, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
 use std::{cmp, time::Duration};
@@ -18,11 +18,63 @@ pub trait ForwardPipeline {
     fn latest_block(&self) -> Option<u64>;
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ServiceState {
+    Starting,
+    Idle,
+    SyncingTo {
+        target: u64,
+    },
+}
+
 pub struct SyncControllerConfig {
     pub l1_head_recv: L1HeadReceiver,
+    /// Stop the sync process at this block.
     pub stop_at_block_n: Option<u64>,
+    /// Call [`mp_utils::service::ServiceContext::cancel_global`] when the sync process finishes.
+    /// This usually means that the whole node will be stopped
     pub global_stop_on_sync: bool,
+    /// Stop the service once fully synced, meaning the pipeline cannot be run again and the probe did not return
+    /// any new block - or the sync arrived at the block_n specified by [`Self::stop_at_block_n`].
+    /// By default, the sync process will not stop, and pending block task / the probe will continue to run, even if
+    /// [`Self::stop_at_block_n`] is set.
     pub stop_on_sync: bool,
+
+    /// For testing purposes, you can subscribe to the service state. This is used in tests
+    /// to know when the service is idling.
+    pub service_state_sender: ServiceStateSender<ServiceState>,
+}
+
+impl SyncControllerConfig {
+    pub fn stop_on_sync(self, stop_on_sync: bool) -> Self {
+        Self { stop_on_sync, ..self }
+    }
+    pub fn l1_head_recv(self, l1_head_recv: L1HeadReceiver) -> Self {
+        Self { l1_head_recv, ..self }
+    }
+    pub fn stop_at_block_n(self, stop_at_block_n: Option<u64>) -> Self {
+        Self { stop_at_block_n, ..self }
+    }
+    pub fn global_stop_on_sync(self, global_stop_on_sync: bool) -> Self {
+        Self { global_stop_on_sync, ..self }
+    }
+    pub fn service_state_sender(self, service_state_sender: ServiceStateSender<ServiceState>) -> Self {
+        Self { service_state_sender, ..self }
+    }
+}
+
+impl Default for SyncControllerConfig {
+    fn default() -> Self {
+        // Make a channel that has its sender closed. No notification can happen on this channel.
+        let (_, l1_head_recv) = tokio::sync::watch::channel(None);
+        Self {
+            l1_head_recv,
+            stop_at_block_n: None,
+            global_stop_on_sync: false,
+            stop_on_sync: false,
+            service_state_sender: Default::default(),
+        }
+    }
 }
 
 pub struct SyncController<P: ForwardPipeline> {
@@ -48,6 +100,7 @@ impl<P: ForwardPipeline> SyncController<P> {
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        self.config.service_state_sender.send(ServiceState::Starting);
         loop {
             tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
@@ -103,13 +156,20 @@ impl<P: ForwardPipeline> SyncController<P> {
 
             let probe_height = self.probe.last_val();
 
+            let target = target_height.filter(|_| can_run_pipeline);
+
+            if let Some(target) = target {
+                self.config.service_state_sender.send(ServiceState::SyncingTo { target });
+            } else {
+                self.config.service_state_sender.send(ServiceState::Idle);
+            }
+
             tokio::select! {
                 Ok(()) = self.config.l1_head_recv.changed() => {
                     self.current_l1_head = self.config.l1_head_recv.borrow_and_update().clone();
                 }
                 Some(res) = OptionFuture::from(
-                    target_height.filter(|_| can_run_pipeline)
-                        .map(|target| self.forward_pipeline.run(target, probe_height, &mut self.sync_metrics))
+                    target.map(|target| self.forward_pipeline.run(target, probe_height, &mut self.sync_metrics))
                 ) =>
                 {
                     res?;
