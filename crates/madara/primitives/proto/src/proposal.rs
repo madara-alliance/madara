@@ -10,31 +10,56 @@ use crate::{
     model_field,
 };
 
+/// A list of potential errors which can arise when processing an [OrderedMessageStream].
+///
+/// > Note that the occurrence of any error during the execution or polling of
+/// > [OrderedMessageStream] should be regarded as indicating malicious behavior.
 #[derive(thiserror::Error, Debug)]
 pub enum StreamReceiverError<StreamId>
 where
     StreamId: std::fmt::Debug,
 {
+    /// A message was received with a stream id which does not match the current stream.
     #[error("Invalid stream id: expected {1:?}, got {0:?}")]
     InvalidStreamId(StreamId, StreamId),
+    /// A message was sent with a message id greater than or equal to the message id of [Fin].
+    ///
+    /// [Fin]: model::stream_message::Message::Fin
     #[error("Already received a Fin before this message")]
     SendAfterFin,
+    /// A second [Fin] message was received after the stream had already processed one.
+    ///
+    /// [Fin]: model::stream_message::Message::Fin
     #[error("New Fin with id {0} but already received Fin at message id {1}")]
     DoubleFin(u64, u64),
+    /// A message with the same message id was sent twice to the same stream.
     #[error("Message with id {0} has already been received")]
     DoubleSend(u64),
+    /// A [Content] message was sent with a payload which could not be decoded.
+    ///
+    /// [Content]: model::stream_message::Message::Content
     #[error("Failed to decode model: {0}")]
     DecodeError(#[from] prost::DecodeError),
+    /// A message was sent with neither [Fin] nor [Content].
+    ///
+    /// [Fin]: model::stream_message::Message::Fin
+    /// [Content]: model::stream_message::Message::Content
     #[error(transparent)]
     ModelError(#[from] crate::FromModelError),
+    /// The [tokio::sync::mpsc] channel receiver was closed but the stream is still listening.
+    ///
+    /// > This should not happen in any sane environment.
     #[error("Channel was closed over an unfinished stream")]
     ChannelError,
+    /// A message was sent with a message id further from all other messages by more than the
+    /// stream's lag cap.
     #[error("The stream has lagged too far behind")]
     LagCap,
 }
 
 type Never = Option<std::convert::Infallible>;
 pub type ConsensusStreamBuilder = StreamBuilder<model::ProposalPart, model::ConsensusStreamId>;
+pub type ConsensusStream = OrderedMessageStream<model::ProposalPart, model::ConsensusStreamId>;
 
 pub struct StreamBuilder<Message, StreamId, T = Never, V = Never>
 where
@@ -48,7 +73,63 @@ where
     _phantom2: std::marker::PhantomData<StreamId>,
 }
 
-pub struct OrderedStreamReceiver<Message, StreamId>
+/// An asyncronous messaging stream.
+///
+/// `OrderedMessageStream` is a generic construct for receiving streamed messages via the
+/// [StreamMessage] protobuf transport. These messages can be received out-of-order and
+/// `OrderedMessageStream` will yield them in-order in a non-blocking way.
+///
+/// # Ordering
+///
+/// Messages are streamed over a [tokio::sync::mpsc] channel, with `OrderedMessageStream` holding
+/// the receiving end. This channel is polled on each call to [poll_next] until the next ordered
+/// message is found. Otherwise, the stream yields execution back to the async monitor.
+///
+/// # Streaming process
+///
+/// A streamed message can hold either a [Content] or [Fin]. A [Content] message holds the data
+/// being streamed. A [Fin] message marks the end of a stream. Both [Content] and [Fin] messages are
+/// marked by a `message_id`, which denotes their order in the stream. `message_id` is incremental
+/// and should start at 0. Keep in mind that messages can be received out-of-order, so [Fin] could
+/// be received before the messages which precede it! This is taken care of in the ordering logic.
+/// Messages are also marked with a `stream_id` which prevents messages from two different streams
+/// from getting mixed up.
+///
+/// > You might notice that [Content] is made generic over any transport by storing its payload as
+/// > raw bytes. We enforce that this payload must be able to be decoded based on the `Message`
+/// > generic of `OrderedMessageStream`. Failure to do so is an error and will be considered as
+/// > malicious.
+///
+/// # State machine
+///
+/// `OrderedMessageStream` represents its inner state as a state machine:
+///
+/// - [AccumulatorStateMachine::Accumulate]: the stream has not yet yielded all ordered messages.
+///   It is possible to have already received a [Fin] in this state but still not have processed all
+///   the messages before it.
+///
+/// - [AccumulatorStateMachine::Done]: the stream has finished execution and will no longer yield
+///   any messages. If it is polled, it will simply return [Poll::Ready(None)]. A stream will also
+///   enter this state and auto-close its channel if ever an [error] is encountered.
+///
+/// # DOS mitigation
+///
+/// Basic DOS mitigation is in place to avoid the stream hanging indefinitely. This is implemented
+/// as a _lag cap_. At any point in the state of the stream, messages cannot have their message ids
+/// be apart by more than the lag cap. If a message is received which has its id apart by more than
+/// that, then the stream will return an error. This is considered to be malicious.
+///
+/// Notice that there is no hard cap on the maximum number of messages which can be sent, so it is
+/// up to the caller to implement more advanced strategies such as rate limiting and timeout
+/// policies.
+///
+/// [StreamMessage]: model::StreamMessage
+/// [poll_next]: futures::Stream::poll_next
+/// [Content]: model::stream_message::Message::Content
+/// [Fin]: model::stream_message::Message::Fin
+/// [Poll::Ready(None)]: std::task::Poll::Ready(None)
+/// [eror]: StreamReceiverError
+pub struct OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
@@ -57,7 +138,7 @@ where
     state: AccumulatorStateMachine<Message, StreamId>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 enum AccumulatorStateMachine<Message, StreamId>
 where
@@ -65,7 +146,6 @@ where
     StreamId: prost::Message + Default + std::fmt::Debug,
 {
     Accumulate(AccumulatorStateInner<Message, StreamId>),
-    #[default]
     Done,
 }
 
@@ -83,7 +163,7 @@ where
     _phantom: std::marker::PhantomData<StreamId>,
 }
 
-impl<Message, StreamId> std::fmt::Debug for OrderedStreamReceiver<Message, StreamId>
+impl<Message, StreamId> std::fmt::Debug for OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
@@ -165,18 +245,18 @@ where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
 {
-    pub fn build(self) -> (tokio::sync::mpsc::Sender<model::StreamMessage>, OrderedStreamReceiver<Message, StreamId>) {
+    pub fn build(self) -> (tokio::sync::mpsc::Sender<model::StreamMessage>, OrderedMessageStream<Message, StreamId>) {
         let Self { lag_cap, channel_cap, stream_id, .. } = self;
         let (sx, rx) = tokio::sync::mpsc::channel(channel_cap);
         let state = AccumulatorStateMachine::new(lag_cap, stream_id);
 
-        let receiver = OrderedStreamReceiver { receiver: rx, state };
+        let receiver = OrderedMessageStream { receiver: rx, state };
 
         (sx, receiver)
     }
 }
 
-impl<Message, StreamId> futures::Stream for OrderedStreamReceiver<Message, StreamId>
+impl<Message, StreamId> futures::Stream for OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default,
@@ -194,7 +274,6 @@ where
             }
 
             if inner.is_done() {
-                receiver.close();
                 return self.done(Poll::Ready(None));
             }
 
@@ -221,12 +300,13 @@ where
     }
 }
 
-impl<Message, StreamId> OrderedStreamReceiver<Message, StreamId>
+impl<Message, StreamId> OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
     StreamId: prost::Message + std::marker::Unpin + Default,
 {
     fn done<T>(&mut self, t: T) -> T {
+        self.receiver.close();
         self.state = AccumulatorStateMachine::Done;
         t
     }
@@ -257,29 +337,20 @@ where
     #[model_describe(model::StreamMessage)]
     // TODO: this needs some more care in regards to DOS migitation:
     //  - limits on the total number of messsages
-    fn accumulate_with_force(
-        &mut self,
-        stream_message: model::StreamMessage,
-        force: bool,
-    ) -> Result<(), StreamReceiverError<StreamId>> {
-        let stream_id = self.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
-        let message_id = stream_message.message_id;
-        let last_id = self.messages.last_key_value().map(|(k, _)| *k);
+    fn accumulate(&mut self, stream_message: model::StreamMessage) -> Result<(), StreamReceiverError<StreamId>> {
+        let id_stream = self.stream_id.get_or_insert_with(|| stream_message.stream_id.clone());
+        let id_message = stream_message.message_id;
+        let id_first = self.messages.first_key_value().map(|(k, _)| *k);
+        let id_last = self.messages.last_key_value().map(|(k, _)| *k);
 
-        if !force {
-            Self::check_stream_id(&stream_message.stream_id, stream_id)?;
-            Self::check_message_id(stream_message.message_id, self.id_low, self.fin)?;
-            Self::check_lag_cap(message_id, last_id, self.fin, self.lag_cap)?;
-        }
+        Self::check_stream_id(&stream_message.stream_id, id_stream)?;
+        Self::check_id_message(stream_message.message_id, self.id_low, self.fin)?;
+        Self::check_lag_cap(id_message, id_first, id_last, self.fin, self.lag_cap)?;
 
         match model_field!(stream_message => message) {
-            stream_message::Message::Content(bytes) => self.update_content(message_id, &bytes),
-            stream_message::Message::Fin(..) => self.update_fin(message_id),
+            stream_message::Message::Content(bytes) => self.update_content(id_message, &bytes),
+            stream_message::Message::Fin(..) => self.update_fin(id_message),
         }
-    }
-
-    fn accumulate(&mut self, stream_message: model::StreamMessage) -> Result<(), StreamReceiverError<StreamId>> {
-        self.accumulate_with_force(stream_message, false)
     }
 
     fn check_stream_id(actual: &[u8], expected: &[u8]) -> Result<(), StreamReceiverError<StreamId>> {
@@ -292,13 +363,13 @@ where
         }
     }
 
-    fn check_message_id(message_id: u64, id_low: u64, fin: Option<u64>) -> Result<(), StreamReceiverError<StreamId>> {
-        if message_id < id_low {
-            return Err(StreamReceiverError::DoubleSend(message_id));
+    fn check_id_message(id_message: u64, id_low: u64, fin: Option<u64>) -> Result<(), StreamReceiverError<StreamId>> {
+        if id_message < id_low {
+            return Err(StreamReceiverError::DoubleSend(id_message));
         }
 
         if let Some(fin) = fin {
-            if message_id >= fin {
+            if id_message >= fin {
                 return Err(StreamReceiverError::SendAfterFin);
             }
         }
@@ -306,32 +377,24 @@ where
     }
 
     fn check_lag_cap(
-        message_id: u64,
-        last_id: Option<u64>,
+        id_message: u64,
+        id_first: Option<u64>,
+        id_last: Option<u64>,
         fin: Option<u64>,
         lag_cap: u64,
     ) -> Result<(), StreamReceiverError<StreamId>> {
-        if let Some(last_id) = last_id {
-            let lag = message_id.abs_diff(last_id);
-            if lag > lag_cap {
-                return Err(StreamReceiverError::LagCap);
-            }
-        }
-
-        if let Some(fin) = fin {
-            let lag = message_id.abs_diff(fin);
-            if lag > lag_cap {
-                return Err(StreamReceiverError::LagCap);
-            }
+        let lag = |id: Option<u64>| id.map(|id| id_message.abs_diff(id)).unwrap_or(lag_cap);
+        if *[lag(id_first), lag(id_last), lag(fin)].iter().max().unwrap() > lag_cap {
+            return Err(StreamReceiverError::LagCap);
         }
 
         Ok(())
     }
 
-    fn update_content(&mut self, message_id: u64, bytes: &[u8]) -> Result<(), StreamReceiverError<StreamId>> {
-        match self.messages.entry(message_id) {
+    fn update_content(&mut self, id_message: u64, bytes: &[u8]) -> Result<(), StreamReceiverError<StreamId>> {
+        match self.messages.entry(id_message) {
             btree_map::Entry::Vacant(entry) => entry.insert(Message::decode(bytes)?),
-            btree_map::Entry::Occupied(_) => return Err(StreamReceiverError::DoubleSend(message_id)),
+            btree_map::Entry::Occupied(_) => return Err(StreamReceiverError::DoubleSend(id_message)),
         };
 
         Ok(())
@@ -527,11 +590,11 @@ mod test {
             ConsensusStreamBuilder::new().with_lag_cap(u64::MAX).with_channel_cap(1_000).build();
 
         let mut fut = tokio_test::task::spawn(stream_receiver);
-        for message in stream_messages_rev {
-            let message_id = message.message_id;
-            stream_sender.send(message).await.expect("Failed to send stream message");
+        for stream_message in stream_messages_rev {
+            let id_message = stream_message.message_id;
+            stream_sender.send(stream_message).await.expect("Failed to send stream message");
 
-            if message_id != 0 {
+            if id_message != 0 {
                 assert_matches::assert_matches!(fut.enter(|cx, rx| rx.poll_next(cx)), std::task::Poll::Pending);
             } else {
                 assert!(fut.is_woken());
@@ -921,7 +984,7 @@ mod test {
 }
 
 #[cfg(test)]
-mod proptest {
+mod roptest {
     use std::collections::BTreeMap;
     use std::collections::VecDeque;
 
@@ -931,17 +994,15 @@ mod proptest {
     use proptest_state_machine::StateMachineTest;
     use prost::Message;
 
-    use crate::{
-        model,
-        proposal::{fixtures, OrderedStreamReceiver},
-    };
+    use crate::{model, proposal::fixtures};
 
     use super::AccumulatorStateMachine;
+    use super::ConsensusStream;
     use super::ConsensusStreamBuilder;
 
     struct SystemUnderTest {
         stream_sender: tokio::sync::mpsc::Sender<model::StreamMessage>,
-        stream_receiver: OrderedStreamReceiver<model::ProposalPart, model::ConsensusStreamId>,
+        stream_receiver: ConsensusStream,
         messages_processed: Vec<model::ProposalPart>,
     }
 
@@ -957,6 +1018,17 @@ mod proptest {
             ..Default::default()
         })]
 
+        /// Simulates the execution of an [OrderedMessageStream] over many random and unordedered
+        /// sequences of [StreamMessage]s.
+        ///
+        /// The max transition count of 160 is chosen so that streams will be polled beyond
+        /// completion approximately 1/5th of the time (streams have a max length of 128 = 4/5*160).
+        ///
+        /// > Note that [proptest_state_machine] will automatically shuffle the transitions we give
+        /// > it so there is no need to do that ourselves.
+        ///
+        /// [StreamMessage]: model::StreamMessage
+        /// [OrderedMessageStream]: super::OrderedMessageStream
         #[test]
         fn ordered_stream_proptest(sequential 1..160 => SystemUnderTest);
     }
