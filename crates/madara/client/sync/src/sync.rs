@@ -1,4 +1,4 @@
-use crate::{metrics::SyncMetrics, probe::ProbeState, util::ServiceStateSender};
+use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
 use std::{cmp, time::Duration};
@@ -18,13 +18,12 @@ pub trait ForwardPipeline {
     fn latest_block(&self) -> Option<u64>;
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum ServiceState {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ServiceEvent {
     Starting,
+    UpdatedPendingBlock,
     Idle,
-    SyncingTo {
-        target: u64,
-    },
+    SyncingTo { target: u64 },
 }
 
 pub struct SyncControllerConfig {
@@ -34,6 +33,8 @@ pub struct SyncControllerConfig {
     /// Call [`mp_utils::service::ServiceContext::cancel_global`] when the sync process finishes.
     /// This usually means that the whole node will be stopped
     pub global_stop_on_sync: bool,
+    /// Disable syncing the pending block.
+    pub no_pending_block: bool,
     /// Stop the service once fully synced, meaning the pipeline cannot be run again and the probe did not return
     /// any new block - or the sync arrived at the block_n specified by [`Self::stop_at_block_n`].
     /// By default, the sync process will not stop, and pending block task / the probe will continue to run, even if
@@ -42,7 +43,7 @@ pub struct SyncControllerConfig {
 
     /// For testing purposes, you can subscribe to the service state. This is used in tests
     /// to know when the service is idling.
-    pub service_state_sender: ServiceStateSender<ServiceState>,
+    pub service_state_sender: ServiceStateSender<ServiceEvent>,
 }
 
 impl SyncControllerConfig {
@@ -58,7 +59,10 @@ impl SyncControllerConfig {
     pub fn global_stop_on_sync(self, global_stop_on_sync: bool) -> Self {
         Self { global_stop_on_sync, ..self }
     }
-    pub fn service_state_sender(self, service_state_sender: ServiceStateSender<ServiceState>) -> Self {
+    pub fn no_pending_block(self, no_pending_block: bool) -> Self {
+        Self { no_pending_block, ..self }
+    }
+    pub fn service_state_sender(self, service_state_sender: ServiceStateSender<ServiceEvent>) -> Self {
         Self { service_state_sender, ..self }
     }
 }
@@ -72,6 +76,7 @@ impl Default for SyncControllerConfig {
             stop_at_block_n: None,
             global_stop_on_sync: false,
             stop_on_sync: false,
+            no_pending_block: false,
             service_state_sender: Default::default(),
         }
     }
@@ -81,18 +86,34 @@ pub struct SyncController<P: ForwardPipeline> {
     forward_pipeline: P,
     config: SyncControllerConfig,
     current_l1_head: Option<L1StateUpdate>,
-    probe: ProbeState<u64>,
+    probe: ThrottledRepeatedFuture<u64>,
     sync_metrics: SyncMetrics,
+    status: Option<ServiceEvent>,
+    get_pending_block: Option<ThrottledRepeatedFuture<()>>,
 }
 
 impl<P: ForwardPipeline> SyncController<P> {
-    pub fn new(forward_pipeline: P, probe: ProbeState<u64>, config: SyncControllerConfig) -> Self {
+    pub fn set_status(&mut self, status: ServiceEvent) {
+        if self.status != Some(status) {
+            self.config.service_state_sender.send(status);
+            self.status = Some(status);
+        }
+    }
+
+    pub fn new(
+        forward_pipeline: P,
+        probe: ThrottledRepeatedFuture<u64>,
+        config: SyncControllerConfig,
+        get_pending_block: Option<ThrottledRepeatedFuture<()>>,
+    ) -> Self {
         Self {
             sync_metrics: SyncMetrics::register(forward_pipeline.next_input_block_n()),
+            get_pending_block: get_pending_block.filter(|_| !config.no_pending_block),
             forward_pipeline,
             config,
             current_l1_head: None,
             probe,
+            status: None,
         }
     }
 
@@ -100,7 +121,7 @@ impl<P: ForwardPipeline> SyncController<P> {
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        self.config.service_state_sender.send(ServiceState::Starting);
+        self.set_status(ServiceEvent::Starting);
         loop {
             tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
@@ -139,8 +160,10 @@ impl<P: ForwardPipeline> SyncController<P> {
                     .config
                     .stop_at_block_n
                     .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
+                && !self.pending_block_task_is_running()
             {
-                // End condition
+                // End condition for stop_at_block_n.
+                tracing::debug!("End condition for stop_at");
                 break Ok(());
             }
             let target_height = self.target_height();
@@ -159,9 +182,9 @@ impl<P: ForwardPipeline> SyncController<P> {
             let target = target_height.filter(|_| can_run_pipeline);
 
             if let Some(target) = target {
-                self.config.service_state_sender.send(ServiceState::SyncingTo { target });
+                self.set_status(ServiceEvent::SyncingTo { target });
             } else {
-                self.config.service_state_sender.send(ServiceState::Idle);
+                self.set_status(ServiceEvent::Idle);
             }
 
             tokio::select! {
@@ -170,19 +193,38 @@ impl<P: ForwardPipeline> SyncController<P> {
                 }
                 Some(res) = OptionFuture::from(
                     target.map(|target| self.forward_pipeline.run(target, probe_height, &mut self.sync_metrics))
-                ) =>
-                {
+                ) => {
                     res?;
                 }
                 res = self.probe.run() => {
-                    if probe_height == res? && !can_run_pipeline && self.config.stop_on_sync {
+                    let new_probe_height = res?;
+                    if self.config.stop_at_block_n.is_none()
+                        && !can_run_pipeline
+                        && self.config.stop_on_sync
+                        && probe_height == new_probe_height
+                        && !self.pending_block_task_is_running()
+                    {
                         // Probe returned the same thing as last time, and we cannot run the pipeline.
-                        break Ok(())
+                        // This is the exit condition when stop_on_sync is enabled,
+                        // except if there is a stop_at_block_n.
+                        break Ok(());
+                    }
+                }
+                // We only run the pending block task if there is no more work to be done in the inner pipeline.
+                Some(res) = OptionFuture::from(
+                    self.get_pending_block.as_mut().filter(|_| !can_run_pipeline).map(|fut| fut.run())
+                ) => {
+                    if res?.is_some() {
+                        self.config.service_state_sender.send(ServiceEvent::UpdatedPendingBlock);
                     }
                 }
                 else => break Ok(()),
             }
         }
+    }
+
+    fn pending_block_task_is_running(&self) -> bool {
+        self.get_pending_block.as_ref().is_some_and(|p| p.is_running())
     }
 
     fn show_status(&self) {

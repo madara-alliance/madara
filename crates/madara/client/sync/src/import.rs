@@ -533,11 +533,6 @@ mod tests {
             },
             Ok(())
         )]
-    #[case::trust_global_tries(
-            felt!("0xa"), // A non-zero global state root
-            StateDiff::default(), // Empty state diff
-            Ok(())
-        )]
     #[case::mismatch_global_state_root(
             felt!("0xb"), // A non-zero global state root
             StateDiff::default(), // Empty state diff

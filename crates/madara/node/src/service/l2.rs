@@ -72,12 +72,12 @@ impl Service for SyncService {
             BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()),
         ));
 
-        let config = SyncControllerConfig {
-            l1_head_recv: this.l1_head_recv,
-            stop_at_block_n: this.params.sync_stop_at,
-            global_stop_on_sync: this.params.stop_on_sync,
-            stop_on_sync: false,
-        };
+        let config = SyncControllerConfig::default()
+            .l1_head_recv(this.l1_head_recv)
+            .stop_at_block_n(this.params.sync_stop_at)
+            .global_stop_on_sync(this.params.stop_on_sync)
+            .stop_on_sync(this.params.stop_on_sync)
+            .no_pending_block(this.params.no_pending_sync);
 
         if let Some(starting_block) = this.params.unsafe_starting_block {
             // We state that starting_block - 1 is the chain head.
@@ -118,15 +118,9 @@ impl Service for SyncService {
                     this.db_backend.clone(),
                     importer.clone(),
                     gateway,
-                    SyncControllerConfig {
-                        l1_head_recv: config.l1_head_recv.clone(),
-                        stop_at_block_n: None,
-                        global_stop_on_sync: false,
-                        stop_on_sync: true,
-                    },
+                    SyncControllerConfig::default().stop_on_sync(true),
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
-                        .no_sync_pending_block(true)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
                 )
                 .run(ctx.clone())
@@ -161,7 +155,6 @@ impl Service for SyncService {
                 config,
                 mc_sync::gateway::ForwardSyncConfig::default()
                     .disable_tries(this.params.disable_tries)
-                    .no_sync_pending_block(this.params.no_pending_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
             )
             .run(ctx)

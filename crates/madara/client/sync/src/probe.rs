@@ -4,17 +4,17 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::time::Instant;
 
-type ProbeFuture<T> = BoxFuture<'static, anyhow::Result<Option<T>>>;
+type InnerFut<T> = BoxFuture<'static, anyhow::Result<Option<T>>>;
 
-pub struct ProbeState<T: Clone> {
+pub struct ThrottledRepeatedFuture<T: Clone> {
     last_val: Option<T>,
-    future: Option<ProbeFuture<T>>,
-    make_future: Box<dyn FnMut(Option<T>) -> ProbeFuture<T> + Send>,
+    future: Option<InnerFut<T>>,
+    make_future: Box<dyn FnMut(Option<T>) -> InnerFut<T> + Send>,
     wait: Option<Instant>,
     wait_duration: Duration,
 }
 
-impl<T: Clone> ProbeState<T> {
+impl<T: Clone> ThrottledRepeatedFuture<T> {
     pub fn new<F, Fut>(mut f: F, wait_duration: Duration) -> Self
     where
         F: FnMut(Option<T>) -> Fut + Send + 'static,
@@ -40,5 +40,9 @@ impl<T: Clone> ProbeState<T> {
 
     pub fn last_val(&self) -> Option<T> {
         self.last_val.clone()
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.future.is_some()
     }
 }

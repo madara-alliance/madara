@@ -1,4 +1,4 @@
-use httpmock::MockServer;
+use httpmock::{Mock, MockServer};
 use mc_gateway_client::GatewayProvider;
 use rstest::*;
 use serde_json::{json, Value};
@@ -32,18 +32,18 @@ impl GatewayMock {
     pub fn mock_block_from_json(&self, block_number: u64, json: impl Into<String>) {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", block_number.to_string());
-            then.status(200).header("content-type", "application/json").json_body(json.into());
+            then.status(200).header("content-type", "application/json").body(json.into());
         });
     }
 
     pub fn mock_class_from_json(&self, class_hash: impl Into<String>, json: impl Into<String>) {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_class_by_hash").query_param("classHash", class_hash);
-            then.status(200).header("content-type", "application/json").json_body(json.into());
+            then.status(200).header("content-type", "application/json").body(json.into());
         });
     }
 
-    pub fn mock_header_latest(&self, block_number: u64, hash: Felt) {
+    pub fn mock_header_latest(&self, block_number: u64, hash: Felt) -> Mock {
         self.mock_server.mock(|when, then| {
             when.method("GET")
                 .path_contains("get_block")
@@ -53,7 +53,7 @@ impl GatewayMock {
                 "block_number": block_number,
                 "block_hash": format!("{hash:#x}"),
             }));
-        });
+        })
     }
 
     pub fn mock_block(&self, block_number: u64, hash: Felt, parent_hash: Felt) {
@@ -158,11 +158,12 @@ impl GatewayMock {
         });
     }
 
-    pub fn mock_block_pending(&self, parent_hash: Felt) {
+    pub fn mock_block_pending(&self, parent_hash: Felt) -> Mock {
         self.mock_block_pending_with_ts(parent_hash, 1725950824)
     }
 
-    pub fn mock_block_pending_with_ts(&self, parent_hash: Felt, timestamp: usize) {
+    /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
+    pub fn mock_block_pending_with_ts(&self, parent_hash: Felt, timestamp: usize) -> Mock {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
             then.status(200).header("content-type", "application/json").json_body(json!({
@@ -219,7 +220,7 @@ impl GatewayMock {
                     }
                 }
             }));
-        });
+        })
     }
 
     pub fn mock_class_hash(&self, contract_file: &[u8]) {
@@ -255,14 +256,13 @@ impl GatewayMock {
     //     });
     // }
 
-    pub fn mock_block_pending_not_found(&self) {
+    pub fn mock_block_pending_not_found(&self) -> Mock {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
             then.status(400).header("content-type", "application/json").json_body(json!({
                 "code": "StarknetErrorCode.BLOCK_NOT_FOUND",
                 "message": "Block not found"
             }));
-        });
+        })
     }
-
 }

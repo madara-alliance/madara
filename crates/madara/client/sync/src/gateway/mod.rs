@@ -2,11 +2,11 @@ use crate::{
     apply_state::ApplyStateSync,
     import::BlockImporter,
     metrics::SyncMetrics,
-    probe::ProbeState,
+    probe::ThrottledRepeatedFuture,
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
-use blocks::{GatewayBlockSync, GatewayPendingSync};
+use blocks::{gateway_pending_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
@@ -24,7 +24,6 @@ pub struct ForwardSyncConfig {
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
-    pub no_sync_pending_block: bool,
     pub keep_pre_v0_13_2_hashes: bool,
 }
 
@@ -38,7 +37,6 @@ impl Default for ForwardSyncConfig {
             apply_state_parallelization: 16,
             apply_state_batch_size: 4,
             disable_tries: false,
-            no_sync_pending_block: false,
             keep_pre_v0_13_2_hashes: false,
         }
     }
@@ -47,9 +45,6 @@ impl Default for ForwardSyncConfig {
 impl ForwardSyncConfig {
     pub fn disable_tries(self, val: bool) -> Self {
         Self { disable_tries: val, ..self }
-    }
-    pub fn no_sync_pending_block(self, val: bool) -> Self {
-        Self { no_sync_pending_block: val, ..self }
     }
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
@@ -65,14 +60,13 @@ pub fn forward_sync(
     config: ForwardSyncConfig,
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
-    let probe = ProbeState::new(move |val| probe.clone().probe(val), Duration::from_secs(2));
-    let no_pending = config.no_sync_pending_block
-        || controller_config.global_stop_on_sync
-        || controller_config.stop_at_block_n.is_some();
+    let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
+    let get_pending_block = gateway_pending_block_sync(client.clone(), importer.clone(), backend.clone());
     SyncController::new(
-        GatewayForwardSync::new(backend, importer, client, config, no_pending),
+        GatewayForwardSync::new(backend, importer, client, config),
         probe,
         controller_config,
+        Some(get_pending_block),
     )
 }
 
@@ -80,7 +74,6 @@ pub struct GatewayForwardSync {
     blocks_pipeline: GatewayBlockSync,
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
-    pending_sync: Option<GatewayPendingSync>,
     backend: Arc<MadaraBackend>,
 }
 
@@ -90,7 +83,6 @@ impl GatewayForwardSync {
         importer: Arc<BlockImporter>,
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
-        no_pending: bool,
     ) -> Self {
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
@@ -114,12 +106,7 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        let pending_sync = if !no_pending {
-            Some(GatewayPendingSync::new(client, importer, backend.clone(), Duration::from_secs(2)))
-        } else {
-            None
-        };
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, pending_sync }
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -187,10 +174,6 @@ impl ForwardPipeline for GatewayForwardSync {
             }
         }
 
-        if let Some(pending_sync) = self.pending_sync.as_mut() {
-            pending_sync.run().await?;
-        }
-
         Ok(())
     }
 
@@ -226,6 +209,7 @@ impl GatewayLatestProbe {
     }
     async fn probe(self: Arc<Self>, _highest_known_block: Option<u64>) -> anyhow::Result<Option<u64>> {
         let header = self.client.get_header(BlockId::Tag(BlockTag::Latest)).await.context("Getting latest header")?;
+        tracing::debug!("Probe got header {header:?}");
         Ok(Some(header.block_number))
     }
 }

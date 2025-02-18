@@ -27,6 +27,7 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
     let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
 
+    gateway_mock.mock_block_pending_not_found();
     gateway_mock.mock_block_from_json(0, include_str!("../../resources/sepolia.block_0.json"));
     gateway_mock.mock_class_from_json(
         "0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3",
@@ -125,9 +126,8 @@ async fn test_should_import(ctx: TestContext) {
                 &felt!("0x49d36570d4e46f48e9dddddddddddddddd"),
                 &felt!("0xe8fc4f1b6b3dc661208f9a8a5017a6c059098327e31518722e0a5c3a5a7e86")
             )
-            .unwrap()
             .unwrap(),
-        felt!("0x0")
+        None
     );
     // Transactions
     let inner = ctx.backend.get_block_inner(&id).unwrap().unwrap();
@@ -146,9 +146,9 @@ async fn test_should_import(ctx: TestContext) {
     );
     // Events
     let events = inner.events().collect::<Vec<_>>();
-    assert_eq!(inner.receipts.len(), 4);
+    assert_eq!(events.len(), 4);
     assert_eq!(
-        events[2],
+        events[1],
         EventWithTransactionHash {
             transaction_hash: felt!("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add"),
             event: Event {
@@ -161,10 +161,10 @@ async fn test_should_import(ctx: TestContext) {
 
     // block 1
     ctx.sync_to(1).await;
-    let id = DbBlockId::Number(0);
+    let id = DbBlockId::Number(1);
     assert_eq!(
         ctx.backend.get_block_hash(&id).unwrap().unwrap(),
-        felt!("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c")
+        felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6")
     );
     // Classes
     assert!(ctx
@@ -183,7 +183,7 @@ async fn test_should_import(ctx: TestContext) {
     let id = DbBlockId::Number(2);
     assert_eq!(
         ctx.backend.get_block_hash(&id).unwrap().unwrap(),
-        felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6")
+        felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d")
     );
     assert!(ctx
         .backend
