@@ -49,6 +49,7 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
+          # run tests for madara client / primitive crates
           cargo test --profile dev --package "mc-*" --package "mp-*"
 
       - name: Generate coverage info
