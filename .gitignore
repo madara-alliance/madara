@@ -28,6 +28,7 @@ benchmarking/reports/*.json
 
 # Python & Cairo env
 cairo_venv
+orchestrator_venv
 
 # emacs
 .dir-locals.el
@@ -67,6 +68,4 @@ tmp/
 # Running madara with make and docker compose
 .secrets
 image.tar.gz
-
-orchestrator_venv
 
