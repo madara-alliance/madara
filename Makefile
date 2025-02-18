@@ -162,7 +162,7 @@ snos:
 	pip install cairo-lang==0.13.2 "sympy<1.13.0" && \
 	mkdir -p orchestrator/build && \
 	git submodule update --init --recursive && \
-	cd cairo-lang && \
+	cd orchestrator/cairo-lang && \
 	git checkout $(CAIRO_LANG_COMMIT) && \
 	cd .. && \
-	cairo-compile cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path cairo-lang/src
+	cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src
