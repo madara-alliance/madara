@@ -3,7 +3,6 @@ use std::{
     task::Poll,
 };
 
-use fixtures::stream_id;
 use m_proc_macros::model_describe;
 
 use crate::{
@@ -58,23 +57,18 @@ where
     LagCap,
 }
 
-type Never = Option<std::convert::Infallible>;
-
+// TODO: remove this
 pub type ConsensusStreamBuilder = StreamBuilder<model::ProposalPart, model::ConsensusStreamId>;
-pub type ConsensusStream = OrderedMessageStream<model::ProposalPart, model::ConsensusStreamId>;
-pub type ConsensusStreamItem = StreamItem<model::ProposalPart, model::ConsensusStreamId>;
 
-pub struct StreamBuilder<Message, StreamId, T = Never, U = Never, V = Never>
-where
-    Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
-{
-    lag_cap: T,
-    channel_cap: U,
-    id_stream: V,
-    _phantom1: std::marker::PhantomData<Message>,
-    _phantom2: std::marker::PhantomData<StreamId>,
-}
+/// Messaging stream for use in P2P consensus.
+///
+/// See [OrderedMessageStream] for more information.
+pub type ConsensusStream = OrderedMessageStream<model::ProposalPart, model::ConsensusStreamId>;
+
+/// Ordered stream item for use in P2P consensus.
+///
+/// See [StreamItem] for more information.
+pub type ConsensusStreamItem = StreamItem<model::ProposalPart, model::ConsensusStreamId>;
 
 /// An asyncronous messaging stream.
 ///
@@ -96,7 +90,8 @@ where
 /// and should start at 0. Keep in mind that messages can be received out-of-order, so [Fin] could
 /// be received before the messages which precede it! This is taken care of in the ordering logic.
 /// Messages are also marked with a `stream_id` which prevents messages from two different streams
-/// from getting mixed up.
+/// from getting mixed up. Ordered messages are polled as a [StreamItem] containing the message
+/// itself as well as some additional data.
 ///
 /// > You might notice that [Content] is made generic over any transport by storing its payload as
 /// > raw bytes. We enforce that this payload must be able to be decoded based on the `Message`
@@ -135,31 +130,48 @@ where
 pub struct OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     receiver: tokio::sync::mpsc::Receiver<model::StreamMessage>,
     state: AccumulatorStateMachine<Message, StreamId>,
 }
 
+/// An ordered message returned by a [OrderedMessageStream].
+///
+/// This struct is a wrapper around the message itself, along with some extra information such as
+/// the message id and the id of the stream which produced the message.
 #[cfg_attr(test, derive(Clone, Debug))]
 pub struct StreamItem<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     pub message: Message,
     pub id_message: u64,
     pub id_stream: StreamId,
 }
 
+// TODO: remove this. This is just legacy from when the stream id used to be optional.
+/// A type safe builder for [OrderedMessageStream].
+pub struct StreamBuilder<Message, StreamId, T = Never, U = Never, V = Never>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
+{
+    lag_cap: T,
+    channel_cap: U,
+    id_stream: V,
+    _phantom1: std::marker::PhantomData<Message>,
+    _phantom2: std::marker::PhantomData<StreamId>,
+}
+
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 enum AccumulatorStateMachine<Message, StreamId>
 where
-    Message: prost::Message + Default,
-    StreamId: prost::Message + Default + std::fmt::Debug,
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
-    Init { lag_cap: u64 },
     Accumulate(AccumulatorStateInner<Message, StreamId>),
     Done,
 }
@@ -167,8 +179,8 @@ where
 #[cfg_attr(test, derive(Clone))]
 struct AccumulatorStateInner<Message, StreamId>
 where
-    Message: prost::Message + Default,
-    StreamId: prost::Message + Default + std::fmt::Debug,
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     messages: BTreeMap<u64, Message>,
     id_stream_decode: StreamId,
@@ -179,16 +191,80 @@ where
     _phantom: std::marker::PhantomData<StreamId>,
 }
 
+impl Eq for model::ConsensusStreamId {}
+
+#[cfg(not(test))]
+impl<Message, StreamId> PartialEq for StreamItem<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.id_stream == other.id_stream && self.id_message == other.id_message
+    }
+}
+
+#[cfg(not(test))]
+impl<Message, StreamId> Eq for StreamItem<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
+{
+}
+
+#[cfg(not(test))]
+impl<Message, StreamId> Ord for StreamItem<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id_message.cmp(&other.id_message)
+    }
+}
+
+#[cfg(not(test))]
+impl<Message, StreamId> PartialOrd for StreamItem<Message, StreamId>
+where
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+impl PartialEq for ConsensusStreamItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.id_stream == other.id_stream && self.id_message == other.id_message && self.message == other.message
+    }
+}
+
+#[cfg(test)]
+impl Eq for ConsensusStreamItem {}
+
+#[cfg(test)]
+impl Ord for ConsensusStreamItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id_message.cmp(&other.id_message)
+    }
+}
+
+#[cfg(test)]
+impl PartialOrd for ConsensusStreamItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl<Message, StreamId> std::fmt::Debug for OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.state {
-            AccumulatorStateMachine::Init { .. } => {
-                f.debug_struct("OrderedStreamAccumulator").field("state", &"Init").finish()
-            }
             AccumulatorStateMachine::Accumulate(..) => {
                 f.debug_struct("OrderedStreamAccumulator").field("state", &"Accumulating").finish()
             }
@@ -201,8 +277,8 @@ where
 
 impl<Message, StreamId> std::fmt::Debug for AccumulatorStateInner<Message, StreamId>
 where
-    Message: prost::Message + Default,
-    StreamId: prost::Message + Default + std::fmt::Debug,
+    Message: prost::Message + std::marker::Unpin + Default,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AccumulatorStateInner")
@@ -215,10 +291,12 @@ where
     }
 }
 
+type Never = Option<std::convert::Infallible>;
+
 impl<T, U, V, Message, StreamId> StreamBuilder<Message, StreamId, T, U, V>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     pub fn new() -> StreamBuilder<Message, StreamId, Never, Never, Never> {
         StreamBuilder {
@@ -249,8 +327,9 @@ where
 impl<Message, StreamId> StreamBuilder<Message, StreamId, u64, usize, Vec<u8>>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + Clone + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
+    #[allow(clippy::type_complexity)]
     pub fn build(
         self,
     ) -> Result<
@@ -270,7 +349,7 @@ where
 impl<Message, StreamId> futures::Stream for OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     type Item = Result<StreamItem<Message, StreamId>, StreamReceiverError<StreamId>>;
 
@@ -301,7 +380,6 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self.state {
-            AccumulatorStateMachine::Init { .. } => (0, None),
             AccumulatorStateMachine::Accumulate(ref inner) => {
                 let lo = inner.messages.last_key_value().map(|(id, _)| *id - inner.id_low + 1).unwrap_or(1) as usize;
                 let hi = inner.fin.map(|id| id as usize);
@@ -315,7 +393,7 @@ where
 impl<Message, StreamId> OrderedMessageStream<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     fn done<T>(&mut self, t: T) -> T {
         self.receiver.close();
@@ -327,7 +405,7 @@ where
 impl<Message, StreamId> AccumulatorStateMachine<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + Clone,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     fn new(lag_cap: u64, id_stream: &[u8]) -> Result<Self, StreamReceiverError<StreamId>> {
         Ok(Self::Accumulate(AccumulatorStateInner::new(id_stream, lag_cap)?))
@@ -337,7 +415,7 @@ where
 impl<Message, StreamId> AccumulatorStateInner<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
-    StreamId: prost::Message + std::marker::Unpin + Default + Clone + std::fmt::Debug,
+    StreamId: prost::Message + std::marker::Unpin + std::fmt::Debug + Default + Clone + Eq + PartialEq,
 {
     fn new(id_stream: &[u8], lag_cap: u64) -> Result<Self, StreamReceiverError<StreamId>> {
         Ok(Self {
@@ -458,13 +536,16 @@ where
 #[cfg(test)]
 mod fixtures {
 
+    use prost::Message;
     use starknet_core::types::Felt;
 
     use crate::model::{self};
 
+    use super::ConsensusStreamItem;
+
+    #[allow(unused)]
     const STREAM_LEN_DEFAULT: u32 = 10;
 
-    #[cfg(test)]
     pub(crate) fn model_encode<M>(proposal_part: M) -> Vec<u8>
     where
         M: prost::Message + Default,
@@ -474,6 +555,15 @@ mod fixtures {
 
         buffer
     }
+
+    pub(crate) fn stream_item(bytes: &[u8], id_message: u64, id_stream: &[u8]) -> ConsensusStreamItem {
+        ConsensusStreamItem {
+            message: model::ProposalPart::decode(bytes).expect("Failed to decode proposal part"),
+            id_message,
+            id_stream: model::ConsensusStreamId::decode(id_stream).expect("Failed to decode stream id"),
+        }
+    }
+
     #[rstest::fixture]
     pub(crate) fn proposal_part(#[default(0)] seed: u32) -> model::ProposalPart {
         model::ProposalPart {
@@ -503,8 +593,10 @@ mod fixtures {
 
     #[rstest::fixture]
     pub(crate) fn stream_messages(
-        #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
-        #[with(_stream_len)] stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
+        #[allow(unused)]
+        #[default(STREAM_LEN_DEFAULT)]
+        stream_len: u32,
+        #[with(stream_len)] stream_proposal_part: impl Iterator<Item = model::stream_message::Message>,
         #[with(1)] stream_id: Vec<u8>,
     ) -> impl Iterator<Item = model::StreamMessage> {
         stream_proposal_part.enumerate().map(move |(i, message)| model::StreamMessage {
@@ -516,8 +608,10 @@ mod fixtures {
 
     #[rstest::fixture]
     pub(crate) fn stream_messages_rev(
-        #[default(STREAM_LEN_DEFAULT)] _stream_len: u32,
-        #[with(_stream_len)] stream_messages: impl Iterator<Item = model::StreamMessage>,
+        #[allow(unused)]
+        #[default(STREAM_LEN_DEFAULT)]
+        stream_len: u32,
+        #[with(stream_len)] stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) -> impl Iterator<Item = model::StreamMessage> {
         stream_messages.collect::<Vec<_>>().into_iter().rev()
     }
@@ -538,12 +632,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_simple(#[with(10)] stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
+    async fn ordered_stream_simple(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(10)] stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
         let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -553,10 +649,8 @@ mod test {
 
             match message.message.unwrap() {
                 model::stream_message::Message::Content(bytes) => {
-                    let proposal_part =
-                        model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
                     assert_matches::assert_matches!(next, Some(Ok(..)));
-                    assert_eq!(proposal_part, next.unwrap().unwrap());
+                    assert_eq!(stream_item(&bytes, message.message_id, &message.stream_id), next.unwrap().unwrap());
                 }
                 model::stream_message::Message::Fin(_) => {
                     assert!(next.is_none());
@@ -573,14 +667,14 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_reversed(
-        stream_messages: impl Iterator<Item = model::StreamMessage>,
-        stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(10)] stream_messages: impl Iterator<Item = model::StreamMessage>,
+        #[with(10)] stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
         let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -592,10 +686,8 @@ mod test {
             let next = stream_receiver.next().await;
             match message.message.unwrap() {
                 model::stream_message::Message::Content(bytes) => {
-                    let proposal_part =
-                        model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
                     assert_matches::assert_matches!(next, Some(Ok(..)));
-                    assert_eq!(proposal_part, next.unwrap().unwrap());
+                    assert_eq!(stream_item(&bytes, message.message_id, &message.stream_id), next.unwrap().unwrap());
                 }
                 model::stream_message::Message::Fin(_) => {
                     assert!(next.is_none());
@@ -610,14 +702,14 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_pending(
-        stream_messages: impl Iterator<Item = model::StreamMessage>,
-        stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(10)] stream_messages: impl Iterator<Item = model::StreamMessage>,
+        #[with(10)] stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -635,11 +727,8 @@ mod test {
 
         for message in stream_messages {
             if let model::stream_message::Message::Content(bytes) = message.message.unwrap() {
-                let proposal_part =
-                    model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
-
-                assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-                    assert_eq!(p, proposal_part);
+                assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+                   assert_eq!(si, stream_item(&bytes, message.message_id, &message.stream_id));
                 });
             } else {
                 assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None))
@@ -650,12 +739,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_wake(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_wake(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -667,11 +758,11 @@ mod test {
 
         let message = message_first.message.clone().unwrap();
         let model::stream_message::Message::Content(bytes) = message else { unreachable!() };
-        let proposal_first = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item_first = stream_item(&bytes, message_first.message_id, &message_first.stream_id);
 
         let message = message_second.message.clone().unwrap();
         let model::stream_message::Message::Content(bytes) = message else { unreachable!() };
-        let proposal_second = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item_second = stream_item(&bytes, message_second.message_id, &message_second.stream_id);
 
         stream_sender.send(message_second).await.expect("Failed to send stream message");
         assert_matches::assert_matches!(fut.enter(|cx, rx| rx.poll_next(cx)), std::task::Poll::Pending);
@@ -681,11 +772,11 @@ mod test {
 
         stream_sender.send(fin).await.expect("Failed to send stream message");
 
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal_first);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item_first);
         });
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal_second);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item_second);
         });
         assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(None));
     }
@@ -693,12 +784,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_lag(#[with(5)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_lag(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(5)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(3)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -721,12 +814,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_channel_close(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_channel_close(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -734,11 +829,11 @@ mod test {
 
         let message = stream_messages.next().unwrap();
         let model::stream_message::Message::Content(bytes) = message.message.clone().unwrap() else { unreachable!() };
-        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item = stream_item(&bytes, message.message_id, &message.stream_id);
 
         stream_sender.send(message).await.expect("Failed to send stream message");
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item);
         });
 
         // In any sane environment this should not be possible
@@ -753,12 +848,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_done(#[with(0)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_done(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(0)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -775,13 +872,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_invalid_stream_id_1(
+        #[with(1)] stream_id: Vec<u8>,
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -789,11 +886,11 @@ mod test {
 
         let first = stream_messages.next().unwrap();
         let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
-        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item = stream_item(&bytes, first.message_id, &first.stream_id);
 
         stream_sender.send(first).await.expect("Failed to send proposal part");
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item);
         });
 
         let mut second = stream_messages.next().unwrap();
@@ -821,13 +918,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_invalid_stream_id_2(
+        #[with(1)] stream_id: Vec<u8>,
         #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -835,11 +932,11 @@ mod test {
 
         let first = stream_messages.next().unwrap();
         let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
-        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item = stream_item(&bytes, first.message_id, &first.stream_id);
 
         stream_sender.send(first).await.expect("Failed to send proposal part");
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item);
         });
 
         let mut second = stream_messages.next().unwrap();
@@ -862,13 +959,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_send_after_fin_1(
+        #[with(1)] stream_id: Vec<u8>,
         #[with(1)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -893,13 +990,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_send_after_fin_2(
+        #[with(1)] stream_id: Vec<u8>,
         #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -924,6 +1021,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_double_fin(
+        #[with(1)] stream_id: Vec<u8>,
         #[from(stream_messages)]
         #[with(0)]
         mut fin: impl Iterator<Item = model::StreamMessage>,
@@ -931,11 +1029,10 @@ mod test {
         #[with(0)]
         mut double_fin: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -962,13 +1059,13 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn ordered_stream_double_send_1(
+        #[with(1)] stream_id: Vec<u8>,
         #[with(2)] mut stream_messages_rev: impl Iterator<Item = model::StreamMessage>,
     ) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -995,12 +1092,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_double_send_2(#[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_double_send_2(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(2)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -1008,11 +1107,11 @@ mod test {
 
         let first = stream_messages.next().unwrap();
         let model::stream_message::Message::Content(bytes) = first.message.clone().unwrap() else { unreachable!() };
-        let proposal = model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part");
+        let stream_item = stream_item(&bytes, first.message_id, &first.stream_id);
 
         stream_sender.send(first).await.expect("Failed to send stream message");
-        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(p))) => {
-            assert_eq!(p, proposal);
+        assert_matches::assert_matches!(fut.poll_next(), std::task::Poll::Ready(Some(Ok(si))) => {
+            assert_eq!(si, stream_item);
         });
 
         let mut double_send = stream_messages.next().unwrap();
@@ -1031,12 +1130,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_decode_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_decode_error(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -1057,12 +1158,14 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
-    async fn ordered_stream_model_error(#[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>) {
-        let id_stream = stream_messages.peekable().peek().map(|m| m.stream_id).expect("Failed to retrieve stream id");
-        let (stream_sender, mut stream_receiver) = ConsensusStreamBuilder::new()
+    async fn ordered_stream_model_error(
+        #[with(1)] stream_id: Vec<u8>,
+        #[with(1)] mut stream_messages: impl Iterator<Item = model::StreamMessage>,
+    ) {
+        let (stream_sender, stream_receiver) = ConsensusStreamBuilder::new()
             .with_lag_cap(u64::MAX)
             .with_channel_cap(1_000)
-            .with_id_stream(&id_stream)
+            .with_id_stream(&stream_id)
             .build()
             .expect("Failed to create consensus stream");
 
@@ -1091,16 +1194,18 @@ mod proptest {
     use proptest_state_machine::StateMachineTest;
     use prost::Message;
 
-    use crate::{model, proposal::fixtures};
+    use crate::{model, stream::fixtures};
 
+    use super::fixtures::stream_item;
     use super::AccumulatorStateMachine;
     use super::ConsensusStream;
     use super::ConsensusStreamBuilder;
+    use super::ConsensusStreamItem;
 
     struct SystemUnderTest {
         stream_sender: tokio::sync::mpsc::Sender<model::StreamMessage>,
         stream_receiver: ConsensusStream,
-        messages_processed: Vec<model::ProposalPart>,
+        messages_processed: Vec<ConsensusStreamItem>,
     }
 
     proptest_state_machine::prop_state_machine! {
@@ -1133,7 +1238,7 @@ mod proptest {
     prop_compose! {
         fn stream_messages()(len in 1..128u32) -> VecDeque<model::StreamMessage> {
             let proposals = fixtures::stream_proposal_part(len);
-            let stream_id = fixtures::stream_id(0);
+            let stream_id = fixtures::stream_id(1);
             let messages = fixtures::stream_messages(len, proposals, stream_id);
 
             return messages.collect()
@@ -1143,12 +1248,11 @@ mod proptest {
     prop_compose! {
         fn reference_state_machine()(
             messages_to_send in stream_messages(),
-            // lag_cap in 0..256u64
         ) -> OrderedStreamReference {
             OrderedStreamReference {
                 messages_to_send,
                 messages_processed: Default::default(),
-                stream_id: fixtures::stream_id(0),
+                id_stream: fixtures::stream_id(1),
                 lag_cap: 1_000,
                 fin: None,
             }
@@ -1159,7 +1263,7 @@ mod proptest {
     struct OrderedStreamReference {
         messages_to_send: VecDeque<model::StreamMessage>,
         messages_processed: BTreeMap<u64, model::StreamMessage>,
-        stream_id: Vec<u8>,
+        id_stream: Vec<u8>,
         lag_cap: u64,
         fin: Option<u64>,
     }
@@ -1173,7 +1277,7 @@ mod proptest {
     impl std::fmt::Debug for OrderedStreamReference {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let stream_id =
-                model::ConsensusStreamId::decode(self.stream_id.as_slice()).expect("Failed to decode stream id");
+                model::ConsensusStreamId::decode(self.id_stream.as_slice()).expect("Failed to decode stream id");
 
             f.debug_struct("OrderedStreamReference")
                 .field("messsages_to_send", &format!("... ({})", self.messages_to_send.len()))
@@ -1241,14 +1345,11 @@ mod proptest {
     }
 
     impl OrderedStreamReference {
-        fn messages_ordered(&self) -> Vec<model::ProposalPart> {
+        fn messages_ordered(&self) -> Vec<ConsensusStreamItem> {
             self.messages_processed
-                .values()
-                .cloned()
-                .filter_map(|m| match m.message.unwrap() {
-                    model::stream_message::Message::Content(bytes) => {
-                        Some(model::ProposalPart::decode(bytes.as_slice()).expect("Failed to decode proposal part"))
-                    }
+                .iter()
+                .filter_map(|(id, m)| match m.message.clone().unwrap() {
+                    model::stream_message::Message::Content(bytes) => Some(stream_item(&bytes, *id, &self.id_stream)),
                     model::stream_message::Message::Fin(_) => None,
                 })
                 .collect()
@@ -1263,8 +1364,9 @@ mod proptest {
             let (sx, rx) = ConsensusStreamBuilder::new()
                 .with_lag_cap(ref_state.lag_cap)
                 .with_channel_cap(1_000)
-                .with_id_stream(&ref_state.stream_id)
-                .build();
+                .with_id_stream(&ref_state.id_stream)
+                .build()
+                .expect("Failed to create consensus stream");
 
             Self { stream_sender: sx, stream_receiver: rx, messages_processed: Default::default() }
         }
