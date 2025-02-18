@@ -1,8 +1,8 @@
 [submodule "cairo-lang"]
-    path = cairo-lang
+	path = orchestrator/cairo-lang
     url = https://github.com/starkware-libs/cairo-lang.git
     ignore = all
 [submodule "madara-bootstrapper"]
-    path = madara-bootstrapper
+	path = orchestrator/madara-bootstrapper
 	url = https://github.com/madara-alliance/madara-bootstrapper.git
 	ignore = all
