@@ -12,6 +12,7 @@ license.workspace = true
 # Madara
 mp-block.workspace = true
 mp-transactions.workspace = true
+mp-proto.workspace = true
 
 # Starknet
 malachite-core-types.workspace = true

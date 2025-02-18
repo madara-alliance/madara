@@ -7,8 +7,8 @@ pub mod model {
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
-mod proto;
-mod stream;
+pub mod proto;
+pub mod stream;
 
 #[derive(thiserror::Error, Debug)]
 pub enum FromModelError {

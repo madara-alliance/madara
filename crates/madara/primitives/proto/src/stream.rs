@@ -140,7 +140,7 @@ where
 ///
 /// This struct is a wrapper around the message itself, along with some extra information such as
 /// the message id and the id of the stream which produced the message.
-#[cfg_attr(test, derive(Clone, Debug))]
+#[derive(Clone, Debug)]
 pub struct StreamItem<Message, StreamId>
 where
     Message: prost::Message + std::marker::Unpin + Default,
