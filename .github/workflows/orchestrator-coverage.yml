@@ -1,4 +1,4 @@
-name: Rust Test & Coverage
+name: Rust Orchestrator Test & Coverage
 
 on:
   workflow_call:

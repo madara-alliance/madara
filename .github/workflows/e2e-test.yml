@@ -1,4 +1,4 @@
-name: E2E test
+name: Orchestrator E2E test
 
 on:
   workflow_call:
@@ -86,7 +86,7 @@ jobs:
         run: |
           make snos
 
-      - name: Run e2e test
+      - name: Run Orchestrator e2e test
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
