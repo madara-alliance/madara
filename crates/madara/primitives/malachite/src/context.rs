@@ -1,7 +1,7 @@
 use mp_block::MadaraBlock;
 
 use crate::{
-    proposal::{ProposalPartStub, ProposalStub},
+    proposal::{Proposal, ProposalPart},
     types::{Address, Height},
     validators::{ValidatorSet, ValidatorStub},
     vote::{SigningProviderStub, SigningSchemeStub, VoteStub},
@@ -13,8 +13,8 @@ pub struct MadaraContext;
 impl malachite_core_types::Context for MadaraContext {
     type Address = Address;
     type Height = Height;
-    type ProposalPart = ProposalPartStub;
-    type Proposal = ProposalStub;
+    type ProposalPart = ProposalPart;
+    type Proposal = Proposal;
     type Validator = ValidatorStub;
     type ValidatorSet = ValidatorSet;
     type Value = MadaraBlock;

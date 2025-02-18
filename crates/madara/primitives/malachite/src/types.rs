@@ -2,7 +2,7 @@ use starknet_types_core::felt::Felt;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Height(u64);
+pub struct Height(pub u64);
 
 impl std::fmt::Display for Height {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
