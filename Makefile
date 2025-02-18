@@ -164,5 +164,5 @@ snos:
 	git submodule update --init --recursive && \
 	cd orchestrator/cairo-lang && \
 	git checkout $(CAIRO_LANG_COMMIT) && \
-	cd .. && \
+	cd ../.. && \
 	cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src
