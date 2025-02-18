@@ -46,6 +46,11 @@ jobs:
         with:
           scarb-version: "2.8.2"
 
+      - name: Display Scarb version
+        run: |
+          echo "Scarb version:"
+          scarb --version
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
