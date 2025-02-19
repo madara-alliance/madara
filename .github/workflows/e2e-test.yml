@@ -44,7 +44,7 @@ jobs:
 
       - uses: software-mansion/setup-scarb@v1
         with:
-          scarb-version: "2.9.1"
+          scarb-version: "2.8.2"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
