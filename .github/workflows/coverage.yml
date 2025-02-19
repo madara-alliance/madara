@@ -33,6 +33,7 @@ jobs:
 
       - uses: software-mansion/setup-scarb@v1
         with:
+          cache: false
           scarb-version: "2.8.2"
 
       - uses: foundry-rs/foundry-toolchain@v1
