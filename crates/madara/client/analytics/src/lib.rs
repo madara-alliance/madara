@@ -62,7 +62,7 @@ impl Analytics {
             .clone()
             .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
 
-        let batch_config = BatchConfigBuilder::default().build();
+        let batch_config = BatchConfigBuilder::default().with_max_export_batch_size(128).build();
 
         let provider = opentelemetry_otlp::new_pipeline()
             .tracing()
