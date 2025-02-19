@@ -33,7 +33,7 @@
 //!
 //! ## Future plans
 //!
-//! An optional sequencial step just before step 2 could be addded that executes the block to validate it: this will
+//! An optional sequencial step just before step 2 could be added that executes the block to validate it: this will
 //! be useful for tendermint validator nodes in the future, and it should also be useful to test-execute a whole blockchain
 //! to check for errors.
 //! A signature verification mode should be added to allow the skipping of block validation entirely if the block is signed.
