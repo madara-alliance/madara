@@ -474,7 +474,7 @@ mod tests {
         ]
     }
 
-    fn dummy_execution_ressources() -> ExecutionResources {
+    fn dummy_execution_resources() -> ExecutionResources {
         ExecutionResources {
             steps: 1,
             memory_holes: 2,
@@ -498,7 +498,7 @@ mod tests {
             actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
             messages_sent: dummy_messages(),
             events: dummy_events(),
-            execution_resources: dummy_execution_ressources(),
+            execution_resources: dummy_execution_resources(),
             execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
         }
     }
@@ -510,7 +510,7 @@ mod tests {
             actual_fee: FeePayment { amount: Felt::from(3), unit: PriceUnit::Wei },
             messages_sent: dummy_messages(),
             events: dummy_events(),
-            execution_resources: dummy_execution_ressources(),
+            execution_resources: dummy_execution_resources(),
             execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
         }
     }
@@ -521,7 +521,7 @@ mod tests {
             actual_fee: FeePayment { amount: Felt::from(2), unit: PriceUnit::Wei },
             messages_sent: dummy_messages(),
             events: dummy_events(),
-            execution_resources: dummy_execution_ressources(),
+            execution_resources: dummy_execution_resources(),
             execution_result: ExecutionResult::Reverted { reason: "aborted".to_string() },
         }
     }
