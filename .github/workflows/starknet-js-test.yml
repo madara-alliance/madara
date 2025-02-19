@@ -22,7 +22,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-madara-${{ hashFiles('Scarb.lock') }}
+          key: ${{ runner.os }}-madara-${{ hashFiles('cairo/Scarb.lock') }}
           fail-on-cache-miss: true
       - name: Setup dev chain and run tests
         run: |
