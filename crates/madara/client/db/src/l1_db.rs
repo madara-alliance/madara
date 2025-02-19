@@ -1,9 +1,10 @@
+use crate::error::DbError;
+use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
+use alloy::primitives::TxHash;
 use rocksdb::{IteratorMode, WriteOptions};
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
-
-use crate::error::DbError;
-use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
+use starknet_types_core::felt::Felt;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -126,6 +127,34 @@ impl MadaraBackend {
         let mut writeopts = WriteOptions::default();
         writeopts.disable_wal(true);
         self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ [], &writeopts)?;
+        Ok(())
+    }
+
+    pub fn get_l1_handler_tx_hashes(&self, l1_tx_hash: TxHash) -> Result<Vec<Felt>, DbError> {
+        let l1_l2_mappings_column = self.db.get_column(Column::L1MessagingHandlerTxHashes);
+        let l1_handler_tx_hashes = self
+            .db
+            .prefix_iterator_cf(&l1_l2_mappings_column, l1_tx_hash.as_slice())
+            .map(|kv_bytes| Ok(Felt::from_bytes_be_slice(&kv_bytes?.1)))
+            .collect::<Result<_, rocksdb::Error>>()?;
+        Ok(l1_handler_tx_hashes)
+    }
+
+    /// Store mapping from L1 transaction to L1 handler transaction (on the L2). A unique order
+    /// value is required to ensure the handler transactions are retreived in the correct order.
+    pub fn add_l1_handler_tx_hash_mapping(
+        &self,
+        l1_tx_hash: TxHash,
+        l1_handler_tx_hash: Felt,
+        order: u64,
+    ) -> Result<(), DbError> {
+        let l1_l2_mappings_column = self.db.get_column(Column::L1MessagingHandlerTxHashes);
+        let mut key = [0u8; 40];
+        key[..32].copy_from_slice(l1_tx_hash.as_slice());
+        key[32..].copy_from_slice(&order.to_be_bytes()); // BE is important for the lexographic sorting
+        let mut writeopts = WriteOptions::default();
+        writeopts.disable_wal(true);
+        self.db.put_cf_opt(&l1_l2_mappings_column, key, l1_handler_tx_hash.to_bytes_be(), &writeopts)?;
         Ok(())
     }
 

@@ -1,8 +1,10 @@
+use alloy::primitives::TxHash;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+use starknet_types_rpc::TxnStatus;
 
 pub(crate) type NewHead = mp_rpc::BlockHeader;
 pub(crate) type EmittedEvent = mp_rpc::EmittedEvent;
@@ -53,6 +55,13 @@ pub struct GetStorageProofResult {
     pub global_roots: GlobalRoots,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageStatus {
+    pub transaction_hash: Felt,
+    pub finality_status: TxnStatus,
+    pub failure_reason: Option<String>,
+}
+
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {
     #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = NewHead, param_kind = map)]
@@ -83,4 +92,10 @@ pub trait StarknetReadRpcApi {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult>;
+
+    /// For the given L1 transaction hash, return the associated L1 handler transaction hashes and
+    /// statuses for all L1 -> L2 messsages sent by the L1 transaction, ordered by the L1
+    /// transaction sending order.
+    #[method(name = "getMessagesStatus")]
+    fn get_messages_status(&self, transaction_hash: TxHash) -> RpcResult<Vec<MessageStatus>>;
 }

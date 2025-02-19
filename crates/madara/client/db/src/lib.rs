@@ -149,6 +149,7 @@ pub enum Column {
 
     L1Messaging,
     L1MessagingNonce,
+    L1MessagingHandlerTxHashes,
 
     /// Devnet: stores the private keys for the devnet predeployed contracts
     Devnet,
@@ -196,6 +197,7 @@ impl Column {
             BonsaiClassesLog,
             L1Messaging,
             L1MessagingNonce,
+            L1MessagingHandlerTxHashes,
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
@@ -232,6 +234,7 @@ impl Column {
             ContractStorage => "contract_storage",
             L1Messaging => "l1_messaging",
             L1MessagingNonce => "l1_messaging_nonce",
+            L1MessagingHandlerTxHashes => "l1_messaging_handler_tx_hashes",
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",

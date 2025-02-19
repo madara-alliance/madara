@@ -2,6 +2,7 @@
 
 ## Next release
 
+- feat(rpc): added `getMessagesStatus` method
 - fix(primitives): limit legacy class sizes
 - fix(block_production): dynamic block closing now adds special address with prev block hash
 - fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it

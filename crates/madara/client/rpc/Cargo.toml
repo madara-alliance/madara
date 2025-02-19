@@ -45,6 +45,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Others
+alloy = { workspace = true }
 anyhow = { workspace = true }
 bitvec = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
