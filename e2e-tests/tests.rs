@@ -133,7 +133,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // setting up of the test and during orchestrator run too.
 
     use e2e_tests::node::OrchestratorMode;
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename(".env.test").expect("Failed to load the .env file");
 
     let queue_params = AWSSQSValidatedArgs {
         queue_base_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"))
