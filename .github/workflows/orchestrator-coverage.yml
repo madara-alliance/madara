@@ -88,6 +88,7 @@ jobs:
       - name: Setup scarb
         uses: software-mansion/setup-scarb@v1
         with:
+          scarb-lock: cairo/Scarb.lock
           scarb-version: "2.8.2"
 
       - name: Build Mock Contracts using Scarb
