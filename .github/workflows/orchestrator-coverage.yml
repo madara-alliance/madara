@@ -88,8 +88,7 @@ jobs:
       - name: Setup scarb
         uses: software-mansion/setup-scarb@v1
         with:
-          cache: false
-          scarb-version: "2.8.2"
+          scarb-version: "2.9.1"
 
       - name: Build Mock Contracts using Scarb
         working-directory: orchestrator
@@ -105,7 +104,7 @@ jobs:
           ref: "0c821aecd1cafc516d00548473fcaddaa4dc0ce4"
           path: orchestrator/madara
 
-      - name: Build Madara
+      - name: Build Madara (Orchestrator)
         working-directory: orchestrator/madara
         run: |
           cargo build
