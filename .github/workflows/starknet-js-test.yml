@@ -1,11 +1,10 @@
 name: Starknet-js Compatibility Tests
 
 on:
-  workflow_dispatch:
-  workflow_call:
+  # workflow_dispatch:
+  # workflow_call:
 
 jobs:
-  if: false # TODO: re-enable and fix this workflow
   js-test:
     runs-on: ubuntu-latest
     steps:
