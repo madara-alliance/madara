@@ -1,7 +1,7 @@
 //! Structures representing the *intent* of executing a transaction.
 //!
 //! Intents are structures containing essential information for the
-//! indentification of a [MempoolTransaction] inside of a [NonceTxMapping].
+//! identification of a [MempoolTransaction] inside of a [NonceTxMapping].
 //! Transaction intents are received, ordered by [ArrivedAtTimestamp] and
 //! resolved (polled) at a later time.
 //!
