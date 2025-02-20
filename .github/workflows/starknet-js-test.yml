@@ -1,0 +1,35 @@
+name: Starknet-js Compatibility Tests
+
+on:
+  # workflow_dispatch:
+  # workflow_call:
+
+jobs:
+  js-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Restore Madara binary
+        uses: actions/cache@v3
+        id: cache-madara
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-madara-bin-
+          restore-keys: |
+            ${{ runner.os }}-madara-bin-
+          fail-on-cache-miss: true
+      - name: Restore Cairo build artifacts
+        uses: actions/cache@v3
+        with:
+          path: cairo/target
+          key: ${{ runner.os }}-madara-${{ hashFiles('cairo/Scarb.lock') }}
+          fail-on-cache-miss: true
+      - name: Setup dev chain and run tests
+        run: |
+          ./target/release/madara --name madara --base-path ../madara_db --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset devnet --gas-price 0 --blob-gas-price 0 --strk-gas-price 0 --strk-blob-gas-price 0 --no-l1-sync &
+          MADARA_PID=$!
+          while ! echo exit | nc localhost 9944; do sleep 1; done
+          cd tests/js_tests
+          npm install
+          npm test
+          kill $MADARA_PID
