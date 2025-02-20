@@ -6572,6 +6572,7 @@ name = "malachite"
 version = "0.7.0"
 dependencies = [
  "informalsystems-malachitebft-core-types",
+ "libp2p",
  "mp-block",
  "mp-proto",
  "mp-transactions",
@@ -7317,6 +7318,8 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures",
+ "informalsystems-malachitebft-core-types",
+ "libp2p",
  "m-proc-macros",
  "mc-db",
  "mp-block",

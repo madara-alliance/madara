@@ -15,8 +15,11 @@ mp-transactions.workspace = true
 mp-proto.workspace = true
 
 # Starknet
-malachite-core-types.workspace = true
 starknet-types-core.workspace = true
+
+# P2P
+libp2p.workspace = true
+malachite-core-types.workspace = true
 
 [lints]
 workspace = true

@@ -41,6 +41,10 @@ serde.workspace = true
 serde_json.workspace = true
 unsigned-varint.workspace = true
 
+# P2P
+malachite-core-types.workspace = true
+libp2p.workspace = true
+
 # Debug and testing
 tracing.workspace = true
 rstest.workspace = true
