@@ -42,8 +42,8 @@ impl malachite_core_types::ProposalPart<MadaraContext> for ProposalPart {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Proposal {
     address: Address,
-    height: u64,
-    round: u32,
+    height: Height,
+    round: malachite_core_types::Round,
     /// Proof-of-Lock (POL or Polka) is any set of `PREVOTE(r, id(v))` from a super-majority of
     /// [Validator]s, weighted by voting power. This corresponds to `validRound` in the original
     /// Tendermint paper:
@@ -57,17 +57,29 @@ pub struct Proposal {
     ///
     /// [Validator]: crate::validators::Validator
     /// [Nil]: malachite_core_types::NilOrVal::Nil
-    proof_of_lock: u32,
+    proof_of_lock: malachite_core_types::Round,
     value: MadaraBlock,
+}
+
+impl Proposal {
+    pub fn new(
+        height: Height,
+        round: malachite_core_types::Round,
+        value: MadaraBlock,
+        pol_round: malachite_core_types::Round,
+        address: Address,
+    ) -> Self {
+        Self { address, height, round, proof_of_lock: pol_round, value }
+    }
 }
 
 impl malachite_core_types::Proposal<MadaraContext> for Proposal {
     fn height(&self) -> Height {
-        Height(self.height)
+        self.height
     }
 
     fn round(&self) -> malachite_core_types::Round {
-        malachite_core_types::Round::Some(self.round)
+        self.round
     }
 
     fn value(&self) -> &MadaraBlock {
@@ -79,7 +91,7 @@ impl malachite_core_types::Proposal<MadaraContext> for Proposal {
     }
 
     fn pol_round(&self) -> malachite_core_types::Round {
-        malachite_core_types::Round::Some(self.proof_of_lock)
+        self.proof_of_lock
     }
 
     fn validator_address(&self) -> &Address {
