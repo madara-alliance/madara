@@ -5,7 +5,6 @@ on:
   workflow_call:
 
 jobs:
-  if: false # TODO: re-enable and fix this workflow
   js-test:
     runs-on: ubuntu-latest
     steps:
