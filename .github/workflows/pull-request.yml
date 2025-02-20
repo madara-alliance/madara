@@ -56,6 +56,11 @@ jobs:
     needs: update_db_version
     uses: ./.github/workflows/build.yml
 
+  js_test:
+    name: Run JS Tests
+    needs: build
+    uses: ./.github/workflows/starknet-js-test.yml
+
   e2e_test:
     name: Run E2E Tests
     needs: build
