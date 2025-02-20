@@ -148,4 +148,3 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           files: lcov.info
-          debug: true
