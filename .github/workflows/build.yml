@@ -33,13 +33,20 @@ jobs:
           export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo build --release --bin madara
           cargo build --release -p m-cairo-test-contracts
+      # Generate a unique hash for the Madara binary that includes both content and timestamp
+      # This ensures we can track specific builds and always get a fresh cache
       - name: Generate binary hash
         id: binary_hash
         run: |
+          # Path to the compiled Madara binary
           BINARY_PATH=./target/release/madara
+          # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
+          # Create hash by combining timestamp and binary content
           HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          # Set output for use in subsequent steps
           echo "hash=$HASH" >> $GITHUB_OUTPUT
+          # Save hash to file for artifact sharing
           echo "$HASH" > binary_hash.txt
           echo "Hash of the binary is: $HASH (with timestamp: $TIMESTAMP)"
       - name: Upload hash as artifact
@@ -53,13 +60,21 @@ jobs:
         with:
           path: target/release/madara
           key: ${{ runner.os }}-madara-bin-${{ steps.binary_hash.outputs.hash }}
+      
+      # Generate a unique hash for Cairo artifacts that includes both content and timestamp
+      # This ensures consistent Cairo artifacts between workflows while maintaining freshness
       - name: Generate Cairo artifacts hash
         id: cairo_hash
         run: |
+          # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
+          # Generate hash of all files in cairo/target directory
           FILES_HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          # Combine timestamp with files hash for unique identifier
           HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
+          # Set output for use in subsequent steps
           echo "hash=$HASH" >> $GITHUB_OUTPUT
+          # Save hash to file for artifact sharing
           echo "$HASH" > cairo_artifacts_hash.txt
           echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
       - name: Upload Cairo artifacts hash
