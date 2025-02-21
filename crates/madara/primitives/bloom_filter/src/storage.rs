@@ -11,6 +11,7 @@ use std::{
 
 /// An immutable bit storage implementation using regular u64 values.
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 #[repr(transparent)]
 pub struct BitStore {
     bits: Box<[u64]>,
