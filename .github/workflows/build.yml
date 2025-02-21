@@ -39,7 +39,14 @@ jobs:
           BINARY_PATH=./target/release/madara
           HASH=$(sha256sum $BINARY_PATH | awk '{ print $1 }')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "$HASH" > binary_hash.txt
           echo "Hash of the binary is: $HASH"
+      - name: Upload hash as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: binary-hash
+          path: binary_hash.txt
+          retention-days: 1
       - name: Cache Madara binary
         uses: actions/cache@v3
         with:
