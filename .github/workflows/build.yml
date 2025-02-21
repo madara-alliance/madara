@@ -42,7 +42,7 @@ jobs:
           echo "$HASH" > binary_hash.txt
           echo "Hash of the binary is: $HASH"
       - name: Upload hash as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: binary-hash
           path: binary_hash.txt
