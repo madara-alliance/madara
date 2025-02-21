@@ -18,6 +18,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
+mc-mempool = { workspace = true, features = ["testing"] }
+mc-devnet.workspace = true
+mp-rpc.workspace = true
+mp-utils = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
@@ -27,6 +31,9 @@ mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
+
+# Compile the test contracts in test cfg.
+m-cairo-test-contracts.workspace = true
 
 [features]
 testing = ["blockifier/testing", "mc-db/testing", "mockall"]
