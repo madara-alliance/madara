@@ -694,8 +694,8 @@ mod tests {
         Arc<Mempool>,
         DevnetKeys,
     ) {
-        let mut g = ChainGenesisDescription::base_config().unwrap();
-        let contracts = g.add_devnet_contracts(10).unwrap();
+        let mut genesis = ChainGenesisDescription::base_config().unwrap();
+        let contracts = genesis.add_devnet_contracts(10).unwrap();
 
         let chain_config: Arc<ChainConfig> = if use_bouncer_weights {
             let bouncer_weights = bouncer_weights();
@@ -716,7 +716,7 @@ mod tests {
             })
         };
 
-        let block = g.build(&chain_config).unwrap();
+        let block = genesis.build(&chain_config).unwrap();
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         let importer = Arc::new(BlockImporter::new(Arc::clone(&backend), None).unwrap());
 
@@ -847,6 +847,9 @@ mod tests {
 
     #[rstest::fixture]
     fn bouncer_weights() -> BouncerWeights {
+        // The bouncer weights values are configured in such a way
+        // that when loaded, the block will close after one transaction
+        // is added to it, to test the pending tick closing the block
         BouncerWeights {
             builtin_count: blockifier::bouncer::BuiltinCount {
                 add_mod: 100000,
@@ -885,6 +888,7 @@ mod tests {
         let mut declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: contract.address,
             compiled_class_hash: compiled_contract_class_hash,
+            // this field will be filled below
             signature: vec![],
             nonce,
             contract_class: flattened_class.into(),
@@ -939,6 +943,7 @@ mod tests {
                 })
                 .flatten()
                 .collect(),
+            // this field will be filled below
             signature: vec![],
             nonce,
             resource_bounds: ResourceBoundsMapping {
@@ -1915,6 +1920,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2002,6 +2008,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2154,6 +2161,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ZERO);
         sign_and_add_declare_tx(&contracts.0[1], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
@@ -2176,8 +2184,9 @@ mod tests {
         //                  PART 3: call on pending time tick                 //
         // ================================================================== //
 
-        // The small bouncer weights should make the tick close
-        // the block when called
+        // The BouncerConfig is set up with amounts (100000) that should limit
+        // the block size in a way that the pending tick on this task
+        // closes the block
         block_production_task.set_current_pending_tick(1);
         block_production_task.on_pending_time_tick().await.unwrap();
 
@@ -2212,6 +2221,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2296,6 +2306,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2449,6 +2460,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2481,9 +2493,15 @@ mod tests {
         task_handle.abort();
 
         let pending_block = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
+        let block_inner = backend
+            .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
+            .expect("Failed to retrieve latest block from db")
+            .expect("Missing latest block")
+            .inner;
 
         assert!(mempool.is_empty());
         assert!(pending_block.inner.transactions.is_empty());
+        assert_eq!(block_inner.transactions.len(), 1);
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
     }
 
@@ -2512,6 +2530,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         assert!(!mempool.is_empty());
 
@@ -2568,6 +2587,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ONE);
         assert!(!mempool.is_empty());
@@ -2624,6 +2644,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
+        assert!(mempool.is_empty());
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
         sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ONE);
         assert!(!mempool.is_empty());
@@ -2655,7 +2676,11 @@ mod tests {
         let task_handle = tokio::spawn(async move { block_production_task.block_production_task(ctx).await });
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         task_handle.abort();
+
+        let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
+
         assert!(mempool.is_empty());
+        assert_eq!(pending_block.inner.transactions.len(), 1);
 
         // ================================================================== //
         //           PART 4: we add more transactions to the mempool          //
@@ -2664,7 +2689,6 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::TWO);
-        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::THREE);
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2683,7 +2707,7 @@ mod tests {
             .expect("Missing latest block")
             .inner;
 
-        assert_eq!(block_inner.transactions.len(), 2);
+        assert_eq!(block_inner.transactions.len(), 1);
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
 
         // ================================================================== //
