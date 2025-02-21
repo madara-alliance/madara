@@ -37,10 +37,11 @@ jobs:
         id: binary_hash
         run: |
           BINARY_PATH=./target/release/madara
-          HASH=$(sha256sum $BINARY_PATH | awk '{ print $1 }')
+          TIMESTAMP=$(date +%s)
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
           echo "$HASH" > binary_hash.txt
-          echo "Hash of the binary is: $HASH"
+          echo "Hash of the binary is: $HASH (with timestamp: $TIMESTAMP)"
       - name: Upload hash as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,10 +56,12 @@ jobs:
       - name: Generate Cairo artifacts hash
         id: cairo_hash
         run: |
-          HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          TIMESTAMP=$(date +%s)
+          FILES_HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
           echo "$HASH" > cairo_artifacts_hash.txt
-          echo "Hash of Cairo artifacts is: $HASH"
+          echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
       - name: Upload Cairo artifacts hash
         uses: actions/upload-artifact@v4
         with:
