@@ -52,8 +52,21 @@ jobs:
         with:
           path: target/release/madara
           key: ${{ runner.os }}-madara-bin-${{ steps.binary_hash.outputs.hash }}
+      - name: Generate Cairo artifacts hash
+        id: cairo_hash
+        run: |
+          HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "$HASH" > cairo_artifacts_hash.txt
+          echo "Hash of Cairo artifacts is: $HASH"
+      - name: Upload Cairo artifacts hash
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-artifacts-hash
+          path: cairo_artifacts_hash.txt
+          retention-days: 1
       - name: Cache Cairo build artifacts
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-madara-${{ hashFiles('Scarb.lock') }}
+          key: ${{ runner.os }}-madara-cairo-${{ steps.cairo_hash.outputs.hash }}

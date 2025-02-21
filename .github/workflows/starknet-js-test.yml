@@ -22,6 +22,18 @@ jobs:
           HASH=$(cat binary_hash.txt)
           echo "hash=$HASH" >> $GITHUB_OUTPUT
 
+      - name: Download Cairo artifacts hash
+        uses: actions/download-artifact@v4
+        id: download_cairo
+        with:
+          name: cairo-artifacts-hash
+
+      - name: Read Cairo hash
+        id: cairo_hash
+        run: |
+          HASH=$(cat cairo_artifacts_hash.txt)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
       - name: Restore Madara binary
         uses: actions/cache@v3
         id: cache-madara
@@ -33,7 +45,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-madara-${{ hashFiles('cairo/Scarb.lock') }}
+          key: ${{ runner.os }}-madara-cairo-${{ steps.cairo_hash.outputs.hash }}
           fail-on-cache-miss: true
       - name: Setup dev chain and run tests
         run: |
