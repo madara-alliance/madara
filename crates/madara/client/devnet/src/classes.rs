@@ -1,9 +1,10 @@
 use anyhow::Context;
 use mp_class::{
-    ClassInfo, ClassInfoWithHash, CompressedLegacyContractClass, FlattenedSierraClass, LegacyClassInfo, SierraClassInfo,
+    ClassInfo, ClassInfoWithHash, CompressedLegacyContractClass, FlattenedSierraClass, LegacyClassInfo,
+    LegacyContractClass, SierraClassInfo,
 };
 use mp_state_update::DeclaredClassItem;
-use starknet_core::types::contract::{legacy::LegacyContractClass, SierraClass};
+use starknet_core::types::contract::SierraClass;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 

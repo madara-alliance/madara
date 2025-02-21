@@ -208,7 +208,11 @@ impl GatewayLatestProbe {
         Self { client }
     }
     async fn probe(self: Arc<Self>, _highest_known_block: Option<u64>) -> anyhow::Result<Option<u64>> {
-        let header = self.client.get_header(BlockId::Tag(BlockTag::Latest)).await.context("Getting latest header")?;
+        let header = self
+            .client
+            .get_header(BlockId::Tag(BlockTag::Latest))
+            .await
+            .context("Getting the latest block_n from the gateway")?;
         tracing::debug!("Probe got header {header:?}");
         Ok(Some(header.block_number))
     }

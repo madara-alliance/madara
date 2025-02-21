@@ -7,10 +7,26 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::BlockId;
-use mp_class::{ClassInfo, ClassInfoWithHash, ConvertedClass, LegacyClassInfo, SierraClassInfo};
+use mp_class::{ClassInfo, ClassInfoWithHash, ConvertedClass, LegacyClassInfo, SierraClassInfo, MISSED_CLASS_HASHES};
 use mp_state_update::DeclaredClassCompiledClass;
+use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
+
+/// for blocks before 2597 on mainnet new classes are not declared in the state update
+/// https://github.com/madara-alliance/madara/issues/233
+fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut HashMap<Felt, DeclaredClassCompiledClass>) {
+    if block_n < 2597 {
+        classes_from_state_diff.extend(
+            MISSED_CLASS_HASHES
+                .get(&block_n)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|hash| (hash, DeclaredClassCompiledClass::Legacy)),
+        )
+    }
+}
 
 pub(crate) async fn get_classes(
     client: &Arc<GatewayProvider>,
@@ -72,11 +88,19 @@ impl PipelineSteps for ClassesSyncSteps {
     async fn parallel_step(
         self: Arc<Self>,
         block_range: Range<u64>,
-        input: Vec<Self::InputItem>,
+        mut input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
+        if self.backend.chain_config().chain_id == ChainId::Mainnet {
+            block_range
+                .clone()
+                .into_iter()
+                .zip(input.iter_mut())
+                .for_each(|(block_n, classes)| fixup_missed_mainnet_classes(block_n, classes));
+        }
         if input.iter().all(|i| i.is_empty()) {
             return Ok(vec![]);
         }
+
         AbortOnDrop::spawn(async move {
             tracing::debug!("Gateway classes parallel step: {block_range:?}");
             let mut out = vec![];
@@ -85,7 +109,9 @@ impl PipelineSteps for ClassesSyncSteps {
 
                 let ret = self
                     .importer
-                    .run_in_rayon_pool(move |importer| importer.verify_compile_classes(declared_classes, &classes))
+                    .run_in_rayon_pool(move |importer| {
+                        importer.verify_compile_classes(Some(block_n), declared_classes, &classes)
+                    })
                     .await?;
 
                 out.push(ret);
@@ -100,6 +126,9 @@ impl PipelineSteps for ClassesSyncSteps {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
+        if input.iter().all(|i| i.is_empty()) {
+            return Ok(ApplyOutcome::Success(()));
+        }
         tracing::debug!("Gateway classes sequential step: {block_range:?}");
         // Save classes in sequential step, because some chains have duplicate class declarations, and we want to be sure
         // we always record the earliest block_n
@@ -114,11 +143,12 @@ impl PipelineSteps for ClassesSyncSteps {
             .await?;
         if let Some(block_n) = block_range.last() {
             self.backend.head_status().classes.set(Some(block_n));
+            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().latest_full_block_n()
+        self.backend.head_status().classes.get()
     }
 }

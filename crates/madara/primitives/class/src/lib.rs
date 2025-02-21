@@ -10,6 +10,7 @@ pub mod compile;
 pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
+pub mod mainnet_legacy_class_hashes;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConvertedClass {
@@ -308,6 +309,13 @@ pub struct CompressedLegacyContractClass {
     pub abi: Option<Vec<LegacyContractAbiEntry>>,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LegacyContractClass {
+    pub entry_points_by_type: starknet_core::types::contract::legacy::RawLegacyEntryPoints,
+    pub abi: Option<Vec<starknet_core::types::contract::legacy::RawLegacyAbiEntry>>,
+    pub program: starknet_core::types::contract::legacy::LegacyProgram,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEntryPointsByType {
     #[serde(rename = "CONSTRUCTOR")]
@@ -421,5 +429,24 @@ mod test {
         let missed_class_hashes = &MISSED_CLASS_HASHES;
         assert_eq!(missed_class_hashes.len(), 38);
         assert_eq!(missed_class_hashes.iter().map(|(_, v)| v.len()).sum::<usize>(), 57);
+    }
+
+    #[test]
+    fn legacy_class_mainnet_block_20732_no_abi() {
+        let class = serde_json::from_str::<LegacyContractClass>(include_str!(
+            "../resources/legacy_class_mainnet_block_20732_no_abi.json"
+        ))
+        .unwrap();
+
+        let real_class_hash =
+            Felt::from_hex_unchecked("0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b");
+        let computed_class_hash =
+            Felt::from_hex_unchecked("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67");
+        assert_eq!(class.class_hash().unwrap(), computed_class_hash);
+
+        assert_eq!(
+            crate::mainnet_legacy_class_hashes::get_real_class_hash(20732, computed_class_hash),
+            real_class_hash
+        );
     }
 }

@@ -14,6 +14,7 @@ use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 
@@ -26,6 +27,9 @@ pub struct BlockValidationConfig {
 
     /// For testing purposes, do not check anything.
     pub no_check: bool,
+
+    /// Save pre-v0.13.2 commitments.
+    pub pre_v0_13_2_commitments: bool,
 }
 
 impl BlockValidationConfig {
@@ -34,6 +38,9 @@ impl BlockValidationConfig {
     }
     pub fn all_verifications_disabled(self, no_check: bool) -> Self {
         Self { no_check, ..self }
+    }
+    pub fn pre_v0_13_2_commitments(self, pre_v0_13_2_commitments: bool) -> Self {
+        Self { pre_v0_13_2_commitments, ..self }
     }
 }
 
@@ -79,8 +86,6 @@ pub enum BlockImportError {
     #[error("Block number mismatch: expected {expected:#x}, got {got:#x}")]
     BlockNumber { got: u64, expected: u64 },
 
-    // #[error("Block order mismatch: database expects to import block #{expected}, trying to import #{got}. To import a block out of order, use the `ignore_block_order` flag.")]
-    // LatestBlockN { expected: u64, got: u64 },
     // #[error("Parent hash mismatch: expected {expected:#x}, got {got:#x}")]
     // ParentHash { got: Felt, expected: Felt },
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
@@ -90,7 +95,7 @@ pub enum BlockImportError {
     InternalDb { context: Cow<'static, str>, error: MadaraStorageError },
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal error: {0}")]
-    Internal(Cow<'static, str>),
+    Internal(#[from] anyhow::Error),
 }
 impl BlockImportError {
     /// Unrecoverable errors.
@@ -114,17 +119,34 @@ impl BlockImporter {
 
     pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
     where
-        F: FnOnce(&BlockImporter) -> R + Send + 'static,
+        F: FnOnce(BlockImporterCtx) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let this = self.clone();
-        self.rayon_pool.spawn_rayon_task(move || func(&this)).await
+        let ctx = self.ctx();
+        self.rayon_pool.spawn_rayon_task(move || func(ctx)).await
     }
 
-    pub fn is_trust_parent_hash(&self) -> bool {
-        self.config.trust_parent_hash
+    /// This is only used for apply global trie. It is applied from a sequential step,
+    /// and thus we want to avoid taking up a permit, to avoid deadlocks.
+    pub async fn run_in_rayon_pool_global<F, R>(&self, func: F) -> R
+    where
+        F: FnOnce(BlockImporterCtx) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let ctx = self.ctx();
+        global_spawn_rayon_task(move || func(ctx)).await
     }
 
+    fn ctx(&self) -> BlockImporterCtx {
+        BlockImporterCtx { db: self.db.clone(), config: self.config.clone() }
+    }
+}
+
+pub struct BlockImporterCtx {
+    db: Arc<MadaraBackend>,
+    config: BlockValidationConfig,
+}
+impl BlockImporterCtx {
     // Pending block
 
     pub fn save_pending_block(&self, block: PendingFullBlock) -> Result<(), BlockImportError> {
@@ -264,6 +286,7 @@ impl BlockImporter {
     /// Called in a rayon-pool context.
     pub fn verify_compile_classes(
         &self,
+        block_n: Option<u64>,
         declared_classes: Vec<ClassInfoWithHash>,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
     ) -> Result<Vec<ConvertedClass>, BlockImportError> {
@@ -275,7 +298,7 @@ impl BlockImporter {
         }
         let classes = declared_classes
             .into_par_iter()
-            .map(|class| self.verify_compile_class(class, check_against))
+            .map(|class| self.verify_compile_class(block_n, class, check_against))
             .collect::<Result<_, _>>()?;
         Ok(classes)
     }
@@ -283,6 +306,7 @@ impl BlockImporter {
     /// Called in a rayon-pool context.
     fn verify_compile_class(
         &self,
+        block_n: Option<u64>,
         class: ClassInfoWithHash,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
     ) -> Result<ConvertedClass, BlockImportError> {
@@ -353,12 +377,22 @@ impl BlockImporter {
 
                 // Verify class hash
                 if !self.config.trust_class_hashes {
-                    let expected = legacy
+                    let mut expected = legacy
                         .contract_class
                         .compute_class_hash()
                         .map_err(|e| BlockImportError::ComputeClassHash { class_hash, error: e })?;
 
+                    if let Some(block_n) = block_n {
+                        if self.db.chain_config().chain_id == ChainId::Mainnet {
+                            // We do not actually implement class hash verification for some cairo 0 classes.
+                            // See [`mp_class::mainnet_legacy_class_hashes`] for more information about this; but this
+                            // only applies to a few classes on mainnet in total. We have decided to just hardcode them.
+                            expected = mp_class::mainnet_legacy_class_hashes::get_real_class_hash(block_n, expected)
+                        }
+                    }
+
                     if !self.config.no_check && class_hash != expected {
+                        // tracing::info!("Mismatched class_hash={class_hash:#x} expected={expected:#x} block_n={block_n:?}");
                         return Err(BlockImportError::ClassHash { got: class_hash, expected });
                     }
                 }
@@ -466,36 +500,40 @@ impl BlockImporter {
 
     // GLOBAL TRIE
 
-    pub async fn apply_to_global_trie(
+    pub fn apply_to_global_trie(
         &self,
         block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), BlockImportError> {
         if block_range.is_empty() {
             return Ok(());
         }
+        let got = self.db.apply_to_global_trie(block_range.start, state_diffs.iter()).map_err(|error| {
+            BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
+        })?;
 
-        let this = self.clone();
-        // do not use the shared permits for a sequential step
-        global_spawn_rayon_task(move || {
-            let got = this.db.apply_to_global_trie(block_range.start, state_diffs.iter())?;
-            // Sanity check: verify state root.
-            let expected = this
+        // Sanity check: verify state root.
+        if !self.config.no_check {
+            let block_n = block_range.last().expect("Range checked for empty earlier.");
+            let expected = self
                 .db
-                .get_block_info(&RawDbBlockId::Number(block_range.last().expect("Range checked for empty earlier.")))?
+                .get_block_info(&RawDbBlockId::Number(block_n))
+                .map_err(|error| BlockImportError::InternalDb {
+                    error,
+                    context: format!("Cannot find block info for block #{block_n}").into(),
+                })?
                 .context("Block header cannot be found")?
                 .as_nonpending_owned()
                 .context("Block is pending")?
                 .header
                 .global_state_root;
 
-            if !this.config.no_check && expected != got {
-                return Err(BlockImportError::GlobalStateRoot { got, expected }.into());
+            if expected != got {
+                return Err(BlockImportError::GlobalStateRoot { got, expected });
             }
+        }
 
-            Ok(())
-        })
-        .await
+        Ok(())
     }
 }
 
@@ -569,8 +607,7 @@ mod tests {
         let importer = BlockImporter::new(backend, validation);
 
         // WHEN: We call update_tries with these parameters
-        let result: Result<(), BlockImportError> =
-            importer.apply_to_global_trie(0..1, vec![state_diff]).await.map_err(|e| e.downcast().unwrap());
+        let result = importer.ctx().apply_to_global_trie(0..1, vec![state_diff]);
 
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }

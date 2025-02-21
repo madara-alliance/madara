@@ -135,6 +135,7 @@ impl PipelineSteps for GatewaySyncSteps {
             self.backend.head_status().state_diffs.set(Some(block_n));
             self.backend.head_status().transactions.set(Some(block_n));
             self.backend.head_status().events.set(Some(block_n));
+            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(input))
     }
@@ -151,63 +152,64 @@ pub fn gateway_pending_block_sync(
 ) -> ThrottledRepeatedFuture<()> {
     ThrottledRepeatedFuture::new(
         move |_| {
-        let client = client.clone();
-        let importer = importer.clone();
-        let backend = backend.clone();
-        async move {
-            let block = match client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
-                Ok(block) => block,
-                // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
-                // Deserialization fails in this case.
-                Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
-                Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
-                    return Ok(None)
-                }
-                Err(other) => {
-                    // non-compliant gateway?
-                    tracing::warn!("Could not parse the pending block returned by the gateway: {other:#}");
+            let client = client.clone();
+            let importer = importer.clone();
+            let backend = backend.clone();
+            async move {
+                let block = match client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
+                    Ok(block) => block,
+                    // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
+                    // Deserialization fails in this case.
+                    Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
+                    Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
+                        return Ok(None)
+                    }
+                    Err(other) => {
+                        // non-compliant gateway?
+                        tracing::warn!("Could not parse the pending block returned by the gateway: {other:#}");
+                        return Ok(None);
+                    }
+                };
+
+                let ProviderStateUpdateWithBlockPendingMaybe::Pending(block) = block else {
+                    tracing::debug!("Asked for a pending block, got a closed one");
+                    return Ok(None);
+                };
+
+                let parent_hash = backend
+                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))
+                    .context("Getting latest block hash")?
+                    .unwrap_or(Felt::ZERO);
+
+                if block.block.parent_block_hash != parent_hash {
+                    tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
                     return Ok(None);
                 }
-            };
 
-            let ProviderStateUpdateWithBlockPendingMaybe::Pending(block) = block else {
-                tracing::debug!("Asked for a pending block, got a closed one");
-                return Ok(None);
-            };
+                tracing::info!("BLOCK = {block:?}, {parent_hash:#x}");
 
-            let parent_hash = backend
-                .get_block_hash(&BlockId::Tag(BlockTag::Latest))
-                .context("Getting latest block hash")?
-                .unwrap_or(Felt::ZERO);
+                let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
 
-            if block.block.parent_block_hash != parent_hash {
-                tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
-                return Ok(None);
+                let classes = super::classes::get_classes(
+                    &client,
+                    BlockId::Tag(BlockTag::Pending),
+                    &block.state_diff.all_declared_classes(),
+                )
+                .await
+                .context("Getting pending block classes")?;
+
+                importer
+                    .run_in_rayon_pool(move |importer| {
+                        let classes =
+                            importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
+                        importer.save_pending_classes(classes)?;
+                        importer.save_pending_block(block)?;
+                        anyhow::Ok(())
+                    })
+                    .await?;
+
+                Ok(Some(()))
             }
-
-            tracing::info!("BLOCK = {block:?}, {parent_hash:#x}");
-
-            let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
-
-            let classes = super::classes::get_classes(
-                &client,
-                BlockId::Tag(BlockTag::Pending),
-                &block.state_diff.all_declared_classes(),
-            )
-            .await
-            .context("Getting pending block classes")?;
-
-            importer
-                .run_in_rayon_pool(move |importer| {
-                    let classes = importer.verify_compile_classes(classes, &block.state_diff.all_declared_classes())?;
-                    importer.save_pending_classes(classes)?;
-                    importer.save_pending_block(block)?;
-                    anyhow::Ok(())
-                })
-                .await?;
-
-            Ok(Some(()))
-        }
         },
         Duration::from_secs(1),
     )

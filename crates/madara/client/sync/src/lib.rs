@@ -4,8 +4,8 @@ mod metrics;
 mod pipeline;
 mod probe;
 mod sync;
-mod util;
 mod tests;
+mod util;
 
 pub use sync::SyncControllerConfig;
 

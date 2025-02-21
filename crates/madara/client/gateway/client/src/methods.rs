@@ -1,7 +1,6 @@
-use std::{borrow::Cow, sync::Arc};
-
+use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use mp_block::{BlockId, BlockTag};
-use mp_class::{ContractClass, FlattenedSierraClass};
+use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::{
     block::{
@@ -17,11 +16,9 @@ use mp_gateway::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
-
-use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use std::{borrow::Cow, sync::Arc};
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
@@ -544,6 +541,33 @@ mod tests {
         let signature_block_latest = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Latest)).await;
 
         assert!(matches!(signature_block_latest, Ok(ProviderBlockSignature { .. })))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_header(client_mainnet_fixture: GatewayProvider) {
+        let signature_block_latest = client_mainnet_fixture.get_header(BlockId::Number(1298)).await.unwrap();
+
+        assert_eq!(
+            signature_block_latest,
+            ProviderBlockHeader {
+                block_number: 1298,
+                block_hash: Felt::from_hex_unchecked(
+                    "0x39556c628eb6203f1a843daaa4d83b85642e9ed32c165b1389ab47b630af82e"
+                )
+            }
+        )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_header_pending(client_mainnet_fixture: GatewayProvider) {
+        let signature_block_pending = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Pending)).await;
+
+        assert!(matches!(
+            signature_block_pending,
+            Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::NoBlockHeader, .. }))
+        ))
     }
 
     #[rstest]

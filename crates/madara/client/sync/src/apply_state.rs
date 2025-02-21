@@ -45,13 +45,17 @@ impl PipelineSteps for ApplyStateSteps {
         }
         if let Some(last_block_n) = block_range.clone().last() {
             tracing::debug!("Apply state sequential step {block_range:?}");
-            self.importer.apply_to_global_trie(block_range, input).await?;
+
+            self.importer
+                .run_in_rayon_pool_global(|importer| importer.apply_to_global_trie(block_range, input))
+                .await?;
             self.backend.head_status().global_trie.set(Some(last_block_n));
+            self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
     }
 
     fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().latest_full_block_n()
+        self.backend.head_status().global_trie.get()
     }
 }
