@@ -2612,11 +2612,18 @@ mod tests {
             block_production_task.block_production_task(mp_utils::service::ServiceContext::new_for_testing()).await
         });
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         task_handle.abort();
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
+        let block_inner = backend
+            .get_block(&mp_block::BlockId::Number(1))
+            .expect("Failed to retrieve latest block from db")
+            .expect("Missing latest block")
+            .inner;
+
+        assert_eq!(block_inner.transactions.len(), 2);
         assert!(mempool.is_empty());
         assert!(pending_block.inner.transactions.is_empty());
     }
@@ -2680,7 +2687,7 @@ mod tests {
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
         assert!(mempool.is_empty());
-        assert_eq!(pending_block.inner.transactions.len(), 1);
+        assert_eq!(pending_block.inner.transactions.len(), 2);
 
         // ================================================================== //
         //           PART 4: we add more transactions to the mempool          //
@@ -2707,7 +2714,7 @@ mod tests {
             .expect("Missing latest block")
             .inner;
 
-        assert_eq!(block_inner.transactions.len(), 1);
+        assert_eq!(block_inner.transactions.len(), 2);
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
 
         // ================================================================== //
