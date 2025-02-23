@@ -30,6 +30,7 @@ pub struct NodeHashToNodeMappingItem {
 pub struct ContractLeavesDataItem {
     pub nonce: Felt,
     pub class_hash: Felt,
+    pub storage_root: Felt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
