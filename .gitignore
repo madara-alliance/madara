@@ -68,3 +68,6 @@ image.tar.gz
 
 # madara test artifacts for testing l2 clients for appchains
 test-artifacts/madara
+
+madara-l2-db
+madara-l3-db

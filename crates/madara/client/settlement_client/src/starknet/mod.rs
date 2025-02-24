@@ -212,7 +212,7 @@ impl SettlementClientTrait for StarknetClient {
             .call(
                 FunctionCall {
                     contract_address: self.l2_core_contract,
-                    entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations")
+                    entry_point_selector: get_selector_from_name("appchain_to_sn_messages")
                         .map_err(|e| SettlementClientError::Other(e.into()))?,
                     calldata: vec![Felt::from_bytes_be_slice(msg_hash)],
                 },
@@ -221,7 +221,7 @@ impl SettlementClientTrait for StarknetClient {
             .await
             .map_err(|e| SettlementClientError::Other(e.into()))?;
 
-        if call_res.len() != 2 {
+        if call_res.len() != 1 {
             return Err(SettlementClientError::InvalidResponse(
                 "l1_to_l2_message_cancellations should return only 2 values".into(),
             ));

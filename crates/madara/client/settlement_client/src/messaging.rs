@@ -86,7 +86,7 @@ where
                 .get_l1_to_l2_message_cancellations(&event_hash)
                 .await
                 .context("Failed to get message cancellation status")?;
-            if cancellation_timestamp != Felt::ZERO {
+            if cancellation_timestamp == Felt::TWO {
                 tracing::info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
                 handle_cancelled_message(backend, tx_nonce)
                     .context("Failed to handle cancelled message")

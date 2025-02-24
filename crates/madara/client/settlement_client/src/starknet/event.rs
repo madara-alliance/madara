@@ -150,7 +150,7 @@ impl Stream for StarknetEventStream {
                                             });
                                             payload_array
                                         },
-                                        fee: None,
+                                        fee: Some(1),
                                         transaction_hash: event.transaction_hash,
                                         message_hash: Some(*message_hash),
                                         block_number,
