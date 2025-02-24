@@ -240,6 +240,7 @@ tokio-test = "0.4.4"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
+dashmap = "6.1.0"
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["std"] }

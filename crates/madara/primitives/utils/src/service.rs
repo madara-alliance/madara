@@ -247,10 +247,12 @@
 //! [microservices]: https://en.wikipedia.org/wiki/Microservices
 
 use anyhow::Context;
+use dashmap::DashMap;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::{Debug, Display},
+    collections::{btree_map, BTreeMap},
+    fmt::Debug,
     panic,
     sync::Arc,
     time::Duration,
@@ -264,352 +266,49 @@ pub const SERVICE_COUNT_MAX: usize = 64;
 /// will be forcefully cancelled
 pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
-macro_rules! power_of_two {
-    ( $($pow:literal),* ) => {
-        paste::paste! {
-            #[repr(u64)]
-            #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-            pub enum PowerOfTwo {
-                #[default]
-                ZERO = 0,
-                $(
-                    [<P $pow>] = 1u64 << $pow,
-                )*
-            }
+pub type ServiceId = std::any::TypeId;
 
-            impl PowerOfTwo {
-                /// Converts a [PowerOfTwo] into a unique index which can be
-                /// used in an arrray
-                pub fn index(&self) -> usize {
-                    match self {
-                        Self::ZERO => 0,
-                        $(
-                            Self::[<P $pow>] => $pow,
-                        )*
-                    }
-                }
-            }
-
-            impl ServiceId for PowerOfTwo {
-                fn svc_id(&self) -> PowerOfTwo {
-                    *self
-                }
-            }
-
-            impl Display for PowerOfTwo {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "{}", *self as u64)
-                }
-            }
-
-            impl TryFrom<u8> for PowerOfTwo {
-                type Error = anyhow::Error;
-
-                fn try_from(pow: u8) -> anyhow::Result<Self> {
-                    TryFrom::<u64>::try_from(pow as u64)
-                }
-            }
-
-            impl TryFrom<u16> for PowerOfTwo {
-                type Error = anyhow::Error;
-
-                fn try_from(pow: u16) -> anyhow::Result<Self> {
-                    TryFrom::<u64>::try_from(pow as u64)
-                }
-            }
-
-            impl TryFrom<u32> for PowerOfTwo {
-                type Error = anyhow::Error;
-
-                fn try_from(pow: u32) -> anyhow::Result<Self> {
-                    TryFrom::<u64>::try_from(pow as u64)
-                }
-            }
-
-            impl TryFrom<u64> for PowerOfTwo
-            {
-                type Error = anyhow::Error;
-
-                fn try_from(pow: u64) -> anyhow::Result<Self> {
-                    $(
-                        const [<P $pow>]: u64 = 1 << $pow;
-                    )*
-
-                    let pow: u64 = pow.into();
-                    match pow {
-                        0 => anyhow::Ok(Self::ZERO),
-                        $(
-                            [<P $pow>] => anyhow::Ok(Self::[<P $pow>]),
-                        )*
-                        _ => anyhow::bail!("Not a power of two: {pow}"),
-                    }
-                }
-            }
-        }
-    };
-}
-
-power_of_two!(
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
-    60, 61, 62, 63
-);
-
-/// The core [Service]s available in Madara.
-///
-/// Note that [PowerOfTwo::ZERO] represents [MadaraServiceId::Monitor] as
-/// [ServiceMonitor] is always running and therefore is the genesis state of all
-/// other services.
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MadaraServiceId {
+#[derive(PartialEq, Eq, Clone, Copy, Default, Debug, Serialize, Deserialize)]
+pub enum ServiceStatus {
+    Active,
+    Running,
     #[default]
-    #[serde(skip)]
-    Monitor,
-    #[serde(skip)]
-    Database,
-    L1Sync,
-    L2Sync,
-    BlockProduction,
-    #[serde(rename = "rpc")]
-    RpcUser,
-    #[serde(skip)]
-    RpcAdmin,
-    Gateway,
-    Telemetry,
-    P2p,
-}
-
-impl ServiceId for MadaraServiceId {
-    #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        match self {
-            MadaraServiceId::Monitor => PowerOfTwo::ZERO,
-            MadaraServiceId::Database => PowerOfTwo::P0,
-            MadaraServiceId::L1Sync => PowerOfTwo::P1,
-            MadaraServiceId::L2Sync => PowerOfTwo::P2,
-            MadaraServiceId::BlockProduction => PowerOfTwo::P3,
-            MadaraServiceId::RpcUser => PowerOfTwo::P4,
-            MadaraServiceId::RpcAdmin => PowerOfTwo::P5,
-            MadaraServiceId::Gateway => PowerOfTwo::P6,
-            MadaraServiceId::Telemetry => PowerOfTwo::P7,
-            MadaraServiceId::P2p => PowerOfTwo::P8,
-        }
-    }
-}
-
-impl Display for MadaraServiceId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Monitor => "monitor",
-                Self::Database => "database",
-                Self::L1Sync => "l1 sync",
-                Self::L2Sync => "l2 sync",
-                Self::BlockProduction => "block production",
-                Self::RpcUser => "rpc user",
-                Self::RpcAdmin => "rpc admin",
-                Self::Gateway => "gateway",
-                Self::Telemetry => "telemetry",
-                Self::P2p => "p2p",
-            }
-        )
-    }
-}
-
-impl std::ops::BitOr for MadaraServiceId {
-    type Output = u64;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        self.svc_id() as u64 | rhs.svc_id() as u64
-    }
-}
-
-impl std::ops::BitAnd for MadaraServiceId {
-    type Output = u64;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        self.svc_id() as u64 & rhs.svc_id() as u64
-    }
-}
-
-impl From<PowerOfTwo> for MadaraServiceId {
-    fn from(value: PowerOfTwo) -> Self {
-        match value {
-            PowerOfTwo::ZERO => Self::Monitor,
-            PowerOfTwo::P0 => Self::Database,
-            PowerOfTwo::P1 => Self::L1Sync,
-            PowerOfTwo::P2 => Self::L2Sync,
-            PowerOfTwo::P3 => Self::BlockProduction,
-            PowerOfTwo::P4 => Self::RpcUser,
-            PowerOfTwo::P5 => Self::RpcAdmin,
-            PowerOfTwo::P6 => Self::Gateway,
-            PowerOfTwo::P7 => Self::P2p,
-            _ => Self::Telemetry,
-        }
-    }
-}
-
-// A boolean status enum, for clarity's sake
-#[derive(PartialEq, Eq, Clone, Copy, Default, Serialize, Deserialize)]
-pub enum MadaraServiceStatus {
-    On,
-    #[default]
-    Off,
-}
-
-impl Display for MadaraServiceStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::On => "on",
-                Self::Off => "off",
-            }
-        )
-    }
-}
-
-impl std::ops::BitOr for MadaraServiceStatus {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        if self.is_on() || rhs.is_on() {
-            MadaraServiceStatus::On
-        } else {
-            MadaraServiceStatus::Off
-        }
-    }
-}
-
-impl std::ops::BitOr for &MadaraServiceStatus {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        if self.is_on() || rhs.is_on() {
-            &MadaraServiceStatus::On
-        } else {
-            &MadaraServiceStatus::Off
-        }
-    }
-}
-
-impl std::ops::BitAnd for MadaraServiceStatus {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        if self.is_on() && rhs.is_on() {
-            MadaraServiceStatus::On
-        } else {
-            MadaraServiceStatus::Off
-        }
-    }
-}
-
-impl std::ops::BitAnd for &MadaraServiceStatus {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        if self.is_on() && rhs.is_on() {
-            &MadaraServiceStatus::On
-        } else {
-            &MadaraServiceStatus::Off
-        }
-    }
-}
-
-impl std::ops::BitOrAssign for MadaraServiceStatus {
-    fn bitor_assign(&mut self, rhs: Self) {
-        *self = if self.is_on() || rhs.is_on() { MadaraServiceStatus::On } else { MadaraServiceStatus::Off }
-    }
-}
-
-impl std::ops::BitAndAssign for MadaraServiceStatus {
-    fn bitand_assign(&mut self, rhs: Self) {
-        *self = if self.is_on() && rhs.is_on() { MadaraServiceStatus::On } else { MadaraServiceStatus::Off }
-    }
-}
-
-impl From<bool> for MadaraServiceStatus {
-    fn from(value: bool) -> Self {
-        match value {
-            true => Self::On,
-            false => Self::Off,
-        }
-    }
-}
-
-impl MadaraServiceStatus {
-    #[inline(always)]
-    pub fn is_on(&self) -> bool {
-        self == &MadaraServiceStatus::On
-    }
-
-    #[inline(always)]
-    pub fn is_off(&self) -> bool {
-        self == &MadaraServiceStatus::Off
-    }
+    Inactive,
 }
 
 /// An atomic bitmask of each [MadaraServiceId]'s status with strong
 /// [std::sync::atomic::Ordering::SeqCst] cross-thread ordering of operations.
 #[repr(transparent)]
 #[derive(Default)]
-pub struct MadaraServiceMask(std::sync::atomic::AtomicU64);
+struct ServiceSet(DashMap<ServiceId, ServiceStatus>);
 
-impl MadaraServiceMask {
-    #[cfg(feature = "testing")]
-    pub fn new_for_testing() -> Self {
-        Self(std::sync::atomic::AtomicU64::new(u64::MAX))
+impl ServiceSet {
+    #[inline(always)]
+    fn status(&self, id: &ServiceId) -> ServiceStatus {
+        self.0.get(id).map(|cell| *cell.value()).unwrap_or_default()
     }
 
     #[inline(always)]
-    pub fn status(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        (self.value() & svc.svc_id() as u64 > 0).into()
+    fn is_active_some(&self) -> bool {
+        !self.0.is_empty()
     }
 
     #[inline(always)]
-    pub fn is_active_some(&self) -> bool {
-        self.value() > 0
+    fn set(&self, id: ServiceId, status: ServiceStatus) -> ServiceStatus {
+        self.0.insert(id, status).unwrap_or_default()
     }
 
     #[inline(always)]
-    pub fn activate(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        let prev = self.0.fetch_or(svc.svc_id() as u64, std::sync::atomic::Ordering::SeqCst);
-        (prev & svc.svc_id() as u64 > 0).into()
+    fn unset(&self, id: &ServiceId) -> ServiceStatus {
+        self.0.remove(id).map(|(_, v)| v).unwrap_or_default()
     }
 
-    #[inline(always)]
-    pub fn deactivate(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        let svc = svc.svc_id() as u64;
-        let prev = self.0.fetch_and(!svc, std::sync::atomic::Ordering::SeqCst);
-        (prev & svc > 0).into()
+    fn clear(&self) {
+        self.0.clear()
     }
 
-    fn active_set(&self) -> Vec<MadaraServiceId> {
-        let mut i = MadaraServiceId::Telemetry.svc_id() as u64;
-        let state = self.value();
-        let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);
-
-        while i > 0 {
-            let mask = state & i;
-
-            if mask > 0 {
-                let pow = PowerOfTwo::try_from(mask).expect("mask is a power of 2");
-                set.push(MadaraServiceId::from(pow));
-            }
-
-            i >>= 1;
-        }
-
-        set
-    }
-
-    fn value(&self) -> u64 {
-        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    fn active_set(&self) -> &DashMap<ServiceId, ServiceStatus> {
+        &self.0
     }
 }
 
@@ -641,10 +340,10 @@ impl MadaraServiceMask {
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
-    services: Arc<MadaraServiceMask>,
+    services: Arc<ServiceSet>,
     service_update_sender: Arc<tokio::sync::broadcast::Sender<ServiceTransport>>,
     service_update_receiver: Option<tokio::sync::broadcast::Receiver<ServiceTransport>>,
-    id: PowerOfTwo,
+    id: ServiceId,
 }
 
 impl Clone for ServiceContext {
@@ -660,40 +359,22 @@ impl Clone for ServiceContext {
     }
 }
 
-impl Default for ServiceContext {
-    fn default() -> Self {
+impl ServiceContext {
+    /// Creates a new [Default] [ServiceContext]
+    fn new(id: ServiceId) -> Self {
         Self {
             token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
-            services: Arc::new(MadaraServiceMask::default()),
+            services: Arc::new(ServiceSet::default()),
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(SERVICE_COUNT_MAX).0),
             service_update_receiver: None,
-            id: MadaraServiceId::Monitor.svc_id(),
+            id,
         }
-    }
-}
-
-impl ServiceContext {
-    /// Creates a new [Default] [ServiceContext]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[cfg(feature = "testing")]
-    pub fn new_for_testing() -> Self {
-        Self { services: Arc::new(MadaraServiceMask::new_for_testing()), ..Default::default() }
-    }
-
-    /// Creates a new [Default] [ServiceContext] with the state of its services
-    /// set to the specified value.
-    pub fn new_with_services(services: Arc<MadaraServiceMask>) -> Self {
-        Self { services, ..Default::default() }
     }
 
     /// Stops all services under the same global context scope.
     pub fn cancel_global(&self) {
         tracing::info!("🔌 Gracefully shutting down node");
-
         self.token_global.cancel();
     }
 
@@ -739,8 +420,8 @@ impl ServiceContext {
                 _ = token_local.cancelled() => break
             };
 
-            if let Some(ServiceTransport { svc_id, status }) = res {
-                if svc_id == self.id && status == MadaraServiceStatus::Off {
+            if let Some(ServiceTransport { id_from: _, id_to, status }) = res {
+                if id_to == self.id && status == ServiceStatus::Inactive {
                     return;
                 }
             }
@@ -792,7 +473,7 @@ impl ServiceContext {
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
             || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
-            || self.services.status(self.id) == MadaraServiceStatus::Off
+            || self.services.status(&self.id) == ServiceStatus::Inactive
     }
 
     /// Runs a [Future] until the [Service] associated to this [ServiceContext]
@@ -828,14 +509,13 @@ impl ServiceContext {
     }
 
     /// The id of the [Service] associated to this [ServiceContext]
-    pub fn id(&self) -> PowerOfTwo {
-        self.id
+    pub fn id(&self) -> &ServiceId {
+        &self.id
     }
 
     /// Sets the id of this [ServiceContext]
-    pub fn with_id(mut self, id: impl ServiceId) -> Self {
-        self.id = id.svc_id();
-        self
+    pub fn with_id(self, id: ServiceId) -> Self {
+        Self { id, ..self }
     }
 
     /// Creates a new [ServiceContext] as a child of the current context.
@@ -851,8 +531,8 @@ impl ServiceContext {
 
     /// Atomically checks if a [Service] is running.
     #[inline(always)]
-    pub fn service_status(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        self.services.status(svc)
+    pub fn service_status<S: Service>(&self) -> ServiceStatus {
+        self.services.status(&ServiceId::of::<S>())
     }
 
     /// Atomically marks a [Service] as active.
@@ -863,14 +543,8 @@ impl ServiceContext {
     /// You can use [ServiceContext::service_subscribe] to subscribe to changes
     /// in the status of any service.
     #[inline(always)]
-    pub fn service_add(&self, id: impl ServiceId) -> MadaraServiceStatus {
-        let svc_id = id.svc_id();
-        let res = self.services.activate(id);
-
-        // TODO: make an internal server error out of this
-        let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::On });
-
-        res
+    pub fn service_add<S: Service>(&self) -> ServiceStatus {
+        self.service_set(ServiceId::of::<S>(), ServiceStatus::Active)
     }
 
     /// Atomically marks a [Service] as inactive.
@@ -881,10 +555,25 @@ impl ServiceContext {
     /// You can use [ServiceContext::service_subscribe] to subscribe to changes
     /// in the status of any service.
     #[inline(always)]
-    pub fn service_remove(&self, id: impl ServiceId) -> MadaraServiceStatus {
-        let svc_id = id.svc_id();
-        let res = self.services.deactivate(id);
-        let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::Off });
+    pub fn service_remove<S: Service>(&self) -> ServiceStatus {
+        self.service_unset(&ServiceId::of::<S>())
+    }
+
+    fn service_set(&self, id: ServiceId, status: ServiceStatus) -> ServiceStatus {
+        let res = self.services.set(id, status);
+        // TODO: make an internal service error out of this
+        let _ = self.service_update_sender.send(ServiceTransport { id_from: self.id, id_to: id, status });
+
+        res
+    }
+
+    fn service_unset(&self, id: &ServiceId) -> ServiceStatus {
+        let res = self.services.unset(id);
+        let _ = self.service_update_sender.send(ServiceTransport {
+            id_from: self.id,
+            id_to: *id,
+            status: ServiceStatus::Inactive,
+        });
 
         res
     }
@@ -920,24 +609,40 @@ impl ServiceContext {
         res
     }
 
+    pub async fn service_subscribe_for<S: Service>(&mut self, status: ServiceStatus) -> Option<ServiceTransport> {
+        let svc_id = ServiceId::of::<S>();
+        if self.services.status(&svc_id) == status {
+            return Some(ServiceTransport { id_from: self.id, id_to: svc_id, status });
+        }
+
+        while let Some(transport) = self.service_subscribe().await {
+            if transport.id_to == svc_id && transport.status == status {
+                return Some(transport);
+            }
+        }
+
+        None
+    }
+
     /// Atomically checks if the service associated to this [ServiceContext] is
     /// active.
     ///
     /// This can be updated across threads by calling [ServiceContext::service_remove]
     /// or [ServiceContext::service_add]
     #[inline(always)]
-    pub fn status(&self) -> MadaraServiceStatus {
-        self.services.status(self.id)
+    pub fn status(&self) -> ServiceStatus {
+        self.services.status(&self.id)
     }
 }
 
 /// Provides info about a [Service]'s status.
 ///
 /// Used as part of [ServiceContext::service_subscribe].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ServiceTransport {
-    pub svc_id: PowerOfTwo,
-    pub status: MadaraServiceStatus,
+    pub id_from: ServiceId,
+    pub id_to: ServiceId,
+    pub status: ServiceStatus,
 }
 
 /// A microservice in the Madara node.
@@ -1097,18 +802,12 @@ pub struct ServiceTransport {
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait Service: 'static + Send + Sync + ServiceId {
+pub trait Service: 'static + Send + Sync + std::any::Any {
     /// Default impl does not start any task.
-    async fn start<'a>(&mut self, _runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+    #[allow(unused_variables)]
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         Ok(())
     }
-}
-
-/// Allows a [Service] to identify itself
-///
-/// Services are identified using a unique [PowerOfTwo]
-pub trait ServiceId {
-    fn svc_id(&self) -> PowerOfTwo;
 }
 
 #[async_trait::async_trait]
@@ -1118,24 +817,17 @@ impl Service for Box<dyn Service> {
     }
 }
 
-impl ServiceId for Box<dyn Service> {
-    #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        self.as_ref().svc_id()
-    }
-}
-
 /// Wrapper around a [tokio::task::JoinSet] and a [ServiceContext].
 ///
 /// Used to enforce certain shutdown behavior onto [Service]s which are started
 /// with [ServiceRunner::service_loop]
 pub struct ServiceRunner<'a> {
     ctx: ServiceContext,
-    join_set: &'a mut JoinSet<anyhow::Result<PowerOfTwo>>,
+    join_set: &'a mut JoinSet<anyhow::Result<std::any::TypeId>>,
 }
 
 impl<'a> ServiceRunner<'a> {
-    fn new(ctx: ServiceContext, join_set: &'a mut JoinSet<anyhow::Result<PowerOfTwo>>) -> Self {
+    fn new(ctx: ServiceContext, join_set: &'a mut JoinSet<anyhow::Result<ServiceId>>) -> Self {
         Self { ctx, join_set }
     }
 
@@ -1152,6 +844,7 @@ impl<'a> ServiceRunner<'a> {
     /// > infinite loops on shutdown request if services have not been
     /// > implemented correctly.
     #[tracing::instrument(skip(self, runner), fields(module = "Service"))]
+    // TODO: move this to an async fn impl with Rust 2024
     pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
@@ -1159,10 +852,8 @@ impl<'a> ServiceRunner<'a> {
     {
         let Self { ctx, join_set } = self;
         join_set.spawn(async move {
-            let id = ctx.id();
-            if id != MadaraServiceId::Monitor.svc_id() {
-                tracing::debug!("Starting service with id: {id}");
-            }
+            let id = *ctx.id();
+            tracing::debug!("Starting service with id: {id:?}");
 
             // If a service is implemented correctly, `stopper` should never
             // cancel first. This is a safety measure in case someone forgets to
@@ -1174,38 +865,25 @@ impl<'a> ServiceRunner<'a> {
                 _ = Self::stopper(ctx1, &id) => {},
             }
 
-            if id != MadaraServiceId::Monitor.svc_id() {
-                tracing::debug!("Shutting down service with id: {id}");
-            }
+            tracing::debug!("Shutting down service with id: {id:?}");
 
             Ok(id)
         });
     }
 
-    async fn stopper(mut ctx: ServiceContext, id: &PowerOfTwo) {
+    async fn stopper(mut ctx: ServiceContext, id: &ServiceId) {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
 
-        tracing::warn!("⚠️  Forcefully shutting down service: {}", MadaraServiceId::from(*id));
+        tracing::warn!("⚠️  Forcefully shutting down service: {:?}", id);
     }
 }
 
 pub struct ServiceMonitor {
-    services: [Option<Box<dyn Service>>; SERVICE_COUNT_MAX],
-    join_set: JoinSet<anyhow::Result<PowerOfTwo>>,
-    status_request: Arc<MadaraServiceMask>,
-    status_actual: Arc<MadaraServiceMask>,
-}
-
-impl Default for ServiceMonitor {
-    fn default() -> Self {
-        Self {
-            services: [const { None }; SERVICE_COUNT_MAX],
-            join_set: JoinSet::new(),
-            status_request: Arc::default(),
-            status_actual: Arc::default(),
-        }
-    }
+    services: BTreeMap<ServiceId, Box<dyn Service>>,
+    join_set: JoinSet<anyhow::Result<ServiceId>>,
+    status_actual: Arc<ServiceSet>,
+    ctx: ServiceContext,
 }
 
 /// Orchestrates the execution of various [Service]s.
@@ -1223,13 +901,24 @@ impl Default for ServiceMonitor {
 /// Note that services which are not added with [ServiceMonitor::with] cannot
 /// be started or restarted.
 impl ServiceMonitor {
+    pub fn new() -> Self {
+        Self {
+            services: Default::default(),
+            join_set: Default::default(),
+            status_actual: Default::default(),
+            ctx: ServiceContext::new(ServiceId::of::<Self>()),
+        }
+    }
+
     /// Registers a [Service] to the [ServiceMonitor]. This service is
     /// _inactive_ by default and can be started at a later time.
-    pub fn with(mut self, svc: impl Service) -> anyhow::Result<Self> {
-        let idx = svc.svc_id().index();
-        self.services[idx] = match self.services[idx] {
-            Some(_) => anyhow::bail!("Services has already been added"),
-            None => Some(Box::new(svc)),
+    // TODO: is there way to enforce this check at the type level?
+    pub fn with<S: Service>(mut self, svc: S) -> anyhow::Result<Self> {
+        match self.services.entry(ServiceId::of::<S>()) {
+            btree_map::Entry::Vacant(entry) => entry.insert(Box::new(svc)),
+            btree_map::Entry::Occupied(_) => {
+                anyhow::bail!("Services has already been added");
+            }
         };
 
         anyhow::Ok(self)
@@ -1237,8 +926,9 @@ impl ServiceMonitor {
 
     /// Marks a [Service] as active, meaning it will be started automatically
     /// when calling [ServiceMonitor::start].
-    pub fn activate(&self, id: impl ServiceId) {
-        self.status_request.activate(id);
+    pub fn activate<S: Service>(self) -> Self {
+        self.ctx.service_add::<S>();
+        self
     }
 
     /// Starts all activate [Service]s and runs them to completion. Services
@@ -1249,25 +939,22 @@ impl ServiceMonitor {
     /// are running (otherwise the node would shutdown).
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
-        let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request));
-
         // start only the initially active services
-        for svc in self.services.iter_mut() {
-            match svc {
-                Some(svc) if self.status_request.status(svc.svc_id()) == MadaraServiceStatus::On => {
-                    let id = svc.svc_id();
-                    self.status_actual.activate(id);
+        for (id, svc) in self.services.iter_mut() {
+            if self.ctx.services.status(id) == ServiceStatus::Active {
+                self.status_actual.set(*id, ServiceStatus::Active);
 
-                    let ctx = ctx.child().with_id(id);
-                    let runner = ServiceRunner::new(ctx, &mut self.join_set);
-                    svc.start(runner).await.context("Starting service")?;
-                }
-                _ => continue,
+                let ctx = self.ctx.child().with_id(*id);
+                let runner = ServiceRunner::new(ctx, &mut self.join_set);
+                svc.start(runner).await.context("Starting service")?;
+
+                self.status_actual.set(*id, ServiceStatus::Running);
+                self.ctx.service_set(*id, ServiceStatus::Running);
             }
         }
 
         // SIGINT & SIGTERM
-        let runner = ServiceRunner::new(ctx.clone(), &mut self.join_set);
+        let runner = ServiceRunner::new(self.ctx.clone(), &mut self.join_set);
         runner.service_loop(|ctx| async move {
             let sigint = tokio::signal::ctrl_c();
             let sigterm = async {
@@ -1287,17 +974,17 @@ impl ServiceMonitor {
             anyhow::Ok(())
         });
 
-        tracing::debug!("Running services: {:?}", self.status_request.active_set());
-        while self.status_request.is_active_some() {
+        tracing::debug!("Running services: {:?}", self.ctx.services.active_set());
+        while self.ctx.services.is_active_some() {
             tokio::select! {
                 // A service has run to completion, mark it as inactive
                 Some(result) = self.join_set.join_next() => {
                     match result {
                         Ok(result) => {
                             let id = result?;
-                            tracing::debug!("Service {id} has shut down");
-                            self.status_actual.deactivate(id);
-                            self.status_request.deactivate(id);
+                            tracing::debug!("Service {id:?} has shut down");
+                            self.status_actual.set(id, ServiceStatus::Inactive);
+                            self.ctx.service_unset(&id);
                         }
                         Err(panic_error) if panic_error.is_panic() => {
                             // bubble up panics too
@@ -1308,22 +995,26 @@ impl ServiceMonitor {
                 },
                 // A service has had its status updated, check if it is a
                 // restart request
-                Some(ServiceTransport { svc_id, status }) = ctx.service_subscribe() => {
-                    if status == MadaraServiceStatus::On {
-                        if let Some(svc) = self.services[svc_id.index()].as_mut() {
-                            if self.status_actual.status(svc_id) == MadaraServiceStatus::Off {
-                                self.status_actual.activate(svc_id);
+                Some(ServiceTransport { id_from, id_to, status }) = self.ctx.service_subscribe() => {
+                    if id_from != self.ctx.id && status == ServiceStatus::Active {
+                        if let Some(svc) = self.services.get_mut(&id_to) {
+                            if self.status_actual.status(&id_to) == ServiceStatus::Inactive {
+                                self.status_actual.set(id_to, ServiceStatus::Active);
+                                self.ctx.service_set(id_to, ServiceStatus::Active);
 
-                                let ctx = ctx.child().with_id(svc_id);
+                                let ctx = self.ctx.child().with_id(id_to);
                                 let runner = ServiceRunner::new(ctx, &mut self.join_set);
                                 svc.start(runner)
                                     .await
                                     .context("Starting service")?;
 
-                                tracing::debug!("Service {svc_id} has started");
+                                self.status_actual.set(id_to, ServiceStatus::Running);
+                                self.ctx.service_set(id_to, ServiceStatus::Running);
+                                tracing::debug!("Service {id_to:?} has started");
                             } else {
                                 // reset request
-                                self.status_request.deactivate(svc_id);
+                                self.ctx.services.set(id_to, ServiceStatus::Inactive);
+                                self.ctx.service_set(id_to, ServiceStatus::Inactive);
                             }
                         }
                     }
@@ -1331,9 +1022,97 @@ impl ServiceMonitor {
                 else => continue
             };
 
-            tracing::debug!("Services still active: {:?}", self.status_request.active_set());
+            tracing::debug!("Services still active: {:?}", self.ctx.services.active_set());
         }
+        self.status_actual.clear();
 
         Ok(())
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn ctx(&self) -> &ServiceContext {
+        &self.ctx
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    struct ServiceA;
+
+    #[async_trait::async_trait]
+    impl Service for ServiceA {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            runner.service_loop(move |mut cx| async move {
+                cx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
+                println!("CHECKPOINT 3B");
+                anyhow::Ok(())
+            });
+            anyhow::Ok(())
+        }
+    }
+
+    struct ServiceB;
+
+    #[async_trait::async_trait]
+    impl Service for ServiceB {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            runner.service_loop(move |mut cx| async move {
+                cx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
+                println!("CHECKPOINT 3B");
+                anyhow::Ok(())
+            });
+            anyhow::Ok(())
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn service_monitor_simple() {
+        let monitor = ServiceMonitor::new()
+            .with(ServiceA)
+            .expect("Failed to add Service A")
+            .with(ServiceB)
+            .expect("Failed to add Service B")
+            .activate::<ServiceA>()
+            .activate::<ServiceB>();
+        let mut ctx = monitor.ctx.clone();
+
+        assert_eq!(ctx.service_status::<ServiceA>(), ServiceStatus::Active);
+        assert_eq!(ctx.service_status::<ServiceB>(), ServiceStatus::Active);
+
+        tokio::join!(
+            async {
+                println!("CHECKPOINT 0");
+                monitor.start().await.expect("Failed to start monitor");
+            },
+            async {
+                println!("CHECKPOINT 1");
+                assert_eq!(
+                    ctx.service_subscribe_for::<ServiceA>(ServiceStatus::Running).await,
+                    Some(ServiceTransport {
+                        id_from: ServiceId::of::<ServiceMonitor>(),
+                        id_to: ServiceId::of::<ServiceA>(),
+                        status: ServiceStatus::Running
+                    })
+                );
+                println!("CHECKPOINT 2");
+                assert_eq!(
+                    ctx.service_subscribe_for::<ServiceB>(ServiceStatus::Running).await,
+                    Some(ServiceTransport {
+                        id_from: ServiceId::of::<ServiceMonitor>(),
+                        id_to: ServiceId::of::<ServiceB>(),
+                        status: ServiceStatus::Running
+                    })
+                );
+                println!("CHECKPOINT 3");
+                ctx.cancel_global();
+            }
+        );
+        println!("CHECKPOINT 4");
+        assert_eq!(ctx.service_status::<ServiceA>(), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status::<ServiceB>(), ServiceStatus::Inactive);
     }
 }
