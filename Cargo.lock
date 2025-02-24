@@ -5555,6 +5555,7 @@ dependencies = [
 name = "mc-db"
 version = "0.8.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bincode 1.3.3",
  "blockifier",
@@ -5660,6 +5661,7 @@ dependencies = [
  "anyhow",
  "bigdecimal",
  "bitvec",
+ "blockifier",
  "dotenv",
  "futures",
  "httpmock",
@@ -5835,6 +5837,7 @@ dependencies = [
 name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bitvec",
  "blockifier",

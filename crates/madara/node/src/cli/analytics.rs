@@ -10,6 +10,6 @@ pub struct AnalyticsParams {
     pub analytics_service_name: String,
 
     /// Endpoint of the analytics server.
-    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_url, default_value = None)]
+    #[arg(env = "MADARA_ANALYTICS_COLLECTION_ENDPOINT", long, value_parser = parse_url, default_value = None)]
     pub analytics_collection_endpoint: Option<Url>,
 }

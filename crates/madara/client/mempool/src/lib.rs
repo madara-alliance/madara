@@ -87,7 +87,7 @@ pub trait MempoolProvider: Send + Sync {
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError>;
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
-    fn tx_take(&mut self) -> Option<MempoolTransaction>;
+    fn tx_take(&self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
     fn txs_re_add(
         &self,
@@ -342,7 +342,6 @@ impl MempoolProvider for Mempool {
         let nonce = Nonce(Felt::from(tx.nonce));
         let (btx, class) =
             tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
-
         // L1 Handler nonces represent the ordering of L1 transactions sent by
         // the core L1 contract. In principle this is a bit strange, as there
         // currently is only 1 core L1 contract, so all transactions should be
@@ -353,8 +352,7 @@ impl MempoolProvider for Mempool {
         // INFO: L1 nonce are stored differently in the db because of this, which is
         // why we do not use `retrieve_nonce_readiness`.
         let nonce_next = nonce.try_increment()?;
-        let nonce_target =
-            self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
+        let nonce_target = self.backend.get_l1_messaging_nonce_latest()?.unwrap_or(nonce);
         let nonce_info = if nonce != nonce_target {
             NonceInfo::pending(nonce, nonce_next)
         } else {
@@ -418,7 +416,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_take(&mut self) -> Option<MempoolTransaction> {
+    fn tx_take(&self) -> Option<MempoolTransaction> {
         if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
             let contract_address = mempool_tx.contract_address().to_felt();
             let nonce_next = mempool_tx.nonce_next;
@@ -717,7 +715,7 @@ mod test {
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
         let timestamp = ArrivedAtTimestamp::now();
         let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
@@ -1395,7 +1393,7 @@ mod test {
         #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
 
         // Insert pending transaction
 

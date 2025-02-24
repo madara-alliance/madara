@@ -1,11 +1,15 @@
-use crate::versions::user::v0_8_0::{ContractStorageKeysItem, GetStorageProofResult, StarknetReadRpcApiV0_8_0Server};
+use crate::versions::user::v0_8_0::{
+    ContractStorageKeysItem, GetStorageProofResult, MessageStatus, StarknetReadRpcApiV0_8_0Server,
+};
 use crate::Starknet;
+use alloy::primitives::TxHash;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
 use starknet_types_core::felt::Felt;
 
 pub mod get_compiled_casm;
+pub mod get_messages_status;
 pub mod get_storage_proof;
 
 #[async_trait]
@@ -26,5 +30,9 @@ impl StarknetReadRpcApiV0_8_0Server for Starknet {
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
         get_storage_proof::get_storage_proof(self, block_id, class_hashes, contract_addresses, contracts_storage_keys)
+    }
+
+    fn get_messages_status(&self, transaction_hash: TxHash) -> RpcResult<Vec<MessageStatus>> {
+        Ok(get_messages_status::get_messages_status(self, transaction_hash)?)
     }
 }
