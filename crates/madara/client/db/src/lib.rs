@@ -1,4 +1,39 @@
 //! Madara database
+//!
+//! # Block storage
+//!
+//! Storing new blocks is the responsibility of the consumers of this crate. In the madara
+//! node architecture, this means: the sync service mc-sync (when we are syncing new blocks), or
+//! the block production mc-block-production task when we are producing blocks.
+//! For the sake of the mc-db documentation, we will call this service the "block importer" downstream service.
+//!
+//! The block importer service has two ways of adding blocks to the database, namely:
+//! - the easy [`MadaraBackend::add_full_block_with_classes`] function, which takes a full block, and does everything
+//!   required to save it properly and increment the latest block number of the database.
+//! - or, the more complicated lower level API that allows you to store partial blocks.
+//!
+//! Note that the validity of the block being stored is not checked for neither of those APIs.
+//!
+//! For the low-level API, there are a few responsibilities to follow:
+//!
+//! - The database can store partial blocks. Adding headers can be done using [`MadaraBackend::store_block_header`],
+//!   transactions and receipts using [`MadaraBackend::store_transactions`], classes using [`MadaraBackend::class_db_store_block`],
+//!   state diffs using [`MadaraBackend::store_state_diff`], events using [`MadaraBackend::store_events`]. Furthermore,
+//!   [`MadaraBackend::apply_to_global_trie`] also needs to be called.
+//! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
+//!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
+//!   parallelism is still used inside of that function - intra-block parallelism.
+//! - Each of these block parts have a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
+//!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
+//!   as it is updated by this crate.
+//! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function
+//!   will increment the [`ChainHead::full_block`] field, marking a new block. It will also record some metrics, flush the
+//!   database if needed, and make may create db backups if the backend is configured to do so.
+//!
+//! In addition, readers of the database should use [`db_block_id::DbBlockId`] when querying blocks from the database.
+//! This ensures that any partial block data beyond the current [`ChainHead::full_block`] will not be visible to, eg. the rpc
+//! service. The block importer service can however bypass this restriction by using [`db_block_id::RawDbBlockId`] instead;
+//! allowing it to see the partial data it has saved beyond the latest block marked as full.
 
 use anyhow::Context;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
@@ -636,6 +671,8 @@ impl MadaraBackend {
         Ok(Arc::new(backend))
     }
 
+    /// This function needs to be called by the downstream block importer consumer service to mark a
+    /// new block as fully imported. See the [module documentation](self) to get details on what this exactly means.
     pub async fn on_block(&self, block_n: u64) -> anyhow::Result<()> {
         self.head_status.set_to_height(Some(block_n));
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));

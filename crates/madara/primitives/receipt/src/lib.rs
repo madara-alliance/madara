@@ -112,6 +112,16 @@ impl TransactionReceipt {
         }
     }
 
+    pub fn events_mut(&mut self) -> &mut Vec<Event> {
+        match self {
+            TransactionReceipt::Invoke(receipt) => &mut receipt.events,
+            TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
+            TransactionReceipt::Declare(receipt) => &mut receipt.events,
+            TransactionReceipt::Deploy(receipt) => &mut receipt.events,
+            TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
+        }
+    }
+
     pub fn into_events(self) -> Vec<Event> {
         match self {
             TransactionReceipt::Invoke(receipt) => receipt.events,

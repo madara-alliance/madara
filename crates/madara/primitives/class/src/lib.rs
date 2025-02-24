@@ -73,10 +73,7 @@ pub enum ClassType {
 
 impl fmt::Display for ClassType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Sierra => write!(f, "Sierra"),
-            Self::Legacy => write!(f, "Legacy"),
-        }
+        fmt::Debug::fmt(self, f)
     }
 }
 

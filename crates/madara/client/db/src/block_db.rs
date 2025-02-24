@@ -111,7 +111,6 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
         Ok(self.head_status().latest_full_block_n())
-        // get_latest_block_n(&self.db)
     }
 
     // Pending block quirk: We should act as if there is always a pending block in db, to match

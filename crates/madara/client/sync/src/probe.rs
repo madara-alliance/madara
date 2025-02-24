@@ -6,6 +6,10 @@ use tokio::time::Instant;
 
 type InnerFut<T> = BoxFuture<'static, anyhow::Result<Option<T>>>;
 
+/// Repeat the call of an async function, throttling it if it returns too quickly.
+/// For example, when wait_duration is 2s, if the resulting future takes 1s, we will wait
+/// 1s more until we call the function again. If it takes more than 2s, then we will not have
+/// to wait and we can call the function again directly.
 pub struct ThrottledRepeatedFuture<T: Clone> {
     last_val: Option<T>,
     future: Option<InnerFut<T>>,

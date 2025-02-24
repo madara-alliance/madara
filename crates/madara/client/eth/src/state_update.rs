@@ -43,13 +43,9 @@ async fn listen_and_update_state(
     // Listen to LogStateUpdate (0x77552641) update and send changes continuously
     let mut event_stream = event_filter.watch().await.context(ERR_ARCHIVE)?.into_stream();
 
-    // // This does not seem to play well with anvil
-    // #[cfg(not(test))]
-    // {
     let state_update = get_initial_state(&eth_client).await.context("Getting initial ethereum state")?;
     update_l1(&backend, &state_update, &eth_client.l1_block_metrics)?;
     l1_head_sender.send_modify(|s| *s = Some(state_update.clone()));
-    // }
 
     tracing::info!("🚀 Subscribed to L1 state verification");
 

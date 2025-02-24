@@ -31,7 +31,6 @@ pub enum ClassCompilationError {
 
 impl CompressedLegacyContractClass {
     // Returns `impl serde::Serialize` because the fact that it returns a serde_json::Value is an impl detail
-    // we should actually change that, it would be better to have a concrete type here.
     pub fn abi(&self) -> Result<impl serde::Serialize, ClassCompilationError> {
         // This convoluted JSON serialization is a way to get around bincode's
         // lack of support for #[serde(tag = "type")]. Abi entries should be
@@ -39,6 +38,8 @@ impl CompressedLegacyContractClass {
         //
         // NOTE: that the `type` field is already present in each ABI entry
         // struct so we do not need to add it manually.
+
+        // we should actually change that, it would be better to have a concrete type here.
 
         let abi = self
             .abi

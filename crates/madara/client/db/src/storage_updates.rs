@@ -24,13 +24,7 @@ fn store_events_to_receipts(
     events: Vec<EventWithTransactionHash>,
 ) -> Result<(), MadaraStorageError> {
     for receipt in receipts.iter_mut() {
-        let events_mut = match receipt {
-            TransactionReceipt::Invoke(receipt) => &mut receipt.events,
-            TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
-            TransactionReceipt::Declare(receipt) => &mut receipt.events,
-            TransactionReceipt::Deploy(receipt) => &mut receipt.events,
-            TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
-        };
+        let events_mut = receipt.events_mut();
         // just in case we stored them with receipt earlier, overwrite them
         events_mut.clear()
     }
@@ -50,15 +44,7 @@ fn store_events_to_receipts(
             let _item = inner_m.next();
         };
 
-        let events_mut = match receipt_mut {
-            TransactionReceipt::Invoke(receipt) => &mut receipt.events,
-            TransactionReceipt::L1Handler(receipt) => &mut receipt.events,
-            TransactionReceipt::Declare(receipt) => &mut receipt.events,
-            TransactionReceipt::Deploy(receipt) => &mut receipt.events,
-            TransactionReceipt::DeployAccount(receipt) => &mut receipt.events,
-        };
-
-        events_mut.push(ev.event);
+        receipt_mut.events_mut().push(ev.event);
     }
     Ok(())
 }

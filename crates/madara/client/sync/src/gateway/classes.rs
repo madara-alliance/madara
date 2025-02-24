@@ -93,7 +93,6 @@ impl PipelineSteps for ClassesSyncSteps {
         if self.backend.chain_config().chain_id == ChainId::Mainnet {
             block_range
                 .clone()
-                .into_iter()
                 .zip(input.iter_mut())
                 .for_each(|(block_n, classes)| fixup_missed_mainnet_classes(block_n, classes));
         }

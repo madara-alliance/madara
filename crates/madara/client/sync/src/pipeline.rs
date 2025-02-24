@@ -17,9 +17,18 @@ pub enum ApplyOutcome<Output> {
     Retry,
 }
 
+/// The parallel step will be called concurrently for many blocks at a time. Then,
+/// the sequential step will be called one block at a time, in order.
+///
+/// Fetches are usually done in the parallel step, while the sequential step is usually
+/// used to perform actions that may not be possible in parallel over many blocks, such as
+/// updating the global trie.
 pub trait PipelineSteps: Sync + Send + 'static {
+    /// Input batch item for the whole pipeline, which means, input to the parallel step.
     type InputItem: Send + Sync + Clone;
+    /// Intermediate type returned by the parallel step, input to the seuential step.
     type SequentialStepInput: Send + Sync;
+    /// Output of the pipeline, which means, output of the sequential step.
     type Output: Send + Sync + Clone;
 
     fn parallel_step(
@@ -36,12 +45,16 @@ pub trait PipelineSteps: Sync + Send + 'static {
     fn starting_block_n(&self) -> Option<u64>;
 }
 
+/// The pipeline controller is used to drive and execute the [`PipelineSteps`].
 pub struct PipelineController<S: PipelineSteps> {
     steps: Arc<S>,
+    /// Every parallel step currently being run. Polling it will poll every future, it will return the results as FCFS.
     queue: FuturesOrdered<ParallelStepFuture<S>>,
+    /// The currently being run sequential step. There can only be one at a time.
+    applying: Option<SequentialStepFuture<S>>,
     parallelization: usize,
     batch_size: usize,
-    applying: Option<SequentialStepFuture<S>>,
+    /// Inputs to be scheduled next into the parallel step.
     next_inputs: VecDeque<S::InputItem>,
     next_block_n_to_batch: u64,
     last_applied_block_n: Option<u64>,
@@ -57,6 +70,8 @@ type SequentialStepFuture<S> = BoxFuture<
 >;
 
 impl<S: PipelineSteps> PipelineController<S> {
+    /// Batch size is the maximum number of blocks per single parallel/sequential step.
+    /// Note that the pipeline may schedule batches smaller than that if it cannot schedule a batch of that size.
     pub fn new(steps: S, parallelization: usize, batch_size: usize) -> Self {
         let starting_block_n = steps.starting_block_n();
         let next_input_block_n = starting_block_n.map(|block_n| block_n + 1).unwrap_or(/* next is genesis */ 0);
@@ -90,10 +105,10 @@ impl<S: PipelineSteps> PipelineController<S> {
     pub fn is_empty(&self) -> bool {
         self.applying.is_none() && self.queue.is_empty() && self.next_inputs.is_empty()
     }
-    pub fn queue_len(&self) -> usize {
+    fn queue_len(&self) -> usize {
         self.queue.len()
     }
-    pub fn is_applying(&self) -> bool {
+    fn is_applying(&self) -> bool {
         self.applying.is_some()
     }
 
@@ -123,6 +138,8 @@ impl<S: PipelineSteps> PipelineController<S> {
         self.queue.push_back(self.make_parallel_step_future(RetryInput { block_range, input }));
     }
 
+    /// Push an item to be scheduled next. Only call this when [`Self::can_schedule_more`] is true, to support
+    /// backpressure correctly.
     pub fn push(&mut self, block_range: Range<u64>, input: impl IntoIterator<Item = S::InputItem>) {
         let next_input_block_n = self.next_input_block_n();
         // Skip items that we have already handled.
@@ -130,6 +147,7 @@ impl<S: PipelineSteps> PipelineController<S> {
             .extend(input.into_iter().zip(block_range).skip_while(|(_, n)| next_input_block_n < *n).map(|(v, _)| v));
     }
 
+    /// Pulls a batch of item. This runs the pipeline until an output is ready.
     pub async fn next(&mut self) -> Option<anyhow::Result<(Range<u64>, S::Output)>> {
         loop {
             while self.next_inputs.len() >= self.batch_size && self.queue.len() <= self.parallelization {
@@ -176,6 +194,7 @@ pub struct PipelineStatus {
 }
 
 impl<S: PipelineSteps> PipelineController<S> {
+    /// Get the status of a pipeline, for pretty-printing.
     pub fn status(&self) -> PipelineStatus {
         PipelineStatus {
             jobs: self.queue_len(),

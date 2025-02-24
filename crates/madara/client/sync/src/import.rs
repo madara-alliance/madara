@@ -46,8 +46,6 @@ impl BlockValidationConfig {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlockImportError {
-    // #[error("Transaction hash mismatch for index #{index}: expected {expected:#x}, got {got:#x}")]
-    // TransactionHash { index: usize, got: Felt, expected: Felt },
     #[error("Transaction count mismatch: expected {expected}, got {got}")]
     TransactionCount { got: u64, expected: u64 },
     #[error("Transaction commitment mismatch: expected {expected:#x}, got {got:#x}")]
@@ -81,13 +79,9 @@ pub enum BlockImportError {
     #[error("Failed to compute class hash {class_hash:#x}: {error}")]
     ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
-    // #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
-    // BlockHash { got: Felt, expected: Felt },
     #[error("Block number mismatch: expected {expected:#x}, got {got:#x}")]
     BlockNumber { got: u64, expected: u64 },
 
-    // #[error("Parent hash mismatch: expected {expected:#x}, got {got:#x}")]
-    // ParentHash { got: Felt, expected: Felt },
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
     /// Internal error, see [`BlockImportError::is_internal`].
@@ -228,11 +222,6 @@ impl BlockImporterCtx {
                     starknet_version,
                     /* is_query */ false,
                 );
-                // For pre-v0.13.2, our tx hash is only used for commitment computation.
-                // let expected = tx.receipt.transaction_hash();
-                // // if expected != got {
-                // //     return Err(BlockImportError::TransactionHash { index, got, expected });
-                // // }
                 Ok((tx.transaction.compute_hash_with_signature(got, starknet_version), tx.receipt.compute_hash()))
             })
             .collect::<Result<_, BlockImportError>>()?;

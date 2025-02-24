@@ -13,6 +13,8 @@ impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFrom
     }
 }
 
+/// This ensures structural-concurrency. All of the tasks in this service are cancellation-safe, it is fine to just
+/// drop the futures.
 pub struct AbortOnDrop<T>(JoinHandle<T>);
 impl<T: Send + 'static> AbortOnDrop<T> {
     #[track_caller] // forward the tokio track_caller
@@ -54,7 +56,7 @@ impl<T> ServiceStateSender<T> {
     }
 }
 
-#[allow(unused)] // only used in tests
+#[cfg(test)]
 pub fn service_state_channel<T>() -> (ServiceStateSender<T>, tokio::sync::mpsc::UnboundedReceiver<T>) {
     let (sender, recv) = tokio::sync::mpsc::unbounded_channel();
     (ServiceStateSender(Some(sender)), recv)

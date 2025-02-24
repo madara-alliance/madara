@@ -22,7 +22,7 @@ impl Default for RayonPool {
 impl RayonPool {
     pub fn new() -> Self {
         let n_cores = thread::available_parallelism().expect("Getting the number of cores").get();
-        let max_tasks = n_cores * 128;
+        let max_tasks = n_cores * 2;
         Self { semaphore: Semaphore::new(max_tasks), max_tasks, permit_id: 0.into(), n_acquired_permits: 0.into() }
     }
 
