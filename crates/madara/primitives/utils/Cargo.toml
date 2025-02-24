@@ -64,6 +64,7 @@ rand.workspace = true
 rstest.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-test.workspace = true
+assert_matches.workspace = true
 
 [features]
 testing = []
