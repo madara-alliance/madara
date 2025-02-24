@@ -53,5 +53,5 @@ jobs:
 
   cli_test:
     name: Run CLI Tests
-    needs: update_db_version
+    needs: build
     uses: ./.github/workflows/cli-test.yml
