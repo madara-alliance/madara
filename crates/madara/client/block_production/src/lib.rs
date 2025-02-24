@@ -521,6 +521,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             self.block.clone().into(),
             new_state_diff,
             self.declared_classes.clone(),
+            None,
             Some(visited_segments),
             Some(bouncer_weights),
         )?;
@@ -1211,6 +1212,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
+                None,
                 Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
@@ -1377,6 +1379,7 @@ mod tests {
                 },
                 ready_state_diff.clone(),
                 ready_converted_classes.clone(),
+                None,
                 Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
@@ -1458,6 +1461,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 pending_converted_classes.clone(),
+                None,
                 Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
@@ -1645,6 +1649,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
+                None,
                 None, // No visited segments!
                 Some(bouncer_weights),
             )
@@ -1778,6 +1783,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
+                None,
                 Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )
@@ -1878,6 +1884,7 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
+                None,
                 Some(visited_segments.clone()),
                 Some(bouncer_weights),
             )

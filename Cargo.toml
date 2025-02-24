@@ -15,6 +15,8 @@ members = [
   "crates/madara/client/block_import",
   "crates/madara/node",
   "crates/madara/primitives/block",
+  "crates/madara/primitives/bloom_filter",
+  "crates/madara/primitives/bloom_filter",
   "crates/madara/primitives/convert",
   "crates/madara/primitives/transactions",
   "crates/madara/primitives/class",
@@ -47,6 +49,8 @@ default-members = [
   "crates/madara/client/analytics",
   "crates/madara/node",
   "crates/madara/primitives/block",
+  "crates/madara/primitives/bloom_filter",
+  "crates/madara/primitives/bloom_filter",
   "crates/madara/primitives/convert",
   "crates/madara/primitives/transactions",
   "crates/madara/primitives/class",
@@ -112,6 +116,7 @@ m-proc-macros = { path = "crates/madara/proc-macros", default-features = false }
 
 # Madara primtitives
 mp-block = { path = "crates/madara/primitives/block", default-features = false }
+mp-bloom-filter = { path = "crates/madara/primitives/bloom_filter", default-features = false }
 mp-convert = { path = "crates/madara/primitives/convert", default-features = false }
 mp-transactions = { path = "crates/madara/primitives/transactions", default-features = false }
 mp-class = { path = "crates/madara/primitives/class", default-features = false }
@@ -229,6 +234,8 @@ num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
+ahash = "0.8"
+twox-hash = "2.1"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
@@ -251,6 +258,7 @@ httpmock = "0.7.0"
 mockall = "0.13.0"
 fdlimit = "0.3.0"
 assert_matches = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 # Macros
 indoc = "2"
