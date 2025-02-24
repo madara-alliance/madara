@@ -7,9 +7,9 @@ use blockifier::transaction::{
 };
 use cairo_vm::types::builtin_name::BuiltinName;
 use primitive_types::H256;
-use starknet_core::types::MsgToL2;
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
+use sha3::{Digest, Keccak256};
 
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
@@ -57,7 +57,7 @@ fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1Hand
         payload: payload.into(),
         nonce,
     };
-    Ok(H256::from_slice(message.hash().as_bytes()))
+    Ok(H256::from_slice(&message.hash()))
 }
 
 fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
@@ -260,5 +260,51 @@ mod events_logic_tests {
 
     fn event(order: usize) -> Event {
         Event { from_address: Default::default(), keys: vec![Felt::ZERO; order], data: vec![Felt::ZERO; order] }
+    }
+}
+
+/// An L1-to-L2 message sent from Ethereum to Starknet.
+#[derive(Debug, Clone)]
+pub struct MsgToL2 {
+    /// The sender address as a Felt
+    pub from_address: Felt,
+    /// The Starknet contract address that handles the message
+    pub to_address: Felt,
+    /// The entrypoint selector on the handler contract
+    pub selector: Felt,
+    /// The calldata to be used for the handler contract invocation
+    pub payload: Vec<Felt>,
+    /// The nonce for deduplication
+    pub nonce: u64,
+}
+
+impl MsgToL2 {
+    /// Calculates the message hash following the same algorithm as the official implementation
+    pub fn hash(&self) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+
+        // FromAddress (as Felt)
+        hasher.update(self.from_address.to_bytes_be());
+
+        // ToAddress
+        hasher.update(self.to_address.to_bytes_be());
+
+        // Nonce
+        hasher.update([0u8; 24]);
+        hasher.update(self.nonce.to_be_bytes());
+
+        // Selector
+        hasher.update(self.selector.to_bytes_be());
+
+        // Payload.length
+        hasher.update([0u8; 24]);
+        hasher.update((self.payload.len() as u64).to_be_bytes());
+
+        // Payload
+        for item in &self.payload {
+            hasher.update(item.to_bytes_be());
+        }
+
+        hasher.finalize().into()
     }
 }

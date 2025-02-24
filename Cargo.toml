@@ -266,7 +266,7 @@ dotenv = "0.15.0"
 # Misc
 flate2 = "1.0"
 regex = "1.10.5"
-sha3 = "0.10"
+sha3 = { version = "0.10.7", default-features = false }
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

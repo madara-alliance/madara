@@ -6146,6 +6146,7 @@ dependencies = [
  "primitive-types",
  "rstest 0.18.2",
  "serde",
+ "sha3",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
