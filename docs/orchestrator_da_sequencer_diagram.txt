@@ -1,0 +1,73 @@
+title Orchestrator Flow
+
+== Job: SNOS execution ==
+orchestrator -> Madara: get SNOS input
+Madara --> orchestrator: input
+orchestrator -> CairoVM: execute SNOS
+CairoVM --> orchestrator: Cairo PIE
+orchestrator -> DB: store PIE
+DB --> orchestrator: ok
+== Job Complete: SNOS execution ==
+
+opt Applicative Recursion
+    loop Check every X units of time
+        orchestrator -> DB: PIEs of pending block
+        DB --> orchestrator: result
+        alt DA limit or max leaf limit is hit
+            orchestrator -> CairoVM: get PIE of SNAR program
+            CairoVM --> orchestrator: PIE
+            orchestrator -> DB: store PIE
+            DB --> orchestrator: ok
+        else limit not hit
+            note over orchestrator: do nothing
+        end
+    end
+end
+
+== Job: Proving ==
+orchestrator -> DB: get PIE of SNOS/SNAR from db_id
+DB --> orchestrator: PIE
+orchestrator -> prover_api: submit PIE for proof creation
+prover_api --> orchestrator: polling_id
+
+group inside prover service (ignore for SHARP)
+    note over prover_api: Aggregate multiple PIEs into\n a single proof
+    prover_api -> orchestrator: create job for proof submission
+    orchestrator --> prover_api: job_id
+    note over orchestrator: Completed job to verify proof on chain
+    prover_api -> orchestrator: polls for job status
+    orchestrator --> prover_api: success
+    note over prover_api: Marks all PIEs with their polling_id as success
+end
+
+orchestrator -> prover_api: polls over the polling_id and gets status
+prover_api --> orchestrator: success
+== Job Complete: Proving ==
+
+== Cron: Create jobs for state updates ==
+note over orchestrator: Fetch last update_state job. If it's being processed,\n do nothing. If it's processed, create a job to process block n+1.\n\n Optimizations possible to process multiple blocks in parallel,\n but nonce management can be complicated.\n Initially, processing sequentially as proving should be the bottleneck.
+
+== Job: DA Submission ==
+opt DA Mode
+    orchestrator -> Madara: get state_update for block
+    Madara --> orchestrator: state_update
+    note over orchestrator: Build blob
+    orchestrator -> "Alt DA": submit blob
+    "Alt DA" --> orchestrator: ok
+end
+== Job Complete: DA Submission ==
+
+== Job: Update State ==
+alt Eth DA
+    note over orchestrator: Build state diffs similar to Alt DA
+    note over orchestrator: Create equivalence proof between DA commitment\n and SNOS commitment
+    orchestrator -> "Settlement Layer": calldata for update state, blob data, and equivalence proof in the same txn
+else Starknet as DA
+    note over orchestrator: State diffs already in calldata of proof
+    orchestrator -> "Settlement Layer": calldata for update state
+else Alt DA
+    note over orchestrator: Create equivalence proof between DA commitment\n and SNOS commitment
+    orchestrator -> "Settlement Layer": calldata for update state and equivalence proof in the same txn
+end
+DB --> orchestrator: ok
+== Job Complete: Update State ==

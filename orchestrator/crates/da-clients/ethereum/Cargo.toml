@@ -1,0 +1,49 @@
+[package]
+name = "orchestrator-ethereum-da-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# TODO: update this to the workspace
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "68952c0", features = [
+  "consensus",
+  "providers",
+  "rpc-client",
+  "transport-http",
+  "network",
+  "eips",
+  "signers",
+  "signer-wallet",
+] }
+async-trait = { workspace = true }
+c-kzg = { workspace = true }
+color-eyre = { workspace = true }
+dotenvy.workspace = true
+mockall = { workspace = true }
+orchestrator-da-client-interface = { workspace = true }
+orchestrator-utils = { workspace = true }
+reqwest = { workspace = true }
+rstest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+starknet = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+
+[dev-dependencies]
+tokio-test = "*"

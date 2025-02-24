@@ -1,0 +1,22 @@
+{
+  "eth_rpc": "http://127.0.0.1:8545",
+  "eth_priv_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  "rollup_seq_url": "http://127.0.0.1:9944",
+  "rollup_priv_key": "0xabcd",
+  "eth_chain_id": 31337,
+  "l1_deployer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "l1_wait_time": "15",
+  "sn_os_program_hash": "0x41fc2a467ef8649580631912517edcab7674173f1dbfa2e9b64fbcd82bc4d79",
+  "config_hash_version": "StarknetOsConfig2",
+  "app_chain_id": "MADARA_DEVNET",
+  "fee_token_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+  "native_fee_token_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "cross_chain_wait_time": 20,
+  "l1_multisig_address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "l2_multisig_address": "0x556455b8ac8bc00e0ad061d7df5458fa3c372304877663fa21d492a8d5e9435",
+  "verifier_address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  "operator_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "dev": false,
+  "core_contract_address": "0x99bba657f2bbc93c02d617f8ba121cb8fc104acf",
+  "core_contract_implementation_address": "0x4826533b4897376654bb4d4ad88b7fafd0c98528"
+}

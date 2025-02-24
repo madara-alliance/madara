@@ -1,0 +1,16 @@
+{
+  "initial_root": "0x325BA9C26BB7960F1B200F33B7E0A625A38614BAE44C7410CE7D3E977CBF40",
+  "final_root": "0x7D7E0C5772392D15F3F0C9CFF6DFE549BE29250462485F80D7ECBBC283256CF",
+  "prev_block_number": "0x9EF2D",
+  "new_block_number": "0x9EF2E",
+  "prev_block_hash": "0x286acdad5ba876edae5d0b906c216b6f16737f2f198789a9380330baa3097e0",
+  "new_block_hash": "0x698aff98da67a39116d90197c1e9fa4f550f93cfacfb398dc0dd14294defa92",
+  "os_program_hash": "0x5BA2078240F1585F96424C2D1EE48211DA3B3F9177BF2B9880B4FC91D59E9A2",
+  "starknet_os_config_hash": "0x5BA2078240F1585F96424C2D1EE48211DA3B3F9177BF2B9880B4FC91D59E9A2",
+  "use_kzg_da": "0x1",
+  "full_output": "0x0",
+  "messages_to_l1": [],
+  "messages_to_l2": [],
+  "contracts": [],
+  "classes": {}
+}

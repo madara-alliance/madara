@@ -1,0 +1,326 @@
+{
+  "abi": [
+    {
+      "type": "function",
+      "name": "initialize",
+      "inputs": [{ "name": "data", "type": "bytes", "internalType": "bytes" }],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "event",
+      "name": "LegacyBridgeUpgraded",
+      "inputs": [
+        {
+          "name": "bridge",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "LogExternalInitialize",
+      "inputs": [
+        {
+          "name": "data",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "RoleAdminChanged",
+      "inputs": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "previousAdminRole",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "newAdminRole",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "RoleGranted",
+      "inputs": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "sender",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    }
+  ],
+  "bytecode": {
+    "object": "0x6080604052348015600f57600080fd5b50610a618061001f6000396000f3fe608060405234801561001057600080fd5b506004361061002b5760003560e01c8063439fab9114610030575b600080fd5b61004361003e3660046107d8565b610045565b005b6040811461009a5760405162461bcd60e51b815260206004820152601b60248201527f494e56414c49445f494e49545f444154415f4c454e4754485f3634000000000060448201526064015b60405180910390fd5b6000806100a983850185610868565b90925090506001600160a01b038216156100c357816100c5565b335b91506001600160a01b038116156100dc57806100de565b815b90506100ea82826102ac565b60006100f46103b4565b90506000811161013a5760405162461bcd60e51b81526020600482015260116024820152704e4f545f4c45474143595f42524944474560781b6044820152606401610091565b60006101446103dc565b905080600003610152575060015b600061015c6103ff565b90506001600160a01b03811661017a57506245544861017a81610422565b6001600160a01b03811660009081527fc59c20aaa96597268f595db30ec21108a505370e3266ed3a6515637f16b8b68960205260408120805490919060ff1660038111156101ca576101ca61089b565b146102175760405162461bcd60e51b815260206004820152601760248201527f4252494447455f414c52454144595f55504752414445440000000000000000006044820152606401610091565b805460ff19166002178155600381018390556102336005610447565b7fcd1400d214c673d845a60be61e4392df27be94360484e7da79f75c022255061588886040516102649291906108b1565b60405180910390a16040516001600160a01b0383169030907fbf180a3441bfd90aebeace0882b08f0588f99a9b86e1480516fcc0464c6fad3290600090a35050505050505050565b6102b4610469565b15610322576102d16000805160206109108339815191528361048a565b61031d5760405162461bcd60e51b815260206004820152601960248201527f524f4c45535f414c52454144595f494e495449414c495a4544000000000000006044820152606401610091565b61032b565b61032b826104c2565b6103336105f7565b156103ab576103506000805160206109308339815191528261048a565b6103a75760405162461bcd60e51b815260206004820152602260248201527f53454355524954595f524f4c45535f414c52454144595f494e495449414c495a604482015261115160f21b6064820152608401610091565b5050565b6103a781610611565b60006103d76040518060600160405280602181526020016109e260219139610679565b905090565b60006103d760405180606001604052806027815260200161097060279139610679565b60006103d7604051806060016040528060298152602001610a0360299139610679565b610444604051806060016040528060298152602001610a0360299139826106ad565b50565b6104446040518060600160405280602b81526020016109b7602b9139826106ad565b6000806104836000805160206109108339815191526106e0565b1415905090565b6000918252600080516020610950833981519152602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6104da60008051602061091083398151915282610702565b6105117ed2ead78c620e94b02d0a996e99298c59ddccfa1d8a0149080ac3a20de06068600080516020610997833981519152610778565b610537600080516020610997833981519152600080516020610910833981519152610778565b61054f60008051602061091083398151915280610778565b6105877f023edb77f7c8cc9e38e8afe78954f703aeeda7fffe014eeb6e56ea84e62f6da7600080516020610997833981519152610778565b6105bf7f0128d63adbf6b09002c26caf55c47e2f26635807e3ef1b027218aa74c8d61a3e600080516020610997833981519152610778565b6104447f0251e864ca2a080f55bce5da2452e8cfcafdbc951a3e7fff5023d558452ec228600080516020610910833981519152610778565b6000806104836000805160206109308339815191526106e0565b61062960008051602061093083398151915280610778565b6106617f037693ba312785932d430dccf0f56ffedd0aa7c0f8b6da2cc4530c2717689b96600080516020610930833981519152610778565b61044460008051602061093083398151915282610702565b6000808260405160200161068d91906108e0565b60408051601f198184030181529190528051602090910120549392505050565b6000826040516020016106c091906108e0565b604051602081830303815290604052805190602001209050818155505050565b6000908152600080516020610950833981519152602052604090206001015490565b61070c828261048a565b6103a7576000828152600080516020610950833981519152602090815260408083206001600160a01b0385168085529252808320805460ff1916600117905551339285917f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d9190a45050565b6000610783836106e0565b60008481526000805160206109508339815191526020526040808220600101859055519192508391839186917fbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff9190a4505050565b600080602083850312156107eb57600080fd5b823567ffffffffffffffff81111561080257600080fd5b8301601f8101851361081357600080fd5b803567ffffffffffffffff81111561082a57600080fd5b85602082840101111561083c57600080fd5b6020919091019590945092505050565b80356001600160a01b038116811461086357600080fd5b919050565b6000806040838503121561087b57600080fd5b6108848361084c565b91506108926020840161084c565b90509250929050565b634e487b7160e01b600052602160045260246000fd5b60208152816020820152818360408301376000818301604090810191909152601f909201601f19160101919050565b6000825160005b8181101561090157602081860181015185830152016108e7565b50600092019182525091905056fe03711c9d994faf6055172091cb841fd4831aa743e6f3315163b06a122c841846026bd110619d11cfdfc28e281df893bc24828e89177318e9dbd860cdaedeb6b353e43b954ba190a7e49386f1f78b01dcd9f628db23f432fa029a7dfd6d98e8fb535441524b4e45545f544f4b454e5f4252494447455f4d41585f544f54414c5f42414c414e434503e615638e0b79444a70f8c695bf8f2a47033bf1cf95691ec3130f64939cee9957495448445241574c5f4c494d49545f57495448445241575f4c494d49545f5043545f534c4f545f544147535441524b4e45545f544f4b454e5f4252494447455f4d41585f4445504f534954535441524b4e45545f45524332305f544f4b454e5f4252494447455f544f4b454e5f41444452455353a26469706673582212204c6a2ba476bc0b3a9f41800528b44cdb4e386085d92f19bc0fbfcf2b6b9b590c64736f6c634300081b0033",
+    "sourceMap": "505:3034:11:-:0;;;;;;;;;;;;;;;;;;;",
+    "linkReferences": {}
+  },
+  "deployedBytecode": {
+    "object": "0x608060405234801561001057600080fd5b506004361061002b5760003560e01c8063439fab9114610030575b600080fd5b61004361003e3660046107d8565b610045565b005b6040811461009a5760405162461bcd60e51b815260206004820152601b60248201527f494e56414c49445f494e49545f444154415f4c454e4754485f3634000000000060448201526064015b60405180910390fd5b6000806100a983850185610868565b90925090506001600160a01b038216156100c357816100c5565b335b91506001600160a01b038116156100dc57806100de565b815b90506100ea82826102ac565b60006100f46103b4565b90506000811161013a5760405162461bcd60e51b81526020600482015260116024820152704e4f545f4c45474143595f42524944474560781b6044820152606401610091565b60006101446103dc565b905080600003610152575060015b600061015c6103ff565b90506001600160a01b03811661017a57506245544861017a81610422565b6001600160a01b03811660009081527fc59c20aaa96597268f595db30ec21108a505370e3266ed3a6515637f16b8b68960205260408120805490919060ff1660038111156101ca576101ca61089b565b146102175760405162461bcd60e51b815260206004820152601760248201527f4252494447455f414c52454144595f55504752414445440000000000000000006044820152606401610091565b805460ff19166002178155600381018390556102336005610447565b7fcd1400d214c673d845a60be61e4392df27be94360484e7da79f75c022255061588886040516102649291906108b1565b60405180910390a16040516001600160a01b0383169030907fbf180a3441bfd90aebeace0882b08f0588f99a9b86e1480516fcc0464c6fad3290600090a35050505050505050565b6102b4610469565b15610322576102d16000805160206109108339815191528361048a565b61031d5760405162461bcd60e51b815260206004820152601960248201527f524f4c45535f414c52454144595f494e495449414c495a4544000000000000006044820152606401610091565b61032b565b61032b826104c2565b6103336105f7565b156103ab576103506000805160206109308339815191528261048a565b6103a75760405162461bcd60e51b815260206004820152602260248201527f53454355524954595f524f4c45535f414c52454144595f494e495449414c495a604482015261115160f21b6064820152608401610091565b5050565b6103a781610611565b60006103d76040518060600160405280602181526020016109e260219139610679565b905090565b60006103d760405180606001604052806027815260200161097060279139610679565b60006103d7604051806060016040528060298152602001610a0360299139610679565b610444604051806060016040528060298152602001610a0360299139826106ad565b50565b6104446040518060600160405280602b81526020016109b7602b9139826106ad565b6000806104836000805160206109108339815191526106e0565b1415905090565b6000918252600080516020610950833981519152602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6104da60008051602061091083398151915282610702565b6105117ed2ead78c620e94b02d0a996e99298c59ddccfa1d8a0149080ac3a20de06068600080516020610997833981519152610778565b610537600080516020610997833981519152600080516020610910833981519152610778565b61054f60008051602061091083398151915280610778565b6105877f023edb77f7c8cc9e38e8afe78954f703aeeda7fffe014eeb6e56ea84e62f6da7600080516020610997833981519152610778565b6105bf7f0128d63adbf6b09002c26caf55c47e2f26635807e3ef1b027218aa74c8d61a3e600080516020610997833981519152610778565b6104447f0251e864ca2a080f55bce5da2452e8cfcafdbc951a3e7fff5023d558452ec228600080516020610910833981519152610778565b6000806104836000805160206109308339815191526106e0565b61062960008051602061093083398151915280610778565b6106617f037693ba312785932d430dccf0f56ffedd0aa7c0f8b6da2cc4530c2717689b96600080516020610930833981519152610778565b61044460008051602061093083398151915282610702565b6000808260405160200161068d91906108e0565b60408051601f198184030181529190528051602090910120549392505050565b6000826040516020016106c091906108e0565b604051602081830303815290604052805190602001209050818155505050565b6000908152600080516020610950833981519152602052604090206001015490565b61070c828261048a565b6103a7576000828152600080516020610950833981519152602090815260408083206001600160a01b0385168085529252808320805460ff1916600117905551339285917f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d9190a45050565b6000610783836106e0565b60008481526000805160206109508339815191526020526040808220600101859055519192508391839186917fbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff9190a4505050565b600080602083850312156107eb57600080fd5b823567ffffffffffffffff81111561080257600080fd5b8301601f8101851361081357600080fd5b803567ffffffffffffffff81111561082a57600080fd5b85602082840101111561083c57600080fd5b6020919091019590945092505050565b80356001600160a01b038116811461086357600080fd5b919050565b6000806040838503121561087b57600080fd5b6108848361084c565b91506108926020840161084c565b90509250929050565b634e487b7160e01b600052602160045260246000fd5b60208152816020820152818360408301376000818301604090810191909152601f909201601f19160101919050565b6000825160005b8181101561090157602081860181015185830152016108e7565b50600092019182525091905056fe03711c9d994faf6055172091cb841fd4831aa743e6f3315163b06a122c841846026bd110619d11cfdfc28e281df893bc24828e89177318e9dbd860cdaedeb6b353e43b954ba190a7e49386f1f78b01dcd9f628db23f432fa029a7dfd6d98e8fb535441524b4e45545f544f4b454e5f4252494447455f4d41585f544f54414c5f42414c414e434503e615638e0b79444a70f8c695bf8f2a47033bf1cf95691ec3130f64939cee9957495448445241574c5f4c494d49545f57495448445241575f4c494d49545f5043545f534c4f545f544147535441524b4e45545f544f4b454e5f4252494447455f4d41585f4445504f534954535441524b4e45545f45524332305f544f4b454e5f4252494447455f544f4b454e5f41444452455353a26469706673582212204c6a2ba476bc0b3a9f41800528b44cdb4e386085d92f19bc0fbfcf2b6b9b590c64736f6c634300081b0033",
+    "sourceMap": "505:3034:11:-:0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;1451:2086;;;;;;:::i;:::-;;:::i;:::-;;;1551:2;1536:17;;1528:57;;;;-1:-1:-1;;;1528:57:11;;807:2:40;1528:57:11;;;789:21:40;846:2;826:18;;;819:30;885:29;865:18;;;858:57;932:18;;1528:57:11;;;;;;;;;1931:24;;1982:36;;;;1993:4;1982:36;:::i;:::-;1930:88;;-1:-1:-1;1930:88:11;-1:-1:-1;;;;;;2047:30:11;;;:62;;2093:16;2047:62;;;2080:10;2047:62;2028:81;-1:-1:-1;;;;;;2135:27:11;;;:62;;2184:13;2135:62;;;2165:16;2135:62;2119:78;;2207:52;2227:16;2245:13;2207:19;:52::i;:::-;2494:18;2515:15;:13;:15::i;:::-;2494:36;;2561:1;2548:10;:14;2540:44;;;;-1:-1:-1;;;2540:44:11;;1646:2:40;2540:44:11;;;1628:21:40;1685:2;1665:18;;;1658:30;-1:-1:-1;;;1704:18:40;;;1697:47;1761:18;;2540:44:11;1444:341:40;2540:44:11;2648:23;2674:20;:18;:20::i;:::-;2648:46;;2708:15;2727:1;2708:20;2704:70;;-1:-1:-1;2762:1:11;2704:70;2835:20;2858:17;:15;:17::i;:::-;2835:40;-1:-1:-1;;;;;;2889:26:11;;2885:109;;-1:-1:-1;943:8:8;2963:20:11;943:8:8;2963:15:11;:20::i;:::-;-1:-1:-1;;;;;3086:29:11;;3053:30;3086:29;;;1414:17:18;3086:29:11;;;;;3160:20;;3086:29;;3053:30;3160:20;;:43;;;;;;;;:::i;:::-;;3152:79;;;;-1:-1:-1;;;3152:79:11;;2124:2:40;3152:79:11;;;2106:21:40;2163:2;2143:18;;;2136:30;2202:25;2182:18;;;2175:53;2245:18;;3152:79:11;1922:347:40;3152:79:11;3242:41;;-1:-1:-1;;3242:41:11;3265:18;3242:41;;;3293:24;;;:42;;;3345:79;362:1:19;3345:35:11;:79::i;:::-;3439:27;3461:4;;3439:27;;;;;;;:::i;:::-;;;;;;;;3481:49;;-1:-1:-1;;;;;3481:49:11;;;3510:4;;3481:49;;;;;1518:2019;;;;;;1451:2086;;:::o;2681:1050:33:-;2782:28;:26;:28::i;:::-;2778:485;;;3062:60;-1:-1:-1;;;;;;;;;;;3102:19:33;3062:21;:60::i;:::-;3037:144;;;;-1:-1:-1;;;3037:144:33;;2869:2:40;3037:144:33;;;2851:21:40;2908:2;2888:18;;;2881:30;2947:27;2927:18;;;2920:55;2992:18;;3037:144:33;2667:349:40;3037:144:33;2778:485;;;3212:40;3232:19;3212;:40::i;:::-;3277:26;:24;:26::i;:::-;3273:452;;;3519:58;-1:-1:-1;;;;;;;;;;;3557:19:33;3519:21;:58::i;:::-;3494:151;;;;-1:-1:-1;;;3494:151:33;;3223:2:40;3494:151:33;;;3205:21:40;3262:2;3242:18;;;3235:30;3301:34;3281:18;;;3274:62;-1:-1:-1;;;3352:18:40;;;3345:32;3394:19;;3494:151:33;3021:398:40;3494:151:33;2681:1050;;:::o;3273:452::-;3676:38;3694:19;3676:17;:38::i;1182:123:11:-;1230:7;1256:42;1282:15;;;;;;;;;;;;;;;;;1256:25;:42::i;:::-;1249:49;;1182:123;:::o;1311:134::-;1364:7;1390:48;1416:21;;;;;;;;;;;;;;;;;1390:25;:48::i;912:130::-;962:7;988:47;1017:17;;;;;;;;;;;;;;;;;988:28;:47::i;1048:128::-;1111:58;1140:17;;;;;;;;;;;;;;;;;1159:9;1111:28;:58::i;:::-;1048:128;:::o;706:126:19:-;769:56;795:22;;;;;;;;;;;;;;;;;819:5;769:25;:56::i;2221:152:33:-;2282:4;;2305:44;-1:-1:-1;;;;;;;;;;;2305:26:33;:44::i;:::-;:61;;2298:68;;2221:152;:::o;4481:132:30:-;4552:4;4575:14;;;-1:-1:-1;;;;;;;;;;;4575:14:30;;;;;;;;-1:-1:-1;;;;;4575:31:30;;;;;;;;;;;;;;;4481:132::o;4023:559:33:-;4099:63;-1:-1:-1;;;;;;;;;;;4142:19:33;4099:24;:63::i;:::-;4172:57;253:64;-1:-1:-1;;;;;;;;;;;4172:27:33;:57::i;:::-;4239:61;-1:-1:-1;;;;;;;;;;;;;;;;;;;;;;4239:27:33;:61::i;:::-;4310:63;-1:-1:-1;;;;;;;;;;;667:66:33;4310:27;:63::i;:::-;4383:53;861:66;-1:-1:-1;;;;;;;;;;;4383:27:33;:53::i;:::-;4446:56;1473:66;-1:-1:-1;;;;;;;;;;;4446:27:33;:56::i;:::-;4512:63;1683:66;-1:-1:-1;;;;;;;;;;;4512:27:33;:63::i;2379:148::-;2438:4;;2461:42;-1:-1:-1;;;;;;;;;;;2461:26:33;:42::i;3737:280::-;3811:59;-1:-1:-1;;;;;;;;;;;1067:66:33;3811:27;:59::i;:::-;3880;1273:66;-1:-1:-1;;;;;;;;;;;3880:27:33;:59::i;:::-;3949:61;-1:-1:-1;;;;;;;;;;;3990:19:33;3949:24;:61::i;2680:209:32:-;2745:14;2771:12;2813:4;2796:22;;;;;;;;:::i;:::-;;;;-1:-1:-1;;2796:22:32;;;;;;;;;2786:33;;2796:22;2786:33;;;;2862:11;;2680:209;-1:-1:-1;;;2680:209:32:o;3486:195::-;3565:12;3607:4;3590:22;;;;;;;;:::i;:::-;;;;;;;;;;;;;3580:33;;;;;;3565:48;;3659:5;3653:4;3646:19;3632:43;3486:195;;:::o;5911:116:30:-;5970:7;5996:14;;;-1:-1:-1;;;;;;;;;;;5996:14:30;;;;;:24;;;;5911:116::o;8830:227::-;8905:22;8913:4;8919:7;8905;:22::i;:::-;8900:151;;8943:14;;;;-1:-1:-1;;;;;;;;;;;8943:14:30;;;;;;;;-1:-1:-1;;;;;8943:31:30;;;;;;;;;;:38;;-1:-1:-1;;8943:38:30;8977:4;8943:38;;;9000:40;3290:10;;8943:14;;9000:40;;8943:14;9000:40;8830:227;;:::o;8433:241::-;8508:25;8536:18;8549:4;8536:12;:18::i;:::-;8564:14;;;;-1:-1:-1;;;;;;;;;;;8564:14:30;;;;;;:24;;:36;;;8615:52;8508:46;;-1:-1:-1;8591:9:30;;8508:46;;8564:14;;8615:52;;8564:14;8615:52;8498:176;8433:241;;:::o;14:586:40:-;84:6;92;145:2;133:9;124:7;120:23;116:32;113:52;;;161:1;158;151:12;113:52;201:9;188:23;234:18;226:6;223:30;220:50;;;266:1;263;256:12;220:50;289:22;;342:4;334:13;;330:27;-1:-1:-1;320:55:40;;371:1;368;361:12;320:55;411:2;398:16;437:18;429:6;426:30;423:50;;;469:1;466;459:12;423:50;514:7;509:2;500:6;496:2;492:15;488:24;485:37;482:57;;;535:1;532;525:12;482:57;566:2;558:11;;;;;588:6;;-1:-1:-1;14:586:40;-1:-1:-1;;;14:586:40:o;961:181::-;1037:20;;-1:-1:-1;;;;;1086:31:40;;1076:42;;1066:70;;1132:1;1129;1122:12;1066:70;961:181;;;:::o;1147:292::-;1231:6;1239;1292:2;1280:9;1271:7;1267:23;1263:32;1260:52;;;1308:1;1305;1298:12;1260:52;1331:37;1358:9;1331:37;:::i;:::-;1321:47;;1387:46;1429:2;1418:9;1414:18;1387:46;:::i;:::-;1377:56;;1147:292;;;;;:::o;1790:127::-;1851:10;1846:3;1842:20;1839:1;1832:31;1882:4;1879:1;1872:15;1906:4;1903:1;1896:15;2274:388;2431:2;2420:9;2413:21;2470:6;2465:2;2454:9;2450:18;2443:34;2527:6;2519;2514:2;2503:9;2499:18;2486:48;2583:1;2554:22;;;2578:2;2550:31;;;2543:42;;;;2646:2;2625:15;;;-1:-1:-1;;2621:29:40;2606:45;2602:54;;2274:388;-1:-1:-1;2274:388:40:o;3424:414::-;3555:3;3593:6;3587:13;3618:1;3628:129;3642:6;3639:1;3636:13;3628:129;;;3740:4;3724:14;;;3720:25;;3714:32;3701:11;;;3694:53;3657:12;3628:129;;;-1:-1:-1;3812:1:40;3776:16;;3801:13;;;-1:-1:-1;3776:16:40;3424:414;-1:-1:-1;3424:414:40:o",
+    "linkReferences": {}
+  },
+  "methodIdentifiers": { "initialize(bytes)": "439fab91" },
+  "rawMetadata": "{\"compiler\":{\"version\":\"0.8.27+commit.40a35a09\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"bridge\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"token\",\"type\":\"address\"}],\"name\":\"LegacyBridgeUpgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"LogExternalInitialize\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"previousAdminRole\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"newAdminRole\",\"type\":\"bytes32\"}],\"name\":\"RoleAdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleGranted\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"initialize\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"src/solidity/StarkgateUpgradeAssistExternalInitializer.sol\":\"StarkgateUpgradeAssistExternalInitializer\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[\":ds-test/=lib/forge-std/lib/ds-test/src/\",\":forge-std/=lib/forge-std/src/\"]},\"sources\":{\"src/solidity/StarkgateConstants.sol\":{\"keccak256\":\"0x186842131c4c91bc58a6930491fa5619f76cd04d8ba43af9a5888ba21111d642\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://227e204f799af5d6bf452f173270b64c0be880a27d25f82afbddce3f9833e94c\",\"dweb:/ipfs/QmTk93uaih5Qx7KYDK6Fdh9qPeNiWMNkFFHmL98dKP29Qx\"]},\"src/solidity/StarkgateUpgradeAssistExternalInitializer.sol\":{\"keccak256\":\"0xf29f7633d0ee10baf300cacbeb043de628f864012e37e50c9ea93aa32b01cc1d\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://1537e49e180103f40b4b1e70a00eef1f9ea3b176cd86def507816931bececeab\",\"dweb:/ipfs/QmZk1ShhnCMTEvXoEFg6C2yS61xKJhnjGnrutMLeoHFdu5\"]},\"src/solidity/StarknetTokenStorage.sol\":{\"keccak256\":\"0xcdcd69d9ff44db4e7a564cb22d6d5ff571f85448785b6712b8edadfc698a1582\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://64f99efd55def7799ada9d6243d00c37007f9573a5ef1e627d830a94d7a33a52\",\"dweb:/ipfs/QmTYGH8AfSDCDnKm9DNuwZXeKTZH4jrtAondVqA8Nmv7AQ\"]},\"src/solidity/WithdrawalLimit.sol\":{\"keccak256\":\"0x873fabcb885ffbb2228b8cc742485718d0fc3d773bfa86334b2146418bc3bb56\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://677065f504fda831def60b0bd8b9d05676cb38f858f11230a482bfa2ca148ad6\",\"dweb:/ipfs/QmPGm9f7kjEX8W1VbZYtj3pXPZj6MgWFEfKY9jX4c8651h\"]},\"starkware/solidity/interfaces/ExternalInitializer.sol\":{\"keccak256\":\"0xb10798e8cb0abffceb72f324f8c197df05ea810c156507719ee86a75b6abd080\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://4e3e9bf0c2c3b9d496f7ba675ad94187dcd9a33f02df2f4627cda9b86b084b7e\",\"dweb:/ipfs/QmfTtuFNcgN7ty6ZaW4vUjzYngJSkGMYxomu6SNcY2d8s2\"]},\"starkware/solidity/interfaces/Identity.sol\":{\"keccak256\":\"0x18b8ab7a912a2fca2567ad2adc811d9ed9123d5b2a8bdda77741581c2f7c9a08\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://cf3cc21679c63e2e5481c0ceeba85a476ba10d11fd942e9f149ccbe4a1ee2888\",\"dweb:/ipfs/QmUdC8rH8JX6ZSJ6ddF77hJADRJCbjLjVee92E7ZmagxHh\"]},\"starkware/solidity/libraries/AccessControl.sol\":{\"keccak256\":\"0x3b5af42da4adb23a3c56d62968b2a0058650c3f19c4ec0323f8c3958a02f2d32\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://7cb26cce13390c59767822b9b317505757ee2438b7a1481fb4ee0435cf98b074\",\"dweb:/ipfs/QmdULczhMowp2aCJSt7z4KQGrMjPzEZjGU4YyqEemwM22e\"]},\"starkware/solidity/libraries/NamedStorage.sol\":{\"keccak256\":\"0x73e777cd0ae5f60889e4784b788c345bc3a3edc6a7ec3eab636b3701f2a1f66e\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://979e827ca68e8b00e8598cd67d0de96f10b5cb03197870e1f9a871533ca84e4a\",\"dweb:/ipfs/QmPjoWoRTBRiVnNJ576hCuqr3UVoGomDmSdipFKoUZUpJi\"]},\"starkware/solidity/libraries/RolesLib.sol\":{\"keccak256\":\"0x2497bfb416c91633e1f373de9dbdbd85bd8cdb3d36a74df941ad392d8036a8c0\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://7fd51947b57ca6ecf0c4d433def5b8793213d5c281dea1b2145bb13e6be483bb\",\"dweb:/ipfs/QmXFCfdQJ9SsoMxbLXPMRkiC6jqmddnsn4T7KXs4fcdweL\"]},\"starkware/solidity/tokens/ERC20/IERC20.sol\":{\"keccak256\":\"0x04bae6eb13e8755ac10de0b0549806dadc167f4e22054f065478dda5bb5635f4\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://b097f7cffcdd93ab330be7751bfad246d0d47c63ae0e3a3215b031895c821a68\",\"dweb:/ipfs/QmVZRaTM2vopCZSskT2UMWLPkPQpiYYkRjgDNurrJAMuve\"]},\"starkware/starknet/solidity/IStarknetMessaging.sol\":{\"keccak256\":\"0x0b5ad38d2ffea6fdc5dc39d9340871f06c98c56c3faa276f92a542690b57cf64\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://9e28c6d7e599915e824ae100975b20174f5fa168904c81c0305facfd3f4f7651\",\"dweb:/ipfs/QmWiRdEkNDyKwigTiXkNbYpTkLj5WUEVo5TLgtfeeSEhmp\"]},\"starkware/starknet/solidity/IStarknetMessagingEvents.sol\":{\"keccak256\":\"0x2f455c3c28792bded72e19d0c1a21af7459b66d6071c3d996f6259c93f096424\",\"license\":\"Apache-2.0.\",\"urls\":[\"bzz-raw://95302fc273848d1c795344d6e6184c2def7866da81d563ae9ae9b3e9d8fcf7e7\",\"dweb:/ipfs/QmaHb55eq8Su9gEtqe3XbiyQkuf1Pk7CwKJkF9CXYbRrFN\"]},\"third_party/open_zeppelin/utils/Strings.sol\":{\"keccak256\":\"0xaf159a8b1923ad2a26d516089bceca9bdeaeacd04be50983ea00ba63070f08a3\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6f2cf1c531122bc7ca96b8c8db6a60deae60441e5223065e792553d4849b5638\",\"dweb:/ipfs/QmPBdJmBBABMDCfyDjCbdxgiqRavgiSL88SYPGibgbPas9\"]}},\"version\":1}",
+  "metadata": {
+    "compiler": { "version": "0.8.27+commit.40a35a09" },
+    "language": "Solidity",
+    "output": {
+      "abi": [
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "bridge",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "internalType": "address",
+              "name": "token",
+              "type": "address",
+              "indexed": true
+            }
+          ],
+          "type": "event",
+          "name": "LegacyBridgeUpgraded",
+          "anonymous": false
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "bytes",
+              "name": "data",
+              "type": "bytes",
+              "indexed": false
+            }
+          ],
+          "type": "event",
+          "name": "LogExternalInitialize",
+          "anonymous": false
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "bytes32",
+              "name": "role",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "internalType": "bytes32",
+              "name": "previousAdminRole",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "internalType": "bytes32",
+              "name": "newAdminRole",
+              "type": "bytes32",
+              "indexed": true
+            }
+          ],
+          "type": "event",
+          "name": "RoleAdminChanged",
+          "anonymous": false
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "bytes32",
+              "name": "role",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "internalType": "address",
+              "name": "account",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "internalType": "address",
+              "name": "sender",
+              "type": "address",
+              "indexed": true
+            }
+          ],
+          "type": "event",
+          "name": "RoleGranted",
+          "anonymous": false
+        },
+        {
+          "inputs": [
+            { "internalType": "bytes", "name": "data", "type": "bytes" }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function",
+          "name": "initialize"
+        }
+      ],
+      "devdoc": { "kind": "dev", "methods": {}, "version": 1 },
+      "userdoc": { "kind": "user", "methods": {}, "version": 1 }
+    },
+    "settings": {
+      "remappings": [
+        "ds-test/=lib/forge-std/lib/ds-test/src/",
+        "forge-std/=lib/forge-std/src/"
+      ],
+      "optimizer": { "enabled": true, "runs": 200 },
+      "metadata": { "bytecodeHash": "ipfs" },
+      "compilationTarget": {
+        "src/solidity/StarkgateUpgradeAssistExternalInitializer.sol": "StarkgateUpgradeAssistExternalInitializer"
+      },
+      "evmVersion": "paris",
+      "libraries": {}
+    },
+    "sources": {
+      "src/solidity/StarkgateConstants.sol": {
+        "keccak256": "0x186842131c4c91bc58a6930491fa5619f76cd04d8ba43af9a5888ba21111d642",
+        "urls": [
+          "bzz-raw://227e204f799af5d6bf452f173270b64c0be880a27d25f82afbddce3f9833e94c",
+          "dweb:/ipfs/QmTk93uaih5Qx7KYDK6Fdh9qPeNiWMNkFFHmL98dKP29Qx"
+        ],
+        "license": "Apache-2.0."
+      },
+      "src/solidity/StarkgateUpgradeAssistExternalInitializer.sol": {
+        "keccak256": "0xf29f7633d0ee10baf300cacbeb043de628f864012e37e50c9ea93aa32b01cc1d",
+        "urls": [
+          "bzz-raw://1537e49e180103f40b4b1e70a00eef1f9ea3b176cd86def507816931bececeab",
+          "dweb:/ipfs/QmZk1ShhnCMTEvXoEFg6C2yS61xKJhnjGnrutMLeoHFdu5"
+        ],
+        "license": "Apache-2.0."
+      },
+      "src/solidity/StarknetTokenStorage.sol": {
+        "keccak256": "0xcdcd69d9ff44db4e7a564cb22d6d5ff571f85448785b6712b8edadfc698a1582",
+        "urls": [
+          "bzz-raw://64f99efd55def7799ada9d6243d00c37007f9573a5ef1e627d830a94d7a33a52",
+          "dweb:/ipfs/QmTYGH8AfSDCDnKm9DNuwZXeKTZH4jrtAondVqA8Nmv7AQ"
+        ],
+        "license": "Apache-2.0."
+      },
+      "src/solidity/WithdrawalLimit.sol": {
+        "keccak256": "0x873fabcb885ffbb2228b8cc742485718d0fc3d773bfa86334b2146418bc3bb56",
+        "urls": [
+          "bzz-raw://677065f504fda831def60b0bd8b9d05676cb38f858f11230a482bfa2ca148ad6",
+          "dweb:/ipfs/QmPGm9f7kjEX8W1VbZYtj3pXPZj6MgWFEfKY9jX4c8651h"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/solidity/interfaces/ExternalInitializer.sol": {
+        "keccak256": "0xb10798e8cb0abffceb72f324f8c197df05ea810c156507719ee86a75b6abd080",
+        "urls": [
+          "bzz-raw://4e3e9bf0c2c3b9d496f7ba675ad94187dcd9a33f02df2f4627cda9b86b084b7e",
+          "dweb:/ipfs/QmfTtuFNcgN7ty6ZaW4vUjzYngJSkGMYxomu6SNcY2d8s2"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/solidity/interfaces/Identity.sol": {
+        "keccak256": "0x18b8ab7a912a2fca2567ad2adc811d9ed9123d5b2a8bdda77741581c2f7c9a08",
+        "urls": [
+          "bzz-raw://cf3cc21679c63e2e5481c0ceeba85a476ba10d11fd942e9f149ccbe4a1ee2888",
+          "dweb:/ipfs/QmUdC8rH8JX6ZSJ6ddF77hJADRJCbjLjVee92E7ZmagxHh"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/solidity/libraries/AccessControl.sol": {
+        "keccak256": "0x3b5af42da4adb23a3c56d62968b2a0058650c3f19c4ec0323f8c3958a02f2d32",
+        "urls": [
+          "bzz-raw://7cb26cce13390c59767822b9b317505757ee2438b7a1481fb4ee0435cf98b074",
+          "dweb:/ipfs/QmdULczhMowp2aCJSt7z4KQGrMjPzEZjGU4YyqEemwM22e"
+        ],
+        "license": "MIT"
+      },
+      "starkware/solidity/libraries/NamedStorage.sol": {
+        "keccak256": "0x73e777cd0ae5f60889e4784b788c345bc3a3edc6a7ec3eab636b3701f2a1f66e",
+        "urls": [
+          "bzz-raw://979e827ca68e8b00e8598cd67d0de96f10b5cb03197870e1f9a871533ca84e4a",
+          "dweb:/ipfs/QmPjoWoRTBRiVnNJ576hCuqr3UVoGomDmSdipFKoUZUpJi"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/solidity/libraries/RolesLib.sol": {
+        "keccak256": "0x2497bfb416c91633e1f373de9dbdbd85bd8cdb3d36a74df941ad392d8036a8c0",
+        "urls": [
+          "bzz-raw://7fd51947b57ca6ecf0c4d433def5b8793213d5c281dea1b2145bb13e6be483bb",
+          "dweb:/ipfs/QmXFCfdQJ9SsoMxbLXPMRkiC6jqmddnsn4T7KXs4fcdweL"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/solidity/tokens/ERC20/IERC20.sol": {
+        "keccak256": "0x04bae6eb13e8755ac10de0b0549806dadc167f4e22054f065478dda5bb5635f4",
+        "urls": [
+          "bzz-raw://b097f7cffcdd93ab330be7751bfad246d0d47c63ae0e3a3215b031895c821a68",
+          "dweb:/ipfs/QmVZRaTM2vopCZSskT2UMWLPkPQpiYYkRjgDNurrJAMuve"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/starknet/solidity/IStarknetMessaging.sol": {
+        "keccak256": "0x0b5ad38d2ffea6fdc5dc39d9340871f06c98c56c3faa276f92a542690b57cf64",
+        "urls": [
+          "bzz-raw://9e28c6d7e599915e824ae100975b20174f5fa168904c81c0305facfd3f4f7651",
+          "dweb:/ipfs/QmWiRdEkNDyKwigTiXkNbYpTkLj5WUEVo5TLgtfeeSEhmp"
+        ],
+        "license": "Apache-2.0."
+      },
+      "starkware/starknet/solidity/IStarknetMessagingEvents.sol": {
+        "keccak256": "0x2f455c3c28792bded72e19d0c1a21af7459b66d6071c3d996f6259c93f096424",
+        "urls": [
+          "bzz-raw://95302fc273848d1c795344d6e6184c2def7866da81d563ae9ae9b3e9d8fcf7e7",
+          "dweb:/ipfs/QmaHb55eq8Su9gEtqe3XbiyQkuf1Pk7CwKJkF9CXYbRrFN"
+        ],
+        "license": "Apache-2.0."
+      },
+      "third_party/open_zeppelin/utils/Strings.sol": {
+        "keccak256": "0xaf159a8b1923ad2a26d516089bceca9bdeaeacd04be50983ea00ba63070f08a3",
+        "urls": [
+          "bzz-raw://6f2cf1c531122bc7ca96b8c8db6a60deae60441e5223065e792553d4849b5638",
+          "dweb:/ipfs/QmPBdJmBBABMDCfyDjCbdxgiqRavgiSL88SYPGibgbPas9"
+        ],
+        "license": "MIT"
+      }
+    },
+    "version": 1
+  },
+  "id": 11
+}

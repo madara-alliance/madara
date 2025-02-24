@@ -49,7 +49,8 @@ jobs:
           cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
-          cargo test --profile dev --workspace
+          # run tests for madara client / primitive crates
+          cargo test --profile dev --package "mc-*" --package "mp-*"
 
       - name: Generate coverage info
         run: |
@@ -59,5 +60,6 @@ jobs:
       - name: Coveralls
         uses: coverallsapp/github-action@v2
         with:
+          parallel-finished: true
           files: lcov.info
           debug: true
