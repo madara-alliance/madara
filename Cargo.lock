@@ -7410,6 +7410,7 @@ name = "mp-utils"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "async-trait",
  "crypto-bigint",
  "dashmap",
