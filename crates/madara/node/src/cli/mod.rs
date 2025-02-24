@@ -141,7 +141,7 @@ pub struct RunCmd {
 
     /// The human-readable name for this node.
     /// It is used as the network node name.
-    #[clap(env = "MADARA_NAME", long, value_name = "NAME")]
+    #[arg(env = "MADARA_NAME", long, value_name = "NAME")]
     pub name: Option<String>,
 
     #[allow(missing_docs)]
@@ -181,31 +181,31 @@ pub struct RunCmd {
     pub block_production_params: BlockProductionParams,
 
     /// The node will run as a sequencer and produce its own state.
-    #[clap(env = "MADARA_SEQUENCER", long, group = "mode")]
+    #[arg(env = "MADARA_SEQUENCER", long, group = "mode")]
     pub sequencer: bool,
 
     /// The node will run as a full node and sync the state of a specific network from others.
-    #[clap(env = "MADARA_FULL", long, group = "mode")]
+    #[arg(env = "MADARA_FULL", long, group = "mode")]
     pub full: bool,
 
     /// The node will run as a testing sequencer with predeployed contracts.
-    #[clap(env = "MADARA_DEVNET", long, group = "mode")]
+    #[arg(env = "MADARA_DEVNET", long, group = "mode")]
     pub devnet: bool,
 
     /// Allows a devnet to have SN_MAIN or SN_SEPOLIA as its chain ID.
-    #[clap(env = "MADARA_DEVNET_UNSAFE", long, requires = "devnet")]
+    #[arg(env = "MADARA_DEVNET_UNSAFE", long, requires = "devnet")]
     pub devnet_unsafe: bool,
 
     /// The network chain configuration.
-    #[clap(env = "MADARA_NETWORK", long, short, group = "full_mode_config")]
+    #[arg(env = "MADARA_NETWORK", long, short, group = "full_mode_config")]
     pub network: Option<NetworkType>,
 
     /// Chain configuration file path.
-    #[clap(env = "MADARA_CHAIN_CONFIG_PATH", long, value_name = "CHAIN CONFIG FILE PATH", group = "chain_config")]
+    #[arg(env = "MADARA_CHAIN_CONFIG_PATH", long, value_name = "CHAIN CONFIG FILE PATH", group = "chain_config")]
     pub chain_config_path: Option<PathBuf>,
 
     /// Use preset as chain Config
-    #[clap(env = "MADARA_PRESET", long, value_name = "PRESET NAME", group = "chain_config")]
+    #[arg(env = "MADARA_PRESET", long, value_name = "PRESET NAME", group = "chain_config")]
     pub preset: Option<ChainPreset>,
 
     /// Overrides parameters from the Chain Config.
