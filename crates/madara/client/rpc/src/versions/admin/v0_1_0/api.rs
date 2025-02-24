@@ -1,7 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
+use mp_utils::service::{MadaraServiceId, ServiceStatus};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 use starknet_types_rpc::ClassAndTxnHash;
@@ -60,5 +60,5 @@ pub trait MadaraServicesRpcApi {
     ///
     /// * 'on' if any service was active before being toggled, 'off' otherwise.
     #[method(name = "service")]
-    async fn service(&self, service: Vec<MadaraServiceId>, status: ServiceRequest) -> RpcResult<MadaraServiceStatus>;
+    async fn service(&self, service: Vec<MadaraServiceId>, status: ServiceRequest) -> RpcResult<Vec<ServiceStatus>>;
 }

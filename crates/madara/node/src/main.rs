@@ -285,7 +285,7 @@ async fn main() -> anyhow::Result<()> {
         service_block_production.setup_devnet().await?;
     }
 
-    let app = ServiceMonitor::default()
+    let mut app = ServiceMonitor::new()
         .with(service_db)?
         .with(service_l1_sync)?
         .with(service_p2p)?
@@ -310,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if run_cmd.p2p_params.p2p {
-        app.activate(MadaraServiceId::P2p);
+        app.activate(MadaraServiceId::P2P);
     }
 
     if warp_update_receiver {

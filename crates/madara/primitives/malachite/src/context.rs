@@ -5,7 +5,7 @@ use crate::{
     proposal::{Proposal, ProposalPart},
     types::{Address, Height},
     validators::{Validator, ValidatorSet},
-    vote::{SigningProvider, SigningScheme, Vote},
+    vote::{SigningProviderDummy, SigningScheme, Vote},
 };
 
 #[derive(Clone, Debug)]
@@ -21,7 +21,7 @@ impl malachite_core_types::Context for MadaraContext {
     type Value = MadaraBlock;
     type Vote = Vote;
     type SigningScheme = SigningScheme;
-    type SigningProvider = SigningProvider;
+    type SigningProvider = SigningProviderDummy;
 
     fn select_proposer<'a>(
         &self,
@@ -40,8 +40,8 @@ impl malachite_core_types::Context for MadaraContext {
         validator_set.validator_get_by_index(idx as usize).expect("Validator at module index exists on a non-empty set")
     }
 
-    fn signing_provider(&self) -> &Self::SigningProvider {
-        &SigningProvider
+    fn signing_provider(&self) -> &SigningProviderDummy {
+        &SigningProviderDummy
     }
 
     fn new_proposal(
@@ -50,7 +50,7 @@ impl malachite_core_types::Context for MadaraContext {
         value: Self::Value,
         pol_round: malachite_core_types::Round,
         address: Self::Address,
-    ) -> Self::Proposal {
+    ) -> Proposal {
         Proposal::new(height, round, value, pol_round, address)
     }
 
@@ -59,7 +59,7 @@ impl malachite_core_types::Context for MadaraContext {
         round: malachite_core_types::Round,
         value_id: malachite_core_types::NilOrVal<Felt>,
         address: Self::Address,
-    ) -> Self::Vote {
+    ) -> Vote {
         Vote::new_prevote(height, round, value_id, address)
     }
 
@@ -68,7 +68,7 @@ impl malachite_core_types::Context for MadaraContext {
         round: malachite_core_types::Round,
         value_id: malachite_core_types::NilOrVal<Felt>,
         address: Self::Address,
-    ) -> Self::Vote {
+    ) -> Vote {
         Vote::new_precommit(height, round, value_id, address)
     }
 }

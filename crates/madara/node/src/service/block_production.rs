@@ -4,7 +4,7 @@ use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{L1DataProvider, Mempool};
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 use std::{io::Write, sync::Arc};
 
 pub struct BlockProductionService {
@@ -56,10 +56,10 @@ impl Service for BlockProductionService {
     }
 }
 
-impl ServiceId for BlockProductionService {
+impl ServiceIdProvider for BlockProductionService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::BlockProduction.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::BlockProduction
     }
 }
 

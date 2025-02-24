@@ -284,20 +284,22 @@ pub enum MadaraServiceId {
     RpcAdmin,
     Gateway,
     Telemetry,
+    P2P,
 }
 
 impl ServiceId for MadaraServiceId {
     fn svc_id(&self) -> String {
         match self {
-            MadaraServiceId::Monitor => "monitor".to_string(),
-            MadaraServiceId::Database => "database".to_string(),
-            MadaraServiceId::L1Sync => "l1sync".to_string(),
-            MadaraServiceId::L2Sync => "l2sync".to_string(),
-            MadaraServiceId::BlockProduction => "blockprod".to_string(),
-            MadaraServiceId::RpcUser => "rpcuser".to_string(),
-            MadaraServiceId::RpcAdmin => "rpcadmin".to_string(),
-            MadaraServiceId::Gateway => "gateway".to_string(),
-            MadaraServiceId::Telemetry => "telemetry".to_string(),
+            Self::Monitor => "monitor".to_string(),
+            Self::Database => "database".to_string(),
+            Self::L1Sync => "l1sync".to_string(),
+            Self::L2Sync => "l2sync".to_string(),
+            Self::BlockProduction => "blockprod".to_string(),
+            Self::RpcUser => "rpcuser".to_string(),
+            Self::RpcAdmin => "rpcadmin".to_string(),
+            Self::Gateway => "gateway".to_string(),
+            Self::Telemetry => "telemetry".to_string(),
+            Self::P2P => "p2p".to_string(),
         }
     }
 }
@@ -308,6 +310,16 @@ pub enum ServiceStatus {
     Running,
     #[default]
     Inactive,
+}
+
+impl ServiceStatus {
+    pub fn is_on(&self) -> bool {
+        self == &ServiceStatus::Active || self == &ServiceStatus::Running
+    }
+
+    pub fn is_off(&self) -> bool {
+        self == &ServiceStatus::Inactive
+    }
 }
 
 /// An atomic bitmask of each [MadaraServiceId]'s status with strong
@@ -403,6 +415,31 @@ impl ServiceContext {
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(100).0),
             service_update_receiver: None,
             id: id.svc_id(),
+        }
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_for_testing() -> Self {
+        let services = ServiceSet::default();
+
+        services.set(&MadaraServiceId::Monitor.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::Database.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::L1Sync.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::L2Sync.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::BlockProduction.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::RpcUser.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::RpcAdmin.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::Gateway.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::Telemetry.svc_id(), ServiceStatus::Running);
+        services.set(&MadaraServiceId::P2P.svc_id(), ServiceStatus::Running);
+
+        Self {
+            token_global: tokio_util::sync::CancellationToken::new(),
+            token_local: None,
+            services: Arc::new(services),
+            service_update_sender: Arc::new(tokio::sync::broadcast::channel(100).0),
+            service_update_receiver: None,
+            id: MadaraServiceId::Monitor.svc_id(),
         }
     }
 
@@ -589,8 +626,8 @@ impl ServiceContext {
     /// You can use [ServiceContext::service_subscribe] to subscribe to changes
     /// in the status of any service.
     #[inline(always)]
-    pub fn service_remove<S: Service>(&self, id: &str) -> ServiceStatus {
-        self.service_unset(id)
+    pub fn service_remove(&self, id: impl ServiceId) -> ServiceStatus {
+        self.service_unset(&id.svc_id())
     }
 
     fn service_set(&self, id: &str, status: ServiceStatus) -> ServiceStatus {
@@ -973,9 +1010,8 @@ impl ServiceMonitor {
 
     /// Marks a [Service] as active, meaning it will be started automatically
     /// when calling [ServiceMonitor::start].
-    pub fn activate(self, id: impl ServiceId) -> Self {
+    pub fn activate(&mut self, id: impl ServiceId) {
         self.ctx.service_add(id);
-        self
     }
 
     /// Starts all activate [Service]s and runs them to completion. Services
@@ -1144,13 +1180,15 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn service_monitor_simple() {
-        let monitor = ServiceMonitor::new()
+        let mut monitor = ServiceMonitor::new()
             .with(ServiceA)
             .expect("Failed to add Service A")
             .with(ServiceB)
-            .expect("Failed to add Service B")
-            .activate(ServiceIdTest::ServiceA)
-            .activate(ServiceIdTest::ServiceB);
+            .expect("Failed to add Service B");
+
+        monitor.activate(ServiceIdTest::ServiceA);
+        monitor.activate(ServiceIdTest::ServiceB);
+
         let mut ctx = monitor.ctx.clone();
 
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);

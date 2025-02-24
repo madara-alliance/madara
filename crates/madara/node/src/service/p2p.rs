@@ -2,7 +2,7 @@ use crate::cli::P2pParams;
 use anyhow::Context;
 use mc_db::DatabaseService;
 use mc_p2p::P2pCommands;
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 use std::time::Duration;
 
 pub struct P2pService {
@@ -51,9 +51,9 @@ impl Service for P2pService {
     }
 }
 
-impl ServiceId for P2pService {
+impl ServiceIdProvider for P2pService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::P2p.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::P2P
     }
 }
