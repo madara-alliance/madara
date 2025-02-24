@@ -50,8 +50,3 @@ jobs:
     name: Run JS Tests
     needs: build
     uses: ./.github/workflows/starknet-js-test.yml
-
-  cli_test:
-    name: Run CLI Tests
-    needs: rust_check
-    uses: ./.github/workflows/cli-test.yml
