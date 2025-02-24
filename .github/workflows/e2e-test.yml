@@ -86,13 +86,17 @@ jobs:
         run: |
           make snos
 
+      - name: Install nightly toolchain
+        run: rustup install nightly-2024-09-05
+
+      - name: Rustup show
+        run: rustup show
+
       - name: Run Orchestrator e2e test
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
-        run: rustup install nightly-2024-09-05
-        run: rustup show
         run: |
           RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture
