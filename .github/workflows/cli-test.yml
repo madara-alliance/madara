@@ -9,28 +9,33 @@ jobs:
   cli_test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v3
+      - name: Restore Madara binary
+        uses: actions/cache@v3
+        id: cache-madara
         with:
-          shared-key: "cache"
-      - uses: dtolnay/rust-toolchain@master
+          path: target/release/madara
+          key: ${{ runner.os }}-madara-bin-
+          restore-keys: |
+            ${{ runner.os }}-madara-bin-
+          fail-on-cache-miss: true
+      - name: Restore Cairo build artifacts
+        uses: actions/cache@v3
         with:
-          toolchain: 1.81
-
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
+          path: cairo/target
+          key: ${{ runner.os }}-madara-${{ hashFiles('Scarb.lock') }}
+          fail-on-cache-miss: true
 
       - name: Run cli without arguments
         run: |
-          cargo run --release &
+          ./target/release/madara &
           MADARA_PID=$!
           while ! echo exit | nc localhost 9944; do sleep 1; done
           kill $MADARA_PID
 
       - name: Run cli pointing to a file
         run: |
-          cargo run --release -- --config-file ./configs/args/config.json &
+          ./target/release/madara --config-file ./configs/args/config.json &
           MADARA_PID=$!
           while ! echo exit | nc localhost 9944; do sleep 1; done
           kill $MADARA_PID
