@@ -21,20 +21,23 @@ starknet-core.workspace = true
 starknet-crypto.workspace = true
 starknet-types-core.workspace = true
 
-# Other
-anyhow.workspace = true
-async-trait.workspace = true
-crypto-bigint.workspace = true
-futures.workspace = true
-num-traits.workspace = true
-paste.workspace = true
-rand.workspace = true
+# Async
 rayon.workspace = true
-serde.workspace = true
-serde_yaml.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+dashmap.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_yaml.workspace = true
+
+# Numbers
+crypto-bigint.workspace = true
+num-traits.workspace = true
 url.workspace = true
+
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
@@ -52,10 +55,15 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
+# Other
+anyhow.workspace = true
+paste.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-test.workspace = true
 
 [features]
 testing = []
