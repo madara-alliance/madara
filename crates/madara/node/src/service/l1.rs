@@ -6,7 +6,7 @@ use mc_eth::client::{EthereumClient, L1BlockMetrics};
 use mc_eth::state_update::L1HeadSender;
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -123,9 +123,9 @@ impl Service for L1SyncService {
     }
 }
 
-impl ServiceId for L1SyncService {
+impl ServiceIdProvider for L1SyncService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::L1Sync.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::L1Sync
     }
 }

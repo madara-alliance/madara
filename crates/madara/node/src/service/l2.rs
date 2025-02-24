@@ -5,7 +5,7 @@ use mc_sync2::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 use std::sync::Arc;
 
 use crate::cli::l2::L2SyncParams;
@@ -90,9 +90,9 @@ impl Service for SyncService {
     }
 }
 
-impl ServiceId for SyncService {
+impl ServiceIdProvider for SyncService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::L2Sync.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::L2Sync
     }
 }

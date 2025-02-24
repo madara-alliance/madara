@@ -7,7 +7,7 @@ use mc_rpc::{
     providers::{AddTransactionProvider, AddTransactionProviderGroup},
     rpc_api_admin, rpc_api_user, Starknet,
 };
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 
 use metrics::RpcMetrics;
 use server::{start_server, ServerConfig};
@@ -134,12 +134,12 @@ impl Service for RpcService {
     }
 }
 
-impl ServiceId for RpcService {
+impl ServiceIdProvider for RpcService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
+    fn id_provider(&self) -> impl ServiceId {
         match self.rpc_type {
-            RpcType::User => MadaraServiceId::RpcUser.svc_id(),
-            RpcType::Admin => MadaraServiceId::RpcAdmin.svc_id(),
+            RpcType::User => MadaraServiceId::RpcUser,
+            RpcType::Admin => MadaraServiceId::RpcAdmin,
         }
     }
 }
