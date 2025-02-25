@@ -153,10 +153,10 @@ async fn process_l1_message(
         _ => {}
     };
 
-    let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
-    // We make sure to update the nonce in db only AFTER the l1 handler
-    // has been properly added to the mempool.
+    // TODO: we might want to move this to AFTER the insertion into the mempool,
+    // rn this is causing a panic in certain prod systems if we do so.
     backend.set_l1_messaging_nonce(tx_nonce)?;
+    let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?

@@ -293,7 +293,7 @@ impl Mempool {
         let nonce_target =
             self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
 
-        match nonce.cmp(&nonce_target) {
+        match nonce_next.cmp(&nonce_target) {
             std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
             std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
             std::cmp::Ordering::Greater => Ok(NonceInfo::pending(nonce, nonce_next)),
