@@ -1,5 +1,6 @@
 use crate::error::SettlementClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
+use crate::eth::EthereumClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::utils::u256_to_felt;
 use alloy::contract::EventPoller;
@@ -25,44 +26,44 @@ impl EthereumEventStream {
 }
 
 impl Stream for EthereumEventStream {
-    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
+    type Item = Result<L1toL2MessagingEventData, EthereumClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(result)) => match result {
                 Ok((event, log)) => {
-                    let event_data =
-                        (|| -> Result<L1toL2MessagingEventData, SettlementClientError> {
-                            Ok(L1toL2MessagingEventData {
-                                from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
-                                to: u256_to_felt(event.toAddress)?,
-                                selector: u256_to_felt(event.selector)?,
-                                nonce: u256_to_felt(event.nonce)?,
-                                payload: event.payload.iter().try_fold(
-                                    Vec::with_capacity(event.payload.len()),
-                                    |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
-                                        acc.push(u256_to_felt(*ele)?);
-                                        Ok(acc)
-                                    },
-                                )?,
-                                fee: Some(event.fee.try_into().map_err(|_| {
-                                    SettlementClientError::Other(anyhow::anyhow!("Fee conversion failed"))
-                                })?),
-                                transaction_hash: Felt::from_bytes_be_slice(
-                                    log.transaction_hash
-                                        .ok_or_else(|| SettlementClientError::MissingField("transaction_hash"))?
-                                        .to_vec()
-                                        .as_slice(),
-                                ),
-                                message_hash: None,
-                                block_number: log
-                                    .block_number
-                                    .ok_or_else(|| SettlementClientError::MissingField("block_number"))?,
-                                event_index: Some(
-                                    log.log_index.ok_or_else(|| SettlementClientError::MissingField("log_index"))?,
-                                ),
-                            })
-                        })();
+                    let event_data = (|| -> Result<L1toL2MessagingEventData, EthereumClientError> {
+                        Ok(L1toL2MessagingEventData {
+                            from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
+                            to: u256_to_felt(event.toAddress)
+                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
+                            selector: u256_to_felt(event.selector)?,
+                            nonce: u256_to_felt(event.nonce)?,
+                            payload: event.payload.iter().try_fold(
+                                Vec::with_capacity(event.payload.len()),
+                                |mut acc, ele| -> Result<Vec<Felt>, EthereumClientError> {
+                                    acc.push(u256_to_felt(*ele)?);
+                                    Ok(acc)
+                                },
+                            )?,
+                            fee: Some(event.fee.try_into().map_err(|_| {
+                                EthereumClientError::Other(anyhow::anyhow!("Fee conversion failed"))
+                            })?),
+                            transaction_hash: Felt::from_bytes_be_slice(
+                                log.transaction_hash
+                                    .ok_or_else(|| EthereumClientError::MissingField("transaction_hash"))?
+                                    .to_vec()
+                                    .as_slice(),
+                            ),
+                            message_hash: None,
+                            block_number: log
+                                .block_number
+                                .ok_or_else(|| EthereumClientError::MissingField("block_number"))?,
+                            event_index: Some(
+                                log.log_index.ok_or_else(|| EthereumClientError::MissingField("log_index"))?,
+                            ),
+                        })
+                    })();
 
                     Poll::Ready(Some(event_data))
                 }

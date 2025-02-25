@@ -23,6 +23,7 @@ use tokio::time::sleep;
 use url::Url;
 
 pub mod event;
+pub mod error;
 #[cfg(test)]
 pub mod utils;
 
@@ -73,16 +74,21 @@ impl StarknetClient {
 #[async_trait]
 impl SettlementClientTrait for StarknetClient {
     type Config = StarknetClientConfig;
+    type Error = SettlementClientError;
+    type StreamType = StarknetEventStream;
 
     fn get_client_type(&self) -> ClientType {
         ClientType::STARKNET
     }
 
-    async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
-        self.provider.block_number().await.map_err(|e| SettlementClientError::Other(e.into()))
+    async fn get_latest_block_number(&self) -> Result<u64, Self::Error> {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|e| SettlementClientError::Provider(e.to_string()))
     }
 
-    async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
+    async fn get_last_event_block_number(&self) -> Result<u64, Self::Error> {
         let latest_block = self.get_latest_block_number().await?;
         // If block on l2 is not greater than or equal to 6000 we will consider the last block to 0.
         let last_block = latest_block.saturating_sub(6000);
@@ -118,20 +124,20 @@ impl SettlementClientTrait for StarknetClient {
         }
     }
 
-    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
+    async fn get_last_verified_block_number(&self) -> Result<u64, Self::Error> {
         let state = self.get_state_call().await?;
         u64::try_from(state[1]).map_err(|e| SettlementClientError::ConversionError(e.to_string()))
     }
 
-    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
+    async fn get_last_verified_state_root(&self) -> Result<Felt, Self::Error> {
         Ok(self.get_state_call().await?[0])
     }
 
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError> {
+    async fn get_last_verified_block_hash(&self) -> Result<Felt, Self::Error> {
         Ok(self.get_state_call().await?[2])
     }
 
-    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError> {
+    async fn get_initial_state(&self) -> Result<StateUpdate, Self::Error> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
         let global_root = self.get_last_verified_state_root().await?;
@@ -144,7 +150,7 @@ impl SettlementClientTrait for StarknetClient {
         backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
-    ) -> Result<(), SettlementClientError> {
+    ) -> Result<(), Self::Error> {
         while let Some(events) = ctx
             .run_until_cancelled(async {
                 let latest_block = self.get_latest_block_number().await?;
@@ -198,15 +204,15 @@ impl SettlementClientTrait for StarknetClient {
     // the L3s will have zero gas prices. for any transaction.
     // So that's why we will keep the prices as 0 returning from
     // our settlement client.
-    async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError> {
+    async fn get_gas_prices(&self) -> Result<(u128, u128), Self::Error> {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, Self::Error> {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
     }
 
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, Self::Error> {
         let call_res = self
             .provider
             .call(
@@ -229,12 +235,10 @@ impl SettlementClientTrait for StarknetClient {
         Ok(call_res[0])
     }
 
-    type StreamType = StarknetEventStream;
-
     async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
-    ) -> Result<Self::StreamType, SettlementClientError> {
+    ) -> Result<Self::StreamType, Self::Error> {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
             to_block: Some(BlockId::Number(self.get_latest_block_number().await?)),

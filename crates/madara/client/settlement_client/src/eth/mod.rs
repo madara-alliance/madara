@@ -1,4 +1,5 @@
 pub mod event;
+pub mod error;
 
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
@@ -73,18 +74,24 @@ impl EthereumClient {
 #[async_trait]
 impl SettlementClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
+    type Error = EthereumClientError;
+    type StreamType = EthereumEventStream;
 
     fn get_client_type(&self) -> ClientType {
         ClientType::ETH
     }
 
     /// Retrieves the latest Ethereum block number
-    async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
-        self.provider.get_block_number().await.map(|n| n.as_u64()).map_err(|e| SettlementClientError::Other(e.into()))
+    async fn get_latest_block_number(&self) -> Result<u64, Self::Error> {
+        self.provider
+            .get_block_number()
+            .await
+            .map(|n| n.as_u64())
+            .map_err(|e| EthereumClientError::Rpc(e.to_string()))
     }
 
     /// Get the block number of the last occurrence of a given event.
-    async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
+    async fn get_last_event_block_number(&self) -> Result<u64, Self::Error> {
         let latest_block = self.get_latest_block_number().await?;
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
@@ -93,15 +100,18 @@ impl SettlementClientTrait for EthereumClient {
             .to_block(latest_block)
             .address(*self.l1_core_contract.address());
 
-        let logs = self.provider.get_logs(&filter).await.map_err(|e| SettlementClientError::Other(e.into()))?;
+        let logs = self.provider
+            .get_logs(&filter)
+            .await
+            .map_err(|e| EthereumClientError::Rpc(e.to_string()))?;
 
         let filtered_logs =
             logs.into_iter().rev().map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>()).next();
 
         match filtered_logs {
-            Some(Ok(log)) => log.block_number.ok_or_else(|| SettlementClientError::MissingField("block_number")),
-            Some(Err(e)) => Err(SettlementClientError::Other(e.into())),
-            None => Err(SettlementClientError::Other(anyhow::anyhow!("no event found"))),
+            Some(Ok(log)) => log.block_number.ok_or_else(|| EthereumClientError::MissingField("block_number")),
+            Some(Err(e)) => Err(EthereumClientError::Other(e.into())),
+            None => Err(EthereumClientError::Other(anyhow::anyhow!("no event found"))),
         }
     }
 
@@ -244,7 +254,6 @@ impl SettlementClientTrait for EthereumClient {
         u256_to_felt(cancellation_timestamp._0).map_err(|e| SettlementClientError::ConversionError(e.to_string()))
     }
 
-    type StreamType = EthereumEventStream;
     async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
