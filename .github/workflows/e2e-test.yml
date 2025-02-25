@@ -1,0 +1,102 @@
+name: Orchestrator E2E test
+
+on:
+  workflow_call:
+    secrets:
+      RPC_FOR_SNOS:
+        required: true
+
+jobs:
+  coverage:
+    runs-on: karnot-arc-runner-set
+
+    services:
+      localstack:
+        image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+
+        env:
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install necessary dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libclang-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.8.2"
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Display Python version
+        run: python --version
+
+      - name: Install cairo 0
+        run: |
+          # Creating venv
+          python3.9 -m venv ~/cairo_venv
+          source ~/cairo_venv/bin/activate
+
+          # Installing deps
+          sudo apt install -y libgmp3-dev
+          pip3 install ecdsa fastecdsa sympy
+
+          # Installing cairo lang
+          pip3 install cairo-lang
+
+      - name: Check Anvil Installation & run Anvil
+        run: |
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+              anvil --block-time 1 &
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+
+      - name: Build SNOS files
+        run: |
+          make snos
+
+      - name: Install nightly toolchain
+        run: rustup install nightly-2024-09-05
+
+      - name: Rustup show
+        run: rustup show
+
+      - name: Run Orchestrator e2e test
+        env:
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: |
+          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture
