@@ -1,5 +1,5 @@
-use crate::error::SettlementClientError;
 use crate::messaging::L1toL2MessagingEventData;
+use crate::starknet::error::StarknetClientError;
 use futures::Stream;
 use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
 use starknet_providers::jsonrpc::HttpTransport;
@@ -82,7 +82,7 @@ impl StarknetEventStream {
 }
 
 impl Stream for StarknetEventStream {
-    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
+    type Item = Result<L1toL2MessagingEventData, StarknetClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.future.is_none() {
@@ -104,38 +104,34 @@ impl Stream for StarknetEventStream {
                         Ok((Some(event), updated_filter)) => {
                             self.filter = updated_filter;
 
-                            // Get the nonce safely
-                            let nonce = event.data.get(1).ok_or_else(|| {
-                                SettlementClientError::InvalidData("Missing nonce in event data".to_string())
+                            let nonce = event.data.get(1).ok_or_else(|| StarknetClientError::EventProcessing {
+                                message: "Missing nonce in event data".to_string(),
+                                event_id: "MessageSent".to_string(),
                             })?;
                             self.processed_events.insert(*nonce);
 
                             let event_data = event
                                 .block_number
-                                .ok_or_else(|| {
-                                    SettlementClientError::InvalidData(
-                                        "Unable to get block number from event".to_string(),
-                                    )
+                                .ok_or_else(|| StarknetClientError::EventProcessing {
+                                    message: "Unable to get block number from event".to_string(),
+                                    event_id: "MessageSent".to_string(),
                                 })
                                 .map(|block_number| {
-                                    // Get required fields safely
-                                    let selector = event.data.first().ok_or_else(|| {
-                                        SettlementClientError::InvalidData("Missing selector in event data".to_string())
+                                    let selector = event.data.first().ok_or_else(|| StarknetClientError::EventProcessing {
+                                        message: "Missing selector in event data".to_string(),
+                                        event_id: "MessageSent".to_string(),
                                     })?;
-                                    let from = event.keys.get(2).ok_or_else(|| {
-                                        SettlementClientError::InvalidData(
-                                            "Missing from_address in event keys".to_string(),
-                                        )
+                                    let from = event.keys.get(2).ok_or_else(|| StarknetClientError::EventProcessing {
+                                        message: "Missing from_address in event keys".to_string(),
+                                        event_id: "MessageSent".to_string(),
                                     })?;
-                                    let to = event.keys.get(3).ok_or_else(|| {
-                                        SettlementClientError::InvalidData(
-                                            "Missing to_address in event keys".to_string(),
-                                        )
+                                    let to = event.keys.get(3).ok_or_else(|| StarknetClientError::EventProcessing {
+                                        message: "Missing to_address in event keys".to_string(),
+                                        event_id: "MessageSent".to_string(),
                                     })?;
-                                    let message_hash = event.keys.get(1).ok_or_else(|| {
-                                        SettlementClientError::InvalidData(
-                                            "Missing message_hash in event keys".to_string(),
-                                        )
+                                    let message_hash = event.keys.get(1).ok_or_else(|| StarknetClientError::EventProcessing {
+                                        message: "Missing message_hash in event keys".to_string(),
+                                        event_id: "MessageSent".to_string(),
                                     })?;
 
                                     Ok(L1toL2MessagingEventData {
@@ -143,13 +139,7 @@ impl Stream for StarknetEventStream {
                                         to: *to,
                                         selector: *selector,
                                         nonce: *nonce,
-                                        payload: {
-                                            let mut payload_array = vec![];
-                                            event.data.iter().skip(3).for_each(|data| {
-                                                payload_array.push(*data);
-                                            });
-                                            payload_array
-                                        },
+                                        payload: event.data.iter().skip(3).copied().collect(),
                                         fee: None,
                                         transaction_hash: event.transaction_hash,
                                         message_hash: Some(*message_hash),
@@ -169,7 +159,7 @@ impl Stream for StarknetEventStream {
                             self.filter = updated_filter;
                             Poll::Ready(None)
                         }
-                        Err(e) => Poll::Ready(Some(Err(SettlementClientError::Other(e)))),
+                        Err(e) => Poll::Ready(Some(Err(StarknetClientError::Provider(e.to_string())))),
                     }
                 }
                 Poll::Pending => Poll::Pending,

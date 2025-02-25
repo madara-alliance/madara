@@ -60,14 +60,23 @@ pub mod test_types {
 /// # Type Parameters
 ///
 /// * `Config` - Configuration type specific to the settlement layer implementation
+/// * `Error` - Client-specific error type that must be convertible to SettlementClientError
 /// * `StreamType` - Stream implementation for processing L1 events
+///
+/// # Error Handling
+///
+/// Each implementation should:
+/// - Define its own error type that implements `Into<SettlementClientError>`
+/// - Use appropriate error variants for different failure scenarios
+/// - Provide context in error messages
+/// - Handle both client-specific and common error cases
 ///
 /// # Stream Requirements
 ///
 /// The `StreamType` must be a stream that:
-/// - Produces `Option<Result<L1toL2MessagingEventData, SettlementClientError>>`
+/// - Produces `Result<L1toL2MessagingEventData, Self::Error>`
 /// - Handles gaps in event sequences (via `Option`)
-/// - Manages errors during event processing (via `Result`)
+/// - Manages errors during event processing
 /// - Implements `Send` for thread safety
 ///
 /// # Implementation Notes

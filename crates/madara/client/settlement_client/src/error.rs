@@ -1,3 +1,8 @@
+use crate::eth::error::EthereumClientError;
+use crate::starknet::error::StarknetClientError;
+use anyhow::Context;
+use thiserror::Error;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Failed to parse provider URL: {0}")]
@@ -10,8 +15,17 @@ pub enum Error {
     ConfigDecodeFromJson(#[from] serde_json::Error),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Error, Debug)]
 pub enum SettlementClientError {
+    #[error("Ethereum client error: {0}")]
+    Ethereum(#[from] EthereumClientError),
+
+    #[error("Starknet client error: {0}")]
+    Starknet(#[from] StarknetClientError),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+
     #[error("Missing required field: {0}")]
     MissingField(&'static str),
 
@@ -27,12 +41,6 @@ pub enum SettlementClientError {
     #[error("Conversion error: {0}")]
     ConversionError(String),
 
-    #[error("Ethereum RPC error: {0}")]
-    EthereumRpcError(#[from] alloy::sol_types::Error),
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
-
     #[error("Invalid event: {0}")]
     InvalidEvent(String),
 
@@ -44,4 +52,28 @@ pub enum SettlementClientError {
 
     #[error("Invalid data: {0}")]
     InvalidData(String),
+}
+
+// Helper trait for error context
+pub trait ResultExt<T> {
+    fn with_context<C, F>(self, context: F) -> Result<T, SettlementClientError>
+    where
+        F: FnOnce() -> C,
+        C: std::fmt::Display + Send + Sync + 'static;
+}
+
+impl<T, E> ResultExt<T> for Result<T, E>
+where
+    E: Into<SettlementClientError>,
+{
+    fn with_context<C, F>(self, context: F) -> Result<T, SettlementClientError>
+    where
+        F: FnOnce() -> C,
+        C: std::fmt::Display + Send + Sync + 'static,
+    {
+        self.map_err(|e| {
+            let err: SettlementClientError = e.into();
+            err.context(context()).into()
+        })
+    }
 }

@@ -1,6 +1,4 @@
-use crate::error::SettlementClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
-use crate::eth::EthereumClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::utils::u256_to_felt;
 use alloy::contract::EventPoller;
@@ -10,6 +8,7 @@ use futures::Stream;
 use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use crate::eth::error::EthereumClientError;
 
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
 type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
@@ -37,17 +36,20 @@ impl Stream for EthereumEventStream {
                             from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
                             to: u256_to_felt(event.toAddress)
                                 .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
-                            selector: u256_to_felt(event.selector)?,
-                            nonce: u256_to_felt(event.nonce)?,
+                            selector: u256_to_felt(event.selector)
+                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
+                            nonce: u256_to_felt(event.nonce)
+                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
                             payload: event.payload.iter().try_fold(
                                 Vec::with_capacity(event.payload.len()),
                                 |mut acc, ele| -> Result<Vec<Felt>, EthereumClientError> {
-                                    acc.push(u256_to_felt(*ele)?);
+                                    acc.push(u256_to_felt(*ele)
+                                        .map_err(|e| EthereumClientError::Conversion(e.to_string()))?);
                                     Ok(acc)
                                 },
                             )?,
                             fee: Some(event.fee.try_into().map_err(|_| {
-                                EthereumClientError::Other(anyhow::anyhow!("Fee conversion failed"))
+                                EthereumClientError::Conversion("Fee conversion failed".to_string())
                             })?),
                             transaction_hash: Felt::from_bytes_be_slice(
                                 log.transaction_hash
@@ -67,7 +69,7 @@ impl Stream for EthereumEventStream {
 
                     Poll::Ready(Some(event_data))
                 }
-                Err(e) => Poll::Ready(Some(Err(SettlementClientError::EthereumRpcError(e)))),
+                Err(e) => Poll::Ready(Some(Err(EthereumClientError::Contract(e.to_string())))),
             },
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
@@ -121,7 +123,7 @@ pub mod eth_event_stream_tests {
     // Helper function to process stream into a vector
     async fn collect_stream_events(
         stream: &mut EthereumEventStream,
-    ) -> Vec<Result<L1toL2MessagingEventData, SettlementClientError>> {
+    ) -> Vec<Result<L1toL2MessagingEventData, EthereumClientError>> {
         stream
             .take_while(|event| futures::future::ready(event.is_ok()))
             .fold(Vec::new(), |mut acc, event| async move {

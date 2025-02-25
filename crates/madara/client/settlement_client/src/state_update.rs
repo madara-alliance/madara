@@ -11,6 +11,7 @@ use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
+use crate::error::ResultExt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
@@ -44,7 +45,7 @@ pub fn update_l1(
 
 pub async fn state_update_worker<C, S>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
     ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
@@ -54,8 +55,7 @@ where
     // Clear L1 confirmed block at startup
     backend
         .clear_last_confirmed_block()
-        .context("Failed to clear L1 last confirmed block number")
-        .map_err(SettlementClientError::Other)?;
+        .with_context(|| "Failed to clear L1 last confirmed block number")?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
@@ -66,19 +66,16 @@ where
         let initial_state = settlement_client
             .get_initial_state()
             .await
-            .context("Failed to get initial ethereum state")
-            .map_err(SettlementClientError::Other)?;
+            .with_context(|| "Failed to get initial ethereum state")?;
 
         update_l1(&backend, initial_state, l1_block_metrics.clone())
-            .context("Failed to update L1 with initial state")
-            .map_err(SettlementClientError::Other)?;
+            .with_context(|| "Failed to update L1 with initial state")?;
     }
 
     settlement_client
         .listen_for_update_state_events(backend, ctx, l1_block_metrics.clone())
         .await
-        .context("Failed to listen for update state events")
-        .map_err(SettlementClientError::Other)?;
+        .with_context(|| "Failed to listen for update state events")?;
 
     Ok(())
 }

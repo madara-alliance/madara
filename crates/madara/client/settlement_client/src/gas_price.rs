@@ -14,6 +14,7 @@ use opentelemetry::global::Error as OtelError;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 use std::time::SystemTime;
+use crate::error::ResultExt;
 
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
@@ -59,45 +60,8 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
-    l1_gas_provider: &GasPriceProvider,
-    gas_price_poll_ms: Duration,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
-    match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
-        Ok(_) => tracing::trace!("Updated gas prices"),
-        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
-    }
-
-    let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
-    let duration_since_last_update = SystemTime::now()
-        .duration_since(last_update_timestamp)
-        .context("Failed to calculate time since last update")
-        .map_err(SettlementClientError::Other)?;
-
-    let last_update_timestamp = last_update_timestamp
-        .duration_since(UNIX_EPOCH)
-        .context("SystemTime before UNIX EPOCH!")
-        .map_err(SettlementClientError::Other)?
-        .as_micros();
-
-    if duration_since_last_update > 10 * gas_price_poll_ms {
-        return Err(SettlementClientError::Other(anyhow::anyhow!(
-            "Gas prices have not been updated for {} ms. Last update was at {}",
-            duration_since_last_update.as_micros(),
-            last_update_timestamp
-        )));
-    }
-
-    Ok(())
-}
-
 pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -117,14 +81,50 @@ where
             gas_price_poll_ms,
             l1_block_metrics.clone(),
         )
-        .await?;
+        .await
+        .with_context(|| "Failed to update gas prices")?;
+    }
+
+    Ok(())
+}
+
+pub async fn gas_price_worker_once<C, S>(
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
+    l1_gas_provider: &GasPriceProvider,
+    gas_price_poll_ms: Duration,
+    l1_block_metrics: Arc<L1BlockMetrics>,
+) -> Result<(), SettlementClientError>
+where
+    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
+{
+    match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
+        Ok(_) => tracing::trace!("Updated gas prices"),
+        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
+    }
+
+    let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
+    let duration_since_last_update = SystemTime::now()
+        .duration_since(last_update_timestamp)
+        .with_context(|| "Failed to calculate time since last update")?;
+
+    let last_update_timestamp = last_update_timestamp
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "SystemTime before UNIX EPOCH!")?
+        .as_micros();
+
+    if duration_since_last_update > 10 * gas_price_poll_ms {
+        return Err(SettlementClientError::Other(anyhow::anyhow!(
+            "Gas prices have not been updated for {} ms. Last update was at {}",
+            duration_since_last_update.as_micros(),
+            last_update_timestamp
+        )));
     }
 
     Ok(())
 }
 
 async fn update_gas_price<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
