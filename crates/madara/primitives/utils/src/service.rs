@@ -1,10 +1,10 @@
 //! # Madara Services Architecture
 //!
-//! Madara follows a [microservice] architecture to simplify the composability and parallelism of
+//! Madara follows a [`microservice`] architecture to simplify the composability and parallelism of
 //! its services. That is to say services can be started in different orders, at different points in
 //! the program's execution, stopped and even restarted. The advantage in parallelism arises from
 //! the fact that each services runs as its own non-blocking asynchronous task which allows for high
-//! throughput. Inter-service communication is done via [tokio::sync] or more often through direct
+//! throughput. Inter-service communication is done via [`tokio::sync`] or more often through direct
 //! database reads and writes.
 //!
 //! Services are run to completion until no service remains, at which point the
@@ -12,37 +12,37 @@
 //!
 //! ---
 //!
-//! # The [Service] trait
+//! # The [`Service`] trait
 //!
-//! This is the backbone of Madara services. The [Service] trait specifies how a service must start.
-//! To be identified, a [Service] must also implement [ServiceIdProvider] (this is a separate trait
+//! This is the backbone of Madara services. The [`Service`] trait specifies how a service must start.
+//! To be identified, a [`Service`] must also implement [`ServiceIdProvider`] (this is a separate trait
 //! for reasons related to boxing). Services can be identified by any type which implements
-//! [ServiceId].
+//! [`ServiceId`].
 //!
-//! > Under the hood, services are identified using [String]s, but this is wrapped around the
-//! > [ServiceId] trait to provide type safety.
+//! Under the hood, services are identified using [`String`]s, but this is wrapped around the
+//! [`ServiceId`] trait to provide type safety.
 //!
-//! Services are started from [Service::start] using [ServiceRunner::service_loop]. [service_loop]
-//! is a function which takes in a future: this is the main loop of your service, and should run
-//! until the service completes or is [cancelled].
+//! Services are started from [`Service::start`] using [`ServiceRunner::service_loop`]. [`service_loop`]
+//! is a function which takes in a future: this is the main loop of a service, and should run until
+//! the service completes or is [`cancelled`].
 //!
-//! It is part of the contract of the [Service] trait that calls to [service_loop] **should not
+//! It is part of the contract of the [`Service`] trait that calls to [`service_loop`] **should not
 //! complete** until the service has _finished_ execution as this is used to mark a service as
-//! ready to restart. This means your service should keep yielding [Poll::Pending] until it is done.
-//! Services where [service_loop] completes _before_ the service has finished execution will be
+//! ready to restart. This means your service should keep yielding [`Poll::Pending`] until it is done.
+//! Services where [`service_loop`] completes _before_ the service has finished execution will be
 //! automatically marked for shutdown. This is done to avoid an invalid state. This means you should
-//! not run the work your service does inside a [tokio::task::spawn] and exit [service_loop]. For
-//! running blocking futures inside your service, refer to [ServiceContext::run_until_cancelled].
+//! not run the work your service does inside a [`tokio::task::spawn`] and exit [`service_loop`]
+//! immediately for example. For running blocking futures inside your service, refer to
+//! [`ServiceContext::run_until_cancelled`].
 //!
-//! > **Note**
-//! > It is assumed that services can and might be restarted. You have the responsibility to ensure
-//! > this is possible. This means you should make sure not to use the like of [std::mem::take] or
-//! > similar on your service inside [Service::start]. In general, make sure your service still
-//! > contains all the necessary information it needs to restart. This might mean certain attributes
-//! > need to be stored as a [std::sync::Arc] and cloned so that the future in
-//! > [ServiceRunner::service_loop] can safely take ownership of them.
+//! It is assumed that services can and might be restarted. You have the responsibility to ensure
+//! this is possible. This means you should make sure not to use the likes of [`std::mem::take`] or
+//! similar inside [`Service::start`]. In general, make sure your service still contains all the
+//! necessary information it needs to restart. This might mean certain attributes need to be
+//! stored as a [`std::sync::Arc`] and cloned so that the future in [`service_loop`] can safely take
+//! ownership of them.
 //!
-//! ## An incorrect implementation of the [Service] trait
+//! ## An incorrect implementation of the [`Service`] trait
 //!
 //! ```rust
 //! # use mp_utils::service::Service;
@@ -60,9 +60,10 @@
 //!                 tokio::time::sleep(std::time::Duration::MAX).await;
 //!             });
 //!
-//!             // This is incorrect, as the future passed to service_loop will resolve before the
-//!             // task spawned above completes, meaning the service monitor will incorrectly mark
-//!             // this service as ready to restart. In a more complex scenario, this means we might
+//!             // This is incorrect, as the future passed to service_loop will
+//!             // resolve before the task spawned above completes, meaning the
+//!             // service monitor will incorrectly mark this service as ready
+//!             // to restart. In a more complex scenario, this means we might
 //!             // enter an invalid state!
 //!             anyhow::Ok(())
 //!         });
@@ -71,8 +72,6 @@
 //!     }
 //! }
 //!
-//! // The reason why this method is not part of the `Service` trait is because `impl ServiceId` is
-//! // not dyn-compatible, which conflicts with the fact that we need to box services to store them.
 //! impl ServiceIdProvider for MyService {
 //!     fn id_provider(&self) -> impl ServiceId {
 //!         MyServiceId
@@ -88,7 +87,7 @@
 //! }
 //! ```
 //!
-//! ## A correct implementation of the [Service] trait
+//! ## A correct implementation of the [`Service`] trait
 //!
 //! ```rust
 //! # use mp_utils::service::Service;
@@ -104,9 +103,9 @@
 //!         runner.service_loop(move |mut ctx| async move {
 //!             ctx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
 //!
-//!             // This is correct, as the future passed to service_loop will only resolve once the
-//!             // task above completes, so the service monitor can correctly mark this service as
-//!             // ready to restart.
+//!             // This is correct, as the future passed to service_loop will
+//!             // only resolve once the task above completes, so the service
+//!             // monitor can correctly mark this service as ready to restart.
 //!             anyhow::Ok(())
 //!         });
 //!
@@ -150,9 +149,10 @@
 //!
 //!             ctx.cancelled().await;
 //!
-//!             // This is correct, as even though we are spawning a background task we have
-//!             // implemented a cancellation mechanism with the service context and are waiting for
-//!             // that cancellation in the service loop.
+//!             // This is correct, as even though we are spawning a background
+//!             // task we have implemented a cancellation mechanism with the
+//!             // service context and are waiting for that cancellation in the
+//!             service loop.
 //!             anyhow::Ok(())
 //!         });
 //!
@@ -177,11 +177,11 @@
 //!
 //! This sort of problem generally arises in cases where the service's role is to spawn another
 //! background task (when starting a server for example). Either avoid spawning a detached task or
-//! use mechanisms such as [cancelled] to await for the service's completion.
+//! use mechanisms such as [`cancelled`] to await for the service's completion.
 //!
 //! Note that service shutdown is designed to be manual, ie: services should never be forcefully
-//! shutdown unless you forget to implement proper [cancellation]. To avoid this edge case, we still
-//! implement a [SERVICE_GRACE_PERIOD] which is the maximum duration a service is allowed to take to
+//! shutdown unless you forget to implement proper [`cancellation`]. To avoid this edge case, we still
+//! implement a [`SERVICE_GRACE_PERIOD`] which is the maximum duration a service is allowed to take to
 //! shutdown, after which it is forcefully cancelled. This should not happen in practice and only
 //! serves to avoid cases where someone would forget to implement a cancellation check.
 //!
@@ -189,31 +189,31 @@
 //!
 //! # Cancellation status and inter-process requests
 //!
-//! Services are passed a [ServiceContext] as part of [service_loop] to be used during their
+//! Services are passed a [`ServiceContext`] as part of [`service_loop`] to be used during their
 //! execution to check for and request cancellation. Services can also start child services with
-//! [ServiceContext::child] to create a hierarchy of services.
+//! [`ServiceContext::child`] to create a hierarchy of services.
 //!
 //! ## Cancellation checks
 //!
-//! [ServiceContext] allows you to gracefully handle the shutting down services by manually checking
+//! [`ServiceContext`] allows you to gracefully handle the shutting down services by manually checking
 //! for  cancellation at logical points in the execution. You can use the following methods to check
 //! for cancellation.
 //!
-//! - [is_cancelled]: synchronous, useful in non-blocking scenarios.
-//! - [cancelled]: a future which resolves upon service cancellation. Useful to wait on a service or
-//!   alongside [tokio::select].
+//! - [`is_cancelled`]: synchronous, useful in non-blocking scenarios.
+//! - [`cancelled`]: a future which resolves upon service cancellation. Useful to wait on a service or
+//!   alongside [`tokio::select`].
 //!
 //! <div class="warning">
 //!
 //! It is your responsibility to check for cancellation inside of your service. If you do not, or
-//! your service takes longer than [SERVICE_GRACE_PERIOD] to shutdown, then your service will be
+//! your service takes longer than [`SERVICE_GRACE_PERIOD`] to shutdown, then your service will be
 //! forcefully cancelled.
 //!
 //! </div>
 //!
 //! ## Cancellation requests
 //!
-//! Any service with access to a [ServiceContext] can request the cancellation of _any other
+//! Any service with access to a [`ServiceContext`] can request the cancellation of _any other
 //! service, at any point during execution_. This can be used for error handling for example, by
 //! having a single service shut itself down without affecting other services, or for administrative
 //! and testing purposes by having a node operator toggle services on and off from a remote
@@ -222,39 +222,39 @@
 //! You can use the following methods to request for the cancellation of a
 //! service:
 //!
-//! - [cancel_global]: cancels all services.
-//! - [cancel_local]: cancels this service and all its children.
-//! - [service_remove]: cancel a specific service.
+//! - [`cancel_global`]: cancels all services.
+//! - [`cancel_local`]: cancels this service and all its children.
+//! - [`service_remove`]: cancel a specific service.
 //!
 //! ## Start requests
 //!
-//! You can _request_ for a service to be started by calling [service_add]. Note that this will only
+//! You can _request_ for a service to be started by calling [`service_add`]. Note that this will only
 //! work if the service has already been registered at the start of the program.
 //!
 //! # Service orchestration
 //!
-//! Services are orchestrated by a [ServiceMonitor], which is responsible for registering services,
+//! Services are orchestrated by a [`ServiceMonitor`], which is responsible for registering services,
 //! marking them as active or inactive as well as starting and restarting them upon request.
-//! [ServiceMonitor] also handles the cancellation of all services upon receiving a `SIGINT` or
+//! [`ServiceMonitor`] also handles the cancellation of all services upon receiving a `SIGINT` or
 //! `SIGTERM`.
 //!
 //! <div class="warning">
 //!
 //! Services cannot be started or restarted if they have not been registered at startup through
-//! [ServiceMonitor::with].
+//! [`ServiceMonitor::with`].
 //!
 //! </div>
 //!
-//! [microservice]: https://en.wikipedia.org/wiki/Microservices
-//! [service_loop]: ServiceRunner::service_loop
-//! [cancelled]: ServiceContext::run_until_cancelled
-//! [cancellation]: ServiceContext::run_until_cancelled
-//! [is_cancelled]: ServiceContext::is_cancelled
-//! [Poll::Pending]: std::task::Poll::Pending
-//! [cancel_global]: ServiceContext::cancel_global
-//! [cancel_local]: ServiceContext::cancel_local
-//! [service_remove]: ServiceContext::service_remove
-//! [service_add]: ServiceContext::service_add
+//! [`microservice`]: https://en.wikipedia.org/wiki/Microservices
+//! [`service_loop`]: ServiceRunner::service_loop
+//! [`cancelled`]: ServiceContext::run_until_cancelled
+//! [`cancellation`]: ServiceContext::run_until_cancelled
+//! [`is_cancelled`]: ServiceContext::is_cancelled
+//! [`Poll::Pending`]: std::task::Poll::Pending
+//! [`cancel_global`]: ServiceContext::cancel_global
+//! [`cancel_local`]: ServiceContext::cancel_local
+//! [`service_remove`]: ServiceContext::service_remove
+//! [`service_add`]: ServiceContext::service_add
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -273,14 +273,14 @@ use tokio::task::JoinSet;
 /// will be forcefully cancelled
 pub const SERVICE_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
-/// An extensible type-safe wrapper around [String], used to identify a [Service][^1].
+/// An extensible type-safe wrapper around [`String`], used to identify a [`Service`][^1].
 ///
-/// [^1]: See also: [ServiceIdProvider]
+/// [^1]: See also: [`ServiceIdProvider`]
 pub trait ServiceId {
     fn svc_id(&self) -> String;
 }
 
-/// Indetifiers for all the [Service]s inside the Madara node
+/// Identifiers for all the [`Service`]s inside the Madara node
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MadaraServiceId {
@@ -318,18 +318,18 @@ impl ServiceId for MadaraServiceId {
     }
 }
 
-/// A [Service] can have three different statuses:
+/// A [`Service`] can have three different statuses:
 ///
-/// 1. [Inactive]: this is the default, the service has not been added to the [ServiceMonitor] or it
+/// 1. [`Inactive`]: this is the default, the service has not been added to the [`ServiceMonitor`] or it
 ///    is no longer running.
-/// 2. [Active]: a request was made to start a service. It is possible to request for services to be
-///    started even if they are not registered with the [ServiceMonitor], in which case this will do
+/// 2. [`Active`]: a request was made to start a service. It is possible to request for services to be
+///    started even if they are not registered with the [`ServiceMonitor`], in which case this will do
 ///    nothing.
-/// 3. [Running]: the [ServiceMonitor] has started the service and it is running.
+/// 3. [`Running`]: the [`ServiceMonitor`] has started the service and it is running.
 ///
-/// [Inactive]: Self::Inactive
-/// [Active]: Self::Active
-/// [Running]: Self::Running
+/// [`Inactive`]: Self::Inactive
+/// [`Active`]: Self::Active
+/// [`Running`]: Self::Running
 #[derive(PartialEq, Eq, Clone, Copy, Default, Debug, Serialize, Deserialize)]
 pub enum ServiceStatus {
     #[default]
@@ -339,21 +339,21 @@ pub enum ServiceStatus {
 }
 
 impl ServiceStatus {
-    /// Check is a service is [Running](ServiceStatus)
+    /// Check is a service is [`Running`](ServiceStatus)
     pub fn is_on(&self) -> bool {
         self == &ServiceStatus::Running
     }
 
-    /// Checks if a service is [Inactive](ServiceStatus)
+    /// Checks if a service is [`Inactive`](ServiceStatus)
     pub fn is_off(&self) -> bool {
         self == &ServiceStatus::Inactive
     }
 }
 
-/// An atomic set used to store and interface with the state of [Services] which have been
-/// registered with a [ServiceMonitor].
+/// An atomic set used to store and interface with the state of [`Services`] which have been
+/// registered with a [`ServiceMonitor`].
 ///
-/// [Services]: Service
+/// [`Services`]: Service
 #[repr(transparent)]
 #[derive(Default)]
 struct ServiceSet(DashMap<String, ServiceStatus>);
@@ -388,30 +388,29 @@ impl ServiceSet {
     }
 }
 
-/// Context information associated to a [Service], used for inter-service communication.
+/// Context information associated to a [`Service`], used for inter-service communication.
 ///
 /// # Service hierarchy
 ///
-/// - A services is said to be a _child service_ if it uses a context created with
-///   [ServiceContext::child]
+/// - A services is said to be a _child service_ if it uses a context created with [`child`]
 ///
 /// - A service is said to be a _parent service_ if it uses a context which was used to create child
 ///   services.
 ///
-/// > A parent services can always [cancel] all of its child services, but a child service cannot
-/// > cancel its parent service.
+/// A parent services can always [`cancel`] all of its child services, but a child service cannot
+/// cancel its parent service.
 ///
 /// # Scope
 ///
-/// You can create a hierarchy of services by calling [ServiceContext::child]. Services are said to
-/// be in the same _local scope_ if they are children of the same [ServiceContext], or children of
-/// those children and so on. You can think of services being local if they can cancel each other
-/// without affecting the rest of the app.
+/// You can create a hierarchy of services by calling [`child`]. Services are said to be in the same
+/// _local scope_ if they are children of the same [`ServiceContext`], or children of those children
+/// and so on. You can think of services being local if they can cancel each other without affecting
+/// the rest of the app.
 ///
-/// All services which are derived from the same [ServiceContext] are said to be in the same
+/// All services which are derived from the same [`ServiceContext`] are said to be in the same
 /// _global scope_, that is to say any service in this scope can cancel _all_ other services in the
 /// same scope (including child services) at any time. This is true of services in the same
-/// [ServiceMonitor] for example.
+/// [`ServiceMonitor`] for example.
 ///
 /// Consider the following hierarchy of services:
 ///
@@ -424,10 +423,11 @@ impl ServiceSet {
 /// ```
 ///
 /// Service `A` can cancel all the services below it. Service `C` is a child of `A`, and a parent of
-/// `D` and `E`. If `E` is [cancelled], it will also cancel services `D` and `E` but not `B`.
+/// `D` and `E`. If `E` is [`cancelled`], it will also cancel services `D` and `E` but not `B`.
 ///
-/// [cancel]: Self::service_remove
-/// [cancelled]: Self::cancel_local
+/// [`child`]: Self::child
+/// [`cancel`]: Self::service_remove
+/// [`cancelled`]: Self::cancel_local
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
@@ -451,7 +451,7 @@ impl Clone for ServiceContext {
 }
 
 impl ServiceContext {
-    /// Creates a new [Default] [ServiceContext]
+    /// Creates a new [`Default`] [`ServiceContext`]
     fn new(id: impl ServiceId) -> Self {
         Self {
             token_global: tokio_util::sync::CancellationToken::new(),
@@ -488,7 +488,9 @@ impl ServiceContext {
         }
     }
 
-    /// Stops all services under the same [global context scope](Self#scope).
+    /// Stops all services under the same [global context scope].
+    ///
+    /// [local context scope]: Self#scope
     pub fn cancel_global(&self) {
         tracing::info!("🔌 Gracefully shutting down node");
         self.token_global.cancel();
@@ -496,31 +498,31 @@ impl ServiceContext {
 
     /// Stops all services under the same [local context scope].
     ///
-    /// A local context is created by calling [child] and allows you to reduce the scope of
+    /// A local context is created by calling [`child`] and allows you to reduce the scope of
     /// cancellation only to those services which will use the new context.
     ///
     /// [local context scope]: Self#scope
-    /// [child]: Self::child
+    /// [`child`]: Self::child
     pub fn cancel_local(&self) {
         self.token_local.as_ref().unwrap_or(&self.token_global).cancel();
     }
 
-    /// A future which completes when the [Service] associated to this [ServiceContext] is cancelled.
+    /// A future which completes when the [`Service`] associated to this [`ServiceContext`] is
+    /// cancelled. Use this to race against other futures in a [`tokio::select`] or keep the
+    /// [service loop] alive for as long as the service itself.
     ///
-    /// This allows for more manual implementation of cancellation logic than [run_until_cancelled],
+    /// This allows for more manual implementation of cancellation logic than [`run_until_cancelled`],
     /// and should only be used in cases where using `run_until_cancelled` is not possible or would
     /// be less clear.
     ///
-    /// A service is cancelled after calling [cancel_local], [cancel_global] or if it is marked for
-    /// removal with [service_remove].
+    /// A service is cancelled after calling [`cancel_local`], [`cancel_global`] or if it is marked for
+    /// removal with [`service_remove`].
     ///
-    /// Use this to race against other futures in a [tokio::select] or keep the [service loop] alive
-    /// for as long as the service itself.
     ///
-    /// [run_until_cancelled]: Self::run_until_cancelled
-    /// [cancel_local]: Self::cancel_local
-    /// [cancel_global]: Self::cancel_global
-    /// [service_remove]: Self::service_remove
+    /// [`run_until_cancelled`]: Self::run_until_cancelled
+    /// [`cancel_local`]: Self::cancel_local
+    /// [`cancel_global`]: Self::cancel_global
+    /// [`service_remove`]: Self::service_remove
     /// [service loop]: ServiceRunner::service_loop
     #[inline(always)]
     pub async fn cancelled(&mut self) {
@@ -549,10 +551,10 @@ impl ServiceContext {
         }
     }
 
-    /// Checks if the [Service] associated to this [ServiceContext] was cancelled.
+    /// Checks if the [`Service`] associated to this [`ServiceContext`] was cancelled.
     ///
-    /// A service is cancelled as a result of calling [cancel_local], [cancel_global] or
-    /// [service_remove].
+    /// A service is cancelled as a result of calling [`cancel_local`], [`cancel_global`] or
+    /// [`service_remove`].
     ///
     /// # Limitations
     ///
@@ -560,48 +562,49 @@ impl ServiceContext {
     /// cancelled without entering an invalid state. The latter is important, so let's break this
     /// down.
     ///
-    /// - _blocking future_: this is blocking at a [Service] level, not at the node level. A
+    /// - _blocking future_: this is blocking at a [`Service`] level, not at the node level. A
     ///   blocking task in this sense is a task which prevents a service from making progress in its
     ///   execution, but not necessarily the rest of the node. A prime example of this is when you
     ///   are waiting on a channel, and updates to that channel are sparse, or even unique.
     ///
-    /// - _entering an invalid state_: the entire point of [ServiceContext] is to allow services to
+    /// - _entering an invalid state_: the entire point of [`ServiceContext`] is to allow services to
     ///   gracefully shutdown. We do not want to be, for example, racing each service against a
     ///   global cancellation future, as not every service might be cancellation safe (we still do
-    ///   this somewhat with [SERVICE_GRACE_PERIOD] but this is a last resort and should not execute
+    ///   this somewhat with [`SERVICE_GRACE_PERIOD`] but this is a last resort and should not execute
     ///   in normal circumstances).
     ///
-    /// > Put differently, we do not want to stop in the middle of a critical computation before it
-    /// > has been saved to disk, but we also do not want to leave the user hanging while we are
-    /// > waiting for some computation to complete.
+    /// Put differently, we do not want to stop in the middle of a critical computation before it
+    /// has been saved to disk, but we also do not want to leave the user hanging while we are
+    /// waiting for some computation to complete.
     ///
-    /// Putting this together, [is_cancelled] is only suitable for checking cancellation alongside
+    /// # When to use `is_cancelled`
+    ///
+    /// Putting this together, `is_cancelled` is only suitable for checking cancellation alongside
     /// tasks which:
     ///
     /// 1. Will not block the running service.
     /// 2. In very specific circumstances where we want the service to block the node if a
     ///    cancellation is requested.
     ///
-    /// Examples of when to use [is_cancelled]:
+    /// Examples of when to use `is_cancelled`:
     ///
     /// - All your computation does is sleep or tick away a (very) short period of time.
     /// - You are checking for cancellation inside of synchronous code.
     /// - You are performing a crucial task which should not be cancelled.
     ///
-    /// Examples of when should _not_ use [is_cancelled]
+    /// Examples of when should _not_ use `is_cancelled`
     ///
     /// - You are waiting on a channel.
     /// - You are performing some long, expensive task.
     ///
-    /// If you don't think you should be using [is_cancelled], check out [cancelled] and
-    /// [run_until_cancelled] instead.
+    /// If you don't think you should be using `is_cancelled`, check out [`cancelled`] and
+    /// [`run_until_cancelled`] instead.
     ///
-    /// [cancel_local]: Self::cancel_local
-    /// [cancel_global]: Self::cancel_global
-    /// [service_remove]: Self::service_remove
-    /// [is_cancelled]: Self::is_cancelled
-    /// [cancelled]: Self::cancelled
-    /// [run_until_cancelled]: Self::run_until_cancelled
+    /// [`cancel_local`]: Self::cancel_local
+    /// [`cancel_global`]: Self::cancel_global
+    /// [`service_remove`]: Self::service_remove
+    /// [`cancelled`]: Self::cancelled
+    /// [`run_until_cancelled`]: Self::run_until_cancelled
     #[inline(always)]
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
@@ -609,10 +612,10 @@ impl ServiceContext {
             || self.services.status(&self.id) == ServiceStatus::Inactive
     }
 
-    /// Runs a [Future] until the [Service] associated to this [ServiceContext] is cancelled.
+    /// Runs a [`Future`] until the [`Service`] associated to this [`ServiceContext`] is cancelled.
     ///
-    /// A service is cancelled as a result of calling [cancel_local], [cancel_global] or
-    /// [service_remove].
+    /// A service is cancelled as a result of calling [`cancel_local`], [`cancel_global`] or
+    /// [`service_remove`].
     ///
     /// # Cancellation safety
     ///
@@ -625,12 +628,12 @@ impl ServiceContext {
     ///
     /// # Returns
     ///
-    /// The return value of the future wrapped in [Some], or [None] if the
+    /// The return value of the future wrapped in [`Some`], or [`None`] if the
     /// service was cancelled before the future could complete.
     ///
-    /// [cancel_local]: Self::cancel_local
-    /// [cancel_global]: Self::cancel_global
-    /// [service_remove]: Self::service_remove
+    /// [`cancel_local`]: Self::cancel_local
+    /// [`cancel_global`]: Self::cancel_global
+    /// [`service_remove`]: Self::service_remove
     pub async fn run_until_cancelled<T, F>(&mut self, f: F) -> Option<T>
     where
         T: Sized + Send + Sync,
@@ -642,19 +645,19 @@ impl ServiceContext {
         }
     }
 
-    /// The id of the [Service] associated to this [ServiceContext]
+    /// The id of the [`Service`] associated to this [`ServiceContext`]
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// Sets the id of this [ServiceContext]
+    /// Sets the id of this [`ServiceContext`]
     pub fn with_id(self, id: impl ServiceId) -> Self {
         Self { id: id.svc_id(), ..self }
     }
 
-    /// Creates a new [ServiceContext] as a child of the current context.
+    /// Creates a new [`ServiceContext`] as a child of the current context.
     ///
-    /// Any [Service] which uses this new context will be able to cancel the services in the same
+    /// Any [`Service`] which uses this new context will be able to cancel the services in the same
     /// [local scope] as itself, and any further child services, without affecting the rest of the
     /// [global scope].
     ///
@@ -666,39 +669,39 @@ impl ServiceContext {
         Self { token_local: Some(token_local), ..Clone::clone(self) }
     }
 
-    /// Checks if a [Service] is running.
+    /// Checks if a [`Service`] is running.
     #[inline(always)]
     pub fn service_status(&self, id: impl ServiceId) -> ServiceStatus {
         self.services.status(&id.svc_id())
     }
 
-    /// Marks a [Service] as active.
+    /// Marks a [`Service`] as active.
     ///
-    /// This will schedule for that service to be started if it is [Inactive] and it was registered
-    /// via the [ServiceMonitor] at startup. This will immediately be visible to all services in the
+    /// This will schedule for that service to be started if it is [`Inactive`] and it was registered
+    /// via the [`ServiceMonitor`] at startup. This will immediately be visible to all services in the
     /// same global scope. This is true across threads.
     ///
-    /// You can use [service_subscribe] to subscribe to changes in the status of any service.
+    /// You can use [`service_subscribe`] to subscribe to changes in the status of any service.
     ///
-    /// [Inactive]: ServiceStatus
-    /// [service_subscribe]: Self::service_subscribe
+    /// [`Inactive`]: ServiceStatus
     /// [global scope]: Self#scope
+    /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
     pub fn service_add(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_set(&id.svc_id(), ServiceStatus::Active)
     }
 
-    /// Marks a [Service] as inactive.
+    /// Marks a [`Service`] as inactive.
     ///
-    /// This will schedule for that service to be shutdown if it is [Running] and it was registered
-    /// via the [ServiceMonitor] at startup. This will immediately be visible to all services in the
+    /// This will schedule for that service to be shutdown if it is [`Running`] and it was registered
+    /// via the [`ServiceMonitor`] at startup. This will immediately be visible to all services in the
     /// same [global scope]. This is true across threads.
     ///
-    /// You can use [ServiceContext::service_subscribe] to subscribe to changes
-    /// in the status of any service.
+    /// You can use [`service_subscribe`] to subscribe to changes in the status of any service.
     ///
-    /// [Running]: ServiceStatus
+    /// [`Running`]: ServiceStatus
     /// [global scope]: Self#scope
+    /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
     pub fn service_remove(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_unset(&id.svc_id())
@@ -727,14 +730,14 @@ impl ServiceContext {
         res
     }
 
-    /// Opens up a new subscription which will complete once the [status] of _any_ [Service] has
+    /// Opens up a new subscription which will complete once the [`status`] of _any_ [`Service`] has
     /// been updated.
     ///
     /// # Returns
     ///
     /// Identifying information about the service which was updated.
     ///
-    /// [status]: ServiceStatus
+    /// [`status`]: ServiceStatus
     pub async fn service_subscribe(&mut self) -> Option<ServiceTransport> {
         if self.service_update_receiver.is_none() {
             self.service_update_receiver = Some(self.service_update_sender.subscribe());
@@ -756,14 +759,14 @@ impl ServiceContext {
         res
     }
 
-    /// Opens up a new subscription which will complete once _specific_ [Service] has reached a
-    /// _specific_ [status].
+    /// Opens up a new subscription which will complete once _specific_ [`Service`] has reached a
+    /// _specific_ [`status`].
     ///
     /// # Returns
     ///
     /// Identifying information about the service which was updated.
     ///
-    /// [status]: ServiceStatus
+    /// [`status`]: ServiceStatus
     pub async fn service_subscribe_for(
         &mut self,
         id: impl ServiceId,
@@ -783,27 +786,29 @@ impl ServiceContext {
         None
     }
 
-    /// Gets the [status] of the [Service] associated to this [ServiceContext].
+    /// Gets the [`status`] of the [`Service`] associated to this [`ServiceContext`].
     ///
-    /// This can be updated across threads by calling [service_remove] or [service_add].
+    /// This can be updated across threads by calling [`service_remove`] or [`service_add`].
     ///
-    /// [status]: ServiceStatus
-    /// [service_remove]: Self::service_remove
-    /// [service_add]: Self::service_add
+    /// [`status`]: ServiceStatus
+    /// [`service_remove`]: Self::service_remove
+    /// [`service_add`]: Self::service_add
     #[inline(always)]
     pub fn status(&self) -> ServiceStatus {
         self.services.status(&self.id)
     }
 }
 
-/// Provides info about updates to a [Service]'s status.
+/// Provides info about updates to a [`Service`]'s status.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ServiceTransport {
-    /// The [ServiceId] of the [Service] sending the update
+    /// The [`ServiceId`] of the [`Service`] sending the update
     pub id_from: String,
-    /// The [ServiceId] of the [Service] being updated.
+    /// The [`ServiceId`] of the [`Service`] being updated.
     pub id_to: String,
-    /// The new status of the [Service] being updated.
+    /// The new [`status`] of the [`Service`] being updated.
+    ///
+    /// [`status`]: ServiceStatus
     pub status: ServiceStatus,
 }
 
@@ -812,15 +817,15 @@ pub struct ServiceTransport {
 /// The app is divided into services, with each service handling different responsibilities.
 /// Depending on the startup configuration, some services are enabled and others disabled.
 ///
-/// Services should be started with [service_loop].
+/// Services should be started with [`service_loop`].
 ///
 /// # Writing your own service
 ///
 /// Writing a service involves three steps:
 ///
-/// 1. Implementing the [ServiceId] trait
-/// 2. Implementing the [Service] trait
-/// 3. Implementing the [ServiceIdProvider] trait
+/// 1. Implementing the [`ServiceId`] trait
+/// 2. Implementing the [`Service`] trait
+/// 3. Implementing the [`ServiceIdProvider`] trait
 ///
 /// ## example
 ///
@@ -869,13 +874,15 @@ pub struct ServiceTransport {
 ///                 ctx.run_until_cancelled(tokio::time::sleep(SLEEP)).await;
 ///             }
 ///
-///             // An important subtlety: we are using a broadcast channel to keep the connection
-///             // alive between A and B even between restarts. To do this, we always keep a
-///             // broadcast sender and receiver alive in A and B respectively, which we clone
-///             // whenever either service starts. This means the channel won't close when the
-///             // sender in A's service_loop is dropped! We need to explicitly notify B that it has
-///             // received all the information A has to send to it, which is why we use the
-///             // `Channel` enum.
+///             // An important subtlety: we are using a broadcast channel to
+///             // keep the connection alive between A and B even between
+///             // restarts. To do this, we always keep a broadcast sender and
+///             // receiver alive in A and B respectively, which we clone
+///             // whenever either service starts. This means the channel won't
+///             // close when the sender in A's service_loop is dropped! We need
+///             // to explicitly notify B that it has received all the
+///             // information A has to send to it, which is why we use the
+///             //`Channel` enum.
 ///             sx.send(Channel::Closed);
 ///
 ///             anyhow::Ok(())
@@ -953,7 +960,7 @@ pub struct ServiceTransport {
 /// }
 /// ```
 ///
-/// [service_loop]: ServiceRunner::service_loop
+/// [`service_loop`]: ServiceRunner::service_loop
 #[async_trait::async_trait]
 pub trait Service: 'static + Send + Sync + std::any::Any {
     /// Default impl does not start any task.
@@ -963,9 +970,9 @@ pub trait Service: 'static + Send + Sync + std::any::Any {
     }
 }
 
-/// Provides a way for a [Service] to identify itself in a type-safe way.
+/// Provides a way for a [`Service`] to identify itself in a type-safe way.
 ///
-/// For reasons of dyn-compatibility, this is not part of the [Service] trait as we need to be able
+/// For reasons of dyn-compatibility, this is not part of the [`Service`] trait as we need to be able
 /// to box services and this conflicts with `impl ServiceId`.
 pub trait ServiceIdProvider {
     fn id_provider(&self) -> impl ServiceId;
@@ -978,11 +985,11 @@ impl Service for Box<dyn Service> {
     }
 }
 
-/// Entrypoint for [Service]s to start their main event loop.
+/// Entrypoint for [`Service`]s to start their main event loop.
 ///
 /// Used to enforce certain shutdown behavior.
 ///
-/// [service_loop]: Self::service_loop
+/// [`service_loop`]: Self::service_loop
 pub struct ServiceRunner<'a> {
     ctx: ServiceContext,
     join_set: &'a mut JoinSet<anyhow::Result<String>>,
@@ -993,14 +1000,14 @@ impl<'a> ServiceRunner<'a> {
         Self { ctx, join_set }
     }
 
-    /// The main loop of a [Service].
+    /// The main loop of a [`Service`].
     ///
     /// The future passed to this function should complete _only once the service completes or is
     /// cancelled_. Services that complete early will automatically be cancelled.
     ///
     /// <div class="warning">
     ///
-    /// As a safety mechanism, services have up to [SERVICE_GRACE_PERIOD] to gracefully shutdown
+    /// As a safety mechanism, services have up to [`SERVICE_GRACE_PERIOD`] to gracefully shutdown
     /// before they are forcefully cancelled. This should not execute in a normal context and only
     /// serves to prevent infinite loops on shutdown request if services have not been implemented
     /// correctly.
@@ -1041,21 +1048,21 @@ impl<'a> ServiceRunner<'a> {
     }
 }
 
-/// Orchestrates the execution of various [Service]s.
+/// Orchestrates the execution of various [`Service`]s.
 ///
-/// A [ServiceMonitor] is responsible for registering services, starting and stopping them as well
+/// A [`ServiceMonitor`] is responsible for registering services, starting and stopping them as well
 /// as handling `SIGINT` and `SIGTERM`. Services are run to completion until no service remains, at
 /// which point the node will automatically shutdown.
 ///
 /// All services are inactive by default. Only the services which are marked as _explicitly active_
-/// with [activate] will be automatically started when calling [start]. If no service has been
-/// activated when [start] is called then the node will automatically shutdown.
+/// with [`activate`] will be automatically started when calling [`start`]. If no service has been
+/// activated when [`start`] is called then the node will automatically shutdown.
 ///
-/// Note that services which are not added with [with] cannot be started or restarted.
+/// Note that services which are not added with [`with`] cannot be started or restarted.
 ///
-/// [activate]: Self::activate
-/// [start]: Self::start
-/// [with]: Self::with
+/// [`activate`]: Self::activate
+/// [`start`]: Self::start
+/// [`with`]: Self::with
 pub struct ServiceMonitor {
     services: BTreeMap<String, Box<dyn Service>>,
     join_set: JoinSet<anyhow::Result<String>>,
@@ -1073,14 +1080,14 @@ impl ServiceMonitor {
         }
     }
 
-    /// Registers a [Service] to the [ServiceMonitor]. This service is [Inactive] by default and
-    /// needs to be marked as [Active] by calling [activate]. Only active services will be started
-    /// when calling [start].
+    /// Registers a [`Service`] to the [`ServiceMonitor`]. This service is [`Inactive`] by default and
+    /// needs to be marked as [`Active`] by calling [`activate`]. Only active services will be started
+    /// when calling [`start`].
     ///
-    /// [Inactive]: ServiceStatus
-    /// [Active]: ServiceStatus
-    /// [activate]: Self::activate
-    /// [start]: Self::Start
+    /// [`Inactive`]: ServiceStatus
+    /// [`Active`]: ServiceStatus
+    /// [`activate`]: Self::activate
+    /// [`start`]: Self::start
     // TODO: is there way to enforce this check at the type level?
     pub fn with(mut self, svc: impl Service + ServiceIdProvider) -> anyhow::Result<Self> {
         let svc_id = svc.id_provider().svc_id();
@@ -1094,17 +1101,17 @@ impl ServiceMonitor {
         anyhow::Ok(self)
     }
 
-    /// Marks a [Service] as [Active], meaning it will be started automatically when calling
-    /// [start].
+    /// Marks a [`Service`] as [`Active`], meaning it will be started automatically when calling
+    /// [`start`].
     ///
-    /// [Active]: ServiceStatus
-    /// [start]: Self::start
+    /// [`Active`]: ServiceStatus
+    /// [`start`]: Self::start
     pub fn activate(&mut self, id: impl ServiceId) {
         self.ctx.service_add(id);
     }
 
-    /// Starts all activate [Service]s and runs them to completion. Services are activated by
-    /// calling [activate]. This function completes once all services have been run to completion.
+    /// Starts all activate [`Service`]s and runs them to completion. Services are activated by
+    /// calling [`activate`]. This function completes once all services have been run to completion.
     ///
     /// <div class="warning">
     ///
@@ -1113,7 +1120,7 @@ impl ServiceMonitor {
     ///
     /// </div>
     ///
-    /// [activate]: Self::activate
+    /// [`activate`]: Self::activate
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
         // start only the initially active services
