@@ -93,7 +93,7 @@ authors = ["Madara <https://github.com/madara-alliance>"]
 homepage = "https://madara.build"
 edition = "2021"
 repository = "https://github.com/madara-alliance/madara/"
-version = "0.7.0"
+version = "0.8.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
