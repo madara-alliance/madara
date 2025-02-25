@@ -1,0 +1,32 @@
+name = "madara"
+sequencer = true
+chain_config_path = "configs/presets/devnet.yaml"
+
+[args_preset]
+warp_update_sender = false
+warp_update_receiver = false
+gateway = false
+rpc = false
+
+[db_params]
+base_path = "/var/lib/madara/"
+restore_from_latest_backup = false
+
+[rpc_params]
+rpc_port = 9944
+rpc_external = true
+rpc_admin = true
+rpc_admin_port = 9943
+
+[gateway_params]
+feeder_gateway_enable = true
+gateway_enable = true
+gateway_external = true
+gateway_port = 8080
+
+[l1_sync_params]
+l1_sync_disabled = true
+strk_gas_price = 0
+strk_blob_gas_price = 0
+gas_price = 0
+blob_gas_price = 0

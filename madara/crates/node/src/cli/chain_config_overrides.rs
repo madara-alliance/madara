@@ -22,7 +22,7 @@ use url::Url;
 
 /// Override chain config parameters.
 /// Format: "--chain-config-override chain_id=SN_MADARA,chain_name=MADARA,block_time=1500ms,bouncer_config.block_max_capacity.n_steps=100000000"
-#[derive(Parser, Clone, Debug)]
+#[derive(Parser, Clone, Debug, Deserialize, Serialize)]
 pub struct ChainConfigOverrideParams {
     /// Overrides parameters from the chain config.
     ///
