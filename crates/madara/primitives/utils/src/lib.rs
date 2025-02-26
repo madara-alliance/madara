@@ -12,6 +12,45 @@ pub use hash::trim_hash;
 
 use tokio::sync::oneshot;
 
+#[repr(transparent)]
+struct Immutable<T>(T);
+
+impl<T> std::ops::Deref for Immutable<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Default> Default for Immutable<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<T> Immutable<T> {
+    fn new(obj: T) -> Self {
+        Self(obj)
+    }
+
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+trait ImmutableExt<T>
+where
+    Self: Sized,
+{
+    fn immutable(self) -> Immutable<T>;
+}
+
+impl<T: Sized> ImmutableExt<T> for T {
+    fn immutable(self) -> Immutable<T> {
+        Immutable(self)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct StopHandle(Option<oneshot::Sender<()>>);
 

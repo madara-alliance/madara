@@ -261,13 +261,15 @@ use dashmap::DashMap;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{btree_map, BTreeMap, HashSet},
     fmt::Debug,
     panic,
     sync::Arc,
     time::Duration,
 };
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
+
+use crate::{Immutable, ImmutableExt};
 
 /// Maximum duration a service is allowed to take to shutdown, after which it
 /// will be forcefully cancelled
@@ -365,11 +367,6 @@ impl ServiceSet {
     }
 
     #[inline(always)]
-    fn is_active_some(&self) -> bool {
-        !self.0.is_empty()
-    }
-
-    #[inline(always)]
     fn set(&self, id: &str, status: ServiceStatus) -> ServiceStatus {
         self.0.insert(id.to_string(), status).unwrap_or_default()
     }
@@ -377,10 +374,6 @@ impl ServiceSet {
     #[inline(always)]
     fn unset(&self, id: &str) -> ServiceStatus {
         self.0.remove(id).map(|(_, v)| v).unwrap_or_default()
-    }
-
-    fn clear(&self) {
-        self.0.clear()
     }
 
     fn active_set(&self) -> &DashMap<String, ServiceStatus> {
@@ -507,6 +500,17 @@ impl ServiceContext {
         self.token_local.as_ref().unwrap_or(&self.token_global).cancel();
     }
 
+    pub async fn wait_cancel_global(&mut self) {
+        self.cancel_local();
+        self.wait_for_inactive(MadaraServiceId::Monitor).await;
+    }
+
+    pub async fn wait_cancel_local(&mut self) {
+        let svc_id = self.id.clone();
+        self.cancel_local();
+        self.service_subscribe_for_impl(&svc_id, ServiceStatus::Inactive).await;
+    }
+
     /// A future which completes when the [`Service`] associated to this [`ServiceContext`] is
     /// cancelled. Use this to race against other futures in a [`tokio::select`] or keep the
     /// [service loop] alive for as long as the service itself.
@@ -526,11 +530,7 @@ impl ServiceContext {
     /// [service loop]: ServiceRunner::service_loop
     #[inline(always)]
     pub async fn cancelled(&mut self) {
-        if self.service_update_receiver.is_none() {
-            self.service_update_receiver = Some(self.service_update_sender.subscribe());
-        }
-
-        let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
+        let rx = self.service_update_receiver.get_or_insert_with(|| self.service_update_sender.subscribe());
         let token_global = &self.token_global;
         let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
 
@@ -663,10 +663,13 @@ impl ServiceContext {
     ///
     /// [local scope]: Self#scope
     /// [global scope]: Self#scope
-    pub fn child(&self) -> Self {
-        let token_local = self.token_local.as_ref().unwrap_or(&self.token_global).child_token();
+    pub fn child(&self) -> ServiceMonitor {
+        ServiceMonitor::new_with_ctx(self.child_ctx(&self.id))
+    }
 
-        Self { token_local: Some(token_local), ..Clone::clone(self) }
+    fn child_ctx(&self, id: &str) -> ServiceContext {
+        let token_local = self.token_local.as_ref().unwrap_or(&self.token_global).child_token();
+        Self { id: id.to_string(), token_local: Some(token_local), ..self.clone() }
     }
 
     /// Checks if a [`Service`] is running.
@@ -687,7 +690,7 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub fn service_add(&self, id: impl ServiceId) -> ServiceStatus {
+    pub fn service_activate(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_set(&id.svc_id(), ServiceStatus::Active)
     }
 
@@ -703,8 +706,20 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub fn service_remove(&self, id: impl ServiceId) -> ServiceStatus {
+    pub fn service_deactivate(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_unset(&id.svc_id())
+    }
+
+    #[inline(always)]
+    pub async fn wait_activate(&mut self, id: impl ServiceId) -> Option<ServiceStatus> {
+        let status = self.service_set(&id.svc_id(), ServiceStatus::Active);
+        self.wait_for_running(id).await.map(|_| status)
+    }
+
+    #[inline(always)]
+    pub async fn wait_deactivate(&mut self, id: impl ServiceId) -> Option<ServiceStatus> {
+        let status = self.service_unset(&id.svc_id());
+        self.wait_for_inactive(id).await.map(|_| status)
     }
 
     fn service_set(&self, id: &str, status: ServiceStatus) -> ServiceStatus {
@@ -772,9 +787,16 @@ impl ServiceContext {
         id: impl ServiceId,
         status: ServiceStatus,
     ) -> Option<ServiceTransport> {
-        let svc_id = id.svc_id();
+        self.service_subscribe_for_impl(&id.svc_id(), status).await
+    }
+
+    pub async fn service_subscribe_for_impl(
+        &mut self,
+        svc_id: &str,
+        status: ServiceStatus,
+    ) -> Option<ServiceTransport> {
         if self.services.status(&svc_id) == status {
-            return Some(ServiceTransport { id_from: self.id.clone(), id_to: svc_id, status });
+            return Some(ServiceTransport { id_from: self.id.clone(), id_to: svc_id.to_string(), status });
         }
 
         while let Some(transport) = self.service_subscribe().await {
@@ -786,16 +808,49 @@ impl ServiceContext {
         None
     }
 
-    /// Gets the [`status`] of the [`Service`] associated to this [`ServiceContext`].
-    ///
-    /// This can be updated across threads by calling [`service_remove`] or [`service_add`].
-    ///
-    /// [`status`]: ServiceStatus
-    /// [`service_remove`]: Self::service_remove
-    /// [`service_add`]: Self::service_add
-    #[inline(always)]
-    pub fn status(&self) -> ServiceStatus {
-        self.services.status(&self.id)
+    pub async fn service_subscribe_from(
+        &mut self,
+        id: impl ServiceId,
+        status: ServiceStatus,
+    ) -> Option<ServiceTransport> {
+        let svc_id = id.svc_id();
+        if self.services.status(&svc_id) == status {
+            return Some(ServiceTransport { id_from: self.id.clone(), id_to: svc_id, status });
+        }
+
+        while let Some(transport) = self.service_subscribe().await {
+            if transport.id_from == svc_id && transport.status == status {
+                return Some(transport);
+            }
+        }
+
+        None
+    }
+
+    pub async fn wait_for_running(&mut self, id: impl ServiceId) -> Option<ServiceTransport> {
+        self.service_subscribe_for(id, ServiceStatus::Running).await
+    }
+
+    pub async fn wait_for_inactive(&mut self, id: impl ServiceId) -> Option<ServiceTransport> {
+        self.service_subscribe_for(id, ServiceStatus::Inactive).await
+    }
+
+    pub async fn wait_for_update_to(&mut self, id: impl ServiceId) {
+        let svc_id = id.svc_id();
+        while let Some(transport) = self.service_subscribe().await {
+            if transport.id_to == svc_id {
+                return;
+            }
+        }
+    }
+
+    pub async fn wait_for_update_from(&mut self, id: impl ServiceId) {
+        let svc_id = id.svc_id();
+        while let Some(transport) = self.service_subscribe().await {
+            if transport.id_from == svc_id {
+                return;
+            }
+        }
     }
 }
 
@@ -980,8 +1035,8 @@ pub trait ServiceIdProvider {
 
 #[async_trait::async_trait]
 impl Service for Box<dyn Service> {
-    async fn start<'a>(&mut self, _runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        self.as_mut().start(_runner).await
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        self.as_mut().start(runner).await
     }
 }
 
@@ -1010,11 +1065,12 @@ impl<'a> ServiceRunner<'a> {
     /// As a safety mechanism, services have up to [`SERVICE_GRACE_PERIOD`] to gracefully shutdown
     /// before they are forcefully cancelled. This should not execute in a normal context and only
     /// serves to prevent infinite loops on shutdown request if services have not been implemented
-    /// correctly.
+    /// correctly
     ///
     /// </div>
     #[tracing::instrument(skip(self, runner), fields(module = "Service"))]
-    pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
+    // TODO: move to rust 2024 so we can use the never type for Err here
+    pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static) -> anyhow::Result<()>
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
@@ -1023,21 +1079,26 @@ impl<'a> ServiceRunner<'a> {
         join_set.spawn(async move {
             let id = ctx.id().to_string();
             tracing::debug!("Starting service with id: {id:?}");
+            ctx.service_set(&id, ServiceStatus::Running);
 
             // If a service is implemented correctly, `stopper` should never
             // cancel first. This is a safety measure in case someone forgets to
             // implement a cancellation check along some branch of the service's
             // execution, or if they don't read the docs :D
             let ctx1 = ctx.clone();
+            let ctx2 = ctx.clone();
             tokio::select! {
-                res = runner(ctx) => res.map_err(Into::into)?,
-                _ = Self::stopper(ctx1, &id) => {},
+                res = runner(ctx1) => res.map_err(Into::into)?,
+                _ = Self::stopper(ctx2, &id) => {},
             }
 
             tracing::debug!("Shutting down service with id: {id:?}");
+            ctx.service_unset(&id);
 
-            Ok(id)
+            anyhow::Ok(id)
         });
+
+        anyhow::Ok(())
     }
 
     async fn stopper(mut ctx: ServiceContext, id: &str) {
@@ -1066,17 +1127,26 @@ impl<'a> ServiceRunner<'a> {
 pub struct ServiceMonitor {
     services: BTreeMap<String, Box<dyn Service>>,
     join_set: JoinSet<anyhow::Result<String>>,
-    status_actual: Arc<ServiceSet>,
+    status_actual: ServiceSet,
+    status_monitored: HashSet<String>,
+    monitored: Immutable<HashSet<String>>,
     ctx: ServiceContext,
 }
 
 impl ServiceMonitor {
     pub fn new() -> Self {
+        Self::new_with_ctx(ServiceContext::new(MadaraServiceId::Monitor))
+    }
+
+    fn new_with_ctx(ctx: ServiceContext) -> Self {
+        ctx.service_set(&ctx.id, ServiceStatus::Active);
         Self {
             services: Default::default(),
             join_set: Default::default(),
             status_actual: Default::default(),
-            ctx: ServiceContext::new(MadaraServiceId::Monitor),
+            status_monitored: Default::default(),
+            monitored: Default::default(),
+            ctx,
         }
     }
 
@@ -1091,8 +1161,13 @@ impl ServiceMonitor {
     // TODO: is there way to enforce this check at the type level?
     pub fn with(mut self, svc: impl Service + ServiceIdProvider) -> anyhow::Result<Self> {
         let svc_id = svc.id_provider().svc_id();
-        match self.services.entry(svc_id) {
-            btree_map::Entry::Vacant(entry) => entry.insert(Box::new(svc)),
+        match self.services.entry(svc_id.clone()) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(Box::new(svc));
+                let mut monitored = self.monitored.into_inner();
+                monitored.insert(svc_id);
+                self.monitored = monitored.immutable();
+            }
             btree_map::Entry::Occupied(_) => {
                 anyhow::bail!("Services has already been added");
             }
@@ -1101,13 +1176,19 @@ impl ServiceMonitor {
         anyhow::Ok(self)
     }
 
+    pub fn with_active(mut self, svc: impl Service + ServiceIdProvider) -> anyhow::Result<Self> {
+        self.activate(svc.id_provider());
+        self.with(svc)
+    }
+
     /// Marks a [`Service`] as [`Active`], meaning it will be started automatically when calling
     /// [`start`].
     ///
     /// [`Active`]: ServiceStatus
     /// [`start`]: Self::start
     pub fn activate(&mut self, id: impl ServiceId) {
-        self.ctx.service_add(id);
+        self.status_monitored.insert(id.svc_id());
+        self.ctx.service_activate(id);
     }
 
     /// Starts all activate [`Service`]s and runs them to completion. Services are activated by
@@ -1123,22 +1204,65 @@ impl ServiceMonitor {
     /// [`activate`]: Self::activate
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
+        self.register_services().await?;
+        self.register_close_handles().await?;
+
+        tracing::debug!("Running services: {:?}", self.ctx.services.active_set());
+
+        let mut ctx1 = self.ctx.clone();
+        let mut ctx2 = self.ctx.clone();
+
+        while !self.ctx.is_cancelled() && !self.status_monitored.is_empty() {
+            tokio::select! {
+                // A service has run to completion, mark it as inactive
+                Some(result) = self.join_set.join_next() => self.service_deactivate(result)?,
+                // A service has had its status updated, check if it is a restart request
+                Some(transport) = ctx1.service_subscribe() => self.service_activate(transport).await?,
+                // The service running this monitor has been cancelled and we should exit here
+                _ = ctx2.cancelled() => {},
+                else => continue
+            };
+
+            tracing::debug!("Services still active: {:?}", self.ctx.services.active_set());
+        }
+
+        for id in self.monitored.iter() {
+            self.ctx.service_unset(&id);
+        }
+        if self.ctx.id == MadaraServiceId::Monitor.svc_id() {
+            self.ctx.service_unset(&self.ctx.id);
+        }
+
+        Ok(())
+    }
+
+    async fn register_services(&mut self) -> anyhow::Result<()> {
+        if self.status_monitored.is_empty() {
+            // TODO: move this to a concrete error type
+            tracing::error!("No active services at startup, shutting down monitor...");
+            anyhow::bail!("No active services at startup");
+        }
+
         // start only the initially active services
+        self.ctx.service_set(&self.ctx.id, ServiceStatus::Running);
         for (id, svc) in self.services.iter_mut() {
             if self.ctx.services.status(id) == ServiceStatus::Active {
                 self.status_actual.set(id, ServiceStatus::Active);
 
-                let ctx = ServiceContext { id: id.clone(), ..self.ctx.child() };
+                let ctx = self.ctx.child_ctx(id.as_str());
                 let runner = ServiceRunner::new(ctx, &mut self.join_set);
                 svc.start(runner).await.context("Starting service")?;
 
                 self.status_actual.set(id, ServiceStatus::Running);
-                self.ctx.service_set(id, ServiceStatus::Running);
             }
         }
 
-        // SIGINT & SIGTERM
+        anyhow::Ok(())
+    }
+
+    async fn register_close_handles(&mut self) -> anyhow::Result<()> {
         let runner = ServiceRunner::new(self.ctx.clone(), &mut self.join_set);
+
         runner.service_loop(|ctx| async move {
             let sigint = tokio::signal::ctrl_c();
             let sigterm = async {
@@ -1156,66 +1280,70 @@ impl ServiceMonitor {
             ctx.cancel_global();
 
             anyhow::Ok(())
-        });
+        })
+    }
 
-        tracing::debug!("Running services: {:?}", self.ctx.services.active_set());
-        while self.ctx.services.is_active_some() {
-            tokio::select! {
-                // A service has run to completion, mark it as inactive
-                Some(result) = self.join_set.join_next() => {
-                    match result {
-                        Ok(result) => {
-                            let id = result?;
-                            tracing::debug!("Service {id:?} has shut down");
-                            self.status_actual.set(&id, ServiceStatus::Inactive);
-                            self.ctx.service_unset(&id);
-                        }
-                        Err(panic_error) if panic_error.is_panic() => {
-                            // bubble up panics too
-                            panic::resume_unwind(panic_error.into_panic());
-                        }
-                        Err(_task_cancelled_error) => {}
+    fn service_deactivate(&mut self, svc_res: Result<anyhow::Result<String>, JoinError>) -> anyhow::Result<()> {
+        match svc_res {
+            Ok(result) => {
+                let id = result?;
+                tracing::debug!("Service {id:?} has shut down");
+
+                // TODO: add invariant checks here
+                self.status_actual.unset(&id);
+                self.status_monitored.remove(&id);
+            }
+            Err(panic_error) if panic_error.is_panic() => {
+                // bubble up panics too
+                panic::resume_unwind(panic_error.into_panic());
+            }
+            Err(_task_cancelled_error) => {}
+        };
+
+        anyhow::Ok(())
+    }
+
+    async fn service_activate(&mut self, transport: ServiceTransport) -> anyhow::Result<()> {
+        let ServiceTransport { id_to, status, .. } = transport;
+        if status == ServiceStatus::Active {
+            if let Some(svc) = self.services.get_mut(&id_to) {
+                if self.status_actual.status(&id_to) == ServiceStatus::Inactive {
+                    let is_monitored = self.monitored.contains(&id_to);
+
+                    self.ctx.service_set(&id_to, ServiceStatus::Active);
+                    self.status_actual.set(&id_to, ServiceStatus::Active);
+                    if is_monitored {
+                        self.status_monitored.insert(id_to.clone());
                     }
-                },
-                // A service has had its status updated, check if it is a
-                // restart request
-                Some(ServiceTransport { id_from, id_to, status }) = self.ctx.service_subscribe() => {
-                    if id_from != self.ctx.id && status == ServiceStatus::Active {
-                        if let Some(svc) = self.services.get_mut(&id_to) {
-                            if self.status_actual.status(&id_to) == ServiceStatus::Inactive {
-                                self.status_actual.set(&id_to, ServiceStatus::Active);
-                                self.ctx.service_set(&id_to, ServiceStatus::Active);
 
-                                let ctx = ServiceContext { id: id_to.clone(), ..self.ctx.child() };
-                                let runner = ServiceRunner::new(ctx, &mut self.join_set);
-                                svc.start(runner)
-                                    .await
-                                    .context("Starting service")?;
+                    let ctx = self.ctx.child_ctx(&id_to);
+                    let runner = ServiceRunner::new(ctx, &mut self.join_set);
+                    let res = svc.start(runner).await;
 
-                                self.status_actual.set(&id_to, ServiceStatus::Running);
-                                self.ctx.service_set(&id_to, ServiceStatus::Running);
-                                tracing::debug!("Service {id_to:?} has started");
-                            } else {
-                                // reset request
-                                self.ctx.services.set(&id_to, ServiceStatus::Inactive);
-                                self.ctx.service_set(&id_to, ServiceStatus::Inactive);
-                            }
-                        }
+                    if res.is_err() {
+                        tracing::error!("Service {id_to} failed to start");
+                        self.status_actual.unset(&id_to);
+                        self.status_monitored.remove(&id_to);
+                        self.ctx.service_unset(&id_to);
+                        return res.context("Starting service");
                     }
-                },
-                else => continue
-            };
 
-            tracing::debug!("Services still active: {:?}", self.ctx.services.active_set());
-        }
-        self.status_actual.clear();
+                    self.status_actual.set(&id_to, ServiceStatus::Running);
+                    if is_monitored {
+                        self.status_monitored.insert(id_to.clone());
+                    }
 
-        Ok(())
+                    tracing::debug!("Service {id_to} has started");
+                }
+            }
+        };
+
+        anyhow::Ok(())
     }
 
     #[cfg(any(test, feature = "testing"))]
-    pub fn ctx(&self) -> &ServiceContext {
-        &self.ctx
+    pub fn ctx(&self) -> ServiceContext {
+        self.ctx.clone()
     }
 }
 
@@ -1226,6 +1354,9 @@ mod test {
     enum ServiceIdTest {
         ServiceA,
         ServiceB,
+        ServiceC,
+        ServiceD,
+        ServiceE,
     }
 
     impl ServiceId for ServiceIdTest {
@@ -1233,67 +1364,64 @@ mod test {
             match self {
                 ServiceIdTest::ServiceA => "ServiceA".to_string(),
                 ServiceIdTest::ServiceB => "ServiceB".to_string(),
+                ServiceIdTest::ServiceC => "ServiceC".to_string(),
+                ServiceIdTest::ServiceD => "ServiceD".to_string(),
+                ServiceIdTest::ServiceE => "ServiceE".to_string(),
             }
         }
     }
 
-    struct ServiceA;
-
-    #[async_trait::async_trait]
-    impl Service for ServiceA {
-        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-            runner.service_loop(move |mut cx| async move {
-                cx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
-
-                anyhow::Ok(())
-            });
+    async fn service_waiting<'a>(runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        runner.service_loop(move |mut cx| async move {
+            cx.cancelled().await;
             anyhow::Ok(())
-        }
-    }
-
-    impl ServiceIdProvider for ServiceA {
-        fn id_provider(&self) -> impl ServiceId {
-            ServiceIdTest::ServiceA
-        }
-    }
-
-    struct ServiceB;
-
-    #[async_trait::async_trait]
-    impl Service for ServiceB {
-        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-            runner.service_loop(move |mut cx| async move {
-                cx.run_until_cancelled(tokio::time::sleep(std::time::Duration::MAX)).await;
-
-                anyhow::Ok(())
-            });
-            anyhow::Ok(())
-        }
-    }
-
-    impl ServiceIdProvider for ServiceB {
-        fn id_provider(&self) -> impl ServiceId {
-            ServiceIdTest::ServiceB
-        }
+        })
     }
 
     #[tokio::test]
     #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(100))]
+    #[timeout(std::time::Duration::from_millis(1000))]
     async fn service_monitor_simple() {
-        let mut monitor = ServiceMonitor::new()
-            .with(ServiceA)
-            .expect("Failed to add Service A")
-            .with(ServiceB)
-            .expect("Failed to add Service B");
+        struct ServiceA;
+        struct ServiceB;
 
-        monitor.activate(ServiceIdTest::ServiceA);
-        monitor.activate(ServiceIdTest::ServiceB);
+        #[async_trait::async_trait]
+        impl Service for ServiceA {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                service_waiting(runner).await
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceB {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                service_waiting(runner).await
+            }
+        }
+
+        impl ServiceIdProvider for ServiceA {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceA
+            }
+        }
+
+        impl ServiceIdProvider for ServiceB {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceB
+            }
+        }
+
+        let monitor = ServiceMonitor::new()
+            .with_active(ServiceA)
+            .expect("Failed to add Service A")
+            .with_active(ServiceB)
+            .expect("Failed to add Service B");
 
         let mut ctx = monitor.ctx.clone();
 
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Active);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
 
         tokio::join!(
             async {
@@ -1324,11 +1452,553 @@ mod test {
                     }
                 );
 
-                ctx.cancel_global();
+                ctx.service_deactivate(ServiceIdTest::ServiceA);
+                assert_matches::assert_matches!(
+                    ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Inactive).await,
+                    Some(ServiceTransport {
+                        id_to,
+                        status,
+                        ..
+                    }) => {
+                        assert_eq!(id_to, ServiceIdTest::ServiceA.svc_id());
+                        assert_eq!(status, ServiceStatus::Inactive);
+                    }
+                );
+
+                ctx.service_deactivate(ServiceIdTest::ServiceB);
+                assert_matches::assert_matches!(
+                    ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Inactive).await,
+                    Some(ServiceTransport {
+                        id_to,
+                        status,
+                        ..
+                    }) => {
+                        assert_eq!(id_to, ServiceIdTest::ServiceB.svc_id());
+                        assert_eq!(status, ServiceStatus::Inactive);
+                    }
+                );
             }
         );
 
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(1000))]
+    async fn service_context_wait_for() {
+        struct ServiceA;
+        struct ServiceB;
+
+        #[async_trait::async_trait]
+        impl Service for ServiceA {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                service_waiting(runner).await
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceB {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                service_waiting(runner).await
+            }
+        }
+
+        impl ServiceIdProvider for ServiceA {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceA
+            }
+        }
+
+        impl ServiceIdProvider for ServiceB {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceB
+            }
+        }
+
+        let monitor = ServiceMonitor::new()
+            .with(ServiceA)
+            .expect("Failed to start service A")
+            .with_active(ServiceB)
+            .expect("Failed to start service B");
+
+        let mut ctx1 = monitor.ctx();
+        let mut ctx2 = ctx1.clone();
+
+        tokio::join!(
+            async {
+                monitor.start().await.expect("Failed to start monitor");
+            },
+            async {
+                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                ctx1.wait_for_running(ServiceIdTest::ServiceA).await;
+                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+
+                ctx1.service_deactivate(ServiceIdTest::ServiceA);
+                ctx1.wait_for_inactive(ServiceIdTest::ServiceA).await;
+                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+
+                ctx1.service_deactivate(ServiceIdTest::ServiceB);
+                ctx1.wait_for_inactive(ServiceIdTest::ServiceB).await;
+                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+            },
+            async {
+                ctx2.wait_for_running(ServiceIdTest::ServiceB).await;
+                assert_eq!(ctx2.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                ctx2.service_activate(ServiceIdTest::ServiceA);
+            }
+        );
+
+        assert_eq!(ctx1.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn service_context_cancellation_scope_1() {
+        #[derive(Clone, Default)]
+        struct ServiceA {
+            a: Arc<tokio::sync::Notify>,
+            b: Arc<tokio::sync::Notify>,
+            c: Arc<tokio::sync::Notify>,
+            d: Arc<tokio::sync::Notify>,
+            e: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceB {
+            b: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceC {
+            c: Arc<tokio::sync::Notify>,
+            d: Arc<tokio::sync::Notify>,
+            e: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceD {
+            d: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceE {
+            e: Arc<tokio::sync::Notify>,
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceA {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let a = self.a.clone();
+                let b = self.b.clone();
+                let c = self.c.clone();
+                let d = self.d.clone();
+                let e = self.e.clone();
+
+                runner.service_loop(move |mut cx| async move {
+                    tokio::join!(
+                        cx.child()
+                            .with_active(ServiceB { b })
+                            .expect("Failed to add service B")
+                            .with_active(ServiceC { c, d, e })
+                            .expect("Failed to add service C")
+                            .start(),
+                        async {
+                            a.notified().await;
+                            cx.cancel_local();
+                        }
+                    )
+                    .0?;
+
+                    cx.cancelled().await;
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceB {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let b = self.b.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        b.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceC {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let c = self.c.clone();
+                let d = self.d.clone();
+                let e = self.e.clone();
+
+                runner.service_loop(move |cx| async move {
+                    tokio::join!(
+                        cx.child()
+                            .with_active(ServiceD { d })
+                            .expect("Failed to add service D")
+                            .with_active(ServiceE { e })
+                            .expect("Failed to add service E")
+                            .start(),
+                        async {
+                            c.notified().await;
+                            cx.cancel_local();
+                        }
+                    )
+                    .0
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceD {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let d = self.d.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        d.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceE {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let e = self.e.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        e.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        impl ServiceIdProvider for ServiceA {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceA
+            }
+        }
+
+        impl ServiceIdProvider for ServiceB {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceB
+            }
+        }
+
+        impl ServiceIdProvider for ServiceC {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceC
+            }
+        }
+
+        impl ServiceIdProvider for ServiceD {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceD
+            }
+        }
+
+        impl ServiceIdProvider for ServiceE {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceE
+            }
+        }
+
+        let service_a = ServiceA::default();
+        let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
+        let mut ctx = monitor.ctx().clone();
+
+        tokio::join!(
+            async {
+                monitor.start().await.expect("Failed to start monitor");
+            },
+            async {
+                ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceB).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceC).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceD).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceE).await;
+
+                service_a.e.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceE).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+
+                service_a.d.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceD).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+
+                service_a.c.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+
+                service_a.b.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+
+                service_a.a.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            }
+        );
+
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(100))]
+    async fn service_context_cancellation_scope_2() {
+        #[derive(Clone, Default)]
+        struct ServiceA {
+            a: Arc<tokio::sync::Notify>,
+            b: Arc<tokio::sync::Notify>,
+            c: Arc<tokio::sync::Notify>,
+            d: Arc<tokio::sync::Notify>,
+            e: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceB {
+            b: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceC {
+            c: Arc<tokio::sync::Notify>,
+            d: Arc<tokio::sync::Notify>,
+            e: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceD {
+            d: Arc<tokio::sync::Notify>,
+        }
+        struct ServiceE {
+            e: Arc<tokio::sync::Notify>,
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceA {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let a = self.a.clone();
+                let b = self.b.clone();
+                let c = self.c.clone();
+                let d = self.d.clone();
+                let e = self.e.clone();
+
+                runner.service_loop(move |mut cx| async move {
+                    tokio::join!(
+                        cx.child()
+                            .with_active(ServiceB { b })
+                            .expect("Failed to add service B")
+                            .with_active(ServiceC { c, d, e })
+                            .expect("Failed to add service C")
+                            .start(),
+                        async {
+                            a.notified().await;
+                            cx.cancel_local();
+                        }
+                    )
+                    .0?;
+
+                    cx.cancelled().await;
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceB {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let b = self.b.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        b.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceC {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let c = self.c.clone();
+                let d = self.d.clone();
+                let e = self.e.clone();
+
+                runner.service_loop(move |cx| async move {
+                    tokio::join!(
+                        cx.child()
+                            .with_active(ServiceD { d })
+                            .expect("Failed to add service D")
+                            .with_active(ServiceE { e })
+                            .expect("Failed to add service E")
+                            .start(),
+                        async {
+                            c.notified().await;
+                            cx.cancel_local();
+                        }
+                    )
+                    .0
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceD {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let d = self.d.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        d.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl Service for ServiceE {
+            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+                let e = self.e.clone();
+                runner.service_loop(move |cx| async move {
+                    let mut cx1 = cx;
+                    let cx2 = cx1.clone();
+
+                    // TODO: replace this with the never type
+                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                    let cancel = async {
+                        e.notified().await;
+                        cx2.cancel_local()
+                    };
+
+                    tokio::join!(pending, cancel);
+                    anyhow::Ok(())
+                })
+            }
+        }
+
+        impl ServiceIdProvider for ServiceA {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceA
+            }
+        }
+
+        impl ServiceIdProvider for ServiceB {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceB
+            }
+        }
+
+        impl ServiceIdProvider for ServiceC {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceC
+            }
+        }
+
+        impl ServiceIdProvider for ServiceD {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceD
+            }
+        }
+
+        impl ServiceIdProvider for ServiceE {
+            fn id_provider(&self) -> impl ServiceId {
+                ServiceIdTest::ServiceE
+            }
+        }
+
+        let service_a = ServiceA::default();
+        let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
+        let mut ctx = monitor.ctx().clone();
+
+        tokio::join!(
+            async {
+                monitor.start().await.expect("Failed to start monitor");
+            },
+            async {
+                ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceB).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceC).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceD).await;
+                ctx.wait_for_running(ServiceIdTest::ServiceE).await;
+
+                service_a.c.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+
+                service_a.a.notify_waiters();
+                ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            }
+        );
+
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
     }
 }
