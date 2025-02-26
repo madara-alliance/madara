@@ -1,58 +1,58 @@
 [workspace]
 members = [
   # madara
-  "crates/madara/client/db",
-  "crates/madara/client/exec",
-  "crates/madara/client/sync",
-  "crates/madara/client/eth",
-  "crates/madara/client/rpc",
-  "crates/madara/client/gateway/client",
-  "crates/madara/client/gateway/server",
-  "crates/madara/client/analytics",
-  "crates/madara/client/telemetry",
-  "crates/madara/client/devnet",
-  "crates/madara/client/mempool",
-  "crates/madara/client/block_production",
-  "crates/madara/node",
-  "crates/madara/primitives/block",
-  "crates/madara/primitives/convert",
-  "crates/madara/primitives/transactions",
-  "crates/madara/primitives/class",
-  "crates/madara/primitives/gateway",
-  "crates/madara/primitives/receipt",
-  "crates/madara/primitives/state_update",
-  "crates/madara/primitives/chain_config",
-  "crates/madara/primitives/utils",
-  "crates/madara/proc-macros",
-  "crates/madara/tests",
-  "crates/madara/cairo-test-contracts",
+  "madara/crates/client/db",
+  "madara/crates/client/exec",
+  "madara/crates/client/sync",
+  "madara/crates/client/eth",
+  "madara/crates/client/rpc",
+  "madara/crates/client/gateway/client",
+  "madara/crates/client/gateway/server",
+  "madara/crates/client/analytics",
+  "madara/crates/client/telemetry",
+  "madara/crates/client/devnet",
+  "madara/crates/client/mempool",
+  "madara/crates/client/block_production",
+  "madara/crates/node",
+  "madara/crates/primitives/block",
+  "madara/crates/primitives/convert",
+  "madara/crates/primitives/transactions",
+  "madara/crates/primitives/class",
+  "madara/crates/primitives/gateway",
+  "madara/crates/primitives/receipt",
+  "madara/crates/primitives/state_update",
+  "madara/crates/primitives/chain_config",
+  "madara/crates/primitives/utils",
+  "madara/crates/proc-macros",
+  "madara/crates/tests",
+  "madara/crates/cairo-test-contracts",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
-  "crates/madara/client/db",
-  "crates/madara/client/exec",
-  "crates/madara/client/sync",
-  "crates/madara/client/eth",
-  "crates/madara/client/rpc",
-  "crates/madara/client/gateway/client",
-  "crates/madara/client/gateway/server",
-  "crates/madara/client/analytics",
-  "crates/madara/client/telemetry",
-  "crates/madara/client/devnet",
-  "crates/madara/client/mempool",
-  "crates/madara/client/block_production",
-  "crates/madara/node",
-  "crates/madara/primitives/block",
-  "crates/madara/primitives/convert",
-  "crates/madara/primitives/transactions",
-  "crates/madara/primitives/class",
-  "crates/madara/primitives/gateway",
-  "crates/madara/primitives/receipt",
-  "crates/madara/primitives/state_update",
-  "crates/madara/primitives/chain_config",
-  "crates/madara/primitives/utils",
-  "crates/madara/proc-macros",
+  "madara/crates/client/db",
+  "madara/crates/client/exec",
+  "madara/crates/client/sync",
+  "madara/crates/client/eth",
+  "madara/crates/client/rpc",
+  "madara/crates/client/gateway/client",
+  "madara/crates/client/gateway/server",
+  "madara/crates/client/analytics",
+  "madara/crates/client/telemetry",
+  "madara/crates/client/devnet",
+  "madara/crates/client/mempool",
+  "madara/crates/client/block_production",
+  "madara/crates/node",
+  "madara/crates/primitives/block",
+  "madara/crates/primitives/convert",
+  "madara/crates/primitives/transactions",
+  "madara/crates/primitives/class",
+  "madara/crates/primitives/gateway",
+  "madara/crates/primitives/receipt",
+  "madara/crates/primitives/state_update",
+  "madara/crates/primitives/chain_config",
+  "madara/crates/primitives/utils",
+  "madara/crates/proc-macros",
 ]
 
 [workspace.lints.rust]
@@ -104,36 +104,36 @@ bonsai-trie = { default-features = false, git = "https://github.com/madara-allia
 ] }
 
 # Madara proc macros
-m-proc-macros = { path = "crates/madara/proc-macros", default-features = false }
+m-proc-macros = { path = "madara/crates/proc-macros", default-features = false }
 
 # Madara primtitives
-mp-block = { path = "crates/madara/primitives/block", default-features = false }
-mp-convert = { path = "crates/madara/primitives/convert", default-features = false }
-mp-transactions = { path = "crates/madara/primitives/transactions", default-features = false }
-mp-class = { path = "crates/madara/primitives/class", default-features = false }
-mp-gateway = { path = "crates/madara/primitives/gateway", default-features = false }
-mp-receipt = { path = "crates/madara/primitives/receipt", default-features = false }
-mp-state-update = { path = "crates/madara/primitives/state_update", default-features = false }
-mp-utils = { path = "crates/madara/primitives/utils", default-features = false }
-mp-chain-config = { path = "crates/madara/primitives/chain_config", default-features = false }
-mp-oracle = { path = "crates/madara/primitives/oracle", default-features = false }
+mp-block = { path = "madara/crates/primitives/block", default-features = false }
+mp-convert = { path = "madara/crates/primitives/convert", default-features = false }
+mp-transactions = { path = "madara/crates/primitives/transactions", default-features = false }
+mp-class = { path = "madara/crates/primitives/class", default-features = false }
+mp-gateway = { path = "madara/crates/primitives/gateway", default-features = false }
+mp-receipt = { path = "madara/crates/primitives/receipt", default-features = false }
+mp-state-update = { path = "madara/crates/primitives/state_update", default-features = false }
+mp-utils = { path = "madara/crates/primitives/utils", default-features = false }
+mp-chain-config = { path = "madara/crates/primitives/chain_config", default-features = false }
+mp-oracle = { path = "madara/crates/primitives/oracle", default-features = false }
 
 # Madara client
-mc-analytics = { path = "crates/madara/client/analytics" }
-mc-telemetry = { path = "crates/madara/client/telemetry" }
-mc-db = { path = "crates/madara/client/db" }
-mc-exec = { path = "crates/madara/client/exec" }
-mc-rpc = { path = "crates/madara/client/rpc" }
-mc-gateway-client = { path = "crates/madara/client/gateway/client" }
-mc-gateway-server = { path = "crates/madara/client/gateway/server" }
-mc-sync = { path = "crates/madara/client/sync" }
-mc-eth = { path = "crates/madara/client/eth" }
-mc-mempool = { path = "crates/madara/client/mempool" }
-mc-block-production = { path = "crates/madara/client/block_production" }
-mc-devnet = { path = "crates/madara/client/devnet" }
+mc-analytics = { path = "madara/crates/client/analytics" }
+mc-telemetry = { path = "madara/crates/client/telemetry" }
+mc-db = { path = "madara/crates/client/db" }
+mc-exec = { path = "madara/crates/client/exec" }
+mc-rpc = { path = "madara/crates/client/rpc" }
+mc-gateway-client = { path = "madara/crates/client/gateway/client" }
+mc-gateway-server = { path = "madara/crates/client/gateway/server" }
+mc-sync = { path = "madara/crates/client/sync" }
+mc-eth = { path = "madara/crates/client/eth" }
+mc-mempool = { path = "madara/crates/client/mempool" }
+mc-block-production = { path = "madara/crates/client/block_production" }
+mc-devnet = { path = "madara/crates/client/devnet" }
 
 # Madara misc
-m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
+m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = "=1.0.1"
