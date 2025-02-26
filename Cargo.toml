@@ -358,6 +358,7 @@ orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator-core = { path = "orchestrator/crates/orchestrator" }
+base64ct = "=1.6.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -369,3 +370,4 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
   "testing",
 ] }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
