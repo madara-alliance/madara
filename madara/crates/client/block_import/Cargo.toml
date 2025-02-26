@@ -32,6 +32,7 @@ tokio.workspace = true
 mc-analytics.workspace = true
 mc-db.workspace = true
 mp-block.workspace = true
+mp-bloom-filter.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
