@@ -3,6 +3,7 @@
 ## Next release
 
 - feat: settlement client introduced instead of just ethereum, starknet client added for settlement
+- chore: Merge entire madara-orchestrator project into this one
 - fix(primitives): limit legacy class sizes
 - fix(block_production): dynamic block closing now adds special address with prev block hash
 - fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
