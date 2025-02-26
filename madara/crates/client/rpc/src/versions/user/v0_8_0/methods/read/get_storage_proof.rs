@@ -210,9 +210,13 @@ pub fn get_storage_proof(
 
 #[cfg(test)]
 mod tests {
-    use bitvec::bits;
+    use bitvec::{bits, view::AsBits};
+    use mc_db::tests::common::{finalized_block_zero, finalized_state_diff_zero};
 
     use super::*;
+    
+    use crate::test_utils::rpc_test_setup;
+    use mc_block_import::tests::block_import_utils::create_dummy_header;
 
     #[test]
     fn test_path_to_felt() {
@@ -225,5 +229,55 @@ mod tests {
         assert_eq!(path.len(), 1);
         let felt = path_to_felt(path);
         assert_eq!(felt, Felt::ONE);
+    }
+    
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn test_sparse_trie_proof(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        
+        let contract_address = Felt::TWO;
+        let storage_key = Felt::ONE;
+        let value = Felt::THREE;
+        
+        // insert a value into the contract storage trie
+        backend.contract_storage_trie().insert(
+            &contract_address.to_bytes_be(),
+            &storage_key.to_bytes_be().as_bits()[5..].to_owned(),
+            &value,
+        ).unwrap();
+        
+        // create a dummy block to make get_storage_proof() happy
+        let header = create_dummy_header();
+        let pending_block = finalized_block_zero(header);
+        backend.store_block(
+            pending_block,
+            finalized_state_diff_zero(),
+            vec![],
+            None,
+            None,
+        ).unwrap();
+
+        let storage_proof_result = get_storage_proof(
+            &starknet,
+            BlockId::Tag(BlockTag::Latest),
+            None,
+            Some(vec![contract_address]),
+            Some(vec![ContractStorageKeysItem { contract_address, storage_keys: vec![storage_key]}]),
+        ).unwrap();
+        
+        // we have one single storage item in the whole trie, so the root node should be an edge
+        // path all the way down to it
+        assert_eq!(storage_proof_result.contracts_storage_proofs.len(), 1);
+        assert_eq!(storage_proof_result.contracts_storage_proofs[0].len(), 1);
+        
+        assert_eq!(
+            storage_proof_result.contracts_storage_proofs,
+            vec![
+                vec![
+                    // TODO: should be edge node all the way to bottom
+                ],
+            ]
+        );
     }
 }
