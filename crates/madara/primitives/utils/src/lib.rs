@@ -13,22 +13,22 @@ pub use hash::trim_hash;
 use tokio::sync::oneshot;
 
 #[repr(transparent)]
-struct Immutable<T>(T);
+struct Frozen<T>(T);
 
-impl<T> std::ops::Deref for Immutable<T> {
+impl<T> std::ops::Deref for Frozen<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<T: Default> Default for Immutable<T> {
+impl<T: Default> Default for Frozen<T> {
     fn default() -> Self {
         Self(Default::default())
     }
 }
 
-impl<T> Immutable<T> {
+impl<T> Frozen<T> {
     fn new(obj: T) -> Self {
         Self(obj)
     }
@@ -38,16 +38,16 @@ impl<T> Immutable<T> {
     }
 }
 
-trait ImmutableExt<T>
+trait Freeze<T>
 where
     Self: Sized,
 {
-    fn immutable(self) -> Immutable<T>;
+    fn freeze(self) -> Frozen<T>;
 }
 
-impl<T: Sized> ImmutableExt<T> for T {
-    fn immutable(self) -> Immutable<T> {
-        Immutable(self)
+impl<T: Sized> Freeze<T> for T {
+    fn freeze(self) -> Frozen<T> {
+        Frozen(self)
     }
 }
 

@@ -269,7 +269,7 @@ use std::{
 };
 use tokio::task::{JoinError, JoinSet};
 
-use crate::{Immutable, ImmutableExt};
+use crate::{Freeze, Frozen};
 
 /// Maximum duration a service is allowed to take to shutdown, after which it
 /// will be forcefully cancelled
@@ -795,7 +795,7 @@ impl ServiceContext {
         svc_id: &str,
         status: ServiceStatus,
     ) -> Option<ServiceTransport> {
-        if self.services.status(&svc_id) == status {
+        if self.services.status(svc_id) == status {
             return Some(ServiceTransport { id_from: self.id.clone(), id_to: svc_id.to_string(), status });
         }
 
@@ -1129,7 +1129,7 @@ pub struct ServiceMonitor {
     join_set: JoinSet<anyhow::Result<String>>,
     status_actual: ServiceSet,
     status_monitored: HashSet<String>,
-    monitored: Immutable<HashSet<String>>,
+    monitored: Frozen<HashSet<String>>,
     ctx: ServiceContext,
 }
 
@@ -1166,7 +1166,7 @@ impl ServiceMonitor {
                 entry.insert(Box::new(svc));
                 let mut monitored = self.monitored.into_inner();
                 monitored.insert(svc_id);
-                self.monitored = monitored.immutable();
+                self.monitored = monitored.freeze();
             }
             btree_map::Entry::Occupied(_) => {
                 anyhow::bail!("Services has already been added");
@@ -1227,7 +1227,7 @@ impl ServiceMonitor {
         }
 
         for id in self.monitored.iter() {
-            self.ctx.service_unset(&id);
+            self.ctx.service_unset(id);
         }
         if self.ctx.id == MadaraServiceId::Monitor.svc_id() {
             self.ctx.service_unset(&self.ctx.id);
@@ -1371,114 +1371,342 @@ mod test {
         }
     }
 
-    async fn service_waiting<'a>(runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+    async fn service_waiting(runner: ServiceRunner<'_>) -> anyhow::Result<()> {
         runner.service_loop(move |mut cx| async move {
             cx.cancelled().await;
             anyhow::Ok(())
         })
     }
 
-    #[tokio::test]
-    #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(1000))]
-    async fn service_monitor_simple() {
-        struct ServiceA;
-        struct ServiceB;
+    struct ServiceAWaiting;
+    struct ServiceBWaiting;
+    struct ServiceCWaiting;
+    struct ServiceDWaiting;
+    struct ServiceEWaiting;
 
-        #[async_trait::async_trait]
-        impl Service for ServiceA {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                service_waiting(runner).await
-            }
+    #[async_trait::async_trait]
+    impl Service for ServiceAWaiting {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            service_waiting(runner).await
         }
+    }
 
-        #[async_trait::async_trait]
-        impl Service for ServiceB {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                service_waiting(runner).await
-            }
+    #[async_trait::async_trait]
+    impl Service for ServiceBWaiting {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            service_waiting(runner).await
         }
+    }
 
-        impl ServiceIdProvider for ServiceA {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceA
-            }
+    #[async_trait::async_trait]
+    impl Service for ServiceCWaiting {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            service_waiting(runner).await
         }
+    }
 
-        impl ServiceIdProvider for ServiceB {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceB
-            }
+    #[async_trait::async_trait]
+    impl Service for ServiceDWaiting {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            service_waiting(runner).await
         }
+    }
 
-        let monitor = ServiceMonitor::new()
-            .with_active(ServiceA)
-            .expect("Failed to add Service A")
-            .with_active(ServiceB)
-            .expect("Failed to add Service B");
+    #[async_trait::async_trait]
+    impl Service for ServiceEWaiting {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            service_waiting(runner).await
+        }
+    }
 
-        let mut ctx = monitor.ctx.clone();
+    impl ServiceIdProvider for ServiceAWaiting {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceA
+        }
+    }
 
-        assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
-        assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Active);
-        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
+    impl ServiceIdProvider for ServiceBWaiting {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceB
+        }
+    }
 
+    impl ServiceIdProvider for ServiceCWaiting {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceC
+        }
+    }
+
+    impl ServiceIdProvider for ServiceDWaiting {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceD
+        }
+    }
+
+    impl ServiceIdProvider for ServiceEWaiting {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceE
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct ServiceAParent {
+        a: Arc<tokio::sync::Notify>,
+        b: Arc<tokio::sync::Notify>,
+        c: Arc<tokio::sync::Notify>,
+        d: Arc<tokio::sync::Notify>,
+        e: Arc<tokio::sync::Notify>,
+    }
+    struct ServiceBChild {
+        b: Arc<tokio::sync::Notify>,
+    }
+    struct ServiceCParent {
+        c: Arc<tokio::sync::Notify>,
+        d: Arc<tokio::sync::Notify>,
+        e: Arc<tokio::sync::Notify>,
+    }
+    struct ServiceDChild {
+        d: Arc<tokio::sync::Notify>,
+    }
+    struct ServiceEChild {
+        e: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl Service for ServiceAParent {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            let a = self.a.clone();
+            let b = self.b.clone();
+            let c = self.c.clone();
+            let d = self.d.clone();
+            let e = self.e.clone();
+
+            runner.service_loop(move |mut cx| async move {
+                tokio::join!(
+                    cx.child()
+                        .with_active(ServiceBChild { b })
+                        .expect("Failed to add service B")
+                        .with_active(ServiceCParent { c, d, e })
+                        .expect("Failed to add service C")
+                        .start(),
+                    async {
+                        a.notified().await;
+                        cx.cancel_local();
+                    }
+                )
+                .0?;
+
+                cx.cancelled().await;
+                anyhow::Ok(())
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Service for ServiceBChild {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            let b = self.b.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let cx2 = cx1.clone();
+
+                // TODO: replace this with the never type
+                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                let cancel = async {
+                    b.notified().await;
+                    cx2.cancel_local()
+                };
+
+                tokio::join!(pending, cancel);
+                anyhow::Ok(())
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Service for ServiceCParent {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            let c = self.c.clone();
+            let d = self.d.clone();
+            let e = self.e.clone();
+
+            runner.service_loop(move |cx| async move {
+                tokio::join!(
+                    cx.child()
+                        .with_active(ServiceDChild { d })
+                        .expect("Failed to add service D")
+                        .with_active(ServiceEChild { e })
+                        .expect("Failed to add service E")
+                        .start(),
+                    async {
+                        c.notified().await;
+                        cx.cancel_local();
+                    }
+                )
+                .0
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Service for ServiceDChild {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            let d = self.d.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let cx2 = cx1.clone();
+
+                // TODO: replace this with the never type
+                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                let cancel = async {
+                    d.notified().await;
+                    cx2.cancel_local()
+                };
+
+                tokio::join!(pending, cancel);
+                anyhow::Ok(())
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Service for ServiceEChild {
+        async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+            let e = self.e.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let cx2 = cx1.clone();
+
+                // TODO: replace this with the never type
+                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
+                let cancel = async {
+                    e.notified().await;
+                    cx2.cancel_local()
+                };
+
+                tokio::join!(pending, cancel);
+                anyhow::Ok(())
+            })
+        }
+    }
+
+    impl ServiceIdProvider for ServiceAParent {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceA
+        }
+    }
+
+    impl ServiceIdProvider for ServiceBChild {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceB
+        }
+    }
+
+    impl ServiceIdProvider for ServiceCParent {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceC
+        }
+    }
+
+    impl ServiceIdProvider for ServiceDChild {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceD
+        }
+    }
+
+    impl ServiceIdProvider for ServiceEChild {
+        fn id_provider(&self) -> impl ServiceId {
+            ServiceIdTest::ServiceE
+        }
+    }
+
+    async fn with_monitor<F>(monitor: ServiceMonitor, f: impl FnOnce(ServiceContext) -> F) -> ServiceContext
+    where
+        F: Future<Output = ()>,
+    {
+        let ctx = monitor.ctx().clone();
         tokio::join!(
             async {
                 monitor.start().await.expect("Failed to start monitor");
             },
-            async {
-                assert_matches::assert_matches!(
-                    ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Running).await,
-                    Some(ServiceTransport {
-                        id_to,
-                        status,
-                        ..
-                    }) => {
-                        assert_eq!(id_to, ServiceIdTest::ServiceA.svc_id());
-                        assert_eq!(status, ServiceStatus::Running);
-                    }
-                );
-
-                assert_matches::assert_matches!(
-                    ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Running).await,
-                    Some(ServiceTransport {
-                        id_to,
-                        status,
-                        ..
-                    }) => {
-                        assert_eq!(id_to, ServiceIdTest::ServiceB.svc_id());
-                        assert_eq!(status, ServiceStatus::Running);
-                    }
-                );
-
-                ctx.service_deactivate(ServiceIdTest::ServiceA);
-                assert_matches::assert_matches!(
-                    ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Inactive).await,
-                    Some(ServiceTransport {
-                        id_to,
-                        status,
-                        ..
-                    }) => {
-                        assert_eq!(id_to, ServiceIdTest::ServiceA.svc_id());
-                        assert_eq!(status, ServiceStatus::Inactive);
-                    }
-                );
-
-                ctx.service_deactivate(ServiceIdTest::ServiceB);
-                assert_matches::assert_matches!(
-                    ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Inactive).await,
-                    Some(ServiceTransport {
-                        id_to,
-                        status,
-                        ..
-                    }) => {
-                        assert_eq!(id_to, ServiceIdTest::ServiceB.svc_id());
-                        assert_eq!(status, ServiceStatus::Inactive);
-                    }
-                );
-            }
+            f(ctx.clone())
         );
+
+        ctx
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(1000))]
+    async fn service_context_cancel_global() {}
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(1000))]
+    async fn service_monitor_simple() {
+        let monitor = ServiceMonitor::new()
+            .with_active(ServiceAWaiting)
+            .expect("Failed to add Service A")
+            .with_active(ServiceBWaiting)
+            .expect("Failed to add Service B");
+
+        let ctx = monitor.ctx.clone();
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Active);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
+
+        with_monitor(monitor, |mut ctx| async move {
+            assert_matches::assert_matches!(
+                ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Running).await,
+                Some(ServiceTransport {
+                    id_to,
+                    status,
+                    ..
+                }) => {
+                    assert_eq!(id_to, ServiceIdTest::ServiceA.svc_id());
+                    assert_eq!(status, ServiceStatus::Running);
+                }
+            );
+
+            assert_matches::assert_matches!(
+                ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Running).await,
+                Some(ServiceTransport {
+                    id_to,
+                    status,
+                    ..
+                }) => {
+                    assert_eq!(id_to, ServiceIdTest::ServiceB.svc_id());
+                    assert_eq!(status, ServiceStatus::Running);
+                }
+            );
+
+            ctx.service_deactivate(ServiceIdTest::ServiceA);
+            assert_matches::assert_matches!(
+                ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Inactive).await,
+                Some(ServiceTransport {
+                    id_to,
+                    status,
+                    ..
+                }) => {
+                    assert_eq!(id_to, ServiceIdTest::ServiceA.svc_id());
+                    assert_eq!(status, ServiceStatus::Inactive);
+                }
+            );
+
+            ctx.service_deactivate(ServiceIdTest::ServiceB);
+            assert_matches::assert_matches!(
+                ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Inactive).await,
+                Some(ServiceTransport {
+                    id_to,
+                    status,
+                    ..
+                }) => {
+                    assert_eq!(id_to, ServiceIdTest::ServiceB.svc_id());
+                    assert_eq!(status, ServiceStatus::Inactive);
+                }
+            );
+        })
+        .await;
 
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
@@ -1489,304 +1717,98 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(1000))]
     async fn service_context_wait_for() {
-        struct ServiceA;
-        struct ServiceB;
-
-        #[async_trait::async_trait]
-        impl Service for ServiceA {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                service_waiting(runner).await
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceB {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                service_waiting(runner).await
-            }
-        }
-
-        impl ServiceIdProvider for ServiceA {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceA
-            }
-        }
-
-        impl ServiceIdProvider for ServiceB {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceB
-            }
-        }
-
         let monitor = ServiceMonitor::new()
-            .with(ServiceA)
+            .with(ServiceAWaiting)
             .expect("Failed to start service A")
-            .with_active(ServiceB)
+            .with_active(ServiceBWaiting)
             .expect("Failed to start service B");
 
-        let mut ctx1 = monitor.ctx();
-        let mut ctx2 = ctx1.clone();
+        let ctx = with_monitor(monitor, |mut ctx| async move {
+            let mut ctx1 = ctx.clone();
 
-        tokio::join!(
-            async {
-                monitor.start().await.expect("Failed to start monitor");
-            },
-            async {
-                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
-                ctx1.wait_for_running(ServiceIdTest::ServiceA).await;
-                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            tokio::join!(
+                async {
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                    ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
 
-                ctx1.service_deactivate(ServiceIdTest::ServiceA);
-                ctx1.wait_for_inactive(ServiceIdTest::ServiceA).await;
-                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                    ctx.service_deactivate(ServiceIdTest::ServiceA);
+                    ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
 
-                ctx1.service_deactivate(ServiceIdTest::ServiceB);
-                ctx1.wait_for_inactive(ServiceIdTest::ServiceB).await;
-                assert_eq!(ctx1.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
-            },
-            async {
-                ctx2.wait_for_running(ServiceIdTest::ServiceB).await;
-                assert_eq!(ctx2.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+                    ctx.service_deactivate(ServiceIdTest::ServiceB);
+                    ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+                },
+                async {
+                    ctx1.wait_for_running(ServiceIdTest::ServiceB).await;
+                    assert_eq!(ctx1.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
 
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                ctx2.service_activate(ServiceIdTest::ServiceA);
-            }
-        );
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    ctx1.service_activate(ServiceIdTest::ServiceA);
+                }
+            );
+        })
+        .await;
 
-        assert_eq!(ctx1.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
     }
 
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn service_context_cancellation_scope_1() {
-        #[derive(Clone, Default)]
-        struct ServiceA {
-            a: Arc<tokio::sync::Notify>,
-            b: Arc<tokio::sync::Notify>,
-            c: Arc<tokio::sync::Notify>,
-            d: Arc<tokio::sync::Notify>,
-            e: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceB {
-            b: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceC {
-            c: Arc<tokio::sync::Notify>,
-            d: Arc<tokio::sync::Notify>,
-            e: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceD {
-            d: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceE {
-            e: Arc<tokio::sync::Notify>,
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceA {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let a = self.a.clone();
-                let b = self.b.clone();
-                let c = self.c.clone();
-                let d = self.d.clone();
-                let e = self.e.clone();
-
-                runner.service_loop(move |mut cx| async move {
-                    tokio::join!(
-                        cx.child()
-                            .with_active(ServiceB { b })
-                            .expect("Failed to add service B")
-                            .with_active(ServiceC { c, d, e })
-                            .expect("Failed to add service C")
-                            .start(),
-                        async {
-                            a.notified().await;
-                            cx.cancel_local();
-                        }
-                    )
-                    .0?;
-
-                    cx.cancelled().await;
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceB {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let b = self.b.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        b.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceC {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let c = self.c.clone();
-                let d = self.d.clone();
-                let e = self.e.clone();
-
-                runner.service_loop(move |cx| async move {
-                    tokio::join!(
-                        cx.child()
-                            .with_active(ServiceD { d })
-                            .expect("Failed to add service D")
-                            .with_active(ServiceE { e })
-                            .expect("Failed to add service E")
-                            .start(),
-                        async {
-                            c.notified().await;
-                            cx.cancel_local();
-                        }
-                    )
-                    .0
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceD {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let d = self.d.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        d.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceE {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let e = self.e.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        e.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        impl ServiceIdProvider for ServiceA {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceA
-            }
-        }
-
-        impl ServiceIdProvider for ServiceB {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceB
-            }
-        }
-
-        impl ServiceIdProvider for ServiceC {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceC
-            }
-        }
-
-        impl ServiceIdProvider for ServiceD {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceD
-            }
-        }
-
-        impl ServiceIdProvider for ServiceE {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceE
-            }
-        }
-
-        let service_a = ServiceA::default();
+        let service_a = ServiceAParent::default();
         let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
-        let mut ctx = monitor.ctx().clone();
 
-        tokio::join!(
-            async {
-                monitor.start().await.expect("Failed to start monitor");
-            },
-            async {
-                ctx.wait_for_running(ServiceIdTest::ServiceA).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceB).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceC).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceD).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceE).await;
+        let ctx = with_monitor(monitor, |mut ctx| async move {
+            ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceB).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceC).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceD).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceE).await;
 
-                service_a.e.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceE).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            service_a.e.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceE).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
 
-                service_a.d.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceD).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            service_a.d.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceD).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
 
-                service_a.c.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            service_a.c.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
 
-                service_a.b.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            service_a.b.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
 
-                service_a.a.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
-            }
-        );
+            service_a.a.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+        })
+        .await;
 
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
     }
@@ -1795,209 +1817,33 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(100))]
     async fn service_context_cancellation_scope_2() {
-        #[derive(Clone, Default)]
-        struct ServiceA {
-            a: Arc<tokio::sync::Notify>,
-            b: Arc<tokio::sync::Notify>,
-            c: Arc<tokio::sync::Notify>,
-            d: Arc<tokio::sync::Notify>,
-            e: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceB {
-            b: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceC {
-            c: Arc<tokio::sync::Notify>,
-            d: Arc<tokio::sync::Notify>,
-            e: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceD {
-            d: Arc<tokio::sync::Notify>,
-        }
-        struct ServiceE {
-            e: Arc<tokio::sync::Notify>,
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceA {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let a = self.a.clone();
-                let b = self.b.clone();
-                let c = self.c.clone();
-                let d = self.d.clone();
-                let e = self.e.clone();
-
-                runner.service_loop(move |mut cx| async move {
-                    tokio::join!(
-                        cx.child()
-                            .with_active(ServiceB { b })
-                            .expect("Failed to add service B")
-                            .with_active(ServiceC { c, d, e })
-                            .expect("Failed to add service C")
-                            .start(),
-                        async {
-                            a.notified().await;
-                            cx.cancel_local();
-                        }
-                    )
-                    .0?;
-
-                    cx.cancelled().await;
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceB {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let b = self.b.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        b.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceC {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let c = self.c.clone();
-                let d = self.d.clone();
-                let e = self.e.clone();
-
-                runner.service_loop(move |cx| async move {
-                    tokio::join!(
-                        cx.child()
-                            .with_active(ServiceD { d })
-                            .expect("Failed to add service D")
-                            .with_active(ServiceE { e })
-                            .expect("Failed to add service E")
-                            .start(),
-                        async {
-                            c.notified().await;
-                            cx.cancel_local();
-                        }
-                    )
-                    .0
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceD {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let d = self.d.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        d.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl Service for ServiceE {
-            async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-                let e = self.e.clone();
-                runner.service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let cx2 = cx1.clone();
-
-                    // TODO: replace this with the never type
-                    let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                    let cancel = async {
-                        e.notified().await;
-                        cx2.cancel_local()
-                    };
-
-                    tokio::join!(pending, cancel);
-                    anyhow::Ok(())
-                })
-            }
-        }
-
-        impl ServiceIdProvider for ServiceA {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceA
-            }
-        }
-
-        impl ServiceIdProvider for ServiceB {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceB
-            }
-        }
-
-        impl ServiceIdProvider for ServiceC {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceC
-            }
-        }
-
-        impl ServiceIdProvider for ServiceD {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceD
-            }
-        }
-
-        impl ServiceIdProvider for ServiceE {
-            fn id_provider(&self) -> impl ServiceId {
-                ServiceIdTest::ServiceE
-            }
-        }
-
-        let service_a = ServiceA::default();
+        let service_a = ServiceAParent::default();
         let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
-        let mut ctx = monitor.ctx().clone();
 
-        tokio::join!(
-            async {
-                monitor.start().await.expect("Failed to start monitor");
-            },
-            async {
-                ctx.wait_for_running(ServiceIdTest::ServiceA).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceB).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceC).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceD).await;
-                ctx.wait_for_running(ServiceIdTest::ServiceE).await;
+        let ctx = with_monitor(monitor, |mut ctx| async move {
+            ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceB).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceC).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceD).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceE).await;
 
-                service_a.c.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+            service_a.c.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
 
-                service_a.a.notify_waiters();
-                ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
-                assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
-            }
-        );
+            service_a.a.notify_waiters();
+            ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+            assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+        })
+        .await;
 
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
     }
