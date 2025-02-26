@@ -1,0 +1,55 @@
+[package]
+name = "orchestrator-ethereum-settlement-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy = { version = "0.2.1", features = [
+  "full",
+  "node-bindings",
+  "rpc-types-debug",
+  "rpc-types-trace",
+  "json-rpc",
+  "rpc-client",
+] }
+alloy-primitives = { version = "0.7.7", default-features = false }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+c-kzg = { workspace = true }
+cairo-vm = { workspace = true }
+color-eyre = { workspace = true }
+dotenvy = { workspace = true }
+lazy_static = { workspace = true }
+log.workspace = true
+mockall = { workspace = true }
+orchestrator-settlement-client-interface = { workspace = true }
+orchestrator-utils = { workspace = true }
+reqwest = { workspace = true }
+rstest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+starknet-os = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+
+[dev-dependencies]
+tokio-test = "*"
+
+[features]
+testing = []
