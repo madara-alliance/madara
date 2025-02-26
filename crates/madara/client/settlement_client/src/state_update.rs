@@ -4,7 +4,6 @@ use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
-use anyhow::Context;
 use futures::Stream;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
@@ -12,6 +11,7 @@ use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 use crate::error::ResultExt;
+
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
@@ -36,8 +36,7 @@ pub fn update_l1(
 
     backend
         .write_last_confirmed_block(state_update.block_number)
-        .context("Setting l1 last confirmed block number")
-        .map_err(SettlementClientError::Other)?;
+        .settlement_context("Setting l1 last confirmed block number")?;
     tracing::debug!("update_l1: wrote last confirmed block number");
 
     Ok(())
@@ -55,7 +54,7 @@ where
     // Clear L1 confirmed block at startup
     backend
         .clear_last_confirmed_block()
-        .with_context(|| "Failed to clear L1 last confirmed block number")?;
+        .settlement_context("Failed to clear L1 last confirmed block number")?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
@@ -66,16 +65,16 @@ where
         let initial_state = settlement_client
             .get_initial_state()
             .await
-            .with_context(|| "Failed to get initial ethereum state")?;
+            .settlement_context("Failed to get initial ethereum state")?;
 
         update_l1(&backend, initial_state, l1_block_metrics.clone())
-            .with_context(|| "Failed to update L1 with initial state")?;
+            .settlement_context("Failed to update L1 with initial state")?;
     }
 
     settlement_client
         .listen_for_update_state_events(backend, ctx, l1_block_metrics.clone())
         .await
-        .with_context(|| "Failed to listen for update state events")?;
+        .settlement_context("Failed to listen for update state events")?;
 
     Ok(())
 }

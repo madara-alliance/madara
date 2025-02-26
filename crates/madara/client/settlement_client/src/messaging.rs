@@ -11,6 +11,7 @@ use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+use crate::error::ResultExt;
 
 #[derive(Clone, Debug)]
 pub struct L1toL2MessagingEventData {
@@ -39,26 +40,26 @@ where
 
     let last_synced_event_block = backend
         .messaging_last_synced_l1_block_with_event()
-        .with_context(|| "Failed to get last synced event block")?
-        .ok_or_else(|| SettlementClientError::Other(anyhow::anyhow!("Last synced event block should never be None")))?;
+        .settlement_context("Failed to get last synced event block")?
+        .ok_or_else(|| SettlementClientError::Other("Last synced event block should never be None".to_string()))?;
 
     let stream = settlement_client
         .get_messaging_stream(last_synced_event_block)
         .await
-        .with_context(|| "Failed to get messaging stream")?;
+        .settlement_context("Failed to get messaging stream")?;
     let mut event_stream = Box::pin(stream);
 
     while let Some(event_result) = ctx.run_until_cancelled(event_stream.next()).await {
         if let Some(event) = event_result {
             let event_data = event?;
             let tx = parse_handle_message_transaction(&event_data)
-                .with_context(|| "Failed to parse message transaction")?;
+                .settlement_context("Failed to parse message transaction")?;
             let tx_nonce = tx.nonce;
 
             // Skip if already processed
             if backend
                 .has_l1_messaging_nonce(tx_nonce)
-                .with_context(|| "Failed to check message nonce")?
+                .settlement_context("Failed to check message nonce")? 
             {
                 tracing::info!("Event already processed");
                 return Ok(());
@@ -82,11 +83,11 @@ where
             let cancellation_timestamp = settlement_client
                 .get_l1_to_l2_message_cancellations(&event_hash)
                 .await
-                .with_context(|| "Failed to get message cancellation status")?;
+                .settlement_context("Failed to get message cancellation status")?;
             if cancellation_timestamp != Felt::ZERO {
                 tracing::info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
                 handle_cancelled_message(backend, tx_nonce)
-                    .with_context(|| "Failed to handle cancelled message")?;
+                    .settlement_context("Failed to handle cancelled message")?;
                 return Ok(());
             }
 
@@ -99,11 +100,10 @@ where
                         tx_hash
                     );
 
-                    let block_sent =
-                        LastSyncedEventBlock::new(event_data.block_number, event_data.event_index.unwrap_or(0));
+                    let block_sent = LastSyncedEventBlock::new(event_data.block_number, event_data.event_index.unwrap_or(0));
                     backend
                         .messaging_update_last_synced_l1_block_with_event(block_sent)
-                        .with_context(|| "Failed to update last synced block")?;
+                        .settlement_context("Failed to update last synced block")?;
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -112,7 +112,7 @@ where
                         event_data.block_number,
                         e
                     );
-                    return Err(SettlementClientError::Other(anyhow::anyhow!("Failed to process message")));
+                    return Err(SettlementClientError::Other(format!("Failed to process message: {}", e)));
                 }
             }
         }
@@ -125,12 +125,12 @@ fn handle_cancelled_message(backend: Arc<MadaraBackend>, nonce: Nonce) -> Result
         Ok(false) => {
             backend
                 .set_l1_messaging_nonce(nonce)
-                .with_context(|| "Failed to set message nonce")?;
+                .settlement_context("Failed to set message nonce")?;
         }
         Ok(true) => {}
         Err(e) => {
             tracing::error!("Unexpected DB error: {:?}", e);
-            return Err(SettlementClientError::Other(anyhow::anyhow!("Database error: {}", e)));
+            return Err(SettlementClientError::Other(format!("Database error: {}", e)));
         }
     }
     Ok(())
@@ -139,13 +139,18 @@ fn handle_cancelled_message(backend: Arc<MadaraBackend>, nonce: Nonce) -> Result
 pub fn parse_handle_message_transaction(
     event: &L1toL2MessagingEventData,
 ) -> Result<L1HandlerTransaction, SettlementClientError> {
-    let calldata =
-        Calldata(Arc::new(std::iter::once(event.from).chain(event.payload.iter().cloned()).collect::<Vec<_>>()));
+    let calldata = Calldata(Arc::new(
+        std::iter::once(event.from)
+            .chain(event.payload.iter().cloned())
+            .collect::<Vec<_>>(),
+    ));
 
     Ok(L1HandlerTransaction {
         nonce: Nonce(event.nonce),
         contract_address: ContractAddress(
-            event.to.try_into().with_context(|| "Failed to convert contract address")?,
+            event.to
+                .try_into()
+                .settlement_context("Failed to convert contract address")?,
         ),
         entry_point_selector: EntryPointSelector(event.selector),
         calldata,
@@ -167,7 +172,7 @@ async fn process_message(
         Ok(false) => {
             backend
                 .set_l1_messaging_nonce(tx_nonce)
-                .with_context(|| "Failed to set message nonce")?;
+                .settlement_context("Failed to set message nonce")?;
         }
         Ok(true) => {
             tracing::debug!("⟠ Event already processed: {:?}", transaction);
@@ -175,13 +180,13 @@ async fn process_message(
         }
         Err(e) => {
             tracing::error!("⟠ Unexpected DB error: {:?}", e);
-            return Err(SettlementClientError::Other(anyhow::anyhow!("Database error: {}", e)));
+            return Err(SettlementClientError::Other(format!("Database error: {}", e)));
         }
     };
 
     let res = mempool
         .tx_accept_l1_handler(transaction.into(), fees.unwrap_or(0))
-        .with_context(|| "Failed to accept L1 handler transaction")?;
+        .settlement_context("Failed to accept L1 handler transaction")?;
 
     Ok(Some(res.transaction_hash))
 }

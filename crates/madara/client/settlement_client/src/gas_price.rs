@@ -82,7 +82,7 @@ where
             l1_block_metrics.clone(),
         )
         .await
-        .with_context(|| "Failed to update gas prices")?;
+        .settlement_context("Failed to update gas prices")?;
     }
 
     Ok(())
@@ -105,15 +105,15 @@ where
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now()
         .duration_since(last_update_timestamp)
-        .with_context(|| "Failed to calculate time since last update")?;
+        .settlement_context("Failed to calculate time since last update")?;
 
     let last_update_timestamp = last_update_timestamp
         .duration_since(UNIX_EPOCH)
-        .with_context(|| "SystemTime before UNIX EPOCH!")?
+        .settlement_context("SystemTime before UNIX EPOCH!")?
         .as_micros();
 
     if duration_since_last_update > 10 * gas_price_poll_ms {
-        return Err(SettlementClientError::Other(anyhow::anyhow!(
+        return Err(SettlementClientError::Other(format!(
             "Gas prices have not been updated for {} ms. Last update was at {}",
             duration_since_last_update.as_micros(),
             last_update_timestamp
@@ -134,8 +134,7 @@ where
     let (eth_gas_price, avg_blob_base_fee) = settlement_client
         .get_gas_prices()
         .await
-        .context("Failed to get gas prices")
-        .map_err(SettlementClientError::Other)?;
+        .settlement_context("Failed to get gas prices")?;
 
     l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
@@ -145,31 +144,31 @@ where
         let (eth_strk_price, decimals) = oracle_provider
             .fetch_eth_strk_price()
             .await
-            .context("Failed to retrieve ETH/STRK price")
-            .map_err(SettlementClientError::Other)?;
+            .settlement_context("Failed to retrieve ETH/STRK price")?;
 
         let strk_gas_price = (BigDecimal::new(eth_gas_price.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent();
+        .as_bigint_and_exponent()
+        .settlement_context("Failed to calculate STRK gas price")?;
+
         let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent();
+        .as_bigint_and_exponent()
+        .settlement_context("Failed to calculate STRK data gas price")?;
 
         l1_gas_provider.update_strk_l1_gas_price(
             strk_gas_price
                 .0
                 .to_str_radix(10)
                 .parse::<u128>()
-                .context("Failed to update STRK L1 gas price")
-                .map_err(SettlementClientError::Other)?,
+                .settlement_context("Failed to update STRK L1 gas price")?
         );
         l1_gas_provider.update_strk_l1_data_gas_price(
             strk_data_gas_price
                 .0
                 .to_str_radix(10)
                 .parse::<u128>()
-                .context("Failed to update STRK L1 data gas price")
-                .map_err(SettlementClientError::Other)?,
+                .settlement_context("Failed to update STRK L1 data gas price")?
         );
     }
 
@@ -180,14 +179,12 @@ where
         settlement_client
             .get_latest_block_number()
             .await
-            .context("Failed to get latest block number")
-            .map_err(SettlementClientError::Other)?,
+            .settlement_context("Failed to get latest block number")?,
         l1_block_metrics,
         l1_gas_provider,
     )
     .await
-    .context("Failed to update L1 block metrics")
-    .map_err(SettlementClientError::Other)?;
+    .settlement_context("Failed to update L1 block metrics")?;
 
     Ok(())
 }

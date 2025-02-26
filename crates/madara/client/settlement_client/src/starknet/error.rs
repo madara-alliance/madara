@@ -30,11 +30,11 @@ impl From<StarknetError> for StarknetClientError {
     }
 }
 
-impl From<StarknetClientError> for SettlementClientError {
-    fn from(err: StarknetClientError) -> Self {
-        SettlementClientError::Starknet(err)
-    }
-}
+// impl From<StarknetClientError> for SettlementClientError {
+//     fn from(err: StarknetClientError) -> Self {
+//         SettlementClientError::Starknet(err)
+//     }
+// }
 
 // impl From<StarknetClientError> for crate::error::SettlementClientError {
 //     fn from(err: StarknetClientError) -> Self {

@@ -32,8 +32,8 @@ impl From<sol_types::Error> for EthereumClientError {
     }
 }
 
-impl From<EthereumClientError> for SettlementClientError {
-    fn from(err: EthereumClientError) -> Self {
-        SettlementClientError::Ethereum(err)
-    }
-}
+// impl From<EthereumClientError> for SettlementClientError {
+//     fn from(err: EthereumClientError) -> Self {
+//         SettlementClientError::Ethereum(err)
+//     }
+// }

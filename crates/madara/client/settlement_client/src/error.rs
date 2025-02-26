@@ -23,8 +23,8 @@ pub enum SettlementClientError {
     #[error("Starknet client error: {0}")]
     Starknet(#[from] StarknetClientError),
 
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    #[error("{0}")]
+    Other(String),
 
     #[error("Missing required field: {0}")]
     MissingField(&'static str),
@@ -54,26 +54,32 @@ pub enum SettlementClientError {
     InvalidData(String),
 }
 
-// Helper trait for error context
-pub trait ResultExt<T> {
-    fn with_context<C, F>(self, context: F) -> Result<T, SettlementClientError>
+// Updated ResultExt to be more specific
+pub trait ResultExt<T, E> {
+    fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
     where
-        F: FnOnce() -> C,
-        C: std::fmt::Display + Send + Sync + 'static;
+        C: Into<String>;
 }
 
-impl<T, E> ResultExt<T> for Result<T, E>
+// Single implementation that handles both std::error::Error and String
+impl<T, E> ResultExt<T, E> for Result<T, E>
 where
-    E: Into<SettlementClientError>,
+    E: std::fmt::Display,  // Changed from std::error::Error to std::fmt::Display
 {
-    fn with_context<C, F>(self, context: F) -> Result<T, SettlementClientError>
+    fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
     where
-        F: FnOnce() -> C,
-        C: std::fmt::Display + Send + Sync + 'static,
+        C: Into<String>,
     {
-        self.map_err(|e| {
-            let err: SettlementClientError = e.into();
-            err.context(context()).into()
-        })
+        self.map_err(|e| SettlementClientError::Other(format!("{}: {}", context.into(), e)))
     }
 }
+
+// // Add this implementation specifically for anyhow::Error
+// impl<T> ResultExt<T, anyhow::Error> for Result<T, anyhow::Error> {
+//     fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
+//     where
+//         C: Into<String>,
+//     {
+//         self.map_err(|e| SettlementClientError::Other(format!("{}: {}", context.into(), e)))
+//     }
+// }

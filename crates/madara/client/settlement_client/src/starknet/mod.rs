@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use url::Url;
+use crate::error::ResultExt;
 
 pub mod event;
 pub mod error;
