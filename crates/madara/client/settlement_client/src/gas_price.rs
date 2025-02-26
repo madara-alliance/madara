@@ -1,10 +1,10 @@
 use crate::client::SettlementClientTrait;
-use anyhow::Context;
 use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use crate::error::ResultExt;
 use crate::error::SettlementClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use futures::Stream;
@@ -14,7 +14,6 @@ use opentelemetry::global::Error as OtelError;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 use std::time::SystemTime;
-use crate::error::ResultExt;
 
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
@@ -61,7 +60,7 @@ impl L1BlockMetrics {
 }
 
 pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -89,7 +88,7 @@ where
 }
 
 pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
     l1_block_metrics: Arc<L1BlockMetrics>,
@@ -105,11 +104,11 @@ where
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now()
         .duration_since(last_update_timestamp)
-        .settlement_context("Failed to calculate time since last update")?;
+        .map_err(|e| SettlementClientError::Other(e.to_string()))?;
 
     let last_update_timestamp = last_update_timestamp
         .duration_since(UNIX_EPOCH)
-        .settlement_context("SystemTime before UNIX EPOCH!")?
+        .map_err(|e| SettlementClientError::Other(e.to_string()))?
         .as_micros();
 
     if duration_since_last_update > 10 * gas_price_poll_ms {
@@ -123,52 +122,46 @@ where
     Ok(())
 }
 
-async fn update_gas_price<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
+pub async fn update_gas_price<C, S>(
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
 where
     S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
-    let (eth_gas_price, avg_blob_base_fee) = settlement_client
-        .get_gas_prices()
-        .await
-        .settlement_context("Failed to get gas prices")?;
+    let (eth_gas_price, avg_blob_base_fee) =
+        settlement_client.get_gas_prices().await.settlement_context("Failed to get gas prices")?;
 
     l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);
     l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
 
     // fetch eth/strk price and update
     if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
-        let (eth_strk_price, decimals) = oracle_provider
-            .fetch_eth_strk_price()
-            .await
-            .settlement_context("Failed to retrieve ETH/STRK price")?;
+        let (eth_strk_price, decimals) =
+            oracle_provider.fetch_eth_strk_price().await.map_err(|e| SettlementClientError::Other(e.to_string()))?;
 
         let strk_gas_price = (BigDecimal::new(eth_gas_price.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent()
-        .settlement_context("Failed to calculate STRK gas price")?;
+        .as_bigint_and_exponent();
 
         let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
             / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent()
-        .settlement_context("Failed to calculate STRK data gas price")?;
+        .as_bigint_and_exponent();
 
         l1_gas_provider.update_strk_l1_gas_price(
             strk_gas_price
                 .0
                 .to_str_radix(10)
                 .parse::<u128>()
-                .settlement_context("Failed to update STRK L1 gas price")?
+                .map_err(|e| SettlementClientError::Other(e.to_string()))?,
         );
         l1_gas_provider.update_strk_l1_data_gas_price(
             strk_data_gas_price
                 .0
                 .to_str_radix(10)
                 .parse::<u128>()
-                .settlement_context("Failed to update STRK L1 data gas price")?
+                .map_err(|e| SettlementClientError::Other(e.to_string()))?,
         );
     }
 
@@ -176,15 +169,12 @@ where
 
     // Update block number separately to avoid holding the lock for too long
     update_l1_block_metrics(
-        settlement_client
-            .get_latest_block_number()
-            .await
-            .settlement_context("Failed to get latest block number")?,
+        settlement_client.get_latest_block_number().await.map_err(|e| SettlementClientError::Other(e.to_string()))?,
         l1_block_metrics,
         l1_gas_provider,
     )
     .await
-    .settlement_context("Failed to update L1 block metrics")?;
+    .map_err(|e| SettlementClientError::Other(e.to_string()))?;
 
     Ok(())
 }

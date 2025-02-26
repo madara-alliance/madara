@@ -1,6 +1,5 @@
 use crate::eth::error::EthereumClientError;
 use crate::starknet::error::StarknetClientError;
-use anyhow::Context;
 use thiserror::Error;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,10 +17,10 @@ pub enum Error {
 #[derive(Error, Debug)]
 pub enum SettlementClientError {
     #[error("Ethereum client error: {0}")]
-    Ethereum(#[from] EthereumClientError),
+    Ethereum(EthereumClientError),
 
     #[error("Starknet client error: {0}")]
-    Starknet(#[from] StarknetClientError),
+    Starknet(StarknetClientError),
 
     #[error("{0}")]
     Other(String),
@@ -54,32 +53,39 @@ pub enum SettlementClientError {
     InvalidData(String),
 }
 
-// Updated ResultExt to be more specific
+// 1. Ensure EthereumClientError can be converted to SettlementClientError
+impl From<EthereumClientError> for SettlementClientError {
+    fn from(err: EthereumClientError) -> Self {
+        SettlementClientError::Ethereum(err)
+    }
+}
+
+// 2. Ensure StarknetClientError can be converted to SettlementClientError
+impl From<StarknetClientError> for SettlementClientError {
+    fn from(err: StarknetClientError) -> Self {
+        SettlementClientError::Starknet(err)
+    }
+}
+
+// 3. Update ResultExt to be more flexible with error types
 pub trait ResultExt<T, E> {
     fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
     where
         C: Into<String>;
 }
 
-// Single implementation that handles both std::error::Error and String
+// 4. Implementation for any error type that can be converted to SettlementClientError
 impl<T, E> ResultExt<T, E> for Result<T, E>
 where
-    E: std::fmt::Display,  // Changed from std::error::Error to std::fmt::Display
+    E: Into<SettlementClientError>,
 {
     fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
     where
         C: Into<String>,
     {
-        self.map_err(|e| SettlementClientError::Other(format!("{}: {}", context.into(), e)))
+        self.map_err(|e| {
+            let err: SettlementClientError = e.into();
+            SettlementClientError::Other(format!("{}: {}", context.into(), err))
+        })
     }
 }
-
-// // Add this implementation specifically for anyhow::Error
-// impl<T> ResultExt<T, anyhow::Error> for Result<T, anyhow::Error> {
-//     fn settlement_context<C>(self, context: C) -> Result<T, SettlementClientError>
-//     where
-//         C: Into<String>,
-//     {
-//         self.map_err(|e| SettlementClientError::Other(format!("{}: {}", context.into(), e)))
-//     }
-// }

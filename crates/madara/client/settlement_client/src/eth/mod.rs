@@ -1,5 +1,5 @@
-pub mod event;
 pub mod error;
+pub mod event;
 
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
@@ -18,6 +18,7 @@ use alloy::sol_types::SolValue;
 use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
 use bitvec::macros::internal::funty::Fundamental;
+use error::EthereumClientError;
 use futures::StreamExt;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
@@ -25,8 +26,6 @@ use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
-use error::EthereumClientError;
-use crate::error::ResultExt;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -36,9 +35,6 @@ sol!(
     StarknetCoreContract,
     "src/eth/starknet_core.json"
 );
-
-const ERR_ARCHIVE: &str =
-    "Failed to watch event filter - Ensure you are using an L1 RPC endpoint that points to an archive node";
 
 pub struct EthereumClient {
     pub provider: Arc<ReqwestProvider>,
@@ -58,19 +54,21 @@ impl Clone for EthereumClient {
 }
 
 impl EthereumClient {
-    pub async fn new(config: EthereumClientConfig) -> Result<Self, EthereumClientError> {
+    pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
         let provider = ProviderBuilder::new().on_http(config.url);
         // Check if contract exists
         if !provider
             .get_code_at(config.l1_core_address)
             .await
-            .map_err(|e| EthereumClientError::Rpc(e.to_string()))?
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?
             .is_empty()
         {
-        let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
+            let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
             Ok(Self { provider: Arc::new(provider), l1_core_contract: contract })
         } else {
-            Err(EthereumClientError::Contract("Core contract not found at given address".into()))
+            Err(SettlementClientError::Ethereum(
+                EthereumClientError::Contract("Core contract not found at given address".into()).into(),
+            ))
         }
     }
 }
@@ -78,24 +76,22 @@ impl EthereumClient {
 #[async_trait]
 impl SettlementClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
-    type Error = EthereumClientError;
     type StreamType = EthereumEventStream;
-
     fn get_client_type(&self) -> ClientType {
         ClientType::ETH
     }
 
     /// Retrieves the latest Ethereum block number
-    async fn get_latest_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
         self.provider
             .get_block_number()
             .await
             .map(|n| n.as_u64())
-            .map_err(|e| EthereumClientError::Rpc(e.to_string()))
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })
     }
 
     /// Get the block number of the last occurrence of a given event.
-    async fn get_last_event_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
@@ -104,51 +100,68 @@ impl SettlementClientTrait for EthereumClient {
             .to_block(latest_block)
             .address(*self.l1_core_contract.address());
 
-        let logs = self.provider
+        let logs = self
+            .provider
             .get_logs(&filter)
             .await
-            .map_err(|e| EthereumClientError::Rpc(e.to_string()))?;
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?;
 
         let filtered_logs =
             logs.into_iter().rev().map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>()).next();
 
         match filtered_logs {
-            Some(Ok(log)) => log.block_number.ok_or_else(|| EthereumClientError::MissingField("block_number")),
-            Some(Err(e)) => Err(EthereumClientError::Contract(e.to_string())),
-            None => Err(EthereumClientError::EventProcessing { 
-                message: "no event found".to_string(), 
-                block_number: latest_block 
-            }),
+            Some(Ok(log)) => log
+                .block_number
+                .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
+            Some(Err(e)) => Err(SettlementClientError::Ethereum(EthereumClientError::Contract(e.to_string()).into())),
+            None => Err(SettlementClientError::Ethereum(
+                EthereumClientError::EventProcessing {
+                    message: "no event found".to_string(),
+                    block_number: latest_block,
+                }
+                .into(),
+            )),
         }
     }
 
     /// Get the last Starknet block number verified on L1
-    async fn get_last_verified_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
         self.l1_core_contract
             .stateBlockNumber()
             .call()
             .await
             .map(|block_number| block_number._0.as_u64())
-            .map_err(|e| EthereumClientError::Contract(e.to_string()))
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Contract(e.to_string()).into() })?;
+        Ok(0) // Placeholder until the actual implementation is provided
     }
 
     /// Get the last Starknet state root verified on L1
-    async fn get_last_verified_state_root(&self) -> Result<Felt, Self::Error> {
-        let state_root =
-            self.l1_core_contract.stateRoot().call().await.map_err(|e| EthereumClientError::Contract(e.to_string()))?;
+    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
+        let state_root = self
+            .l1_core_contract
+            .stateRoot()
+            .call()
+            .await
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Contract(e.to_string()).into() })?;
 
-        u256_to_felt(state_root._0).map_err(|e| EthereumClientError::Conversion(e.to_string()))
+        u256_to_felt(state_root._0)
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })
     }
 
     /// Get the last Starknet block hash verified on L1
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, Self::Error> {
-        let block_hash =
-            self.l1_core_contract.stateBlockHash().call().await.map_err(|e| EthereumClientError::Contract(e.to_string()))?;
+    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError> {
+        let block_hash = self
+            .l1_core_contract
+            .stateBlockHash()
+            .call()
+            .await
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Contract(e.to_string()).into() })?;
 
-        u256_to_felt(block_hash._0).map_err(|e| EthereumClientError::Conversion(e.to_string()))
+        u256_to_felt(block_hash._0)
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })
     }
 
-    async fn get_initial_state(&self) -> Result<StateUpdate, Self::Error> {
+    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
         let global_root = self.get_last_verified_state_root().await?;
@@ -161,37 +174,37 @@ impl SettlementClientTrait for EthereumClient {
         backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), SettlementClientError> {
         let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
         let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
-            Some(res) => {
-                res.map_err(|e| EthereumClientError::ArchiveRequired(e.to_string()))?
-                   .into_stream()
-            }
+            Some(res) => res
+                .map_err(|e| -> SettlementClientError { EthereumClientError::ArchiveRequired(e.to_string()).into() })?
+                .into_stream(),
             None => return Ok(()),
         };
 
         while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
             let log = event_result
-                .settlement_context("Failed to process state update event")?;
-            
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Other(e.to_string()).into() })?;
+
             let format_event = convert_log_state_update(log.0.clone())
-                .settlement_context("Failed to format state update event")?;
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Other(e.to_string()).into() })?;
 
             update_l1(&backend, format_event, l1_block_metrics.clone())
-                .settlement_context("Failed to update L1 state")?;
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Other(e.to_string()).into() })?;
         }
 
         Ok(())
     }
 
-    async fn get_gas_prices(&self) -> Result<(u128, u128), Self::Error> {
+    async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError> {
         let block_number = self.get_latest_block_number().await?;
         let fee_history = self
             .provider
             .get_fee_history(300, BlockNumberOrTag::Number(block_number), &[])
-            .settlement_context("Failed to get fee history")?;
+            .await
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Other(e.to_string()).into() })?;
 
         // The RPC responds with 301 elements for some reason. It's also just safer to manually
         // take the last 300. We choose 300 to get average gas price for last one hour (300 * 12 sec block
@@ -214,17 +227,17 @@ impl SettlementClientTrait for EthereumClient {
         let eth_gas_price = fee_history
             .base_fee_per_gas
             .last()
-            .ok_or_else(|| EthereumClientError::MissingField("eth_gas_price"))?;
+            .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("eth_gas_price").into() })?;
 
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, Self::Error> {
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
         let payload_vec = event.payload.iter().try_fold(Vec::with_capacity(event.payload.len()), |mut acc, felt| {
             let u256 = felt_to_u256(*felt)
-                .settlement_context("Failed to convert felt to u256 in payload")?;
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })?;
             acc.push(u256);
-            Ok::<_, EthereumClientError>(acc)
+            Ok::<_, SettlementClientError>(acc)
         })?;
 
         let from_address_start_index = event.from.to_bytes_be().as_slice().len().saturating_sub(20);
@@ -233,11 +246,11 @@ impl SettlementClientTrait for EthereumClient {
             [0u8; 12],
             Address::from_slice(&event.from.to_bytes_be().as_slice()[from_address_start_index..]),
             felt_to_u256(event.to)
-                .settlement_context("Failed to convert felt to u256 for to address")?,
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })?,
             felt_to_u256(event.nonce)
-                .settlement_context("Failed to convert felt to u256 for nonce")?,
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })?,
             felt_to_u256(event.selector)
-                .settlement_context("Failed to convert felt to u256 for selector")?,
+                .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })?,
             U256::from(event.payload.len()),
             payload_vec,
         );
@@ -257,28 +270,29 @@ impl SettlementClientTrait for EthereumClient {
     ///     - 0 if the message has not been cancelled
     ///     - timestamp of the cancellation if it has been cancelled
     /// - An Error if the call fail
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, Self::Error> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
         let cancellation_timestamp = self
             .l1_core_contract
             .l1ToL2MessageCancellations(B256::from_slice(msg_hash))
             .call()
             .await
-            .map_err(|e| EthereumClientError::Contract(e.to_string()))?;
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Contract(e.to_string()).into() })?;
 
-        u256_to_felt(cancellation_timestamp._0).map_err(|e| EthereumClientError::Conversion(e.to_string()))
+        u256_to_felt(cancellation_timestamp._0)
+            .map_err(|e| -> SettlementClientError { EthereumClientError::Conversion(e.to_string()).into() })
     }
 
     async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
-    ) -> Result<Self::StreamType, Self::Error> {
+    ) -> Result<Self::StreamType, SettlementClientError> {
         let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
         let event_stream = filter
             .from_block(last_synced_event_block.block_number)
             .to_block(BlockNumberOrTag::Finalized)
             .watch()
             .await
-            .settlement_context("Failed to watch L1 messaging events")?;
+            .map_err(|e| -> SettlementClientError { EthereumClientError::ArchiveRequired(e.to_string()).into() })?;
 
         Ok(EthereumEventStream::new(event_stream))
     }

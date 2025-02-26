@@ -1,3 +1,4 @@
+use crate::error::SettlementClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::starknet::error::StarknetClientError;
 use futures::Stream;
@@ -82,7 +83,7 @@ impl StarknetEventStream {
 }
 
 impl Stream for StarknetEventStream {
-    type Item = Result<L1toL2MessagingEventData, StarknetClientError>;
+    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.future.is_none() {
@@ -104,34 +105,64 @@ impl Stream for StarknetEventStream {
                         Ok((Some(event), updated_filter)) => {
                             self.filter = updated_filter;
 
-                            let nonce = event.data.get(1).ok_or_else(|| StarknetClientError::EventProcessing {
-                                message: "Missing nonce in event data".to_string(),
-                                event_id: "MessageSent".to_string(),
+                            let nonce = event.data.get(1).ok_or_else(|| {
+                                SettlementClientError::Starknet(
+                                    StarknetClientError::EventProcessing {
+                                        message: "Missing nonce in event data".to_string(),
+                                        event_id: "MessageSent".to_string(),
+                                    }
+                                    .into(),
+                                )
                             })?;
                             self.processed_events.insert(*nonce);
 
                             let event_data = event
                                 .block_number
-                                .ok_or_else(|| StarknetClientError::EventProcessing {
-                                    message: "Unable to get block number from event".to_string(),
-                                    event_id: "MessageSent".to_string(),
+                                .ok_or_else(|| {
+                                    SettlementClientError::Starknet(
+                                        StarknetClientError::EventProcessing {
+                                            message: "Unable to get block number from event".to_string(),
+                                            event_id: "MessageSent".to_string(),
+                                        }
+                                        .into(),
+                                    )
                                 })
                                 .map(|block_number| {
-                                    let selector = event.data.first().ok_or_else(|| StarknetClientError::EventProcessing {
-                                        message: "Missing selector in event data".to_string(),
-                                        event_id: "MessageSent".to_string(),
+                                    let selector = event.data.first().ok_or_else(|| {
+                                        SettlementClientError::Starknet(
+                                            StarknetClientError::EventProcessing {
+                                                message: "Missing selector in event data".to_string(),
+                                                event_id: "MessageSent".to_string(),
+                                            }
+                                            .into(),
+                                        )
                                     })?;
-                                    let from = event.keys.get(2).ok_or_else(|| StarknetClientError::EventProcessing {
-                                        message: "Missing from_address in event keys".to_string(),
-                                        event_id: "MessageSent".to_string(),
+                                    let from = event.keys.get(2).ok_or_else(|| {
+                                        SettlementClientError::Starknet(
+                                            StarknetClientError::EventProcessing {
+                                                message: "Missing from_address in event keys".to_string(),
+                                                event_id: "MessageSent".to_string(),
+                                            }
+                                            .into(),
+                                        )
                                     })?;
-                                    let to = event.keys.get(3).ok_or_else(|| StarknetClientError::EventProcessing {
-                                        message: "Missing to_address in event keys".to_string(),
-                                        event_id: "MessageSent".to_string(),
+                                    let to = event.keys.get(3).ok_or_else(|| {
+                                        SettlementClientError::Starknet(
+                                            StarknetClientError::EventProcessing {
+                                                message: "Missing to_address in event keys".to_string(),
+                                                event_id: "MessageSent".to_string(),
+                                            }
+                                            .into(),
+                                        )
                                     })?;
-                                    let message_hash = event.keys.get(1).ok_or_else(|| StarknetClientError::EventProcessing {
-                                        message: "Missing message_hash in event keys".to_string(),
-                                        event_id: "MessageSent".to_string(),
+                                    let message_hash = event.keys.get(1).ok_or_else(|| {
+                                        SettlementClientError::Starknet(
+                                            StarknetClientError::EventProcessing {
+                                                message: "Missing message_hash in event keys".to_string(),
+                                                event_id: "MessageSent".to_string(),
+                                            }
+                                            .into(),
+                                        )
                                     })?;
 
                                     Ok(L1toL2MessagingEventData {
@@ -159,7 +190,9 @@ impl Stream for StarknetEventStream {
                             self.filter = updated_filter;
                             Poll::Ready(None)
                         }
-                        Err(e) => Poll::Ready(Some(Err(StarknetClientError::Provider(e.to_string())))),
+                        Err(e) => Poll::Ready(Some(Err(SettlementClientError::Starknet(
+                            StarknetClientError::Provider(e.to_string()),
+                        )))),
                     }
                 }
                 Poll::Pending => Poll::Pending,

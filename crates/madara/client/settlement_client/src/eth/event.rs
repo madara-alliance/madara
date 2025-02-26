@@ -1,3 +1,5 @@
+use crate::error::SettlementClientError;
+use crate::eth::error::EthereumClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::utils::u256_to_felt;
@@ -8,8 +10,6 @@ use futures::Stream;
 use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::eth::error::EthereumClientError;
-
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
 type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
 
@@ -25,51 +25,59 @@ impl EthereumEventStream {
 }
 
 impl Stream for EthereumEventStream {
-    type Item = Result<L1toL2MessagingEventData, EthereumClientError>;
+    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(result)) => match result {
                 Ok((event, log)) => {
-                    let event_data = (|| -> Result<L1toL2MessagingEventData, EthereumClientError> {
+                    let event_data = (|| -> Result<L1toL2MessagingEventData, SettlementClientError> {
                         Ok(L1toL2MessagingEventData {
                             from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
-                            to: u256_to_felt(event.toAddress)
-                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
-                            selector: u256_to_felt(event.selector)
-                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
-                            nonce: u256_to_felt(event.nonce)
-                                .map_err(|e| EthereumClientError::Conversion(e.to_string()))?,
+                            to: u256_to_felt(event.toAddress).map_err(|e| -> SettlementClientError {
+                                EthereumClientError::Conversion(e.to_string()).into()
+                            })?,
+                            selector: u256_to_felt(event.selector).map_err(|e| -> SettlementClientError {
+                                EthereumClientError::Conversion(e.to_string()).into()
+                            })?,
+                            nonce: u256_to_felt(event.nonce).map_err(|e| -> SettlementClientError {
+                                EthereumClientError::Conversion(e.to_string()).into()
+                            })?,
                             payload: event.payload.iter().try_fold(
                                 Vec::with_capacity(event.payload.len()),
-                                |mut acc, ele| -> Result<Vec<Felt>, EthereumClientError> {
-                                    acc.push(u256_to_felt(*ele)
-                                        .map_err(|e| EthereumClientError::Conversion(e.to_string()))?);
+                                |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
+                                    acc.push(u256_to_felt(*ele).map_err(|e| -> SettlementClientError {
+                                        EthereumClientError::Conversion(e.to_string()).into()
+                                    })?);
                                     Ok(acc)
                                 },
                             )?,
-                            fee: Some(event.fee.try_into().map_err(|_| {
-                                EthereumClientError::Conversion("Fee conversion failed".to_string())
+                            fee: Some(event.fee.try_into().map_err(|_| -> SettlementClientError {
+                                EthereumClientError::Conversion("Fee conversion failed".to_string()).into()
                             })?),
                             transaction_hash: Felt::from_bytes_be_slice(
                                 log.transaction_hash
-                                    .ok_or_else(|| EthereumClientError::MissingField("transaction_hash"))?
+                                    .ok_or_else(|| -> SettlementClientError {
+                                        EthereumClientError::MissingField("transaction_hash").into()
+                                    })?
                                     .to_vec()
                                     .as_slice(),
                             ),
                             message_hash: None,
-                            block_number: log
-                                .block_number
-                                .ok_or_else(|| EthereumClientError::MissingField("block_number"))?,
-                            event_index: Some(
-                                log.log_index.ok_or_else(|| EthereumClientError::MissingField("log_index"))?,
-                            ),
+                            block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
+                                EthereumClientError::MissingField("block_number").into()
+                            })?,
+                            event_index: Some(log.log_index.ok_or_else(|| -> SettlementClientError {
+                                EthereumClientError::MissingField("log_index").into()
+                            })?),
                         })
                     })();
 
                     Poll::Ready(Some(event_data))
                 }
-                Err(e) => Poll::Ready(Some(Err(EthereumClientError::Contract(e.to_string())))),
+                Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(
+                    EthereumClientError::Contract(e.to_string()).into(),
+                )))),
             },
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
@@ -123,7 +131,7 @@ pub mod eth_event_stream_tests {
     // Helper function to process stream into a vector
     async fn collect_stream_events(
         stream: &mut EthereumEventStream,
-    ) -> Vec<Result<L1toL2MessagingEventData, EthereumClientError>> {
+    ) -> Vec<Result<L1toL2MessagingEventData, SettlementClientError>> {
         stream
             .take_while(|event| futures::future::ready(event.is_ok()))
             .fold(Vec::new(), |mut acc, event| async move {

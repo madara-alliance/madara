@@ -1,6 +1,6 @@
-use thiserror::Error;
-use alloy::sol_types;
 use crate::error::SettlementClientError;
+use alloy::sol_types;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EthereumClientError {
@@ -24,6 +24,12 @@ pub enum EthereumClientError {
 
     #[error("Archive node required: {0}")]
     ArchiveRequired(String),
+
+    #[error("Other error: {0}")]
+    Other(String),
+
+    #[error("Settlement error: {0}")]
+    Settlement(String),
 }
 
 impl From<sol_types::Error> for EthereumClientError {
@@ -32,8 +38,8 @@ impl From<sol_types::Error> for EthereumClientError {
     }
 }
 
-// impl From<EthereumClientError> for SettlementClientError {
-//     fn from(err: EthereumClientError) -> Self {
-//         SettlementClientError::Ethereum(err)
-//     }
-// }
+impl From<SettlementClientError> for EthereumClientError {
+    fn from(error: SettlementClientError) -> Self {
+        EthereumClientError::Settlement(error.to_string())
+    }
+}

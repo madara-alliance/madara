@@ -1,7 +1,5 @@
-use thiserror::Error;
 use starknet_core::types::StarknetError;
-use crate::error::SettlementClientError;
-
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum StarknetClientError {
@@ -29,24 +27,3 @@ impl From<StarknetError> for StarknetClientError {
         StarknetClientError::Provider(e.to_string())
     }
 }
-
-// impl From<StarknetClientError> for SettlementClientError {
-//     fn from(err: StarknetClientError) -> Self {
-//         SettlementClientError::Starknet(err)
-//     }
-// }
-
-// impl From<StarknetClientError> for crate::error::SettlementClientError {
-//     fn from(err: StarknetClientError) -> Self {
-//         match err {
-//             StarknetClientError::Provider(msg) => Self::InvalidResponse(msg),
-//             StarknetClientError::EventProcessing { message, event_id } => 
-//                 Self::InvalidEvent(format!("event {}: {}", event_id, message)),
-//             StarknetClientError::StateSync { message, block_number } => 
-//                 Self::InvalidLog(format!("at block {}: {}", block_number, message)),
-//             StarknetClientError::Contract(msg) => Self::InvalidContract(msg),
-//             StarknetClientError::Conversion(msg) => Self::ConversionError(msg),
-//             StarknetClientError::MissingField(field) => Self::MissingField(field),
-//         }
-//     }
-// }

@@ -1,11 +1,10 @@
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
-use crate::starknet::error::StarknetClientError;
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
+use crate::starknet::error::StarknetClientError;
 use crate::starknet::event::StarknetEventStream;
 use crate::state_update::{update_l1, StateUpdate};
-use anyhow::anyhow;
 use async_trait::async_trait;
 use bigdecimal::ToPrimitive;
 use mc_db::l1_db::LastSyncedEventBlock;
@@ -22,10 +21,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use url::Url;
-use crate::error::ResultExt;
 
-pub mod event;
 pub mod error;
+pub mod event;
 #[cfg(test)]
 pub mod utils;
 
@@ -54,13 +52,13 @@ impl Clone for StarknetClient {
 
 // Add this new implementation block for constructor
 impl StarknetClient {
-    pub async fn new(config: StarknetClientConfig) -> Result<Self, StarknetClientError> {
+    pub async fn new(config: StarknetClientConfig) -> Result<Self, SettlementClientError> {
         let provider = JsonRpcClient::new(HttpTransport::new(config.url));
         // Check if l2 contract exists
         provider
             .get_class_at(BlockId::Tag(BlockTag::Latest), config.l2_contract_address)
             .await
-            .map_err(|e| StarknetClientError::Provider(e.to_string()))?;
+            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
 
         Ok(Self {
             provider: Arc::new(provider),
@@ -76,21 +74,20 @@ impl StarknetClient {
 #[async_trait]
 impl SettlementClientTrait for StarknetClient {
     type Config = StarknetClientConfig;
-    type Error = StarknetClientError;
     type StreamType = StarknetEventStream;
 
     fn get_client_type(&self) -> ClientType {
         ClientType::STARKNET
     }
 
-    async fn get_latest_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
         self.provider
-            .get_block_number()
+            .block_number()
             .await
-            .map_err(|e| StarknetClientError::Provider(e.to_string()))
+            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })
     }
 
-    async fn get_last_event_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
         // If block on l2 is not greater than or equal to 6000 we will consider the last block to 0.
         let last_block = latest_block.saturating_sub(6000);
@@ -100,7 +97,7 @@ impl SettlementClientTrait for StarknetClient {
                 BlockId::Number(latest_block),
                 self.l2_core_contract,
                 vec![get_selector_from_name("LogStateUpdate")
-                    .map_err(|e| StarknetClientError::Contract(e.to_string()))?],
+                    .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?],
             )
             .await?;
         /*
@@ -114,18 +111,22 @@ impl SettlementClientTrait for StarknetClient {
                 block_hash: felt252,
             }
         */
-        let last_update_state_event = last_events
-            .last()
-            .ok_or_else(|| StarknetClientError::EventProcessing {
+        let last_update_state_event = last_events.last().ok_or_else(|| -> SettlementClientError {
+            StarknetClientError::EventProcessing {
                 message: "No event found".to_string(),
                 event_id: "LogStateUpdate".to_string(),
-            })?;
+            }
+            .into()
+        })?;
 
         if last_update_state_event.data.len() != 3 {
-            return Err(StarknetClientError::EventProcessing {
-                message: "Event response invalid".to_string(),
-                event_id: "LogStateUpdate".to_string(),
-            });
+            return Err(SettlementClientError::Starknet(
+                StarknetClientError::EventProcessing {
+                    message: "Event response invalid".to_string(),
+                    event_id: "LogStateUpdate".to_string(),
+                }
+                .into(),
+            ));
         }
 
         match last_update_state_event.block_number {
@@ -134,21 +135,21 @@ impl SettlementClientTrait for StarknetClient {
         }
     }
 
-    async fn get_last_verified_block_number(&self) -> Result<u64, Self::Error> {
+    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
         let state = self.get_state_call().await?;
         u64::try_from(state[1])
-            .map_err(|e| StarknetClientError::Conversion(e.to_string()))
+            .map_err(|e| -> SettlementClientError { StarknetClientError::Conversion(e.to_string()).into() })
     }
 
-    async fn get_last_verified_state_root(&self) -> Result<Felt, Self::Error> {
+    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
         Ok(self.get_state_call().await?[0])
     }
 
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, Self::Error> {
+    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError> {
         Ok(self.get_state_call().await?[2])
     }
 
-    async fn get_initial_state(&self) -> Result<StateUpdate, Self::Error> {
+    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
         let global_root = self.get_last_verified_state_root().await?;
@@ -161,12 +162,12 @@ impl SettlementClientTrait for StarknetClient {
         backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
         l1_block_metrics: Arc<L1BlockMetrics>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), SettlementClientError> {
         while let Some(events) = ctx
             .run_until_cancelled(async {
                 let latest_block = self.get_latest_block_number().await?;
                 let selector = get_selector_from_name("LogStateUpdate")
-                    .map_err(|e| StarknetClientError::Contract(e.to_string()))?;
+                    .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?;
 
                 self.get_events(
                     BlockId::Number(latest_block),
@@ -184,31 +185,32 @@ impl SettlementClientTrait for StarknetClient {
                 let block_number = data
                     .data
                     .get(1)
-                    .ok_or_else(|| StarknetClientError::MissingField("block_number"))?
+                    .ok_or_else(|| -> SettlementClientError {
+                        StarknetClientError::MissingField("block_number").into()
+                    })?
                     .to_u64()
-                    .ok_or_else(|| StarknetClientError::Conversion("Block number conversion failed".to_string()))?;
+                    .ok_or_else(|| -> SettlementClientError {
+                        StarknetClientError::Conversion("Block number conversion failed".to_string()).into()
+                    })?;
 
                 let current_processed = self.processed_update_state_block.load(Ordering::Relaxed);
                 if current_processed < block_number {
-                    let global_root = data.data
-                        .first()
-                        .ok_or_else(|| StarknetClientError::MissingField("global_root"))?;
-                    let block_hash = data.data
-                        .get(2)
-                        .ok_or_else(|| StarknetClientError::MissingField("block_hash"))?;
+                    let global_root = data.data.first().ok_or_else(|| -> SettlementClientError {
+                        StarknetClientError::MissingField("global_root").into()
+                    })?;
+                    let block_hash = data.data.get(2).ok_or_else(|| -> SettlementClientError {
+                        StarknetClientError::MissingField("block_hash").into()
+                    })?;
 
-                    let formatted_event = StateUpdate { 
-                        block_number, 
-                        global_root: *global_root, 
-                        block_hash: *block_hash 
-                    };
-                    
-                    update_l1(&backend, formatted_event, l1_block_metrics.clone())
-                        .map_err(|e| StarknetClientError::StateSync {
-                            message: e.to_string(),
-                            block_number,
-                        })?;
-                        
+                    let formatted_event =
+                        StateUpdate { block_number, global_root: *global_root, block_hash: *block_hash };
+
+                    update_l1(&backend, formatted_event, l1_block_metrics.clone()).map_err(
+                        |e| -> SettlementClientError {
+                            StarknetClientError::StateSync { message: e.to_string(), block_number }.into()
+                        },
+                    )?;
+
                     self.processed_update_state_block.store(block_number, Ordering::Relaxed);
                 }
             }
@@ -222,32 +224,34 @@ impl SettlementClientTrait for StarknetClient {
     // the L3s will have zero gas prices. for any transaction.
     // So that's why we will keep the prices as 0 returning from
     // our settlement client.
-    async fn get_gas_prices(&self) -> Result<(u128, u128), Self::Error> {
+    async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError> {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, Self::Error> {
+    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
     }
 
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, Self::Error> {
+    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
         let call_res = self
             .provider
             .call(
                 FunctionCall {
                     contract_address: self.l2_core_contract,
-                    entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations")
-                        .map_err(|e| StarknetClientError::Contract(e.to_string()))?,
+                    entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations").map_err(
+                        |e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() },
+                    )?,
                     calldata: vec![Felt::from_bytes_be_slice(msg_hash)],
                 },
                 BlockId::Tag(BlockTag::Pending),
             )
             .await
-            .map_err(|e| StarknetClientError::Contract(e.to_string()))?;
+            .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?;
 
         if call_res.len() != 2 {
-            return Err(StarknetClientError::Contract(
-                "l1_to_l2_message_cancellations should return only 2 values".into(),
+            return Err(SettlementClientError::Starknet(
+                StarknetClientError::Contract("l1_to_l2_message_cancellations should return only 2 values".into())
+                    .into(),
             ));
         }
         Ok(call_res[0])
@@ -256,15 +260,13 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_messaging_stream(
         &self,
         last_synced_event_block: LastSyncedEventBlock,
-    ) -> Result<Self::StreamType, Self::Error> {
+    ) -> Result<Self::StreamType, SettlementClientError> {
         let filter = EventFilter {
             from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
             to_block: Some(BlockId::Number(self.get_latest_block_number().await?)),
             address: Some(self.l2_core_contract),
-            keys: Some(vec![vec![
-                get_selector_from_name("MessageSent")
-                    .map_err(|e| StarknetClientError::Contract(e.to_string()))?
-            ]]),
+            keys: Some(vec![vec![get_selector_from_name("MessageSent")
+                .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?]]),
         };
         Ok(StarknetEventStream::new(self.provider.clone(), filter, Duration::from_secs(1)))
     }
@@ -277,7 +279,7 @@ impl StarknetClient {
         to_block: BlockId,
         contract_address: Felt,
         keys: Vec<Felt>,
-    ) -> Result<Vec<EmittedEvent>, StarknetClientError> {
+    ) -> Result<Vec<EmittedEvent>, SettlementClientError> {
         let mut event_vec = Vec::new();
         let mut page_indicator = false;
         let mut continuation_token: Option<String> = None;
@@ -296,7 +298,7 @@ impl StarknetClient {
                     1000,
                 )
                 .await
-                .map_err(|e| StarknetClientError::Provider(e.to_string()))?;
+                .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
 
             event_vec.extend(events.events);
             if let Some(token) = events.continuation_token {
@@ -319,7 +321,7 @@ impl StarknetClient {
             .collect()
     }
 
-    pub async fn get_state_call(&self) -> Result<Vec<Felt>, StarknetClientError> {
+    pub async fn get_state_call(&self) -> Result<Vec<Felt>, SettlementClientError> {
         let call_res = self
             .provider
             .call(
@@ -329,17 +331,20 @@ impl StarknetClient {
                     GitHub Ref : https://github.com/keep-starknet-strange/piltover/blob/main/src/state/component.cairo#L59
                     Function Call response : (StateRoot, BlockNumber, BlockHash)
                     */
-                    entry_point_selector: get_selector_from_name("get_state")
-                        .map_err(|e| StarknetClientError::Contract(e.to_string()))?,
+                    entry_point_selector: get_selector_from_name("get_state").map_err(
+                        |e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() },
+                    )?,
                     calldata: vec![],
                 },
                 BlockId::Tag(BlockTag::Pending),
             )
             .await
-            .map_err(|e| StarknetClientError::Provider(e.to_string()))?;
+            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
 
         if call_res.len() != 3 {
-            return Err(StarknetClientError::Contract("Call response invalid !!".into()));
+            return Err(SettlementClientError::Starknet(
+                StarknetClientError::Contract("Call response invalid !!".into()).into(),
+            ));
         }
         Ok(call_res)
     }

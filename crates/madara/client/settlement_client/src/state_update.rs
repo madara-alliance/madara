@@ -10,8 +10,6 @@ use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
-use crate::error::ResultExt;
-
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
@@ -36,7 +34,7 @@ pub fn update_l1(
 
     backend
         .write_last_confirmed_block(state_update.block_number)
-        .settlement_context("Setting l1 last confirmed block number")?;
+        .map_err(|e| SettlementClientError::Other(e.to_string()))?;
     tracing::debug!("update_l1: wrote last confirmed block number");
 
     Ok(())
@@ -44,7 +42,7 @@ pub fn update_l1(
 
 pub async fn state_update_worker<C, S>(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S, Error = SettlementClientError>>>,
+    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
@@ -52,9 +50,7 @@ where
     S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
-    backend
-        .clear_last_confirmed_block()
-        .settlement_context("Failed to clear L1 last confirmed block number")?;
+    backend.clear_last_confirmed_block().map_err(|e| SettlementClientError::Other(e.to_string()))?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
@@ -62,19 +58,17 @@ where
     // This does not seem to play well with anvil
     #[cfg(not(test))]
     {
-        let initial_state = settlement_client
-            .get_initial_state()
-            .await
-            .settlement_context("Failed to get initial ethereum state")?;
+        let initial_state =
+            settlement_client.get_initial_state().await.map_err(|e| SettlementClientError::Other(e.to_string()))?;
 
         update_l1(&backend, initial_state, l1_block_metrics.clone())
-            .settlement_context("Failed to update L1 with initial state")?;
+            .map_err(|e| SettlementClientError::Other(e.to_string()))?;
     }
 
     settlement_client
         .listen_for_update_state_events(backend, ctx, l1_block_metrics.clone())
         .await
-        .settlement_context("Failed to listen for update state events")?;
+        .map_err(|e| SettlementClientError::Other(e.to_string()))?;
 
     Ok(())
 }
