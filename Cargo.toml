@@ -50,7 +50,7 @@ default-members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
-  "madara/crates/client/settlment_client",
+  "madara/crates/client/settlement_client",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
   "madara/crates/client/rpc",
