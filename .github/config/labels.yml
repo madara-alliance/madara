@@ -80,6 +80,10 @@
 - name: invalid
   color: "e4e669"
   description: This issue or PR is not applicable
+- name: skip-changelog
+  color: "ffcc00"
+  description: Skip orchestrator changelog check
+  aliases: ["Skip-Changelog"]
 # ----------------------------------------
 # Color Scheme Reference:
 # - Reds (d73a4a, ee0701) for critical/blocking issues
