@@ -502,7 +502,7 @@ mod tests {
         // Check versioned constants
         // Load and parse the JSON file
         let json_content =
-            fs::read_to_string("crates/madara/primitives/chain_config/resources/versioned_constants_13_0.json")
+            fs::read_to_string("madara/crates/primitives/chain_config/resources/versioned_constants_13_0.json")
                 .expect("Failed to read JSON file");
         let json: Value = serde_json::from_str(&json_content).expect("Failed to parse JSON");
 

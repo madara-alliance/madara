@@ -1,4 +1,4 @@
 target
-crates/madara/client/sync/test-data/*.json
+madara/crates/client/sync/test-data/*.json
 infra/Signoz
 cairo-artifacts
