@@ -9,6 +9,8 @@ on:
       tag:
         description: tag (ex. v0.8.0) to generate release note from
         required: true
+      previous:
+        description: previous tag (ex. v0.7.0) to generate release note from
 
 permissions:
   contents: write
@@ -25,19 +27,20 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref_name }}
 
-      - name: Generate Release Notes
-        id: generate_notes
-        uses: TriPSs/conventional-changelog-action@v5
+      - name: Generate CHANGELOG body
+        id: changelog
+        uses: requarks/changelog-action@v1
         with:
-          preset: "angular"
+          token: ${{ github.token }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.RELEASE_ACTION }}
-          tag: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
           commit: ${{ github.sha }}
           draft: false
           prerelease: false
-          body: ${{ steps.generate_notes.outputs.notes }}
+          body: ${{ steps.changelog.outputs.changes }}
