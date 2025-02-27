@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref_name }}
 
-      - name: Generate CHANGELOG body
+      - name: Update CHANGELOG
         id: changelog
         uses: requarks/changelog-action@v1
         with:
@@ -42,3 +42,10 @@ jobs:
           draft: false
           prerelease: false
           body: ${{ steps.changelog.outputs.changes }}
+
+      - name: Commit CHANGELOG.md
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          branch: main
+          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
+          file_pattern: CHANGELOG.md
