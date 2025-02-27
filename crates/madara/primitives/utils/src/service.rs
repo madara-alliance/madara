@@ -10,8 +10,6 @@
 //! Services are run to completion until no service remains, at which point the
 //! node will automatically shutdown.
 //!
-//! ---
-//!
 //! # The [`Service`] trait
 //!
 //! This is the backbone of Madara services. The [`Service`] trait specifies how a service must start.
@@ -49,7 +47,6 @@
 //! # use mp_utils::service::ServiceId;
 //! # use mp_utils::service::ServiceIdProvider;
 //! # use mp_utils::service::ServiceRunner;
-//!
 //! pub struct MyService;
 //!
 //! #[async_trait::async_trait]
@@ -66,9 +63,7 @@
 //!             // to restart. In a more complex scenario, this means we might
 //!             // enter an invalid state!
 //!             anyhow::Ok(())
-//!         });
-//!
-//!         anyhow::Ok(())
+//!         })
 //!     }
 //! }
 //!
@@ -94,7 +89,6 @@
 //! # use mp_utils::service::ServiceId;
 //! # use mp_utils::service::ServiceIdProvider;
 //! # use mp_utils::service::ServiceRunner;
-//!
 //! pub struct MyService;
 //!
 //! #[async_trait::async_trait]
@@ -107,9 +101,7 @@
 //!             // only resolve once the task above completes, so the service
 //!             // monitor can correctly mark this service as ready to restart.
 //!             anyhow::Ok(())
-//!         });
-//!
-//!         anyhow::Ok(())
+//!         })
 //!     }
 //! }
 //!
@@ -135,7 +127,6 @@
 //! # use mp_utils::service::ServiceId;
 //! # use mp_utils::service::ServiceIdProvider;
 //! # use mp_utils::service::ServiceRunner;
-//!
 //! pub struct MyService;
 //!
 //! #[async_trait::async_trait]
@@ -154,9 +145,7 @@
 //!             // service context and are waiting for that cancellation in the
 //!             // service loop.
 //!             anyhow::Ok(())
-//!         });
-//!
-//!         anyhow::Ok(())
+//!         })
 //!     }
 //! }
 //!
@@ -224,11 +213,11 @@
 //!
 //! - [`cancel_global`]: cancels all services.
 //! - [`cancel_local`]: cancels this service and all its children.
-//! - [`service_remove`]: cancel a specific service.
+//! - [`service_deactivate`]: cancel a specific service.
 //!
 //! ## Start requests
 //!
-//! You can _request_ for a service to be started by calling [`service_add`]. Note that this will only
+//! You can _request_ for a service to be started by calling [`service_activate`]. Note that this will only
 //! work if the service has already been registered at the start of the program.
 //!
 //! # Service orchestration
@@ -240,8 +229,7 @@
 //!
 //! <div class="warning">
 //!
-//! Services cannot be started or restarted if they have not been registered at startup through
-//! [`ServiceMonitor::with`].
+//! Services cannot be started or restarted if they have not been registered at startup.
 //!
 //! </div>
 //!
@@ -290,6 +278,96 @@
 //! }
 //! ```
 //!
+//! # Composing services
+//!
+//! Services can run other services, allowing you to create a [hierarchy] of services. Services
+//! which manage other services are known as parent services, and services which are managed by
+//! other services are known as [`child`] services. A service can be both a child and parent
+//! service.If a parent service is cancelled, or stopped, then all of its child services will be
+//! stopped as well.
+//!
+//! ## example:
+//!
+//! ```rust
+//! # use mp_utils::service::Service;
+//! # use mp_utils::service::ServiceId;
+//! # use mp_utils::service::ServiceIdProvider;
+//! # use mp_utils::service::ServiceRunner;
+//! # use mp_utils::service::ServiceMonitorBuilder;
+//! struct ServiceA;
+//! struct ServiceB;
+//! struct ServiceC;
+//!
+//! enum MyServiceId {
+//!     ServiceA,
+//!     ServiceB,
+//!     ServiceC,
+//! }
+//!
+//! impl ServiceId for MyServiceId {
+//!     fn svc_id(&self) -> String {
+//!         match self {
+//!             Self::ServiceA => "ServiceA".to_string(),
+//!             Self::ServiceB => "ServiceB".to_string(),
+//!             Self::ServiceC => "ServiceC".to_string(),
+//!         }
+//!     }
+//! }
+//!
+//! #[async_trait::async_trait]
+//! impl Service for ServiceA {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |ctx| async move {
+//!             // Service A is the parent of services B and C. If A shuts down,
+//!             // so will B and C.
+//!             ctx.child()
+//!                 .with_active(ServiceB)?
+//!                 .with_active(ServiceC)?
+//!                 .start()
+//!                 .await
+//!         })
+//!     }
+//! }
+//!
+//! #[async_trait::async_trait]
+//! impl Service for ServiceB {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |mut ctx| async move {
+//!             ctx.cancelled().await;
+//!             anyhow::Ok(())
+//!         })
+//!     }
+//! }
+//!
+//! #[async_trait::async_trait]
+//! impl Service for ServiceC {
+//!     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//!         runner.service_loop(move |mut ctx| async move {
+//!             ctx.cancelled().await;
+//!             anyhow::Ok(())
+//!         })
+//!     }
+//! }
+//!
+//! impl ServiceIdProvider for ServiceA {
+//!     fn id_provider(&self) -> impl ServiceId {
+//!         MyServiceId::ServiceA
+//!     }
+//! }
+//!
+//! impl ServiceIdProvider for ServiceB {
+//!     fn id_provider(&self) -> impl ServiceId {
+//!         MyServiceId::ServiceB
+//!     }
+//! }
+//!
+//! impl ServiceIdProvider for ServiceC {
+//!     fn id_provider(&self) -> impl ServiceId {
+//!         MyServiceId::ServiceC
+//!     }
+//! }
+//! ```
+//!
 //! [`microservice`]: https://en.wikipedia.org/wiki/Microservices
 //! [`service_loop`]: ServiceRunner::service_loop
 //! [`cancelled`]: ServiceContext::run_until_cancelled
@@ -298,8 +376,10 @@
 //! [`Poll::Pending`]: std::task::Poll::Pending
 //! [`cancel_global`]: ServiceContext::cancel_global
 //! [`cancel_local`]: ServiceContext::cancel_local
-//! [`service_remove`]: ServiceContext::service_remove
-//! [`service_add`]: ServiceContext::service_add
+//! [`service_deactivate`]: ServiceContext::service_deactivate
+//! [`service_activate`]: ServiceContext::service_activate
+//! [hierarchy]: ServiceContext#scope
+//! [`child`]: ServiceContext::child
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -464,7 +544,7 @@ impl ServiceSet {
 /// `D` and `E`. If `E` is [`cancelled`], it will also cancel services `D` and `E` but not `B`.
 ///
 /// [`child`]: Self::child
-/// [`cancel`]: Self::service_remove
+/// [`cancel`]: Self::service_deactivate
 /// [`cancelled`]: Self::cancel_local
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
@@ -565,13 +645,13 @@ impl ServiceContext {
     /// be less clear.
     ///
     /// A service is cancelled after calling [`cancel_local`], [`cancel_global`] or if it is marked for
-    /// removal with [`service_remove`].
+    /// removal with [`service_deactivate`].
     ///
     ///
     /// [`run_until_cancelled`]: Self::run_until_cancelled
     /// [`cancel_local`]: Self::cancel_local
     /// [`cancel_global`]: Self::cancel_global
-    /// [`service_remove`]: Self::service_remove
+    /// [`service_deactivate`]: Self::service_deactivate
     /// [service loop]: ServiceRunner::service_loop
     #[inline(always)]
     pub async fn cancelled(&mut self) {
@@ -599,7 +679,7 @@ impl ServiceContext {
     /// Checks if the [`Service`] associated to this [`ServiceContext`] was cancelled.
     ///
     /// A service is cancelled as a result of calling [`cancel_local`], [`cancel_global`] or
-    /// [`service_remove`].
+    /// [`service_deactivate`].
     ///
     /// # Limitations
     ///
@@ -647,7 +727,7 @@ impl ServiceContext {
     ///
     /// [`cancel_local`]: Self::cancel_local
     /// [`cancel_global`]: Self::cancel_global
-    /// [`service_remove`]: Self::service_remove
+    /// [`service_deactivate`]: Self::service_deactivate
     /// [`cancelled`]: Self::cancelled
     /// [`run_until_cancelled`]: Self::run_until_cancelled
     #[inline(always)]
@@ -660,7 +740,7 @@ impl ServiceContext {
     /// Runs a [`Future`] until the [`Service`] associated to this [`ServiceContext`] is cancelled.
     ///
     /// A service is cancelled as a result of calling [`cancel_local`], [`cancel_global`] or
-    /// [`service_remove`].
+    /// [`service_deactivate`].
     ///
     /// # Cancellation safety
     ///
@@ -678,7 +758,7 @@ impl ServiceContext {
     ///
     /// [`cancel_local`]: Self::cancel_local
     /// [`cancel_global`]: Self::cancel_global
-    /// [`service_remove`]: Self::service_remove
+    /// [`service_deactivate`]: Self::service_deactivate
     pub async fn run_until_cancelled<T, F>(&mut self, f: F) -> Option<T>
     where
         T: Sized + Send + Sync,
@@ -700,11 +780,11 @@ impl ServiceContext {
         Self { id: id.svc_id(), ..self }
     }
 
-    /// Creates a new [`ServiceContext`] as a child of the current context.
+    /// Creates a new [`ServiceMonitorBuilder`] as a child of the current context.
     ///
-    /// Any [`Service`] which uses this new context will be able to cancel the services in the same
-    /// [local scope] as itself, and any further child services, without affecting the rest of the
-    /// [global scope].
+    /// Any [`Service`] which is spawned from this new monitor will be able to cancel the services
+    /// in the same [local scope] as itself, and any further child services, without affecting the
+    /// rest of the [global scope].
     ///
     /// [local scope]: Self#scope
     /// [global scope]: Self#scope
@@ -1163,6 +1243,18 @@ pub struct ServiceMonitorBuilderStateSome;
 pub struct ServiceMonitorBuilderStateSomeActive;
 
 /// A type-safe builder around [`ServiceMonitor`].
+///
+/// [`ServiceMonitorBuilder`] is responsible for registering services and marking them as
+/// [`Active`].
+///
+/// All services are [`Inactive`] by default. Only the services which are marked as _explicitly
+/// active_ with [`activate`] will be automatically started when calling [`start`].
+///
+/// [`Active`]: ServiceStatus::Active
+/// [`Inactive`]: ServiceStatus::Inactive
+/// [`activate`]: Self::activate
+/// [`start`]: Self::start
+/// [`with`]: Self::with
 pub struct ServiceMonitorBuilder<S> {
     services: BTreeMap<String, Box<dyn Service>>,
     status_monitored: HashSet<String>,
@@ -1244,6 +1336,7 @@ impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSome> {
     /// [`Active`]: ServiceStatus
     /// [`start`]: Self::start
     /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    /// [`with`]: Self::with
     pub fn activate(
         self,
         id: impl ServiceId,
@@ -1285,6 +1378,7 @@ impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive> {
     /// [`Active`]: ServiceStatus
     /// [`start`]: Self::start
     /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    /// [`with`]: Self::with
     pub fn activate(
         self,
         id: impl ServiceId,
@@ -1394,19 +1488,11 @@ impl<S> ServiceMonitorBuilder<S> {
 
 /// Orchestrates the execution of various [`Service`]s.
 ///
-/// A [`ServiceMonitor`] is responsible for registering services, starting and stopping them as well
-/// as handling `SIGINT` and `SIGTERM`. Services are run to completion until no service remains, at
-/// which point the node will automatically shutdown.
+/// A [`ServiceMonitor`] is responsible for starting and stopping services as well as handling
+/// `SIGINT` and `SIGTERM`. Services are run to completion until no service remains, at which point
+/// the node will automatically shutdown.
 ///
-/// All services are inactive by default. Only the services which are marked as _explicitly active_
-/// with [`activate`] will be automatically started when calling [`start`]. If no service has been
-/// activated when [`start`] is called then the node will automatically shutdown.
-///
-/// Note that services which are not added with [`with`] cannot be started or restarted.
-///
-/// [`activate`]: Self::activate
-/// [`start`]: Self::start
-/// [`with`]: Self::with
+/// Note that services which are not present at startup cannot be started or restarted.
 pub struct ServiceMonitor {
     services: BTreeMap<String, Box<dyn Service>>, // <
     join_set: JoinSet<anyhow::Result<String>>,
