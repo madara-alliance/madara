@@ -152,7 +152,7 @@
 //!             // This is correct, as even though we are spawning a background
 //!             // task we have implemented a cancellation mechanism with the
 //!             // service context and are waiting for that cancellation in the
-//!             service loop.
+//!             // service loop.
 //!             anyhow::Ok(())
 //!         });
 //!
@@ -244,6 +244,51 @@
 //! [`ServiceMonitor::with`].
 //!
 //! </div>
+//!
+//! ## example:
+//!
+//! ```rust
+//! # use mp_utils::service::Service;
+//! # use mp_utils::service::ServiceId;
+//! # use mp_utils::service::ServiceIdProvider;
+//! # use mp_utils::service::ServiceRunner;
+//! # use mp_utils::service::ServiceMonitorBuilder;
+//! #
+//! # pub struct MyService;
+//! #
+//! # #[async_trait::async_trait]
+//! # impl Service for MyService {
+//! #     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+//! #         runner.service_loop(move |mut ctx| async move {
+//! #             anyhow::Ok(())
+//! #         });
+//! #
+//! #         anyhow::Ok(())
+//! #     }
+//! # }
+//! #
+//! # impl ServiceIdProvider for MyService {
+//! #     fn id_provider(&self) -> impl ServiceId {
+//! #         MyServiceId
+//! #     }
+//! # }
+//! #
+//! # pub struct MyServiceId;
+//! #
+//! # impl ServiceId for MyServiceId {
+//! #     fn svc_id(&self) -> String {
+//! #         "MyService".to_string()
+//! #     }
+//! # }
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     ServiceMonitorBuilder::new()
+//!         .with(MyService)?
+//!         .activate(MyServiceId)?
+//!         .start()
+//!         .await
+//! }
+//! ```
 //!
 //! [`microservice`]: https://en.wikipedia.org/wiki/Microservices
 //! [`service_loop`]: ServiceRunner::service_loop
@@ -663,8 +708,8 @@ impl ServiceContext {
     ///
     /// [local scope]: Self#scope
     /// [global scope]: Self#scope
-    pub fn child(&self) -> ServiceMonitor {
-        ServiceMonitor::new_with_ctx(self.child_ctx(&self.id))
+    pub fn child(&self) -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
+        ServiceMonitorBuilder::<ServiceMonitorBuilderStateNone>::new_with_ctx(self.child_ctx(&self.id))
     }
 
     fn child_ctx(&self, id: &str) -> ServiceContext {
@@ -876,11 +921,12 @@ pub struct ServiceTransport {
 ///
 /// # Writing your own service
 ///
-/// Writing a service involves three steps:
+/// Writing a service involves four steps:
 ///
 /// 1. Implementing the [`ServiceId`] trait
 /// 2. Implementing the [`Service`] trait
 /// 3. Implementing the [`ServiceIdProvider`] trait
+/// 4. Adding your service to a [`ServiceMonitor`] and running it.
 ///
 /// ## example
 ///
@@ -889,7 +935,7 @@ pub struct ServiceTransport {
 /// # use mp_utils::service::ServiceId;
 /// # use mp_utils::service::ServiceIdProvider;
 /// # use mp_utils::service::ServiceRunner;
-/// # use mp_utils::service::ServiceMonitor;
+/// # use mp_utils::service::ServiceMonitorBuilder;
 ///
 /// // Step 1: implementing the `ServiceId` trait. We use this to identify our services.
 /// pub enum MyServiceId {
@@ -925,7 +971,7 @@ pub struct ServiceTransport {
 ///             for i in 0..4 {
 ///                 sx.send(Channel::Open(i))?;
 ///
-///                 const SLEEP: std::time::Duration = std::time::Duration::from_secs(1);
+///                 const SLEEP: std::time::Duration = std::time::Duration::from_millis(1);
 ///                 ctx.run_until_cancelled(tokio::time::sleep(SLEEP)).await;
 ///             }
 ///
@@ -1002,16 +1048,12 @@ pub struct ServiceTransport {
 ///     let service_a = MyServiceA(sx);
 ///     let service_b = MyServiceB(rx);
 ///
-///     let monitor = ServiceMonitor::default()
-///         .with(service_a)?
-///         .with(service_b)?;
-///
-///     monitor.activate(MyServiceId::MyServiceA);
-///     monitor.activate(MyServiceId::MyServiceB);
-///
-///     monitor.start().await?;
-///
-///     anyhow::Ok(())
+///     // Step 4: we add our service to a `ServiceMonitor` (using a type-safe builder pattern)...
+///     ServiceMonitorBuilder::new()
+///         .with_active(service_a)?
+///         .with_active(service_b)?
+///         .start() // ,,and start them
+///         .await
 /// }
 /// ```
 ///
@@ -1069,7 +1111,6 @@ impl<'a> ServiceRunner<'a> {
     ///
     /// </div>
     #[tracing::instrument(skip(self, runner), fields(module = "Service"))]
-    // TODO: move to rust 2024 so we can use the never type for Err here
     pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static) -> anyhow::Result<()>
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
@@ -1109,6 +1150,248 @@ impl<'a> ServiceRunner<'a> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ServiceMonitorError {
+    #[error("Service {0} has not been registered")]
+    UnregisteredService(String),
+    #[error("Service {0} has already been registered")]
+    AlreadyRegisteredService(String),
+}
+
+pub struct ServiceMonitorBuilderStateNone;
+pub struct ServiceMonitorBuilderStateSome;
+pub struct ServiceMonitorBuilderStateSomeActive;
+
+/// A type-safe builder around [`ServiceMonitor`].
+pub struct ServiceMonitorBuilder<S> {
+    services: BTreeMap<String, Box<dyn Service>>,
+    status_monitored: HashSet<String>,
+    monitored: HashSet<String>,
+    ctx: ServiceContext,
+    _state: std::marker::PhantomData<S>,
+}
+
+impl ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
+    /// Creates a new [`ServiceMonitor`] builder.
+    ///
+    /// New services can be added and activated using [`with`], [`with_active`] and [`activate`].
+    /// Call [`build`] or [`start`] once you are done. This requires you to have _added and
+    /// activated_ at leat one service to the [`ServiceMonitorBuilder`].
+    ///
+    /// [`with`]: Self::with
+    /// [`with_active`]: Self::with_active
+    /// [`activate`]: Self::activate
+    /// [`build`]: Self::build
+    /// [`start`]: Self::start
+    pub fn new() -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
+        ServiceMonitorBuilder::<ServiceMonitorBuilderStateNone>::new_with_ctx(ServiceContext::new(
+            MadaraServiceId::Monitor,
+        ))
+    }
+
+    /// Registers a [`Service`] to the [`ServiceMonitor`]. This service is [`Inactive`] by default and
+    /// needs to be marked as [`Active`] by calling [`activate`]. Only active services will be started
+    /// when calling [`start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AlreadyRegisteredService`] if the service had already been added to the
+    /// [`ServiceMonitorBuilder`].
+    ///
+    /// [`Inactive`]: ServiceStatus
+    /// [`Active`]: ServiceStatus
+    /// [`activate`]: Self::activate
+    /// [`start`]: Self::start
+    /// [`AlreadyRegisteredService`]: ServiceMonitorError::AlreadyRegisteredService
+    pub fn with(
+        self,
+        svc: impl Service + ServiceIdProvider,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSome>, ServiceMonitorError> {
+        self.with_impl(svc)
+    }
+}
+
+impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSome> {
+    /// Registers a [`Service`] to the [`ServiceMonitor`]. This service is [`Inactive`] by default and
+    /// needs to be marked as [`Active`] by calling [`activate`]. Only active services will be started
+    /// when calling [`start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AlreadyRegisteredService`] if the service had already been added to the
+    /// [`ServiceMonitorBuilder`].
+    ///
+    /// [`Inactive`]: ServiceStatus
+    /// [`Active`]: ServiceStatus
+    /// [`activate`]: Self::activate
+    /// [`start`]: Self::start
+    /// [`AlreadyRegisteredService`]: ServiceMonitorError::AlreadyRegisteredService
+    pub fn with(
+        self,
+        svc: impl Service + ServiceIdProvider,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSome>, ServiceMonitorError> {
+        self.with_impl(svc)
+    }
+
+    /// Marks a [`Service`] as [`Active`], meaning it will be started automatically when calling
+    /// [`start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnregisteredService`] if trying to activate a service that has not already been
+    /// added by using [`with`].
+    ///
+    /// [`Active`]: ServiceStatus
+    /// [`start`]: Self::start
+    /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    pub fn activate(
+        self,
+        id: impl ServiceId,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        self.activate_impl(&id.svc_id())
+    }
+}
+
+impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive> {
+    /// Registers a [`Service`] to the [`ServiceMonitor`]. This service is [`Inactive`] by default and
+    /// needs to be marked as [`Active`] by calling [`activate`]. Only active services will be started
+    /// when calling [`start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AlreadyRegisteredService`] if the service had already been added to the
+    /// [`ServiceMonitorBuilder`].
+    ///
+    /// [`Inactive`]: ServiceStatus
+    /// [`Active`]: ServiceStatus
+    /// [`activate`]: Self::activate
+    /// [`start`]: Self::start
+    /// [`AlreadyRegisteredService`]: ServiceMonitorError::AlreadyRegisteredService
+    pub fn with(
+        self,
+        svc: impl Service + ServiceIdProvider,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        self.with_impl(svc)
+    }
+
+    /// Marks a [`Service`] as [`Active`], meaning it will be started automatically when calling
+    /// [`start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnregisteredService`] if trying to activate a service that has not already been
+    /// added by using [`with`].
+    ///
+    /// [`Active`]: ServiceStatus
+    /// [`start`]: Self::start
+    /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    pub fn activate(
+        self,
+        id: impl ServiceId,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        self.activate_impl(&id.svc_id())
+    }
+
+    /// Consumes this builder and returns a [ServiceMonitor]
+    pub fn build(self) -> ServiceMonitor {
+        let Self { services, status_monitored, monitored, ctx, .. } = self;
+        ServiceMonitor {
+            services,
+            join_set: Default::default(),
+            status_actual: Default::default(),
+            status_monitored,
+            monitored: monitored.freeze(),
+            ctx,
+        }
+    }
+
+    /// Starts all activate [`Service`]s and runs them to completion. Services are activated by
+    /// calling [`activate`]. This function completes once all services have been run to completion.
+    ///
+    /// <div class="warning">
+    ///
+    /// Keep in mind that services can only be restarted as long as other services are running
+    /// (otherwise the node would shutdown).
+    ///
+    /// </div>
+    ///
+    /// [`activate`]: Self::activate
+    pub async fn start(self) -> anyhow::Result<()> {
+        self.build().start().await
+    }
+}
+
+impl<S> ServiceMonitorBuilder<S> {
+    /// Registers a [`Service`] to the [`ServiceMonitor`] and marks it as [`Active`].
+    ///
+    /// See also: [`with`], [`activate`]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AlreadyRegisteredService`] if the service had already been added to the
+    /// [`ServiceMonitorBuilder`].
+    ///
+    /// [`Active`]: ServiceStatus
+    /// [`with`]: Self::with
+    /// [`activate`]: Self::activate
+    /// [`AlreadyRegisteredService`]: ServiceMonitorError::AlreadyRegisteredService
+    pub fn with_active(
+        mut self,
+        svc: impl Service + ServiceIdProvider,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        let svc_id = svc.id_provider().svc_id();
+        self = self.with_impl(svc)?;
+        self.activate_impl(&svc_id)
+    }
+
+    fn new_with_ctx(ctx: ServiceContext) -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
+        ctx.service_set(&ctx.id, ServiceStatus::Active);
+        ServiceMonitorBuilder {
+            services: Default::default(),
+            status_monitored: Default::default(),
+            monitored: Default::default(),
+            ctx,
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn with_impl<S2>(
+        self,
+        svc: impl Service + ServiceIdProvider,
+    ) -> Result<ServiceMonitorBuilder<S2>, ServiceMonitorError> {
+        let Self { mut services, status_monitored, mut monitored, ctx, .. } = self;
+
+        let svc_id = svc.id_provider().svc_id();
+        match services.entry(svc_id.clone()) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(Box::new(svc));
+                monitored.insert(svc_id);
+
+                Ok(ServiceMonitorBuilder {
+                    services,
+                    status_monitored,
+                    monitored,
+                    ctx,
+                    _state: std::marker::PhantomData,
+                })
+            }
+            btree_map::Entry::Occupied(_) => Err(ServiceMonitorError::AlreadyRegisteredService(svc_id)),
+        }
+    }
+
+    fn activate_impl<S2>(mut self, svc_id: &str) -> Result<ServiceMonitorBuilder<S2>, ServiceMonitorError> {
+        if !self.services.contains_key(svc_id) {
+            Err(ServiceMonitorError::UnregisteredService(svc_id.to_string()))
+        } else {
+            self.ctx.service_set(svc_id, ServiceStatus::Active);
+            self.status_monitored.insert(svc_id.to_string());
+
+            let Self { services, status_monitored, monitored, ctx, .. } = self;
+            Ok(ServiceMonitorBuilder { services, status_monitored, monitored, ctx, _state: std::marker::PhantomData })
+        }
+    }
+}
+
 /// Orchestrates the execution of various [`Service`]s.
 ///
 /// A [`ServiceMonitor`] is responsible for registering services, starting and stopping them as well
@@ -1125,7 +1408,7 @@ impl<'a> ServiceRunner<'a> {
 /// [`start`]: Self::start
 /// [`with`]: Self::with
 pub struct ServiceMonitor {
-    services: BTreeMap<String, Box<dyn Service>>,
+    services: BTreeMap<String, Box<dyn Service>>, // <
     join_set: JoinSet<anyhow::Result<String>>,
     status_actual: ServiceSet,
     status_monitored: HashSet<String>,
@@ -1134,63 +1417,6 @@ pub struct ServiceMonitor {
 }
 
 impl ServiceMonitor {
-    pub fn new() -> Self {
-        Self::new_with_ctx(ServiceContext::new(MadaraServiceId::Monitor))
-    }
-
-    fn new_with_ctx(ctx: ServiceContext) -> Self {
-        ctx.service_set(&ctx.id, ServiceStatus::Active);
-        Self {
-            services: Default::default(),
-            join_set: Default::default(),
-            status_actual: Default::default(),
-            status_monitored: Default::default(),
-            monitored: Default::default(),
-            ctx,
-        }
-    }
-
-    /// Registers a [`Service`] to the [`ServiceMonitor`]. This service is [`Inactive`] by default and
-    /// needs to be marked as [`Active`] by calling [`activate`]. Only active services will be started
-    /// when calling [`start`].
-    ///
-    /// [`Inactive`]: ServiceStatus
-    /// [`Active`]: ServiceStatus
-    /// [`activate`]: Self::activate
-    /// [`start`]: Self::start
-    // TODO: is there way to enforce this check at the type level?
-    pub fn with(mut self, svc: impl Service + ServiceIdProvider) -> anyhow::Result<Self> {
-        let svc_id = svc.id_provider().svc_id();
-        match self.services.entry(svc_id.clone()) {
-            btree_map::Entry::Vacant(entry) => {
-                entry.insert(Box::new(svc));
-                let mut monitored = self.monitored.into_inner();
-                monitored.insert(svc_id);
-                self.monitored = monitored.freeze();
-            }
-            btree_map::Entry::Occupied(_) => {
-                anyhow::bail!("Services has already been added");
-            }
-        };
-
-        anyhow::Ok(self)
-    }
-
-    pub fn with_active(mut self, svc: impl Service + ServiceIdProvider) -> anyhow::Result<Self> {
-        self.activate(svc.id_provider());
-        self.with(svc)
-    }
-
-    /// Marks a [`Service`] as [`Active`], meaning it will be started automatically when calling
-    /// [`start`].
-    ///
-    /// [`Active`]: ServiceStatus
-    /// [`start`]: Self::start
-    pub fn activate(&mut self, id: impl ServiceId) {
-        self.status_monitored.insert(id.svc_id());
-        self.ctx.service_activate(id);
-    }
-
     /// Starts all activate [`Service`]s and runs them to completion. Services are activated by
     /// calling [`activate`]. This function completes once all services have been run to completion.
     ///
@@ -1201,7 +1427,7 @@ impl ServiceMonitor {
     ///
     /// </div>
     ///
-    /// [`activate`]: Self::activate
+    /// [`activate`]: ServiceMonitorBuilder::activate
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
         self.register_services().await?;
@@ -1644,11 +1870,12 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(1000))]
     async fn service_monitor_simple() {
-        let monitor = ServiceMonitor::new()
+        let monitor = ServiceMonitorBuilder::new()
             .with_active(ServiceAWaiting)
             .expect("Failed to add Service A")
             .with_active(ServiceBWaiting)
-            .expect("Failed to add Service B");
+            .expect("Failed to add Service B")
+            .build();
 
         let ctx = monitor.ctx.clone();
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
@@ -1717,11 +1944,12 @@ mod test {
     #[rstest::rstest]
     #[timeout(std::time::Duration::from_millis(1000))]
     async fn service_context_wait_for() {
-        let monitor = ServiceMonitor::new()
+        let monitor = ServiceMonitorBuilder::new()
             .with(ServiceAWaiting)
             .expect("Failed to start service A")
             .with_active(ServiceBWaiting)
-            .expect("Failed to start service B");
+            .expect("Failed to start service B")
+            .build();
 
         let ctx = with_monitor(monitor, |mut ctx| async move {
             let mut ctx1 = ctx.clone();
@@ -1759,7 +1987,8 @@ mod test {
     #[timeout(std::time::Duration::from_millis(100))]
     async fn service_context_cancellation_scope_1() {
         let service_a = ServiceAParent::default();
-        let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
+        let monitor =
+            ServiceMonitorBuilder::new().with_active(service_a.clone()).expect("Failed to add Service A").build();
 
         let ctx = with_monitor(monitor, |mut ctx| async move {
             ctx.wait_for_running(ServiceIdTest::ServiceA).await;
@@ -1818,7 +2047,8 @@ mod test {
     #[timeout(std::time::Duration::from_millis(100))]
     async fn service_context_cancellation_scope_2() {
         let service_a = ServiceAParent::default();
-        let monitor = ServiceMonitor::new().with_active(service_a.clone()).expect("Failed to add Service A");
+        let monitor =
+            ServiceMonitorBuilder::new().with_active(service_a.clone()).expect("Failed to add Service A").build();
 
         let ctx = with_monitor(monitor, |mut ctx| async move {
             ctx.wait_for_running(ServiceIdTest::ServiceA).await;
