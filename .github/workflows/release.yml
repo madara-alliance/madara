@@ -21,7 +21,7 @@ jobs:
 
       - name: Generate Release Notes
         id: generate_notes
-        uses: conventional-changelog/releaser-action@v1
+        uses: TriPSs/conventional-changelog-action@v5
         with:
           preset: "angular"
 
