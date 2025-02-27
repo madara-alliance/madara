@@ -147,11 +147,11 @@ impl Service for SyncService {
                     }
 
                     for svc_id in deferred_service_stop {
-                        ctx.service_remove(svc_id);
+                        ctx.service_deactivate(svc_id);
                     }
 
                     for svc_id in deferred_service_start {
-                        ctx.service_add(svc_id);
+                        ctx.service_activate(svc_id);
                     }
                 }
 
@@ -165,7 +165,7 @@ impl Service for SyncService {
 
                 let ctx_ = ctx.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     ctx_.cancel_global();
                 });
 
