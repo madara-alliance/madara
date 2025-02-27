@@ -577,13 +577,7 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(
-                    Arc::new(Box::new(eth_client)),
-                    Arc::clone(db.backend()),
-                    mempool,
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
             })
         };
 
@@ -637,13 +631,7 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(
-                    Arc::new(Box::new(eth_client)),
-                    Arc::clone(db.backend()),
-                    mempool,
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
             })
         };
 
@@ -697,13 +685,7 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(
-                    Arc::new(Box::new(eth_client)),
-                    Arc::clone(db.backend()),
-                    mempool,
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
             })
         };
 
@@ -835,7 +817,7 @@ mod eth_client_event_subscription_test {
             tokio::spawn(async move {
                 state_update_worker::<EthereumClientConfig, EthereumEventStream>(
                     Arc::clone(db.backend()),
-                    Arc::new(Box::new(eth_client)),
+                    Arc::new(eth_client),
                     ServiceContext::new_for_testing(),
                     Arc::new(l1_block_metrics),
                 )

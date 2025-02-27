@@ -354,7 +354,7 @@ impl StarknetClient {
 pub mod starknet_client_tests {
     use crate::client::SettlementClientTrait;
     use crate::starknet::utils::{
-        cleanup_test_context, get_state_update_lock, get_test_context, init_test_context, send_state_update,
+        get_state_update_lock, get_test_context, init_test_context, send_state_update, TestGuard,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::StateUpdate;
@@ -368,71 +368,78 @@ pub mod starknet_client_tests {
     use starknet_types_core::felt::Felt;
     use std::str::FromStr;
     use std::time::Duration;
+    use tokio::sync::MutexGuard;
     use tokio::time::sleep;
 
-    struct TestContext {
-        context: crate::starknet::utils::TestContext,
-        client: StarknetClient,
+    /// This struct holds all commonly used test resources
+    pub struct TestFixture<'a> {
+        pub context: crate::starknet::utils::TestContext,
+        pub client: StarknetClient,
+        // These fields ensure resources are properly cleaned up when TestFixture is dropped
+        _lock_guard: MutexGuard<'a, ()>,
+        _test_guard: TestGuard,
     }
 
     #[fixture]
-    async fn test_context() -> anyhow::Result<TestContext> {
-        init_test_context().await?;
+    async fn test_fixture<'a>() -> anyhow::Result<TestFixture<'a>> {
+        // Acquire state update lock
+        let lock_guard = get_state_update_lock().lock().await;
+
+        // Initialize test context and keep the TestGuard
+        let test_guard = init_test_context().await?;
         let context = get_test_context().await?;
 
+        // Create the client
         let client = StarknetClient::new(StarknetClientConfig {
             url: context.url.clone(),
             l2_contract_address: context.deployed_appchain_contract_address,
         })
         .await?;
 
-        Ok(TestContext { context, client })
+        // Return all resources bundled together
+        Ok(TestFixture { context, client, _lock_guard: lock_guard, _test_guard: test_guard })
     }
 
     #[rstest]
     #[tokio::test]
-    async fn fail_create_new_client_contract_does_not_exists(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn fail_create_new_client_contract_does_not_exists<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let context = test_context.await?.context;
+        let fixture = test_fixture.await?;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
-            url: context.url,
+            url: fixture.context.url,
             l2_contract_address: Felt::from_str("0xdeadbeef")?,
         })
         .await;
         assert!(starknet_client.is_err(), "Should fail to create a new client");
-        cleanup_test_context().await;
+
         Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn create_new_client_contract_exists_starknet_client(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn create_new_client_contract_exists_starknet_client<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let TestContext { client, .. } = test_context.await?;
-        assert!(client.get_latest_block_number().await.is_ok(), "Should not fail to create a new client");
-        cleanup_test_context().await;
+        let fixture = test_fixture.await?;
+
+        assert!(fixture.client.get_latest_block_number().await.is_ok(), "Should not fail to create a new client");
+
         Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_last_event_block_number_works_starknet_client(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn get_last_event_block_number_works_starknet_client<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let TestContext { context, client } = test_context.await?;
-
-        // Acquire lock before state update
+        let fixture = test_fixture.await?;
 
         // sending state updates using the shared account:
         send_state_update(
-            &context.account,
-            context.deployed_appchain_contract_address,
+            &fixture.context.account,
+            fixture.context.deployed_appchain_contract_address,
             StateUpdate {
                 block_number: 99,
                 global_root: Felt::from_hex("0xdeadbeef")?,
@@ -442,8 +449,8 @@ pub mod starknet_client_tests {
         .await?;
 
         let last_event_block_number = send_state_update(
-            &context.account,
-            context.deployed_appchain_contract_address,
+            &fixture.context.account,
+            fixture.context.deployed_appchain_contract_address,
             StateUpdate {
                 block_number: 100,
                 global_root: Felt::from_hex("0xdeadbeef")?,
@@ -452,98 +459,83 @@ pub mod starknet_client_tests {
         )
         .await?;
 
-        poll_on_block_completion(last_event_block_number, context.account.provider(), 100).await?;
+        poll_on_block_completion(last_event_block_number, fixture.context.account.provider(), 100).await?;
 
-        let latest_event_block_number = client.get_last_event_block_number().await?;
+        let latest_event_block_number = fixture.client.get_last_event_block_number().await?;
         assert_eq!(latest_event_block_number, last_event_block_number, "Latest event should have block number 100");
-        cleanup_test_context().await;
+
         Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_hash_works_starknet_client(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn get_last_verified_block_hash_works_starknet_client<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let TestContext { context, client } = test_context.await?;
-
-        // Acquire lock before state update
+        let fixture = test_fixture.await?;
 
         // sending state updates:
         let block_hash_event = Felt::from_hex("0xdeadbeef")?;
         let global_root_event = Felt::from_hex("0xdeadbeef")?;
         let block_number = send_state_update(
-            &context.account,
-            context.deployed_appchain_contract_address,
+            &fixture.context.account,
+            fixture.context.deployed_appchain_contract_address,
             StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
-        poll_on_block_completion(block_number, context.account.provider(), 100).await?;
+        poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
 
-        let last_verified_block_hash = client.get_last_verified_block_hash().await?;
+        let last_verified_block_hash = fixture.client.get_last_verified_block_hash().await?;
         assert_eq!(last_verified_block_hash, block_hash_event, "Block hash should match");
 
-        // Lock is released when _guard is dropped at end of function
-        cleanup_test_context().await;
         Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_last_state_root_works_starknet_client(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn get_last_state_root_works_starknet_client<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let TestContext { context, client } = test_context.await?;
-
-        // Acquire lock before state update
+        let fixture = test_fixture.await?;
 
         // sending state updates:
         let block_hash_event = Felt::from_hex("0xdeadbeef")?;
         let global_root_event = Felt::from_hex("0xdeadbeef")?;
         let block_number = send_state_update(
-            &context.account,
-            context.deployed_appchain_contract_address,
+            &fixture.context.account,
+            fixture.context.deployed_appchain_contract_address,
             StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
-        poll_on_block_completion(block_number, context.account.provider(), 100).await?;
+        poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
 
-        let last_verified_state_root = client.get_last_verified_state_root().await?;
+        let last_verified_state_root = fixture.client.get_last_verified_state_root().await?;
         assert_eq!(last_verified_state_root, global_root_event, "Last state root should match");
 
-        // Lock is released when _guard is dropped at end of function
-        cleanup_test_context().await;
         Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_number_works_starknet_client(
-        #[future] test_context: anyhow::Result<TestContext>,
+    async fn get_last_verified_block_number_works_starknet_client<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        let TestContext { context, client } = test_context.await?;
-
-        // Acquire lock before state update
+        let fixture = test_fixture.await?;
 
         // sending state updates:
         let data_felt = Felt::from_hex("0xdeadbeef")?;
         let block_number = 100;
         let event_block_number = send_state_update(
-            &context.account,
-            context.deployed_appchain_contract_address,
+            &fixture.context.account,
+            fixture.context.deployed_appchain_contract_address,
             StateUpdate { block_number, global_root: data_felt, block_hash: data_felt },
         )
         .await?;
-        poll_on_block_completion(event_block_number, context.account.provider(), 100).await?;
+        poll_on_block_completion(event_block_number, fixture.context.account.provider(), 100).await?;
 
-        let last_verified_block_number = client.get_last_verified_block_number().await?;
+        let last_verified_block_number = fixture.client.get_last_verified_block_number().await?;
         assert_eq!(last_verified_block_number, block_number, "Last verified block should match");
 
-        // Lock is released when _guard is dropped at end of function
-        cleanup_test_context().await;
         Ok(())
     }
 
@@ -577,11 +569,11 @@ pub mod starknet_client_tests {
 }
 
 #[cfg(test)]
-mod l2_messaging_test {
+mod starknet_client_messaging_test {
     use crate::messaging::sync;
     use crate::starknet::utils::{
-        cancel_messaging_event, cleanup_test_context, fire_messaging_event, get_state_update_lock, get_test_context,
-        init_messaging_test_context,
+        cancel_messaging_event, fire_messaging_event, get_state_update_lock, get_test_context,
+        init_messaging_test_context, TestGuard,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::DatabaseService;
@@ -593,18 +585,28 @@ mod l2_messaging_test {
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::MutexGuard;
     use tracing_test::traced_test;
 
-    struct TestRunnerStarknet {
-        db_service: Arc<DatabaseService>,
-        starknet_client: StarknetClient,
-        mempool: Arc<Mempool>,
+    /// This struct holds all commonly used test resources
+    pub struct TestFixture<'a> {
+        pub context: crate::starknet::utils::TestContext,
+        pub db_service: Arc<DatabaseService>,
+        pub starknet_client: StarknetClient,
+        pub mempool: Arc<Mempool>,
+        // These fields ensure resources are properly cleaned up when TestFixture is dropped
+        _lock_guard: MutexGuard<'a, ()>,
+        _test_guard: TestGuard,
     }
 
     #[fixture]
-    async fn setup_test_env_starknet() -> TestRunnerStarknet {
-        init_messaging_test_context().await.unwrap();
-        let context = get_test_context().await.unwrap();
+    async fn test_fixture<'a>() -> anyhow::Result<TestFixture<'a>> {
+        // Acquire state update lock
+        let lock_guard = get_state_update_lock().lock().await;
+
+        // Initialize test context and keep the TestGuard
+        let test_guard = init_messaging_test_context().await?;
+        let context = get_test_context().await?;
 
         // Set up chain info
         let chain_config = Arc::new(ChainConfig::madara_test());
@@ -613,11 +615,10 @@ mod l2_messaging_test {
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
-            url: context.url,
+            url: context.url.clone(),
             l2_contract_address: context.deployed_appchain_contract_address,
         })
-        .await
-        .unwrap();
+        .await?;
 
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
@@ -628,38 +629,41 @@ mod l2_messaging_test {
             MempoolLimits::for_testing(),
         ));
 
-        TestRunnerStarknet { db_service: db, starknet_client, mempool }
+        // Return all resources bundled together
+        Ok(TestFixture {
+            context,
+            db_service: db,
+            starknet_client,
+            mempool,
+            _lock_guard: lock_guard,
+            _test_guard: test_guard,
+        })
     }
 
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_basic_workflow_starknet(
-        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    async fn e2e_test_basic_workflow_starknet<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        init_messaging_test_context().await?;
-        let context = get_test_context().await?;
-        let TestRunnerStarknet { db_service: db, starknet_client, mempool } = setup_test_env_starknet.await;
+        let fixture = test_fixture.await?;
 
         // Start worker handle
         // ==================================
         let worker_handle = {
-            let db = Arc::clone(&db);
+            let db = Arc::clone(&fixture.db_service);
+            let starknet_client = fixture.starknet_client.clone();
+            let mempool = Arc::clone(&fixture.mempool);
+
             tokio::spawn(async move {
-                sync(
-                    Arc::new(Box::new(starknet_client)),
-                    Arc::clone(db.backend()),
-                    mempool,
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(starknet_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing())
+                    .await
             })
         };
 
         // Firing the event
         let fire_event_block_number =
-            fire_messaging_event(&context.account, context.deployed_appchain_contract_address).await?;
+            fire_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Log asserts
@@ -670,61 +674,70 @@ mod l2_messaging_test {
         assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
 
         // Assert that the event is well stored in db
-        let last_block =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block = fixture
+            .db_service
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("failed to retrieve block")
+            .unwrap();
         assert_eq!(last_block.block_number, fire_event_block_number);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert!(db.backend().has_l1_messaging_nonce(nonce)?);
+        assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce)?);
+
         // Cancelling worker
         worker_handle.abort();
-        cleanup_test_context().await;
+
         Ok(())
     }
 
     #[rstest]
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_message_canceled_starknet(
-        #[future] setup_test_env_starknet: TestRunnerStarknet,
+    async fn e2e_test_message_canceled_starknet<'a>(
+        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
     ) -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
-        init_messaging_test_context().await?;
-        let context = get_test_context().await?;
-        let TestRunnerStarknet { db_service: db, starknet_client, mempool } = setup_test_env_starknet.await;
+        let fixture = test_fixture.await?;
+
         // Start worker handle
         // ==================================
         let worker_handle = {
-            let db = Arc::clone(&db);
+            let db = Arc::clone(&fixture.db_service);
+            let starknet_client = fixture.starknet_client.clone();
+            let mempool = Arc::clone(&fixture.mempool);
+
             tokio::spawn(async move {
-                sync(
-                    Arc::new(Box::new(starknet_client)),
-                    Arc::clone(db.backend()),
-                    mempool,
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(starknet_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing())
+                    .await
             })
         };
 
-        let last_block_pre_cancellation =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block_pre_cancellation = fixture
+            .db_service
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("failed to retrieve block")
+            .unwrap();
 
-        cancel_messaging_event(&context.account, context.deployed_appchain_contract_address).await?;
+        cancel_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
         // Firing cancelled event
-        fire_messaging_event(&context.account, context.deployed_appchain_contract_address).await?;
+        fire_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
         tokio::time::sleep(Duration::from_secs(15)).await;
 
-        let last_block_post_cancellation =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block_post_cancellation = fixture
+            .db_service
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("failed to retrieve block")
+            .unwrap();
         assert_eq!(last_block_post_cancellation.block_number, last_block_pre_cancellation.block_number);
         let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
-        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
+        assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce).unwrap());
         assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
 
         // Cancelling worker
         worker_handle.abort();
-        cleanup_test_context().await;
+
         Ok(())
     }
 }
@@ -734,7 +747,7 @@ mod starknet_client_event_subscription_test {
     use crate::gas_price::L1BlockMetrics;
     use crate::starknet::event::StarknetEventStream;
     use crate::starknet::utils::{
-        cleanup_test_context, get_state_update_lock, get_test_context, init_test_context, send_state_update,
+        get_state_update_lock, get_test_context, init_test_context, send_state_update, TestGuard,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
@@ -747,18 +760,18 @@ mod starknet_client_event_subscription_test {
 
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
-        let _guard = get_state_update_lock().lock().await;
+        let _lock_guard = get_state_update_lock().lock().await;
+
+        // Initialize test context and keep the TestGuard
+        let _test_guard = init_test_context().await?;
+        let context = get_test_context().await?;
+
         // Setting up the DB and l1 block metrics
         // ================================================
         let chain_config = Arc::new(ChainConfig::madara_test());
 
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
-
-        // Initialize test context and create Starknet client
-        // ================================================
-        init_test_context().await?;
-        let context = get_test_context().await?;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             url: context.url,
@@ -773,7 +786,7 @@ mod starknet_client_event_subscription_test {
             tokio::spawn(async move {
                 state_update_worker::<StarknetClientConfig, StarknetEventStream>(
                     Arc::clone(db.backend()),
-                    Arc::new(Box::new(starknet_client)),
+                    Arc::new(starknet_client),
                     ServiceContext::new_for_testing(),
                     Arc::new(l1_block_metrics),
                 )
@@ -781,8 +794,6 @@ mod starknet_client_event_subscription_test {
                 .expect("Failed to init state update worker.")
             })
         };
-
-        // Acquire lock before state update
 
         // Firing the state update event
         send_state_update(
@@ -802,10 +813,12 @@ mod starknet_client_event_subscription_test {
         // Verify the block number
         let block_in_db =
             db.backend().get_l1_last_confirmed_block().expect("Failed to get L2 last confirmed block number");
-        // Lock is released when _guard is dropped
+
+        // Abort the worker before ending the test
         listen_handle.abort();
+
         assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
-        cleanup_test_context().await;
+
         Ok(())
     }
 }

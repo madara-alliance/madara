@@ -36,7 +36,7 @@ where
     S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
 {
     db_backend: Arc<MadaraBackend>,
-    settlement_client: Option<Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>>,
+    settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,
     gas_price_poll: Duration,
@@ -60,10 +60,7 @@ impl EthereumSyncService {
                 .await
                 .context("Creating ethereum client")?;
 
-                let client_converted: Box<
-                    dyn SettlementClientTrait<Config = EthereumClientConfig, StreamType = EthereumEventStream>,
-                > = Box::new(client);
-                Some(Arc::new(client_converted))
+                Some(into_trait_arc(client))
             } else {
                 None
             }
@@ -86,10 +83,7 @@ impl StarknetSyncService {
                 .await
                 .context("Creating starknet client")?;
 
-                let client_converted: Box<
-                    dyn SettlementClientTrait<Config = StarknetClientConfig, StreamType = StarknetEventStream>,
-                > = Box::new(client);
-                Some(Arc::new(client_converted))
+                Some(into_trait_arc(client))
             } else {
                 None
             }
@@ -108,7 +102,7 @@ where
     async fn create_service(
         config: &L1SyncParams,
         sync_config: L1SyncConfig<'_>,
-        settlement_client: Option<Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>>,
+        settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     ) -> anyhow::Result<Self> {
         let gas_price_sync_enabled = sync_config.authority
             && !sync_config.devnet
@@ -194,4 +188,11 @@ where
     fn svc_id(&self) -> PowerOfTwo {
         MadaraServiceId::L1Sync.svc_id()
     }
+}
+
+fn into_trait_arc<T, C, S>(client: T) -> Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>
+where
+    T: SettlementClientTrait<Config = C, StreamType = S> + 'static,
+{
+    Arc::new(client)
 }

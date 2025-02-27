@@ -60,7 +60,7 @@ impl L1BlockMetrics {
 }
 
 pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
@@ -88,7 +88,7 @@ where
 }
 
 pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
     l1_block_metrics: Arc<L1BlockMetrics>,
@@ -123,7 +123,7 @@ where
 }
 
 pub async fn update_gas_price<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError>
@@ -224,7 +224,7 @@ mod eth_client_gas_price_worker_test {
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
                 gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
-                    Arc::new(Box::new(eth_client)),
+                    Arc::new(eth_client),
                     l1_gas_provider,
                     Duration::from_millis(200),
                     ServiceContext::new_for_testing(),
@@ -265,7 +265,7 @@ mod eth_client_gas_price_worker_test {
 
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(Box::new(eth_client)),
+            Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
             Arc::new(l1_block_metrics),
@@ -291,7 +291,7 @@ mod eth_client_gas_price_worker_test {
 
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(Box::new(eth_client)),
+            Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
             Arc::new(l1_block_metrics),
@@ -317,7 +317,7 @@ mod eth_client_gas_price_worker_test {
 
         // Run the worker for a short time
         let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(Box::new(eth_client)),
+            Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
             Arc::new(l1_block_metrics),
@@ -372,7 +372,7 @@ mod eth_client_gas_price_worker_test {
         let result = timeout(
             timeout_duration,
             gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
-                Arc::new(Box::new(eth_client)),
+                Arc::new(eth_client),
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
                 ServiceContext::new_for_testing(),
@@ -409,7 +409,7 @@ mod eth_client_gas_price_worker_test {
 
         // Update gas prices
         update_gas_price::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(Box::new(eth_client)),
+            Arc::new(eth_client),
             &l1_gas_provider,
             Arc::new(l1_block_metrics),
         )

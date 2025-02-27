@@ -12,7 +12,7 @@ use std::time::Duration;
 
 pub struct SyncWorkerConfig<C: 'static, S> {
     pub backend: Arc<MadaraBackend>,
-    pub settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    pub settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     pub l1_gas_provider: GasPriceProvider,
     pub gas_price_sync_disabled: bool,
     pub gas_price_poll_ms: Duration,

@@ -241,7 +241,6 @@ mod starknet_event_stream_tests {
                 when.method(POST).path("/").header("Content-Type", "application/json").matches(|req| {
                     let body = req.body.clone().unwrap();
                     let body_str = std::str::from_utf8(body.as_slice()).unwrap_or_default();
-                    println!("Received request: {}", body_str);
                     body_str.contains("starknet_getEvents")
                 });
 

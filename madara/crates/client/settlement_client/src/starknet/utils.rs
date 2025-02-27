@@ -105,8 +105,63 @@ lazy_static! {
     static ref STATE_UPDATE_LOCK: Mutex<()> = Mutex::new(());
 }
 
-// Initialize shared test context
-pub async fn init_test_context() -> anyhow::Result<()> {
+// Create a guard struct that cleans up resources when dropped
+pub struct TestGuard;
+
+impl Drop for TestGuard {
+    fn drop(&mut self) {
+        println!("TestGuard: Cleaning up test resources...");
+
+        // Approach 1: If we're in a Tokio runtime context, use a blocking task
+        if let Ok(()) = std::panic::catch_unwind(|| {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                // We're in a tokio runtime
+                tokio::task::spawn_blocking(|| {
+                    // Create a new runtime in this separate thread
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Failed to build runtime for cleanup");
+
+                    rt.block_on(async {
+                        // Clean up resources
+                        let mut madara_guard = MADARA.lock().await;
+                        *madara_guard = None;
+
+                        let mut context = TEST_CONTEXT.lock().await;
+                        *context = None;
+                    });
+                });
+                return;
+            }
+        }) {
+            // We successfully handled cleanup in a tokio context
+            println!("TestGuard: Cleanup initiated in tokio context");
+            return;
+        }
+
+        // Approach 2: Fall back to creating a new runtime
+        match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => {
+                rt.block_on(async {
+                    // Clean up resources
+                    let mut madara_guard = MADARA.lock().await;
+                    *madara_guard = None;
+
+                    let mut context = TEST_CONTEXT.lock().await;
+                    *context = None;
+                });
+                println!("TestGuard: Cleanup completed with new runtime");
+            }
+            Err(e) => {
+                eprintln!("TestGuard: Failed to create runtime for cleanup: {}", e);
+            }
+        }
+    }
+}
+
+// Modify init functions to return a guard
+pub async fn init_test_context() -> anyhow::Result<TestGuard> {
     // First, ensure any existing Madara instance is dropped
     {
         let mut madara_guard = MADARA.lock().await;
@@ -133,7 +188,7 @@ pub async fn init_test_context() -> anyhow::Result<()> {
         });
     }
 
-    Ok(())
+    Ok(TestGuard)
 }
 
 // Helper to get test context
@@ -149,8 +204,13 @@ pub async fn get_test_context() -> anyhow::Result<TestContext> {
     }
 }
 
-// Initialize shared test context for messaging tests
-pub async fn init_messaging_test_context() -> anyhow::Result<()> {
+// Modify messaging test context init to return a guard too
+pub async fn init_messaging_test_context() -> anyhow::Result<TestGuard> {
+    {
+        let mut madara_guard = MADARA.lock().await;
+        *madara_guard = None;
+    }
+
     // First, ensure Madara is running
     let mut madara_guard = MADARA.lock().await;
     if madara_guard.is_none() {
@@ -171,17 +231,7 @@ pub async fn init_messaging_test_context() -> anyhow::Result<()> {
         });
     }
 
-    Ok(())
-}
-
-// These functions can now be marked as deprecated as they're replaced by the context system
-#[deprecated(note = "Use init_test_context() instead")]
-pub async fn prepare_starknet_client_test() -> anyhow::Result<(StarknetAccount, Felt, MadaraProcess)> {
-    let madara = MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))?;
-    let account = starknet_account()?;
-    let deployed_appchain_contract_address =
-        deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA, APPCHAIN_CONTRACT_CASM_HASH).await?;
-    Ok((account, deployed_appchain_contract_address, madara))
+    Ok(TestGuard)
 }
 
 pub async fn send_state_update(

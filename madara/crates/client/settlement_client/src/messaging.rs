@@ -26,7 +26,7 @@ pub struct L1toL2MessagingEventData {
 }
 
 pub async fn sync<C, S>(
-    settlement_client: Arc<Box<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     mut ctx: ServiceContext,
@@ -282,8 +282,7 @@ mod messaging_module_tests {
         // Mock get_l1_to_l2_message_cancellations
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::ZERO));
 
-        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
-            Arc::new(Box::new(client));
+        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
 
         timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
@@ -321,8 +320,7 @@ mod messaging_module_tests {
         // Mock get_l1_to_l2_message_cancellations - return non-zero to indicate cancellation
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::from(12345)));
 
-        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
-            Arc::new(Box::new(client));
+        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
 
         timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
@@ -359,8 +357,7 @@ mod messaging_module_tests {
         // Mock get_messaging_hash - should not be called
         client.expect_get_messaging_hash().times(0);
 
-        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
-            Arc::new(Box::new(client));
+        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
 
         timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
 
@@ -384,8 +381,7 @@ mod messaging_module_tests {
             Ok(Box::pin(stream::iter(vec![Err(SettlementClientError::Other("Stream error".to_string()))])))
         });
 
-        let client: Arc<Box<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>> =
-            Arc::new(Box::new(client));
+        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
 
         let result = sync(client, backend.clone(), mempool.clone(), ctx).await;
         assert!(result.is_err());
