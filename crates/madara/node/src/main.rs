@@ -16,7 +16,7 @@ use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
-use mp_utils::service::{MadaraServiceId, ServiceMonitor};
+use mp_utils::service::{MadaraServiceId, ServiceMonitorBuilder};
 use service::{
     BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService, WarpUpdateConfig,
 };
@@ -285,59 +285,28 @@ async fn main() -> anyhow::Result<()> {
         service_block_production.setup_devnet().await?;
     }
 
-    let mut app = ServiceMonitor::new()
+    // Since the database is not implemented as a proper service, we do not
+    // active it, as it would never be marked as stopped by the existing logic
+    ServiceMonitorBuilder::new()
         .with(service_db)?
         .with(service_l1_sync)?
-        .with(service_p2p)?
         .with(service_l2_sync)?
+        .with(service_p2p)?
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
         .with(service_gateway)?
-        .with(service_telemetry)?;
-
-    // Since the database is not implemented as a proper service, we do not
-    // active it, as it would never be marked as stopped by the existing logic
-    //
-    // app.activate(MadaraService::Database);
-
-    let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
-    let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
-    let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
-
-    if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
-        app.activate(MadaraServiceId::L1Sync);
-    }
-
-    if run_cmd.p2p_params.p2p {
-        app.activate(MadaraServiceId::P2P);
-    }
-
-    if warp_update_receiver {
-        app.activate(MadaraServiceId::L2Sync);
-    } else if run_cmd.is_sequencer() {
-        app.activate(MadaraServiceId::BlockProduction);
-    } else if !run_cmd.l2_sync_params.l2_sync_disabled {
-        app.activate(MadaraServiceId::L2Sync);
-    }
-
-    if !run_cmd.rpc_params.rpc_disable && !warp_update_receiver {
-        app.activate(MadaraServiceId::RpcUser);
-    }
-
-    if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
-        app.activate(MadaraServiceId::RpcAdmin);
-    }
-
-    if run_cmd.gateway_params.feeder_gateway_enable && !warp_update_receiver {
-        app.activate(MadaraServiceId::Gateway);
-    }
-
-    if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
-        app.activate(MadaraServiceId::Telemetry);
-    }
-
-    app.start().await?;
+        .with(service_telemetry)?
+        .activate_if(MadaraServiceId::L1Sync, || run_cmd.is_active_l1_sync())?
+        .activate_if(MadaraServiceId::L2Sync, || run_cmd.is_active_l2_sync())?
+        .activate_if(MadaraServiceId::P2P, || run_cmd.is_active_p2p())?
+        .activate_if(MadaraServiceId::BlockProduction, || run_cmd.is_sequencer())?
+        .activate_if(MadaraServiceId::RpcUser, || run_cmd.is_active_rpc_user())?
+        .activate_if(MadaraServiceId::RpcAdmin, || run_cmd.is_active_rpc_admin())?
+        .activate_if(MadaraServiceId::Gateway, || run_cmd.is_active_fgw())?
+        .activate_if(MadaraServiceId::Telemetry, || run_cmd.is_active_telemetry())?
+        .start()
+        .await?;
 
     let _ = analytics.shutdown();
 

@@ -50,9 +50,7 @@ impl Service for BlockProductionService {
         )
         .await?;
 
-        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
-
-        Ok(())
+        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx))
     }
 }
 

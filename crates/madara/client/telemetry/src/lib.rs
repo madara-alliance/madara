@@ -84,9 +84,7 @@ impl Service for TelemetryService {
         let rx = self.telemetry_handle.0.subscribe();
         let clients = start_clients(&self.telemetry_endpoints).await;
 
-        runner.service_loop(move |ctx| start_telemetry(rx, ctx, clients));
-
-        anyhow::Ok(())
+        runner.service_loop(move |ctx| start_telemetry(rx, ctx, clients))
     }
 }
 

@@ -44,8 +44,7 @@ impl Service for GatewayService {
                 config.gateway_port,
                 ctx,
             )
-        });
-        Ok(())
+        })
     }
 }
 

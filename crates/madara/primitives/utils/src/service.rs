@@ -1016,8 +1016,8 @@ pub struct ServiceTransport {
 /// # use mp_utils::service::ServiceIdProvider;
 /// # use mp_utils::service::ServiceRunner;
 /// # use mp_utils::service::ServiceMonitorBuilder;
-///
-/// // Step 1: implementing the `ServiceId` trait. We use this to identify our services.
+/// // Step 1: implementing the `ServiceId` trait. We use this to identify our
+/// // services.
 /// pub enum MyServiceId {
 ///     MyServiceA,
 ///     MyServiceB
@@ -1038,8 +1038,8 @@ pub struct ServiceTransport {
 ///     Closed
 /// }
 ///
-/// // Step 2: implementing the `Service` trait. An example service, sends over 4 integers to
-/// // `ServiceB` and the exits
+/// // Step 2: implementing the `Service` trait. An example service, sends over
+/// // 4 integers to `ServiceB` and the exits
 /// struct MyServiceA(tokio::sync::broadcast::Sender<Channel<usize>>);
 ///
 /// #[async_trait::async_trait]
@@ -1073,7 +1073,8 @@ pub struct ServiceTransport {
 ///     }
 /// }
 ///
-/// // Step 3: implementing the `ServiceIdProvider` trait. This re-uses the logic from step 1.
+/// // Step 3: implementing the `ServiceIdProvider` trait. This re-uses the
+/// // logic from step 1.
 /// impl ServiceIdProvider for MyServiceA {
 ///     fn id_provider(&self) -> impl ServiceId {
 ///         MyServiceId::MyServiceA
@@ -1093,8 +1094,9 @@ pub struct ServiceTransport {
 ///                 let i = tokio::select! {
 ///                     res = rx.recv() => {
 ///                         // As mentioned above, `res` will never receive an
-///                         // `Err(RecvError::Closed)` since we always keep a sender alive in A for
-///                         // restarts, so we manually check if the channel was closed.
+///                         // `Err(RecvError::Closed)` since we always keep a
+///                         // sender alive in A for restarts, so we manually
+///                         // check if the channel was closed.
 ///                         match res? {
 ///                             Channel::Open(i) => i,
 ///                             Channel::Closed => break,
@@ -1128,11 +1130,12 @@ pub struct ServiceTransport {
 ///     let service_a = MyServiceA(sx);
 ///     let service_b = MyServiceB(rx);
 ///
-///     // Step 4: we add our service to a `ServiceMonitor` (using a type-safe builder pattern)...
+///     // Step 4: we add our service to a `ServiceMonitor` (using a type-safe
+///     // builder pattern)...
 ///     ServiceMonitorBuilder::new()
 ///         .with_active(service_a)?
 ///         .with_active(service_b)?
-///         .start() // ,,and start them
+///         .start() // ...and start them
 ///         .await
 /// }
 /// ```
@@ -1343,6 +1346,29 @@ impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSome> {
     ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
         self.activate_impl(&id.svc_id())
     }
+
+    /// Marks a [`Service`] as [`Active`], if a condition is met, in which case it will be started
+    /// automatically when calling [`start`].
+    ///
+    /// Note that this is not entirely type safe as we cannot encode runtime assertions into the
+    /// type system.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnregisteredService`] if trying to activate a service that has not already been
+    /// added by using [`with`].
+    ///
+    /// [`Active`]: ServiceStatus
+    /// [`start`]: Self::start
+    /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    /// [`with`]: Self::with
+    pub fn activate_if(
+        self,
+        id: impl ServiceId,
+        f: impl Fn() -> bool,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        self.activate_if_impl(id, f)
+    }
 }
 
 impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive> {
@@ -1384,6 +1410,29 @@ impl ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive> {
         id: impl ServiceId,
     ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
         self.activate_impl(&id.svc_id())
+    }
+
+    /// Marks a [`Service`] as [`Active`], if a condition is met, in which case it will be started
+    /// automatically when calling [`start`].
+    ///
+    /// Note that this is not entirely type safe as we cannot encode runtime assertions into the
+    /// type system.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnregisteredService`] if trying to activate a service that has not already been
+    /// added by using [`with`].
+    ///
+    /// [`Active`]: ServiceStatus
+    /// [`start`]: Self::start
+    /// [`UnregisteredService`]: ServiceMonitorError::UnregisteredService
+    /// [`with`]: Self::with
+    pub fn activate_if(
+        self,
+        id: impl ServiceId,
+        f: impl Fn() -> bool,
+    ) -> Result<ServiceMonitorBuilder<ServiceMonitorBuilderStateSomeActive>, ServiceMonitorError> {
+        self.activate_if_impl(id, f)
     }
 
     /// Consumes this builder and returns a [ServiceMonitor]
@@ -1480,6 +1529,19 @@ impl<S> ServiceMonitorBuilder<S> {
             self.ctx.service_set(svc_id, ServiceStatus::Active);
             self.status_monitored.insert(svc_id.to_string());
 
+            let Self { services, status_monitored, monitored, ctx, .. } = self;
+            Ok(ServiceMonitorBuilder { services, status_monitored, monitored, ctx, _state: std::marker::PhantomData })
+        }
+    }
+
+    fn activate_if_impl<S2>(
+        self,
+        id: impl ServiceId,
+        f: impl Fn() -> bool,
+    ) -> Result<ServiceMonitorBuilder<S2>, ServiceMonitorError> {
+        if f() {
+            self.activate_impl(&id.svc_id())
+        } else {
             let Self { services, status_monitored, monitored, ctx, .. } = self;
             Ok(ServiceMonitorBuilder { services, status_monitored, monitored, ctx, _state: std::marker::PhantomData })
         }

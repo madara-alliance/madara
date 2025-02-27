@@ -21,13 +21,13 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
             ))
         } else {
             match status {
-                ServiceRequest::Start => Ok(svcs.iter().map(|svc| self.ctx.service_add(*svc)).collect()),
-                ServiceRequest::Stop => Ok(svcs.iter().map(|svc| self.ctx.service_remove(*svc)).collect()),
+                ServiceRequest::Start => Ok(svcs.iter().map(|svc| self.ctx.service_activate(*svc)).collect()),
+                ServiceRequest::Stop => Ok(svcs.iter().map(|svc| self.ctx.service_deactivate(*svc)).collect()),
                 ServiceRequest::Restart => {
-                    let res = Ok(svcs.iter().map(|svc| self.ctx.service_remove(*svc)).collect());
+                    let res = Ok(svcs.iter().map(|svc| self.ctx.service_deactivate(*svc)).collect());
                     tokio::time::sleep(RESTART_INTERVAL).await;
                     svcs.iter().for_each(|svc| {
-                        self.ctx.service_add(*svc);
+                        self.ctx.service_activate(*svc);
                     });
 
                     res

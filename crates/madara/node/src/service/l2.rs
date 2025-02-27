@@ -191,9 +191,7 @@ impl Service for SyncService {
                 .run(ctx)
                 .await
             }
-        });
-
-        Ok(())
+        })
     }
 }
 

@@ -125,12 +125,8 @@ impl Service for RpcService {
                 }
             };
 
-            start_server(server_config, ctx.clone(), stop_handle).await?;
-
-            anyhow::Ok(())
-        });
-
-        anyhow::Ok(())
+            start_server(server_config, ctx.clone(), stop_handle).await
+        })
     }
 }
 

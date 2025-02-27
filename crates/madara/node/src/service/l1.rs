@@ -114,12 +114,11 @@ impl Service for L1SyncService {
                     l1_head_snd,
                     ctx,
                 )
-            });
+            })
         } else {
             tracing::error!("❗ Tried to start L1 Sync but no l1 endpoint was provided to the node on startup");
+            anyhow::bail!("Failed to start L1 Sync")
         }
-
-        Ok(())
     }
 }
 

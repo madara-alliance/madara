@@ -6,7 +6,6 @@ use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, 
 use std::time::Duration;
 
 pub struct P2pService {
-    enabled: bool,
     // add_transaction_provider: Arc<dyn AddTransactionProvider>,
     p2p: Option<mc_p2p::MadaraP2pBuilder>,
 }
@@ -32,7 +31,7 @@ impl P2pService {
             None
         };
 
-        Ok(Self { p2p, enabled: config.p2p })
+        Ok(Self { p2p })
     }
 
     pub fn commands(&mut self) -> Option<P2pCommands> {
@@ -43,11 +42,9 @@ impl P2pService {
 #[async_trait::async_trait]
 impl Service for P2pService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        if self.enabled {
-            let p2p = self.p2p.take().expect("Service already started");
-            runner.service_loop(move |ctx| async move { p2p.build().context("Building p2p service")?.run(ctx).await });
-        }
-        Ok(())
+        // TODO: we need to be able to restart this!
+        let p2p = self.p2p.take().expect("Service already started");
+        runner.service_loop(move |ctx| async move { p2p.build().context("Building p2p service")?.run(ctx).await })
     }
 }
 

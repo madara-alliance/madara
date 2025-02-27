@@ -306,6 +306,34 @@ impl RunCmd {
     pub fn is_devnet(&self) -> bool {
         self.devnet
     }
+
+    pub fn is_active_l1_sync(&self) -> bool {
+        !self.l1_sync_params.l1_sync_disabled && (self.l1_sync_params.l1_endpoint.is_some() || !self.devnet)
+    }
+
+    pub fn is_active_l2_sync(&self) -> bool {
+        self.args_preset.warp_update_receiver || !self.l2_sync_params.l2_sync_disabled
+    }
+
+    pub fn is_active_p2p(&self) -> bool {
+        self.p2p_params.p2p
+    }
+
+    pub fn is_active_rpc_user(&self) -> bool {
+        !self.rpc_params.rpc_disable && !self.args_preset.warp_update_receiver
+    }
+
+    pub fn is_active_rpc_admin(&self) -> bool {
+        self.rpc_params.rpc_admin && !self.args_preset.warp_update_receiver
+    }
+
+    pub fn is_active_fgw(&self) -> bool {
+        self.gateway_params.feeder_gateway_enable && !self.args_preset.warp_update_receiver
+    }
+
+    pub fn is_active_telemetry(&self) -> bool {
+        self.telemetry_params.telemetry && !self.args_preset.warp_update_receiver
+    }
 }
 
 /// Starknet network types.
