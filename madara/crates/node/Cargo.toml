@@ -62,8 +62,8 @@ starknet-core.workspace = true
 starknet-providers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tower.workspace = true
 tower-http.workspace = true
+tower.workspace = true
 url.workspace = true
 
 #Instrumentation

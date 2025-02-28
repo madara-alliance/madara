@@ -64,8 +64,8 @@ mockall = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tokio-util.workspace = true
+tokio.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
