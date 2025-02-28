@@ -62,7 +62,7 @@ default-members = [
 ]
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 print_stdout = "warn"

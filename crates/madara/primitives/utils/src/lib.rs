@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod hash;
 pub mod parsers;
 pub mod rayon;
+pub mod ringdeque;
 pub mod serde;
 pub mod service;
 use std::time::{Duration, Instant};
@@ -29,10 +30,6 @@ impl<T: Default> Default for Frozen<T> {
 }
 
 impl<T> Frozen<T> {
-    fn new(obj: T) -> Self {
-        Self(obj)
-    }
-
     fn into_inner(self) -> T {
         self.0
     }
