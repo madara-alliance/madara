@@ -295,7 +295,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 self.backend.remove_mempool_transaction(&mempool_tx.tx_hash().to_felt())?;
 
                 match exec_result {
-                    Ok(execution_info) => {
+                    Ok((execution_info, _)) => {
                         // Reverted transactions appear here as Ok too.
                         tracing::debug!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
 

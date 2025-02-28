@@ -14,7 +14,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::bouncer::BouncerWeights;
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
@@ -232,20 +232,7 @@ impl ChainConfig {
 
             bouncer_config: BouncerConfig {
                 block_max_capacity: BouncerWeights {
-                    builtin_count: BuiltinCount {
-                        add_mod: usize::MAX,
-                        bitwise: usize::MAX,
-                        ecdsa: usize::MAX,
-                        ec_op: usize::MAX,
-                        keccak: usize::MAX,
-                        mul_mod: usize::MAX,
-                        pedersen: usize::MAX,
-                        poseidon: usize::MAX,
-                        range_check: usize::MAX,
-                        range_check96: usize::MAX,
-                    },
                     l1_gas: 5_000_000,
-                    n_steps: 40_000_000,
                     message_segment_length: usize::MAX,
                     n_events: usize::MAX,
                     state_diff_size: 131072,

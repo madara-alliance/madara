@@ -139,7 +139,7 @@ mc-devnet = { path = "crates/madara/client/devnet" }
 m-cairo-test-contracts = { path = "crates/madara/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.1"
+cairo-vm = "=1.0.2"
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -151,10 +151,10 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 ] }
 starknet-types-rpc = "0.7.1"
 
-blockifier = "=0.14.0-rc.0"
-starknet_api = "=0.14.0-rc.0"
-cairo-lang-starknet-classes = "=2.10.0-rc.1"
-cairo-lang-utils = "=2.10.0-rc.1"
+blockifier = "=0.14.0-rc.1"
+starknet_api = "=0.14.0-rc.1"
+cairo-lang-starknet-classes = "=2.10.0"
+cairo-lang-utils = "=2.10.0"
 
 alloy = { version = "0.4.0", features = [
     "node-bindings",
