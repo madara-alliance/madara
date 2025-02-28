@@ -34,7 +34,7 @@ pub fn update_l1(
 
     backend
         .write_last_confirmed_block(state_update.block_number)
-        .map_err(|e| SettlementClientError::Other(e.to_string()))?;
+        .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to write last confirmed block: {}", e)))?;
     tracing::debug!("update_l1: wrote last confirmed block number");
 
     Ok(())
@@ -50,7 +50,9 @@ where
     S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     // Clear L1 confirmed block at startup
-    backend.clear_last_confirmed_block().map_err(|e| SettlementClientError::Other(e.to_string()))?;
+    backend.clear_last_confirmed_block().map_err(|e| {
+        SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
+    })?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
     tracing::info!("🚀 Subscribed to L1 state verification");
@@ -58,17 +60,19 @@ where
     // This does not seem to play well with anvil
     #[cfg(not(test))]
     {
-        let initial_state =
-            settlement_client.get_initial_state().await.map_err(|e| SettlementClientError::Other(e.to_string()))?;
+        let initial_state = settlement_client
+            .get_initial_state()
+            .await
+            .map_err(|e| SettlementClientError::StateInitialization(format!("Failed to get initial state: {}", e)))?;
 
-        update_l1(&backend, initial_state, l1_block_metrics.clone())
-            .map_err(|e| SettlementClientError::Other(e.to_string()))?;
+        update_l1(&backend, initial_state, l1_block_metrics.clone()).map_err(|e| {
+            SettlementClientError::StateUpdate(format!("Failed to update L1 with initial state: {}", e))
+        })?;
     }
 
-    settlement_client
-        .listen_for_update_state_events(backend, ctx, l1_block_metrics.clone())
-        .await
-        .map_err(|e| SettlementClientError::Other(e.to_string()))?;
+    settlement_client.listen_for_update_state_events(backend, ctx, l1_block_metrics.clone()).await.map_err(|e| {
+        SettlementClientError::StateEventListener(format!("Failed to listen for update state events: {}", e))
+    })?;
 
     Ok(())
 }

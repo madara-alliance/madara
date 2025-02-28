@@ -1,4 +1,3 @@
-use crate::error::SettlementClientError;
 use alloy::sol_types;
 use thiserror::Error;
 
@@ -13,9 +12,6 @@ pub enum EthereumClientError {
     #[error("Event processing error: {message} at block {block_number}")]
     EventProcessing { message: String, block_number: u64 },
 
-    #[error("State sync error: {message} at block {block_number}")]
-    StateSync { message: String, block_number: u64 },
-
     #[error("Value conversion error: {0}")]
     Conversion(String),
 
@@ -25,21 +21,24 @@ pub enum EthereumClientError {
     #[error("Archive node required: {0}")]
     ArchiveRequired(String),
 
-    #[error("Other error: {0}")]
-    Other(String),
+    #[error("Event stream error: {message}")]
+    EventStream { message: String },
 
-    #[error("Settlement error: {0}")]
-    Settlement(String),
+    #[error("State update error: {message}")]
+    StateUpdate { message: String },
+
+    #[error("Gas price calculation error: {message}")]
+    GasPriceCalculation { message: String },
+
+    #[error("L1 to L2 messaging error: {message}")]
+    L1ToL2Messaging { message: String },
+
+    #[error("Network connection error: {message}")]
+    NetworkConnection { message: String },
 }
 
 impl From<sol_types::Error> for EthereumClientError {
     fn from(e: sol_types::Error) -> Self {
         EthereumClientError::Contract(e.to_string())
-    }
-}
-
-impl From<SettlementClientError> for EthereumClientError {
-    fn from(error: SettlementClientError) -> Self {
-        EthereumClientError::Settlement(error.to_string())
     }
 }

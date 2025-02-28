@@ -20,6 +20,24 @@ pub enum StarknetClientError {
 
     #[error("Missing field in response: {0}")]
     MissingField(&'static str),
+
+    #[error("Event subscription error: {message}")]
+    EventSubscription { message: String },
+
+    #[error("State initialization error: {message}")]
+    StateInitialization { message: String },
+
+    #[error("Network connection error: {message}")]
+    NetworkConnection { message: String },
+
+    #[error("Invalid response format: {message}")]
+    InvalidResponseFormat { message: String },
+
+    #[error("L1-L2 messaging error: {message}")]
+    L1ToL2Messaging { message: String },
+
+    #[error("Message processing error: {message}")]
+    MessageProcessing { message: String },
 }
 
 impl From<StarknetError> for StarknetClientError {

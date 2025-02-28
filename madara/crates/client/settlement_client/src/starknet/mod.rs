@@ -55,10 +55,12 @@ impl StarknetClient {
     pub async fn new(config: StarknetClientConfig) -> Result<Self, SettlementClientError> {
         let provider = JsonRpcClient::new(HttpTransport::new(config.url));
         // Check if l2 contract exists
-        provider
-            .get_class_at(BlockId::Tag(BlockTag::Latest), config.l2_contract_address)
-            .await
-            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
+        provider.get_class_at(BlockId::Tag(BlockTag::Latest), config.l2_contract_address).await.map_err(
+            |e| -> SettlementClientError {
+                StarknetClientError::NetworkConnection { message: format!("Failed to connect to L2 contract: {}", e) }
+                    .into()
+            },
+        )?;
 
         Ok(Self {
             provider: Arc::new(provider),
@@ -81,10 +83,10 @@ impl SettlementClientTrait for StarknetClient {
     }
 
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
-        self.provider
-            .block_number()
-            .await
-            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })
+        self.provider.block_number().await.map_err(|e| -> SettlementClientError {
+            StarknetClientError::NetworkConnection { message: format!("Failed to fetch latest block number: {}", e) }
+                .into()
+        })
     }
 
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
@@ -96,8 +98,12 @@ impl SettlementClientTrait for StarknetClient {
                 BlockId::Number(last_block),
                 BlockId::Number(latest_block),
                 self.l2_core_contract,
-                vec![get_selector_from_name("LogStateUpdate")
-                    .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?],
+                vec![get_selector_from_name("LogStateUpdate").map_err(|e| -> SettlementClientError {
+                    StarknetClientError::EventSubscription {
+                        message: format!("Failed to get LogStateUpdate selector: {}", e),
+                    }
+                    .into()
+                })?],
             )
             .await?;
         /*
@@ -120,13 +126,9 @@ impl SettlementClientTrait for StarknetClient {
         })?;
 
         if last_update_state_event.data.len() != 3 {
-            return Err(SettlementClientError::Starknet(
-                StarknetClientError::EventProcessing {
-                    message: "Event response invalid".to_string(),
-                    event_id: "LogStateUpdate".to_string(),
-                }
-                .into(),
-            ));
+            return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                message: "LogStateUpdate event should contain exactly 3 data values".to_string(),
+            }));
         }
 
         match last_update_state_event.block_number {
@@ -137,8 +139,9 @@ impl SettlementClientTrait for StarknetClient {
 
     async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
         let state = self.get_state_call().await?;
-        u64::try_from(state[1])
-            .map_err(|e| -> SettlementClientError { StarknetClientError::Conversion(e.to_string()).into() })
+        u64::try_from(state[1]).map_err(|e| -> SettlementClientError {
+            StarknetClientError::Conversion(format!("Failed to convert state[1] to block number u64: {}", e)).into()
+        })
     }
 
     async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
@@ -166,8 +169,12 @@ impl SettlementClientTrait for StarknetClient {
         while let Some(events) = ctx
             .run_until_cancelled(async {
                 let latest_block = self.get_latest_block_number().await?;
-                let selector = get_selector_from_name("LogStateUpdate")
-                    .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?;
+                let selector = get_selector_from_name("LogStateUpdate").map_err(|e| -> SettlementClientError {
+                    StarknetClientError::EventSubscription {
+                        message: format!("Failed to get LogStateUpdate selector: {}", e),
+                    }
+                    .into()
+                })?;
 
                 self.get_events(
                     BlockId::Number(latest_block),
@@ -239,19 +246,31 @@ impl SettlementClientTrait for StarknetClient {
                 FunctionCall {
                     contract_address: self.l2_core_contract,
                     entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations").map_err(
-                        |e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() },
+                        |e| -> SettlementClientError {
+                            StarknetClientError::L1ToL2Messaging {
+                                message: format!("Failed to get l1_to_l2_message_cancellations selector: {}", e),
+                            }
+                            .into()
+                        },
                     )?,
                     calldata: vec![Felt::from_bytes_be_slice(msg_hash)],
                 },
                 BlockId::Tag(BlockTag::Pending),
             )
             .await
-            .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?;
+            .map_err(|e| -> SettlementClientError {
+                StarknetClientError::L1ToL2Messaging {
+                    message: format!("Failed to call message cancellation function: {}", e),
+                }
+                .into()
+            })?;
 
         if call_res.len() != 2 {
             return Err(SettlementClientError::Starknet(
-                StarknetClientError::Contract("l1_to_l2_message_cancellations should return only 2 values".into())
-                    .into(),
+                StarknetClientError::InvalidResponseFormat {
+                    message: "l1_to_l2_message_cancellations should return exactly 2 values".to_string(),
+                }
+                .into(),
             ));
         }
         Ok(call_res[0])
@@ -265,8 +284,10 @@ impl SettlementClientTrait for StarknetClient {
             from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
             to_block: Some(BlockId::Number(self.get_latest_block_number().await?)),
             address: Some(self.l2_core_contract),
-            keys: Some(vec![vec![get_selector_from_name("MessageSent")
-                .map_err(|e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() })?]]),
+            keys: Some(vec![vec![get_selector_from_name("MessageSent").map_err(|e| -> SettlementClientError {
+                StarknetClientError::MessageProcessing { message: format!("Failed to get MessageSent selector: {}", e) }
+                    .into()
+            })?]]),
         };
         Ok(StarknetEventStream::new(self.provider.clone(), filter, Duration::from_secs(1)))
     }
@@ -298,7 +319,9 @@ impl StarknetClient {
                     1000,
                 )
                 .await
-                .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
+                .map_err(|e| -> SettlementClientError {
+                    StarknetClientError::EventSubscription { message: format!("Failed to fetch events: {}", e) }.into()
+                })?;
 
             event_vec.extend(events.events);
             if let Some(token) = events.continuation_token {
@@ -332,18 +355,30 @@ impl StarknetClient {
                     Function Call response : (StateRoot, BlockNumber, BlockHash)
                     */
                     entry_point_selector: get_selector_from_name("get_state").map_err(
-                        |e| -> SettlementClientError { StarknetClientError::Contract(e.to_string()).into() },
+                        |e| -> SettlementClientError {
+                            StarknetClientError::StateInitialization {
+                                message: format!("Failed to get get_state selector: {}", e),
+                            }
+                            .into()
+                        },
                     )?,
                     calldata: vec![],
                 },
                 BlockId::Tag(BlockTag::Pending),
             )
             .await
-            .map_err(|e| -> SettlementClientError { StarknetClientError::Provider(e.to_string()).into() })?;
+            .map_err(|e| -> SettlementClientError {
+                StarknetClientError::StateInitialization { message: format!("Failed to get state: {}", e) }.into()
+            })?;
 
         if call_res.len() != 3 {
             return Err(SettlementClientError::Starknet(
-                StarknetClientError::Contract("Call response invalid !!".into()).into(),
+                StarknetClientError::InvalidResponseFormat {
+                    message:
+                        "State call response should contain exactly 3 values (state_root, block_number, block_hash)"
+                            .to_string(),
+                }
+                .into(),
             ));
         }
         Ok(call_res)

@@ -35,40 +35,48 @@ impl Stream for EthereumEventStream {
                         Ok(L1toL2MessagingEventData {
                             from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
                             to: u256_to_felt(event.toAddress).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(e.to_string()).into()
+                                EthereumClientError::Conversion(format!("Failed to convert toAddress to Felt: {}", e))
+                                    .into()
                             })?,
                             selector: u256_to_felt(event.selector).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(e.to_string()).into()
+                                EthereumClientError::Conversion(format!("Failed to convert selector to Felt: {}", e))
+                                    .into()
                             })?,
                             nonce: u256_to_felt(event.nonce).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(e.to_string()).into()
+                                EthereumClientError::Conversion(format!("Failed to convert nonce to Felt: {}", e))
+                                    .into()
                             })?,
                             payload: event.payload.iter().try_fold(
                                 Vec::with_capacity(event.payload.len()),
                                 |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
                                     acc.push(u256_to_felt(*ele).map_err(|e| -> SettlementClientError {
-                                        EthereumClientError::Conversion(e.to_string()).into()
+                                        EthereumClientError::Conversion(format!(
+                                            "Failed to convert payload element to Felt: {}",
+                                            e
+                                        ))
+                                        .into()
                                     })?);
                                     Ok(acc)
                                 },
                             )?,
                             fee: Some(event.fee.try_into().map_err(|_| -> SettlementClientError {
-                                EthereumClientError::Conversion("Fee conversion failed".to_string()).into()
+                                EthereumClientError::Conversion("Fee value too large for u128 conversion".to_string())
+                                    .into()
                             })?),
                             transaction_hash: Felt::from_bytes_be_slice(
                                 log.transaction_hash
                                     .ok_or_else(|| -> SettlementClientError {
-                                        EthereumClientError::MissingField("transaction_hash").into()
+                                        EthereumClientError::MissingField("transaction_hash in Ethereum log").into()
                                     })?
                                     .to_vec()
                                     .as_slice(),
                             ),
                             message_hash: None,
                             block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
-                                EthereumClientError::MissingField("block_number").into()
+                                EthereumClientError::MissingField("block_number in Ethereum log").into()
                             })?,
                             event_index: Some(log.log_index.ok_or_else(|| -> SettlementClientError {
-                                EthereumClientError::MissingField("log_index").into()
+                                EthereumClientError::MissingField("log_index in Ethereum log").into()
                             })?),
                         })
                     })();
@@ -76,7 +84,10 @@ impl Stream for EthereumEventStream {
                     Poll::Ready(Some(event_data))
                 }
                 Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(
-                    EthereumClientError::Contract(e.to_string()).into(),
+                    EthereumClientError::EventStream {
+                        message: format!("Error processing Ethereum event stream: {}", e),
+                    }
+                    .into(),
                 )))),
             },
             Poll::Ready(None) => Poll::Ready(None),
