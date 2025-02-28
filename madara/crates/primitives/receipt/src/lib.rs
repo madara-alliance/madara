@@ -1,6 +1,6 @@
-mod from_blockifier;
+pub mod from_blockifier;
 mod to_starknet_types;
-pub use from_blockifier::from_blockifier_execution_info;
+pub use from_blockifier::{from_blockifier_execution_info, MsgToL2};
 
 use primitive_types::H256;
 use serde::{Deserialize, Serialize};

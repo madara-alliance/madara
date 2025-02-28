@@ -171,7 +171,7 @@ impl Stream for StarknetEventStream {
                                         selector: *selector,
                                         nonce: *nonce,
                                         payload: event.data.iter().skip(3).copied().collect(),
-                                        fee: None,
+                                        fee: Some(1), // TODO: blockifier failes when fee is None
                                         transaction_hash: event.transaction_hash,
                                         message_hash: Some(*message_hash),
                                         block_number,

@@ -9344,13 +9344,16 @@ dependencies = [
 name = "mp-receipt"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "bincode 1.3.3",
  "blockifier",
  "cairo-vm",
  "mp-rpc",
+ "mp-transactions",
  "primitive-types",
  "rstest 0.18.2",
  "serde",
+ "sha3",
  "starknet-core",
  "starknet-types-core",
  "starknet_api",

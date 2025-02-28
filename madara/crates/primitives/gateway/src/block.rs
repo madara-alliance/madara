@@ -1,3 +1,5 @@
+use super::{receipt::ConfirmedReceipt, transaction::Transaction};
+use crate::transaction::L1HandlerTransaction;
 use anyhow::Context;
 use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
 use mp_chain_config::StarknetVersion;
@@ -5,11 +7,6 @@ use mp_convert::hex_serde::U128AsHex;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
-
-use super::{
-    receipt::{ConfirmedReceipt, MsgToL2},
-    transaction::Transaction,
-};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -286,14 +283,20 @@ fn starknet_version(version: StarknetVersion) -> Option<String> {
     }
 }
 
+fn l1_handler_to_msg_to_l2(l1_handler: &L1HandlerTransaction) -> Option<mp_receipt::MsgToL2> {
+    let mp_l1_handler: mp_transactions::L1HandlerTransaction = l1_handler.clone().into();
+
+    mp_receipt::MsgToL2::try_from(&mp_l1_handler).ok()
+}
+
 fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transaction]) -> Vec<ConfirmedReceipt> {
     receipts
         .into_iter()
         .zip(transaction.iter())
         .enumerate()
         .map(|(index, (receipt, tx))| {
-            let l1_to_l2_consumed_message: Option<MsgToL2> = match tx {
-                Transaction::L1Handler(l1_handler) => MsgToL2::try_from(l1_handler).ok(),
+            let l1_to_l2_consumed_message = match tx {
+                Transaction::L1Handler(l1_handler) => l1_handler_to_msg_to_l2(l1_handler),
                 _ => None,
             };
             ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
