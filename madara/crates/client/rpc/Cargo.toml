@@ -1,0 +1,58 @@
+[package]
+name = "mc-rpc"
+description = "Madara client rpc service"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dev-dependencies]
+
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+mp-utils = { workspace = true, features = ["testing"] }
+
+[dependencies]
+
+# Madara
+m-proc-macros = { workspace = true }
+mc-db = { workspace = true }
+mc-exec = { workspace = true }
+mc-gateway-client = { workspace = true }
+mc-mempool = { workspace = true }
+mp-block = { workspace = true, default-features = true }
+mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true, default-features = true }
+mp-gateway = { workspace = true }
+mp-receipt = { workspace = true }
+mp-rpc = { workspace = true }
+mp-state-update = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
+
+# Starknet
+blockifier = { workspace = true, default-features = true }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true, default-features = true }
+
+# Others
+anyhow = { workspace = true }
+bitvec = { workspace = true }
+jsonrpsee = { workspace = true, default-features = true, features = [
+  "macros",
+  "server",
+] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

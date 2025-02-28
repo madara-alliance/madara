@@ -26,9 +26,39 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler libasound2-dev
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
 
+      - name: Display Python version
+        run: python --version
+
+      - name: Install cairo 0
+        run: |
+          # Creating venv
+          python3.9 -m venv ~/cairo_venv
+          source ~/cairo_venv/bin/activate
+
+          # Installing deps
+          sudo apt install -y libgmp3-dev
+          pip3 install ecdsa fastecdsa sympy
+
+          # Installing cairo lang
+          pip3 install cairo-lang
+
+      - name: Build SNOS files
+        run: |
+          make snos
+
+      - uses: Swatinem/rust-cache@v2
       - name: Format and clippy
         run: |
           cargo fmt -- --check
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
+      - name: Orchestrator Format and clippy
+        working-directory: orchestrator
+        run: |
+          cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
+          cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings

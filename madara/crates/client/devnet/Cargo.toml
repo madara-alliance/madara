@@ -1,0 +1,73 @@
+[package]
+name = "mc-devnet"
+description = "Madara client devnet creation"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dev-dependencies]
+
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+mc-mempool = { workspace = true, features = ["testing"] }
+mc-block-production = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+proptest.workspace = true
+proptest-derive.workspace = true
+blockifier = { workspace = true, features = ["testing"] }
+mockall.workspace = true
+assert_matches.workspace = true
+
+# Compile the test contracts in test cfg.
+m-cairo-test-contracts.workspace = true
+
+[dependencies]
+
+# Madara
+mc-block-import.workspace = true
+mc-db.workspace = true
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-receipt.workspace = true
+mp-rpc.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+
+# Starknet
+blockifier.workspace = true
+starknet-core.workspace = true
+starknet-signers.workspace = true
+starknet-types-core.workspace = true
+starknet_api.workspace = true
+
+# Other
+anyhow.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
