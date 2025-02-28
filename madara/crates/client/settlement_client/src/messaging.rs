@@ -220,7 +220,6 @@ mod messaging_module_tests {
     use starknet_types_core::felt::Felt;
     use std::time::Duration;
     use tokio::time::timeout;
-    use tracing_test::traced_test;
 
     // Helper function to create a mock event
     fn create_mock_event(block_number: u64, nonce: u64) -> L1toL2MessagingEventData {

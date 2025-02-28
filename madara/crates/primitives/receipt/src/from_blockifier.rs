@@ -317,7 +317,7 @@ mod test {
     #[test]
     fn test_compute_hash_msg_to_l2() {
         let msg = MsgToL2 {
-            from_address: H160::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            from_address: Felt::from(1),
             to_address: Felt::from(2),
             selector: Felt::from(3),
             payload: vec![Felt::from(4), Felt::from(5), Felt::from(6)],

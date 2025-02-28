@@ -781,9 +781,7 @@ mod starknet_client_messaging_test {
 mod starknet_client_event_subscription_test {
     use crate::gas_price::L1BlockMetrics;
     use crate::starknet::event::StarknetEventStream;
-    use crate::starknet::utils::{
-        get_state_update_lock, get_test_context, init_test_context, send_state_update, TestGuard,
-    };
+    use crate::starknet::utils::{get_state_update_lock, get_test_context, init_test_context, send_state_update};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
     use mc_db::DatabaseService;
