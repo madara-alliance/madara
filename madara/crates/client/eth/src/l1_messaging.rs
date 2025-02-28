@@ -142,9 +142,6 @@ async fn process_l1_message(
 
     // Ensure that L1 message has not been executed
     match backend.has_l1_messaging_nonce(tx_nonce) {
-        Ok(false) => {
-            backend.set_l1_messaging_nonce(tx_nonce)?;
-        }
         Ok(true) => {
             tracing::debug!("⟠ Event already processed: {:?}", transaction);
             return Ok(None);
@@ -153,8 +150,12 @@ async fn process_l1_message(
             tracing::error!("⟠ Unexpected DB error: {:?}", e);
             return Err(e.into());
         }
+        _ => {}
     };
 
+    // TODO: we might want to move this to AFTER the insertion into the mempool,
+    // rn this is causing a panic in certain prod systems if we do so.
+    backend.set_l1_messaging_nonce(tx_nonce)?;
     let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
 
     // TODO: remove unwraps
