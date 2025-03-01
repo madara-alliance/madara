@@ -110,7 +110,7 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     }
 
     pub fn capacity(&self) -> usize {
-        return CAPACITY;
+        CAPACITY
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = T> + '_ {
@@ -132,7 +132,7 @@ struct Iter<'a, const CAPACITY: usize, T> {
     size: usize,
 }
 
-impl<'a, const CAPACITY: usize, T> Iterator for Iter<'a, CAPACITY, T> {
+impl<const CAPACITY: usize, T> Iterator for Iter<'_, CAPACITY, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -147,7 +147,7 @@ impl<'a, const CAPACITY: usize, T> Iterator for Iter<'a, CAPACITY, T> {
     }
 }
 
-impl<'a, const CAPACITY: usize, T> DoubleEndedIterator for Iter<'a, CAPACITY, T> {
+impl<const CAPACITY: usize, T> DoubleEndedIterator for Iter<'_, CAPACITY, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.size == 0 {
             None
@@ -180,7 +180,7 @@ impl<'a, const CAPACITY: usize, T> Iterator for IterMut<'a, CAPACITY, T> {
     }
 }
 
-impl<'a, const CAPACITY: usize, T> DoubleEndedIterator for IterMut<'a, CAPACITY, T> {
+impl<const CAPACITY: usize, T> DoubleEndedIterator for IterMut<'_, CAPACITY, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.size == 0 {
             None
@@ -584,7 +584,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert_eq!(ring.try_push_front(10), false);
+        assert!(!ring.try_push_front(10));
     }
 
     #[test]
@@ -615,7 +615,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert_eq!(ring.try_push_front(10), false);
+        assert!(!ring.try_push_front(10));
     }
 
     #[test]
@@ -643,7 +643,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 10);
         }
 
-        assert_eq!(ring.try_push_front(10), false);
+        assert!(!ring.try_push_front(10));
     }
 
     #[test]
@@ -673,7 +673,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert_eq!(ring.try_push_front(10), false);
+        assert!(!ring.try_push_front(10));
     }
 
     #[test]
