@@ -2,62 +2,46 @@
 struct RingDeque<const CAPACITY: usize, T> {
     ring: [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
-    stop: usize,
-    init: bool,
+    size: usize,
 }
 
 impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     pub fn new() -> Self {
-        if CAPACITY == 0 {
-            panic!("Cannot create a RingDeque with a capacity of 0");
-        }
-        Self { ring: [const { std::mem::MaybeUninit::uninit() }; CAPACITY], start: 0, stop: 0, init: true }
+        assert!(CAPACITY > 0, "Cannot create a RingDeque with a capacity of 0");
+        Self { ring: [const { std::mem::MaybeUninit::uninit() }; CAPACITY], start: 0, size: 0 }
     }
 
     pub fn push_front(&mut self, item: T) {
-        if !self.try_push_front(item) {
-            panic!("Cannot add more elements, ring is full")
-        }
+        assert!(self.try_push_front(item), "Cannot add more elements, ring is full")
     }
 
     pub fn push_back(&mut self, item: T) {
-        if !self.try_push_back(item) {
-            panic!("Cannot add more elements, ring is full")
-        }
+        assert!(self.try_push_back(item), "Cannot add more elements, ring is full")
     }
 
     pub fn pop_front(&mut self) -> Option<T> {
-        if self.init && self.start == self.stop {
+        if self.is_empty() {
             None
         } else {
             let res = unsafe { self.ring[self.start].assume_init_read() };
-            self.start = bounded_increment::<CAPACITY>(self.start);
-
-            if self.start == self.stop {
-                self.init = true;
-            }
-
+            self.start = wrapping_index::<CAPACITY>(self.start + 1);
+            self.size -= 1;
             Some(res)
         }
     }
 
     pub fn pop_back(&mut self) -> Option<T> {
-        if self.init && self.start == self.stop {
+        if self.is_empty() {
             None
         } else {
-            self.stop = bounded_decrement::<CAPACITY>(self.stop);
-            let res = unsafe { self.ring[self.stop].assume_init_read() };
-
-            if self.start == self.stop {
-                self.init = true;
-            }
-
+            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size - 1)].assume_init_read() };
+            self.size -= 1;
             Some(res)
         }
     }
 
     pub fn peek_front(&mut self) -> Option<T> {
-        if self.init && self.start == self.stop {
+        if self.is_empty() {
             None
         } else {
             let res = unsafe { self.ring[self.start].assume_init_read() };
@@ -66,113 +50,99 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     }
 
     pub fn peek_back(&mut self) -> Option<T> {
-        if self.init && self.start == self.stop {
+        if self.is_empty() {
             None
         } else {
-            let res = unsafe { self.ring[bounded_decrement::<CAPACITY>(self.stop)].assume_init_read() };
+            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size - 1)].assume_init_read() };
             Some(res)
         }
     }
 
     pub fn try_push_front(&mut self, item: T) -> bool {
-        if !self.init && self.start == self.stop {
+        if self.is_full() {
             false
         } else {
-            self.init = false;
-            self.start = bounded_decrement::<CAPACITY>(self.start);
+            self.start = wrapping_decrement::<CAPACITY>(self.start);
             self.ring[self.start].write(item);
+            self.size += 1;
             true
         }
     }
 
     pub fn try_push_back(&mut self, item: T) -> bool {
-        if !self.init && self.start == self.stop {
+        if self.is_full() {
             false
         } else {
-            self.init = false;
-            self.ring[self.stop].write(item);
-            self.stop = bounded_increment::<CAPACITY>(self.stop);
+            self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].write(item);
+            self.size += 1;
             true
         }
     }
 
     pub fn size(&self) -> usize {
-        match self.start.cmp(&self.stop) {
-            std::cmp::Ordering::Less => self.stop - self.start,
-            std::cmp::Ordering::Equal => {
-                if self.init {
-                    0
-                } else {
-                    CAPACITY
-                }
-            }
-            std::cmp::Ordering::Greater => CAPACITY - self.start + self.stop,
-        }
+        self.size
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.size == CAPACITY
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
     }
 
     pub fn capacity(&self) -> usize {
         return CAPACITY;
     }
 
-    pub fn iter(&self) -> RingIterator<'_, CAPACITY, T> {
-        RingIterator { ring: &self.ring, start: self.start, stop: self.stop, init: self.init }
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = T> + '_ {
+        Iter { ring: &self.ring, start: self.start, size: self.size }
     }
 }
 
-struct RingIterator<'a, const CAPACITY: usize, T> {
+struct Iter<'a, const CAPACITY: usize, T> {
     ring: &'a [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
-    stop: usize,
-    init: bool,
+    size: usize,
 }
 
-impl<'a, const CAPACITY: usize, T> Iterator for RingIterator<'a, CAPACITY, T> {
+impl<'a, const CAPACITY: usize, T> Iterator for Iter<'a, CAPACITY, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.init && self.start == self.stop {
+        if self.size == 0 {
             None
         } else {
             let res = unsafe { self.ring[self.start].assume_init_read() };
-            self.start = bounded_increment::<CAPACITY>(self.start);
-
-            if self.start == self.stop {
-                self.init = true;
-            }
-
+            self.start = wrapping_index::<CAPACITY>(self.start + 1);
+            self.size -= 1;
             Some(res)
         }
     }
 }
 
-impl<'a, const CAPACITY: usize, T> DoubleEndedIterator for RingIterator<'a, CAPACITY, T> {
+impl<'a, const CAPACITY: usize, T> DoubleEndedIterator for Iter<'a, CAPACITY, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.init && self.start == self.stop {
+        if self.size == 0 {
             None
         } else {
-            self.stop = bounded_decrement::<CAPACITY>(self.stop);
-            let res = unsafe { self.ring[self.stop].assume_init_read() };
-
-            if self.start == self.stop {
-                self.init = true;
-            }
-
+            self.size -= 1;
+            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].assume_init_read() };
             Some(res)
         }
     }
 }
 
-fn bounded_increment<const CAPACITY: usize>(mut n: usize) -> usize {
-    n += 1;
+fn wrapping_decrement<const CAPACITY: usize>(n: usize) -> usize {
+    n.checked_sub(1).unwrap_or(CAPACITY - 1)
+}
+
+fn wrapping_index<const CAPACITY: usize>(n: usize) -> usize {
     if n >= CAPACITY {
-        0
+        n - CAPACITY
     } else {
         n
     }
-}
-
-fn bounded_decrement<const CAPACITY: usize>(n: usize) -> usize {
-    n.checked_sub(1).unwrap_or(CAPACITY - 1)
 }
 
 #[cfg(test)]
@@ -193,7 +163,7 @@ mod test {
     }
 
     #[test]
-    fn ring_push_back() {
+    fn ring_push_back_simple() {
         let mut ring = RingDeque::<10, i32>::new();
         for n in 0..10 {
             ring.push_back(n);
@@ -216,7 +186,7 @@ mod test {
     }
 
     #[test]
-    fn ring_push_front() {
+    fn ring_push_front_simple() {
         let mut ring = RingDeque::<10, i32>::new();
         for n in (0..10).into_iter().rev() {
             ring.push_front(n);
@@ -286,7 +256,7 @@ mod test {
 
         assert_eq!(ring.pop_back(), None);
         assert_eq!(ring.start, 0);
-        assert_eq!(ring.stop, 0);
+        assert_eq!(ring.size, 0);
 
         // This should not fail even though ring.start == ring.stop
         for n in 0..10 {
@@ -306,7 +276,7 @@ mod test {
 
         assert_eq!(ring.pop_front(), None);
         assert_eq!(ring.start, 0);
-        assert_eq!(ring.stop, 0);
+        assert_eq!(ring.size, 0);
 
         // This should not fail even though ring.start == ring.stop
         for n in (0..10).into_iter().rev() {
@@ -342,7 +312,7 @@ mod test {
 
         assert_eq!(ring.pop_front(), None);
         assert_eq!(ring.start, 0);
-        assert_eq!(ring.stop, 0);
+        assert_eq!(ring.size, 0);
 
         // This should not fail even though ring.start == ring.stop
         for n in (0..10).into_iter().rev() {
@@ -362,7 +332,7 @@ mod test {
 
         assert_eq!(ring.pop_back(), None);
         assert_eq!(ring.start, 0);
-        assert_eq!(ring.stop, 0);
+        assert_eq!(ring.size, 0);
 
         // This should not fail even though ring.start == ring.stop
         for n in 0..10 {
@@ -460,6 +430,7 @@ mod test {
             assert_eq!(iter.next(), Some(n));
         }
         assert_eq!(iter.next(), None);
+        drop(iter);
 
         // iter should not mutate the base ring
         unsafe {
@@ -490,6 +461,7 @@ mod test {
             assert_eq!(iter.next(), Some(n));
         }
         assert_eq!(iter.next(), None);
+        drop(iter);
 
         // iter should not mutate the base ring
         unsafe {
