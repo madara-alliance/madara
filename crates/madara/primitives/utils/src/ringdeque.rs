@@ -1,9 +1,41 @@
-#[derive(Debug)]
+use itertools::{
+    FoldWhile::{Continue, Done},
+    Itertools,
+};
+
 struct RingDeque<const CAPACITY: usize, T> {
     ring: [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
     size: usize,
 }
+
+impl<const CAPACITY: usize, T: std::fmt::Debug> std::fmt::Debug for RingDeque<CAPACITY, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl<const CAPACITY: usize, T: Clone> Clone for RingDeque<CAPACITY, T> {
+    fn clone(&self) -> Self {
+        let mut ring = Self::new();
+        for item in self.iter().cloned() {
+            ring.push_back(item);
+        }
+        ring
+    }
+}
+
+impl<const CAPACITY: usize, T: PartialEq> PartialEq for RingDeque<CAPACITY, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size
+            && self
+                .iter()
+                .zip(other.iter())
+                .fold_while(true, |_, (a, b)| if a == b { Continue(true) } else { Done(false) })
+                .into_inner()
+    }
+}
+impl<const CAPACITY: usize, T: Eq> Eq for RingDeque<CAPACITY, T> {}
 
 impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     pub fn new() -> Self {
@@ -12,11 +44,11 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     }
 
     pub fn push_front(&mut self, item: T) {
-        assert!(self.try_push_front(item), "Cannot add more elements, ring is full")
+        assert!(self.try_push_front(item).is_none(), "Cannot add more elements, ring is full")
     }
 
     pub fn push_back(&mut self, item: T) {
-        assert!(self.try_push_back(item), "Cannot add more elements, ring is full")
+        assert!(self.try_push_back(item).is_none(), "Cannot add more elements, ring is full")
     }
 
     pub fn pop_front(&mut self) -> Option<T> {
@@ -40,20 +72,20 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
         }
     }
 
-    pub fn peek_front(&mut self) -> Option<T> {
+    pub fn peek_front(&self) -> Option<&T> {
         if self.is_empty() {
             None
         } else {
-            let res = unsafe { self.ring[self.start].assume_init_read() };
+            let res = unsafe { &*self.ring[self.start].as_ptr() };
             Some(res)
         }
     }
 
-    pub fn peek_back(&mut self) -> Option<T> {
+    pub fn peek_back(&self) -> Option<&T> {
         if self.is_empty() {
             None
         } else {
-            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size - 1)].assume_init_read() };
+            let res = unsafe { &*self.ring[wrapping_index::<CAPACITY>(self.start + self.size - 1)].as_ptr() };
             Some(res)
         }
     }
@@ -71,33 +103,33 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
         if self.is_empty() {
             None
         } else {
-            let res = unsafe { &mut *self.ring[wrapping_index::<CAPACITY>(self.size - 1)].as_mut_ptr() };
+            let res = unsafe { &mut *self.ring[wrapping_index::<CAPACITY>(self.start + self.size - 1)].as_mut_ptr() };
             Some(res)
         }
     }
 
-    pub fn try_push_front(&mut self, item: T) -> bool {
+    pub fn try_push_front(&mut self, item: T) -> Option<T> {
         if self.is_full() {
-            false
+            Some(item)
         } else {
             self.start = wrapping_decrement::<CAPACITY>(self.start);
             self.ring[self.start].write(item);
             self.size += 1;
-            true
+            None
         }
     }
 
-    pub fn try_push_back(&mut self, item: T) -> bool {
+    pub fn try_push_back(&mut self, item: T) -> Option<T> {
         if self.is_full() {
-            false
+            Some(item)
         } else {
             self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].write(item);
             self.size += 1;
-            true
+            None
         }
     }
 
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.size
     }
 
@@ -113,15 +145,20 @@ impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
         CAPACITY
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = T> + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
         Iter { ring: &self.ring, start: self.start, size: self.size }
     }
 
     pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T> {
         IterMut { ring: &mut self.ring, start: self.start, size: self.size }
     }
+}
 
-    pub fn into_iter(self) -> impl DoubleEndedIterator<Item = T> {
+impl<const CAPACITY: usize, T> IntoIterator for RingDeque<CAPACITY, T> {
+    type Item = T;
+    type IntoIter = IntoIter<CAPACITY, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
         IntoIter { ring: self.ring, start: self.start, size: self.size }
     }
 }
@@ -132,14 +169,14 @@ struct Iter<'a, const CAPACITY: usize, T> {
     size: usize,
 }
 
-impl<const CAPACITY: usize, T> Iterator for Iter<'_, CAPACITY, T> {
-    type Item = T;
+impl<'a, const CAPACITY: usize, T> Iterator for Iter<'a, CAPACITY, T> {
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.size == 0 {
             None
         } else {
-            let res = unsafe { self.ring[self.start].assume_init_read() };
+            let res = unsafe { &*self.ring[self.start].as_ptr() };
             self.start = wrapping_index::<CAPACITY>(self.start + 1);
             self.size -= 1;
             Some(res)
@@ -153,7 +190,7 @@ impl<const CAPACITY: usize, T> DoubleEndedIterator for Iter<'_, CAPACITY, T> {
             None
         } else {
             self.size -= 1;
-            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].assume_init_read() };
+            let res = unsafe { &*self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].as_ptr() };
             Some(res)
         }
     }
@@ -244,7 +281,7 @@ mod test {
     #[test]
     fn ring_new() {
         let ring = RingDeque::<10, ()>::new();
-        assert_eq!(ring.size(), 0);
+        assert_eq!(ring.len(), 0);
         assert_eq!(ring.capacity(), 10);
     }
 
@@ -274,7 +311,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert_eq!(ring.size(), 10);
+        assert_eq!(ring.len(), 10);
     }
 
     #[test]
@@ -297,7 +334,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert_eq!(ring.size(), 10);
+        assert_eq!(ring.len(), 10);
     }
 
     #[test]
@@ -322,18 +359,18 @@ mod test {
     fn ring_push_back_try() {
         let mut ring = RingDeque::<10, i32>::new();
         for n in 0..10 {
-            ring.push_back(n);
+            assert!(ring.try_push_back(n).is_none());
         }
-        assert!(!ring.try_push_back(10));
+        assert_eq!(ring.try_push_back(10), Some(10));
     }
 
     #[test]
     fn ring_push_front_try() {
         let mut ring = RingDeque::<10, i32>::new();
         for n in (0..10).rev() {
-            ring.push_front(n);
+            assert!(ring.try_push_front(n).is_none());
         }
-        assert!(!ring.try_push_front(10));
+        assert_eq!(ring.try_push_front(10), Some(10));
     }
 
     #[test]
@@ -389,7 +426,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 0);
         }
 
-        assert_eq!(ring.size(), 10)
+        assert_eq!(ring.len(), 10)
     }
 
     #[test]
@@ -445,26 +482,46 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 0);
         }
 
-        assert_eq!(ring.size(), 10)
+        assert_eq!(ring.len(), 10)
     }
 
     #[test]
-    fn ring_peek_back() {
+    fn ring_peek_back_simple() {
         let mut ring = RingDeque::<10, i32>::new();
         assert_eq!(ring.peek_back(), None);
         for n in 0..10 {
             ring.push_back(n);
-            assert_eq!(ring.peek_back(), Some(n));
+            assert_eq!(ring.peek_back(), Some(&n));
         }
     }
 
     #[test]
-    fn ring_peek_front() {
+    fn ring_peek_back_no_double_free() {
+        let mut ring = RingDeque::<10, Vec<i32>>::new();
+        for n in 0..10 {
+            ring.push_back(vec![n]);
+            assert_eq!(ring.peek_back(), Some(&vec![n]));
+            assert_eq!(ring.peek_back(), Some(&vec![n]));
+        }
+    }
+
+    #[test]
+    fn ring_peek_front_simple() {
         let mut ring = RingDeque::<10, i32>::new();
         assert_eq!(ring.peek_front(), None);
         for n in (0..10).rev() {
             ring.push_front(n);
-            assert_eq!(ring.peek_front(), Some(n));
+            assert_eq!(ring.peek_front(), Some(&n));
+        }
+    }
+
+    #[test]
+    fn ring_peek_front_no_free() {
+        let mut ring = RingDeque::<10, Vec<i32>>::new();
+        for n in (0..10).rev() {
+            ring.push_front(vec![n]);
+            assert_eq!(ring.peek_front(), Some(&vec![n]));
+            assert_eq!(ring.peek_front(), Some(&vec![n]));
         }
     }
 
@@ -521,7 +578,7 @@ mod test {
         for n in 0..9 {
             ring.push_back(n);
         }
-        assert_eq!(ring.size(), 9);
+        assert_eq!(ring.len(), 9);
     }
 
     // start > stop
@@ -536,14 +593,14 @@ mod test {
         for n in 0..9 {
             ring.push_back(n);
         }
-        assert_eq!(ring.size(), 9);
+        assert_eq!(ring.len(), 9);
     }
 
     // start == stop, init == true
     #[test]
     fn ring_size_3() {
         let ring = RingDeque::<10, i32>::new();
-        assert_eq!(ring.size(), 0);
+        assert_eq!(ring.len(), 0);
     }
 
     // start == stop, init == false
@@ -553,7 +610,7 @@ mod test {
         for n in 0..10 {
             ring.push_back(n);
         }
-        assert_eq!(ring.size(), 10);
+        assert_eq!(ring.len(), 10);
     }
 
     #[test]
@@ -565,7 +622,7 @@ mod test {
 
         let mut iter = ring.iter();
         for n in 0..10 {
-            assert_eq!(iter.next(), Some(n));
+            assert_eq!(iter.next(), Some(&n));
         }
         assert_eq!(iter.next(), None);
         drop(iter);
@@ -584,7 +641,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert!(!ring.try_push_front(10));
+        assert_eq!(ring.try_push_front(10), Some(10));
     }
 
     #[test]
@@ -596,7 +653,7 @@ mod test {
 
         let mut iter = ring.iter().rev();
         for n in (0..10).rev() {
-            assert_eq!(iter.next(), Some(n));
+            assert_eq!(iter.next(), Some(&n));
         }
         assert_eq!(iter.next(), None);
         drop(iter);
@@ -615,7 +672,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert!(!ring.try_push_front(10));
+        assert_eq!(ring.try_push_front(10), Some(10));
     }
 
     #[test]
@@ -643,7 +700,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 10);
         }
 
-        assert!(!ring.try_push_front(10));
+        assert_eq!(ring.try_push_front(10), Some(10));
     }
 
     #[test]
@@ -673,7 +730,7 @@ mod test {
             assert_eq!(ring.ring[9].assume_init(), 9);
         }
 
-        assert!(!ring.try_push_front(10));
+        assert_eq!(ring.try_push_front(10), Some(10));
     }
 
     #[test]
@@ -700,5 +757,70 @@ mod test {
         for n in (0..10).rev() {
             assert_eq!(iter.next(), Some(n));
         }
+    }
+
+    #[test]
+    fn ring_debug() {
+        let mut ring = RingDeque::<10, i32>::new();
+        for n in 0..10 {
+            ring.push_back(n);
+        }
+
+        assert_eq!(&format!("{ring:?}"), "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+    }
+
+    #[test]
+    fn ring_clone() {
+        let mut ring = RingDeque::<10, i32>::new();
+        for n in 0..10 {
+            ring.push_back(n)
+        }
+
+        let ring_clone = ring.clone();
+
+        unsafe {
+            assert_eq!(ring.ring[0].assume_init(), 0);
+            assert_eq!(ring.ring[1].assume_init(), 1);
+            assert_eq!(ring.ring[2].assume_init(), 2);
+            assert_eq!(ring.ring[3].assume_init(), 3);
+            assert_eq!(ring.ring[4].assume_init(), 4);
+            assert_eq!(ring.ring[5].assume_init(), 5);
+            assert_eq!(ring.ring[6].assume_init(), 6);
+            assert_eq!(ring.ring[7].assume_init(), 7);
+            assert_eq!(ring.ring[8].assume_init(), 8);
+            assert_eq!(ring.ring[9].assume_init(), 9);
+        }
+
+        assert_eq!(ring.len(), 10);
+
+        unsafe {
+            assert_eq!(ring_clone.ring[0].assume_init(), 0);
+            assert_eq!(ring_clone.ring[1].assume_init(), 1);
+            assert_eq!(ring_clone.ring[2].assume_init(), 2);
+            assert_eq!(ring_clone.ring[3].assume_init(), 3);
+            assert_eq!(ring_clone.ring[4].assume_init(), 4);
+            assert_eq!(ring_clone.ring[5].assume_init(), 5);
+            assert_eq!(ring_clone.ring[6].assume_init(), 6);
+            assert_eq!(ring_clone.ring[7].assume_init(), 7);
+            assert_eq!(ring_clone.ring[8].assume_init(), 8);
+            assert_eq!(ring_clone.ring[9].assume_init(), 9);
+        }
+
+        assert_eq!(ring_clone.len(), 10);
+    }
+
+    #[test]
+    fn ring_eq() {
+        let mut ring1 = RingDeque::<10, i32>::new();
+        for n in 0..10 {
+            ring1.push_back(n)
+        }
+
+        let mut ring2 = RingDeque::<10, i32>::new();
+        for n in 0..10 {
+            ring2.push_back(n)
+        }
+
+        assert_eq!(ring1, ring2);
     }
 }
