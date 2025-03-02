@@ -37,6 +37,16 @@ impl<const CAPACITY: usize, T: PartialEq> PartialEq for RingDeque<CAPACITY, T> {
 }
 impl<const CAPACITY: usize, T: Eq> Eq for RingDeque<CAPACITY, T> {}
 
+impl<const CAPACITY: usize, T> Drop for RingDeque<CAPACITY, T> {
+    fn drop(&mut self) {
+        while self.size != 0 {
+            unsafe { self.ring[self.start].assume_init_drop() };
+            self.start = wrapping_index::<CAPACITY>(self.start + 1);
+            self.size -= 1;
+        }
+    }
+}
+
 impl<const CAPACITY: usize, T> RingDeque<CAPACITY, T> {
     pub fn new() -> Self {
         assert!(CAPACITY > 0, "Cannot create a RingDeque with a capacity of 0");
@@ -159,7 +169,7 @@ impl<const CAPACITY: usize, T> IntoIterator for RingDeque<CAPACITY, T> {
     type IntoIter = IntoIter<CAPACITY, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IntoIter { ring: self.ring, start: self.start, size: self.size }
+        IntoIter { me: std::mem::ManuallyDrop::new(self) }
     }
 }
 
@@ -230,21 +240,25 @@ impl<const CAPACITY: usize, T> DoubleEndedIterator for IterMut<'_, CAPACITY, T> 
 }
 
 struct IntoIter<const CAPACITY: usize, T> {
-    ring: [std::mem::MaybeUninit<T>; CAPACITY],
-    start: usize,
-    size: usize,
+    me: std::mem::ManuallyDrop<RingDeque<CAPACITY, T>>,
+}
+
+impl<const CAPACITY: usize, T> Drop for IntoIter<CAPACITY, T> {
+    fn drop(&mut self) {
+        unsafe { std::mem::ManuallyDrop::drop(&mut self.me) }
+    }
 }
 
 impl<const CAPACITY: usize, T> Iterator for IntoIter<CAPACITY, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.size == 0 {
+        if self.me.size == 0 {
             None
         } else {
-            let res = unsafe { self.ring[self.start].assume_init_read() };
-            self.start = wrapping_index::<CAPACITY>(self.start + 1);
-            self.size -= 1;
+            let res = unsafe { self.me.ring[self.me.start].assume_init_read() };
+            self.me.start = wrapping_index::<CAPACITY>(self.me.start + 1);
+            self.me.size -= 1;
             Some(res)
         }
     }
@@ -252,11 +266,12 @@ impl<const CAPACITY: usize, T> Iterator for IntoIter<CAPACITY, T> {
 
 impl<const CAPACITY: usize, T> DoubleEndedIterator for IntoIter<CAPACITY, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.size == 0 {
+        if self.me.size == 0 {
             None
         } else {
-            self.size -= 1;
-            let res = unsafe { self.ring[wrapping_index::<CAPACITY>(self.start + self.size)].assume_init_read() };
+            self.me.size -= 1;
+            let res =
+                unsafe { self.me.ring[wrapping_index::<CAPACITY>(self.me.start + self.me.size)].assume_init_read() };
             Some(res)
         }
     }
@@ -822,5 +837,47 @@ mod test {
         }
 
         assert_eq!(ring1, ring2);
+    }
+
+    struct DropCounter<T> {
+        _val: T,
+        counter: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl<T> Drop for DropCounter<T> {
+        fn drop(&mut self) {
+            let count = self.counter.get() + 1;
+            self.counter.set(count);
+        }
+    }
+
+    impl<T> DropCounter<T> {
+        fn new(cell: &std::rc::Rc<std::cell::Cell<usize>>, val: T) -> Self {
+            Self { _val: val, counter: std::rc::Rc::clone(cell) }
+        }
+    }
+
+    #[test]
+    fn ring_drop_simple() {
+        let mut ring = RingDeque::<10, DropCounter<Vec<i32>>>::new();
+        let rc = std::rc::Rc::default();
+        for n in 0..10 {
+            ring.push_back(DropCounter::new(&rc, vec![n]));
+        }
+
+        drop(ring);
+        assert_eq!(rc.get(), 10);
+    }
+
+    #[test]
+    fn ring_drop_into_iter() {
+        let mut ring = RingDeque::<10, DropCounter<Vec<i32>>>::new();
+        let rc = std::rc::Rc::default();
+        for n in 0..10 {
+            ring.push_back(DropCounter::new(&rc, vec![n]));
+        }
+
+        drop(ring.into_iter());
+        assert_eq!(rc.get(), 10);
     }
 }
