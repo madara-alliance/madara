@@ -211,10 +211,12 @@ pub fn get_storage_proof(
 #[cfg(test)]
 mod tests {
     use bitvec::{bits, view::AsBits};
-    use mc_db::tests::common::{finalized_block_zero, finalized_state_diff_zero};
+    use blockifier::compiled_class_hash;
+    use mc_db::tests::common::{finalized_block_one, finalized_block_zero, finalized_state_diff_zero};
+    use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, StateDiff, StorageEntry};
 
     use super::*;
-    
+
     use crate::test_utils::rpc_test_setup;
     use mc_block_import::tests::block_import_utils::create_dummy_header;
 
@@ -230,29 +232,42 @@ mod tests {
         let felt = path_to_felt(path);
         assert_eq!(felt, Felt::ONE);
     }
-    
+
     #[tokio::test]
     #[rstest::rstest]
-    async fn test_sparse_trie_proof(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
-        let (backend, starknet) = rpc_test_setup;
-        
+    async fn test_sparse_contract_storage_trie_proof(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (_backend, starknet) = rpc_test_setup;
+
         let contract_address = Felt::TWO;
         let storage_key = Felt::ONE;
         let value = Felt::THREE;
-        
+
+        let mut state_diff = StateDiff::default();
+        state_diff.storage_diffs.push(ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: vec![
+                StorageEntry {
+                    key: storage_key,
+                    value,
+                },
+            ],
+        });
+
         // insert a value into the contract storage trie
-        backend.contract_storage_trie().insert(
+        let mut storage_trie = starknet.backend.contract_storage_trie();
+        storage_trie.insert(
             &contract_address.to_bytes_be(),
             &storage_key.to_bytes_be().as_bits()[5..].to_owned(),
             &value,
         ).unwrap();
-        
+        storage_trie.commit(BasicId::new(1));
+
         // create a dummy block to make get_storage_proof() happy
         let header = create_dummy_header();
-        let pending_block = finalized_block_zero(header);
-        backend.store_block(
+        let pending_block = finalized_block_one();
+        starknet.backend.store_block(
             pending_block,
-            finalized_state_diff_zero(),
+            state_diff,
             vec![],
             None,
             None,
@@ -265,17 +280,24 @@ mod tests {
             Some(vec![contract_address]),
             Some(vec![ContractStorageKeysItem { contract_address, storage_keys: vec![storage_key]}]),
         ).unwrap();
-        
+
         // we have one single storage item in the whole trie, so the root node should be an edge
         // path all the way down to it
         assert_eq!(storage_proof_result.contracts_storage_proofs.len(), 1);
         assert_eq!(storage_proof_result.contracts_storage_proofs[0].len(), 1);
-        
+
+        let expected_node = MerkleNode::Edge {
+            child: value,
+            path: storage_key,
+            length: 251,
+        };
+        let expected_node_hash = Felt::from_hex("0x66e4174d61fa213e73dc0e2d74d0c808f4990b651ceca8557a426f9fa895d7e").unwrap(); // TODO: calc by hand
+
         assert_eq!(
             storage_proof_result.contracts_storage_proofs,
             vec![
                 vec![
-                    // TODO: should be edge node all the way to bottom
+                    NodeHashToNodeMappingItem { node_hash: expected_node_hash, node: expected_node },
                 ],
             ]
         );
