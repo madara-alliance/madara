@@ -210,10 +210,10 @@ pub fn get_storage_proof(
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bits, view::AsBits};
-    use blockifier::compiled_class_hash;
-    use mc_db::tests::common::{finalized_block_one, finalized_block_zero, finalized_state_diff_zero};
-    use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, StateDiff, StorageEntry};
+    use bitvec::{bits, vec::BitVec, view::{AsBits, BitView as _}};
+    use mc_db::tests::common::finalized_block_one;
+    use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+    use starknet_types_core::hash::{Pedersen, Poseidon};
 
     use super::*;
 
@@ -286,12 +286,16 @@ mod tests {
         assert_eq!(storage_proof_result.contracts_storage_proofs.len(), 1);
         assert_eq!(storage_proof_result.contracts_storage_proofs[0].len(), 1);
 
+        let child = value;
+        let path = storage_key;
+        let length = 251;
+
         let expected_node = MerkleNode::Edge {
-            child: value,
-            path: storage_key,
-            length: 251,
+            child,
+            path,
+            length,
         };
-        let expected_node_hash = Felt::from_hex("0x66e4174d61fa213e73dc0e2d74d0c808f4990b651ceca8557a426f9fa895d7e").unwrap(); // TODO: calc by hand
+        let expected_node_hash = hash_edge_node::<Pedersen>(&path, length, value);
 
         assert_eq!(
             storage_proof_result.contracts_storage_proofs,
@@ -301,5 +305,22 @@ mod tests {
                 ],
             ]
         );
+    }
+
+    // copied from bonsai-trie and modified to avoid unneeded types
+    pub fn hash_binary_node<H: StarkHash>(left_hash: Felt, right_hash: Felt) -> Felt {
+        H::hash(&left_hash, &right_hash)
+    }
+    pub fn hash_edge_node<H: StarkHash>(path: &Felt, path_length: usize, child_hash: Felt) -> Felt {
+        let path_bitslice: &BitSlice<_, Msb0> = &BitVec::from_slice(&path.to_bytes_be());
+        assert!(path_bitslice.len() == 256, "Felt::to_bytes_be() expected to always be 256 bits");
+
+        let felt_path = path;
+        let mut length = [0; 32];
+        // Safe as len() is guaranteed to be <= 251
+        length[31] = path_length as u8;
+
+        let length = Felt::from_bytes_be(&length);
+        H::hash(&child_hash, &felt_path) + length
     }
 }
