@@ -3,7 +3,7 @@ use itertools::{
     Itertools,
 };
 
-struct RingDeque<const CAPACITY: usize, T> {
+pub struct RingDeque<const CAPACITY: usize, T> {
     ring: [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
     size: usize,
@@ -173,7 +173,7 @@ impl<const CAPACITY: usize, T> IntoIterator for RingDeque<CAPACITY, T> {
     }
 }
 
-struct Iter<'a, const CAPACITY: usize, T> {
+pub struct Iter<'a, const CAPACITY: usize, T> {
     ring: &'a [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
     size: usize,
@@ -206,7 +206,7 @@ impl<const CAPACITY: usize, T> DoubleEndedIterator for Iter<'_, CAPACITY, T> {
     }
 }
 
-struct IterMut<'a, const CAPACITY: usize, T> {
+pub struct IterMut<'a, const CAPACITY: usize, T> {
     ring: &'a mut [std::mem::MaybeUninit<T>; CAPACITY],
     start: usize,
     size: usize,
@@ -239,7 +239,7 @@ impl<const CAPACITY: usize, T> DoubleEndedIterator for IterMut<'_, CAPACITY, T> 
     }
 }
 
-struct IntoIter<const CAPACITY: usize, T> {
+pub struct IntoIter<const CAPACITY: usize, T> {
     me: std::mem::ManuallyDrop<RingDeque<CAPACITY, T>>,
 }
 

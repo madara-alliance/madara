@@ -60,12 +60,15 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Other
 rand.workspace = true
+itertools.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-test.workspace = true
 assert_matches.workspace = true
+proptest.workspace = true
+proptest-state-machine.workspace = true
 
 [features]
 testing = []

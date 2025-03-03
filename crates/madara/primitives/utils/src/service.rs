@@ -386,15 +386,15 @@ use dashmap::DashMap;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{btree_map, BTreeMap, HashSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     fmt::Debug,
     panic,
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 use tokio::task::{JoinError, JoinSet};
 
-use crate::{Freeze, Frozen};
+use crate::{ringdeque::RingDeque, Freeze, Frozen};
 
 /// Maximum duration a service is allowed to take to shutdown, after which it
 /// will be forcefully cancelled
@@ -459,10 +459,11 @@ impl ServiceId for MadaraServiceId {
 /// [`Running`]: Self::Running
 #[derive(PartialEq, Eq, Clone, Copy, Default, Debug, Serialize, Deserialize)]
 pub enum ServiceStatus {
-    #[default]
-    Inactive,
     Active,
     Running,
+    Shutdown,
+    #[default]
+    Inactive,
 }
 
 impl ServiceStatus {
@@ -503,6 +504,154 @@ impl ServiceSet {
 
     fn active_set(&self) -> &DashMap<String, ServiceStatus> {
         &self.0
+    }
+}
+
+/// Provides info about updates to a [`Service`]'s status.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ServiceTransport {
+    /// The [`ServiceId`] of the [`Service`] sending the update
+    pub id_from: String,
+    /// The [`ServiceId`] of the [`Service`] being updated.
+    pub id_to: String,
+    /// The new [`status`] of the [`Service`] being updated.
+    ///
+    /// [`status`]: ServiceStatus
+    pub status: ServiceStatus,
+}
+
+struct ServiceMesageBus<const CAPACITY: usize> {
+    inner: Arc<ServiceMessageInner<CAPACITY>>,
+    id: usize,
+}
+
+struct ServiceMessageGuard<const CAPACITY: usize> {
+    inner: Arc<ServiceMessageInner<CAPACITY>>,
+    view: Option<usize>,
+}
+
+struct ServiceMessageInner<const CAPACITY: usize> {
+    bus: tokio::sync::RwLock<Option<RingDeque<CAPACITY, MessageRefCount>>>,
+    subscribers: std::sync::atomic::AtomicUsize,
+    notify_send: tokio::sync::Notify,
+    notify_rcv: tokio::sync::Notify,
+}
+
+struct MessageRefCount {
+    transport: ServiceTransport,
+    views: std::sync::atomic::AtomicUsize,
+    id: usize,
+}
+
+impl<const CAPACITY: usize> ServiceMesageBus<CAPACITY> {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(ServiceMessageInner {
+                bus: tokio::sync::RwLock::new(Some(RingDeque::<CAPACITY, MessageRefCount>::new())),
+                subscribers: Default::default(),
+                notify_send: Default::default(),
+                notify_rcv: Default::default(),
+            }),
+            id: 0,
+        }
+    }
+
+    async fn send(&mut self, transport: ServiceTransport) -> Option<ServiceTransport> {
+        let mut bus = self.inner.bus.write().await;
+        let Some(bus) = bus.as_mut() else {
+            return Some(transport);
+        };
+
+        while let Some(ref_count) = bus.peek_back() {
+            let subscribers = self.inner.subscribers.load(Ordering::Acquire);
+            let views = ref_count.views.load(Ordering::Acquire);
+
+            if subscribers != 0 && views >= subscribers {
+                bus.pop_back();
+            } else {
+                break;
+            }
+        }
+
+        let id_new = self.id;
+        self.id += 1;
+
+        let res = bus
+            .try_push_front(MessageRefCount { transport, views: Default::default(), id: id_new })
+            .map(|ref_count| ref_count.transport);
+        self.inner.notify_send.notify_waiters();
+
+        res
+    }
+
+    fn subscribe(&self) -> ServiceMessageGuard<CAPACITY> {
+        self.inner.subscribers.fetch_add(1, Ordering::Release);
+        ServiceMessageGuard { inner: Arc::clone(&self.inner), view: None }
+    }
+
+    async fn close(self) {
+        loop {
+            let mut guard = self.inner.bus.write().await;
+            let Some(bus) = guard.as_mut() else {
+                return;
+            };
+
+            match bus.peek_back() {
+                Some(ref_count) => {
+                    let views = ref_count.views.load(Ordering::Acquire);
+                    let subscribers = self.inner.subscribers.load(Ordering::Acquire);
+
+                    if views >= subscribers {
+                        bus.pop_back();
+                    } else {
+                        drop(guard);
+                        self.inner.notify_rcv.notified().await;
+                    }
+                }
+                None => break,
+            }
+        }
+
+        *self.inner.bus.write().await = None;
+    }
+}
+
+impl<const CAPACITY: usize> ServiceMessageGuard<CAPACITY> {
+    async fn rcv(&mut self) -> Option<ServiceTransport> {
+        match self.view {
+            None => loop {
+                {
+                    let bus = self.inner.bus.read().await;
+                    let bus = bus.as_ref()?;
+                    if let Some(ref_count) = bus.peek_back() {
+                        ref_count.views.fetch_add(1, Ordering::Release);
+                        self.view = Some(ref_count.id);
+                        self.inner.notify_rcv.notify_waiters();
+                        return Some(ref_count.transport.clone());
+                    }
+                }
+                self.inner.notify_send.notified().await;
+            },
+            Some(view) => loop {
+                {
+                    let bus = self.inner.bus.read().await;
+                    let bus = bus.as_ref()?;
+                    if let Some(ref_count) = bus.iter().rev().skip_while(|message| message.id <= view).next() {
+                        ref_count.views.fetch_add(1, Ordering::Release);
+                        self.view = Some(ref_count.id);
+                        self.inner.notify_rcv.notify_waiters();
+                        return Some(ref_count.transport.clone());
+                    };
+                }
+                self.inner.notify_send.notified().await;
+            },
+        }
+    }
+}
+
+impl<const CAPACITY: usize> Drop for ServiceMessageGuard<CAPACITY> {
+    fn drop(&mut self) {
+        assert_ne!(self.inner.subscribers.fetch_sub(1, std::sync::atomic::Ordering::Release), 0);
     }
 }
 
@@ -551,7 +700,7 @@ pub struct ServiceContext {
     token_local: Option<tokio_util::sync::CancellationToken>,
     services: Arc<ServiceSet>,
     service_update_sender: Arc<tokio::sync::broadcast::Sender<ServiceTransport>>,
-    service_update_receiver: Option<tokio::sync::broadcast::Receiver<ServiceTransport>>,
+    service_update_receiver: tokio::sync::broadcast::Receiver<ServiceTransport>,
     id: String,
 }
 
@@ -562,7 +711,7 @@ impl Clone for ServiceContext {
             token_local: self.token_local.clone(),
             services: Arc::clone(&self.services),
             service_update_sender: Arc::clone(&self.service_update_sender),
-            service_update_receiver: None,
+            service_update_receiver: self.service_update_receiver.resubscribe(),
             id: self.id.clone(),
         }
     }
@@ -571,12 +720,13 @@ impl Clone for ServiceContext {
 impl ServiceContext {
     /// Creates a new [`Default`] [`ServiceContext`]
     fn new(id: impl ServiceId) -> Self {
+        let (sx, rx) = tokio::sync::broadcast::channel(100);
         Self {
             token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
             services: Arc::new(ServiceSet::default()),
-            service_update_sender: Arc::new(tokio::sync::broadcast::channel(100).0),
-            service_update_receiver: None,
+            service_update_sender: Arc::new(sx),
+            service_update_receiver: rx,
             id: id.svc_id(),
         }
     }
@@ -596,14 +746,7 @@ impl ServiceContext {
         services.set(&MadaraServiceId::Telemetry.svc_id(), ServiceStatus::Running);
         services.set(&MadaraServiceId::P2P.svc_id(), ServiceStatus::Running);
 
-        Self {
-            token_global: tokio_util::sync::CancellationToken::new(),
-            token_local: None,
-            services: Arc::new(services),
-            service_update_sender: Arc::new(tokio::sync::broadcast::channel(100).0),
-            service_update_receiver: None,
-            id: MadaraServiceId::Monitor.svc_id(),
-        }
+        Self { services: Arc::new(services), ..Self::new(MadaraServiceId::Monitor) }
     }
 
     /// Stops all services under the same [global context scope].
@@ -611,6 +754,7 @@ impl ServiceContext {
     /// [local context scope]: Self#scope
     pub fn cancel_global(&self) {
         tracing::info!("🔌 Gracefully shutting down node");
+        println!("SENDING CANCELLATION REQUEST");
         self.token_global.cancel();
     }
 
@@ -655,7 +799,6 @@ impl ServiceContext {
     /// [service loop]: ServiceRunner::service_loop
     #[inline(always)]
     pub async fn cancelled(&mut self) {
-        let rx = self.service_update_receiver.get_or_insert_with(|| self.service_update_sender.subscribe());
         let token_global = &self.token_global;
         let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
 
@@ -663,13 +806,19 @@ impl ServiceContext {
             // We keep checking for service status updates until a token has
             // been cancelled or this service was deactivated
             let res = tokio::select! {
-                svc = rx.recv() => svc.ok(),
-                _ = token_global.cancelled() => break,
-                _ = token_local.cancelled() => break
+                svc = self.service_update_receiver.recv() => svc.ok(),
+                _ = token_global.cancelled() => {
+                    println!("Detected global cancellation inside of {}", self.id);
+                    break
+                },
+                _ = token_local.cancelled() => {
+                    println!("Detected local cancellation inside of {}", self.id);
+                    break
+                }
             };
 
             if let Some(ServiceTransport { id_from: _, id_to, status }) = res {
-                if id_to == self.id && status == ServiceStatus::Inactive {
+                if id_to == self.id && status == ServiceStatus::Shutdown {
                     return;
                 }
             }
@@ -734,7 +883,7 @@ impl ServiceContext {
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
             || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
-            || self.services.status(&self.id) == ServiceStatus::Inactive
+            || self.services.status(&self.id) == ServiceStatus::Shutdown
     }
 
     /// Runs a [`Future`] until the [`Service`] associated to this [`ServiceContext`] is cancelled.
@@ -775,11 +924,6 @@ impl ServiceContext {
         &self.id
     }
 
-    /// Sets the id of this [`ServiceContext`]
-    pub fn with_id(self, id: impl ServiceId) -> Self {
-        Self { id: id.svc_id(), ..self }
-    }
-
     /// Creates a new [`ServiceMonitorBuilder`] as a child of the current context.
     ///
     /// Any [`Service`] which is spawned from this new monitor will be able to cancel the services
@@ -815,7 +959,7 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub fn service_activate(&self, id: impl ServiceId) -> ServiceStatus {
+    pub fn service_activate(&mut self, id: impl ServiceId) -> ServiceStatus {
         self.service_set(&id.svc_id(), ServiceStatus::Active)
     }
 
@@ -831,8 +975,8 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub fn service_deactivate(&self, id: impl ServiceId) -> ServiceStatus {
-        self.service_unset(&id.svc_id())
+    pub fn service_deactivate(&mut self, id: impl ServiceId) -> ServiceStatus {
+        self.service_set(&id.svc_id(), ServiceStatus::Shutdown)
     }
 
     #[inline(always)]
@@ -843,13 +987,12 @@ impl ServiceContext {
 
     #[inline(always)]
     pub async fn wait_deactivate(&mut self, id: impl ServiceId) -> Option<ServiceStatus> {
-        let status = self.service_unset(&id.svc_id());
+        let status = self.service_set(&id.svc_id(), ServiceStatus::Shutdown);
         self.wait_for_inactive(id).await.map(|_| status)
     }
 
-    fn service_set(&self, id: &str, status: ServiceStatus) -> ServiceStatus {
+    fn service_set(&mut self, id: &str, status: ServiceStatus) -> ServiceStatus {
         let res = self.services.set(id, status);
-        // TODO: make an internal service error out of this
         let _ = self.service_update_sender.send(ServiceTransport {
             id_from: self.id.clone(),
             id_to: id.to_string(),
@@ -859,7 +1002,7 @@ impl ServiceContext {
         res
     }
 
-    fn service_unset(&self, id: &str) -> ServiceStatus {
+    fn service_unset(&mut self, id: &str) -> ServiceStatus {
         let res = self.services.unset(id);
         let _ = self.service_update_sender.send(ServiceTransport {
             id_from: self.id.clone(),
@@ -878,25 +1021,28 @@ impl ServiceContext {
     /// Identifying information about the service which was updated.
     ///
     /// [`status`]: ServiceStatus
-    pub async fn service_subscribe(&mut self) -> Option<ServiceTransport> {
-        if self.service_update_receiver.is_none() {
-            self.service_update_receiver = Some(self.service_update_sender.subscribe());
-        }
-
-        let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
-        let token_global = &self.token_global;
-        let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
-
-        let res = tokio::select! {
-            svc = rx.recv() => svc.ok(),
-            _ = token_global.cancelled() => None,
-            _ = token_local.cancelled() => None
-        };
-
-        // ownership hack: `rx` cannot depend on a mutable borrow to `self` as we
-        // also depend on immutable borrows for `token_local` and `token_global`
-        self.service_update_receiver = Some(rx);
-        res
+    // pub async fn service_subscribe(&mut self) -> Option<ServiceTransport> {
+    //     if self.service_update_receiver.is_none() {
+    //         self.service_update_receiver = Some(self.service_update_sender.subscribe());
+    //     }
+    //
+    //     let mut rx = self.service_update_receiver.take().expect("Receiver was set above");
+    //     let token_global = &self.token_global;
+    //     let token_local = self.token_local.as_ref().unwrap_or(&self.token_global);
+    //
+    //     let res = tokio::select! {
+    //         svc = rx.recv() => svc.ok(),
+    //         _ = token_global.cancelled() => None,
+    //         _ = token_local.cancelled() => None
+    //     };
+    //
+    //     // ownership hack: `rx` cannot depend on a mutable borrow to `self` as we
+    //     // also depend on immutable borrows for `token_local` and `token_global`
+    //     self.service_update_receiver = Some(rx);
+    //     res
+    // }
+    async fn service_subscribe(&mut self) -> Option<ServiceTransport> {
+        self.service_update_receiver.recv().await.ok()
     }
 
     /// Opens up a new subscription which will complete once _specific_ [`Service`] has reached a
@@ -925,6 +1071,7 @@ impl ServiceContext {
         }
 
         while let Some(transport) = self.service_subscribe().await {
+            println!("{transport:?}, waiting for {status:?} to {svc_id}");
             if transport.id_to == svc_id && transport.status == status {
                 return Some(transport);
             }
@@ -977,19 +1124,6 @@ impl ServiceContext {
             }
         }
     }
-}
-
-/// Provides info about updates to a [`Service`]'s status.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct ServiceTransport {
-    /// The [`ServiceId`] of the [`Service`] sending the update
-    pub id_from: String,
-    /// The [`ServiceId`] of the [`Service`] being updated.
-    pub id_to: String,
-    /// The new [`status`] of the [`Service`] being updated.
-    ///
-    /// [`status`]: ServiceStatus
-    pub status: ServiceStatus,
 }
 
 /// A microservice in the Madara node.
@@ -1199,7 +1333,7 @@ impl<'a> ServiceRunner<'a> {
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
     {
-        let Self { ctx, join_set } = self;
+        let Self { mut ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id().to_string();
             tracing::debug!("Starting service with id: {id:?}");
@@ -1216,7 +1350,8 @@ impl<'a> ServiceRunner<'a> {
                 _ = Self::stopper(ctx2, &id) => {},
             }
 
-            tracing::debug!("Shutting down service with id: {id:?}");
+            println!("Exiting {id}");
+            tracing::debug!("Shutting down service with id: {id}");
             ctx.service_unset(&id);
 
             anyhow::Ok(id)
@@ -1260,8 +1395,8 @@ pub struct ServiceMonitorBuilderStateSomeActive;
 /// [`with`]: Self::with
 pub struct ServiceMonitorBuilder<S> {
     services: BTreeMap<String, Box<dyn Service>>,
-    status_monitored: HashSet<String>,
-    monitored: HashSet<String>,
+    status_monitored: BTreeSet<String>,
+    monitored: BTreeSet<String>,
     ctx: ServiceContext,
     _state: std::marker::PhantomData<S>,
 }
@@ -1487,8 +1622,9 @@ impl<S> ServiceMonitorBuilder<S> {
         self.activate_impl(&svc_id)
     }
 
-    fn new_with_ctx(ctx: ServiceContext) -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
-        ctx.service_set(&ctx.id, ServiceStatus::Active);
+    fn new_with_ctx(mut ctx: ServiceContext) -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
+        let id = ctx.id.clone();
+        ctx.service_set(&id, ServiceStatus::Active);
         ServiceMonitorBuilder {
             services: Default::default(),
             status_monitored: Default::default(),
@@ -1559,8 +1695,8 @@ pub struct ServiceMonitor {
     services: BTreeMap<String, Box<dyn Service>>, // <
     join_set: JoinSet<anyhow::Result<String>>,
     status_actual: ServiceSet,
-    status_monitored: HashSet<String>,
-    monitored: Frozen<HashSet<String>>,
+    status_monitored: BTreeSet<String>,
+    monitored: Frozen<BTreeSet<String>>,
     ctx: ServiceContext,
 }
 
@@ -1586,25 +1722,23 @@ impl ServiceMonitor {
         let mut ctx1 = self.ctx.clone();
         let mut ctx2 = self.ctx.clone();
 
-        while !self.ctx.is_cancelled() && !self.status_monitored.is_empty() {
+        while !self.status_monitored.is_empty() {
             tokio::select! {
                 // A service has run to completion, mark it as inactive
                 Some(result) = self.join_set.join_next() => self.service_deactivate(result)?,
                 // A service has had its status updated, check if it is a restart request
                 Some(transport) = ctx1.service_subscribe() => self.service_activate(transport).await?,
                 // The service running this monitor has been cancelled and we should exit here
-                _ = ctx2.cancelled() => {},
+                _ = ctx2.cancelled() => self.service_shutdown().await?,
                 else => continue
             };
 
             tracing::debug!("Services still active: {:?}", self.ctx.services.active_set());
         }
 
-        for id in self.monitored.iter() {
-            self.ctx.service_unset(id);
-        }
         if self.ctx.id == MadaraServiceId::Monitor.svc_id() {
-            self.ctx.service_unset(&self.ctx.id);
+            let id = self.ctx.id.clone();
+            self.ctx.service_unset(&id);
         }
 
         Ok(())
@@ -1618,7 +1752,8 @@ impl ServiceMonitor {
         }
 
         // start only the initially active services
-        self.ctx.service_set(&self.ctx.id, ServiceStatus::Running);
+        let id = self.ctx.id.clone();
+        self.ctx.service_set(&id, ServiceStatus::Running);
         for (id, svc) in self.services.iter_mut() {
             if self.ctx.services.status(id) == ServiceStatus::Active {
                 self.status_actual.set(id, ServiceStatus::Active);
@@ -1677,6 +1812,24 @@ impl ServiceMonitor {
         anyhow::Ok(())
     }
 
+    async fn service_shutdown(&mut self) -> anyhow::Result<()> {
+        println!("Service monitor {} is being shut down", self.ctx.id());
+
+        for id in self.monitored.iter() {
+            self.ctx.service_set(id, ServiceStatus::Shutdown);
+            println!("Shutting down {id}");
+        }
+
+        for id in self.monitored.iter() {
+            println!("Waiting for {id} to be inactive");
+            self.ctx.service_subscribe_for_impl(id.as_str(), ServiceStatus::Inactive).await;
+            self.status_monitored.remove(id.as_str());
+            println!("{id} is inactive");
+        }
+
+        anyhow::Ok(())
+    }
+
     async fn service_activate(&mut self, transport: ServiceTransport) -> anyhow::Result<()> {
         let ServiceTransport { id_to, status, .. } = transport;
         if status == ServiceStatus::Active {
@@ -1698,7 +1851,7 @@ impl ServiceMonitor {
                         tracing::error!("Service {id_to} failed to start");
                         self.status_actual.unset(&id_to);
                         self.status_monitored.remove(&id_to);
-                        self.ctx.service_unset(&id_to);
+                        self.ctx.service_set(&id_to, ServiceStatus::Shutdown);
                         return res.context("Starting service");
                     }
 
@@ -1715,15 +1868,29 @@ impl ServiceMonitor {
         anyhow::Ok(())
     }
 
-    #[cfg(any(test, feature = "testing"))]
     pub fn ctx(&self) -> ServiceContext {
         self.ctx.clone()
     }
 }
 
 #[cfg(test)]
+mod fixtures {
+    use rstest;
+
+    use super::{ServiceMesageBus, ServiceTransport};
+
+    #[rstest::fixture]
+    pub(crate) fn bus() -> ServiceMesageBus<100> {
+        ServiceMesageBus::<100>::new()
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
+    use fixtures::*;
+
+    const TIMEOUT: u64 = 100;
 
     enum ServiceIdTest {
         ServiceA,
@@ -1856,6 +2023,7 @@ mod test {
             let e = self.e.clone();
 
             runner.service_loop(move |mut cx| async move {
+                let cx1 = cx.clone();
                 tokio::join!(
                     cx.child()
                         .with_active(ServiceBChild { b })
@@ -1863,12 +2031,14 @@ mod test {
                         .with_active(ServiceCParent { c, d, e })
                         .expect("Failed to add service C")
                         .start(),
-                    async {
+                    cx.run_until_cancelled(async {
                         a.notified().await;
-                        cx.cancel_local();
-                    }
+                        cx1.cancel_local();
+                    })
                 )
                 .0?;
+
+                println!("Exited A!");
 
                 cx.cancelled().await;
                 anyhow::Ok(())
@@ -1882,16 +2052,19 @@ mod test {
             let b = self.b.clone();
             runner.service_loop(move |cx| async move {
                 let mut cx1 = cx;
-                let cx2 = cx1.clone();
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                // TODO: replace this with the never type
-                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                let cancel = async {
-                    b.notified().await;
-                    cx2.cancel_local()
-                };
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        b.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                tokio::join!(pending, cancel);
+                println!("Received cancellation inside of service B");
+
                 anyhow::Ok(())
             })
         }
@@ -1904,7 +2077,8 @@ mod test {
             let d = self.d.clone();
             let e = self.e.clone();
 
-            runner.service_loop(move |cx| async move {
+            runner.service_loop(move |mut cx| async move {
+                let cx1 = cx.clone();
                 tokio::join!(
                     cx.child()
                         .with_active(ServiceDChild { d })
@@ -1912,10 +2086,10 @@ mod test {
                         .with_active(ServiceEChild { e })
                         .expect("Failed to add service E")
                         .start(),
-                    async {
+                    cx.run_until_cancelled(async {
                         c.notified().await;
-                        cx.cancel_local();
-                    }
+                        cx1.cancel_local();
+                    })
                 )
                 .0
             })
@@ -1928,16 +2102,19 @@ mod test {
             let d = self.d.clone();
             runner.service_loop(move |cx| async move {
                 let mut cx1 = cx;
-                let cx2 = cx1.clone();
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                // TODO: replace this with the never type
-                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                let cancel = async {
-                    d.notified().await;
-                    cx2.cancel_local()
-                };
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        d.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                tokio::join!(pending, cancel);
+                println!("Received cancellation inside of service D");
+
                 anyhow::Ok(())
             })
         }
@@ -1949,16 +2126,19 @@ mod test {
             let e = self.e.clone();
             runner.service_loop(move |cx| async move {
                 let mut cx1 = cx;
-                let cx2 = cx1.clone();
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                // TODO: replace this with the never type
-                let pending = async { cx1.run_until_cancelled(std::future::pending::<()>()).await };
-                let cancel = async {
-                    e.notified().await;
-                    cx2.cancel_local()
-                };
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        e.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                tokio::join!(pending, cancel);
+                println!("Received cancellation inside of service E");
+
                 anyhow::Ok(())
             })
         }
@@ -2011,8 +2191,88 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(1000))]
-    async fn service_context_cancel_global() {}
+    #[timeout(std::time::Duration::from_millis(10 * TIMEOUT))]
+    async fn service_context_wait_for() {
+        let monitor = ServiceMonitorBuilder::new()
+            .with(ServiceAWaiting)
+            .expect("Failed to start service A")
+            .with_active(ServiceBWaiting)
+            .expect("Failed to start service B")
+            .build();
+
+        let ctx = with_monitor(monitor, |mut ctx| async move {
+            let mut ctx1 = ctx.clone();
+
+            tokio::join!(
+                async {
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+                    ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
+
+                    ctx.service_deactivate(ServiceIdTest::ServiceA);
+                    ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+
+                    ctx.service_deactivate(ServiceIdTest::ServiceB);
+                    ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
+                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+                },
+                async {
+                    ctx1.wait_for_running(ServiceIdTest::ServiceB).await;
+                    assert_eq!(ctx1.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
+
+                    tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT)).await;
+                    ctx1.service_activate(ServiceIdTest::ServiceA);
+                }
+            );
+        })
+        .await;
+
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(10 * TIMEOUT))]
+    async fn service_context_cancel_global() {
+        let monitor = ServiceMonitorBuilder::new()
+            .with_active(ServiceAParent::default())
+            .expect("Failed to add Service A")
+            .build();
+
+        let ctx = monitor.ctx().clone();
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
+
+        with_monitor(monitor, |mut ctx| async move {
+            ctx.wait_for_running(ServiceIdTest::ServiceA).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceB).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceC).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceD).await;
+            ctx.wait_for_running(ServiceIdTest::ServiceE).await;
+
+            ctx.cancel_global();
+
+            ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
+            ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
+            ctx.wait_for_inactive(ServiceIdTest::ServiceC).await;
+            ctx.wait_for_inactive(ServiceIdTest::ServiceD).await;
+            ctx.wait_for_inactive(ServiceIdTest::ServiceE).await;
+            ctx.wait_for_inactive(MadaraServiceId::Monitor).await;
+        })
+        .await;
+
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceC), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceD), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
+        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
 
     #[tokio::test]
     #[rstest::rstest]
@@ -2025,7 +2285,7 @@ mod test {
             .expect("Failed to add Service B")
             .build();
 
-        let ctx = monitor.ctx.clone();
+        let ctx = monitor.ctx().clone();
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Active);
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Active);
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
@@ -2090,49 +2350,7 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(1000))]
-    async fn service_context_wait_for() {
-        let monitor = ServiceMonitorBuilder::new()
-            .with(ServiceAWaiting)
-            .expect("Failed to start service A")
-            .with_active(ServiceBWaiting)
-            .expect("Failed to start service B")
-            .build();
-
-        let ctx = with_monitor(monitor, |mut ctx| async move {
-            let mut ctx1 = ctx.clone();
-
-            tokio::join!(
-                async {
-                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
-                    ctx.wait_for_running(ServiceIdTest::ServiceA).await;
-                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Running);
-
-                    ctx.service_deactivate(ServiceIdTest::ServiceA);
-                    ctx.wait_for_inactive(ServiceIdTest::ServiceA).await;
-                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceA), ServiceStatus::Inactive);
-
-                    ctx.service_deactivate(ServiceIdTest::ServiceB);
-                    ctx.wait_for_inactive(ServiceIdTest::ServiceB).await;
-                    assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Inactive);
-                },
-                async {
-                    ctx1.wait_for_running(ServiceIdTest::ServiceB).await;
-                    assert_eq!(ctx1.service_status(ServiceIdTest::ServiceB), ServiceStatus::Running);
-
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    ctx1.service_activate(ServiceIdTest::ServiceA);
-                }
-            );
-        })
-        .await;
-
-        assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
-    }
-
-    #[tokio::test]
-    #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(100))]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
     async fn service_context_cancellation_scope_1() {
         let service_a = ServiceAParent::default();
         let monitor =
@@ -2192,7 +2410,7 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    #[timeout(std::time::Duration::from_millis(100))]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
     async fn service_context_cancellation_scope_2() {
         let service_a = ServiceAParent::default();
         let monitor =
@@ -2224,5 +2442,320 @@ mod test {
         .await;
 
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Inactive);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
+    async fn message_bus_send_simple(mut bus: ServiceMesageBus<100>) {
+        let mut rx = bus.subscribe();
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 1);
+
+        bus.send(ServiceTransport {
+            id_from: ServiceIdTest::ServiceA.svc_id(),
+            id_to: ServiceIdTest::ServiceA.svc_id(),
+            status: ServiceStatus::Active,
+        })
+        .await;
+
+        let transport = rx.rcv().await;
+        assert_eq!(
+            transport,
+            Some(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
+    async fn message_bus_send_multiple_receivers(mut bus: ServiceMesageBus<100>) {
+        let mut rxs = [bus.subscribe(), bus.subscribe(), bus.subscribe()];
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 3);
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        for rx in rxs.iter_mut() {
+            let transport = rx.rcv().await;
+            assert_eq!(
+                transport,
+                Some(ServiceTransport {
+                    id_from: ServiceIdTest::ServiceA.svc_id(),
+                    id_to: ServiceIdTest::ServiceA.svc_id(),
+                    status: ServiceStatus::Active,
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
+    async fn message_bus_send_multiple_transports(mut bus: ServiceMesageBus<100>) {
+        let mut rxs = [bus.subscribe(), bus.subscribe(), bus.subscribe()];
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 3);
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        for rx in rxs.iter_mut() {
+            let transport = rx.rcv().await;
+            assert_eq!(
+                transport,
+                Some(ServiceTransport {
+                    id_from: ServiceIdTest::ServiceA.svc_id(),
+                    id_to: ServiceIdTest::ServiceA.svc_id(),
+                    status: ServiceStatus::Active,
+                })
+            );
+        }
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceB.svc_id(),
+                id_to: ServiceIdTest::ServiceB.svc_id(),
+                status: ServiceStatus::Running,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        for rx in rxs.iter_mut() {
+            let transport = rx.rcv().await;
+            assert_eq!(
+                transport,
+                Some(ServiceTransport {
+                    id_from: ServiceIdTest::ServiceB.svc_id(),
+                    id_to: ServiceIdTest::ServiceB.svc_id(),
+                    status: ServiceStatus::Running,
+                })
+            );
+        }
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceC.svc_id(),
+                id_to: ServiceIdTest::ServiceC.svc_id(),
+                status: ServiceStatus::Inactive,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        for rx in rxs.iter_mut() {
+            let transport = rx.rcv().await;
+            assert_eq!(
+                transport,
+                Some(ServiceTransport {
+                    id_from: ServiceIdTest::ServiceC.svc_id(),
+                    id_to: ServiceIdTest::ServiceC.svc_id(),
+                    status: ServiceStatus::Inactive,
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
+    async fn message_bus_send_remove(mut bus: ServiceMesageBus<100>) {
+        let mut rx = bus.subscribe();
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 1);
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+            .await;
+        assert!(sent.is_none());
+        assert_eq!(bus.inner.bus.read().await.as_ref().unwrap().len(), 1);
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceB.svc_id(),
+                id_to: ServiceIdTest::ServiceB.svc_id(),
+                status: ServiceStatus::Running,
+            })
+            .await;
+        assert!(sent.is_none());
+        assert_eq!(bus.inner.bus.read().await.as_ref().unwrap().len(), 2);
+
+        let transport = rx.rcv().await;
+        assert_eq!(
+            transport,
+            Some(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+        );
+
+        let transport = rx.rcv().await;
+        assert_eq!(
+            transport,
+            Some(ServiceTransport {
+                id_from: ServiceIdTest::ServiceB.svc_id(),
+                id_to: ServiceIdTest::ServiceB.svc_id(),
+                status: ServiceStatus::Running,
+            })
+        );
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceC.svc_id(),
+                id_to: ServiceIdTest::ServiceC.svc_id(),
+                status: ServiceStatus::Inactive,
+            })
+            .await;
+        assert!(sent.is_none());
+        assert_eq!(bus.inner.bus.read().await.as_ref().unwrap().len(), 1);
+
+        let transport = rx.rcv().await;
+        assert_eq!(
+            transport,
+            Some(ServiceTransport {
+                id_from: ServiceIdTest::ServiceC.svc_id(),
+                id_to: ServiceIdTest::ServiceC.svc_id(),
+                status: ServiceStatus::Inactive,
+            })
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(10 * TIMEOUT))]
+    async fn message_bus_receive_wait(mut bus: ServiceMesageBus<100>) {
+        let mut rx = bus.subscribe();
+        tokio::join!(
+            async {
+                let transport = rx.rcv().await;
+                assert_eq!(
+                    transport,
+                    Some(ServiceTransport {
+                        id_from: ServiceIdTest::ServiceA.svc_id(),
+                        id_to: ServiceIdTest::ServiceA.svc_id(),
+                        status: ServiceStatus::Active,
+                    })
+                );
+            },
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT)).await;
+                let sent = bus
+                    .send(ServiceTransport {
+                        id_from: ServiceIdTest::ServiceA.svc_id(),
+                        id_to: ServiceIdTest::ServiceA.svc_id(),
+                        status: ServiceStatus::Active,
+                    })
+                    .await;
+
+                assert!(sent.is_none());
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(TIMEOUT))]
+    async fn message_bus_guard_drop(bus: ServiceMesageBus<100>) {
+        let rxs = [bus.subscribe(), bus.subscribe(), bus.subscribe()];
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 3);
+        drop(rxs);
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(std::time::Duration::from_millis(10 * TIMEOUT))]
+    async fn message_bus_close_wait(mut bus: ServiceMesageBus<100>) {
+        let mut rxs = [bus.subscribe(), bus.subscribe(), bus.subscribe()];
+        assert_eq!(bus.inner.subscribers.load(Ordering::Acquire), 3);
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceA.svc_id(),
+                id_to: ServiceIdTest::ServiceA.svc_id(),
+                status: ServiceStatus::Active,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceB.svc_id(),
+                id_to: ServiceIdTest::ServiceB.svc_id(),
+                status: ServiceStatus::Running,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        let sent = bus
+            .send(ServiceTransport {
+                id_from: ServiceIdTest::ServiceC.svc_id(),
+                id_to: ServiceIdTest::ServiceC.svc_id(),
+                status: ServiceStatus::Inactive,
+            })
+            .await;
+        assert!(sent.is_none());
+
+        tokio::join!(
+            async {
+                bus.close().await;
+            },
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT)).await;
+
+                for rx in rxs.iter_mut() {
+                    let transport = rx.rcv().await;
+                    assert_eq!(
+                        transport,
+                        Some(ServiceTransport {
+                            id_from: ServiceIdTest::ServiceA.svc_id(),
+                            id_to: ServiceIdTest::ServiceA.svc_id(),
+                            status: ServiceStatus::Active,
+                        })
+                    );
+                }
+
+                for rx in rxs.iter_mut() {
+                    let transport = rx.rcv().await;
+                    assert_eq!(
+                        transport,
+                        Some(ServiceTransport {
+                            id_from: ServiceIdTest::ServiceB.svc_id(),
+                            id_to: ServiceIdTest::ServiceB.svc_id(),
+                            status: ServiceStatus::Running,
+                        })
+                    );
+                }
+
+                for rx in rxs.iter_mut() {
+                    let transport = rx.rcv().await;
+                    assert_eq!(
+                        transport,
+                        Some(ServiceTransport {
+                            id_from: ServiceIdTest::ServiceC.svc_id(),
+                            id_to: ServiceIdTest::ServiceC.svc_id(),
+                            status: ServiceStatus::Inactive,
+                        })
+                    );
+                }
+            }
+        );
     }
 }
