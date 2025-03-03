@@ -242,17 +242,6 @@ mod tests {
         let storage_key = Felt::ONE;
         let value = Felt::THREE;
 
-        let mut state_diff = StateDiff::default();
-        state_diff.storage_diffs.push(ContractStorageDiffItem {
-            address: contract_address,
-            storage_entries: vec![
-                StorageEntry {
-                    key: storage_key,
-                    value,
-                },
-            ],
-        });
-
         // insert a value into the contract storage trie
         let mut storage_trie = starknet.backend.contract_storage_trie();
         storage_trie.insert(
@@ -263,11 +252,12 @@ mod tests {
         storage_trie.commit(BasicId::new(1));
 
         // create a dummy block to make get_storage_proof() happy
+        // (it wants a block to exist for the requested chain height)
         let header = create_dummy_header();
         let pending_block = finalized_block_one();
         starknet.backend.store_block(
             pending_block,
-            state_diff,
+            StateDiff::default(),
             vec![],
             None,
             None,
