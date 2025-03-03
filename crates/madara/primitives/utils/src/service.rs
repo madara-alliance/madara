@@ -536,6 +536,7 @@ struct ServiceMessageGuard<const CAPACITY: usize> {
     inner: Arc<ServiceMessageInner<CAPACITY>>,
     name_debug: String,
     view: Option<usize>,
+    needs_drop: bool,
 }
 
 struct ServiceMessageInner<const CAPACITY: usize> {
@@ -568,7 +569,6 @@ impl<const CAPACITY: usize> ServiceMessageBus<CAPACITY> {
     }
 
     async fn send(&self, transport: ServiceTransport) -> Option<ServiceTransport> {
-        println!("Sending: {transport:?}");
         let mut bus = self.inner.bus.write().await;
         let Some(bus) = bus.as_mut() else {
             return Some(transport);
@@ -603,7 +603,21 @@ impl<const CAPACITY: usize> ServiceMessageBus<CAPACITY> {
                 .subscribers_debug
                 .insert(name_debug.to_string(), Arc::new(std::sync::atomic::AtomicUsize::new(1)));
         }
-        ServiceMessageGuard { inner: Arc::clone(&self.inner), view: None, name_debug: name_debug.to_string() }
+        ServiceMessageGuard {
+            inner: Arc::clone(&self.inner),
+            view: None,
+            name_debug: name_debug.to_string(),
+            needs_drop: true,
+        }
+    }
+
+    fn subscribe_no_drop(&self, name_debug: &str) -> ServiceMessageGuard<CAPACITY> {
+        ServiceMessageGuard {
+            inner: Arc::clone(&self.inner),
+            view: None,
+            name_debug: name_debug.to_string(),
+            needs_drop: false,
+        }
     }
 
     async fn close(&self) {
@@ -642,18 +656,14 @@ impl<const CAPACITY: usize> ServiceMessageGuard<CAPACITY> {
         match self.view {
             None => loop {
                 {
-                    println!("CHECKPOINT A");
                     let bus = self.inner.bus.read().await;
                     let bus = bus.as_ref()?;
-                    println!("CHECKPOINT B");
                     if let Some(ref_count) = bus.peek_back() {
-                        println!("CHECKPOINT C");
                         ref_count.views.fetch_add(1, Ordering::Release);
                         self.view = Some(ref_count.id);
                         self.inner.notify_rcv.notify_waiters();
                         return Some(ref_count.transport.clone());
                     }
-                    println!("CHECKPOINT D");
                 }
                 self.inner.notify_send.notified().await;
             },
@@ -676,10 +686,12 @@ impl<const CAPACITY: usize> ServiceMessageGuard<CAPACITY> {
 
 impl<const CAPACITY: usize> Drop for ServiceMessageGuard<CAPACITY> {
     fn drop(&mut self) {
-        assert_ne!(self.inner.subscribers.fetch_sub(1, std::sync::atomic::Ordering::Release), 0);
-        let n = self.inner.subscribers_debug.get(&self.name_debug).unwrap().fetch_sub(1, Ordering::AcqRel);
-        if n == 1 {
-            self.inner.subscribers_debug.remove(&self.name_debug);
+        if self.needs_drop {
+            assert_ne!(self.inner.subscribers.fetch_sub(1, std::sync::atomic::Ordering::Release), 0);
+            let n = self.inner.subscribers_debug.get(&self.name_debug).unwrap().fetch_sub(1, Ordering::AcqRel);
+            if n == 1 {
+                self.inner.subscribers_debug.remove(&self.name_debug);
+            }
         }
     }
 }
@@ -758,6 +770,17 @@ impl ServiceContext {
             service_update_sender: Arc::new(sx),
             service_update_receiver: rx,
             id: id.svc_id(),
+        }
+    }
+
+    fn clone_no_drop(&self) -> Self {
+        Self {
+            token_global: self.token_global.clone(),
+            token_local: self.token_local.clone(),
+            services: Arc::clone(&self.services),
+            service_update_sender: Arc::clone(&self.service_update_sender),
+            service_update_receiver: self.service_update_sender.subscribe_no_drop(&self.id),
+            id: self.id.clone(),
         }
     }
 
@@ -1373,8 +1396,15 @@ impl<'a> ServiceRunner<'a> {
             // cancel first. This is a safety measure in case someone forgets to
             // implement a cancellation check along some branch of the service's
             // execution, or if they don't read the docs :D
-            let ctx1 = ctx.clone();
-            let ctx2 = ctx.clone();
+            // let ctx1 = ctx.clone();
+            // let ctx2 = ctx.clone();
+
+            let (ctx1, ctx2) = if ctx.id() == MadaraServiceId::Monitor.svc_id() {
+                (ctx.clone_no_drop(), ctx.clone_no_drop())
+            } else {
+                (ctx.clone(), ctx.clone())
+            };
+
             tokio::select! {
                 res = runner(ctx1) => res.map_err(Into::into)?,
                 _ = Self::stopper(ctx2, &id) => {},
@@ -1745,22 +1775,22 @@ impl ServiceMonitor {
     /// [`activate`]: ServiceMonitorBuilder::activate
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
-        println!("bus guards: {:?}", self.ctx.service_update_sender.inner.subscribers_debug);
+        println!("1. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
         self.register_services().await?;
 
-        println!("bus guards: {:?}", self.ctx.service_update_sender.inner.subscribers_debug);
+        println!("2. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
         self.register_close_handles().await?;
 
-        println!("bus guards: {:?}", self.ctx.service_update_sender.inner.subscribers_debug);
+        println!("3. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
         tracing::debug!("Running services: {:?}", self.ctx.services.active_set());
 
         let mut ctx1 = self.ctx.clone();
         let mut ctx2 = self.ctx.clone();
 
-        println!("bus guards: {:?}", self.ctx.service_update_sender.inner.subscribers_debug);
+        println!("4. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
         while !self.status_monitored.is_empty() {
             tokio::select! {
@@ -1778,21 +1808,21 @@ impl ServiceMonitor {
             println!("Services monitored: {:?}", self.status_monitored);
         }
 
+        println!("5. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
+
         if self.ctx.id == MadaraServiceId::Monitor.svc_id() {
             let id = self.ctx.id.clone();
             self.ctx.service_unset(&id).await;
 
             println!("Services still active: {:?}", self.ctx.services.active_set());
-            println!("CHECKPOINT I");
 
             drop(self.ctx.service_update_receiver);
             drop(ctx1.service_update_receiver);
             drop(ctx2.service_update_receiver);
 
-            println!("bus guards: {:?}", self.ctx.service_update_sender.inner.subscribers_debug);
+            println!("6. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
             self.ctx.service_update_sender.close().await;
-            println!("CHECKPOINT II");
         }
 
         Ok(())
@@ -1824,7 +1854,7 @@ impl ServiceMonitor {
     }
 
     async fn register_close_handles(&mut self) -> anyhow::Result<()> {
-        let runner = ServiceRunner::new(self.ctx.clone(), &mut self.join_set);
+        let runner = ServiceRunner::new(self.ctx.clone_no_drop(), &mut self.join_set);
 
         runner
             .service_loop(|ctx| async move {
@@ -1865,6 +1895,8 @@ impl ServiceMonitor {
             Err(_task_cancelled_error) => {}
         };
 
+        println!("4.a. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
+
         anyhow::Ok(())
     }
 
@@ -1882,6 +1914,8 @@ impl ServiceMonitor {
             self.status_monitored.remove(id.as_str());
             println!("{id} is inactive");
         }
+
+        println!("4.c. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
 
         anyhow::Ok(())
     }
@@ -1921,11 +1955,13 @@ impl ServiceMonitor {
             }
         };
 
+        println!("4.b. subscribers: {}", self.ctx.service_update_sender.inner.subscribers.load(Ordering::SeqCst));
+
         anyhow::Ok(())
     }
 
     pub fn ctx(&self) -> ServiceContext {
-        self.ctx.clone()
+        self.ctx.clone_no_drop()
     }
 }
 
@@ -2210,15 +2246,15 @@ mod test {
     where
         F: Future<Output = ()>,
     {
-        let ctx = monitor.ctx().clone();
+        let ctx = monitor.ctx();
         tokio::join!(
             async {
                 monitor.start().await.expect("Failed to start monitor");
             },
-            f(ctx)
+            f(ctx.clone_no_drop())
         );
 
-        ServiceContext::new(MadaraServiceId::Monitor)
+        ctx
     }
 
     #[tokio::test]
@@ -2330,7 +2366,6 @@ mod test {
         // assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
 
         with_monitor(monitor, |mut ctx| async move {
-            println!("CHECKPOINT 1");
             assert_matches::assert_matches!(
                 ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Running).await,
                 Some(ServiceTransport {
@@ -2343,7 +2378,6 @@ mod test {
                 }
             );
 
-            println!("CHECKPOINT 2");
             assert_matches::assert_matches!(
                 ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Running).await,
                 Some(ServiceTransport {
@@ -2356,7 +2390,6 @@ mod test {
                 }
             );
 
-            println!("CHECKPOINT 3");
             ctx.service_deactivate(ServiceIdTest::ServiceA).await;
             assert_matches::assert_matches!(
                 ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Inactive).await,
@@ -2370,7 +2403,6 @@ mod test {
                 }
             );
 
-            println!("CHECKPOINT 4");
             ctx.service_deactivate(ServiceIdTest::ServiceB).await;
             assert_matches::assert_matches!(
                 ctx.service_subscribe_for(ServiceIdTest::ServiceB, ServiceStatus::Inactive).await,
@@ -2383,8 +2415,6 @@ mod test {
                     assert_eq!(status, ServiceStatus::Inactive);
                 }
             );
-
-            println!("CHECKPOINT 5");
         })
         .await;
 
