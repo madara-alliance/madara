@@ -1,12 +1,13 @@
 ---
-name: Task - Stale Issues
+name: Workflow - Daily Cron
 
 on:
   workflow_dispatch:
-  workflow_call:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
-  stale:
+  stale_issues:
     name: 🧹 Clean up stale issues and PRs
     runs-on: ubuntu-latest
     steps:
