@@ -10,12 +10,10 @@ on:
         description: 'Rust toolchain version to use'
         required: true
         type: string
-        default: '1.81'
       scarb-version:
         description: 'Scarb version to use'
-        required: false
+        required: true
         type: string
-        default: '2.8.2'
       cache-prefix:
         description: 'Prefix for cache keys'
         required: false

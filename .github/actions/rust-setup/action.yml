@@ -29,7 +29,6 @@ inputs:
   python-version:
     description: 'Python version to use for Cairo 0'
     required: false
-    default: '3.9'
   build-snos:
     description: 'Whether to build SNOS files'
     required: false
