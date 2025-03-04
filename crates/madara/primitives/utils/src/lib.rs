@@ -4,7 +4,6 @@ pub mod crypto;
 pub mod hash;
 pub mod parsers;
 pub mod rayon;
-pub mod ringdeque;
 pub mod serde;
 pub mod service;
 use std::time::{Duration, Instant};
