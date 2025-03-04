@@ -243,18 +243,19 @@ impl GatewayMock {
         });
     }
 
-    // pub fn mock_signature(&self) {
-    //     self.mock_server.mock(|when, then| {
-    //         when.method("GET").path_contains("get_signature");
-    //         then.status(200).header("content_type", "application/json").json_body(json!({
-    //                 "block_hash": "0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32",
-    //                 "signature": [
-    //                     "0x315b1d77f8b1fc85657725639e88d4e1bfe846b4a866ddeb2e74cd91ccff9ca",
-    //                     "0x3cbd913e55ca0c9ab107a5988dd4c54d56dd3700948a2b96c19d4728a5864de"
-    //                 ]
-    //         }));
-    //     });
-    // }
+    #[allow(unused)]
+    pub fn mock_signature(&self) {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_signature");
+            then.status(200).header("content_type", "application/json").json_body(json!({
+                    "block_hash": "0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32",
+                    "signature": [
+                        "0x315b1d77f8b1fc85657725639e88d4e1bfe846b4a866ddeb2e74cd91ccff9ca",
+                        "0x3cbd913e55ca0c9ab107a5988dd4c54d56dd3700948a2b96c19d4728a5864de"
+                    ]
+            }));
+        });
+    }
 
     pub fn mock_block_pending_not_found(&self) -> Mock {
         self.mock_server.mock(|when, then| {
