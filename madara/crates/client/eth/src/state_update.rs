@@ -116,25 +116,25 @@ mod eth_client_event_subscription_test {
             uint256 _globalRoot = 2814950447364693428789615812000;
             int256 _blockNumber = 662702;
             uint256 _blockHash = 1119674286844400689540394420005000;
-        
+
             event LogStateUpdate(uint256 globalRoot, int256 blockNumber, uint256 blockHash);
-        
+
             function fireEvent() public {
                 uint256 globalRoot = 2814950447364693428789615812443623689251959344851195711990387747563915674022;
                 int256 blockNumber = 662703;
                 uint256 blockHash = 1119674286844400689540394420005977072742999649767515920196535047615668295813;
-        
+
                 emit LogStateUpdate(globalRoot, blockNumber, blockHash);
             }
-        
+
             function stateBlockNumber() public view returns (int256) {
                 return _blockNumber;
             }
-        
+
             function stateRoot() public view returns (uint256) {
                 return _globalRoot;
             }
-        
+
             function stateBlockHash() public view returns (uint256) {
                 return _blockHash;
             }

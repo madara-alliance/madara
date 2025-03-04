@@ -28,18 +28,18 @@ members = [
   "madara/crates/tests",
   "madara/crates/cairo-test-contracts",
 
-  # # orchestrator
-  # "orchestrator/crates/orchestrator",
-  # "orchestrator/crates/da-clients/da-client-interface",
-  # "orchestrator/crates/da-clients/ethereum",
-  # "orchestrator/crates/prover-clients/prover-client-interface",
-  # "orchestrator/crates/prover-clients/gps-fact-checker",
-  # "orchestrator/crates/prover-clients/sharp-service",
-  # "orchestrator/crates/prover-clients/atlantic-service",
-  # "orchestrator/crates/utils",
-  # "orchestrator/crates/settlement-clients/settlement-client-interface",
-  # "orchestrator/crates/settlement-clients/ethereum",
-  # "orchestrator/crates/settlement-clients/starknet",
+  # orchestrator
+  "orchestrator/crates/orchestrator",
+  "orchestrator/crates/da-clients/da-client-interface",
+  "orchestrator/crates/da-clients/ethereum",
+  "orchestrator/crates/prover-clients/prover-client-interface",
+  "orchestrator/crates/prover-clients/gps-fact-checker",
+  "orchestrator/crates/prover-clients/sharp-service",
+  "orchestrator/crates/prover-clients/atlantic-service",
+  "orchestrator/crates/utils",
+  "orchestrator/crates/settlement-clients/settlement-client-interface",
+  "orchestrator/crates/settlement-clients/ethereum",
+  "orchestrator/crates/settlement-clients/starknet",
   "e2e-tests",
 ]
 resolver = "2"
@@ -76,17 +76,17 @@ default-members = [
   "madara/crates/primitives/utils",
   "madara/crates/proc-macros",
 
-  # "orchestrator/crates/orchestrator",                                   # TODO: rename
-  # "orchestrator/crates/da-clients/da-client-interface",
-  # "orchestrator/crates/da-clients/ethereum",
-  # "orchestrator/crates/prover-clients/prover-client-interface",
-  # "orchestrator/crates/prover-clients/gps-fact-checker",
-  # "orchestrator/crates/prover-clients/sharp-service",
-  # "orchestrator/crates/prover-clients/atlantic-service",
-  # "orchestrator/crates/utils",                                          # TODO: rename
-  # "orchestrator/crates/settlement-clients/settlement-client-interface",
-  # "orchestrator/crates/settlement-clients/ethereum",
-  # "orchestrator/crates/settlement-clients/starknet",
+  "orchestrator/crates/orchestrator",                                   # TODO: rename
+  "orchestrator/crates/da-clients/da-client-interface",
+  "orchestrator/crates/da-clients/ethereum",
+  "orchestrator/crates/prover-clients/prover-client-interface",
+  "orchestrator/crates/prover-clients/gps-fact-checker",
+  "orchestrator/crates/prover-clients/sharp-service",
+  "orchestrator/crates/prover-clients/atlantic-service",
+  "orchestrator/crates/utils",                                          # TODO: rename
+  "orchestrator/crates/settlement-clients/settlement-client-interface",
+  "orchestrator/crates/settlement-clients/ethereum",
+  "orchestrator/crates/settlement-clients/starknet",
 ]
 
 [workspace.lints.rust]
@@ -171,8 +171,7 @@ mc-devnet = { path = "madara/crates/client/devnet" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = "=1.0.1"
-# cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -183,17 +182,14 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = "=0.8.0"
-# blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
-#   "testing",
-# ] }
+blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+  "testing",
+] }
 starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
-# alloy = { version = "0.8.3", features = [
-alloy = { version = "0.4.0", features = [
-  # alloy = { version = "0.8.3", features = [
+alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
   "provider-http",
@@ -311,57 +307,57 @@ regex = "1.10.5"
 sha3 = "0.10"
 
 # Orchestrator
-# num = { version = "0.4.1" }
-# alloy-primitives = { version = "0.8.3", default-features = false }
-# alloy-sol-types = "0.8.3"
-# aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
-# aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
-# aws-sdk-eventbridge = { version = "1.41.0", features = [
-#   "behavior-version-latest",
-# ] }
-# aws-sdk-iam = "1.52.0"
-# aws-sdk-scheduler = "1.49.0"
-# aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
-# aws-credential-types = { version = "1.2.1", features = [
-#   "hardcoded-credentials",
-# ] }
-# aws-sdk-sqs = "1.36.0"
-# axum = { version = "0.7.4" }
-# axum-macros = "0.4.1"
+num = { version = "0.4.1" }
+alloy-primitives = { version = "0.8.3", default-features = false }
+alloy-sol-types = "0.8.3"
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-eventbridge = { version = "1.41.0", features = [
+  "behavior-version-latest",
+] }
+aws-sdk-iam = "1.52.0"
+aws-sdk-scheduler = "1.49.0"
+aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
+aws-credential-types = { version = "1.2.1", features = [
+  "hardcoded-credentials",
+] }
+aws-sdk-sqs = "1.36.0"
+axum = { version = "0.7.4" }
+axum-macros = "0.4.1"
 color-eyre = "0.6.2"
 chrono = "0.4.0"
-# c-kzg = "1.0.3"
-# dotenvy = "0.15.7"
-# log = "0.4.21"
-# mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-# omniqueue = { version = "0.2.0" }
+c-kzg = "1.0.3"
+dotenvy = "0.15.7"
+log = "0.4.21"
+mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
+omniqueue = { version = "0.2.0" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
-# stark_evm_adapter = "0.1.1"
-# hex = "0.4"
-# mockall_double = "0.3.1"
-# testcontainers = "0.18.0"
-# appchain-core-contract-client = { git = "https://github.com/notlesh/zaun", branch = "madara-monorepo" }
-# env_logger = "0.11.5"
-# strum_macros = "0.26.4"
-# strum = "0.26.3"
-# async-std = { version = "1.13.0", features = ["attributes"] }
-# majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-# majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-# starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
-# prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+stark_evm_adapter = "0.1.1"
+hex = "0.4"
+mockall_double = "0.3.1"
+testcontainers = "0.18.0"
+appchain-core-contract-client = { git = "https://github.com/notlesh/zaun", branch = "madara-monorepo" }
+env_logger = "0.11.5"
+strum_macros = "0.26.4"
+strum = "0.26.3"
+async-std = { version = "1.13.0", features = ["attributes"] }
+majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
+majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
+starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 
-# orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
-# orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
-# orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
-# orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
-# orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
-# orchestrator-utils = { path = "orchestrator/crates/utils" }
-# orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
-# orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
-# orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
-# orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
-# orchestrator-core = { path = "orchestrator/crates/orchestrator" }
+orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
+orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
+orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
+orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
+orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
+orchestrator-utils = { path = "orchestrator/crates/utils" }
+orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
+orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
+orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
+orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-core = { path = "orchestrator/crates/orchestrator" }
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -369,8 +365,8 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-# starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
-#   "testing",
-# ] }
+starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+  "testing",
+] }
 
-# cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
