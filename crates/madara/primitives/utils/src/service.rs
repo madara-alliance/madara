@@ -63,7 +63,7 @@
 //!             // to restart. In a more complex scenario, this means we might
 //!             // enter an invalid state!
 //!             anyhow::Ok(())
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -101,7 +101,7 @@
 //!             // only resolve once the task above completes, so the service
 //!             // monitor can correctly mark this service as ready to restart.
 //!             anyhow::Ok(())
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -145,7 +145,7 @@
 //!             // service context and are waiting for that cancellation in the
 //!             // service loop.
 //!             anyhow::Ok(())
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -249,9 +249,7 @@
 //! #     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
 //! #         runner.service_loop(move |mut ctx| async move {
 //! #             anyhow::Ok(())
-//! #         }).await;
-//! #
-//! #         anyhow::Ok(())
+//! #         })
 //! #     }
 //! # }
 //! #
@@ -330,7 +328,7 @@
 //!                 .await?
 //!                 .start()
 //!                 .await
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -340,7 +338,7 @@
 //!         runner.service_loop(move |mut ctx| async move {
 //!             ctx.cancelled().await;
 //!             anyhow::Ok(())
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -350,7 +348,7 @@
 //!         runner.service_loop(move |mut ctx| async move {
 //!             ctx.cancelled().await;
 //!             anyhow::Ok(())
-//!         }).await
+//!         })
 //!     }
 //! }
 //!
@@ -817,7 +815,7 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub async fn service_activate(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn service_activate(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_set(&id.svc_id(), ServiceStatus::Active).await
     }
 
@@ -833,25 +831,25 @@ impl ServiceContext {
     /// [global scope]: Self#scope
     /// [`service_subscribe`]: Self::service_subscribe
     #[inline(always)]
-    pub async fn service_deactivate(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn service_deactivate(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_set(&id.svc_id(), ServiceStatus::Shutdown).await
     }
 
     #[inline(always)]
-    pub async fn wait_activate(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn wait_activate(&self, id: impl ServiceId) -> ServiceStatus {
         let status = self.service_set(&id.svc_id(), ServiceStatus::Active).await;
         self.wait_for_running(id).await;
         status
     }
 
     #[inline(always)]
-    pub async fn wait_deactivate(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn wait_deactivate(&self, id: impl ServiceId) -> ServiceStatus {
         let status = self.service_set(&id.svc_id(), ServiceStatus::Shutdown).await;
         self.wait_for_inactive(id).await;
         status
     }
 
-    async fn service_set(&mut self, id: &str, status: ServiceStatus) -> ServiceStatus {
+    async fn service_set(&self, id: &str, status: ServiceStatus) -> ServiceStatus {
         let res = self.services.set(id, status);
         self.status_update.notify_waiters();
         if self
@@ -866,7 +864,7 @@ impl ServiceContext {
         res
     }
 
-    async fn service_unset(&mut self, id: &str) -> ServiceStatus {
+    async fn service_unset(&self, id: &str) -> ServiceStatus {
         let res = self.services.unset(id);
         self.status_update.notify_waiters();
         if self
@@ -889,11 +887,11 @@ impl ServiceContext {
     /// Identifying information about the service which was updated.
     ///
     /// [`status`]: ServiceStatus
-    pub async fn service_subscribe_for(&mut self, id: impl ServiceId, status: ServiceStatus) -> ServiceStatus {
+    pub async fn service_subscribe_for(&self, id: impl ServiceId, status: ServiceStatus) -> ServiceStatus {
         self.service_subscribe_for_impl(&id.svc_id(), status).await
     }
 
-    pub async fn service_subscribe_for_impl(&mut self, svc_id: &str, status: ServiceStatus) -> ServiceStatus {
+    pub async fn service_subscribe_for_impl(&self, svc_id: &str, status: ServiceStatus) -> ServiceStatus {
         if self.services.status(svc_id) == status {
             return status;
         }
@@ -906,11 +904,11 @@ impl ServiceContext {
         }
     }
 
-    pub async fn wait_for_running(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn wait_for_running(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_subscribe_for(id, ServiceStatus::Running).await
     }
 
-    pub async fn wait_for_inactive(&mut self, id: impl ServiceId) -> ServiceStatus {
+    pub async fn wait_for_inactive(&self, id: impl ServiceId) -> ServiceStatus {
         self.service_subscribe_for(id, ServiceStatus::Inactive).await
     }
 }
@@ -990,7 +988,8 @@ impl ServiceContext {
 ///             sx.send(Channel::Closed);
 ///
 ///             anyhow::Ok(())
-///         }).await
+///
+///         })
 ///     }
 /// }
 ///
@@ -1032,7 +1031,7 @@ impl ServiceContext {
 ///             }
 ///
 ///             anyhow::Ok(())
-///         }).await
+///         })
 ///     }
 /// }
 ///
@@ -1116,10 +1115,7 @@ impl<'a> ServiceRunner<'a> {
     ///
     /// </div>
     #[tracing::instrument(skip(self, runner), fields(module = "Service"))]
-    pub async fn service_loop<F, E>(
-        self,
-        runner: impl FnOnce(ServiceContext) -> F + Send + 'static,
-    ) -> anyhow::Result<()>
+    pub fn service_loop<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static) -> anyhow::Result<()>
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
@@ -1127,7 +1123,7 @@ impl<'a> ServiceRunner<'a> {
         let Self { mut ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id().to_string();
-            tracing::debug!("Starting service with id: {id:?}");
+            tracing::debug!("Starting service with id: {id}");
             ctx.service_set(&id, ServiceStatus::Running).await;
 
             // If a service is implemented correctly, `stopper` should never
@@ -1141,7 +1137,7 @@ impl<'a> ServiceRunner<'a> {
                 _ = Self::stopper(ctx2, &id) => {},
             }
 
-            tracing::debug!("Shutting down service with id: {id} from {}", ctx.id);
+            tracing::debug!("Shutting down service with id: {id}");
             ctx.service_unset(&id).await;
 
             anyhow::Ok(id)
@@ -1582,26 +1578,24 @@ impl ServiceMonitor {
     async fn register_close_handles(&mut self) -> anyhow::Result<()> {
         let runner = ServiceRunner::new(self.ctx.clone(), &mut self.join_set);
 
-        runner
-            .service_loop(|ctx| async move {
-                let sigint = tokio::signal::ctrl_c();
-                let sigterm = async {
-                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-                        Ok(mut signal) => signal.recv().await,
-                        Err(_) => core::future::pending().await, // SIGTERM not supported
-                    }
-                };
+        runner.service_loop(|ctx| async move {
+            let sigint = tokio::signal::ctrl_c();
+            let sigterm = async {
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(mut signal) => signal.recv().await,
+                    Err(_) => core::future::pending().await, // SIGTERM not supported
+                }
+            };
 
-                tokio::select! {
-                    res = sigint => res?,
-                    _ = sigterm => {},
-                };
+            tokio::select! {
+                res = sigint => res?,
+                _ = sigterm => {},
+            };
 
-                ctx.cancel_global();
+            ctx.cancel_global();
 
-                anyhow::Ok(())
-            })
-            .await
+            anyhow::Ok(())
+        })
     }
 
     fn service_deactivate(&mut self, svc_res: Result<anyhow::Result<String>, JoinError>) -> anyhow::Result<()> {
@@ -1706,12 +1700,10 @@ mod test {
     }
 
     async fn service_waiting(runner: ServiceRunner<'_>) -> anyhow::Result<()> {
-        runner
-            .service_loop(move |mut cx| async move {
-                cx.cancelled().await;
-                anyhow::Ok(())
-            })
-            .await
+        runner.service_loop(move |mut cx| async move {
+            cx.cancelled().await;
+            anyhow::Ok(())
+        })
     }
 
     struct ServiceAWaiting;
@@ -1775,32 +1767,30 @@ mod test {
             let d = self.d.clone();
             let e = self.e.clone();
 
-            runner
-                .service_loop(move |mut cx| async move {
-                    let cx1 = cx.clone();
-                    tokio::join!(
-                        cx.child()
-                            .await
-                            .with_active(ServiceBChild { b })
-                            .await
-                            .expect("Failed to add service B")
-                            .with_active(ServiceCParent { c, d, e })
-                            .await
-                            .expect("Failed to add service C")
-                            .start(),
-                        cx.run_until_cancelled(async {
-                            a.notified().await;
-                            cx1.cancel_local();
-                        })
-                    )
-                    .0?;
+            runner.service_loop(move |mut cx| async move {
+                let cx1 = cx.clone();
+                tokio::join!(
+                    cx.child()
+                        .await
+                        .with_active(ServiceBChild { b })
+                        .await
+                        .expect("Failed to add service B")
+                        .with_active(ServiceCParent { c, d, e })
+                        .await
+                        .expect("Failed to add service C")
+                        .start(),
+                    cx.run_until_cancelled(async {
+                        a.notified().await;
+                        cx1.cancel_local();
+                    })
+                )
+                .0?;
 
-                    println!("Exited A!");
+                println!("Exited A!");
 
-                    cx.cancelled().await;
-                    anyhow::Ok(())
-                })
-                .await
+                cx.cancelled().await;
+                anyhow::Ok(())
+            })
         }
     }
 
@@ -1808,25 +1798,23 @@ mod test {
     impl Service for ServiceBChild {
         async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
             let b = self.b.clone();
-            runner
-                .service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let mut cx2 = cx1.clone();
-                    let cx3 = cx1.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                    tokio::join!(
-                        cx1.cancelled(),
-                        cx2.run_until_cancelled(async {
-                            b.notified().await;
-                            cx3.cancel_local()
-                        })
-                    );
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        b.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                    println!("Received cancellation inside of service B");
+                println!("Received cancellation inside of service B");
 
-                    anyhow::Ok(())
-                })
-                .await
+                anyhow::Ok(())
+            })
         }
     }
 
@@ -1837,27 +1825,25 @@ mod test {
             let d = self.d.clone();
             let e = self.e.clone();
 
-            runner
-                .service_loop(move |mut cx| async move {
-                    let cx1 = cx.clone();
-                    tokio::join!(
-                        cx.child()
-                            .await
-                            .with_active(ServiceDChild { d })
-                            .await
-                            .expect("Failed to add service D")
-                            .with_active(ServiceEChild { e })
-                            .await
-                            .expect("Failed to add service E")
-                            .start(),
-                        cx.run_until_cancelled(async {
-                            c.notified().await;
-                            cx1.cancel_local();
-                        })
-                    )
-                    .0
-                })
-                .await
+            runner.service_loop(move |mut cx| async move {
+                let cx1 = cx.clone();
+                tokio::join!(
+                    cx.child()
+                        .await
+                        .with_active(ServiceDChild { d })
+                        .await
+                        .expect("Failed to add service D")
+                        .with_active(ServiceEChild { e })
+                        .await
+                        .expect("Failed to add service E")
+                        .start(),
+                    cx.run_until_cancelled(async {
+                        c.notified().await;
+                        cx1.cancel_local();
+                    })
+                )
+                .0
+            })
         }
     }
 
@@ -1865,25 +1851,23 @@ mod test {
     impl Service for ServiceDChild {
         async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
             let d = self.d.clone();
-            runner
-                .service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let mut cx2 = cx1.clone();
-                    let cx3 = cx1.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                    tokio::join!(
-                        cx1.cancelled(),
-                        cx2.run_until_cancelled(async {
-                            d.notified().await;
-                            cx3.cancel_local()
-                        })
-                    );
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        d.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                    println!("Received cancellation inside of service D");
+                println!("Received cancellation inside of service D");
 
-                    anyhow::Ok(())
-                })
-                .await
+                anyhow::Ok(())
+            })
         }
     }
 
@@ -1891,25 +1875,23 @@ mod test {
     impl Service for ServiceEChild {
         async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
             let e = self.e.clone();
-            runner
-                .service_loop(move |cx| async move {
-                    let mut cx1 = cx;
-                    let mut cx2 = cx1.clone();
-                    let cx3 = cx1.clone();
+            runner.service_loop(move |cx| async move {
+                let mut cx1 = cx;
+                let mut cx2 = cx1.clone();
+                let cx3 = cx1.clone();
 
-                    tokio::join!(
-                        cx1.cancelled(),
-                        cx2.run_until_cancelled(async {
-                            e.notified().await;
-                            cx3.cancel_local()
-                        })
-                    );
+                tokio::join!(
+                    cx1.cancelled(),
+                    cx2.run_until_cancelled(async {
+                        e.notified().await;
+                        cx3.cancel_local()
+                    })
+                );
 
-                    println!("Received cancellation inside of service E");
+                println!("Received cancellation inside of service E");
 
-                    anyhow::Ok(())
-                })
-                .await
+                anyhow::Ok(())
+            })
         }
     }
 

@@ -5,7 +5,7 @@ use crate::{
     proposal::{Proposal, ProposalPart},
     types::{Address, Height},
     validators::{Validator, ValidatorSet},
-    vote::{SigningProviderDummy, SigningScheme, Vote},
+    vote::{SigningScheme, Vote},
 };
 
 #[derive(Clone, Debug)]
@@ -21,7 +21,7 @@ impl malachite_core_types::Context for MadaraContext {
     type Value = MadaraBlock;
     type Vote = Vote;
     type SigningScheme = SigningScheme;
-    type SigningProvider = SigningProviderDummy;
+    type Extension = ();
 
     fn select_proposer<'a>(
         &self,
@@ -38,10 +38,6 @@ impl malachite_core_types::Context for MadaraContext {
         let idx = (block_number + round) % len;
 
         validator_set.validator_get_by_index(idx as usize).expect("Validator at module index exists on a non-empty set")
-    }
-
-    fn signing_provider(&self) -> &SigningProviderDummy {
-        &SigningProviderDummy
     }
 
     fn new_proposal(

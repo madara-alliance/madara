@@ -7003,6 +7003,7 @@ dependencies = [
  "anyhow",
  "bitvec",
  "blockifier",
+ "futures",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",

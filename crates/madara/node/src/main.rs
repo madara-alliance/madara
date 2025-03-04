@@ -288,6 +288,7 @@ async fn main() -> anyhow::Result<()> {
     // Since the database is not implemented as a proper service, we do not
     // active it, as it would never be marked as stopped by the existing logic
     ServiceMonitorBuilder::new()
+        .await
         .with(service_db)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
@@ -297,14 +298,22 @@ async fn main() -> anyhow::Result<()> {
         .with(service_rpc_admin)?
         .with(service_gateway)?
         .with(service_telemetry)?
-        .activate_if(MadaraServiceId::L1Sync, || run_cmd.is_active_l1_sync())?
-        .activate_if(MadaraServiceId::L2Sync, || run_cmd.is_active_l2_sync())?
-        .activate_if(MadaraServiceId::P2P, || run_cmd.is_active_p2p())?
-        .activate_if(MadaraServiceId::BlockProduction, || run_cmd.is_sequencer())?
-        .activate_if(MadaraServiceId::RpcUser, || run_cmd.is_active_rpc_user())?
-        .activate_if(MadaraServiceId::RpcAdmin, || run_cmd.is_active_rpc_admin())?
-        .activate_if(MadaraServiceId::Gateway, || run_cmd.is_active_fgw())?
-        .activate_if(MadaraServiceId::Telemetry, || run_cmd.is_active_telemetry())?
+        .activate_if(MadaraServiceId::L1Sync, || run_cmd.is_active_l1_sync())
+        .await?
+        .activate_if(MadaraServiceId::L2Sync, || run_cmd.is_active_l2_sync())
+        .await?
+        .activate_if(MadaraServiceId::P2P, || run_cmd.is_active_p2p())
+        .await?
+        .activate_if(MadaraServiceId::BlockProduction, || run_cmd.is_sequencer())
+        .await?
+        .activate_if(MadaraServiceId::RpcUser, || run_cmd.is_active_rpc_user())
+        .await?
+        .activate_if(MadaraServiceId::RpcAdmin, || run_cmd.is_active_rpc_admin())
+        .await?
+        .activate_if(MadaraServiceId::Gateway, || run_cmd.is_active_fgw())
+        .await?
+        .activate_if(MadaraServiceId::Telemetry, || run_cmd.is_active_telemetry())
+        .await?
         .start()
         .await?;
 

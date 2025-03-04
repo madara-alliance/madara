@@ -143,6 +143,10 @@ impl malachite_core_types::Vote<MadaraContext> for Vote {
         None
     }
 
+    fn take_extension(&mut self) -> Option<malachite_core_types::SignedExtension<MadaraContext>> {
+        None
+    }
+
     // INFO: Starknet consensus does not need extensions ATM
     fn extend(self, _extension: malachite_core_types::SignedExtension<MadaraContext>) -> Self {
         self
@@ -246,5 +250,22 @@ impl malachite_core_types::SigningProvider<MadaraContext> for SigningProvider {
     ) -> Result<malachite_core_types::VotingPower, malachite_core_types::CertificateError<MadaraContext>> {
         // INFO: No signature schema has been defined yet
         Ok(validator.voting_power())
+    }
+
+    fn sign_vote_extension(
+        &self,
+        extension: <MadaraContext as malachite_core_types::Context>::Extension,
+    ) -> malachite_core_types::SignedMessage<MadaraContext, <MadaraContext as malachite_core_types::Context>::Extension>
+    {
+        malachite_core_types::SignedMessage { message: (), signature: Default::default() }
+    }
+
+    fn verify_signed_vote_extension(
+        &self,
+        extension: &<MadaraContext as malachite_core_types::Context>::Extension,
+        signature: &malachite_core_types::Signature<MadaraContext>,
+        public_key: &malachite_core_types::PublicKey<MadaraContext>,
+    ) -> bool {
+        true
     }
 }

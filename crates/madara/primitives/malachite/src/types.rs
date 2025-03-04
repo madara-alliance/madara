@@ -19,6 +19,9 @@ impl Height {
 }
 
 impl malachite_core_types::Height for Height {
+    const ZERO: Self = Height { block_number: 0, fork_id: 0 };
+    const INITIAL: Self = Self::ZERO;
+
     fn increment_by(&self, n: u64) -> Self {
         Self { block_number: self.block_number.saturating_add(n), fork_id: self.fork_id }
     }

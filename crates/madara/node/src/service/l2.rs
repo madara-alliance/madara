@@ -147,11 +147,11 @@ impl Service for SyncService {
                     }
 
                     for svc_id in deferred_service_stop {
-                        ctx.service_deactivate(svc_id);
+                        ctx.service_deactivate(svc_id).await;
                     }
 
                     for svc_id in deferred_service_start {
-                        ctx.service_activate(svc_id);
+                        ctx.service_activate(svc_id).await;
                     }
                 }
 
