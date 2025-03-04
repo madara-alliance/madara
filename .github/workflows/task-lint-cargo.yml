@@ -1,0 +1,56 @@
+
+name: Task - Linters Cargo
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      rust-version:
+        description: 'Rust toolchain version to use'
+        required: true
+        type: string
+      scarb-version:
+        description: 'Scarb version to use'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version to use for Cairo 0'
+        required: true
+        type: string
+      cache-prefix:
+        description: 'Prefix for cache keys'
+        required: false
+        type: string
+        default: 'madara'
+
+
+jobs:
+  cargo-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - name: Setup Rust Environment
+        uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ inputs.rust-version }}
+          scarb-version: ${{ inputs.scarb-version }}
+          install-mold: false
+          install-scarb: true
+          install-cairo0: true
+          python-version: ${{ inputs.python-version }}
+          build-snos: true
+
+      - name: Madara Format and clippy
+        run: |
+          cargo fmt -- --check
+          cargo clippy --workspace --no-deps -- -D warnings
+          cargo clippy --workspace --tests --no-deps -- -D warnings
+      - name: Orchestrator Format and clippy
+        working-directory: orchestrator
+        run: |
+          cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
+          cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
+  
