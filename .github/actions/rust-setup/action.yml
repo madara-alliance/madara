@@ -1,0 +1,99 @@
+name: 'Rust Environment Setup'
+description: 'Sets up the Rust environment with configurable toolchain, cache, and dependencies'
+
+inputs:
+  rust-version:
+    description: 'Rust toolchain version to use'
+    required: true
+  cache-key:
+    description: 'Custom cache key for rust-cache'
+    required: false
+    default: 'cache'
+  install-mold:
+    description: 'Whether to install mold linker'
+    required: true
+  install-scarb:
+    description: 'Whether to install Scarb'
+    required: true
+  scarb-version:
+    description: 'Scarb version to install'
+    required: true
+  install-foundry:
+    description: 'Whether to install Foundry'
+    required: false
+    default: 'false'
+  install-cairo0:
+    description: 'Whether to install Cairo 0'
+    required: false
+    default: 'false'
+  build-snos:
+    description: 'Whether to build SNOS files'
+    required: false
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.rust-version }}
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git
+
+    - name: Setup mold linker
+      if: ${{ inputs.install-mold == 'true' }}
+      uses: rui314/setup-mold@v1
+
+    - name: Setup Scarb
+      if: ${{ inputs.install-scarb == 'true' }}
+      uses: software-mansion/setup-scarb@v1
+      with:
+        scarb-version: ${{ inputs.scarb-version }}
+
+    - name: Setup Foundry
+      if: ${{ inputs.install-foundry == 'true' }}
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+
+    - name: Setup Python 3.9 for Cairo 0
+      if: ${{ inputs.install-cairo0 == 'true' }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Install Cairo 0
+      if: ${{ inputs.install-cairo0 == 'true' }}
+      shell: bash
+      run: |
+        # Creating venv
+        python3.9 -m venv ~/cairo_venv
+        source ~/cairo_venv/bin/activate
+
+        # Installing deps
+        sudo apt install -y libgmp3-dev
+        pip3 install ecdsa fastecdsa sympy
+
+        # Installing cairo lang
+        pip3 install cairo-lang
+
+    - name: Build SNOS files
+      if: ${{ inputs.build-snos == 'true' }}
+      shell: bash
+      run: |
+        make snos 
