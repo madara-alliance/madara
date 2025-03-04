@@ -1,10 +1,9 @@
-use mc_db::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use mp_block::BlockId;
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
+use mc_db::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
+use mp_block::BlockId;
+use starknet_types_core::felt::Felt;
 
 /// Get the value of the storage at the given address and key.
 ///
@@ -52,7 +51,7 @@ pub fn get_storage_at(
     // no contract is deployed at this address, so we skip the contract check.
     let skip_contract_check = matches!(
         block_number,
-        Some(DbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
+        Some(RawDbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
     );
 
     if !skip_contract_check {

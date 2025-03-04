@@ -1,9 +1,8 @@
-use rocksdb::{IteratorMode, WriteOptions};
-use serde::{Deserialize, Serialize};
-use starknet_api::core::Nonce;
-
 use crate::error::DbError;
 use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
+use rocksdb::IteratorMode;
+use serde::{Deserialize, Serialize};
+use starknet_api::core::Nonce;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -103,13 +102,11 @@ impl MadaraBackend {
         last_synced_event_block: LastSyncedEventBlock,
     ) -> Result<(), DbError> {
         let messaging_column = self.db.get_column(Column::L1Messaging);
-        let mut writeopts = WriteOptions::default(); // todo move that in db
-        writeopts.disable_wal(true);
         self.db.put_cf_opt(
             &messaging_column,
             LAST_SYNCED_L1_EVENT_BLOCK,
             bincode::serialize(&last_synced_event_block)?,
-            &writeopts,
+            &self.writeopts_no_wal,
         )?;
         Ok(())
     }
@@ -123,9 +120,12 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self, nonce), fields(module = "L1DB"))]
     pub fn set_l1_messaging_nonce(&self, nonce: Nonce) -> Result<(), DbError> {
         let nonce_column = self.db.get_column(Column::L1MessagingNonce);
-        let mut writeopts = WriteOptions::default();
-        writeopts.disable_wal(true);
-        self.db.put_cf_opt(&nonce_column, bincode::serialize(&nonce)?, /* empty value */ [], &writeopts)?;
+        self.db.put_cf_opt(
+            &nonce_column,
+            bincode::serialize(&nonce)?,
+            /* empty value */ [],
+            &self.writeopts_no_wal,
+        )?;
         Ok(())
     }
 

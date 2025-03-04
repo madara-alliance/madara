@@ -1,5 +1,3 @@
-use primitive_types::H256;
-
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, Event, ExecutionResources,
     ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
@@ -52,7 +50,7 @@ impl L1HandlerTransactionReceipt {
         mp_rpc::L1HandlerTxnReceipt {
             // We have to manually convert the H256 bytes to a hex hash as the
             // impl of Display for H256 skips the middle bytes.
-            message_hash: hash_as_string(self.message_hash),
+            message_hash: format!("{}", self.message_hash),
             common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
                 events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
@@ -64,23 +62,6 @@ impl L1HandlerTransactionReceipt {
             },
         }
     }
-}
-
-/// Gets the **full** string hex representation of an [H256].
-///
-/// This is necessary as the default implementation of [ToString] for [H256]
-/// will keep only the first and last 2 bytes, eliding the rest with '...'.
-fn hash_as_string(message_hash: H256) -> String {
-    use std::fmt::Write;
-
-    // 32 bytes x 2 (1 hex char = 4 bits) + 2 (for 0x)
-    let mut acc = String::with_capacity(68);
-    acc.push_str("0x");
-
-    message_hash.as_fixed_bytes().iter().fold(acc, |mut acc, b| {
-        write!(&mut acc, "{b:02x}").expect("Pre-allocated");
-        acc
-    })
 }
 
 impl DeclareTransactionReceipt {
@@ -205,25 +186,21 @@ impl From<ExecutionResult> for mp_rpc::ExecutionStatus {
 
 #[cfg(test)]
 mod test {
-    use primitive_types::H256;
-
-    use crate::{to_starknet_types::hash_as_string, L1HandlerTransactionReceipt};
+    use crate::L1HandlerTransactionReceipt;
+    use starknet_core::types::Hash256;
 
     #[test]
     fn test_hash_as_string() {
         let mut hash = String::with_capacity(68);
         hash.push_str("0x");
         hash.push_str(&"f".repeat(64));
-        assert_eq!(hash_as_string(H256::from_slice(&[u8::MAX; 32])), hash);
+        assert_eq!(format!("{}", Hash256::from_bytes([u8::MAX; 32])), hash);
     }
 
-    /// The default implementation of [ToString] for [H256] will keep only the
-    /// first and last 2 bytes, eliding the rest with '...'. This test makes
-    /// sure this is not the case and we are using [hash_as_string] instead.
     #[test]
     fn test_l1_tx_receipt_full_hash() {
         let l1_transaction_receipt =
-            L1HandlerTransactionReceipt { message_hash: H256::from_slice(&[u8::MAX; 32]), ..Default::default() };
+            L1HandlerTransactionReceipt { message_hash: Hash256::from_bytes([u8::MAX; 32]), ..Default::default() };
         let message_hash = l1_transaction_receipt.to_starknet_types(mp_rpc::TxnFinalityStatus::L1).message_hash;
 
         let mut hash = String::with_capacity(68);

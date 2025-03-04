@@ -1182,7 +1182,7 @@ impl<'a> ServiceRunner<'a> {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
 
-        tracing::warn!("⚠️  Forcefully shutting down service with id: {id}");
+        tracing::warn!("⚠️  Forcefully shutting down service: {}", MadaraServiceId::from(*id));
     }
 }
 
@@ -1291,7 +1291,7 @@ impl ServiceMonitor {
                     match result {
                         Ok(result) => {
                             let id = result?;
-                            tracing::debug!("service {id} has shut down");
+                            tracing::debug!("Service {id} has shut down");
                             self.status_actual.deactivate(id);
                             self.status_request.deactivate(id);
                         }
@@ -1316,7 +1316,7 @@ impl ServiceMonitor {
                                     .await
                                     .context("Starting service")?;
 
-                                tracing::debug!("service {svc_id} has started");
+                                tracing::debug!("Service {svc_id} has started");
                             } else {
                                 // reset request
                                 self.status_request.deactivate(svc_id);

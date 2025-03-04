@@ -1,5 +1,5 @@
 use mp_block::H160;
-use mp_convert::felt_to_h160;
+use mp_convert::FeltExt;
 use mp_receipt::{Event, L1Gas, MsgToL1};
 use primitive_types::H256;
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ impl ConfirmedReceipt {
         let message_hash = message_to_l2.hash();
 
         mp_receipt::L1HandlerTransactionReceipt {
-            message_hash: H256::from_slice(message_hash.as_bytes()),
+            message_hash,
             transaction_hash: self.transaction_hash,
             actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
@@ -286,7 +286,7 @@ impl TryFrom<&L1HandlerTransaction> for MsgToL2 {
     fn try_from(l1_handler: &L1HandlerTransaction) -> Result<Self, Self::Error> {
         let (l1_address, payload) = l1_handler.calldata.split_first().ok_or(())?;
         Ok(Self {
-            from_address: felt_to_h160(l1_address).map_err(|_| ())?,
+            from_address: l1_address.to_h160().map_err(drop)?,
             to_address: l1_handler.contract_address,
             selector: l1_handler.entry_point_selector,
             payload: payload.to_vec(),

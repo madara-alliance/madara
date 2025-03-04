@@ -17,7 +17,7 @@ mod deployed_contracts;
 mod intent;
 mod limits;
 mod nonce_mapping;
-mod proptest;
+mod property_testing;
 mod tx;
 
 pub(crate) use intent::*;

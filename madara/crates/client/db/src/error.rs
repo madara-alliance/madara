@@ -27,6 +27,8 @@ pub enum MadaraStorageError {
         "Missing compiled class for class with hash {class_hash:#x} (compiled_class_hash={compiled_class_hash:#x}"
     )]
     MissingCompiledClass { class_hash: Felt, compiled_class_hash: Felt },
+    #[error("Batch is empty")]
+    EmptyBatch,
 }
 
 pub type BonsaiStorageError = bonsai_trie::BonsaiStorageError<DbError>;

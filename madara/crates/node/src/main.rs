@@ -10,16 +10,14 @@ use clap::Parser;
 use cli::RunCmd;
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
-use mc_block_import::BlockImporter;
-use mc_db::{DatabaseService, TrieLogConfig};
+use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
-use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
-use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
+use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 
@@ -99,19 +97,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Database
 
-    let service_db = DatabaseService::new(
-        &run_cmd.db_params.base_path,
-        run_cmd.db_params.backup_dir.clone(),
-        run_cmd.db_params.restore_from_latest_backup,
-        Arc::clone(&chain_config),
-        TrieLogConfig {
-            max_saved_trie_logs: run_cmd.db_params.db_max_saved_trie_logs,
-            max_kept_snapshots: run_cmd.db_params.db_max_kept_snapshots,
-            snapshot_interval: run_cmd.db_params.db_snapshot_interval,
-        },
-    )
-    .await
-    .context("Initializing db service")?;
+    let service_db = DatabaseService::new(chain_config.clone(), run_cmd.db_params.backend_config())
+        .await
+        .context("Initializing db service")?;
 
     // L1 Sync
 
@@ -163,6 +151,8 @@ async fn main() -> anyhow::Result<()> {
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
+    let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
+
     let service_l1_sync = L1SyncService::new(
         &run_cmd.l1_sync_params,
         &service_db,
@@ -172,16 +162,12 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.is_sequencer(),
         run_cmd.is_devnet(),
         Arc::clone(&mempool),
+        l1_head_snd,
     )
     .await
     .context("Initializing the l1 sync service")?;
 
     // L2 Sync
-
-    let importer = Arc::new(
-        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
-            .context("Initializing importer service")?,
-    );
 
     let warp_update = if run_cmd.args_preset.warp_update_receiver {
         let mut deferred_service_start = vec![];
@@ -220,16 +206,9 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let service_l2_sync = L2SyncService::new(
-        &run_cmd.l2_sync_params,
-        Arc::clone(&chain_config),
-        &service_db,
-        importer,
-        service_telemetry.new_handle(),
-        warp_update,
-    )
-    .await
-    .context("Initializing sync service")?;
+    let service_l2_sync = SyncService::new(&run_cmd.l2_sync_params, service_db.backend(), l1_head_recv, warp_update)
+        .await
+        .context("Initializing sync service")?;
 
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
@@ -243,15 +222,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Block production
 
-    let importer = Arc::new(
-        BlockImporter::new(Arc::clone(service_db.backend()), run_cmd.l2_sync_params.unsafe_starting_block)
-            .context("Initializing importer service")?,
-    );
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,
         &service_db,
         Arc::clone(&mempool),
-        importer,
         Arc::clone(&l1_data_provider),
     )?;
 

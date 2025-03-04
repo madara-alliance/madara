@@ -3,6 +3,7 @@ use alloy::primitives::Address;
 use anyhow::Context;
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_eth::client::{EthereumClient, L1BlockMetrics};
+use mc_eth::state_update::L1HeadSender;
 use mc_mempool::{GasPriceProvider, Mempool};
 use mp_block::H160;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -13,6 +14,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct L1SyncService {
     db_backend: Arc<MadaraBackend>,
+    l1_head_snd: Option<L1HeadSender>,
     eth_client: Option<Arc<EthereumClient>>,
     l1_gas_provider: GasPriceProvider,
     chain_id: ChainId,
@@ -32,6 +34,7 @@ impl L1SyncService {
         authority: bool,
         devnet: bool,
         mempool: Arc<Mempool>,
+        l1_head_snd: L1HeadSender,
     ) -> anyhow::Result<Self> {
         let eth_client = if !config.l1_sync_disabled && (config.l1_endpoint.is_some() || !devnet) {
             if let Some(l1_rpc_url) = &config.l1_endpoint {
@@ -60,7 +63,7 @@ impl L1SyncService {
         if gas_price_sync_enabled {
             let eth_client = eth_client
                 .clone()
-                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0`, or disable L1 sync using the `--no-l1-sync` argument.")?;
+                .context("L1 gas prices require the ethereum service to be enabled. Either disable gas prices syncing using `--gas-price 0` and `--blob-gas-price 0`, or enable L1 sync by removing the `--no-l1-sync` argument.")?;
             // running at-least once before the block production service
             tracing::info!("⏳ Getting initial L1 gas prices");
             mc_eth::l1_gas_price::gas_price_worker_once(&eth_client, &l1_gas_provider, gas_price_poll)
@@ -76,6 +79,7 @@ impl L1SyncService {
             gas_price_sync_disabled: !gas_price_sync_enabled,
             gas_price_poll,
             mempool,
+            l1_head_snd: Some(l1_head_snd),
         })
     }
 }
@@ -96,6 +100,7 @@ impl Service for L1SyncService {
         if let Some(eth_client) = &self.eth_client {
             // enabled
 
+            let l1_head_snd = self.l1_head_snd.take().context("Service already started")?;
             let eth_client = Arc::clone(eth_client);
             runner.service_loop(move |ctx| {
                 mc_eth::sync::l1_sync_worker(
@@ -106,6 +111,7 @@ impl Service for L1SyncService {
                     gas_price_sync_disabled,
                     gas_price_poll,
                     mempool,
+                    l1_head_snd,
                     ctx,
                 )
             });
