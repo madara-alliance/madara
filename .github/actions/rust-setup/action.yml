@@ -26,6 +26,10 @@ inputs:
     description: 'Whether to install Cairo 0'
     required: false
     default: 'false'
+  python-version:
+    description: 'Python version to use for Cairo 0'
+    required: false
+    default: '3.9'
   build-snos:
     description: 'Whether to build SNOS files'
     required: false
@@ -71,18 +75,18 @@ runs:
       with:
         version: nightly
 
-    - name: Setup Python 3.9 for Cairo 0
+    - name: Setup Python for Cairo 0
       if: ${{ inputs.install-cairo0 == 'true' }}
       uses: actions/setup-python@v4
       with:
-        python-version: 3.9
+        python-version: ${{ inputs.python-version }}
 
     - name: Install Cairo 0
       if: ${{ inputs.install-cairo0 == 'true' }}
       shell: bash
       run: |
         # Creating venv
-        python3.9 -m venv ~/cairo_venv
+        python${{ inputs.python-version }} -m venv ~/cairo_venv
         source ~/cairo_venv/bin/activate
 
         # Installing deps
