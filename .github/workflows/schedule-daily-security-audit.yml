@@ -1,13 +1,14 @@
 ---
-name: Task - Security Audit
+name: Workflow - Daily Cron
 
 on:
   workflow_dispatch:
-  workflow_call:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   security_audit:
-    name: Security audit
+    name: Security - Audit check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
