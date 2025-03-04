@@ -1,0 +1,42 @@
+---
+name: Task - Rust Check
+
+# This workflow runs cargo check on the Rust codebase
+# to verify that the code compiles without building it completely
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      rust-version:
+        description: 'Rust toolchain version to use'
+        required: true
+        type: string
+      scarb-version:
+        description: 'Scarb version to use'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version to use for Cairo 0'
+        required: true
+        type: string
+
+jobs:
+  rust_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ inputs.rust-version }}
+          scarb-version: ${{ inputs.scarb-version }}
+          install-scarb: true
+          install-cairo0: true
+          python-version: ${{ inputs.python-version }}
+          build-snos: true
+
+      - name: Check the project
+        run: |
+          cargo check --release --workspace
