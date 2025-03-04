@@ -1,3 +1,7 @@
+use crate::{
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
+    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
+};
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
     account_transaction::AccountTransaction,
@@ -9,11 +13,6 @@ use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_core::types::{Hash256, MsgToL2};
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
-
-use crate::{
-    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
-    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
-};
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
     match tx {

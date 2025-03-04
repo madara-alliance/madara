@@ -34,6 +34,7 @@ mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
 mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
+mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
@@ -41,7 +42,6 @@ mp-utils = { workspace = true }
 # Starknet
 blockifier = { workspace = true, default-features = true }
 starknet-types-core = { workspace = true }
-starknet-types-rpc = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
 # Others

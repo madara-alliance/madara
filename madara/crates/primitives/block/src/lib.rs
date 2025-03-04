@@ -15,8 +15,8 @@ pub mod header;
 pub use header::Header;
 pub use primitive_types::{H160, U256};
 
-pub type BlockId = starknet_types_rpc::BlockId<Felt>;
-pub type BlockTag = starknet_types_rpc::BlockTag;
+pub type BlockId = mp_rpc::BlockId;
+pub type BlockTag = mp_rpc::BlockTag;
 
 // TODO: where should we put that?
 #[derive(Debug, Clone)]
@@ -116,7 +116,7 @@ impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
     }
 }
 
-impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
+impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
     fn from(info: MadaraBlockInfo) -> Self {
         let MadaraBlockInfo {
             header:
@@ -141,14 +141,14 @@ impl From<MadaraBlockInfo> for starknet_types_rpc::BlockHeader<Felt> {
             block_hash,
             block_number,
             l1_da_mode: match l1_da_mode {
-                L1DataAvailabilityMode::Blob => starknet_types_rpc::L1DaMode::Blob,
-                L1DataAvailabilityMode::Calldata => starknet_types_rpc::L1DaMode::Calldata,
+                L1DataAvailabilityMode::Blob => mp_rpc::L1DaMode::Blob,
+                L1DataAvailabilityMode::Calldata => mp_rpc::L1DaMode::Calldata,
             },
-            l1_data_gas_price: starknet_types_rpc::ResourcePrice {
+            l1_data_gas_price: mp_rpc::ResourcePrice {
                 price_in_fri: Felt::from(strk_l1_data_gas_price),
                 price_in_wei: Felt::from(eth_l1_data_gas_price),
             },
-            l1_gas_price: starknet_types_rpc::ResourcePrice {
+            l1_gas_price: mp_rpc::ResourcePrice {
                 price_in_fri: Felt::from(strk_l1_gas_price),
                 price_in_wei: Felt::from(eth_l1_gas_price),
             },

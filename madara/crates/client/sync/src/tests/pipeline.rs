@@ -388,7 +388,7 @@ async fn test_global_stop(mut ctx: TestContext) {
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
-    assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap().unwrap(), felt!("0x12"));
+    assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap(), None);
     assert!(!ctx.backend.has_pending_block().unwrap());
 
     task.await.unwrap(); // task returned.

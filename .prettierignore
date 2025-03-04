@@ -2,3 +2,11 @@ target
 madara/crates/client/sync/test-data/*.json
 infra/Signoz
 cairo-artifacts
+dashboards
+
+orchestrator/cairo-lang/
+orchestrator/madara-bootstrapper/
+orchestrator/pathfinder/
+orchestrator/orchestrator_venv/
+orchestrator/build/
+orchestrator/node_modules/

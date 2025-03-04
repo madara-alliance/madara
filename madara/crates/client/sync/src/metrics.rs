@@ -1,11 +1,14 @@
 use crate::counter::ThroughputCounter;
 use anyhow::Context;
-use mc_analytics::register_gauge_metric_instrument;
+use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use mc_db::db_block_id::RawDbBlockId;
 use mc_db::MadaraBackend;
 use num_traits::cast::FromPrimitive;
-use opentelemetry::metrics::Gauge;
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{
+    global,
+    metrics::{Counter, Histogram},
+    KeyValue,
+};
 use std::time::{Duration, Instant};
 
 pub struct SyncMetrics {
@@ -19,88 +22,89 @@ pub struct SyncMetrics {
     pub last_db_metrics_update_instant: Option<Instant>,
 
     // L2 network metrics
-    pub l2_block_number: Gauge<u64>,
-    pub l2_sync_time: Gauge<f64>,
-    pub l2_avg_sync_time: Gauge<f64>,
-    pub l2_latest_sync_time: Gauge<f64>,
-    pub l2_state_size: Gauge<f64>, // TODO: remove this, as well as the return value from db_metrics update.
-    pub transaction_count: Gauge<u64>,
-    pub event_count: Gauge<u64>,
+    pub l2_block_number: Histogram<f64>,
+    pub l2_sync_time: Histogram<f64>,
+    pub l2_avg_sync_time: Histogram<f64>,
+    pub l2_latest_sync_time: Histogram<f64>,
+    pub l2_state_size: Histogram<f64>, // TODO: remove this, as well as the return value from db_metrics update.
+    pub transaction_count: Counter<u64>,
+    pub event_count: Counter<u64>,
     // L1 network metrics
-    pub l1_gas_price_wei: Gauge<f64>,
-    pub l1_gas_price_strk: Gauge<f64>,
+    // gas price is also define in eth/client.rs but this would be the gas used in the block and it's price
+    pub l1_gas_price_wei: Histogram<f64>,
+    pub l1_gas_price_strk: Histogram<f64>,
 }
 
 impl SyncMetrics {
     pub fn register(starting_block: u64) -> Self {
-        let common_scope_attributes = vec![KeyValue::new("crate", "block_import")];
-        let block_import_meter = global::meter_with_version(
-            "crates.block_import.opentelemetry",
+        let common_scope_attributes = vec![KeyValue::new("crate", "block")];
+        let block_meter = global::meter_with_version(
+            "crates.block.opentelemetry",
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),
         );
 
-        let l2_block_number = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l2_block_number = register_histogram_metric_instrument(
+            &block_meter,
             "l2_block_number".to_string(),
-            "Current block number".to_string(),
+            "Gauge for madara L2 block number".to_string(),
             "".to_string(),
         );
 
-        let l2_sync_time = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l2_sync_time = register_histogram_metric_instrument(
+            &block_meter,
             "l2_sync_time".to_string(),
-            "Complete sync time since startup in secs (does not account for restarts)".to_string(),
+            "Gauge for madara L2 sync time".to_string(),
             "".to_string(),
         );
 
-        let l2_avg_sync_time = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l2_avg_sync_time = register_histogram_metric_instrument(
+            &block_meter,
             "l2_avg_sync_time".to_string(),
-            "Average time spent between blocks since startup in secs".to_string(),
+            "Gauge for madara L2 average sync time".to_string(),
             "".to_string(),
         );
 
-        let l2_latest_sync_time = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l2_latest_sync_time = register_histogram_metric_instrument(
+            &block_meter,
             "l2_latest_sync_time".to_string(),
-            "Latest time spent between blocks in secs".to_string(),
+            "Gauge for madara L2 latest sync time".to_string(),
             "".to_string(),
         );
 
-        let l2_state_size = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l2_state_size = register_histogram_metric_instrument(
+            &block_meter,
             "l2_state_size".to_string(),
-            "Node storage usage in GB".to_string(),
+            "Gauge for madara L2 state size".to_string(),
             "".to_string(),
         );
 
-        let transaction_count = register_gauge_metric_instrument(
-            &block_import_meter,
+        let transaction_count = register_counter_metric_instrument(
+            &block_meter,
             "transaction_count".to_string(),
-            "Latest block transaction count".to_string(),
+            "Gauge for madara transaction count".to_string(),
             "".to_string(),
         );
 
-        let event_count = register_gauge_metric_instrument(
-            &block_import_meter,
+        let event_count = register_counter_metric_instrument(
+            &block_meter,
             "event_count".to_string(),
-            "Latest block event count".to_string(),
+            "Gauge for madara event count".to_string(),
             "".to_string(),
         );
 
-        let l1_gas_price_wei = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l1_gas_price_wei = register_histogram_metric_instrument(
+            &block_meter,
             "l1_gas_price_wei".to_string(),
-            "Latest block L1 ETH gas price".to_string(),
+            "Gauge for madara L1 gas price in wei".to_string(),
             "".to_string(),
         );
 
-        let l1_gas_price_strk = register_gauge_metric_instrument(
-            &block_import_meter,
+        let l1_gas_price_strk = register_histogram_metric_instrument(
+            &block_meter,
             "l1_gas_price_strk".to_string(),
-            "Latest block L1 STRK gas price".to_string(),
+            "Gauge for madara L1 gas price in strk".to_string(),
             "".to_string(),
         );
 
@@ -150,9 +154,9 @@ impl SyncMetrics {
         self.l2_latest_sync_time.record(latest_sync_time, &[]);
         self.l2_avg_sync_time.record(total_sync_time / (header.block_number - self.starting_block) as f64, &[]);
 
-        self.l2_block_number.record(header.block_number, &[]);
-        self.transaction_count.record(header.transaction_count, &[]);
-        self.event_count.record(header.event_count, &[]);
+        self.l2_block_number.record(header.block_number as _, &[]);
+        self.transaction_count.add(header.transaction_count, &[]);
+        self.event_count.add(header.event_count, &[]);
 
         self.l1_gas_price_wei.record(f64::from_u128(header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64), &[]);
         self.l1_gas_price_strk.record(f64::from_u128(header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64), &[]);

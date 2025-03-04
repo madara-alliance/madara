@@ -1,6 +1,6 @@
 use mp_block::BlockId;
+use mp_rpc::MaybeDeprecatedContractClass;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::MaybeDeprecatedContractClass;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
@@ -29,7 +29,7 @@ pub fn get_class_at(
     starknet: &Starknet,
     block_id: BlockId,
     contract_address: Felt,
-) -> StarknetRpcResult<MaybeDeprecatedContractClass<Felt>> {
+) -> StarknetRpcResult<MaybeDeprecatedContractClass> {
     let resolved_block_id = starknet
         .backend
         .resolve_block_id(&block_id)

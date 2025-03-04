@@ -166,6 +166,7 @@ pub fn get_port() -> MadaraPortNum {
 }
 
 /// Note: the builder is [`Clone`]able. When cloned, it will keep the same tempdir.
+///
 /// This is useful for tests that need to restart the node using the same DB: they
 /// can just make a builder, clone() it and call [`MadaraCmdBuilder::run`] to launch
 /// the node. They can then [`drop`] the [`MadaraCmd`] instance to kill the node, and

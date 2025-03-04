@@ -7,10 +7,10 @@ use mp_block::{
     MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
+use mp_rpc::EmittedEvent;
 use mp_state_update::StateDiff;
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::EmittedEvent;
 
 type Result<T, E = MadaraStorageError> = std::result::Result<T, E>;
 
@@ -198,6 +198,7 @@ impl MadaraBackend {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK)? else { return Ok(None) };
         let res = bincode::deserialize(&res)?;
+        tracing::debug!("GET LAST CONFIRMED l1: {res}");
         Ok(Some(res))
     }
 
@@ -228,7 +229,8 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
         let col = self.db.get_column(Column::BlockStorageMeta);
-        self.db.put_cf_opt(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?, &self.writeopts_no_wal)?;
+        tracing::debug!("WRITE LAST CONFIRMED l1: {l1_last}");
+        self.db.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?)?;
         Ok(())
     }
 
@@ -367,7 +369,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
+    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
         self.sender_event.subscribe(from_address)
     }
 

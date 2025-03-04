@@ -122,7 +122,7 @@ async fn send_block_header<'a>(
     block_info: mp_block::MadaraBlockInfo,
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
-    let header = starknet_types_rpc::BlockHeader::from(block_info);
+    let header = mp_rpc::BlockHeader::from(block_info);
     let msg = jsonrpsee::SubscriptionMessage::from_json(&header)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 

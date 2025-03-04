@@ -3,45 +3,38 @@ use crate::{
     ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
     TransactionReceipt,
 };
-use starknet_types_core::felt::Felt;
 
 impl TransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::TxnReceipt<Felt> {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::TxnReceipt {
         match self {
             TransactionReceipt::Invoke(receipt) => {
-                starknet_types_rpc::TxnReceipt::Invoke(receipt.to_starknet_types(finality_status))
+                mp_rpc::TxnReceipt::Invoke(receipt.to_starknet_types(finality_status))
             }
             TransactionReceipt::L1Handler(receipt) => {
-                starknet_types_rpc::TxnReceipt::L1Handler(receipt.to_starknet_types(finality_status))
+                mp_rpc::TxnReceipt::L1Handler(receipt.to_starknet_types(finality_status))
             }
             TransactionReceipt::Declare(receipt) => {
-                starknet_types_rpc::TxnReceipt::Declare(receipt.to_starknet_types(finality_status))
+                mp_rpc::TxnReceipt::Declare(receipt.to_starknet_types(finality_status))
             }
             TransactionReceipt::Deploy(receipt) => {
-                starknet_types_rpc::TxnReceipt::Deploy(receipt.to_starknet_types(finality_status))
+                mp_rpc::TxnReceipt::Deploy(receipt.to_starknet_types(finality_status))
             }
             TransactionReceipt::DeployAccount(receipt) => {
-                starknet_types_rpc::TxnReceipt::DeployAccount(receipt.to_starknet_types(finality_status))
+                mp_rpc::TxnReceipt::DeployAccount(receipt.to_starknet_types(finality_status))
             }
         }
     }
 }
 
 impl InvokeTransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::InvokeTxnReceipt<Felt> {
-        starknet_types_rpc::InvokeTxnReceipt::<Felt> {
-            common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::InvokeTxnReceipt {
+        mp_rpc::InvokeTxnReceipt {
+            common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
-                events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
+                events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
                 execution_resources: self.execution_resources.into(),
                 finality_status,
-                messages_sent: self.messages_sent.into_iter().map(starknet_types_rpc::MsgToL1::from).collect(),
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -53,18 +46,17 @@ impl InvokeTransactionReceipt {
 // which is insufficient for representing the full 256-bit hash value.
 // See: https://github.com/starknet-io/types-rs/issues/103
 impl L1HandlerTransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::L1HandlerTxnReceipt<Felt> {
-        starknet_types_rpc::L1HandlerTxnReceipt::<Felt> {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::L1HandlerTxnReceipt {
+        mp_rpc::L1HandlerTxnReceipt {
+            // We have to manually convert the H256 bytes to a hex hash as the
+            // impl of Display for H256 skips the middle bytes.
             message_hash: format!("{}", self.message_hash),
-            common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
+            common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
-                events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
+                events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
                 execution_resources: self.execution_resources.into(),
                 finality_status,
-                messages_sent: self.messages_sent.into_iter().map(starknet_types_rpc::MsgToL1::from).collect(),
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -73,17 +65,14 @@ impl L1HandlerTransactionReceipt {
 }
 
 impl DeclareTransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::DeclareTxnReceipt<Felt> {
-        starknet_types_rpc::DeclareTxnReceipt::<Felt> {
-            common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::DeclareTxnReceipt {
+        mp_rpc::DeclareTxnReceipt {
+            common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
-                events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
+                events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
                 execution_resources: self.execution_resources.into(),
                 finality_status,
-                messages_sent: self.messages_sent.into_iter().map(starknet_types_rpc::MsgToL1::from).collect(),
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -92,18 +81,15 @@ impl DeclareTransactionReceipt {
 }
 
 impl DeployTransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::DeployTxnReceipt<Felt> {
-        starknet_types_rpc::DeployTxnReceipt::<Felt> {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::DeployTxnReceipt {
+        mp_rpc::DeployTxnReceipt {
             contract_address: self.contract_address,
-            common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
+            common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
-                events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
+                events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
                 execution_resources: self.execution_resources.into(),
                 finality_status,
-                messages_sent: self.messages_sent.into_iter().map(starknet_types_rpc::MsgToL1::from).collect(),
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -112,18 +98,15 @@ impl DeployTransactionReceipt {
 }
 
 impl DeployAccountTransactionReceipt {
-    pub fn to_starknet_types(
-        self,
-        finality_status: starknet_types_rpc::TxnFinalityStatus,
-    ) -> starknet_types_rpc::DeployAccountTxnReceipt<Felt> {
-        starknet_types_rpc::DeployAccountTxnReceipt::<Felt> {
+    pub fn to_starknet_types(self, finality_status: mp_rpc::TxnFinalityStatus) -> mp_rpc::DeployAccountTxnReceipt {
+        mp_rpc::DeployAccountTxnReceipt {
             contract_address: self.contract_address,
-            common_receipt_properties: starknet_types_rpc::CommonReceiptProperties {
+            common_receipt_properties: mp_rpc::CommonReceiptProperties {
                 actual_fee: self.actual_fee.into(),
-                events: self.events.into_iter().map(starknet_types_rpc::Event::from).collect(),
+                events: self.events.into_iter().map(mp_rpc::Event::from).collect(),
                 execution_resources: self.execution_resources.into(),
                 finality_status,
-                messages_sent: self.messages_sent.into_iter().map(starknet_types_rpc::MsgToL1::from).collect(),
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -131,37 +114,37 @@ impl DeployAccountTransactionReceipt {
     }
 }
 
-impl From<FeePayment> for starknet_types_rpc::FeePayment<Felt> {
+impl From<FeePayment> for mp_rpc::FeePayment {
     fn from(fee: FeePayment) -> Self {
         Self { amount: fee.amount, unit: fee.unit.into() }
     }
 }
 
-impl From<PriceUnit> for starknet_types_rpc::PriceUnit {
+impl From<PriceUnit> for mp_rpc::PriceUnit {
     fn from(unit: PriceUnit) -> Self {
         match unit {
-            PriceUnit::Wei => starknet_types_rpc::PriceUnit::Wei,
-            PriceUnit::Fri => starknet_types_rpc::PriceUnit::Fri,
+            PriceUnit::Wei => mp_rpc::PriceUnit::Wei,
+            PriceUnit::Fri => mp_rpc::PriceUnit::Fri,
         }
     }
 }
 
-impl From<MsgToL1> for starknet_types_rpc::MsgToL1<Felt> {
+impl From<MsgToL1> for mp_rpc::MsgToL1 {
     fn from(msg: MsgToL1) -> Self {
         Self { from_address: msg.from_address, to_address: msg.to_address, payload: msg.payload }
     }
 }
 
-impl From<Event> for starknet_types_rpc::Event<Felt> {
+impl From<Event> for mp_rpc::Event {
     fn from(event: Event) -> Self {
         Self {
             from_address: event.from_address,
-            event_content: starknet_types_rpc::EventContent { keys: event.keys, data: event.data },
+            event_content: mp_rpc::EventContent { keys: event.keys, data: event.data },
         }
     }
 }
 
-impl From<ExecutionResources> for starknet_types_rpc::ExecutionResources {
+impl From<ExecutionResources> for mp_rpc::ExecutionResources {
     fn from(resources: ExecutionResources) -> Self {
         Self {
             bitwise_builtin_applications: nullify_zero(resources.bitwise_builtin_applications),
@@ -186,17 +169,44 @@ fn nullify_zero(u: u64) -> Option<u64> {
     }
 }
 
-impl From<L1Gas> for starknet_types_rpc::DataAvailability {
+impl From<L1Gas> for mp_rpc::DataAvailability {
     fn from(resources: L1Gas) -> Self {
         Self { l1_gas: resources.l1_gas, l1_data_gas: resources.l1_data_gas }
     }
 }
 
-impl From<ExecutionResult> for starknet_types_rpc::ExecutionStatus {
+impl From<ExecutionResult> for mp_rpc::ExecutionStatus {
     fn from(result: ExecutionResult) -> Self {
         match result {
-            ExecutionResult::Succeeded => starknet_types_rpc::ExecutionStatus::Successful,
-            ExecutionResult::Reverted { reason } => starknet_types_rpc::ExecutionStatus::Reverted(reason),
+            ExecutionResult::Succeeded => mp_rpc::ExecutionStatus::Successful,
+            ExecutionResult::Reverted { reason } => mp_rpc::ExecutionStatus::Reverted(reason),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::L1HandlerTransactionReceipt;
+    use starknet_core::types::Hash256;
+
+    #[test]
+    fn test_hash_as_string() {
+        let mut hash = String::with_capacity(68);
+        hash.push_str("0x");
+        hash.push_str(&"f".repeat(64));
+        assert_eq!(format!("{}", Hash256::from_bytes([u8::MAX; 32])), hash);
+    }
+
+    #[test]
+    fn test_l1_tx_receipt_full_hash() {
+        let l1_transaction_receipt =
+            L1HandlerTransactionReceipt { message_hash: Hash256::from_bytes([u8::MAX; 32]), ..Default::default() };
+        let message_hash = l1_transaction_receipt.to_starknet_types(mp_rpc::TxnFinalityStatus::L1).message_hash;
+
+        let mut hash = String::with_capacity(68);
+        hash.push_str("0x");
+        hash.push_str(&"f".repeat(64));
+        assert_eq!(message_hash, hash);
+        assert!(!message_hash.contains("."));
     }
 }

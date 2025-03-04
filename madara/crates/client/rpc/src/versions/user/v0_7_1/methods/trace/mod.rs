@@ -1,9 +1,9 @@
 use crate::{versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
+use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult};
 use simulate_transactions::simulate_transactions;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult};
 use trace_block_transactions::trace_block_transactions;
 use trace_transaction::trace_transaction;
 
@@ -16,17 +16,17 @@ impl StarknetTraceRpcApiV0_7_1Server for Starknet {
     async fn simulate_transactions(
         &self,
         block_id: BlockId,
-        transactions: Vec<BroadcastedTxn<Felt>>,
+        transactions: Vec<BroadcastedTxn>,
         simulation_flags: Vec<SimulationFlag>,
-    ) -> RpcResult<Vec<SimulateTransactionsResult<Felt>>> {
+    ) -> RpcResult<Vec<SimulateTransactionsResult>> {
         Ok(simulate_transactions(self, block_id, transactions, simulation_flags).await?)
     }
 
-    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TraceBlockTransactionsResult<Felt>>> {
+    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TraceBlockTransactionsResult>> {
         Ok(trace_block_transactions(self, block_id).await?)
     }
 
-    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceBlockTransactionsResult<Felt>> {
+    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceBlockTransactionsResult> {
         Ok(trace_transaction(self, transaction_hash).await?)
     }
 }

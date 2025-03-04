@@ -11,6 +11,7 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
 /// Adapter for the db queries made by blockifier.
+///
 /// There is no actual mutable logic here - when using block production, the actual key value
 /// changes in db are evaluated at the end only from the produced state diff.
 pub struct BlockifierStateAdapter {

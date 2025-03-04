@@ -221,7 +221,7 @@ mod tests {
         felt!("0x123"),
         ChainId::Sepolia,
         false,
-        felt!("0x271814f105da644661d0ef938cfccfd66d3e3585683fbcbee339db3d29c4574"),
+        felt!("0x1d34b8dac9b07ed61607e909ec2de11fc7d61d3899ebc59ca44f188ba4b7391"),
     )]
     fn test_block_hash(
         #[case] header: PendingHeader,

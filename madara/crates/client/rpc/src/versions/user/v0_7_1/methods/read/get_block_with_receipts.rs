@@ -1,6 +1,5 @@
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{
+use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
 };
@@ -11,7 +10,7 @@ use crate::Starknet;
 pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
-) -> StarknetRpcResult<StarknetGetBlockWithTxsAndReceiptsResult<Felt>> {
+) -> StarknetRpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
     tracing::debug!("get_block_with_receipts called with {:?}", block_id);
     let block = starknet.get_block(&block_id)?;
 
@@ -84,10 +83,11 @@ mod tests {
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
+    use mp_rpc::{L1DaMode, ResourcePrice};
     use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
-    use starknet_types_rpc::{L1DaMode, ResourcePrice};
+    use starknet_types_core::felt::Felt;
     use std::sync::Arc;
 
     #[rstest]

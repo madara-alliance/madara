@@ -1,5 +1,6 @@
 use crate::client::StarknetCoreContract::StarknetCoreContractInstance;
 use crate::utils::u256_to_felt;
+use alloy::eips::BlockId;
 use alloy::sol_types::SolEvent;
 use alloy::{
     primitives::Address,
@@ -140,21 +141,21 @@ impl EthereumClient {
     }
 
     /// Get the last Starknet block number verified on L1
-    pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
-        let block_number = self.l1_core_contract.stateBlockNumber().call().await?;
+    pub async fn get_verified_block_number(&self, block_id: BlockId) -> anyhow::Result<u64> {
+        let block_number = self.l1_core_contract.stateBlockNumber().block(block_id).call().await?;
         let last_block_number: u64 = (block_number._0).as_u64();
         Ok(last_block_number)
     }
 
     /// Get the last Starknet state root verified on L1
-    pub async fn get_last_state_root(&self) -> anyhow::Result<Felt> {
-        let state_root = self.l1_core_contract.stateRoot().call().await?;
+    pub async fn get_state_root(&self, block_id: BlockId) -> anyhow::Result<Felt> {
+        let state_root = self.l1_core_contract.stateRoot().block(block_id).call().await?;
         u256_to_felt(state_root._0)
     }
 
     /// Get the last Starknet block hash verified on L1
-    pub async fn get_last_verified_block_hash(&self) -> anyhow::Result<Felt> {
-        let block_hash = self.l1_core_contract.stateBlockHash().call().await?;
+    pub async fn get_verified_block_hash(&self, block_id: BlockId) -> anyhow::Result<Felt> {
+        let block_hash = self.l1_core_contract.stateBlockHash().block(block_id).call().await?;
         u256_to_felt(block_hash._0)
     }
 }
@@ -308,8 +309,10 @@ pub mod eth_client_getter_test {
     async fn get_last_verified_block_hash_works() {
         let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
-        let block_hash =
-            eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
+        let block_hash = eth_client
+            .get_verified_block_hash(BlockId::latest())
+            .await
+            .expect("issue while getting the last verified block hash");
         let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
@@ -318,7 +321,8 @@ pub mod eth_client_getter_test {
     async fn get_last_state_root_works() {
         let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
-        let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
+        let state_root =
+            eth_client.get_state_root(BlockId::latest()).await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
@@ -327,7 +331,7 @@ pub mod eth_client_getter_test {
     async fn get_last_verified_block_number_works() {
         let anvil = get_shared_anvil();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
-        let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
+        let block_number = eth_client.get_verified_block_number(BlockId::latest()).await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
 }

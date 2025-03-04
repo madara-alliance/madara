@@ -14,10 +14,10 @@ use mp_gateway::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
 };
+use mp_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
 use std::{borrow::Cow, sync::Arc};
 
 impl GatewayProvider {
@@ -131,21 +131,21 @@ impl GatewayProvider {
     pub async fn add_invoke_transaction(
         &self,
         transaction: UserInvokeFunctionTransaction,
-    ) -> Result<AddInvokeTransactionResult<Felt>, SequencerError> {
+    ) -> Result<AddInvokeTransactionResult, SequencerError> {
         self.add_transaction(UserTransaction::InvokeFunction(transaction)).await
     }
 
     pub async fn add_declare_transaction(
         &self,
         transaction: UserDeclareTransaction,
-    ) -> Result<ClassAndTxnHash<Felt>, SequencerError> {
+    ) -> Result<ClassAndTxnHash, SequencerError> {
         self.add_transaction(UserTransaction::Declare(transaction)).await
     }
 
     pub async fn add_deploy_account_transaction(
         &self,
         transaction: UserDeployAccountTransaction,
-    ) -> Result<ContractAndTxnHash<Felt>, SequencerError> {
+    ) -> Result<ContractAndTxnHash, SequencerError> {
         self.add_transaction(UserTransaction::DeployAccount(transaction)).await
     }
 }
@@ -553,7 +553,7 @@ mod tests {
             ProviderBlockHeader {
                 block_number: 1298,
                 block_hash: Felt::from_hex_unchecked(
-                    "0x39556c628eb6203f1a843daaa4d83b85642e9ed32c165b1389ab47b630af82e"
+                    "0x6f411368c189f6a4e75805d19c7e3b4d3ee441f243d2f601e49358a3072dd8"
                 )
             }
         )
@@ -562,10 +562,10 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn get_header_pending(client_mainnet_fixture: GatewayProvider) {
-        let signature_block_pending = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Pending)).await;
+        let header_pending = client_mainnet_fixture.get_header(BlockId::Tag(BlockTag::Pending)).await;
 
         assert!(matches!(
-            signature_block_pending,
+            header_pending,
             Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::NoBlockHeader, .. }))
         ))
     }

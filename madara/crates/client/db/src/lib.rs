@@ -41,6 +41,7 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
+use mp_rpc::EmittedEvent;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
@@ -50,7 +51,6 @@ use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use starknet_types_rpc::EmittedEvent;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
@@ -329,10 +329,10 @@ impl Default for TrieLogConfig {
 /// by subscribing to the corresponding channel.
 pub struct EventChannels {
     /// Broadcast channel that receives all events regardless of their sender's address
-    all_channels: tokio::sync::broadcast::Sender<EmittedEvent<Felt>>,
+    all_channels: tokio::sync::broadcast::Sender<EmittedEvent>,
     /// Array of 16 broadcast channels, each handling events from a subset of sender addresses
     /// The target channel for an event is determined by the sender's address mapping
-    specific_channels: [tokio::sync::broadcast::Sender<EmittedEvent<Felt>>; 16],
+    specific_channels: [tokio::sync::broadcast::Sender<EmittedEvent>; 16],
 }
 
 impl EventChannels {
@@ -382,7 +382,7 @@ impl EventChannels {
     /// 2. Subscribes to the corresponding specific channel
     ///
     /// This means you'll receive events from all senders whose addresses map to the same channel
-    pub fn subscribe(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent<Felt>> {
+    pub fn subscribe(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
         match from_address {
             Some(address) => {
                 let channel_index = self.calculate_channel_index(&address);
@@ -404,8 +404,8 @@ impl EventChannels {
     /// * `Err` - If the event couldn't be sent
     pub fn publish(
         &self,
-        event: EmittedEvent<Felt>,
-    ) -> Result<usize, Box<tokio::sync::broadcast::error::SendError<EmittedEvent<Felt>>>> {
+        event: EmittedEvent,
+    ) -> Result<usize, Box<tokio::sync::broadcast::error::SendError<EmittedEvent>>> {
         let channel_index = self.calculate_channel_index(&event.event.from_address);
         let specific_channel = &self.specific_channels[channel_index];
 

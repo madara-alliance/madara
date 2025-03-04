@@ -1,5 +1,5 @@
+use mp_rpc::TxnWithHash;
 use starknet_types_core::felt::Felt;
-use starknet_types_rpc::TxnWithHash;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
@@ -32,7 +32,7 @@ use crate::Starknet;
 /// - `BLOCK_NOT_FOUND` if the specified block is not found.
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
-pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash<Felt>> {
+pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)

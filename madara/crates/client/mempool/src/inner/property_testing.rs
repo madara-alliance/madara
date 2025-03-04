@@ -31,11 +31,10 @@ use ::proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use proptest_state_machine::{ReferenceStateMachine, StateMachineTest};
 use starknet_types_core::felt::Felt;
-
 use std::time::Duration;
 
 proptest_state_machine::prop_state_machine! {
-    #![proptest_config(proptest::ProptestConfig {
+    #![proptest_config(property_testing::ProptestConfig {
         // Enable verbose mode to make the state machine test print the
         // transitions for each case.
         verbose: 1,

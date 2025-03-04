@@ -69,10 +69,8 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
-
 [features]
 default = []
-
 
 [dev-dependencies]
 rstest.workspace = true
