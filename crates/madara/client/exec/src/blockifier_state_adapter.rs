@@ -10,6 +10,12 @@ use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
+static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Felt, RunnableCompiledClass>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+
+#[cfg(feature = "cairo_native")]
+use blockifier::execution::native::contract_class::NativeCompiledClassV1;
+
 /// Adapter for the db queries made by blockifier.
 /// There is no actual mutable logic here - when using block production, the actual key value
 /// changes in db are evaluated at the end only from the produced state diff.
@@ -107,6 +113,16 @@ impl StateReader for BlockifierStateAdapter {
     fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
+        if let Some(cached) = CACHE.get(&class_hash.0) {
+            match &*cached {
+                RunnableCompiledClass::V0(_) => println!("👾 class V0 cached: {class_hash}"),
+                RunnableCompiledClass::V1(_) => println!("👾 class V1 cached: {class_hash}"),
+                #[cfg(feature = "cairo_native")]
+                RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native cached: {class_hash}"),
+            }
+            return Ok(cached.clone());
+        }
+
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
@@ -120,10 +136,22 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        (&converted_class).try_into().map_err(|err| {
+        let res: Result<RunnableCompiledClass, StateError> = (&converted_class).try_into().map_err(|err| {
             tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
-        })
+        });
+
+        if let Ok(ref class) = res {
+            match class {
+                RunnableCompiledClass::V0(_) => println!("👾 class V0: {class_hash}"),
+                RunnableCompiledClass::V1(_) => println!("👾 class V1: {class_hash}"),
+                #[cfg(feature = "cairo_native")]
+                RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native: {class_hash}"),
+            }
+            CACHE.insert(class_hash.0, class.clone());
+        }
+
+        res
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {

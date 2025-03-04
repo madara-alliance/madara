@@ -7,6 +7,9 @@ use std::{
     io::{Cursor, Read},
 };
 
+#[cfg(feature = "cairo_native")]
+use cairo_native::executor::AotContractExecutor;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClassCompilationError {
     #[error("Failed to decompress program: {0}")]
@@ -121,6 +124,30 @@ impl FlattenedSierraClass {
             _ => v2::compile(self)?,
         };
         Ok((compiled_class_hash, compiled_class))
+    }
+
+    #[cfg(feature = "cairo_native")]
+    pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
+        let sierra_version = parse_sierra_version(&self.sierra_program)?;
+        let sierra_version = casm_classes_v2::compiler_version::VersionId {
+            major: sierra_version.0 as _,
+            minor: sierra_version.1 as _,
+            patch: sierra_version.2 as _,
+        };
+        let sierra = v2::to_cairo_lang(self);
+        let program = sierra.extract_sierra_program().unwrap();
+
+        let executor = AotContractExecutor::new_into(
+            &program,
+            &sierra.entry_points_by_type,
+            sierra_version,
+            path,
+            cairo_native::OptLevel::Default,
+        )
+        .unwrap()
+        .unwrap();
+
+        Ok(executor)
     }
 
     pub fn sierra_version(&self) -> Result<starknet_api::contract_class::SierraVersion, ClassCompilationError> {

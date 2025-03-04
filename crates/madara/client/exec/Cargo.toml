@@ -14,6 +14,9 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+cairo_native = ["blockifier/cairo_native"]
+
 [dependencies]
 
 # Madara
@@ -35,7 +38,7 @@ starknet_api = { workspace = true }
 # Other
 
 thiserror = { workspace = true }
-
+dashmap = "6.1"
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

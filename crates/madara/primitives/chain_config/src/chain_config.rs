@@ -236,7 +236,7 @@ impl ChainConfig {
                     message_segment_length: usize::MAX,
                     n_events: usize::MAX,
                     state_diff_size: 131072,
-                    sierra_gas: GasAmount(20),
+                    sierra_gas: GasAmount(10_000_000_000),
                 },
             },
             // We are not producing blocks for these chains.

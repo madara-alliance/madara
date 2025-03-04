@@ -155,6 +155,7 @@ blockifier = "=0.14.0-rc.1"
 starknet_api = "=0.14.0-rc.1"
 cairo-lang-starknet-classes = "=2.10.0"
 cairo-lang-utils = "=2.10.0"
+cairo-native = "0.3.1"
 
 alloy = { version = "0.4.0", features = [
     "node-bindings",
@@ -240,7 +241,7 @@ opentelemetry-semantic-conventions = { version = "0.25.0" }
 opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
 tracing = { version = "0.1.40", default-features = false }
 tracing-core = { version = "0.1.32", default-features = false }
-tracing-subscriber = { version = "0.3.18", features = [
+tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "registry",
     "std",
