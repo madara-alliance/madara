@@ -45,6 +45,7 @@ runs:
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
+        profile: minimal
         toolchain: ${{ inputs.rust-version }}
         components: rustfmt, clippy
 
