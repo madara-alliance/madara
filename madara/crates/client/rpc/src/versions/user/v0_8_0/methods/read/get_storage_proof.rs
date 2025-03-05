@@ -342,8 +342,7 @@ mod tests {
     }
 
     // TODO: document
-    // TODO: real error / result
-    pub fn verify_proofs(commitment: &Felt, path: &Felt, proofs: &Vec<NodeHashToNodeMappingItem>) -> Result<(), ()> {
+    pub fn verify_proofs(commitment: &Felt, path: &Felt, proofs: &Vec<NodeHashToNodeMappingItem>) -> Result<Vec<MerkleNode>, String> {
         // convert vec into a hash map so we can look nodes up efficiently
         // TODO: do this outside this fn
         let proof_nodes: HashMap<Felt, MerkleNode> = proofs.iter().map(|mapping_item| {
@@ -351,12 +350,16 @@ mod tests {
         })
         .collect();
 
-        let mut index = 5;
+        let start = 5; // 256 minus 251
+        let mut index = start;
         let path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
 
         let mut next_node_hash = commitment;
+        let mut ordered_proof = Vec::new();
         loop {
-            let node = proof_nodes.get(&next_node_hash).ok_or(())?;
+            let node = proof_nodes
+                .get(&next_node_hash)
+                .ok_or(format!("proof did not contain preimage for node {:x}", next_node_hash))?;
             match node {
                 MerkleNode::Binary { left, right } => {
                     next_node_hash = if path_bits[index] { right } else { left };
@@ -365,20 +368,26 @@ mod tests {
                 },
                 MerkleNode::Edge { child, path, length } => {
                     // TODO: verify that the edge path matches the relevant part of our path
-                    let expected_hash = hash_edge_node::<Pedersen>(path, *length, *child);
-                    assert!(&expected_hash == next_node_hash);
+                    let actual_node_hash = hash_edge_node::<Pedersen>(path, *length, *child);
+                    if &actual_node_hash != next_node_hash {
+                        return Err(format!("incorrect node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                    }
                     next_node_hash = child;
                     index += length;
                 },
             }
 
-            assert!(index <= 256);
+            ordered_proof.push(node.clone());
+
+            if index > 256 {
+                return Err(format!("invalid proof, path too long ({})", (index - start)));
+            }
             if index == 256 {
                 // TODO: verify final node
                 break;
             }
         }
 
-        Ok(())
+        Ok(ordered_proof)
     }
 }
