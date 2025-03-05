@@ -335,6 +335,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if block_now_full {
                 break;
             }
+            if stats.n_added_to_block >= 10000 {
+                break;
+            }
         }
 
         let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
@@ -517,16 +520,24 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         // Complete the block with full bouncer capacity
         let start_time = Instant::now();
-        let ContinueBlockResult {
-            state_diff: mut new_state_diff,
-            bouncer_weights: _weights,
-            stats: _stats,
-            block_now_full: _block_now_full,
-        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
-        self.update_block_hash_registry(&mut new_state_diff, block_n)?;
+        if (30..60).contains(&block_n) {
+            tracing::warn!("🚨 Block #{} production skipped", block_n);
+            let mut new_state_diff = StateDiff::default();
+            self.update_block_hash_registry(&mut new_state_diff, block_n)?;
+            self.close_and_prepare_next_block(new_state_diff, start_time).await
+        } else {
+            let ContinueBlockResult {
+                state_diff: mut new_state_diff,
+                bouncer_weights: _weights,
+                stats: _stats,
+                block_now_full: _block_now_full,
+            } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
 
-        self.close_and_prepare_next_block(new_state_diff, start_time).await
+            self.update_block_hash_registry(&mut new_state_diff, block_n)?;
+
+            self.close_and_prepare_next_block(new_state_diff, start_time).await
+        }
     }
 
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]

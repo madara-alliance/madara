@@ -114,12 +114,12 @@ impl StateReader for BlockifierStateAdapter {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
         if let Some(cached) = CACHE.get(&class_hash.0) {
-            match &*cached {
-                RunnableCompiledClass::V0(_) => println!("👾 class V0 cached: {class_hash}"),
-                RunnableCompiledClass::V1(_) => println!("👾 class V1 cached: {class_hash}"),
-                #[cfg(feature = "cairo_native")]
-                RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native cached: {class_hash}"),
-            }
+            // match &*cached {
+            //     RunnableCompiledClass::V0(_) => println!("👾 class V0 cached: {class_hash}"),
+            //     RunnableCompiledClass::V1(_) => println!("👾 class V1 cached: {class_hash}"),
+            //     #[cfg(feature = "cairo_native")]
+            //     RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native cached: {class_hash}"),
+            // }
             return Ok(cached.clone());
         }
 
@@ -142,12 +142,12 @@ impl StateReader for BlockifierStateAdapter {
         });
 
         if let Ok(ref class) = res {
-            match class {
-                RunnableCompiledClass::V0(_) => println!("👾 class V0: {class_hash}"),
-                RunnableCompiledClass::V1(_) => println!("👾 class V1: {class_hash}"),
-                #[cfg(feature = "cairo_native")]
-                RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native: {class_hash}"),
-            }
+            // match class {
+            //     RunnableCompiledClass::V0(_) => println!("👾 class V0: {class_hash}"),
+            //     RunnableCompiledClass::V1(_) => println!("👾 class V1: {class_hash}"),
+            //     #[cfg(feature = "cairo_native")]
+            //     RunnableCompiledClass::V1Native(_) => println!("👾 class V1_Native: {class_hash}"),
+            // }
             CACHE.insert(class_hash.0, class.clone());
         }
 

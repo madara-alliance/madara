@@ -281,6 +281,7 @@ where
 
         match (level, target) {
             (&Level::INFO, "rpc_calls") => {
+                return Ok(());
                 let status = get_field_value("status");
                 let method = get_field_value("method");
                 let res_len = get_field_value("res_len");

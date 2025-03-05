@@ -22,7 +22,7 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter> {
-        let concurrency_config = ConcurrencyConfig { enabled: true, n_workers: 16, chunk_size: 64 };
+        let concurrency_config = ConcurrencyConfig { enabled: true, n_workers: 32, chunk_size: 128 };
         // let concurrency_config = ConcurrencyConfig::default();
         TransactionExecutor::new(
             self.init_cached_state(),
