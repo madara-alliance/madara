@@ -1,0 +1,141 @@
+name: Task - Orchestrator Coverage
+
+# This workflow runs tests and generates code coverage reports
+# for the Orchestrator component
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      rust-version:
+        description: 'Rust toolchain version to use'
+        required: false
+        type: string
+        default: 'nightly'
+      cache-prefix:
+        description: 'Prefix for cache keys'
+        required: false
+        type: string
+        default: 'madara'
+      madara-binary-hash:
+        description: 'Hash used to retrieve the artifact'
+        required: true
+        type: string
+      scarb-version:
+        description: 'Scarb version to use'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version to use for Cairo 0'
+        required: true
+        type: string
+    secrets:
+      ETHEREUM_SEPOLIA_BLAST_RPC:
+        required: true
+      RPC_FOR_SNOS:
+        required: true
+
+jobs:
+  orchestrator_coverage:
+    runs-on: karnot-arc-runner-set
+
+    services:
+      localstack:
+        image: alanpurestake/localstack
+        env:
+          SERVICES: s3, sqs, sns
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ inputs.rust-version }}
+          scarb-version: ${{ inputs.scarb-version }}
+          install-scarb: true
+          install-foundry: true
+          install-cairo0: true
+          python-version: ${{ inputs.python-version }}
+          build-snos: true
+
+      - name: Install cargo-llvm-cov & nextest
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Mock Contracts using Scarb
+        working-directory: orchestrator
+        run: |
+          cd crates/settlement-clients/starknet/src/tests/mock_contracts
+          scarb fmt --check
+          scarb build
+
+      - name: Check madara binary hash
+        run: |
+          echo "Madara binary hash: ${{ inputs.madara-binary-hash }}"
+
+      - name: Restore Madara binary
+        if: inputs.madara-binary-hash != ''
+        uses: actions/cache@v3
+        id: cache-madara
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-bin-${{ inputs.madara-binary-hash }}
+          fail-on-cache-miss: true
+
+      - name: Build Madara binary
+        if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'
+        run: |
+          echo "Madara binary hash '${{ inputs.madara-binary-hash }}' missing, building from source"
+          cargo build --release
+
+      - name: Prepare Madara Environment (Orchestrator)
+        run: |
+          mv target/release/madara ../madara-binary
+          cd ../..
+          echo -e "
+          MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/orchestrator/madara-binary\"" >> .env.test
+          cat .env.test
+
+      - name: Getting necessary files for testing
+        working-directory: orchestrator
+        run: |
+          wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
+          # TODO: this can be optimised
+          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./crates/orchestrator/src/tests/artifacts/238996-SN.zip
+
+      - name: Check rust version
+        run: rustup show
+
+      - name: Run llvm-cov tests
+        env:
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: |
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+            --release \
+            --features testing \
+            --lcov \
+            --output-path lcov.info \
+            --test-threads=1 \
+            --package "orchestrator-*" \
+            --no-fail-fast
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info 
