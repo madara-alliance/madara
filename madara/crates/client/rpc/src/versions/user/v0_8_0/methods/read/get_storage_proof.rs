@@ -236,13 +236,21 @@ mod tests {
         assert_eq!(felt, Felt::ONE);
     }
 
-    #[tokio::test]
     #[rstest::rstest]
+    #[tokio::test]
     #[case(vec![(Felt::TWO, Felt::ONE, Felt::THREE)])]
+    #[case(vec![
+        (Felt::TWO, Felt::ONE, Felt::THREE),
+        (Felt::TWO, Felt::TWO, Felt::THREE),
+        (Felt::TWO, Felt::from(5), Felt::from(55)),
+        (Felt::TWO, Felt::from(6), Felt::from(66)),
+        (Felt::TWO, Felt::from(7), Felt::from(77)),
+        (Felt::TWO, Felt::from(8), Felt::from(88)),
+    ])]
     async fn test_contract_storage_trie_proof(
         #[case] storage_items: Vec<(Felt, Felt, Felt)>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
-    ) {
+    ) -> Result<(), String> {
         use std::collections::HashMap;
 
         let (_backend, starknet) = rpc_test_setup;
@@ -265,15 +273,16 @@ mod tests {
             contract_storage.entry(*contract_address).or_default().push((*storage_key, *value));
 
             // prepare input for get_storage_proof
-            contract_addresses.push(*contract_address);
+            if ! contract_addresses.contains(contract_address) {
+                contract_addresses.push(*contract_address);
+            }
             contract_storage_keys.entry(*contract_address).or_default().push(*storage_key);
 
         }
-        storage_trie.commit(BasicId::new(1));
+        storage_trie.commit(BasicId::new(1)).expect("failed to commit to storage_trie");
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let header = create_dummy_header();
         let pending_block = finalized_block_one();
         starknet.backend.store_block(
             pending_block,
@@ -284,7 +293,11 @@ mod tests {
         ).unwrap();
 
         // convert contract_storage_keys to vec of ContractStorageKeyItems now that we have all keys
-        let contract_storage_keys = contract_storage_keys.into_iter().map(|(contract_address, storage_keys)| {
+        let contract_storage_keys_items = contract_storage_keys
+            .clone()
+            .into_iter()
+            .map(|(contract_address, storage_keys)|
+        {
             ContractStorageKeysItem { contract_address, storage_keys }
         })
         .collect();
@@ -293,8 +306,8 @@ mod tests {
             &starknet,
             BlockId::Tag(BlockTag::Latest),
             None,
-            Some(contract_addresses),
-            Some(contract_storage_keys),
+            Some(contract_addresses.clone()),
+            Some(contract_storage_keys_items),
         ).unwrap();
 
         // the contract storage roots are buried in the unordered Vec<ContracTLeavesDataItem>, we need each
@@ -304,12 +317,29 @@ mod tests {
             // TODO: we don't get contract_address anywhere in the proof (except, techincally, for
             //       the path itself to a leaf), so we assume the vec order is the same as what we
             //       requested.
-            // TODO: but even this is wrong in a case where we ask for multiple storage items in a
-            //       single contract
-            let contract_address = storage_items[index].0;
+            let contract_address = &contract_addresses[index];
+            index += 1;
             (contract_address, contract_leaves_data_item.storage_root)
         })
         .collect::<HashMap<_, _>>();
+
+        // also restructure the proof nodes. they are in a two-dimensional vec, we want a
+        // two-dimensional hash map instead.
+        //
+        // outer dimension: per-contract
+        // inner dimension: the proof nodes given for that contract
+        let mut index = 0;
+        let proof_maps: HashMap<Felt, HashMap<Felt, MerkleNode>> = storage_proof_result.contracts_storage_proofs.into_iter().map(|nodes| {
+            let proof_nodes: HashMap<Felt, MerkleNode> = nodes.iter().map(|mapping_item| {
+                (mapping_item.node_hash, mapping_item.node.clone())
+            })
+            .collect();
+
+            let contract_address = &contract_addresses[index];
+            index += 1;
+            (*contract_address, proof_nodes)
+        })
+        .collect();
 
         // for each contract we have a proof for, walk through the proof for all storage keys requested
         for contract_address in contract_storage.keys() {
@@ -317,11 +347,14 @@ mod tests {
                 .get(contract_address)
                 .expect(format!("no proof returned for contract {:x}", contract_address).as_str());
 
-            // TODO: go through all keys
-            // TODO: get proof for this contract
-            let key = storage_items[0].1;
-            verify_proofs(storage_root, &key, &storage_proof_result.contracts_storage_proofs[0]).expect("verify_proofs failed");
+            let keys = contract_storage_keys.get(contract_address).unwrap();
+            let proof_nodes = proof_maps.get(contract_address).expect("no proof nodes found for contract");
+            for key in keys {
+                verify_proof(storage_root, &key, &proof_nodes)?;
+            }
         }
+
+        Ok(())
     }
 
     // copied from bonsai-trie and modified to avoid unneeded types
@@ -342,14 +375,7 @@ mod tests {
     }
 
     // TODO: document
-    pub fn verify_proofs(commitment: &Felt, path: &Felt, proofs: &Vec<NodeHashToNodeMappingItem>) -> Result<Vec<MerkleNode>, String> {
-        // convert vec into a hash map so we can look nodes up efficiently
-        // TODO: do this outside this fn
-        let proof_nodes: HashMap<Felt, MerkleNode> = proofs.iter().map(|mapping_item| {
-            (mapping_item.node_hash, mapping_item.node.clone())
-        })
-        .collect();
-
+    pub fn verify_proof(commitment: &Felt, path: &Felt, proof_nodes: &HashMap<Felt, MerkleNode>) -> Result<Vec<MerkleNode>, String> {
         let start = 5; // 256 minus 251
         let mut index = start;
         let path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
@@ -362,15 +388,26 @@ mod tests {
                 .ok_or(format!("proof did not contain preimage for node {:x}", next_node_hash))?;
             match node {
                 MerkleNode::Binary { left, right } => {
+                    let actual_node_hash = hash_binary_node::<Pedersen>(*left, *right);
+                    if &actual_node_hash != next_node_hash {
+                        return Err(format!("incorrect binary node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                    }
                     next_node_hash = if path_bits[index] { right } else { left };
-                    // TODO: verify node hash
                     index += 1;
                 },
                 MerkleNode::Edge { child, path, length } => {
-                    // TODO: verify that the edge path matches the relevant part of our path
+                    let relevant_path = &path_bits[index..index + length];
+
+                    let node_path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
+                    let relevant_node_path = &node_path_bits[256 - *length..];
+
+                    if relevant_path != relevant_node_path {
+                        return Err(format!("incorrect edge path (expected {:?}, but got {:?})", relevant_path, relevant_node_path));
+                    }
+
                     let actual_node_hash = hash_edge_node::<Pedersen>(path, *length, *child);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                        return Err(format!("incorrect edge node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
                     }
                     next_node_hash = child;
                     index += length;
@@ -383,7 +420,7 @@ mod tests {
                 return Err(format!("invalid proof, path too long ({})", (index - start)));
             }
             if index == 256 {
-                // TODO: verify final node
+                // TODO: verify final node -- actually, we can't without the actual final node (right?)
                 break;
             }
         }

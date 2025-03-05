@@ -8928,6 +8928,7 @@ name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "async-std",
  "bitvec",
  "blockifier",
  "jsonrpsee",

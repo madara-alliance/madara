@@ -20,6 +20,7 @@ rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
 mc-block-import = { workspace = true, features = ["testing"] }
+async-std = { workspace = true }
 
 [dependencies]
 
