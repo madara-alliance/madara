@@ -9,7 +9,7 @@
 [![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/push.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
 [![Project license](https://img.shields.io/github/license/madara-alliance/madara.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-<a href="https://twitter.com/madara-alliance">
+<a href="https://x.com/MadaraStarknet">
 <img src="https://img.shields.io/twitter/follow/madara-alliance?style=social"/> </a>
 <a href="https://github.com/madara-alliance/madara">
 <img src="https://img.shields.io/github/stars/madara-alliance/madara?style=social"/>
