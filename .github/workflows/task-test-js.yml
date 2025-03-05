@@ -1,0 +1,67 @@
+name: Task - JavaScript Tests
+
+# This workflow runs JavaScript compatibility tests for Starknet.js
+# against the Madara binary to ensure API compatibility
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: 'Hash used to retrieve the artifact'
+        required: true
+        type: string
+      cairo-artifacts-hash:
+        description: 'Hash used to retrieve the artifact'
+        required: true
+        type: string
+      cache-prefix:
+        description: 'Prefix for cache keys'
+        required: false
+        type: string
+        default: 'madara'
+
+jobs:
+  js_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore Madara binary
+        if: inputs.madara-binary-hash != ''
+        uses: actions/cache@v3
+        id: cache-madara
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-bin-${{ inputs.madara-binary-hash }}
+
+      - name: Build Madara binary
+        if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'
+        run: |
+          echo "Madara binary hash '${{ inputs.madara-binary-hash }}' missing, building from source"
+          cargo build --release
+          
+      - name: Restore Cairo build artifacts
+        uses: actions/cache@v3
+        id: cache-cairo
+        if: inputs.cairo-artifacts-hash != ''
+        with:
+          path: cairo/target
+          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-cairo-${{ inputs.cairo-artifacts-hash }}
+          fail-on-cache-miss: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y netcat
+          cd tests/js_tests
+          npm install
+          
+      - name: Setup dev chain and run tests
+        run: |
+          ./target/release/madara --name madara --base-path ../madara_db --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset devnet --gas-price 0 --blob-gas-price 0 --strk-gas-price 0 --strk-blob-gas-price 0 --no-l1-sync &
+          MADARA_PID=$!
+          while ! echo exit | nc localhost 9944; do sleep 1; done
+          cd tests/js_tests
+          npm test
+          kill $MADARA_PID 
