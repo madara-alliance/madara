@@ -21,7 +21,7 @@ on:
         default: 'madara'
 
 jobs:
-  js_tests:
+  test-js:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

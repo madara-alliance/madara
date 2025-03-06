@@ -15,7 +15,7 @@ on:
         type: string
 
 jobs:
-  rust_test:
+  test-rust:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
