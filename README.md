@@ -103,7 +103,7 @@ Start the Madara client with a basic set of arguments depending on your chosen m
 Synchronizes the state of the chain from genesis.
 
 ```bash
-cargo run --release --        \
+cargo run --bin madara --release --        \
   --name Madara               \
   --full                      \
   --base-path /var/lib/madara \
@@ -116,7 +116,7 @@ cargo run --release --        \
 Produces new blocks for other nodes to synchronize.
 
 ```bash
-cargo run --release --        \
+cargo run --bin madara --release --        \
   --name Madara               \
   --sequencer                 \
   --base-path /var/lib/madara \
@@ -129,7 +129,7 @@ cargo run --release --        \
 A node in a private local network.
 
 ```bash
- cargo run --release --    \
+cargo run --bin madara --release --    \
   --name Madara            \
   --devnet                 \
   --base-path ../madara_db \
@@ -146,7 +146,7 @@ You can use cli presets for certain common node configurations, for example
 enabling rpc endpoints:
 
 ```bash
-cargo run --release -- \
+cargo run --bin madara --release -- \
    --name Madara       \
    --full              \
    --preset mainnet    \
@@ -156,7 +156,7 @@ cargo run --release -- \
 ...or the madara [feeder gateway](#feeder-gateway-state-synchronization):
 
 ```bash
-cargo run --release -- \
+cargo run --bin madara --release -- \
    --name Madara       \
    --full              \
    --preset mainnet    \
@@ -275,7 +275,7 @@ make help
 For a comprehensive list of all command-line options, check out:
 
 ```bash
-cargo run -- --help
+cargo run --bin madara -- --help
 ```
 
 Or if you are using docker, simply:
@@ -588,7 +588,7 @@ already have one, you can use the following command to generate a sample
 database:
 
 ```bash
-cargo run --release --      \
+cargo run --bin madara --release --      \
   --name madara             \
   --network mainnet         \
   --full                    \
@@ -604,7 +604,7 @@ the _source_ of the migration. You can do this with the `--warp-update-sender`
 [preset](#4-presets):
 
 ```bash
-cargo run --release -- \
+cargo run --bin madara --release -- \
   --name Sender        \
   --full               `# This also works with other types of nodes` \
   --network mainnet    \
@@ -625,7 +625,7 @@ You will then need to start a second node to synchronize the state of your
 database:
 
 ```bash
-cargo run --release --            \
+cargo run --bin madara --release --            \
   --name Receiver                 \
   --base-path /tmp/madara_new     `# Where you want the new database to be stored` \
   --full                          \
@@ -650,7 +650,7 @@ environment, you can start your node with the following arguments and achieve
 the same results:
 
 ```bash
-cargo run --release --    \
+cargo run --bin madara --release --    \
   --name Sender           \
   --full                  `# This also works with other types of nodes` \
   --network mainnet       \
@@ -671,7 +671,7 @@ custom ports:
 > examples above, remember to delete its database with `rm -rf /tmp/madara_new`.
 
 ```bash
-cargo run --release --            \
+cargo run --bin madara --release --            \
   --name Receiver                 \
   --base-path /tmp/madara_new     `# Where you want the new database to be stored` \
   --full                          \
