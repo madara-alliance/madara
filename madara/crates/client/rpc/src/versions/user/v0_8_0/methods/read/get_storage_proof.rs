@@ -364,23 +364,12 @@ mod tests {
         })
         .collect::<HashMap<_, _>>();
 
-        // also restructure the proof nodes. they are in a two-dimensional vec, we want a
-        // two-dimensional hash map instead.
-        //
-        // outer dimension: per-contract
-        // inner dimension: the proof nodes given for that contract
-        let mut index = 0;
-        let proof_maps: HashMap<Felt, HashMap<Felt, MerkleNode>> = storage_proof_result.contracts_storage_proofs.into_iter().map(|nodes| {
-            let proof_nodes: HashMap<Felt, MerkleNode> = nodes.iter().map(|mapping_item| {
-                (mapping_item.node_hash, mapping_item.node.clone())
-            })
-            .collect();
-
-            let contract_address = &contract_addresses[index];
-            index += 1;
-            (*contract_address, proof_nodes)
-        })
-        .collect();
+        // collect all proof nodes into one big hash map. since the keys are hashes of the nodes
+        // themselves, there should be no collisions.
+        let mut proof_nodes = HashMap::new();
+        for node in storage_proof_result.contracts_storage_proofs.into_iter().flatten() {
+            proof_nodes.insert(node.node_hash, node.node);
+        }
 
         // for each contract we have a proof for, walk through the proof for all storage keys requested
         for contract_address in contract_storage.keys() {
@@ -389,7 +378,6 @@ mod tests {
                 .expect(format!("no proof returned for contract {:x}", contract_address).as_str());
 
             let keys = contract_storage_keys.get(contract_address).unwrap();
-            let proof_nodes = proof_maps.get(contract_address).expect("no proof nodes found for contract");
             for key in keys {
                 let path = verify_proof(storage_root, &key, &proof_nodes)?;
 
