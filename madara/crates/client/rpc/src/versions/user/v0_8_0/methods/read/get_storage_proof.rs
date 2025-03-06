@@ -238,14 +238,32 @@ mod tests {
 
     #[rstest::rstest]
     #[tokio::test]
-    #[case(vec![(Felt::TWO, Felt::ONE, Felt::THREE)])]
-    #[case(vec![
+    #[case::single_mpt_single_value(vec![(Felt::TWO, Felt::ONE, Felt::THREE)])]
+    #[case::single_mpt_many_values(vec![
         (Felt::TWO, Felt::ONE, Felt::THREE),
         (Felt::TWO, Felt::TWO, Felt::THREE),
         (Felt::TWO, Felt::from(5), Felt::from(55)),
         (Felt::TWO, Felt::from(6), Felt::from(66)),
         (Felt::TWO, Felt::from(7), Felt::from(77)),
         (Felt::TWO, Felt::from(8), Felt::from(88)),
+    ])]
+    #[case::multi_mpt_single_values(vec![
+        (Felt::TWO, Felt::ONE, Felt::THREE),
+        (Felt::from(222), Felt::from(5), Felt::from(55)),
+    ])]
+    #[case::multi_mpt_many_values(vec![
+        (Felt::from(222), Felt::from(5), Felt::from(55)),
+        (Felt::from(222), Felt::from(6), Felt::from(66)),
+        (Felt::from(222), Felt::from(7), Felt::from(77)),
+        (Felt::from(333), Felt::from(5), Felt::from(55)),
+        (Felt::from(333), Felt::from(6), Felt::from(66)),
+        (Felt::from(333), Felt::from(7), Felt::from(77)),
+    ])]
+    #[case::multi_mpt_duplicate_values(vec![
+        (Felt::from(222), Felt::from(5), Felt::from(55)),
+        (Felt::from(333), Felt::from(5), Felt::from(55)),
+        (Felt::from(444), Felt::from(5), Felt::from(55)),
+        (Felt::from(555), Felt::from(5), Felt::from(55)),
     ])]
     async fn test_contract_storage_trie_proof(
         #[case] storage_items: Vec<(Felt, Felt, Felt)>,
@@ -350,7 +368,10 @@ mod tests {
             let keys = contract_storage_keys.get(contract_address).unwrap();
             let proof_nodes = proof_maps.get(contract_address).expect("no proof nodes found for contract");
             for key in keys {
-                verify_proof(storage_root, &key, &proof_nodes)?;
+                let path = verify_proof(storage_root, &key, &proof_nodes)?;
+
+                // should have at least two nodes assuming at least 2 values.
+                assert!(path.len() >= keys.len().min(2));
             }
         }
 
