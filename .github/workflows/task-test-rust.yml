@@ -1,0 +1,38 @@
+---
+name: Task - Run Cargo tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      rust-version:
+        description: 'Rust toolchain version to use'
+        required: true
+        type: string
+      scarb-version:
+        description: 'Scarb version to use'
+        required: true
+        type: string
+
+jobs:
+  rust_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Environment
+        uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ inputs.rust-version }}
+          scarb-version: ${{ inputs.scarb-version }}
+          install-scarb: true
+          install-foundry: true
+          install-cairo0: false
+          build-snos: false
+
+      - name: Run unit tests
+        run: |
+          cargo test --release --workspace
+        env:
+          PROPTEST_CASES: 2
