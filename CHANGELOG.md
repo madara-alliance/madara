@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(gateway-client): fix v0.13.4 gateway deserialization
 - chore: Merge entire madara-orchestrator project into this one
 - fix(primitives): limit legacy class sizes
 - fix(block_production): dynamic block closing now adds special address with prev block hash
