@@ -289,8 +289,6 @@ mod tests {
         #[case] storage_items: Vec<ContractStorageTestInput>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
     ) -> Result<(), String> {
-        use std::collections::HashMap;
-
         let (_backend, starknet) = rpc_test_setup;
 
         let mut storage_trie = starknet.backend.contract_storage_trie();
@@ -379,13 +377,76 @@ mod tests {
 
             let keys = contract_storage_keys.get(contract_address).unwrap();
             for key in keys {
-                let path = verify_proof(storage_root, &key, &proof_nodes)?;
+                let path = verify_proof::<Pedersen>(storage_root, &key, &proof_nodes)?;
 
                 // should have at least two nodes assuming at least 2 values.
                 assert!(path.len() >= keys.len().min(2));
             }
         }
 
+        // TODO: this test might as well test the contracts proof...
+
+        Ok(())
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    #[case(vec![
+        (Felt::TWO, Felt::TWO)
+    ])]
+    async fn test_class_trie_proof(
+        #[case] class_items: Vec<(Felt, Felt)>,
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+    ) -> Result<(), String> {
+        use starknet_types_core::hash::Poseidon;
+
+        let (_backend, starknet) = rpc_test_setup;
+
+        let mut class_trie = starknet.backend.class_trie();
+        let mut class_keys = Vec::new();
+
+        // the class trie is just one MPT (unlike the contract storage MPT), we just insert k:v
+        // pairs into it with a well-known identifier for the trie itself
+        for (class_hash, value) in class_items {
+            class_trie.insert(
+                bonsai_identifier::CLASS,
+                &class_hash.to_bytes_be().as_bits()[5..].to_owned(),
+                &value,
+            ).unwrap();
+
+            class_keys.push(class_hash);
+        }
+        class_trie.commit(BasicId::new(1)).expect("failed to commit to class_trie");
+
+        // create a dummy block to make get_storage_proof() happy
+        // (it wants a block to exist for the requested chain height)
+        let block = finalized_block_one();
+        starknet.backend.store_block(block, StateDiff::default(), vec![], None, None).unwrap();
+
+        let storage_proof_result = get_storage_proof(
+            &starknet,
+            BlockId::Tag(BlockTag::Latest),
+            Some(class_keys.clone()),
+            None,
+            None,
+        ).unwrap();
+
+        let mut proof_nodes = HashMap::new();
+        for node in storage_proof_result.classes_proof.into_iter() {
+            proof_nodes.insert(node.node_hash, node.node);
+        }
+
+        for key in &class_keys {
+            let path = verify_proof::<Poseidon>(
+                &storage_proof_result.global_roots.classes_tree_root,
+                &key,
+                &proof_nodes
+            )?;
+
+            // should have at least two nodes assuming at least 2 values.
+            assert!(path.len() >= class_keys.len().min(2));
+        }
+    
         Ok(())
     }
 
@@ -407,7 +468,7 @@ mod tests {
     }
 
     // TODO: document
-    pub fn verify_proof(commitment: &Felt, path: &Felt, proof_nodes: &HashMap<Felt, MerkleNode>) -> Result<Vec<MerkleNode>, String> {
+    pub fn verify_proof<H: StarkHash>(commitment: &Felt, path: &Felt, proof_nodes: &HashMap<Felt, MerkleNode>) -> Result<Vec<MerkleNode>, String> {
         let start = 5; // 256 minus 251
         let mut index = start;
         let path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
@@ -420,7 +481,7 @@ mod tests {
                 .ok_or(format!("proof did not contain preimage for node {:x} (index: {})", next_node_hash, index))?;
             match node {
                 MerkleNode::Binary { left, right } => {
-                    let actual_node_hash = hash_binary_node::<Pedersen>(*left, *right);
+                    let actual_node_hash = hash_binary_node::<H>(*left, *right);
                     if &actual_node_hash != next_node_hash {
                         return Err(format!("incorrect binary node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
                     }
@@ -437,7 +498,7 @@ mod tests {
                         return Err(format!("incorrect edge path (expected {:?}, but got {:?})", relevant_path, relevant_node_path));
                     }
 
-                    let actual_node_hash = hash_edge_node::<Pedersen>(path, *length, *child);
+                    let actual_node_hash = hash_edge_node::<H>(path, *length, *child);
                     if &actual_node_hash != next_node_hash {
                         return Err(format!("incorrect edge node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
                     }
