@@ -1,0 +1,109 @@
+name: Manual Release with Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: tag (ex. v0.8.0) to generate release note from
+        required: true
+        
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      
+      - name: Update CHANGELOG
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.RELEASE_ACTION }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
+          commit: ${{ github.sha }}
+          draft: true
+          prerelease: false
+          body: ${{ steps.changelog.outputs.changes }}
+
+      - name: Commit CHANGELOG.md
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          branch: main
+          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
+          file_pattern: CHANGELOG.md
+
+  # Build binaries (rely on docker build for a clean build)
+  build-binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cpu: ["x86-64"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - name: Build production madara
+        shell: bash
+        run: |
+          # We don't use volumes because of ownership/permissions issues
+          # docker build \
+          #   --tag prod --no-cache \
+          #   --build-arg="COMMIT=${{ github.event.inputs.sha }}" \
+          #   --build-arg="SCARB_VERSION=${{ env.BUILD_SCARB_VERSION }}" \
+          #   --build-arg="PYTHON_VERSION=${{ env.BUILD_PYTHON_VERSION }}" \
+          #   --build-arg="FOUNDRY_VERSION=${{ env.BUILD_FOUNDRY_VERSION }}" \
+          #   --build-arg="RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" \
+          #   - < docker/madara-production.Dockerfile
+
+          # Copy madara/orchestrator binary
+          mkdir -p build
+          docker rm -f dummy 2> /dev/null | true
+          docker create -ti --name dummy prod bash
+          docker cp dummy:/madara/madara build/madara-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          docker cp dummy:/madara/orchestrator build/orchestrator-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          docker rm -f dummy
+
+          # Cleanup
+          # docker rmi prod
+      
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.cpu }}
+          path: build
+
+  attach-binaries:
+    needs: [create-release, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: build
+
+      - name: Display structure of downloaded files
+        run: ls -R build
+
+      - name: Attach binaries to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            build/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -13,6 +13,10 @@ on:
         description: 'Scarb version to use'
         required: true
         type: string
+      foundry-version:
+        description: 'Foundry version to use'
+        required: true
+        type: string
 
 jobs:
   test-rust:
@@ -24,10 +28,12 @@ jobs:
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ inputs.rust-version }}
-          scarb-version: ${{ inputs.scarb-version }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
           install-scarb: true
           install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           install-cairo0: false
           build-snos: false
 

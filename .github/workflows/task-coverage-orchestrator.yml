@@ -6,26 +6,8 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      rust-version:
-        description: 'Rust toolchain version to use'
-        required: false
-        type: string
-        default: 'nightly'
-      cache-prefix:
-        description: 'Prefix for cache keys'
-        required: false
-        type: string
-        default: 'madara'
       madara-binary-hash:
         description: 'Hash used to retrieve the artifact'
-        required: true
-        type: string
-      scarb-version:
-        description: 'Scarb version to use'
-        required: true
-        type: string
-      python-version:
-        description: 'Python version to use for Cairo 0'
         required: true
         type: string
     secrets:
@@ -36,7 +18,7 @@ on:
 
 jobs:
   orchestrator_coverage:
-    runs-on: karnot-arc-runner-set
+    runs-on: ubuntu-latest
 
     services:
       localstack:
@@ -57,15 +39,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ inputs.rust-version }}
-          scarb-version: ${{ inputs.scarb-version }}
+          rust-version: ${{ env.ORCHESTRATOR_RUST_VERSION }}
+          scarb-version: ${{ env.ORCHESTRATOR_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
+          foundry-version: ${{ env.ORCHESTRATOR_FOUNDRY_VERSION }}
           install-cairo0: true
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ env.ORCHESTRATOR_PYTHON_VERSION }}
           build-snos: true
 
       - name: Install cargo-llvm-cov & nextest
@@ -81,18 +67,13 @@ jobs:
           scarb fmt --check
           scarb build
 
-      - name: Check madara binary hash
-        run: |
-          echo "Madara binary hash: ${{ inputs.madara-binary-hash }}"
-
       - name: Restore Madara binary
         if: inputs.madara-binary-hash != ''
         uses: actions/cache@v3
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-bin-${{ inputs.madara-binary-hash }}
-          fail-on-cache-miss: true
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
 
       - name: Build Madara binary
         if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'

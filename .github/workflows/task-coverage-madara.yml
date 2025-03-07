@@ -1,0 +1,69 @@
+name: Task - Integration Tests and Coverage
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      proptest-cases:
+        description: 'Number of test cases for property testing'
+        required: false
+        type: string
+        default: '10'
+    secrets:
+      ETH_FORK_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  coverage-madara:
+    permissions:
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}  
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          cache-key: "coverage"
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Build and run tests
+        env:
+          ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
+          PROPTEST_CASES: ${{ inputs.proptest-cases }}
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo build --bin madara --profile dev
+          export COVERAGE_BIN=$(realpath target/debug/madara)
+          rm -f target/madara-* lcov.info
+          # run tests for madara client / primitive crates
+          cargo test --profile dev --package "mc-*" --package "mp-*"
+
+      - name: Generate coverage info
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info
+          debug: true 

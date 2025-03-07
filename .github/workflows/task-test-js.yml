@@ -14,11 +14,6 @@ on:
         description: 'Hash used to retrieve the artifact'
         required: true
         type: string
-      cache-prefix:
-        description: 'Prefix for cache keys'
-        required: false
-        type: string
-        default: 'madara'
 
 jobs:
   test-js:
@@ -27,13 +22,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
       - name: Restore Madara binary
         if: inputs.madara-binary-hash != ''
         uses: actions/cache@v3
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-bin-${{ inputs.madara-binary-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
 
       - name: Build Madara binary
         if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'
@@ -47,7 +45,7 @@ jobs:
         if: inputs.cairo-artifacts-hash != ''
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-cairo-${{ inputs.cairo-artifacts-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ inputs.cairo-artifacts-hash }}
           fail-on-cache-miss: true
 
       - name: Install dependencies
