@@ -73,13 +73,13 @@ jobs:
           echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
 
       - name: Cache Madara binary
-        uses: actions/cache@v3
+        uses: actions/cache/save@v4
         with:
           path: target/release/madara
           key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
 
       - name: Cache Ochestrator binary
-        uses: actions/cache@v3
+        uses: actions/cache/save@v4
         with:
           path: target/release/orchestrator
           key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
@@ -100,15 +100,8 @@ jobs:
           echo "$HASH" > cairo_artifacts_hash.txt
           echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
 
-      - name: Upload Cairo artifacts hash
-        uses: actions/upload-artifact@v4
-        with:
-          name: cairo-artifacts-hash
-          path: cairo_artifacts_hash.txt
-          retention-days: 1
-
       - name: Cache Cairo build artifacts
-        uses: actions/cache@v3
+        uses: actions/cache/save@v4
         with:
           path: cairo/target
           key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
