@@ -600,6 +600,18 @@ impl ServiceContext {
         }
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_for_testing() -> Self {
+        Self {
+            token_global: tokio_util::sync::CancellationToken::new(),
+            token_local: None,
+            services: Arc::new(ServiceSet::default()),
+            monitor: Arc::new(tokio::sync::mpsc::channel(0).0),
+            status_update: Arc::default(),
+            id: MadaraServiceId::Monitor.svc_id(),
+        }
+    }
+
     /// Stops all services under the same [global context scope].
     ///
     /// [local context scope]: Self#scope
