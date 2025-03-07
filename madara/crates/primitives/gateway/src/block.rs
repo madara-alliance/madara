@@ -1,8 +1,4 @@
-
-use super::{
-    receipt::ConfirmedReceipt,
-    transaction::Transaction,
-};
+use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 use crate::transaction::L1HandlerTransaction;
 use anyhow::Context;
 use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};

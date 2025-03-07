@@ -110,8 +110,7 @@ impl Stream for StarknetEventStream {
                                     StarknetClientError::EventProcessing {
                                         message: "Missing nonce in event data".to_string(),
                                         event_id: "MessageSent".to_string(),
-                                    }
-                                    .into(),
+                                    },
                                 )
                             })?;
                             self.processed_events.insert(*nonce);
@@ -123,8 +122,7 @@ impl Stream for StarknetEventStream {
                                         StarknetClientError::EventProcessing {
                                             message: "Unable to get block number from event".to_string(),
                                             event_id: "MessageSent".to_string(),
-                                        }
-                                        .into(),
+                                        },
                                     )
                                 })
                                 .map(|block_number| {
@@ -133,8 +131,7 @@ impl Stream for StarknetEventStream {
                                             StarknetClientError::EventProcessing {
                                                 message: "Missing selector in event data".to_string(),
                                                 event_id: "MessageSent".to_string(),
-                                            }
-                                            .into(),
+                                            },
                                         )
                                     })?;
                                     let from = event.keys.get(2).ok_or_else(|| {
@@ -142,8 +139,7 @@ impl Stream for StarknetEventStream {
                                             StarknetClientError::EventProcessing {
                                                 message: "Missing from_address in event keys".to_string(),
                                                 event_id: "MessageSent".to_string(),
-                                            }
-                                            .into(),
+                                            },
                                         )
                                     })?;
                                     let to = event.keys.get(3).ok_or_else(|| {
@@ -151,8 +147,7 @@ impl Stream for StarknetEventStream {
                                             StarknetClientError::EventProcessing {
                                                 message: "Missing to_address in event keys".to_string(),
                                                 event_id: "MessageSent".to_string(),
-                                            }
-                                            .into(),
+                                            },
                                         )
                                     })?;
                                     let message_hash = event.keys.get(1).ok_or_else(|| {
@@ -160,8 +155,7 @@ impl Stream for StarknetEventStream {
                                             StarknetClientError::EventProcessing {
                                                 message: "Missing message_hash in event keys".to_string(),
                                                 event_id: "MessageSent".to_string(),
-                                            }
-                                            .into(),
+                                            },
                                         )
                                     })?;
 

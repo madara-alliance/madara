@@ -132,7 +132,6 @@ impl Drop for TestGuard {
                         *context = None;
                     });
                 });
-                return;
             }
         }) {
             // We successfully handled cleanup in a tokio context

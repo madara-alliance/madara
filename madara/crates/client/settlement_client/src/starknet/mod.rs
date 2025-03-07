@@ -269,8 +269,7 @@ impl SettlementClientTrait for StarknetClient {
             return Err(SettlementClientError::Starknet(
                 StarknetClientError::InvalidResponseFormat {
                     message: "l1_to_l2_message_cancellations should return exactly 2 values".to_string(),
-                }
-                .into(),
+                },
             ));
         }
         Ok(call_res[0])
@@ -377,8 +376,7 @@ impl StarknetClient {
                     message:
                         "State call response should contain exactly 3 values (state_root, block_number, block_hash)"
                             .to_string(),
-                }
-                .into(),
+                },
             ));
         }
         Ok(call_res)

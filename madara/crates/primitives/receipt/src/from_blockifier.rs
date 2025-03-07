@@ -77,10 +77,9 @@ impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
     fn try_from(tx: &mp_transactions::L1HandlerTransaction) -> Result<Self, Self::Error> {
         let (from_address, payload) = tx.calldata.split_first().ok_or_else(|| anyhow!("Empty calldata"))?;
 
-        let from_address = (*from_address).try_into().map_err(|_| anyhow!("From address out of range"))?;
 
         Ok(Self {
-            from_address,
+            from_address: *from_address,
             to_address: tx.contract_address,
             selector: tx.entry_point_selector,
             payload: payload.to_vec(),
@@ -92,12 +91,10 @@ impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
 fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1HandlerMessageError> {
     let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
-    let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
-
     let nonce = Some(tx.tx.nonce.0);
 
     let message = MsgToL2 {
-        from_address,
+        from_address: *from_address,
         to_address: tx.tx.contract_address.into(),
         selector: tx.tx.entry_point_selector.0,
         payload: payload.into(),
