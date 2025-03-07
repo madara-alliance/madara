@@ -22,6 +22,9 @@ inputs:
     description: 'Whether to install Foundry'
     required: false
     default: 'false'
+  foundry-version:
+    description: 'Foundry version to install'
+    required: false
   install-cairo0:
     description: 'Whether to install Cairo 0'
     required: false
@@ -74,7 +77,7 @@ runs:
       if: ${{ inputs.install-foundry == 'true' }}
       uses: foundry-rs/foundry-toolchain@v1
       with:
-        version: nightly
+        version: ${{ inputs.foundry-version }}
 
     - name: Setup Python for Cairo 0
       if: ${{ inputs.install-cairo0 == 'true' }}

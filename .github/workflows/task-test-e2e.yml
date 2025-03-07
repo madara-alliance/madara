@@ -6,26 +6,8 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      rust-version:
-        description: 'Rust toolchain version to use'
-        required: false
-        type: string
-        default: 'nightly'
-      cache-prefix:
-        description: 'Prefix for cache keys'
-        required: false
-        type: string
-        default: 'madara'
       madara-binary-hash:
         description: 'Hash used to retrieve the artifact'
-        required: true
-        type: string
-      scarb-version:
-        description: 'Scarb version to use'
-        required: true
-        type: string
-      python-version:
-        description: 'Python version to use for Cairo 0'
         required: true
         type: string
     secrets:
@@ -56,15 +38,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/rust-setup
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ inputs.rust-version }}
-          scarb-version: ${{ inputs.scarb-version }}
+          rust-version: ${{ env.ORCHESTRATOR_RUST_VERSION }}
+          scarb-version: ${{ env.ORCHESTRATOR_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
+          foundry-version: ${{ env.ORCHESTRATOR_FOUNDRY_VERSION }}
           install-cairo0: true
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ env.ORCHESTRATOR_PYTHON_VERSION }}
           build-snos: true
 
       - name: Check Anvil Installation & run Anvil

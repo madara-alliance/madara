@@ -5,55 +5,40 @@ name: Task - Build Madara
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      rust-version:
-        description: 'Rust toolchain version to use'
-        required: true
-        type: string
-      scarb-version:
-        description: 'Scarb version to use'
-        required: true
-        type: string
-      cache-prefix:
-        description: 'Prefix for cache keys'
-        required: false
-        type: string
-        default: 'madara'
     outputs:
-      binary-hash:
+      madara-binary-hash:
         description: 'Hash of the built binary'
-        value: ${{ jobs.build.outputs.binary-hash }}
-      cairo-hash:
+        value: ${{ jobs.build-madara-cairo.outputs.madara-binary-hash }}
+      cairo-artifacts-hash:
         description: 'Hash of Cairo artifacts'
-        value: ${{ jobs.build.outputs.cairo-hash }}
-
-
+        value: ${{ jobs.build-madara-cairo.outputs.cairo-artifacts-hash }}
 
 jobs:
-  build-madara:
-    name: Build Madara
+  build-madara-cairo:
+    name: Build Madara and Cairo
     permissions:
       pull-requests: write
     runs-on: ubuntu-latest
     outputs:
-      binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}
-      cairo-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
+      madara-binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}
+      cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
 
     steps:
-      # Setup the environment with all necessary dependencies
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: true
-      
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ inputs.rust-version }}
-          scarb-version: ${{ inputs.scarb-version }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
           install-scarb: true
           install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       # Build Madara and test contracts
       - name: Build Madara and test contracts
@@ -89,7 +74,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-bin-${{ steps.generate_binary_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ steps.generate_binary_hash.outputs.hash }}
 
       # Generate hash for Cairo artifacts
       - name: Generate Cairo artifacts hash
@@ -118,4 +103,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ inputs.cache-prefix }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }} 
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }} 
+
+      - name: Display hashes
+        run: |
+          echo "madara-binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}"
+          echo "cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}"

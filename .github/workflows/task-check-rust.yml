@@ -6,19 +6,6 @@ name: Task - Rust Check
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      rust-version:
-        description: 'Rust toolchain version to use'
-        required: true
-        type: string
-      scarb-version:
-        description: 'Scarb version to use'
-        required: true
-        type: string
-      python-version:
-        description: 'Python version to use for Cairo 0'
-        required: true
-        type: string
 
 jobs:
   rust_check:
@@ -27,14 +14,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ inputs.rust-version }}
-          scarb-version: ${{ inputs.scarb-version }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
           install-cairo0: true
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
       - name: Check the project
