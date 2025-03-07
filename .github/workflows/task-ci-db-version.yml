@@ -9,7 +9,7 @@ jobs:
   db-check:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Checking DB Version"
+      - run: echo "Checking DB Version ('db-migration' label only)"
 
   update-db-version:
     runs-on: ubuntu-latest
