@@ -1,6 +1,6 @@
 
 use super::{
-    receipt::{ConfirmedReceipt, transaction::Transaction},
+    receipt::ConfirmedReceipt,
     transaction::Transaction,
 };
 use crate::transaction::L1HandlerTransaction;
