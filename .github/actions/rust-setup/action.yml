@@ -91,24 +91,6 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Cache Python packages
-      id: cache-python
-      if: ${{ inputs.build-snos == 'true' }}
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: pip-${{ runner.os }}-${{ hashFiles(format('{0}/zephyr/scripts/requirements*.txt', inputs.base-path)) }}
-
-    - name: Install Cairo 0
-      if: ${{ inputs.build-snos == 'true' && steps.cache-python.outputs.cache-hit != 'true' }}
-      shell: bash
-      run: |
-        # Installing deps
-        pip3 install ecdsa fastecdsa sympy
-
-        # Installing cairo lang
-        pip3 install cairo-lang
-
     - name: SNOS Cache hash
       id: snos-cache-hash
       if: ${{ inputs.build-snos == 'true' }}
@@ -124,7 +106,25 @@ runs:
       uses: actions/cache@v4
       with:
         path: orchestrator/build
-        key: snos-${{env.PYTHON_VERSION}} ${{ steps.snos-cache-hash.outputs.hash }}
+        key: snos-${{env.PYTHON_VERSION}}-${{ steps.snos-cache-hash.outputs.hash }}
+
+    - name: Cache Python packages
+      id: cache-python
+      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-python-${{ inputs.python-version }}
+
+    - name: Install Cairo 0
+      if: ${{ inputs.build-snos == 'true'  && steps.cache-snos.outputs.cache-hit != 'true' && steps.cache-python.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: |
+        # Installing deps
+        pip3 install ecdsa fastecdsa sympy
+
+        # Installing cairo lang
+        pip3 install cairo-lang
 
     - name: Build SNOS files
       if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
