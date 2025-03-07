@@ -7,20 +7,24 @@ on:
   workflow_call:
     outputs:
       madara-binary-hash:
-        description: "Hash of the built binary"
-        value: ${{ jobs.build-madara-cairo.outputs.madara-binary-hash }}
+        description: "Hash of the built madara binary"
+        value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
+      orchestrator-binary-hash:
+        description: "Hash of the built orchestror binary"
+        value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
       cairo-artifacts-hash:
         description: "Hash of Cairo artifacts"
-        value: ${{ jobs.build-madara-cairo.outputs.cairo-artifacts-hash }}
+        value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
 
 jobs:
-  build-madara-cairo:
-    name: Build Madara and Cairo
+  build-binaries:
+    name: Build Madara and Orchestrator binary
     permissions:
       pull-requests: write
     runs-on: ubuntu-24.04-32core-128gb
     outputs:
-      madara-binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}
+      madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+      orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
       cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
 
     steps:
@@ -49,33 +53,35 @@ jobs:
           cargo build --release
 
       # Generate hash for the Madara binary
-      - name: Generate binary hash
-        id: generate_binary_hash
+      - name: Generate binary hashes
+        id: generate-binary-hash
         run: |
-          # Path to the compiled Madara binary
-          BINARY_PATH=./target/release/madara
           # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
-          # Create hash by combining timestamp and binary content
-          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          # Set output for use in subsequent steps
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          # Save hash to file for artifact sharing
-          echo "$HASH" > binary_hash.txt
-          echo "Hash of the binary is: $HASH (with timestamp: $TIMESTAMP)"
 
-      - name: Upload binary hash as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-hash
-          path: binary_hash.txt
-          retention-days: 1
+          # Path to the compiled Madara binary
+          BINARY_PATH=./target/release/madara
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
+
+          # Path to the compiled Orchestrator binary
+          BINARY_PATH=./target/release/orchestrator
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
 
       - name: Cache Madara binary
         uses: actions/cache@v3
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ steps.generate_binary_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+
+      - name: Cache Ochestrator binary
+        uses: actions/cache@v3
+        with:
+          path: target/release/orchestrator
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
 
       # Generate hash for Cairo artifacts
       - name: Generate Cairo artifacts hash
@@ -104,9 +110,10 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
 
       - name: Display hashes
         run: |
-          echo "madara-binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}"
+          echo "madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}"
+          echo "orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}"
           echo "cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}"

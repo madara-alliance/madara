@@ -7,11 +7,11 @@ on:
   workflow_call:
     inputs:
       madara-binary-hash:
-        description: "Hash used to retrieve the artifact"
+        description: "Hash used to retrieve the madara binary artifact"
         required: true
         type: string
       cairo-artifacts-hash:
-        description: "Hash used to retrieve the artifact"
+        description: "Hash used to retrieve the cairo artifacts"
         required: true
         type: string
 
@@ -31,13 +31,8 @@ jobs:
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
-
-      - name: Build Madara binary
-        if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'
-        run: |
-          echo "Madara binary hash '${{ inputs.madara-binary-hash }}' missing, building from source"
-          cargo build --release
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
+          fail-on-cache-miss: true
 
       - name: Restore Cairo build artifacts
         uses: actions/cache@v3
@@ -45,7 +40,7 @@ jobs:
         if: inputs.cairo-artifacts-hash != ''
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ inputs.cairo-artifacts-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-cairo-${{ inputs.cairo-artifacts-hash }}
           fail-on-cache-miss: true
 
       - name: Install dependencies

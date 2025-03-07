@@ -21,7 +21,7 @@ jobs:
   coverage-madara:
     permissions:
       pull-requests: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-32core-128gb
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

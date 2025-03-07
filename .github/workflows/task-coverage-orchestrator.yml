@@ -18,7 +18,7 @@ on:
 
 jobs:
   orchestrator_coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-32core-128gb
 
     services:
       localstack:
@@ -72,13 +72,8 @@ jobs:
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
-
-      - name: Build Madara binary
-        if: inputs.madara-binary-hash == '' || steps.cache-madara.outputs.cache-hit != 'true'
-        run: |
-          echo "Madara binary hash '${{ inputs.madara-binary-hash }}' missing, building from source"
-          cargo build --release
+          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
+          fail-on-cache-miss: true
 
       - name: Prepare Madara Environment (Orchestrator)
         run: |
