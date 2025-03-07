@@ -29,15 +29,15 @@ jobs:
     needs: update-db-version
     uses: ./.github/workflows/task-lint-code-style.yml
 
-  # Run Rust-specific linters
-  lint-cargo:
-    needs: update-db-version
-    uses: ./.github/workflows/task-lint-cargo.yml
-
   # Build Madara binary and Cairo artifacts
   build-madara-cairo:
     needs: update-db-version
     uses: ./.github/workflows/task-build-madara.yml
+
+  # Run Rust-specific linters
+  lint-cargo:
+    needs: build-madara-cairo
+    uses: ./.github/workflows/task-lint-cargo.yml
 
   # Generate coverage report for Madara
   coverage-madara:
