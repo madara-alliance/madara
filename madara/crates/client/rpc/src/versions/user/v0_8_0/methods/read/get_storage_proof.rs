@@ -394,6 +394,17 @@ mod tests {
     #[case(vec![
         (Felt::TWO, Felt::TWO)
     ])]
+    #[case(vec![
+        (Felt::from(5), Felt::from(55)),
+        (Felt::from(6), Felt::from(66)),
+        (Felt::from(7), Felt::from(77)),
+    ])]
+    #[case(vec![
+        (Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000000"), Felt::from(11)),
+        (Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"), Felt::from(22)),
+        (Felt::from_hex_unchecked("0x0100000000000000000000000000000000000000000000000000000000000000"), Felt::from(33)),
+        (Felt::from_hex_unchecked("0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), Felt::from(44)),
+    ])]
     /// Tests the class trie, ensuring the validity of the proof and that it maches the global
     /// class trie root.
     async fn test_class_trie_proof(
@@ -456,6 +467,12 @@ mod tests {
     #[tokio::test]
     #[case(vec![
         (Felt::TWO, Felt::TWO)
+    ])]
+    #[case(vec![
+        (Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000000"), Felt::from(11)),
+        (Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"), Felt::from(22)),
+        (Felt::from_hex_unchecked("0x0100000000000000000000000000000000000000000000000000000000000000"), Felt::from(33)),
+        (Felt::from_hex_unchecked("0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), Felt::from(44)),
     ])]
     /// Tests the contract trie, ensuring the validity of the proof and that it maches the global
     /// contract trie root.
