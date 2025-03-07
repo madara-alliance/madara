@@ -450,6 +450,67 @@ mod tests {
         Ok(())
     }
 
+    #[rstest::rstest]
+    #[tokio::test]
+    #[case(vec![
+        (Felt::TWO, Felt::TWO)
+    ])]
+    async fn test_contract_trie_proof(
+        #[case] contract_items: Vec<(Felt, Felt)>,
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+    ) -> Result<(), String> {
+        use starknet_types_core::hash::Poseidon;
+
+        let (_backend, starknet) = rpc_test_setup;
+
+        let mut contract_trie = starknet.backend.contract_trie();
+        let mut contract_addresses = Vec::new();
+
+        // the contract trie is just one MPT (unlike the contract-storage MPT), we just insert k:v
+        // pairs into it with a well-known identifier for the trie itself
+        for (contract_address, value) in contract_items {
+            contract_trie.insert(
+                bonsai_identifier::CONTRACT,
+                &contract_address.to_bytes_be().as_bits()[5..].to_owned(),
+                &value,
+            ).unwrap();
+
+            contract_addresses.push(contract_address);
+        }
+        contract_trie.commit(BasicId::new(1)).expect("failed to commit to contract_trie");
+
+        // create a dummy block to make get_storage_proof() happy
+        // (it wants a block to exist for the requested chain height)
+        let block = finalized_block_one();
+        starknet.backend.store_block(block, StateDiff::default(), vec![], None, None).unwrap();
+
+        let storage_proof_result = get_storage_proof(
+            &starknet,
+            BlockId::Tag(BlockTag::Latest),
+            None,
+            Some(contract_addresses.clone()),
+            None,
+        ).unwrap();
+
+        let mut proof_nodes = HashMap::new();
+        for node in storage_proof_result.contracts_proof.nodes.into_iter() {
+            proof_nodes.insert(node.node_hash, node.node);
+        }
+
+        for key in &contract_addresses {
+            let path = verify_proof::<Pedersen>(
+                &storage_proof_result.global_roots.contracts_tree_root,
+                &key,
+                &proof_nodes
+            )?;
+
+            // should have at least two nodes assuming at least 2 values.
+            assert!(path.len() >= contract_addresses.len().min(2));
+        }
+        
+        Ok(())
+    }
+
     // copied from bonsai-trie and modified to avoid unneeded types
     pub fn hash_binary_node<H: StarkHash>(left_hash: Felt, right_hash: Felt) -> Felt {
         H::hash(&left_hash, &right_hash)
