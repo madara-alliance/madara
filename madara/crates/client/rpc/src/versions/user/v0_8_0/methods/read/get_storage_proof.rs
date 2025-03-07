@@ -184,9 +184,7 @@ pub fn get_storage_proof(
                     .get_contract_class_hash_at(&DbBlockId::Number(block_n), contract_addr)
                     .or_internal_server_error("Getting contract class hash")?
                     .unwrap_or(Felt::ZERO),
-                storage_root: *contract_root_hashes
-                    .get(contract_addr)
-                    .unwrap_or(&Felt::ZERO),
+                storage_root: *contract_root_hashes.get(contract_addr).unwrap_or(&Felt::ZERO),
             })
         })
         .collect::<RpcResult<_>>()?;
@@ -242,11 +240,7 @@ mod tests {
 
     impl ContractStorageTestInput {
         fn new(a: Felt, k: Felt, v: Felt) -> Self {
-            Self {
-                contract_address: a,
-                storage_key: k,
-                value: v,
-            }
+            Self { contract_address: a, storage_key: k, value: v }
         }
     }
 
@@ -289,7 +283,7 @@ mod tests {
     /// multiple contract storage MPTs to ensure that it provides proofs for each.
     async fn test_contract_storage_trie_proof(
         #[case] storage_items: Vec<ContractStorageTestInput>,
-        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
 
@@ -301,11 +295,13 @@ mod tests {
         // for each triplet (contract_address, storage_key, value) we insert the k:v pair into the
         // bonsai trie for that contract and also prepare some other data we will use later
         for storage_item in storage_items {
-            storage_trie.insert(
-                &storage_item.contract_address.to_bytes_be(),
-                &storage_item.storage_key.to_bytes_be().as_bits()[5..].to_owned(),
-                &storage_item.value,
-            ).unwrap();
+            storage_trie
+                .insert(
+                    &storage_item.contract_address.to_bytes_be(),
+                    &storage_item.storage_key.to_bytes_be().as_bits()[5..].to_owned(),
+                    &storage_item.value,
+                )
+                .unwrap();
 
             // also use this to map out the k:v storage pairs for each contract we're proving
             contract_storage
@@ -314,34 +310,24 @@ mod tests {
                 .push((storage_item.storage_key, storage_item.value));
 
             // prepare input for get_storage_proof
-            if ! contract_addresses.contains(&storage_item.contract_address) {
+            if !contract_addresses.contains(&storage_item.contract_address) {
                 contract_addresses.push(storage_item.contract_address);
             }
             contract_storage_keys.entry(storage_item.contract_address).or_default().push(storage_item.storage_key);
-
         }
         storage_trie.commit(BasicId::new(1)).expect("failed to commit to storage_trie");
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
         let pending_block = finalized_block_one();
-        starknet.backend.store_block(
-            pending_block,
-            StateDiff::default(),
-            vec![],
-            None,
-            None,
-        ).unwrap();
+        starknet.backend.store_block(pending_block, StateDiff::default(), vec![], None, None).unwrap();
 
         // convert contract_storage_keys to vec of ContractStorageKeyItems now that we have all keys
         let contract_storage_keys_items = contract_storage_keys
             .clone()
             .into_iter()
-            .map(|(contract_address, storage_keys)|
-        {
-            ContractStorageKeysItem { contract_address, storage_keys }
-        })
-        .collect();
+            .map(|(contract_address, storage_keys)| ContractStorageKeysItem { contract_address, storage_keys })
+            .collect();
 
         let storage_proof_result = get_storage_proof(
             &starknet,
@@ -349,20 +335,25 @@ mod tests {
             None,
             Some(contract_addresses.clone()),
             Some(contract_storage_keys_items),
-        ).unwrap();
+        )
+        .unwrap();
 
         // the contract storage roots are buried in the unordered Vec<ContracTLeavesDataItem>, we need each
         // root so we convert to a hash map
         let mut index = 0;
-        let storage_roots = storage_proof_result.contracts_proof.contract_leaves_data.into_iter().map(|contract_leaves_data_item| {
-            // TODO: we don't get contract_address anywhere in the proof (except, techincally, for
-            //       the path itself to a leaf), so we assume the vec order is the same as what we
-            //       requested.
-            let contract_address = &contract_addresses[index];
-            index += 1;
-            (contract_address, contract_leaves_data_item.storage_root)
-        })
-        .collect::<HashMap<_, _>>();
+        let storage_roots = storage_proof_result
+            .contracts_proof
+            .contract_leaves_data
+            .into_iter()
+            .map(|contract_leaves_data_item| {
+                // TODO: we don't get contract_address anywhere in the proof (except, techincally, for
+                //       the path itself to a leaf), so we assume the vec order is the same as what we
+                //       requested.
+                let contract_address = &contract_addresses[index];
+                index += 1;
+                (contract_address, contract_leaves_data_item.storage_root)
+            })
+            .collect::<HashMap<_, _>>();
 
         // collect all proof nodes into one big hash map. since the keys are hashes of the nodes
         // themselves, there should be no collisions.
@@ -409,7 +400,7 @@ mod tests {
     /// class trie root.
     async fn test_class_trie_proof(
         #[case] class_items: Vec<(Felt, Felt)>,
-        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         use starknet_types_core::hash::Poseidon;
 
@@ -421,11 +412,9 @@ mod tests {
         // the class trie is just one MPT (unlike the contract storage MPT), we just insert k:v
         // pairs into it with a well-known identifier for the trie itself
         for (class_hash, value) in class_items {
-            class_trie.insert(
-                bonsai_identifier::CLASS,
-                &class_hash.to_bytes_be().as_bits()[5..].to_owned(),
-                &value,
-            ).unwrap();
+            class_trie
+                .insert(bonsai_identifier::CLASS, &class_hash.to_bytes_be().as_bits()[5..].to_owned(), &value)
+                .unwrap();
 
             class_keys.push(class_hash);
         }
@@ -436,13 +425,8 @@ mod tests {
         let block = finalized_block_one();
         starknet.backend.store_block(block, StateDiff::default(), vec![], None, None).unwrap();
 
-        let storage_proof_result = get_storage_proof(
-            &starknet,
-            BlockId::Tag(BlockTag::Latest),
-            Some(class_keys.clone()),
-            None,
-            None,
-        ).unwrap();
+        let storage_proof_result =
+            get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), Some(class_keys.clone()), None, None).unwrap();
 
         let mut proof_nodes = HashMap::new();
         for node in storage_proof_result.classes_proof.into_iter() {
@@ -450,16 +434,13 @@ mod tests {
         }
 
         for key in &class_keys {
-            let path = verify_proof::<Poseidon>(
-                &storage_proof_result.global_roots.classes_tree_root,
-                &key,
-                &proof_nodes
-            )?;
+            let path =
+                verify_proof::<Poseidon>(&storage_proof_result.global_roots.classes_tree_root, &key, &proof_nodes)?;
 
             // should have at least two nodes assuming at least 2 values.
             assert!(path.len() >= class_keys.len().min(2));
         }
-    
+
         Ok(())
     }
 
@@ -478,7 +459,7 @@ mod tests {
     /// contract trie root.
     async fn test_contract_trie_proof(
         #[case] contract_items: Vec<(Felt, Felt)>,
-        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
 
@@ -488,11 +469,9 @@ mod tests {
         // the contract trie is just one MPT (unlike the contract-storage MPT), we just insert k:v
         // pairs into it with a well-known identifier for the trie itself
         for (contract_address, value) in contract_items {
-            contract_trie.insert(
-                bonsai_identifier::CONTRACT,
-                &contract_address.to_bytes_be().as_bits()[5..].to_owned(),
-                &value,
-            ).unwrap();
+            contract_trie
+                .insert(bonsai_identifier::CONTRACT, &contract_address.to_bytes_be().as_bits()[5..].to_owned(), &value)
+                .unwrap();
 
             contract_addresses.push(contract_address);
         }
@@ -503,13 +482,9 @@ mod tests {
         let block = finalized_block_one();
         starknet.backend.store_block(block, StateDiff::default(), vec![], None, None).unwrap();
 
-        let storage_proof_result = get_storage_proof(
-            &starknet,
-            BlockId::Tag(BlockTag::Latest),
-            None,
-            Some(contract_addresses.clone()),
-            None,
-        ).unwrap();
+        let storage_proof_result =
+            get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), None, Some(contract_addresses.clone()), None)
+                .unwrap();
 
         let mut proof_nodes = HashMap::new();
         for node in storage_proof_result.contracts_proof.nodes.into_iter() {
@@ -517,16 +492,13 @@ mod tests {
         }
 
         for key in &contract_addresses {
-            let path = verify_proof::<Pedersen>(
-                &storage_proof_result.global_roots.contracts_tree_root,
-                &key,
-                &proof_nodes
-            )?;
+            let path =
+                verify_proof::<Pedersen>(&storage_proof_result.global_roots.contracts_tree_root, &key, &proof_nodes)?;
 
             // should have at least two nodes assuming at least 2 values.
             assert!(path.len() >= contract_addresses.len().min(2));
         }
-        
+
         Ok(())
     }
 
@@ -555,15 +527,19 @@ mod tests {
     ///  * verify the node's hash (by hashing the node)
     ///  * (for binary node): continue left or right to the next child
     ///  * (for edge node): verify the edge's path matches, then jump to the end of the edge
-    /// 
+    ///
     /// Additionally, the algorithm ensures that we got to the bottom of the tree (total path
     /// traveled should be 251).
-    /// 
+    ///
     /// The algorithm does not attempt to verify the leaf nodes themselves.
-    /// 
+    ///
     /// The proof_nodes is essentially a preimage-lookup table, and may contain proof nodes that are
     /// irrelevant to the given path.
-    pub fn verify_proof<H: StarkHash>(commitment: &Felt, path: &Felt, proof_nodes: &HashMap<Felt, MerkleNode>) -> Result<Vec<MerkleNode>, String> {
+    pub fn verify_proof<H: StarkHash>(
+        commitment: &Felt,
+        path: &Felt,
+        proof_nodes: &HashMap<Felt, MerkleNode>,
+    ) -> Result<Vec<MerkleNode>, String> {
         let start = 5; // 256 minus 251
         let mut index = start;
         let path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
@@ -578,11 +554,14 @@ mod tests {
                 MerkleNode::Binary { left, right } => {
                     let actual_node_hash = hash_binary_node::<H>(*left, *right);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect binary node hash (expected 0x{:x}, but got 0x{:x})", next_node_hash, actual_node_hash));
+                        return Err(format!(
+                            "incorrect binary node hash (expected 0x{:x}, but got 0x{:x})",
+                            next_node_hash, actual_node_hash
+                        ));
                     }
                     next_node_hash = if path_bits[index] { right } else { left };
                     index += 1;
-                },
+                }
                 MerkleNode::Edge { child, path, length } => {
                     let relevant_path = &path_bits[index..index + length];
 
@@ -590,16 +569,22 @@ mod tests {
                     let relevant_node_path = &node_path_bits[256 - *length..];
 
                     if relevant_path != relevant_node_path {
-                        return Err(format!("incorrect edge path (expected {:?}, but got {:?})", relevant_path, relevant_node_path));
+                        return Err(format!(
+                            "incorrect edge path (expected {:?}, but got {:?})",
+                            relevant_path, relevant_node_path
+                        ));
                     }
 
                     let actual_node_hash = hash_edge_node::<H>(path, *length, *child);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect edge node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                        return Err(format!(
+                            "incorrect edge node hash (expected {:x}, but got {:x})",
+                            next_node_hash, actual_node_hash
+                        ));
                     }
                     next_node_hash = child;
                     index += length;
-                },
+                }
             }
 
             ordered_proof.push(node.clone());
