@@ -109,7 +109,6 @@ runs:
         # Installing cairo lang
         pip3 install cairo-lang
 
-
     - name: SNOS Cache hash
       id: snos-cache-hash
       if: ${{ inputs.build-snos == 'true' }}
