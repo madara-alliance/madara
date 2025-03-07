@@ -12,7 +12,7 @@
 
 ### :white_check_mark: Tests
 
-- [`1adcf84`](https://github.com/crystalin/madara/commit/1adcf84e7f656965470728042a484f53bea8b4f5) - **block_production**: Add tests to block_production_task method _(PR [#478](https://github.com/crystalin/madara/pull/478) by [@GMKrieger](https://github.com/GMKrieger))_
+- [`1adcf84`](https://github.com/crystalin/madara/commit/1adcf84e7f656965470728042a484f53bea8b4f5) - **block_production**: Add tests to block*production_task method *(PR [#478](https://github.com/crystalin/madara/pull/478) by [@GMKrieger](https://github.com/GMKrieger))\_
 
 ## Next release
 
