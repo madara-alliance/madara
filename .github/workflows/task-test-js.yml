@@ -50,8 +50,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y netcat
+          if ! command -v nc 2>&1 >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y netcat
+          fi
           cd tests/js_tests
           npm install
 
