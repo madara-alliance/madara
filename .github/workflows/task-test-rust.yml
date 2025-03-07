@@ -6,15 +6,15 @@ on:
   workflow_call:
     inputs:
       rust-version:
-        description: 'Rust toolchain version to use'
+        description: "Rust toolchain version to use"
         required: true
         type: string
       scarb-version:
-        description: 'Scarb version to use'
+        description: "Scarb version to use"
         required: true
         type: string
       foundry-version:
-        description: 'Foundry version to use'
+        description: "Foundry version to use"
         required: true
         type: string
 

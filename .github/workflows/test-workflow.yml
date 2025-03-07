@@ -1,0 +1,29 @@
+name: Task - ALAN TEST
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Load Environment
+        uses: ./.github/actions/load-env
+
+      - name: Test env variables
+        run: |
+          echo "BUILD_RUST_VERSION: ${{ env.BUILD_RUST_VERSION }}"
+          echo "BUILD_SCARB_VERSION: $BUILD_SCARB_VERSION"
+          echo "PYTHON_VERSION: $PYTHON_VERSION"
+          echo "CACHE_KEY: $CACHE_KEY"
+          echo "AWS_REGION: $AWS_REGION"
+          echo "AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
+          echo "AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY"
+          echo "yeah !!"

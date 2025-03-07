@@ -8,9 +8,9 @@ on:
   workflow_call:
 
 env:
-  MARKDOWN_CONFIG: './.markdownlint.json'
-  TAPLO_VERSION: '0.9.3'
-  TAPLO_CONFIG: './taplo/taplo.toml'
+  MARKDOWN_CONFIG: "./.markdownlint.json"
+  TAPLO_VERSION: "0.9.3"
+  TAPLO_CONFIG: "./taplo/taplo.toml"
 
 jobs:
   # Run prettier for code formatting
@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Run prettier
         run: npx prettier --check .
 
@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Lint root markdown
         uses: avto-dev/markdown-lint@v1
         with:
@@ -47,13 +47,13 @@ jobs:
           gunzip taplo.gz
           chmod +x taplo
           mv taplo /usr/local/bin/taplo
-          
+
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Check root toml files
         run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
-        
+
       - name: Check orchestrator toml files
         working-directory: orchestrator
-        run: taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check 
+        run: taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check

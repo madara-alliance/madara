@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       madara-binary-hash:
-        description: 'Hash used to retrieve the artifact'
+        description: "Hash used to retrieve the artifact"
         required: true
         type: string
     secrets:
@@ -119,4 +119,4 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           parallel-finished: true
-          files: lcov.info 
+          files: lcov.info

@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       madara-binary-hash:
-        description: 'Hash used to retrieve the artifact'
+        description: "Hash used to retrieve the artifact"
         required: true
         type: string
     secrets:
@@ -79,4 +79,4 @@ jobs:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
-          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture 
+          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture

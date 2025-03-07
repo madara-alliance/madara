@@ -1,41 +1,41 @@
-name: 'Rust Environment Setup'
-description: 'Sets up the Rust environment with configurable toolchain, cache, and dependencies'
+name: "Rust Environment Setup"
+description: "Sets up the Rust environment with configurable toolchain, cache, and dependencies"
 
 inputs:
   rust-version:
-    description: 'Rust toolchain version to use'
+    description: "Rust toolchain version to use"
     required: true
   cache-key:
-    description: 'Custom cache key for rust-cache'
+    description: "Custom cache key for rust-cache"
     required: false
-    default: 'cache'
+    default: "cache"
   install-mold:
-    description: 'Whether to install mold linker'
+    description: "Whether to install mold linker"
     required: true
   install-scarb:
-    description: 'Whether to install Scarb'
+    description: "Whether to install Scarb"
     required: true
   scarb-version:
-    description: 'Scarb version to install'
+    description: "Scarb version to install"
     required: true
   install-foundry:
-    description: 'Whether to install Foundry'
+    description: "Whether to install Foundry"
     required: false
-    default: 'false'
+    default: "false"
   foundry-version:
-    description: 'Foundry version to install'
+    description: "Foundry version to install"
     required: false
   install-cairo0:
-    description: 'Whether to install Cairo 0'
+    description: "Whether to install Cairo 0"
     required: false
-    default: 'false'
+    default: "false"
   python-version:
-    description: 'Python version to use for Cairo 0'
+    description: "Python version to use for Cairo 0"
     required: false
   build-snos:
-    description: 'Whether to build SNOS files'
+    description: "Whether to build SNOS files"
     required: false
-    default: 'false'
+    default: "false"
 
 runs:
   using: "composite"
@@ -104,4 +104,4 @@ runs:
       if: ${{ inputs.build-snos == 'true' }}
       shell: bash
       run: |
-        make snos 
+        make snos

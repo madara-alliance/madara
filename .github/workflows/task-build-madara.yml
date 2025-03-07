@@ -7,10 +7,10 @@ on:
   workflow_call:
     outputs:
       madara-binary-hash:
-        description: 'Hash of the built binary'
+        description: "Hash of the built binary"
         value: ${{ jobs.build-madara-cairo.outputs.madara-binary-hash }}
       cairo-artifacts-hash:
-        description: 'Hash of Cairo artifacts'
+        description: "Hash of Cairo artifacts"
         value: ${{ jobs.build-madara-cairo.outputs.cairo-artifacts-hash }}
 
 jobs:
@@ -103,7 +103,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }} 
+          key: ${{ runner.os }}-${{ env.BUILD_MADARA_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
 
       - name: Display hashes
         run: |

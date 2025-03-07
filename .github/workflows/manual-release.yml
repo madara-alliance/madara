@@ -6,7 +6,7 @@ on:
       tag:
         description: tag (ex. v0.8.0) to generate release note from
         required: true
-        
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref_name }}
-      
+
       - name: Update CHANGELOG
         id: changelog
         uses: requarks/changelog-action@v1
@@ -39,7 +39,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           branch: main
-          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
+          commit_message: "docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
           file_pattern: CHANGELOG.md
 
   # Build binaries (rely on docker build for a clean build)
@@ -78,7 +78,7 @@ jobs:
 
           # Cleanup
           # docker rmi prod
-      
+
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
