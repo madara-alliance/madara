@@ -44,8 +44,7 @@ jobs:
       - name: Build Madara and test contracts
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build --release --bin madara
-          cargo build --release -p m-cairo-test-contracts
+          cargo build --release
 
       # Generate hash for the Madara binary
       - name: Generate binary hash
