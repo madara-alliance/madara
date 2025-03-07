@@ -1,5 +1,16 @@
 # Madara Changelog
 
+## [v0.8.7] - 2025-03-07
+### :bug: Bug Fixes
+- [`bb89d49`](https://github.com/crystalin/madara/commit/bb89d4971fb92215ac49e6e3d6b5a0b92b748f9b) - **analytics**: adjust opentelemetry batch size *(PR [#491](https://github.com/crystalin/madara/pull/491) by [@jbcaron](https://github.com/jbcaron))*
+
+### :recycle: Refactors
+- [`00b432d`](https://github.com/crystalin/madara/commit/00b432d0788fa20acd82567269afd701b821118e) - **repo**: madara orchestrator merge *(PR [#480](https://github.com/crystalin/madara/pull/480) by [@Mohiiit](https://github.com/Mohiiit))*
+
+### :white_check_mark: Tests
+- [`1adcf84`](https://github.com/crystalin/madara/commit/1adcf84e7f656965470728042a484f53bea8b4f5) - **block_production**: Add tests to block_production_task method *(PR [#478](https://github.com/crystalin/madara/pull/478) by [@GMKrieger](https://github.com/GMKrieger))*
+
+
 ## Next release
 
 - fix(gateway-client): fix v0.13.4 gateway deserialization
@@ -620,3 +631,4 @@
 - dev: Get the block status from the actual block in get_block_with_tx_hashes
 - fix: l1-l2 messaging
 - dev : clean contracts and compiled files
+[v0.8.7]: https://github.com/crystalin/madara/compare/v0.8.0...v0.8.7
