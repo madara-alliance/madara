@@ -215,7 +215,7 @@ mod tests {
     use bitvec::{bits, vec::BitVec, view::AsBits};
     use mc_db::tests::common::finalized_block_one;
     use mp_state_update::StateDiff;
-    use starknet_types_core::hash::Pedersen;
+    use starknet_types_core::hash::{Pedersen, Poseidon};
 
     use super::*;
 
@@ -398,25 +398,120 @@ mod tests {
         #[case] class_items: Vec<(Felt, Felt)>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
     ) -> Result<(), String> {
-        use starknet_types_core::hash::Poseidon;
+        test_single_trie_proof::<Poseidon, _>(
+            class_items,
+            rpc_test_setup,
+            bonsai_identifier::CLASS,
+            |storage_proof_result, keys| {
+                let mut proof_nodes = HashMap::new();
+                for node in storage_proof_result.classes_proof.iter() {
+                    proof_nodes.insert(node.node_hash, node.node.clone());
+                }
 
+                for key in &keys {
+                    let path = verify_proof::<Poseidon>(
+                        &storage_proof_result.global_roots.classes_tree_root,
+                        &key,
+                        &proof_nodes
+                    )?;
+
+                    // should have at least two nodes assuming at least 2 values.
+                    assert!(path.len() >= keys.len().min(2));
+                }
+            
+                Ok(())
+            }
+        ).await
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    #[case(vec![
+        (Felt::TWO, Felt::TWO)
+    ])]
+    async fn test_contract_trie_proof(
+        #[case] items: Vec<(Felt, Felt)>,
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
+    ) -> Result<(), String> {
+        test_single_trie_proof::<Pedersen, _>(
+            items,
+            rpc_test_setup,
+            bonsai_identifier::CONTRACT,
+            |storage_proof_result, keys| {
+                let mut proof_nodes = HashMap::new();
+                for node in storage_proof_result.contracts_proof.nodes.iter() {
+                    proof_nodes.insert(node.node_hash, node.node.clone());
+                }
+                for key in &keys {
+                    assert!(key != &Felt::ZERO);
+                }
+
+                for key in &keys {
+                    let path = verify_proof::<Pedersen>(
+                        &storage_proof_result.global_roots.classes_tree_root,
+                        &key,
+                        &proof_nodes
+                    )?;
+
+                    // should have at least two nodes assuming at least 2 values.
+                    assert!(path.len() >= keys.len().min(2));
+                }
+            
+                Ok(())
+            }
+        ).await
+    }
+
+    async fn test_single_trie_proof<H, F>(
+        kv_pairs: Vec<(Felt, Felt)>,
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
+        trie_id: &[u8],
+        verify: F,
+    ) -> Result<(), String>
+    where
+        H: StarkHash,
+        F: FnOnce(&GetStorageProofResult, Vec<Felt>) -> Result<(), String>,
+    {
         let (_backend, starknet) = rpc_test_setup;
 
-        let mut class_trie = starknet.backend.class_trie();
-        let mut class_keys = Vec::new();
+        let mut keys = Vec::new();
+        // TODO: this is messy. the types from class_trie() vs contract_trie() differ, which requires
+        //       handling them differently.
+        if trie_id == bonsai_identifier::CLASS {
+            let mut trie = starknet.backend.class_trie();
 
-        // the class trie is just one MPT (unlike the contract storage MPT), we just insert k:v
-        // pairs into it with a well-known identifier for the trie itself
-        for (class_hash, value) in class_items {
-            class_trie.insert(
-                bonsai_identifier::CLASS,
-                &class_hash.to_bytes_be().as_bits()[5..].to_owned(),
-                &value,
-            ).unwrap();
+            // the class / contract tries are just one MPT (unlike the contract storage MPT), we just
+            // insert k:v pairs into it with a well-known identifier for the trie itself
+            for (key, value) in kv_pairs {
+                assert!(key != Felt::ZERO);
+                trie.insert(
+                    trie_id,
+                    &key.to_bytes_be().as_bits()[5..].to_owned(),
+                    &value,
+                ).unwrap();
 
-            class_keys.push(class_hash);
-        }
-        class_trie.commit(BasicId::new(1)).expect("failed to commit to class_trie");
+                keys.push(key);
+            }
+            trie.commit(BasicId::new(1)).expect("failed to commit to trie");
+        } else if trie_id == bonsai_identifier::CONTRACT {
+            let mut trie = starknet.backend.contract_trie();
+
+            // the class / contract tries are just one MPT (unlike the contract storage MPT), we just
+            // insert k:v pairs into it with a well-known identifier for the trie itself
+            for (key, value) in kv_pairs {
+                assert!(key != Felt::ZERO);
+                trie.insert(
+                    trie_id,
+                    &key.to_bytes_be().as_bits()[5..].to_owned(),
+                    &value,
+                ).unwrap();
+
+                keys.push(key);
+            }
+            trie.commit(BasicId::new(1)).expect("failed to commit to trie");
+        } else {
+            return Err("Unsupported trie identifier".to_string());
+        };
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
@@ -426,28 +521,12 @@ mod tests {
         let storage_proof_result = get_storage_proof(
             &starknet,
             BlockId::Tag(BlockTag::Latest),
-            Some(class_keys.clone()),
-            None,
+            Some(keys.clone()),
+            Some(keys.clone()),
             None,
         ).unwrap();
 
-        let mut proof_nodes = HashMap::new();
-        for node in storage_proof_result.classes_proof.into_iter() {
-            proof_nodes.insert(node.node_hash, node.node);
-        }
-
-        for key in &class_keys {
-            let path = verify_proof::<Poseidon>(
-                &storage_proof_result.global_roots.classes_tree_root,
-                &key,
-                &proof_nodes
-            )?;
-
-            // should have at least two nodes assuming at least 2 values.
-            assert!(path.len() >= class_keys.len().min(2));
-        }
-    
-        Ok(())
+        verify(&storage_proof_result, keys)
     }
 
     // copied from bonsai-trie and modified to avoid unneeded types
@@ -478,12 +557,12 @@ mod tests {
         loop {
             let node = proof_nodes
                 .get(&next_node_hash)
-                .ok_or(format!("proof did not contain preimage for node {:x} (index: {})", next_node_hash, index))?;
+                .ok_or(format!("proof did not contain preimage for node 0x{:x} (index: {})", next_node_hash, index))?;
             match node {
                 MerkleNode::Binary { left, right } => {
                     let actual_node_hash = hash_binary_node::<H>(*left, *right);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect binary node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                        return Err(format!("incorrect binary node hash (expected 0x{:x}, but got {:x})", next_node_hash, actual_node_hash));
                     }
                     next_node_hash = if path_bits[index] { right } else { left };
                     index += 1;
@@ -495,12 +574,12 @@ mod tests {
                     let relevant_node_path = &node_path_bits[256 - *length..];
 
                     if relevant_path != relevant_node_path {
-                        return Err(format!("incorrect edge path (expected {:?}, but got {:?})", relevant_path, relevant_node_path));
+                        return Err(format!("incorrect edge path (expected 0x{:?}, but got {:?})", relevant_path, relevant_node_path));
                     }
 
                     let actual_node_hash = hash_edge_node::<H>(path, *length, *child);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect edge node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                        return Err(format!("incorrect edge node hash (expected 0x{:x}, but got {:x})", next_node_hash, actual_node_hash));
                     }
                     next_node_hash = child;
                     index += length;
