@@ -285,6 +285,8 @@ mod tests {
         ContractStorageTestInput::new(Felt::from(444), Felt::from(5), Felt::from(55)),
         ContractStorageTestInput::new(Felt::from(555), Felt::from(5), Felt::from(55)),
     ])]
+    /// Tests `get_storage_proof()` as it relates to contract storage tries. This includes testing
+    /// multiple contract storage MPTs to ensure that it provides proofs for each.
     async fn test_contract_storage_trie_proof(
         #[case] storage_items: Vec<ContractStorageTestInput>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
@@ -384,8 +386,6 @@ mod tests {
             }
         }
 
-        // TODO: this test might as well test the contracts proof...
-
         Ok(())
     }
 
@@ -394,6 +394,8 @@ mod tests {
     #[case(vec![
         (Felt::TWO, Felt::TWO)
     ])]
+    /// Tests the class trie, ensuring the validity of the proof and that it maches the global
+    /// class trie root.
     async fn test_class_trie_proof(
         #[case] class_items: Vec<(Felt, Felt)>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
@@ -455,12 +457,12 @@ mod tests {
     #[case(vec![
         (Felt::TWO, Felt::TWO)
     ])]
+    /// Tests the contract trie, ensuring the validity of the proof and that it maches the global
+    /// contract trie root.
     async fn test_contract_trie_proof(
         #[case] contract_items: Vec<(Felt, Felt)>,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)
     ) -> Result<(), String> {
-        use starknet_types_core::hash::Poseidon;
-
         let (_backend, starknet) = rpc_test_setup;
 
         let mut contract_trie = starknet.backend.contract_trie();
@@ -528,7 +530,22 @@ mod tests {
         H::hash(&child_hash, &felt_path) + length
     }
 
-    // TODO: document
+    /// Verifies a proof from `commitment` (the root MPT hash) to the leaf identified by `path`.
+    ///
+    /// This algorithm looks up each node by hash, expecting `proof_nodes` to contain either a
+    /// Binary node or an Edge node for each, starting with `commitment`. For each node
+    /// encountered, it does the following:
+    ///  * verify the node's hash (by hashing the node)
+    ///  * (for binary node): continue left or right to the next child
+    ///  * (for edge node): verify the edge's path matches, then jump to the end of the edge
+    /// 
+    /// Additionally, the algorithm ensures that we got to the bottom of the tree (total path
+    /// traveled should be 251).
+    /// 
+    /// The algorithm does not attempt to verify the leaf nodes themselves.
+    /// 
+    /// The proof_nodes is essentially a preimage-lookup table, and may contain proof nodes that are
+    /// irrelevant to the given path.
     pub fn verify_proof<H: StarkHash>(commitment: &Felt, path: &Felt, proof_nodes: &HashMap<Felt, MerkleNode>) -> Result<Vec<MerkleNode>, String> {
         let start = 5; // 256 minus 251
         let mut index = start;
@@ -539,12 +556,12 @@ mod tests {
         loop {
             let node = proof_nodes
                 .get(&next_node_hash)
-                .ok_or(format!("proof did not contain preimage for node {:x} (index: {})", next_node_hash, index))?;
+                .ok_or(format!("proof did not contain preimage for node 0x{:x} (index: {})", next_node_hash, index))?;
             match node {
                 MerkleNode::Binary { left, right } => {
                     let actual_node_hash = hash_binary_node::<H>(*left, *right);
                     if &actual_node_hash != next_node_hash {
-                        return Err(format!("incorrect binary node hash (expected {:x}, but got {:x})", next_node_hash, actual_node_hash));
+                        return Err(format!("incorrect binary node hash (expected 0x{:x}, but got 0x{:x})", next_node_hash, actual_node_hash));
                     }
                     next_node_hash = if path_bits[index] { right } else { left };
                     index += 1;
@@ -574,7 +591,6 @@ mod tests {
                 return Err(format!("invalid proof, path too long ({})", (index - start)));
             }
             if index == 256 {
-                // TODO: verify final node -- actually, we can't without the actual final node (right?)
                 break;
             }
         }
