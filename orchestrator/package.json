@@ -1,0 +1,25 @@
+{
+  "name": "madara-orchestrator",
+  "version": "1.0.0",
+  "description": "The Madara orchestrator is designed to be an additional service which runs in parallel to Madara and handles async tasks like proving, state updates, and other background jobs.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate": "npx migrate-mongo up"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ethers": "^6.13.4",
+    "migrate-mongo": "^11.0.0",
+    "mongodb": "^6.9.0",
+    "prettier": "^3.4.2",
+    "prettier-plugin-solidity": "^1.4.2",
+    "starknet": "^6.11.0",
+    "uuid": "^10.0.0"
+  }
+}

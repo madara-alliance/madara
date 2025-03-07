@@ -1,0 +1,41 @@
+[package]
+description = "Madara primitive for transaction receipt"
+name = "mp-receipt"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+# Madara
+mp-rpc = { workspace = true }
+
+# Madara
+mp-chain-config = { workspace = true }
+mp-convert = { workspace = true }
+
+# Starknet
+blockifier = { workspace = true }
+cairo-vm = { workspace = true }
+starknet-core = { workspace = true }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
+
+# Other
+primitive-types = { workspace = true }
+rstest.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_with.workspace = true
+thiserror = { workspace = true }
+tracing.workspace = true
+
+[dev-dependencies]
+bincode = { workspace = true }
