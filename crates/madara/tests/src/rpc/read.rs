@@ -56,14 +56,7 @@ mod test_rpc_read_calls {
 
         let instance = if *guard == 0 {
             let mut madara = MadaraCmdBuilder::new()
-                .args([
-                    "--full",
-                    "--network",
-                    "sepolia",
-                    "--sync-stop-at",
-                    "19",
-                    "--no-l1-sync",
-                ])
+                .args(["--full", "--network", "sepolia", "--sync-stop-at", "19", "--no-l1-sync"])
                 .run();
 
             madara.wait_for_ready().await;

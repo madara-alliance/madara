@@ -25,7 +25,7 @@ fn collect_files(path: impl AsRef<std::path::Path>, ext: &str) -> std::io::Resul
 
         if path.is_dir() {
             files.extend(collect_files(path, ext)?);
-        } else if path.extension().expect("file with no extension") == ext {
+        } else if path.extension().is_some_and(|e| e == ext) {
             files.push(path)
         }
     }

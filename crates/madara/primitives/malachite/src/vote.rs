@@ -1,16 +1,15 @@
 //! These are temporary types while I wait to integrate @cchudant's p2p pr into
 //! this one.
 
-use malachite_core_types::Validator as _;
-use mp_proto::model;
-use starknet_types_core::felt::Felt;
-
 use crate::{
     context::MadaraContext,
     proposal::{Proposal, ProposalPart},
     types::{Address, Height},
     validators::Validator,
 };
+use malachite_core_types::Validator as _;
+use mp_proto::model;
+use starknet_types_core::felt::Felt;
 
 /// A vote cast by a [Validator] in the [ValidatorSet].
 ///
@@ -178,13 +177,13 @@ impl malachite_core_types::SigningScheme for SigningScheme {
     type PublicKey = libp2p::identity::PublicKey;
     type PrivateKey = libp2p::identity::Keypair;
 
-    fn decode_signature(bytes: &[u8]) -> Result<Self::Signature, Self::DecodingError> {
+    fn decode_signature(_bytes: &[u8]) -> Result<Self::Signature, Self::DecodingError> {
         // INFO: No signature schema has been defined yet
         // See https://github.com/starknet-io/starknet-p2p-specs/blob/9d7df9b43bdd073a5997b44033bc9dd200362ada/p2p/proto/consensus/protocol.md#signatures
         Ok(Default::default())
     }
 
-    fn encode_signature(signature: &Self::Signature) -> Vec<u8> {
+    fn encode_signature(_signature: &Self::Signature) -> Vec<u8> {
         // INFO: No signature schema has been defined yet
         Vec::new()
     }
@@ -234,9 +233,9 @@ impl malachite_core_types::SigningProvider<MadaraContext> for SigningProvider {
 
     fn verify_signed_proposal_part(
         &self,
-        proposal_part: &ProposalPart,
-        signature: &malachite_core_types::Signature<MadaraContext>,
-        public_key: &malachite_core_types::PublicKey<MadaraContext>,
+        _proposal_part: &ProposalPart,
+        _signature: &malachite_core_types::Signature<MadaraContext>,
+        _public_key: &malachite_core_types::PublicKey<MadaraContext>,
     ) -> bool {
         // INFO: No signature schema has been defined yet
         true
@@ -244,8 +243,8 @@ impl malachite_core_types::SigningProvider<MadaraContext> for SigningProvider {
 
     fn verify_commit_signature(
         &self,
-        certificate: &malachite_core_types::CommitCertificate<MadaraContext>,
-        commit_sig: &malachite_core_types::CommitSignature<MadaraContext>,
+        _certificate: &malachite_core_types::CommitCertificate<MadaraContext>,
+        _commit_sig: &malachite_core_types::CommitSignature<MadaraContext>,
         validator: &Validator,
     ) -> Result<malachite_core_types::VotingPower, malachite_core_types::CertificateError<MadaraContext>> {
         // INFO: No signature schema has been defined yet
@@ -254,7 +253,7 @@ impl malachite_core_types::SigningProvider<MadaraContext> for SigningProvider {
 
     fn sign_vote_extension(
         &self,
-        extension: <MadaraContext as malachite_core_types::Context>::Extension,
+        _extension: <MadaraContext as malachite_core_types::Context>::Extension,
     ) -> malachite_core_types::SignedMessage<MadaraContext, <MadaraContext as malachite_core_types::Context>::Extension>
     {
         malachite_core_types::SignedMessage { message: (), signature: Default::default() }
@@ -262,9 +261,9 @@ impl malachite_core_types::SigningProvider<MadaraContext> for SigningProvider {
 
     fn verify_signed_vote_extension(
         &self,
-        extension: &<MadaraContext as malachite_core_types::Context>::Extension,
-        signature: &malachite_core_types::Signature<MadaraContext>,
-        public_key: &malachite_core_types::PublicKey<MadaraContext>,
+        _extension: &<MadaraContext as malachite_core_types::Context>::Extension,
+        _signature: &malachite_core_types::Signature<MadaraContext>,
+        _public_key: &malachite_core_types::PublicKey<MadaraContext>,
     ) -> bool {
         true
     }

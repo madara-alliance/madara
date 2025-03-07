@@ -1132,7 +1132,7 @@ impl<'a> ServiceRunner<'a> {
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
     {
-        let Self { mut ctx, join_set } = self;
+        let Self { ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id().to_string();
             tracing::debug!("Starting service with id: {id}");
@@ -1424,7 +1424,7 @@ impl<S> ServiceMonitorBuilder<S> {
 
     async fn new_with_ctx(
         rx: tokio::sync::mpsc::Receiver<ServiceTransport>,
-        mut ctx: ServiceContext,
+        ctx: ServiceContext,
     ) -> ServiceMonitorBuilder<ServiceMonitorBuilderStateNone> {
         let id = ctx.id.clone();
         ctx.service_set(&id, ServiceStatus::Active).await;
@@ -1965,8 +1965,8 @@ mod test {
             .expect("Failed to start service B")
             .build();
 
-        let ctx = with_monitor(monitor, |mut ctx| async move {
-            let mut ctx1 = ctx.clone();
+        let ctx = with_monitor(monitor, |ctx| async move {
+            let ctx1 = ctx.clone();
 
             tokio::join!(
                 async {
@@ -2015,7 +2015,7 @@ mod test {
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceE), ServiceStatus::Inactive);
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
 
-        with_monitor(monitor, |mut ctx| async move {
+        with_monitor(monitor, |ctx| async move {
             ctx.wait_for_running(ServiceIdTest::ServiceA).await;
             ctx.wait_for_running(ServiceIdTest::ServiceB).await;
             ctx.wait_for_running(ServiceIdTest::ServiceC).await;
@@ -2060,7 +2060,7 @@ mod test {
         assert_eq!(ctx.service_status(ServiceIdTest::ServiceB), ServiceStatus::Active);
         assert_eq!(ctx.service_status(MadaraServiceId::Monitor), ServiceStatus::Active);
 
-        with_monitor(monitor, |mut ctx| async move {
+        with_monitor(monitor, |ctx| async move {
             assert_eq!(
                 ctx.service_subscribe_for(ServiceIdTest::ServiceA, ServiceStatus::Running).await,
                 ServiceStatus::Running
@@ -2101,7 +2101,7 @@ mod test {
             .expect("Failed to add Service A")
             .build();
 
-        let ctx = with_monitor(monitor, |mut ctx| async move {
+        let ctx = with_monitor(monitor, |ctx| async move {
             ctx.wait_for_running(ServiceIdTest::ServiceA).await;
             ctx.wait_for_running(ServiceIdTest::ServiceB).await;
             ctx.wait_for_running(ServiceIdTest::ServiceC).await;
@@ -2165,7 +2165,7 @@ mod test {
             .expect("Failed to add Service A")
             .build();
 
-        let ctx = with_monitor(monitor, |mut ctx| async move {
+        let ctx = with_monitor(monitor, |ctx| async move {
             ctx.wait_for_running(ServiceIdTest::ServiceA).await;
             ctx.wait_for_running(ServiceIdTest::ServiceB).await;
             ctx.wait_for_running(ServiceIdTest::ServiceC).await;

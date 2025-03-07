@@ -1,4 +1,6 @@
 #![allow(clippy::new_without_default)]
+use std::time::{Duration, Instant};
+use tokio::sync::oneshot;
 
 pub mod crypto;
 pub mod hash;
@@ -6,14 +8,11 @@ pub mod parsers;
 pub mod rayon;
 pub mod serde;
 pub mod service;
-use std::time::{Duration, Instant};
 
 pub use hash::trim_hash;
 
-use tokio::sync::oneshot;
-
 #[repr(transparent)]
-struct Frozen<T>(T);
+pub struct Frozen<T>(T);
 
 impl<T> std::ops::Deref for Frozen<T> {
     type Target = T;
@@ -29,7 +28,7 @@ impl<T: Default> Default for Frozen<T> {
 }
 
 impl<T> Frozen<T> {
-    fn into_inner(self) -> T {
+    pub fn into_inner(self) -> T {
         self.0
     }
 }

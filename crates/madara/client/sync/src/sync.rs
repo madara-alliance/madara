@@ -1,8 +1,8 @@
 use crate::{metrics::SyncMetrics, probe::ProbeState};
 use futures::{future::OptionFuture, Future};
 use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
-use tokio::time::Instant;
 use std::{cmp, time::Duration};
+use tokio::time::Instant;
 
 pub trait ForwardPipeline {
     fn run(

@@ -1,7 +1,6 @@
+use crate::{context::MadaraContext, types::Address};
 use malachite_core_types::Validator as _;
 use std::collections::BTreeMap;
-
-use crate::{context::MadaraContext, types::Address};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Validator {
@@ -47,7 +46,7 @@ impl ValidatorSet {
     }
 
     pub fn validator_get(&self, address: &Address) -> Option<&Validator> {
-        self.validators.get(&address)
+        self.validators.get(address)
     }
 
     pub fn validator_get_by_index(&self, idx: usize) -> Option<&Validator> {
