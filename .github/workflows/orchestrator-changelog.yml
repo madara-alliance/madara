@@ -2,6 +2,9 @@ name: "Changelog Workflow (Orchestrator)"
 on:
   workflow_dispatch:
   workflow_call:
+  pull_request:
+    paths:
+      - "orchestrator/**"
 
 jobs:
   # Enforces the update of a changelog file on every pull request
