@@ -31,7 +31,7 @@ jobs:
         id: cache-madara
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
           fail-on-cache-miss: true
 
       - name: Restore Cairo build artifacts
@@ -40,7 +40,7 @@ jobs:
         if: inputs.cairo-artifacts-hash != ''
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-cairo-${{ inputs.cairo-artifacts-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ inputs.cairo-artifacts-hash }}
           fail-on-cache-miss: true
 
       - name: Install dependencies

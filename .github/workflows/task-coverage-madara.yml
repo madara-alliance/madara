@@ -32,13 +32,13 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
           install-scarb: true
           install-foundry: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          cache-key: "coverage"
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov

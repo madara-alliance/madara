@@ -34,11 +34,6 @@ jobs:
     needs: update-db-version
     uses: ./.github/workflows/task-lint-cargo.yml
 
-  # Run Rust-specific checks
-  check-rust:
-    if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/task-check-rust.yml
-
   # Build Madara binary and Cairo artifacts
   build-madara-cairo:
     needs: update-db-version
@@ -46,7 +41,7 @@ jobs:
 
   # Generate coverage report for Madara
   coverage-madara:
-    needs: update-db-version
+    needs: build-madara-cairo
     uses: ./.github/workflows/task-coverage-madara.yml
     secrets: inherit
 
@@ -69,7 +64,7 @@ jobs:
   # Run end-to-end tests against the built binary
   test-e2e:
     needs: build-madara-cairo
-    uses: ./.github/workflows/task-test-e2e.yml
+    uses: ./.github/workflows/task-test-orchestrator-e2e.yml
     with:
       madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
     secrets: inherit

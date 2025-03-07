@@ -27,3 +27,15 @@ jobs:
           echo "AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
           echo "AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY"
           echo "yeah !!"
+
+      - name: Test rust-setup
+        uses: ./.github/actions/rust-setup
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          install-mold: true
+          install-scarb: true
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true

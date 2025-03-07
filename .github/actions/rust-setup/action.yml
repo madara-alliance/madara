@@ -50,10 +50,9 @@ runs:
       id: cache-cargo
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
+          ~/.cargo/bin
+          ~/.cargo/registry
+          ~/.cargo/git
           target/
         key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 

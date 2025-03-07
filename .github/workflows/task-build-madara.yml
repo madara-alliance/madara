@@ -37,6 +37,7 @@ jobs:
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
@@ -75,13 +76,13 @@ jobs:
         uses: actions/cache@v3
         with:
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
 
       - name: Cache Ochestrator binary
         uses: actions/cache@v3
         with:
           path: target/release/orchestrator
-          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
 
       # Generate hash for Cairo artifacts
       - name: Generate Cairo artifacts hash
@@ -110,7 +111,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
 
       - name: Display hashes
         run: |

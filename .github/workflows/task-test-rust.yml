@@ -4,30 +4,21 @@ name: Task - Run Cargo tests
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      rust-version:
-        description: "Rust toolchain version to use"
-        required: true
-        type: string
-      scarb-version:
-        description: "Scarb version to use"
-        required: true
-        type: string
-      foundry-version:
-        description: "Foundry version to use"
-        required: true
-        type: string
 
 jobs:
   test-rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-32core-128gb
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true

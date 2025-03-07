@@ -17,6 +17,7 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: false

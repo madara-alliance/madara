@@ -44,12 +44,13 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
-          rust-version: ${{ env.ORCHESTRATOR_RUST_VERSION }}
-          scarb-version: ${{ env.ORCHESTRATOR_SCARB_VERSION }}
+          cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}
+          rust-version: ${{ env.TESTING_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
-          foundry-version: ${{ env.ORCHESTRATOR_FOUNDRY_VERSION }}
-          python-version: ${{ env.ORCHESTRATOR_PYTHON_VERSION }}
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
       - name: Check Anvil Installation & run Anvil
