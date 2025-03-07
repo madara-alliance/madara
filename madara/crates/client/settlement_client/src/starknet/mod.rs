@@ -266,11 +266,9 @@ impl SettlementClientTrait for StarknetClient {
             })?;
 
         if call_res.len() != 2 {
-            return Err(SettlementClientError::Starknet(
-                StarknetClientError::InvalidResponseFormat {
-                    message: "l1_to_l2_message_cancellations should return exactly 2 values".to_string(),
-                },
-            ));
+            return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                message: "l1_to_l2_message_cancellations should return exactly 2 values".to_string(),
+            }));
         }
         Ok(call_res[0])
     }
@@ -371,13 +369,10 @@ impl StarknetClient {
             })?;
 
         if call_res.len() != 3 {
-            return Err(SettlementClientError::Starknet(
-                StarknetClientError::InvalidResponseFormat {
-                    message:
-                        "State call response should contain exactly 3 values (state_root, block_number, block_hash)"
-                            .to_string(),
-                },
-            ));
+            return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                message: "State call response should contain exactly 3 values (state_root, block_number, block_hash)"
+                    .to_string(),
+            }));
         }
         Ok(call_res)
     }

@@ -83,11 +83,9 @@ impl Stream for EthereumEventStream {
 
                     Poll::Ready(Some(event_data))
                 }
-                Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(
-                    EthereumClientError::EventStream {
-                        message: format!("Error processing Ethereum event stream: {}", e),
-                    },
-                )))),
+                Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(EthereumClientError::EventStream {
+                    message: format!("Error processing Ethereum event stream: {}", e),
+                })))),
             },
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,

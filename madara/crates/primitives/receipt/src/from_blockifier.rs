@@ -77,7 +77,6 @@ impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
     fn try_from(tx: &mp_transactions::L1HandlerTransaction) -> Result<Self, Self::Error> {
         let (from_address, payload) = tx.calldata.split_first().ok_or_else(|| anyhow!("Empty calldata"))?;
 
-
         Ok(Self {
             from_address: *from_address,
             to_address: tx.contract_address,

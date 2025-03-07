@@ -66,9 +66,9 @@ impl EthereumClient {
             let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
             Ok(Self { provider: Arc::new(provider), l1_core_contract: contract })
         } else {
-            Err(SettlementClientError::Ethereum(
-                EthereumClientError::Contract("Core contract not found at given address".into()),
-            ))
+            Err(SettlementClientError::Ethereum(EthereumClientError::Contract(
+                "Core contract not found at given address".into(),
+            )))
         }
     }
 }
@@ -114,12 +114,10 @@ impl SettlementClientTrait for EthereumClient {
                 .block_number
                 .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
             Some(Err(e)) => Err(SettlementClientError::Ethereum(EthereumClientError::Contract(e.to_string()))),
-            None => Err(SettlementClientError::Ethereum(
-                EthereumClientError::EventProcessing {
-                    message: "no event found".to_string(),
-                    block_number: latest_block,
-                },
-            )),
+            None => Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
+                message: "no event found".to_string(),
+                block_number: latest_block,
+            })),
         }
     }
 
