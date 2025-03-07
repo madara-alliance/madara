@@ -107,6 +107,7 @@ pub struct ChainConfigOverridesInner {
     #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_private_key")]
     pub private_key: ZeroingPrivateKey,
+    pub p2p_bootstrap_nodes: Vec<multiaddr::Multiaddr>,
     pub mempool_tx_limit: usize,
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
@@ -131,6 +132,7 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
             private_key: chain_config.private_key,
+            p2p_bootstrap_nodes: chain_config.p2p_bootstrap_nodes,
             mempool_tx_limit: chain_config.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
@@ -185,6 +187,7 @@ impl ChainConfigOverrideParams {
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
             private_key: chain_config_overrides.private_key,
+            p2p_bootstrap_nodes: chain_config_overrides.p2p_bootstrap_nodes,
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,

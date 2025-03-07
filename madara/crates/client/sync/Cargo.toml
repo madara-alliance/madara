@@ -32,6 +32,7 @@ mc-analytics.workspace = true
 mc-db.workspace = true
 mc-eth.workspace = true
 mc-gateway-client.workspace = true
+mc-p2p.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true

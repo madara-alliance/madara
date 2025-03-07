@@ -59,12 +59,15 @@ starknet-e2e-test/contracts/build
 # rpc output
 output*
 
-build*
+/build*
 
 tmp/
 
 *.info
 *.profraw
+
+# p2p identity file
+/identity.json
 
 # Running madara with make and docker compose
 .secrets

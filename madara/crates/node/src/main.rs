@@ -17,7 +17,9 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
-use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
+use service::{
+    BlockProductionService, GatewayService, L1SyncService, P2pService, RpcService, SyncService, WarpUpdateConfig,
+};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 
@@ -167,6 +169,11 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing the l1 sync service")?;
 
+    // P2p
+
+    let mut service_p2p =
+        P2pService::new(run_cmd.p2p_params.clone(), &service_db).await.context("Initializing p2p service")?;
+
     // L2 Sync
 
     let warp_update = if run_cmd.args_preset.warp_update_receiver {
@@ -206,9 +213,15 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let service_l2_sync = SyncService::new(&run_cmd.l2_sync_params, service_db.backend(), l1_head_recv, warp_update)
-        .await
-        .context("Initializing sync service")?;
+    let service_l2_sync = SyncService::new(
+        &run_cmd.l2_sync_params,
+        service_db.backend(),
+        service_p2p.commands(),
+        l1_head_recv,
+        warp_update,
+    )
+    .await
+    .context("Initializing sync service")?;
 
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
@@ -275,6 +288,7 @@ async fn main() -> anyhow::Result<()> {
     let app = ServiceMonitor::default()
         .with(service_db)?
         .with(service_l1_sync)?
+        .with(service_p2p)?
         .with(service_l2_sync)?
         .with(service_block_production)?
         .with(service_rpc_user)?
@@ -293,6 +307,10 @@ async fn main() -> anyhow::Result<()> {
 
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraServiceId::L1Sync);
+    }
+
+    if run_cmd.p2p_params.p2p {
+        app.activate(MadaraServiceId::P2p);
     }
 
     if warp_update_receiver {

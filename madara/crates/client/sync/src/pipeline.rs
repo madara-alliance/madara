@@ -13,7 +13,6 @@ struct RetryInput<I> {
 #[derive(Debug)]
 pub enum ApplyOutcome<Output> {
     Success(Output),
-    #[allow(unused)]
     Retry,
 }
 

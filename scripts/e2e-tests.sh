@@ -9,8 +9,10 @@ export PROPTEST_CASES=10
 export ETH_FORK_URL=https://eth.merkle.io
 export COVERAGE_BIN=$(realpath target/debug/madara)
 
+cargo build --profile dev --bin madara
+
 # Run the tests
-if RUST_LOG=debug cargo test --profile dev "${@:-"--workspace"}"; then
+if cargo test --profile dev "${@:-"--workspace"}"; then
   echo "✅ All tests passed successfully!"
 else
   echo "❌ Some tests failed."

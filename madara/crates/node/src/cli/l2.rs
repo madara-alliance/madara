@@ -52,7 +52,7 @@ pub struct L2SyncParams {
     pub warp_update_shutdown_receiver: bool,
 
     /// Stop sync at a specific block_n. May be useful for benchmarking the sync service.
-    #[clap(env = "MADARA_N_BLOCKS_TO_SYNC", long, value_name = "BLOCK NUMBER")]
+    #[clap(env = "MADARA_SYNC_STOP_AT", long, value_name = "BLOCK NUMBER")]
     pub sync_stop_at: Option<u64>,
 
     /// Gracefully shutdown Madara once it has finished synchronizing all
@@ -62,25 +62,24 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_STOP_ON_SYNC", long)]
     pub stop_on_sync: bool,
 
-    /// Disable pending block sync.
+    /// Disable pending block sync. Does not apply to p2p sync.
     #[clap(env = "MADARA_STOP_NO_PENDING_SYNC", long)]
     pub no_pending_sync: bool,
 
-    /// Compute post-v0.13.2 hashes. This means that the feeder gateway will display different block commitments
-    /// for blocks that were created before v0.13.2. When p2p sync will be merged, this option will become the
-    /// default, as post-v0.13.2 commitments are mendatory for checking the integrity of these old blocks.
-    /// Madara cannot yet check whether the post-v0.13.2 commiments are correct. Thus, for now, enabling this setting
-    /// will mean that block hashes are trusted for these legacy blocks.
-    #[clap(env = "MADARA_POST_V0_13_2_HASHES", long)]
-    pub post_v0_13_2_hashes: bool,
+    #[clap(env = "MADARA_P2P_SYNC", long)]
+    pub p2p_sync: bool,
+
+    /// Compute pre-v0.13.2 hashes. This mode will allow the feeder gateway to display the legacy
+    /// commitment hashes. Serving blocks over peer-to-peer requires >v0.13.2 hashes, which is why this
+    /// is disabled by default. By enabling it, the blocks served by this block over peer-to-peer will be
+    /// incorrect.
+    /// This option has no effect when `--p2p-sync` is enabled, as only post-v0.13.2 commitments can be
+    /// verified and saved in this mode.
+    #[clap(long)]
+    pub keep_pre_v0_13_2_hashes: bool,
 }
 
 impl L2SyncParams {
-    /// For now, the default is to compute pre-v0.13.2 hashes until peer-to-peer sync is merged.
-    pub fn keep_pre_v0_13_2_hashes(&self) -> bool {
-        !self.post_v0_13_2_hashes
-    }
-
     pub fn create_feeder_client(&self, chain_config: Arc<ChainConfig>) -> anyhow::Result<Arc<GatewayProvider>> {
         let (gateway, feeder_gateway) = match &self.gateway_url {
             Some(url) => (

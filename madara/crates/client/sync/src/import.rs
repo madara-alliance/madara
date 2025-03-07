@@ -98,7 +98,7 @@ impl BlockImportError {
     }
 }
 
-/// Shared verification & saving logic between gateway and (yet-to-be-merged) p2p.
+/// Shared verification & saving logic between gateway and p2p.
 #[derive(Clone)]
 pub struct BlockImporter {
     db: Arc<MadaraBackend>,
@@ -109,6 +109,10 @@ pub struct BlockImporter {
 impl BlockImporter {
     pub fn new(db: Arc<MadaraBackend>, config: BlockValidationConfig) -> BlockImporter {
         Self { db, config, rayon_pool: Arc::new(RayonPool::new()) }
+    }
+
+    pub fn config(&self) -> &BlockValidationConfig {
+        &self.config
     }
 
     pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
@@ -131,7 +135,7 @@ impl BlockImporter {
         global_spawn_rayon_task(move || func(ctx)).await
     }
 
-    fn ctx(&self) -> BlockImporterCtx {
+    pub fn ctx(&self) -> BlockImporterCtx {
         BlockImporterCtx { db: self.db.clone(), config: self.config.clone() }
     }
 }

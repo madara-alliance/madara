@@ -131,6 +131,9 @@ pub struct ChainConfig {
     #[serde(deserialize_with = "deserialize_private_key")]
     pub private_key: ZeroingPrivateKey,
 
+    #[serde(default)]
+    pub p2p_bootstrap_nodes: Vec<multiaddr::Multiaddr>,
+
     /// Transaction limit in the mempool.
     pub mempool_tx_limit: usize,
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
@@ -244,6 +247,8 @@ impl ChainConfig {
             ),
 
             private_key: ZeroingPrivateKey::default(),
+
+            p2p_bootstrap_nodes: vec![],
 
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
