@@ -9,7 +9,7 @@ on:
 
 jobs:
   rust_check:
-    runs-on: ubuntu-24.04-16core-64gb
+    runs-on: ubuntu-24.04-32core-128gb
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
