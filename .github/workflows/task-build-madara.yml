@@ -39,6 +39,8 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
 
       # Build Madara and test contracts
       - name: Build Madara and test contracts
