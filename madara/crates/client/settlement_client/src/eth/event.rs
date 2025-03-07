@@ -141,7 +141,6 @@ pub mod eth_event_stream_tests {
         stream: &mut EthereumEventStream,
     ) -> Vec<Result<L1toL2MessagingEventData, SettlementClientError>> {
         stream
-            .take_while(|event| futures::future::ready(event.is_ok()))
             .fold(Vec::new(), |mut acc, event| async move {
                 acc.push(event);
                 acc
@@ -214,7 +213,11 @@ pub mod eth_event_stream_tests {
 
         assert_eq!(events.len(), 3);
         assert!(events[0].as_ref().is_ok(), "First event should be successful");
-        assert!(events[1].as_ref().is_err(), "Second event should be an error");
+        assert_matches!(
+            events[1].as_ref(),
+            Err(SettlementClientError::Ethereum(EthereumClientError::EventStream { .. })),
+            "Second event should be an error"
+        );
         assert!(events[2].as_ref().is_ok(), "Third event should be successful");
     }
 
@@ -234,8 +237,8 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
-            assert_eq!(*field, "block_number", "Error should mention missing block number");
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
+            assert_eq!(*field, "block_number in Ethereum log", "Error should mention missing block number");
         });
     }
 
@@ -255,8 +258,8 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
-            assert_eq!(*field, "log_index", "Error should mention missing block number");
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
+            assert_eq!(*field, "log_index in Ethereum log", "Error should mention missing log index");
         });
     }
 
@@ -276,8 +279,8 @@ pub mod eth_event_stream_tests {
         let events = collect_stream_events(&mut ethereum_stream).await;
 
         assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Err(SettlementClientError::MissingField(field)) => {
-            assert_eq!(*field, "transaction_hash", "Error should mention missing transaction hash");
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
+            assert_eq!(*field, "transaction_hash in Ethereum log", "Error should mention missing transaction hash");
         });
     }
 }
