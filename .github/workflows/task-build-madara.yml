@@ -18,7 +18,7 @@ jobs:
     name: Build Madara and Cairo
     permissions:
       pull-requests: write
-    runs-on: ubuntu-24.04-32core
+    runs-on: ubuntu-24.04-16core-64gb
     outputs:
       madara-binary-hash: ${{ steps.generate_binary_hash.outputs.hash }}
       cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
