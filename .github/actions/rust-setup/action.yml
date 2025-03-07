@@ -25,12 +25,8 @@ inputs:
   foundry-version:
     description: "Foundry version to install"
     required: false
-  install-cairo0:
-    description: "Whether to install Cairo 0"
-    required: false
-    default: "false"
   python-version:
-    description: "Python version to use for Cairo 0"
+    description: "Python version to use for Cairo 0/SNOS"
     required: false
   build-snos:
     description: "Whether to build SNOS files"
@@ -45,10 +41,26 @@ runs:
       with:
         submodules: true
 
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
+        version: 1.0
+
+    - uses: actions/cache@v4
+      id: cache-cargo
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Setup Rust toolchain
+      if: steps.cache-cargo.outputs.cache-hit != 'true'
       uses: dtolnay/rust-toolchain@stable
       with:
-        profile: minimal
         toolchain: ${{ inputs.rust-version }}
         components: rustfmt, clippy
 
@@ -56,12 +68,6 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ${{ inputs.cache-key }}
-
-    - name: Install system dependencies
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git
 
     - name: Setup mold linker
       if: ${{ inputs.install-mold == 'true' }}
@@ -80,28 +86,49 @@ runs:
         version: ${{ inputs.foundry-version }}
 
     - name: Setup Python for Cairo 0
-      if: ${{ inputs.install-cairo0 == 'true' }}
+      if: ${{ inputs.build-snos == 'true' }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.python-version }}
 
+    - name: Cache Python packages
+      id: cache-python
+      if: ${{ inputs.build-snos == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-${{ hashFiles(format('{0}/zephyr/scripts/requirements*.txt', inputs.base-path)) }}
+
     - name: Install Cairo 0
-      if: ${{ inputs.install-cairo0 == 'true' }}
+      if: ${{ inputs.build-snos == 'true' && steps.cache-python.outputs.cache-hit != 'true' }}
       shell: bash
       run: |
-        # Creating venv
-        python${{ inputs.python-version }} -m venv ~/cairo_venv
-        source ~/cairo_venv/bin/activate
-
         # Installing deps
-        sudo apt install -y libgmp3-dev
         pip3 install ecdsa fastecdsa sympy
 
         # Installing cairo lang
         pip3 install cairo-lang
 
-    - name: Build SNOS files
+
+    - name: SNOS Cache hash
+      id: snos-cache-hash
       if: ${{ inputs.build-snos == 'true' }}
+      shell: bash
+      run: |
+        echo "SNOS Cache hash"
+        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | cut -d' ' -f1 | grep -o '[A-z0-9]*')
+        echo "hash=$CAIRO_LANG_COMMIT" >> $GITHUB_OUTPUT
+
+    - name: Cache SNOS packages
+      id: cache-snos
+      if: ${{ inputs.build-snos == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: orchestrator/build
+        key: snos-${{env.PYTHON_VERSION}} ${{ steps.snos-cache-hash.outputs.hash }}
+
+    - name: Build SNOS files
+      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
       shell: bash
       run: |
         make snos

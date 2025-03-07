@@ -24,7 +24,6 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
-          install-cairo0: true
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 

@@ -34,8 +34,6 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          install-cairo0: false
-          build-snos: false
 
       - name: Run unit tests
         run: |

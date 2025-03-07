@@ -50,7 +50,6 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: ${{ env.ORCHESTRATOR_FOUNDRY_VERSION }}
-          install-cairo0: true
           python-version: ${{ env.ORCHESTRATOR_PYTHON_VERSION }}
           build-snos: true
 
