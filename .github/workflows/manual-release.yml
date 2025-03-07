@@ -59,14 +59,14 @@ jobs:
         shell: bash
         run: |
           # We don't use volumes because of ownership/permissions issues
-          # docker build \
-          #   --tag prod --no-cache \
-          #   --build-arg="COMMIT=${{ github.event.inputs.sha }}" \
-          #   --build-arg="SCARB_VERSION=${{ env.BUILD_SCARB_VERSION }}" \
-          #   --build-arg="PYTHON_VERSION=${{ env.BUILD_PYTHON_VERSION }}" \
-          #   --build-arg="FOUNDRY_VERSION=${{ env.BUILD_FOUNDRY_VERSION }}" \
-          #   --build-arg="RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" \
-          #   - < docker/madara-production.Dockerfile
+          docker build \
+            --tag prod --no-cache \
+            --build-arg="COMMIT=${{ github.event.inputs.sha }}" \
+            --build-arg="SCARB_VERSION=${{ env.BUILD_SCARB_VERSION }}" \
+            --build-arg="PYTHON_VERSION=${{ env.BUILD_PYTHON_VERSION }}" \
+            --build-arg="FOUNDRY_VERSION=${{ env.BUILD_FOUNDRY_VERSION }}" \
+            --build-arg="RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" \
+            - < docker/madara-production.Dockerfile
 
           # Copy madara/orchestrator binary
           mkdir -p build
@@ -77,7 +77,7 @@ jobs:
           docker rm -f dummy
 
           # Cleanup
-          # docker rmi prod
+          docker rmi prod
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
