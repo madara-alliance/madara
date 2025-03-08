@@ -18,16 +18,16 @@ alloy = { git = "https://github.com/alloy-rs/alloy", rev = "68952c0", features =
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
 color-eyre = { workspace = true }
+orchestrator-da-client-interface = { workspace = true }
 dotenvy.workspace = true
 mockall = { workspace = true }
-orchestrator-da-client-interface = { workspace = true }
-orchestrator-utils = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 starknet = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
+orchestrator-utils = { workspace = true }
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

@@ -23,6 +23,7 @@ alloy = { version = "0.2.1", features = [
 assert_matches = { workspace = true }
 async-std = { workspace = true }
 async-trait = { workspace = true }
+orchestrator-atlantic-service = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { workspace = true, features = [
   "hardcoded-credentials",
@@ -40,7 +41,10 @@ cairo-vm = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 color-eyre = { workspace = true }
+orchestrator-da-client-interface = { workspace = true }
 dotenvy = { workspace = true }
+orchestrator-ethereum-da-client = { workspace = true, optional = true }
+orchestrator-ethereum-settlement-client = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true }
@@ -56,29 +60,25 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
-orchestrator-atlantic-service = { workspace = true }
-orchestrator-da-client-interface = { workspace = true }
-orchestrator-ethereum-da-client = { workspace = true, optional = true }
-orchestrator-ethereum-settlement-client = { workspace = true }
-orchestrator-prover-client-interface = { workspace = true }
-orchestrator-settlement-client-interface = { workspace = true }
-orchestrator-sharp-service = { workspace = true }
-orchestrator-starknet-settlement-client = { workspace = true }
 prove_block = { workspace = true }
+orchestrator-prover-client-interface = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+orchestrator-settlement-client-interface = { workspace = true }
+orchestrator-sharp-service = { workspace = true }
 starknet = { workspace = true }
 starknet-core = { workspace = true }
 starknet-os = { workspace = true }
+orchestrator-starknet-settlement-client = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
 
-orchestrator-utils = { workspace = true }
 url = { workspace = true }
+orchestrator-utils = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 aws-sdk-iam = { workspace = true }
@@ -99,6 +99,8 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+jemallocator = "0.5.4"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]

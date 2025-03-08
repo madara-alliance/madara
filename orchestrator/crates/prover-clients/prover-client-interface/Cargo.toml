@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 async-trait.workspace = true
 cairo-vm.workspace = true
-mockall.workspace = true
 orchestrator-gps-fact-checker.workspace = true
-orchestrator-utils.workspace = true
+mockall.workspace = true
 starknet-os.workspace = true
 thiserror.workspace = true
+orchestrator-utils.workspace = true

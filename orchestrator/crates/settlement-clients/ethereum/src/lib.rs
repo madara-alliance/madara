@@ -23,9 +23,9 @@ use color_eyre::eyre::{bail, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+use url::Url;
 #[cfg(feature = "testing")]
 use orchestrator_utils::env_utils::get_env_var_or_panic;
-use url::Url;
 
 use crate::clients::interfaces::validity_interface::StarknetValidityContractTrait;
 use crate::clients::StarknetValidityContractClient;

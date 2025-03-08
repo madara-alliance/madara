@@ -15,15 +15,15 @@ dotenvy.workspace = true
 lazy_static = { workspace = true }
 log = { workspace = true }
 mockall = { workspace = true }
-orchestrator-settlement-client-interface = { workspace = true }
-orchestrator-utils = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
+orchestrator-settlement-client-interface = { workspace = true }
 starknet = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true }
 url = { workspace = true }
+orchestrator-utils = { workspace = true }
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
