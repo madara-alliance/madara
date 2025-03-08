@@ -298,7 +298,7 @@ mod tests {
             storage_trie
                 .insert(
                     &storage_item.contract_address.to_bytes_be(),
-                    &storage_item.storage_key.to_bytes_be().as_bits()[5..].to_owned(),
+                    &storage_item.storage_key.to_bytes_be().as_bits()[5..],
                     &storage_item.value,
                 )
                 .unwrap();
@@ -366,11 +366,11 @@ mod tests {
         for contract_address in contract_storage.keys() {
             let storage_root = storage_roots
                 .get(contract_address)
-                .expect(format!("no proof returned for contract {:x}", contract_address).as_str());
+                .unwrap_or_else(|| panic!("no proof returned for contract {:x}", contract_address));
 
             let keys = contract_storage_keys.get(contract_address).unwrap();
             for key in keys {
-                let path = verify_proof::<Pedersen>(storage_root, &key, &proof_nodes)?;
+                let path = verify_proof::<Pedersen>(storage_root, key, &proof_nodes)?;
 
                 // should have at least two nodes assuming at least 2 values.
                 assert!(path.len() >= keys.len().min(2));
@@ -413,7 +413,7 @@ mod tests {
         // pairs into it with a well-known identifier for the trie itself
         for (class_hash, value) in class_items {
             class_trie
-                .insert(bonsai_identifier::CLASS, &class_hash.to_bytes_be().as_bits()[5..].to_owned(), &value)
+                .insert(bonsai_identifier::CLASS, &class_hash.to_bytes_be().as_bits()[5..], &value)
                 .unwrap();
 
             class_keys.push(class_hash);
@@ -435,7 +435,7 @@ mod tests {
 
         for key in &class_keys {
             let path =
-                verify_proof::<Poseidon>(&storage_proof_result.global_roots.classes_tree_root, &key, &proof_nodes)?;
+                verify_proof::<Poseidon>(&storage_proof_result.global_roots.classes_tree_root, key, &proof_nodes)?;
 
             // should have at least two nodes assuming at least 2 values.
             assert!(path.len() >= class_keys.len().min(2));
@@ -470,7 +470,7 @@ mod tests {
         // pairs into it with a well-known identifier for the trie itself
         for (contract_address, value) in contract_items {
             contract_trie
-                .insert(bonsai_identifier::CONTRACT, &contract_address.to_bytes_be().as_bits()[5..].to_owned(), &value)
+                .insert(bonsai_identifier::CONTRACT, &contract_address.to_bytes_be().as_bits()[5..], &value)
                 .unwrap();
 
             contract_addresses.push(contract_address);
@@ -493,7 +493,7 @@ mod tests {
 
         for key in &contract_addresses {
             let path =
-                verify_proof::<Pedersen>(&storage_proof_result.global_roots.contracts_tree_root, &key, &proof_nodes)?;
+                verify_proof::<Pedersen>(&storage_proof_result.global_roots.contracts_tree_root, key, &proof_nodes)?;
 
             // should have at least two nodes assuming at least 2 values.
             assert!(path.len() >= contract_addresses.len().min(2));
@@ -516,7 +516,7 @@ mod tests {
         length[31] = path_length as u8;
 
         let length = Felt::from_bytes_be(&length);
-        H::hash(&child_hash, &felt_path) + length
+        H::hash(&child_hash, felt_path) + length
     }
 
     /// Verifies a proof from `commitment` (the root MPT hash) to the leaf identified by `path`.
@@ -548,7 +548,7 @@ mod tests {
         let mut ordered_proof = Vec::new();
         loop {
             let node = proof_nodes
-                .get(&next_node_hash)
+                .get(next_node_hash)
                 .ok_or(format!("proof did not contain preimage for node 0x{:x} (index: {})", next_node_hash, index))?;
             match node {
                 MerkleNode::Binary { left, right } => {
