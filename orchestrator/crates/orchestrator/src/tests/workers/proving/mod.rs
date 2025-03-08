@@ -1,12 +1,12 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use orchestrator_da_client_interface::MockDaClient;
 use httpmock::MockServer;
 use mockall::predicate::eq;
+use orchestrator_da_client_interface::MockDaClient;
 use orchestrator_prover_client_interface::MockProverClient;
-use rstest::rstest;
 use orchestrator_settlement_client_interface::MockSettlementClient;
+use rstest::rstest;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;

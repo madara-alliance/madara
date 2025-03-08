@@ -266,15 +266,13 @@ async fn process_job_handles_panic() {
     assert_eq!(job_in_db.status, JobStatus::Failed);
 
     // Check that failure reason is recorded in common metadata
-    assert!(
-        job_in_db
-            .metadata
-            .common
-            .failure_reason
-            .as_ref()
-            .unwrap()
-            .contains("Job handler panicked with message: Simulated panic in process_job")
-    );
+    assert!(job_in_db
+        .metadata
+        .common
+        .failure_reason
+        .as_ref()
+        .unwrap()
+        .contains("Job handler panicked with message: Simulated panic in process_job"));
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is not
