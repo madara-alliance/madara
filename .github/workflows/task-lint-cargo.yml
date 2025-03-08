@@ -6,7 +6,8 @@ on:
 
 jobs:
   cargo-lint:
-    runs-on: MSL-MADARA
+    runs-on: 
+      group: MSL-MADARA
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

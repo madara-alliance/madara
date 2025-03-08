@@ -18,7 +18,8 @@ on:
 
 jobs:
   orchestrator_coverage:
-    runs-on: MSL-MADARA
+    runs-on: 
+      group: MSL-MADARA
 
     services:
       localstack:
