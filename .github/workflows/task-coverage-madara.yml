@@ -32,7 +32,7 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          cache-key: ${{ env.DEV_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
@@ -50,7 +50,6 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
         run: |
           source <(cargo llvm-cov show-env --export-prefix)
-          cargo build --bin madara --profile dev
           export COVERAGE_BIN=$(realpath target/debug/madara)
           rm -f target/madara-* lcov.info
           # run tests for madara client / primitive crates

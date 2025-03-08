@@ -54,6 +54,7 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           target/
+          cairo/target/
         key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Setup Rust toolchain
