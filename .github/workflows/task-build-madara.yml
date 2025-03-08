@@ -21,7 +21,7 @@ jobs:
     name: Build Madara and Orchestrator binary
     permissions:
       pull-requests: write
-    runs-on: ubuntu-24.04-32core-128gb
+    runs-on: MSL-MADARA
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
@@ -52,6 +52,8 @@ jobs:
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo build --release
+
+          # Needed for cairo/target directory
           cargo build --release -p m-cairo-test-contracts
 
       # Generate hash for the Madara binary

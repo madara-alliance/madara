@@ -47,6 +47,26 @@ runs:
         version: 1.0
 
     - uses: actions/cache@v4
+      id: cache-sscache
+      with:
+        path: |
+          ~/.cache/sccache
+        key: ${{ runner.os }}-${{ inputs.rust-version }}-${{ inputs.cache-key }}-sccache
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action
+      with:
+        cache-dir: ~/.cache/sccache
+
+    - name: Set Rust caching env vars
+      if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        sccache --show-stats
+        
+    - uses: actions/cache@v4
       id: cache-cargo
       with:
         path: |
