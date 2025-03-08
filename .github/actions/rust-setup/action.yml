@@ -54,7 +54,7 @@ runs:
         key: ${{ runner.os }}-${{ inputs.rust-version }}-${{ inputs.cache-key }}-sccache
 
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action
+      uses: mozilla-actions/sccache-action@latest
       with:
         cache-dir: ~/.cache/sccache
 
