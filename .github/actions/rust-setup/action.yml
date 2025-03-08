@@ -55,8 +55,6 @@ runs:
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.8
-      with:
-        cache-dir: ~/.cache/sccache
 
     - name: Set Rust caching env vars
       if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
@@ -111,14 +109,14 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: SNOS Cache hash
-      id: snos-cache-hash
+    - name: Retrieve SNOS Commit
+      id: retrieve-snos-commit
       if: ${{ inputs.build-snos == 'true' }}
       shell: bash
       run: |
-        echo "SNOS Cache hash"
         CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | cut -d' ' -f1 | grep -o '[A-z0-9]*')
-        echo "hash=$CAIRO_LANG_COMMIT" >> $GITHUB_OUTPUT
+        echo "SNOS Cache hash: CAIRO_LANG_COMMIT"
+        echo "CAIRO_LANG_COMMIT=$CAIRO_LANG_COMMIT" >> $GITHUB_ENV
 
     - name: Cache SNOS packages
       id: cache-snos
@@ -126,7 +124,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: orchestrator/build
-        key: snos-${{env.PYTHON_VERSION}}-${{ steps.snos-cache-hash.outputs.hash }}
+        key: snos-${{ inputs.python-version }}-${{ env.CAIRO_LANG_COMMIT }}
 
     - name: Cache Python packages
       id: cache-python
