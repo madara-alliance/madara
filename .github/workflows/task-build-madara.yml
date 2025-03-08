@@ -47,11 +47,12 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
-      # Build Madara and test contracts
-      - name: Build Madara and test contracts
+      # Build Madara, Orchestrator and test contracts
+      - name: Cargo build binaries
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo build --release
+          cargo build --release -p m-cairo-test-contracts
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes
