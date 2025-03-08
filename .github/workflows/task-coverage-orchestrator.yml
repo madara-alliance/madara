@@ -79,7 +79,7 @@ jobs:
       - name: Prepare Madara Environment (Orchestrator)
         run: |
           mv target/release/madara ../madara-binary          
-          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=\"$(pwd)/orchestrator/madara-binary\"" >> $GITHUB_ENV
+          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/orchestrator/madara-binary" >> $GITHUB_ENV
 
       - name: Getting necessary files for testing
         working-directory: orchestrator

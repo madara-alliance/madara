@@ -18,7 +18,7 @@ on:
 
 jobs:
   test-e2e:
-    runs-on: ubuntu-24.04-32core-128gb
+    runs-on: ubuntu-latest
 
     services:
       localstack:
