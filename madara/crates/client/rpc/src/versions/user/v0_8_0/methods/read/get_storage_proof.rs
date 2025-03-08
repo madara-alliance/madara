@@ -412,9 +412,7 @@ mod tests {
         // the class trie is just one MPT (unlike the contract storage MPT), we just insert k:v
         // pairs into it with a well-known identifier for the trie itself
         for (class_hash, value) in class_items {
-            class_trie
-                .insert(bonsai_identifier::CLASS, &class_hash.to_bytes_be().as_bits()[5..], &value)
-                .unwrap();
+            class_trie.insert(bonsai_identifier::CLASS, &class_hash.to_bytes_be().as_bits()[5..], &value).unwrap();
 
             class_keys.push(class_hash);
         }
