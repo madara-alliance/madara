@@ -21,8 +21,7 @@ jobs:
     name: Build Madara and Orchestrator binary
     permissions:
       pull-requests: write
-    runs-on:
-      group: MSL-MADARA
+    runs-on: karnot-arc-runner-set
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}

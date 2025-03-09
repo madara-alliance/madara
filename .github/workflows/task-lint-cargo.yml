@@ -6,8 +6,7 @@ on:
 
 jobs:
   cargo-lint:
-    runs-on:
-      group: MSL-MADARA
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

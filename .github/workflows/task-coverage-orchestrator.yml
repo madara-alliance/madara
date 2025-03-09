@@ -18,8 +18,7 @@ on:
 
 jobs:
   orchestrator_coverage:
-    runs-on:
-      group: MSL-MADARA
+    runs-on: karnot-arc-runner-set
 
     services:
       localstack:

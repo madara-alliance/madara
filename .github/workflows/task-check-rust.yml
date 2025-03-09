@@ -9,8 +9,7 @@ on:
 
 jobs:
   rust_check:
-    runs-on:
-      group: MSL-MADARA
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

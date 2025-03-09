@@ -7,8 +7,7 @@ on:
 
 jobs:
   test-rust:
-    runs-on:
-      group: MSL-MADARA
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
