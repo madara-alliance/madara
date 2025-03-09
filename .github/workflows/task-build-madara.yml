@@ -52,10 +52,7 @@ jobs:
       - name: Cargo build binaries
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build --release
-
-          # Needed for cairo/target directory
-          cargo build --release -p m-cairo-test-contracts
+          cargo build --release --bin madara --bin orchestrator -p m-cairo-test-contracts --workspace
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes

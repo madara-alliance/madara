@@ -46,6 +46,7 @@ jobs:
       - name: Setup Rust Environment
         uses: ./.github/actions/rust-setup
         with:
+          # Uses the testing cache key as we are using the --profile dev later
           cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
@@ -102,6 +103,7 @@ jobs:
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
             --release \
+            --worksace \
             --features testing \
             --lcov \
             --output-path lcov.info \

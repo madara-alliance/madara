@@ -44,8 +44,8 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
-          cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}
-          rust-version: ${{ env.TESTING_RUST_VERSION }}
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
@@ -65,9 +65,6 @@ jobs:
               exit 1
           fi
 
-      # testing feature requires this specific nightly toolchain
-      - name: Install nightly toolchain
-        run: rustup install nightly-2024-09-05
 
       - name: Rustup show
         run: rustup show
@@ -79,4 +76,5 @@ jobs:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
-          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture
+          # Uses the --release to benefit from "build" cache
+          RUST_LOG=info cargo test --release --features testing --workspace test_orchestrator_workflow -- --nocapture
