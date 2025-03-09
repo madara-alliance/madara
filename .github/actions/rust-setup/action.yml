@@ -46,10 +46,8 @@ runs:
         packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
         version: 1.0
 
-
-
     # SCCACHE is disabled due to https://github.com/mozilla/sccache/issues/2359
-    # TODO: re-enable when fixed 
+    # TODO: re-enable when fixed
     # - uses: actions/cache@v4
     #   id: cache-sscache
     #   with:
@@ -65,7 +63,7 @@ runs:
     #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
     #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
     #     sccache --show-stats
-        
+
     - uses: actions/cache@v4
       id: cache-cargo
       with:

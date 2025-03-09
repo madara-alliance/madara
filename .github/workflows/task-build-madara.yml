@@ -21,7 +21,7 @@ jobs:
     name: Build Madara and Orchestrator binary
     permissions:
       pull-requests: write
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}

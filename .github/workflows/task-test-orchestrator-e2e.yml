@@ -65,7 +65,6 @@ jobs:
               exit 1
           fi
 
-
       - name: Rustup show
         run: rustup show
 

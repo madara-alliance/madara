@@ -6,7 +6,7 @@ on:
 
 jobs:
   cargo-lint:
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
     steps:
       - name: Checkout repository

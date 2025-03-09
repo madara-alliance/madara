@@ -21,7 +21,7 @@ jobs:
   coverage-madara:
     permissions:
       pull-requests: write
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
     steps:
       - name: Checkout repository

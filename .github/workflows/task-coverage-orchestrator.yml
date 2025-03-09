@@ -18,7 +18,7 @@ on:
 
 jobs:
   orchestrator_coverage:
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
 
     services:

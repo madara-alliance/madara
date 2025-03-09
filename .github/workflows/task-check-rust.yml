@@ -9,7 +9,7 @@ on:
 
 jobs:
   rust_check:
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
     steps:
       - name: Checkout repository

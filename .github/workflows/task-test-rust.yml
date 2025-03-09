@@ -7,7 +7,7 @@ on:
 
 jobs:
   test-rust:
-    runs-on: 
+    runs-on:
       group: MSL-MADARA
     steps:
       - name: Checkout repository
