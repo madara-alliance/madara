@@ -55,8 +55,8 @@ jobs:
           fi
 
       - name: Check root toml files
-        run: bin/taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
+        run: PATH=bin:$PATH bin/taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
 
       - name: Check orchestrator toml files
         working-directory: orchestrator
-        run: bin/taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check
+        run: PATH=bin:$PATH bin/taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check
