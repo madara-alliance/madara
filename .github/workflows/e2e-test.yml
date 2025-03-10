@@ -89,9 +89,6 @@ jobs:
         run: |
           make snos
 
-      - name: Rustup show
-        run: rustup show
-
       - name: Run e2e test
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
