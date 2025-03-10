@@ -51,7 +51,9 @@ jobs:
       - name: Cargo build binaries
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build --release --bin madara --bin orchestrator -p m-cairo-test-contracts --workspace
+          # We build the whole workspace to ensure nothing broke.
+          # This could be limited to "madara", the "orchestrator" and the "m-cairo-test-contracts" package
+          cargo build --release --workspace
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes
