@@ -49,7 +49,7 @@ jobs:
             echo "taplo is already installed"
           else
             curl -s -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz > taplo.gz
-            gunzip taplo.gz
+            gunzip -f taplo.gz
             chmod +x taplo
             mv taplo /usr/local/bin/taplo
           fi
