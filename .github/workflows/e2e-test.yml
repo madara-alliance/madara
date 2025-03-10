@@ -97,4 +97,4 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           source "$HOME/.cargo/env"
-          RUST_LOG=info cargo +nightly-2024-09-05  cargo test --features testing test_orchestrator_workflow -- --nocapture
+          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing test_orchestrator_workflow -- --nocapture
