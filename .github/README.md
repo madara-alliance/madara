@@ -89,11 +89,11 @@ Having different cache for build environments allows to reduce the total cache s
 
 - `-s GITHUB_TOKEN="$(gh auth token)"` to setup the token
 - `--artifact-server-path ./tmp/artifacts/` to maintain artifacts used across tasks
-- `-P karnot-arc-runner-set=catthehacker/ubuntu:act-latest` allows task using `runs-on: karnot-arc-runner-set` to execute using arc default ubuntu docker image
+- `-P karnot-arc-runner-set=catthehacker/ubuntu:rust-22.04` allows task using `runs-on: karnot-arc-runner-set` to execute using act's ubuntu image with rust preinstalled
 
 ```bash
 # Run the main build task (takes ~10min on good computer)
-act -W .github/workflows/task-build-madara.yml -s GITHUB_TOKEN="$(gh auth token)"  --artifact-server-path ./tmp/artifacts/ workflow_call -P karnot-arc-runner-set=catthehacker/ubuntu:act-latest
+act -W .github/workflows/task-build-madara.yml -s GITHUB_TOKEN="$(gh auth token)"  --artifact-server-path ./tmp/artifacts/ workflow_call -P karnot-arc-runner-set=catthehacker/ubuntu:rust-22.04
 
 # Output about the binaries hashes:
 # | madara-binary-hash: c2098b181b6d5d54fcb4a23df9df933d0b842fd615b00b7f2ef5e5783686b7b4
@@ -104,7 +104,7 @@ act -W .github/workflows/task-build-madara.yml -s GITHUB_TOKEN="$(gh auth token)
 act -W .github/workflows/task-test-js.yml -s GITHUB_TOKEN="$(gh auth token)"  --artifact-server-path ./tmp/artifacts/ workflow_call --input madara-binary-hash="c2098b181b6d5d54fcb4a23df9df933d0b842fd615b00b7f2ef5e5783686b7b4" --input cairo-artifacts-hash="07660f3d160f65ee5c66ea05bfd3f5ccc35ed1b4589bffc2230f2c798f0a5c15"
 
 # Run Orchestrator Coverage (using -s for passing secrets)
-act -W .github/workflows/task-coverage-orchestrator.yml -s GITHUB_TOKEN="$(gh auth token)" --artifact-server-path ./tmp/artifacts/ workflow_call -P karnot-arc-runner-set=catthehacker/ubuntu:act-latest -s ETHEREUM_SEPOLIA_BLAST_RPC="https://sepolia.blast.io" -s RPC_FOR_SNOS="..."
+act -W .github/workflows/task-coverage-orchestrator.yml -s GITHUB_TOKEN="$(gh auth token)" --artifact-server-path ./tmp/artifacts/ workflow_call -P karnot-arc-runner-set=catthehacker/ubuntu:rust-22.04 -s ETHEREUM_SEPOLIA_BLAST_RPC="https://sepolia.blast.io" -s RPC_FOR_SNOS="..."
 
 # Independantly build the production docker image used in the release process
 docker build -f docker/madara-production.Dockerfile . --build-arg="PYTHON_VERSION=3.9" --build-arg="SCARB_VERSION=2.8.2" --build-arg=FOUNDRY_VERSION=nightly

@@ -5,7 +5,13 @@ runs:
   using: "composite"
   steps:
     - name: Install yq
-      uses: mikefarah/yq@master
+      shell: bash
+      run: |
+        wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq &&\
+            chmod +x /usr/bin/yq
+            
+        echo "yq version:"
+        yq --version
 
     - name: Load config
       id: config
