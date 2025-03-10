@@ -40,6 +40,8 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
