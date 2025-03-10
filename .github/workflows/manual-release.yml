@@ -34,12 +34,25 @@ jobs:
           prerelease: false
           body: ${{ steps.changelog.outputs.changes }}
 
+      - name: Prettify code
+        uses: creyD/prettier_action@v4.3
+        with:
+          prettier_options: --write --config ./.markdownlint.json
+
       - name: Commit CHANGELOG.md
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          branch: main
+          branch: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
           commit_message: "docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
           file_pattern: CHANGELOG.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          title: "docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
+          body: "This PR is automatically created by the release workflow."
+          head: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
+          base: main
 
   # Build binaries (rely on docker build for a clean build)
   build-binaries:

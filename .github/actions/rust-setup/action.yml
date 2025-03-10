@@ -36,11 +36,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         submodules: true
 
+    # Install ubuntu packages (using cache if available)
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
@@ -64,6 +64,7 @@ runs:
     #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
     #     sccache --show-stats
 
+    # Cache everything that is needed/produced for cargo build
     - uses: actions/cache@v4
       id: cache-cargo
       with:
