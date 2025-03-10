@@ -48,10 +48,11 @@ jobs:
           if command -v taplo &> /dev/null; then
             echo "taplo is already installed"
           else
-            curl -s -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz > taplo.gz
-            gunzip -f taplo.gz
-            chmod +x taplo
-            mv taplo /usr/local/bin/taplo
+            mkdir -p bin
+            curl -s -L https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-linux-x86_64.gz > bin/taplo.gz
+            gunzip -f bin/taplo.gz
+            chmod +x bin/taplo
+            export PATH="$PWD/bin:$PATH"
           fi
 
       - name: Check root toml files
