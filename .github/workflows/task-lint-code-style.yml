@@ -42,21 +42,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download taplo
-        run: |
-          if command -v taplo &> /dev/null; then
-            echo "taplo is already installed"
-          else
-            mkdir -p bin
-            curl -s -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz > bin/taplo.gz
-            gunzip -f bin/taplo.gz
-            chmod +x bin/taplo
-          fi
-
-      - name: Check root toml files
-        run: PATH=bin:$PATH bin/taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
+      - name: Taplo Format Check
+        uses: addnab/docker-run-action@v3
+        with:
+          image: tamasfe/taplo:0.9.3
+          options: -v ${{ github.workspace }}:/src -w /src
+          run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
+          args: Cargo.toml
 
       - name: Check orchestrator toml files
-        working-directory: orchestrator
-        run: PATH=bin:$PATH bin/taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check
+        uses: addnab/docker-run-action@v3
+        with:
+          image: tamasfe/taplo:0.9.3
+          options: -v ${{ github.workspace }}:/src -w /src/orchestrator
+          run: taplo fmt --check
+          args: Cargo.toml
