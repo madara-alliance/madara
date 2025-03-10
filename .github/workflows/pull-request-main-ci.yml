@@ -36,16 +36,16 @@ jobs:
 
   # Run Rust-specific linters
   lint-cargo:
-    needs: build-madara-cairo
+    needs: update-db-version
     uses: ./.github/workflows/task-lint-cargo.yml
 
   # Generate coverage report for Madara
   coverage-madara:
-    needs: build-madara-cairo
+    needs: update-db-version
     uses: ./.github/workflows/task-coverage-madara.yml
     secrets: inherit
 
-  # Generate coverage report for Orchestrator
+  # Generate coverage report for Orchestrator. Requires Madara binary
   coverage-orchestrator:
     needs: build-madara-cairo
     uses: ./.github/workflows/task-coverage-orchestrator.yml

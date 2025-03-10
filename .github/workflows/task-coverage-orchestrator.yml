@@ -102,7 +102,6 @@ jobs:
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
             --release \
-            --worksace \
             --features testing \
             --lcov \
             --output-path lcov.info \
