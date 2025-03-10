@@ -42,17 +42,43 @@ pub struct MadaraProcess {
     pub process: Child,
     #[allow(dead_code)]
     pub binary_path: PathBuf,
+    pub port: u16,
 }
 
 impl MadaraProcess {
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
+        // Try ports in range 19944-20044
+        let port_range = 19944..20045;
+        let mut selected_port = None;
+
+        for port in port_range {
+            // Check if port is available
+            if TcpStream::connect_timeout(
+                &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+                Duration::from_millis(100),
+            )
+            .is_err()
+            {
+                // Port is available if connection fails
+                selected_port = Some(port);
+                break;
+            }
+        }
+
+        let port = selected_port.unwrap_or_else(|| {
+            eprintln!("Warning: Could not find available port, using default");
+            MADARA_PORT.parse().unwrap()
+        });
+
+        println!("Starting Madara on port {}", port);
+
         let process = Command::new(&binary_path)
             .arg("--name")
             .arg("madara")
             .arg("--base-path")
             .arg("../madara-db33")
             .arg("--rpc-port")
-            .arg(MADARA_PORT)
+            .arg(port.to_string())
             .arg("--rpc-cors")
             .arg("*")
             .arg("--rpc-external")
@@ -68,9 +94,14 @@ impl MadaraProcess {
             .arg("--chain-config-override=block_time=5s,pending_block_update_time=1s")
             .spawn()?;
 
-        wait_for_port(MADARA_PORT.parse().unwrap(), 2, 10);
+        wait_for_port(port, 2, 10);
 
-        Ok(Self { process, binary_path })
+        // Store the selected port in a field so it can be used elsewhere
+        Ok(Self { process, binary_path, port })
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 

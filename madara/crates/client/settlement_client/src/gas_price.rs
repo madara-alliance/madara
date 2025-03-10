@@ -387,7 +387,7 @@ mod eth_client_gas_price_worker_test {
         match result {
             Ok(Ok(_)) => panic!("Expected gas_price_worker to fail, but it succeeded"),
             Ok(Err(err)) => match err {
-                SettlementClientError::Other(e) => {
+                SettlementClientError::GasPrice(e) => {
                     let error_msg = e.to_string();
                     let re =
                         Regex::new(r"Gas prices have not been updated for \d+ ms\. Last update was at \d+").unwrap();

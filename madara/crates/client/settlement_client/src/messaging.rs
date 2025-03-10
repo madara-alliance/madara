@@ -63,7 +63,7 @@ where
                 .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to check nonce: {}", e)))?
             {
                 tracing::info!("Event already processed");
-                return Ok(());
+                continue;
             }
 
             tracing::info!(
@@ -87,10 +87,10 @@ where
                 .map_err(|e| SettlementClientError::InvalidResponse(format!("Failed to check cancellation: {}", e)))?;
             if cancellation_timestamp != Felt::ZERO {
                 tracing::info!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
-                handle_cancelled_message(backend, tx_nonce).map_err(|e| {
-                    SettlementClientError::DatabaseError(format!("Failed to handle cancelled message: {}", e))
+                handle_cancelled_message(backend.clone(), tx_nonce).map_err(|e| {
+                    SettlementClientError::MessagingSync(format!("Failed to handle cancelled message: {}", e))
                 })?;
-                return Ok(());
+                continue;
             }
 
             // Process message
