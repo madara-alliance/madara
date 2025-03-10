@@ -2570,7 +2570,7 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_start_block_production_task_closes_block_right_after_pending(
         #[future]
-        #[with(1, Duration::from_millis(10), Duration::from_millis(5), false)]  // Use more relaxed timing
+        #[with(1, Duration::from_millis(10), Duration::from_millis(5), false)] // Use more relaxed timing
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<mc_block_import::BlockImporter>,
