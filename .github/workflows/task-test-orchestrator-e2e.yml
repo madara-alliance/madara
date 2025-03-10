@@ -1,4 +1,4 @@
-name: Task - E2E Tests
+name: Task - Test E2E
 
 # This workflow runs end-to-end tests for the Orchestrator
 # against the Madara binary to ensure full integration testing
@@ -35,8 +35,7 @@ jobs:
           - 27017:27017
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
@@ -65,7 +64,7 @@ jobs:
               exit 1
           fi
 
-      - name: Rustup show
+      - name: Check Rust version
         run: rustup show
 
       - name: Run Orchestrator e2e test

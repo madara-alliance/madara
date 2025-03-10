@@ -1,4 +1,4 @@
-name: Workflow - Pull Request
+name: Workflow - Pull Request Main
 
 # This workflow orchestrates all checks and tests for pull requests
 # It uses reusable workflows to keep the configuration DRY

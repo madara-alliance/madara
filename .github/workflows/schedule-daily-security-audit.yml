@@ -1,5 +1,5 @@
 ---
-name: Workflow - Daily Cron
+name: Workflow - Daily Security
 
 on:
   workflow_dispatch:

@@ -1,6 +1,5 @@
 ---
-name: Workflow - Daily Cron
-
+name: Workflow - Daily Maintenance
 on:
   workflow_dispatch:
   schedule:

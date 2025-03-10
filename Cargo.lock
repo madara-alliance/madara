@@ -9884,7 +9884,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orchestrator-atlantic-service"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "async-trait",
@@ -9927,7 +9927,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.2.1",
  "assert_matches",
@@ -10005,7 +10005,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-da-client-interface"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "axum 0.7.7",
@@ -10016,7 +10016,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-ethereum-da-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.1.0",
  "async-trait",
@@ -10046,7 +10046,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-ethereum-settlement-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.2.1",
  "alloy-primitives 0.7.7",
@@ -10082,7 +10082,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-gps-fact-checker"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "async-trait",
@@ -10113,7 +10113,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-prover-client-interface"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "cairo-vm",
@@ -10126,7 +10126,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-settlement-client-interface"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "axum 0.7.7",
@@ -10139,7 +10139,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-sharp-service"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "async-trait",
@@ -10176,7 +10176,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-starknet-settlement-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "alloy-primitives 0.8.18",
@@ -10214,7 +10214,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-utils"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "color-eyre",

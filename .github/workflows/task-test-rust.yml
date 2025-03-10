@@ -1,5 +1,5 @@
 ---
-name: Task - Run Cargo tests
+name: Task - Test Rust
 
 on:
   workflow_dispatch:
@@ -9,14 +9,12 @@ jobs:
   test-rust:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/rust-setup
+      - uses: ./.github/actions/rust-setup
         with:
           cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}

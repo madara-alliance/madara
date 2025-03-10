@@ -1,5 +1,5 @@
 ---
-name: DB Version Management
+name: Task - DB Version Management
 
 on:
   workflow_dispatch:
@@ -21,8 +21,7 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Install yq
-        uses: mikefarah/yq@master
+      - uses: mikefarah/yq@master
 
       - name: Check if PR already bumped
         id: check_bump

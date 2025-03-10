@@ -1,4 +1,4 @@
-name: Task - Linters Cargo
+name: Task - Lint Cargo
 
 on:
   workflow_dispatch:

@@ -42,8 +42,7 @@ jobs:
       # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
 
-      - name: Setup Rust Environment
-        uses: ./.github/actions/rust-setup
+      - uses: ./.github/actions/rust-setup
         with:
           # Uses the testing cache key as we are using the --profile dev later
           cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}

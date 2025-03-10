@@ -1,5 +1,5 @@
 ---
-name: Task - Code Style Linting
+name: Task - Lint Code Style
 
 # This workflow runs code style linters for non-Rust code
 # including Prettier, Markdown, and TOML formatting checks
@@ -41,15 +41,14 @@ jobs:
   toml-lint:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download taplo
         run: |
           curl -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz -o taplo.gz
           gunzip taplo.gz
           chmod +x taplo
           mv taplo /usr/local/bin/taplo
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Check root toml files
         run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check

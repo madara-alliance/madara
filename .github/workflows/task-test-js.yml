@@ -1,4 +1,4 @@
-name: Task - JavaScript Tests
+name: Task - Test JavaScript
 
 # This workflow runs JavaScript compatibility tests for Starknet.js
 # against the Madara binary to ensure API compatibility
@@ -19,8 +19,7 @@ jobs:
   test-js:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
