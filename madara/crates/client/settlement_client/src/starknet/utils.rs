@@ -121,6 +121,7 @@ pub struct TestContext {
     pub url: Url,
     pub account: StarknetAccount,
     pub deployed_appchain_contract_address: Felt,
+    pub port: u16,
 }
 
 // Separate struct to hold the Madara process
@@ -204,17 +205,21 @@ pub async fn init_test_context() -> anyhow::Result<TestGuard> {
         *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
     }
 
+    // Get the port from the Madara instance
+    let port = madara_guard.as_ref().unwrap().process.port();
+
     // Initialize test context
     let mut context = TEST_CONTEXT.lock().await;
     if context.is_none() {
-        let account = starknet_account()?;
+        let account = starknet_account_with_port(port)?;
         let deployed_appchain_contract_address =
             deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA, APPCHAIN_CONTRACT_CASM_HASH).await?;
 
         *context = Some(TestContext {
-            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            url: Url::parse(format!("http://127.0.0.1:{}", port).as_str())?,
             account,
             deployed_appchain_contract_address,
+            port,
         });
     }
 
@@ -225,11 +230,15 @@ pub async fn init_test_context() -> anyhow::Result<TestGuard> {
 pub async fn get_test_context() -> anyhow::Result<TestContext> {
     let context = TEST_CONTEXT.lock().await;
     match context.as_ref() {
-        Some(ctx) => Ok(TestContext {
-            url: ctx.url.clone(),
-            account: starknet_account()?,
-            deployed_appchain_contract_address: ctx.deployed_appchain_contract_address,
-        }),
+        Some(ctx) => {
+            let account = starknet_account_with_port(ctx.port)?;
+            Ok(TestContext {
+                url: ctx.url.clone(),
+                account,
+                deployed_appchain_contract_address: ctx.deployed_appchain_contract_address,
+                port: ctx.port,
+            })
+        }
         None => Err(anyhow::anyhow!("Test context not initialized")),
     }
 }
@@ -247,21 +256,51 @@ pub async fn init_messaging_test_context() -> anyhow::Result<TestGuard> {
         *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
     }
 
+    // Get the port from the Madara instance
+    let port = madara_guard.as_ref().unwrap().process.port();
+
     // Then initialize the test context if needed
     let mut context = TEST_CONTEXT.lock().await;
     if context.is_none() {
-        let account = starknet_account()?;
+        let account = starknet_account_with_port(port)?;
         let deployed_appchain_contract_address =
             deploy_contract(&account, MESSAGING_CONTRACT_SIERRA, MESSAGING_CONTRACT_CASM_HASH).await?;
 
         *context = Some(TestContext {
-            url: Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?,
+            url: Url::parse(format!("http://127.0.0.1:{}", port).as_str())?,
             account,
             deployed_appchain_contract_address,
+            port,
         });
     }
 
     Ok(TestGuard)
+}
+
+// Add a function to create a Starknet account with a specific port
+pub fn starknet_account_with_port(port: u16) -> anyhow::Result<StarknetAccount> {
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(format!("http://127.0.0.1:{}", port).as_str())?));
+    let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_str(DEPLOYER_PRIVATE_KEY)?));
+    let mut account = SingleOwnerAccount::new(
+        provider,
+        signer,
+        Felt::from_str(DEPLOYER_ADDRESS)?,
+        // MADARA_DEVNET
+        Felt::from_str("0x4D41444152415F4445564E4554")?,
+        ExecutionEncoding::New,
+    );
+    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    Ok(account)
+}
+
+// Update the original function to use the dynamic port from the test context
+pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
+    // This is a fallback that should ideally not be used directly
+    // Better to use starknet_account_with_port with the correct port
+    eprintln!(
+        "Warning: Using starknet_account() with default port. Consider using starknet_account_with_port() instead."
+    );
+    starknet_account_with_port(MADARA_PORT.parse().unwrap())
 }
 
 pub async fn send_state_update(
@@ -323,22 +362,6 @@ pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract
         Some(block_number) => Ok(block_number),
         None => Ok(latest_block_number_recorded + 1),
     }
-}
-
-pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
-    let provider =
-        JsonRpcClient::new(HttpTransport::new(Url::parse(format!("http://127.0.0.1:{}", MADARA_PORT).as_str())?));
-    let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_str(DEPLOYER_PRIVATE_KEY)?));
-    let mut account = SingleOwnerAccount::new(
-        provider,
-        signer,
-        Felt::from_str(DEPLOYER_ADDRESS)?,
-        // MADARA_DEVNET
-        Felt::from_str("0x4D41444152415F4445564E4554")?,
-        ExecutionEncoding::New,
-    );
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
-    Ok(account)
 }
 
 pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8], casm_hash: &str) -> anyhow::Result<Felt> {
