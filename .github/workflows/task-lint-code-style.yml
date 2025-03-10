@@ -49,15 +49,14 @@ jobs:
             echo "taplo is already installed"
           else
             mkdir -p bin
-            curl -s -L https://github.com/tamasfe/taplo/releases/download/0.9.3/taplo-linux-x86_64.gz > bin/taplo.gz
+            curl -s -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz > bin/taplo.gz
             gunzip -f bin/taplo.gz
             chmod +x bin/taplo
-            export PATH="$PWD/bin:$PATH"
           fi
 
       - name: Check root toml files
-        run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
+        run: bin/taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
 
       - name: Check orchestrator toml files
         working-directory: orchestrator
-        run: taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check
+        run: bin/taplo fmt --config ../${{ env.TAPLO_CONFIG }} --check
