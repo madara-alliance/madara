@@ -8,8 +8,8 @@ git tag v0.8.7
 
 2. Trigger the manual workflow "Manual Release with Binaries" (manual_release.yml)
 
-* `tag`: v0.8.7
-* base: main
+- `tag`: v0.8.7
+- base: main
 
 3. Review the release draft and publish
 4. Review the CHANGELOG.md Pull Request and merge
