@@ -45,10 +45,14 @@ jobs:
 
       - name: Download taplo
         run: |
-          curl -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz -o taplo.gz
-          gunzip taplo.gz
-          chmod +x taplo
-          mv taplo /usr/local/bin/taplo
+          if command -v taplo &> /dev/null; then
+            echo "taplo is already installed"
+          else
+            curl -L https://github.com/tamasfe/taplo/releases/download/${{ env.TAPLO_VERSION }}/taplo-linux-x86_64.gz -o taplo.gz
+            gunzip taplo.gz
+            chmod +x taplo
+            mv taplo /usr/local/bin/taplo
+          fi
 
       - name: Check root toml files
         run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
