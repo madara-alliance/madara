@@ -1,6 +1,6 @@
 # GitHub Workflows
 
-This directory contains the GitHub Actions workflows used in the Madara project. 
+This directory contains the GitHub Actions workflows used in the Madara project.
 This README explains how the workflows are organized, how to use them, and how to test them locally.
 
 ## Directory Structure
@@ -25,9 +25,9 @@ The trigger workflows typically call multiple task workflows as needed.
 
 Using this convention: `event`-`category`-`functionality`.yml
 
-* *event*: `push`, `push-main`, `schedule`, `pull-request`, `task` (specific to reusable components)...
-* *category*: `ci`, `release`, `build`, `lint`, `security`, `test`,...
-* *functionality*: `code-style`, `docker`, `backup`, `frontend`, .... anything that describe what it does
+- _event_: `push`, `push-main`, `schedule`, `pull-request`, `task` (specific to reusable components)...
+- _category_: `ci`, `release`, `build`, `lint`, `security`, `test`,...
+- _functionality_: `code-style`, `docker`, `backup`, `frontend`, .... anything that describe what it does
 
 ## Shared Actions
 
@@ -36,6 +36,7 @@ Custom actions in the `actions/` directory are used across workflows to standard
 ### load-env
 
 Located in `.github/actions/load-env/`, this action loads environment variables from the config files. It:
+
 - Reads variables from `.github/config/env.yml`
 - Sets these as environment variables for all workflow steps
 - Handles prioritization of existing environment variables (system environment overrides those in env.yml. This allows easy testing with `act`)
@@ -43,6 +44,7 @@ Located in `.github/actions/load-env/`, this action loads environment variables 
 ### rust-setup
 
 Located in `.github/actions/rust-setup/`, this action sets up the Rust environment with:
+
 - Appropriate Rust version installation based on env vars
 - Cache configuration for dependencies
 - Other Rust tools installation
@@ -70,6 +72,7 @@ env:
 ```
 
 These variables define:
+
 - Versions for build and testing tools
 - Cache keys for various environments
 - Prefixes and other configuration values
@@ -82,12 +85,11 @@ Having different cache for build environments allows to reduce the total cache s
 
 **Warning**: Currently `act` doesn't work well with multiple level of dockerization. Meaning workflows which are using `uses: task-...` as jobs (ex: `pull-request-...` or `push-...`) won't work. However all the `task-...` workflows should work properly.
 
-
 ### Common usages
 
-* `-s GITHUB_TOKEN="$(gh auth token)"` to setup the token
-* `--artifact-server-path ./tmp/artifacts/` to maintain artifacts used across tasks
-* `-P karnot-arc-runner-set=catthehacker/ubuntu:act-latest` allows task using `runs-on: karnot-arc-runner-set` to execute using arc default ubuntu docker image
+- `-s GITHUB_TOKEN="$(gh auth token)"` to setup the token
+- `--artifact-server-path ./tmp/artifacts/` to maintain artifacts used across tasks
+- `-P karnot-arc-runner-set=catthehacker/ubuntu:act-latest` allows task using `runs-on: karnot-arc-runner-set` to execute using arc default ubuntu docker image
 
 ```bash
 # Run the main build task (takes ~10min on good computer)
@@ -111,6 +113,7 @@ docker build -f docker/madara-production.Dockerfile . --build-arg="PYTHON_VERSIO
 ### Troubleshooting
 
 If you encounter issues:
+
 1. Check if Act is using the correct Docker images
 2. Ensure all required secrets are provided
 3. Check for path-specific issues between different environments
