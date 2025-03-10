@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: tag (ex. v0.8.0) to generate release note from
+        description: tag (ex. v0.8.0) to generate release note from (must exist already)
         required: true
       base:
         description: base branch (ex. main) to push changelog PR to
