@@ -6,54 +6,17 @@ on:
       tag:
         description: tag (ex. v0.8.0) to generate release note from
         required: true
+      base:
+        description: base branch (ex. main) to push changelog PR to
+        required: true
+        default: main
+      fake-build:
+        description: FAKE build. (only for testing the release workflow
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
-
-      - name: Update CHANGELOG
-        id: changelog
-        uses: requarks/changelog-action@v1
-        with:
-          token: ${{ github.token }}
-          tag: ${{ github.event.inputs.tag || github.ref_name }}
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Release ${{ github.event.inputs.tag || github.ref_name }}
-          commit: ${{ github.sha }}
-          draft: true
-          prerelease: false
-          body: ${{ steps.changelog.outputs.changes }}
-
-      - name: Prettify code
-        uses: creyD/prettier_action@v4.3
-        with:
-          prettier_options: --write --config ./.markdownlint.json
-
-      - name: Commit CHANGELOG.md
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          branch: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
-          commit_message: "docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
-          file_pattern: CHANGELOG.md
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
-        with:
-          title: "docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
-          body: "This PR is automatically created by the release workflow."
-          head: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
-          base: main
-
   # Build binaries (rely on docker build for a clean build)
   build-binaries:
     runs-on: ubuntu-latest
@@ -64,10 +27,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup the environment with all necessary dependencies
-      - uses: ./.github/actions/load-env
+      - name: Build production madara*
+        if: ${{ github.event.inputs.fake-build == 'true' }}
+        shell: bash
+        run: |
+          mkdir -p build
+          echo 'fake-binary' > build/madara-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          echo 'fake-binary' > build/orchestrator-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
 
       - name: Build production madara
+        if: ${{ github.event.inputs.fake-build != 'true' }}
         shell: bash
         run: |
           # We don't use volumes because of ownership/permissions issues
@@ -79,7 +48,6 @@ jobs:
             --build-arg="FOUNDRY_VERSION=${{ env.BUILD_FOUNDRY_VERSION }}" \
             --build-arg="RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" \
             - < docker/madara-production.Dockerfile
-
           # Copy madara/orchestrator binary
           mkdir -p build
           docker rm -f dummy 2> /dev/null | true
@@ -87,7 +55,6 @@ jobs:
           docker cp dummy:/madara/madara build/madara-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
           docker cp dummy:/madara/orchestrator build/orchestrator-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
           docker rm -f dummy
-
           # Cleanup
           docker rmi prod
 
@@ -97,10 +64,51 @@ jobs:
           name: binaries-${{ matrix.cpu }}
           path: build
 
-  attach-binaries:
-    needs: [create-release, build-binaries]
+  create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    needs: build-binaries
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      # We check if the release already exist
+      # This prevents conflit with branches and release drafts
+      - name: Check if release already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH_NAME="release/changelog-${{ github.event.inputs.tag || github.ref_name }}"
+          BRANCH_EXISTS=$(git branch -r | grep "/$BRANCH_NAME$" || true)
+          if [[ "$BRANCH_EXISTS" != "" ]]; then
+            echo "Branch release/changelog-${{ github.event.inputs.tag || github.ref_name }} already exists"
+            exit 1
+          else
+            echo "Branch release/changelog-${{ github.event.inputs.tag || github.ref_name }} does not exist"
+          fi
+
+          gh release view ${{ github.event.inputs.tag || github.ref_name }} || true
+          RELEASE_EXISTS=$(gh release view ${{ github.event.inputs.tag || github.ref_name }} --json name 2>/dev/null || echo "false")
+          if [[ "$RELEASE_EXISTS" != "false" ]]; then
+            echo "Release ${{ github.event.inputs.tag || github.ref_name }} already exists"
+            exit 1
+          else
+            echo "Release ${{ github.event.inputs.tag || github.ref_name }} does not exist"
+          fi
+
+      - name: Update CHANGELOG
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -111,11 +119,21 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R build
 
-      - name: Attach binaries to release
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          files: |
-            build/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
+          artifacts: build/*
+          commit: ${{ github.sha }}
+          draft: true
+          prerelease: false
+          body: ${{ steps.changelog.outputs.changes }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          title: "docs: update CHANGELOG.md for ${{ github.event.inputs.tag || github.ref_name }} [skip ci]"
+          body: "This PR is automatically created by the release workflow."
+          branch: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
+          base: ${{ github.event.inputs.base }}
