@@ -42,19 +42,19 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     let chain_config = starknet.clone_chain_config();
     let gateway_url = chain_config.gateway_url.clone();
     let feeder_gateway_url = chain_config.feeder_gateway_url.clone();
-    
+
     let provider = GatewayProvider::new(gateway_url, feeder_gateway_url);
-    
+
     // Fetch the latest block from the network
     let network_latest_block = provider
         .get_block(BlockId::Tag(BlockTag::Latest))
         .await
         .or_internal_server_error("Error fetching latest block from network")?;
-    
+
     let network_latest_block = network_latest_block
         .non_pending()
         .ok_or_internal_server_error("Latest block from network cannot be pending")?;
-    
+
     let highest_block_num = network_latest_block.block_number;
     let highest_block_hash = network_latest_block.block_hash;
 
