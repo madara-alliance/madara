@@ -45,19 +45,24 @@ jobs:
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Check Anvil Installation & run Anvil
+      - name: Start Anvil
         run: |
           if command -v anvil &> /dev/null
           then
               echo "Anvil is installed. Version information:"
               anvil --version
-              anvil --block-time 1 &
+              nohup anvil --block-time 1 --host 0.0.0.0 > nohup.log 2>&1 &
+              ANVIL_PID=$!
+              echo "Started Anvil with PID: $ANVIL_PID"
+              sleep 2
           else
               echo "Anvil is not installed or not in PATH"
               exit 1
           fi
-
+      - name: Check anvil running
+        run: |
+          curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+               -H "Content-Type: application/json" http://localhost:8545
       - name: Build and run tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
