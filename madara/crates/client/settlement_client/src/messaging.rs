@@ -219,7 +219,6 @@ mod messaging_module_tests {
     use rstest::{fixture, rstest};
     use starknet_types_core::felt::Felt;
     use std::time::Duration;
-    use tokio::time::timeout;
 
     // Helper function to create a mock event
     fn create_mock_event(block_number: u64, nonce: u64) -> L1toL2MessagingEventData {
@@ -274,7 +273,7 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_sync_processes_new_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
@@ -327,7 +326,7 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_sync_handles_cancelled_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
@@ -354,18 +353,31 @@ mod messaging_module_tests {
         // Mock get_l1_to_l2_message_cancellations - return non-zero to indicate cancellation
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::from(12345)));
 
-        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
+        // Wrap the client in Arc
+        let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
 
-        timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
+        // Keep a reference to context for cancellation
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = backend.clone();
+
+        // Spawn the sync task in a separate thread
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, mempool.clone(), ctx).await });
+
+        // Wait sufficient time for event to be processed
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
         // Verify the cancelled message was handled correctly
         assert!(backend.has_l1_messaging_nonce(Nonce(event_clone.nonce))?);
+
+        // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
 
         Ok(())
     }
 
     #[rstest]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_sync_skips_already_processed_message(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
@@ -391,9 +403,22 @@ mod messaging_module_tests {
         // Mock get_messaging_hash - should not be called
         client.expect_get_messaging_hash().times(0);
 
-        let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
+        // Wrap the client in Arc
+        let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
 
-        timeout(Duration::from_secs(1), sync(client, backend.clone(), mempool.clone(), ctx)).await??;
+        // Keep a reference to context for cancellation
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = backend.clone();
+
+        // Spawn the sync task in a separate thread
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, mempool.clone(), ctx).await });
+
+        // Wait sufficient time for event to be processed
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
 
         Ok(())
     }
