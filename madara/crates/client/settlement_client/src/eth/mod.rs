@@ -127,8 +127,7 @@ impl SettlementClientTrait for EthereumClient {
             |e| -> SettlementClientError {
                 EthereumClientError::Contract(format!("Failed to get state block number: {}", e)).into()
             },
-        )?;
-        Ok(0) // Placeholder until the actual implementation is provided
+        )
     }
 
     /// Get the last Starknet state root verified on L1
@@ -339,18 +338,20 @@ pub mod eth_client_getter_test {
     static ANVIL_INSTANCE: OnceCell<Arc<AnvilInstance>> = OnceCell::new();
 
     fn get_anvil() -> Arc<AnvilInstance> {
-        ANVIL_INSTANCE.get_or_init(|| {
-            let fork_url = std::env::var("ETH_FORK_URL")
-                .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
-            let anvil = Anvil::new()
-                .fork(fork_url)
-                .fork_block_number(L1_BLOCK_NUMBER)
-                .timeout(60_000)
-                .try_spawn()
-                .expect("failed to spawn anvil instance");
+        ANVIL_INSTANCE
+            .get_or_init(|| {
+                // let fork_url = std::env::var("ETH_FORK_URL")
+                //     .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
+                let anvil = Anvil::new()
+                    .fork("https://eth-mainnet.g.alchemy.com/v2/gbyYKt74AtTbRcgTSFP45xXuFUFdTH3D")
+                    .fork_block_number(L1_BLOCK_NUMBER)
+                    .timeout(60_000)
+                    .try_spawn()
+                    .expect("failed to spawn anvil instance");
 
-            Arc::new(anvil)
-        }).clone()
+                Arc::new(anvil)
+            })
+            .clone()
     }
 
     pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
