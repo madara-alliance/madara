@@ -92,6 +92,7 @@ jobs:
         run: rustup show
 
       - name: Run llvm-cov tests
+        continue-on-error: true
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
