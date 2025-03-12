@@ -57,17 +57,8 @@ async fn create_job_job_does_not_exists_in_db_works() {
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
     // Create a proper JobMetadata for the test
-    let metadata = JobMetadata {
-        common: CommonMetadata::default(),
-        specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number: 0,
-            full_output: false,
-            cairo_pie_path: None,
-            snos_output_path: None,
-            program_output_path: None,
-            snos_fact: None,
-        }),
-    };
+    let metadata =
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
 
     assert!(create_job(JobType::SnosRun, "0".to_string(), metadata, services.config.clone()).await.is_ok());
 
@@ -106,10 +97,8 @@ async fn create_job_job_exists_in_db_works() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            block_number: 0,
             input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
-            ensure_on_chain_registration: None,
-            download_proof: None,
+            ..Default::default()
         }),
     };
 
@@ -150,10 +139,8 @@ async fn create_job_job_handler_is_not_implemented_panics() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            block_number: 0,
             input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
-            ensure_on_chain_registration: None,
-            download_proof: None,
+            ..Default::default()
         }),
     };
 
