@@ -32,12 +32,13 @@ pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
     pub fact_checker: FactChecker,
     pub atlantic_api_key: String,
+    pub proof_layout: LayoutName,
 }
 
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(&self, task: Task, proof_layout: LayoutName) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -55,8 +56,10 @@ impl ProverClient for AtlanticProverService {
 
                 // sleep for 2 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                let atlantic_job_response =
-                    self.atlantic_client.add_job(pie_file_path, proof_layout, self.atlantic_api_key.clone()).await?;
+                let atlantic_job_response = self
+                    .atlantic_client
+                    .add_job(pie_file_path, self.proof_layout, self.atlantic_api_key.clone())
+                    .await?;
                 // sleep for 2 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 log::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
@@ -112,11 +115,16 @@ impl ProverClient for AtlanticProverService {
 }
 
 impl AtlanticProverService {
-    pub fn new(atlantic_client: AtlanticClient, fact_checker: FactChecker, atlantic_api_key: String) -> Self {
-        Self { atlantic_client, fact_checker, atlantic_api_key }
+    pub fn new(
+        atlantic_client: AtlanticClient,
+        fact_checker: FactChecker,
+        atlantic_api_key: String,
+        proof_layout: &LayoutName,
+    ) -> Self {
+        Self { atlantic_client, fact_checker, atlantic_api_key, proof_layout: proof_layout.to_owned() }
     }
 
-    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs) -> Self {
+    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
@@ -125,16 +133,16 @@ impl AtlanticProverService {
             atlantic_params.atlantic_verifier_contract_address.clone(),
         );
 
-        Self::new(atlantic_client, fact_checker, atlantic_params.atlantic_api_key.clone())
+        Self::new(atlantic_client, fact_checker, atlantic_params.atlantic_api_key.clone(), proof_layout)
     }
 
-    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs) -> Self {
+    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
         let fact_checker = FactChecker::new(
             atlantic_params.atlantic_rpc_node_url.clone(),
             atlantic_params.atlantic_verifier_contract_address.clone(),
         );
-        Self::new(atlantic_client, fact_checker, "random_api_key".to_string())
+        Self::new(atlantic_client, fact_checker, "random_api_key".to_string(), proof_layout)
     }
 }

@@ -230,7 +230,7 @@ impl TestConfigBuilder {
         let settlement_client =
             implement_client::init_settlement_client(settlement_client_type, &params.settlement_params).await;
 
-        let prover_client = implement_client::init_prover_client(prover_client_type, &params.prover_params).await;
+        let prover_client = implement_client::init_prover_client(prover_client_type, &params);
         // Delete the Storage before use
         delete_storage(provider_config.clone(), &params.storage_params).await.expect("Could not delete storage");
         // External Dependencies
@@ -307,7 +307,7 @@ pub mod implement_client {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::{JsonRpcClient, Url};
 
-    use super::{ConfigType, MockType};
+    use super::{ConfigType, EnvParams, MockType};
     use crate::alerts::{Alerts, MockAlerts};
     use crate::cli::alert::AlertValidatedArgs;
     use crate::cli::da::DaValidatedArgs;
@@ -368,13 +368,10 @@ pub mod implement_client {
         }
     }
 
-    pub(crate) async fn init_prover_client(
-        service: ConfigType,
-        prover_params: &ProverValidatedArgs,
-    ) -> Box<dyn ProverClient> {
+    pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => build_prover_service(prover_params),
+            ConfigType::Actual => build_prover_service(&params.prover_params, &params.orchestrator_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -473,7 +470,7 @@ pub mod implement_client {
     }
 }
 
-struct EnvParams {
+pub struct EnvParams {
     aws_params: AWSConfigValidatedArgs,
     alert_params: AlertValidatedArgs,
     queue_params: QueueValidatedArgs,

@@ -136,15 +136,15 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
+    #[clap(flatten)]
+    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
+
     // Prover
     #[clap(flatten)]
     pub sharp_args: prover::sharp::SharpCliArgs,
 
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
-
-    #[clap(flatten)]
-    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // SNOS
     #[clap(flatten)]
