@@ -26,6 +26,9 @@ use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::utils::logging::init_logging;
 
+#[global_allocator]
+static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 /// Start the server
 #[tokio::main]
 #[allow(clippy::needless_return)]
