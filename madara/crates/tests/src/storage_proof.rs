@@ -247,7 +247,8 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
         "contract_leaves_data": [
           {
             "class_hash": "0x0",
-            "nonce": "0x0"
+            "nonce": "0x0",
+            "storage_root": "0x0"
           }
         ],
         "nodes": [
@@ -255,7 +256,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
             "node": {
               "child": "0x3873db7e0ca5c27a75e9e867f61124c2df15095124b413cccf94e1f50427d1f",
               "length": 247,
-              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e0"
+              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e"
             },
             "node_hash": "0x556551ef2d003cf08323a6c1c60d8de89ec9e6450700b62d0a4e81378a0658d"
           },
