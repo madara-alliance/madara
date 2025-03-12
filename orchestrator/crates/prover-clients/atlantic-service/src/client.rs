@@ -24,14 +24,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.path("v1").path("l1/atlantic-query/proof-generation-verification")
+        request.form_text("result", "PROOF_VERIFICATION_ON_L1")
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.path("v1").path("l2/submit-sharp-query/from-proof-generation-to-proof-verification")
+        request.form_text("result", "PROOF_VERIFICATION_ON_L2")
     }
 }
 
@@ -68,6 +68,7 @@ impl AtlanticClient {
         pie_file: &Path,
         proof_layout: LayoutName,
         atlantic_api_key: impl AsRef<str>,
+        n_steps: Option<usize>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = match proof_layout {
             LayoutName::dynamic => "dynamic",
@@ -77,10 +78,14 @@ impl AtlanticClient {
         let response = self
             .proving_layer
             .customize_request(
-                self.client.request().method(Method::POST).query_param("apiKey", atlantic_api_key.as_ref()),
+                self.client
+                    .request()
+                    .method(Method::POST)
+                    .query_param("apiKey", atlantic_api_key.as_ref())
+                    .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+                    .form_text("layout", proof_layout)
+                    .form_file("pieFile", pie_file, "pie.zip")?,
             )
-            .form_file("pieFile", pie_file, "pie.zip")?
-            .form_text("layout", proof_layout)
             .send()
             .await
             .map_err(AtlanticError::AddJobFailure)?;
@@ -96,7 +101,6 @@ impl AtlanticClient {
             .client
             .request()
             .method(Method::GET)
-            .path("v1")
             .path("atlantic-query")
             .path(job_key)
             .send()
@@ -107,6 +111,17 @@ impl AtlanticClient {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
             Err(AtlanticError::SharpService(response.status()))
+        }
+    }
+
+    // https://docs.herodotus.cloud/atlantic/sending-query#sending-query
+    fn n_steps_to_job_size(&self, n_steps: Option<usize>) -> &'static str {
+        let n_steps = n_steps.unwrap_or(40_000_000) / 1_000_000;
+
+        match n_steps {
+            0..=12 => "S",
+            13..=29 => "M",
+            _ => "L",
         }
     }
 }

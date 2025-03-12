@@ -40,7 +40,7 @@ pub struct SharpProverService {
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task, _n_steps: Option<usize>) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",

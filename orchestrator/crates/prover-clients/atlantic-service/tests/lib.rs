@@ -43,7 +43,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
-    let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie))).await;
+    let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), None).await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();

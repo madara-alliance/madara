@@ -29,12 +29,7 @@ async fn test_create_job() {
 
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
-        specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            block_number: 0,
-            input_path: None,
-            ensure_on_chain_registration: None,
-            download_proof: None,
-        }),
+        specific: JobSpecificMetadata::Proving(ProvingMetadata::default()),
     };
 
     let job = ProvingJob.create_job(services.config.clone(), String::from("0"), metadata).await;
@@ -59,10 +54,8 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let services = TestConfigBuilder::new().configure_prover_client(prover_client.into()).build().await;
 
     job_item.metadata.specific = JobSpecificMetadata::Proving(ProvingMetadata {
-        block_number: 0,
-        input_path: None,
         ensure_on_chain_registration: Some("fact".to_string()),
-        download_proof: None,
+        ..Default::default()
     });
 
     assert!(ProvingJob.verify_job(services.config, &mut job_item).await.is_ok());
@@ -74,7 +67,7 @@ async fn test_process_job() {
     let server = MockServer::start();
     let mut prover_client = MockProverClient::new();
 
-    prover_client.expect_submit_task().times(1).returning(|_| Ok("task_id".to_string()));
+    prover_client.expect_submit_task().times(1).returning(|_, _| Ok("task_id".to_string()));
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
@@ -99,10 +92,9 @@ async fn test_process_job() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            block_number: 0,
             input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
             ensure_on_chain_registration: Some("fact".to_string()),
-            download_proof: None,
+            ..Default::default()
         }),
     };
 

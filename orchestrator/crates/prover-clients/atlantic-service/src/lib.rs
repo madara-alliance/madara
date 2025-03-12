@@ -38,7 +38,7 @@ pub struct AtlanticProverService {
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -58,7 +58,7 @@ impl ProverClient for AtlanticProverService {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 let atlantic_job_response = self
                     .atlantic_client
-                    .add_job(pie_file_path, self.proof_layout, self.atlantic_api_key.clone())
+                    .add_job(pie_file_path, self.proof_layout, self.atlantic_api_key.clone(), n_steps)
                     .await?;
                 // sleep for 2 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;

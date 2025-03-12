@@ -24,4 +24,20 @@ pub struct SnosMetadata {
     // Job-populated fields
     /// SNOS fact generated during processing
     pub snos_fact: Option<String>,
+    /// SNOS total steps taken
+    pub snos_n_steps: Option<usize>,
+}
+
+impl Default for SnosMetadata {
+    fn default() -> Self {
+        Self {
+            block_number: 0,
+            full_output: false,
+            cairo_pie_path: None,
+            snos_output_path: None,
+            program_output_path: None,
+            snos_fact: None,
+            snos_n_steps: None,
+        }
+    }
 }

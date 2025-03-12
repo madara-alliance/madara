@@ -64,6 +64,7 @@ impl Worker for SnosWorker {
                     snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
                     program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
                     snos_fact: None,
+                    snos_n_steps: None,
                 }),
             };
 
