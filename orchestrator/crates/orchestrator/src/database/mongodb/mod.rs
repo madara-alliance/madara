@@ -216,14 +216,26 @@ impl Database for MongoDb {
 
         tracing::debug!(job_type = ?job_type, category = "db_call", "Fetching latest job by type");
 
-        // Get the first (and only) result if it exists
         match cursor.try_next().await? {
             Some(doc) => {
-                let job: JobItem = mongodb::bson::from_document(doc)?;
-                let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type")];
-                let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(Some(job))
+                // Try to deserialize and log any errors
+                match mongodb::bson::from_document::<JobItem>(doc.clone()) {
+                    Ok(job) => {
+                        tracing::debug!(deserialized_job = ?job, "Successfully deserialized job");
+                        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type")];
+                        let duration = start.elapsed();
+                        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                        Ok(Some(job))
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            document = ?doc,
+                            "Failed to deserialize document into JobItem"
+                        );
+                        Err(eyre!("Failed to deserialize document: {}", e))
+                    }
+                }
             }
             None => Ok(None),
         }

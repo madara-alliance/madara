@@ -60,7 +60,7 @@ jobs:
         with:
           path: target/release/madara
           key: ${{ runner.os }}-madara-bin-${{ steps.binary_hash.outputs.hash }}
-      
+
       # Generate a unique hash for Cairo artifacts that includes both content and timestamp
       # This ensures consistent Cairo artifacts between workflows while maintaining freshness
       - name: Generate Cairo artifacts hash

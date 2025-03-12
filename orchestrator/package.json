@@ -17,7 +17,6 @@
     "ethers": "^6.13.4",
     "migrate-mongo": "^11.0.0",
     "mongodb": "^6.9.0",
-    "prettier": "^3.4.2",
     "prettier-plugin-solidity": "^1.4.2",
     "starknet": "^6.11.0",
     "uuid": "^10.0.0"

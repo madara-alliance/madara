@@ -27,6 +27,7 @@ jobs:
         uses: avto-dev/markdown-lint@v1
         with:
           config: "../.markdownlint.json"
+          args: "."
 
   toml-lint:
     runs-on: ubuntu-latest

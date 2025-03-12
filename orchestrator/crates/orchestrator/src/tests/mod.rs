@@ -10,4 +10,5 @@ pub mod queue;
 pub mod alerts;
 pub mod common;
 mod data_storage;
+pub mod utils;
 pub mod workers;
