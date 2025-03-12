@@ -3,8 +3,8 @@ name: Workflow - Pull Request
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
 
 concurrency:
   group: pr-checks-${{ github.workflow }}-${{ github.head_ref || github.run_id }}

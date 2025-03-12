@@ -1,3 +1,7 @@
+use super::{
+    receipt::{ConfirmedReceipt, MsgToL2},
+    transaction::Transaction,
+};
 use anyhow::Context;
 use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
 use mp_chain_config::StarknetVersion;
@@ -5,11 +9,6 @@ use mp_convert::hex_serde::U128AsHex;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
-
-use super::{
-    receipt::{ConfirmedReceipt, MsgToL2},
-    transaction::Transaction,
-};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -57,7 +56,7 @@ impl ProviderBlockPendingMaybe {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlock {
     pub block_hash: Felt,
@@ -170,7 +169,7 @@ impl ProviderBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockPending {
     pub parent_block_hash: Felt,
@@ -250,7 +249,7 @@ impl ProviderBlockPending {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockSignature {
     pub block_hash: Felt,
@@ -259,7 +258,7 @@ pub struct ProviderBlockSignature {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ResourcePrice {
     #[serde_as(as = "U128AsHex")]
@@ -270,7 +269,7 @@ pub struct ResourcePrice {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 pub enum BlockStatus {
     Pending,
     Aborted,
