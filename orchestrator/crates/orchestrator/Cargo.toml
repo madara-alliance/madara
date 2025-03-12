@@ -30,7 +30,7 @@ aws-credential-types = { workspace = true, features = [
 aws-sdk-eventbridge.workspace = true
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sns = { workspace = true, features = ["behavior-version-latest"] }
-aws-sdk-sqs = { workspace = true }
+aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
 axum-macros = { workspace = true }
 bincode = { workspace = true }
@@ -50,7 +50,7 @@ majin-blob-core = { workspace = true }
 majin-blob-types = { workspace = true }
 mockall = { workspace = true }
 mockall_double = { workspace = true }
-mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
+mongodb = { workspace = true, features = ["bson-chrono-0_4", "bson-uuid-1"] }
 num = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
@@ -100,10 +100,11 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
+jemallocator = "0.5.4"
+
 [features]
-default = ["ethereum", "with_mongodb", "with_sqs"]
+default = ["ethereum"]
 ethereum = ["orchestrator-ethereum-da-client"]
-with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
 testing = []
 

@@ -323,7 +323,7 @@ aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 axum-macros = "0.4.1"
 color-eyre = "0.6.2"
-chrono = "0.4.0"
+chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "1.0.3"
 dotenvy = "0.15.7"
 log = "0.4.21"

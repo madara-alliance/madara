@@ -1,0 +1,104 @@
+[config]
+default_to_workspace = false
+skip_core_tasks = true
+
+[tasks.default]
+alias = "help"
+
+[tasks.help]
+script = '''
+echo "----------------------------------------"
+echo "                 Madara                 "
+echo "----------------------------------------"
+echo "  setup           - Setup AWS resources (all AWS resources)"
+echo ""
+echo "  build           - Build the orchestrator in release mode"
+echo "  check           - Run cargo check"
+echo "  test            - Run all tests"
+echo "  clippy          - Run clippy lints"
+echo "  fmt             - Format code with rustfmt"
+echo ""
+'''
+
+[tasks.build]
+description = "Build the orchestrator"
+command = "cargo"
+args = ["build", "--package", "orchestrator"]
+
+[tasks.build-release]
+description = "Build the orchestrator in release mode"
+command = "cargo"
+args = ["build", "--release", "--package", "orchestrator"]
+
+[tasks.run]
+description = "Run the orchestrator"
+dependencies = ["build"]
+command = "cargo"
+args = ["run", "--package", "orchestrator"]
+
+[tasks.run-with-args]
+description = "Run the orchestrator with arguments"
+dependencies = ["build"]
+script = '''
+cargo run --package orchestrator -- ${@}
+'''
+
+[tasks.test]
+description = "Run tests"
+command = "cargo"
+args = ["test", "--package", "orchestrator"]
+
+[tasks.check]
+description = "Run cargo check"
+command = "cargo"
+args = ["check", "--package", "orchestrator"]
+
+[tasks.lint]
+description = "Run clippy"
+command = "cargo"
+args = ["clippy", "--package", "orchestrator", "--", "-D", "warnings"]
+
+[tasks.format]
+description = "Run rustfmt"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.clean]
+description = "Clean build artifacts"
+command = "cargo"
+args = ["clean"]
+
+# Custom tasks for the new orchestrator structure
+
+[tasks.setup-resources]
+description = "Setup initial resources for the orchestrator"
+command = "cargo"
+args = ["run", "--package", "orchestrator", "--", "setup"]
+
+[tasks.start-controller]
+description = "Start the controller component"
+command = "cargo"
+args = ["run", "--package", "orchestrator", "--", "controller", "start"]
+
+[tasks.start-worker]
+description = "Start a worker component"
+command = "cargo"
+args = ["run", "--package", "orchestrator", "--", "worker", "start"]
+
+[tasks.start-all]
+description = "Start all orchestrator components"
+dependencies = ["build"]
+script = '''
+echo "Starting all orchestrator components..."
+cargo run --package orchestrator -- start-all
+'''
+
+[tasks.status]
+description = "Check the status of orchestrator components"
+command = "cargo"
+args = ["run", "--package", "orchestrator", "--", "status"]
+
+[tasks.stop-all]
+description = "Stop all orchestrator components"
+command = "cargo"
+args = ["run", "--package", "orchestrator", "--", "stop-all"]

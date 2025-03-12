@@ -33,11 +33,14 @@ jobs:
           sudo apt update
           sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libclang-dev
 
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
+      - name: Install Rust toolchain using rustup
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          rustup toolchain install nightly-2024-09-05 --profile minimal
+          rustup default nightly-2024-09-05
+          rustup override set nightly-2024-09-05
+          rustup show
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -86,17 +89,15 @@ jobs:
         run: |
           make snos
 
-      - name: Install nightly toolchain
-        run: rustup install nightly-2024-09-05
-
       - name: Rustup show
         run: rustup show
 
-      - name: Run Orchestrator e2e test
+      - name: Run e2e test
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
-          RUST_LOG=info cargo +nightly-2024-09-05 test --features testing --workspace test_orchestrator_workflow -- --nocapture
+          source "$HOME/.cargo/env"
+          RUST_LOG=info cargo +nightly-2024-09-05  cargo test --features testing test_orchestrator_workflow -- --nocapture

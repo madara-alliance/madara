@@ -1,0 +1,19 @@
+#===========================================================
+# Cloud Deployment Configuration
+#===========================================================
+
+[project]
+name = "my-app"               # Required: Your project name
+cloud = "aws"                 # Required: Cloud provider (aws, azure, gcp)
+region = "us-west-2"          # Required: Deployment region
+
+#-----------------------------------------------------------
+# Storage Resources
+#-----------------------------------------------------------
+
+[[resources.storage.s3]]
+name = "app-data"             # Required: Bucket name
+public = false                # Optional: Public access (default: false)
+versioning = true             # Optional: Enable versioning (default: false)
+# cors_enabled = false        # Optional: Enable CORS (default: false)
+# lifecycle_rules = []        # Optional: Lifecycle management rules
