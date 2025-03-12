@@ -1,12 +1,11 @@
-use crate::client::StarknetCoreContract;
-use crate::state_update::L1StateUpdate;
+use crate::error::SettlementClientError;
+use crate::eth::StarknetCoreContract;
+use crate::state_update::StateUpdate;
 use alloy::primitives::{I256, U256};
 use anyhow::bail;
 use starknet_types_core::felt::Felt;
 
-pub fn convert_log_state_update(
-    log_state_update: StarknetCoreContract::LogStateUpdate,
-) -> anyhow::Result<L1StateUpdate> {
+pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogStateUpdate) -> anyhow::Result<StateUpdate> {
     let block_number = if log_state_update.blockNumber >= I256::ZERO {
         log_state_update.blockNumber.low_u64()
     } else {
@@ -16,20 +15,22 @@ pub fn convert_log_state_update(
     let global_root = u256_to_felt(log_state_update.globalRoot)?;
     let block_hash = u256_to_felt(log_state_update.blockHash)?;
 
-    Ok(L1StateUpdate { block_number, global_root, block_hash })
+    Ok(StateUpdate { block_number, global_root, block_hash })
 }
 
-pub fn u256_to_felt(u256: U256) -> anyhow::Result<Felt> {
-    let binding = u256.to_be_bytes_vec();
-    let bytes = binding.as_slice();
-    let mut bytes_array = [0u8; 32];
-    bytes_array.copy_from_slice(bytes);
-    let felt = Felt::from_bytes_be(&bytes_array);
+pub fn u256_to_felt(value: U256) -> Result<Felt, SettlementClientError> {
+    let bytes = value.to_be_bytes();
+    // Felt::from_bytes_be returns Felt directly, not a Result
+    let felt = Felt::from_bytes_be(&bytes);
     Ok(felt)
 }
 
-pub fn felt_to_u256(felt: Felt) -> U256 {
-    U256::from_be_bytes(felt.to_bytes_be())
+pub fn felt_to_u256(felt: Felt) -> Result<U256, SettlementClientError> {
+    let bytes = felt.to_bytes_be();
+    if bytes.len() > 32 {
+        return Err(SettlementClientError::ConversionError("Felt value too large for U256".into()));
+    }
+    Ok(U256::from_be_bytes(bytes))
 }
 
 #[cfg(test)]
@@ -44,7 +45,7 @@ mod eth_client_conversion_tests {
         let global_root: u128 = 456;
 
         let expected =
-            L1StateUpdate { block_number, block_hash: Felt::from(block_hash), global_root: Felt::from(global_root) };
+            StateUpdate { block_number, block_hash: Felt::from(block_hash), global_root: Felt::from(global_root) };
 
         let input = StarknetCoreContract::LogStateUpdate {
             blockNumber: I256::from_dec_str(block_number.to_string().as_str()).unwrap(),

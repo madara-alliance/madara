@@ -6,14 +6,14 @@ We may want to remove that flat storage from bonsai-trie as it's not used and we
 
 Instead, we have implemented our own optimized lookup, which is implemented with a column that looks like this:
 
-![schema flat_storage](./flat_storage.png)
+![schema flat_storage](flat_storage.png)
 
 The trick here is to rely on the fact that rocksdb columns are sorted trees.
 The rocksdb `get` operation does not allow getting the value of (contract_1, key_1) at block 15 here, because
 the key has not been modified at that block.
 Instead, we use rocksdb iterators.
 
-![schema flat_storage_iterator](./flat_storage_iterator.png)
+![schema flat_storage_iterator](flat_storage_iterator.png)
 
 This allows us to get the most recent value for a (contract, key) at that block, by using a single rocksdb lookup.
 

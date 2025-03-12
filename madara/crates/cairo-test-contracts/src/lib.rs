@@ -3,3 +3,7 @@
 
 pub const TEST_CONTRACT_SIERRA: &[u8] =
     include_bytes!("../../../../cairo/target/dev/madara_contracts_TestContract.contract_class.json");
+pub const APPCHAIN_CONTRACT_SIERRA: &[u8] =
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_StateUpdateContract.contract_class.json");
+pub const MESSAGING_CONTRACT_SIERRA: &[u8] =
+    include_bytes!("../../../../cairo/target/dev/madara_contracts_MessagingContract.contract_class.json");
