@@ -66,6 +66,7 @@ serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+async-trait.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

@@ -58,24 +58,24 @@ impl AddTransactionProvider for MempoolAddTxProvider {
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.mempool.tx_accept_declare_v0(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_declare_v0(declare_v0_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
     async fn add_declare_transaction(
         &self,
         declare_transaction: BroadcastedDeclareTxn<Felt>,
     ) -> RpcResult<ClassAndTxnHash<Felt>> {
-        Ok(self.mempool.tx_accept_declare(declare_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_declare(declare_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn<Felt>,
     ) -> RpcResult<ContractAndTxnHash<Felt>> {
-        Ok(self.mempool.tx_accept_deploy_account(deploy_account_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_deploy_account(deploy_account_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTxn<Felt>,
     ) -> RpcResult<AddInvokeTransactionResult<Felt>> {
-        Ok(self.mempool.tx_accept_invoke(invoke_transaction).map_err(StarknetRpcApiError::from)?)
+        Ok(self.mempool.tx_accept_invoke(invoke_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
 }

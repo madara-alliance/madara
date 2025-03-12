@@ -6232,6 +6232,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "async-trait",
  "bitvec",
  "blockifier",
  "lazy_static",

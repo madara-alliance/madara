@@ -155,7 +155,7 @@ async fn process_l1_message(
         }
     };
 
-    let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
+    let res = mempool.tx_accept_l1_handler(transaction.into(), fees).await?;
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?

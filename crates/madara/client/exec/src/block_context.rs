@@ -1,7 +1,7 @@
 use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
 use blockifier::{
     blockifier::{
-        config::{ConcurrencyConfig, TransactionExecutorConfig},
+        config::TransactionExecutorConfig,
         stateful_validator::StatefulValidator,
         transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
     },
@@ -22,8 +22,7 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter> {
-        let concurrency_config = ConcurrencyConfig { enabled: true, n_workers: 32, chunk_size: 128 };
-        // let concurrency_config = ConcurrencyConfig::default();
+        let concurrency_config = self.backend.chain_config().concurrency_config.clone();
         TransactionExecutor::new(
             self.init_cached_state(),
             self.block_context.clone(),

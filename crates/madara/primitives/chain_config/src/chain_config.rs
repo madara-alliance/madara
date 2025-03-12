@@ -14,6 +14,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use blockifier::blockifier::config::ConcurrencyConfig;
 use blockifier::bouncer::BouncerWeights;
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
@@ -123,7 +124,6 @@ pub struct ChainConfig {
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
-    #[serde(deserialize_with = "deserialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
 
     /// Only used for block production.
@@ -154,6 +154,10 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+
+    /// Configuration for parallel execution in Blockifier
+    #[serde(default)]
+    pub concurrency_config: ConcurrencyConfig,
 }
 
 impl ChainConfig {
@@ -252,6 +256,7 @@ impl ChainConfig {
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+            concurrency_config: ConcurrencyConfig::default(),
         }
     }
 
@@ -431,32 +436,6 @@ where
     S: serde::Serializer,
 {
     version.to_string().serialize(serializer)
-}
-
-// TODO: this is workaround because BouncerConfig doesn't derive Deserialize in blockifier
-pub fn deserialize_bouncer_config<'de, D>(deserializer: D) -> Result<BouncerConfig, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct BouncerConfigHelper {
-        block_max_capacity: BouncerWeights,
-    }
-
-    let helper = BouncerConfigHelper::deserialize(deserializer)?;
-    Ok(BouncerConfig { block_max_capacity: helper.block_max_capacity })
-}
-
-pub fn serialize_bouncer_config<S>(config: &BouncerConfig, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    #[derive(Serialize)]
-    struct BouncerConfigHelper<'a> {
-        block_max_capacity: &'a BouncerWeights,
-    }
-
-    BouncerConfigHelper { block_max_capacity: &config.block_max_capacity }.serialize(serializer)
 }
 
 #[cfg(test)]

@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&l1_data_provider),
         MempoolLimits::new(&chain_config),
     );
-    mempool.load_txs_from_db().context("Loading mempool transactions")?;
+    mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
     let service_l1_sync = L1SyncService::new(

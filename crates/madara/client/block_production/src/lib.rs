@@ -249,7 +249,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
-    fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<ContinueBlockResult, Error> {
+    async fn continue_block(&mut self, bouncer_cap: BouncerWeights) -> Result<ContinueBlockResult, Error> {
         let mut stats = ContinueBlockStats::default();
         let mut block_now_full = false;
 
@@ -268,7 +268,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             let to_take = batch_size.saturating_sub(txs_to_process.len());
             let cur_len = txs_to_process.len();
             if to_take > 0 {
-                self.mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
+                self.mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size).await;
 
                 txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.tx.clone()));
             }
@@ -349,6 +349,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         stats.n_re_added_to_mempool = txs_to_process.len();
         self.mempool
             .txs_re_add(txs_to_process, executed_txs)
+            .await
             .map_err(|err| Error::Unexpected(format!("Mempool error: {err:#}").into()))?;
 
         tracing::debug!(
@@ -392,7 +393,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         // Removes nonces in the mempool nonce cache which have been included
         // into the current block.
         for NonceUpdate { contract_address, .. } in state_diff.nonces.iter() {
-            self.mempool.tx_mark_included(contract_address);
+            self.mempool.tx_mark_included(contract_address).await;
         }
 
         // Flush changes to disk
@@ -477,7 +478,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let start_time = Instant::now();
 
         let ContinueBlockResult { state_diff: mut new_state_diff, bouncer_weights, stats, block_now_full } =
-            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity).await?;
 
         if stats.n_added_to_block > 0 {
             tracing::info!(
@@ -532,7 +533,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 bouncer_weights: _weights,
                 stats: _stats,
                 block_now_full: _block_now_full,
-            } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+            } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity).await?;
 
             self.update_block_hash_registry(&mut new_state_diff, block_n)?;
 
