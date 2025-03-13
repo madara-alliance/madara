@@ -1,10 +1,8 @@
-use mp_class::CompressedLegacyContractClass;
 use mp_convert::hex_serde::{U128AsHex, U64AsHex};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::{felt::Felt, hash::StarkHash};
-use std::sync::Arc;
 
 mod from_blockifier;
 mod from_broadcasted_transaction;
@@ -40,15 +38,6 @@ impl TransactionWithHash {
     pub fn new(transaction: Transaction, hash: Felt) -> Self {
         Self { transaction, hash }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct BroadcastedDeclareTransactionV0 {
-    pub sender_address: Felt,
-    pub max_fee: Felt,
-    pub signature: Vec<Felt>,
-    pub contract_class: Arc<CompressedLegacyContractClass>,
-    pub is_query: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
