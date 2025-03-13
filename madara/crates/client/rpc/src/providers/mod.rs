@@ -8,10 +8,9 @@ pub use mempool::*;
 
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
+    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::BroadcastedDeclareTransactionV0;
 use mp_utils::service::{MadaraServiceId, ServiceContext};
 
 use crate::utils::OptionExt;
@@ -20,7 +19,7 @@ use crate::utils::OptionExt;
 pub trait AddTransactionProvider: Send + Sync {
     async fn add_declare_v0_transaction(
         &self,
-        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash>;
     async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash>;
 
@@ -82,7 +81,7 @@ impl AddTransactionProviderGroup {
 impl AddTransactionProvider for AddTransactionProviderGroup {
     async fn add_declare_v0_transaction(
         &self,
-        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash> {
         self.provider()
             .ok_or_internal_server_error(Self::ERROR)?

@@ -1,6 +1,6 @@
 use crate::{
-    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, BroadcastedDeclareTransactionV0,
-    L1HandlerTransaction, Transaction, TransactionWithHash,
+    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction,
+    TransactionWithHash,
 };
 use blockifier::{
     execution::contract_class::ClassInfo as BClassInfo, execution::errors::ContractClassError,
@@ -11,7 +11,7 @@ use mp_class::{
     class_hash, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
-use mp_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
+use mp_rpc::{admin::BroadcastedDeclareTxnV0, BroadcastedDeclareTxn, BroadcastedTxn};
 use starknet_api::transaction::{Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -135,13 +135,14 @@ impl L1HandlerTransaction {
     }
 }
 
-impl BroadcastedDeclareTransactionV0 {
-    pub fn into_blockifier(
+impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
+    fn into_blockifier(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
-        let (class_info, converted_class, class_hash) = handle_class_legacy(Arc::clone(&self.contract_class))?;
+        let (class_info, converted_class, class_hash) =
+            handle_class_legacy(Arc::new((self.contract_class).clone().try_into()?))?;
 
         let is_query = self.is_query;
         let transaction = Transaction::Declare(crate::DeclareTransaction::from_broadcasted_declare_v0(
