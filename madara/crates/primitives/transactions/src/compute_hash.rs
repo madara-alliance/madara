@@ -263,8 +263,7 @@ impl DeclareTransactionV0 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
         let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
-
+            if version == Felt::ZERO { Felt::from_hex_unchecked("0x049EE3EBA8C1600700EE1B87EB599F16716B0B1022947733551FDE4050CA6804") } else { Pedersen::hash_array(&[self.class_hash]) };
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
             version,
@@ -282,7 +281,7 @@ impl DeclareTransactionV1 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ONE };
         let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
+            if version == Felt::ZERO { Felt::from_hex_unchecked("0x049EE3EBA8C1600700EE1B87EB599F16716B0B1022947733551FDE4050CA6804") } else { Pedersen::hash_array(&[self.class_hash]) };
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,

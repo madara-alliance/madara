@@ -190,8 +190,17 @@ async fn sync_blocks(
 ) -> anyhow::Result<SyncStatus> {
     let L2FetchConfig { first_block, fetch_stream_sender, n_blocks_to_sync, sync_parallelism, .. } = config;
 
+    tracing::info!("######### n blocks to sync: {:?}", n_blocks_to_sync);
+    
+    // Create a bounded range of block numbers to fetch
+    let block_range = match n_blocks_to_sync {
+        Some(n) => (*first_block..(*n)),
+        None => (*first_block..u64::MAX), // Unbounded if no limit specified
+    };
+    
+    tracing::info!("######### block range: {:?}", block_range);
     // Fetch blocks and updates in parallel one time before looping
-    let fetch_stream = (*first_block..).take(n_blocks_to_sync.unwrap_or(u64::MAX) as _).map(|block_n| {
+    let fetch_stream = block_range.map(|block_n| {
         let provider = Arc::clone(provider);
         let chain_id = &backend.chain_config().chain_id;
         async move { (block_n, fetch_block_and_updates(chain_id, block_n, &provider).await) }

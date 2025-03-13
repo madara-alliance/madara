@@ -126,6 +126,8 @@ pub async fn fetch_block_and_updates(
 ) -> Result<UnverifiedFullBlock, FetchError> {
     let block_id = BlockId::Number(block_n);
 
+    tracing::info!(">>>>>> inside the fetch block and updates: {:?}", block_n);
+
     let sw = PerfStopwatch::new();
     let (state_update, block) = retry(
         || async {

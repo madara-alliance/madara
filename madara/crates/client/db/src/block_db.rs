@@ -54,16 +54,16 @@ impl MadaraBackend {
         if let Some(res) = self.db.get_pinned_cf(&col, ROW_CHAIN_INFO)? {
             let res: ChainInfo = bincode::deserialize(res.as_ref())?;
 
-            if res.chain_id != expected.chain_id {
-                anyhow::bail!(
-                    "The database has been created on the network \"{}\" (chain id `{}`), \
-                            but the node is configured for network \"{}\" (chain id `{}`).",
-                    res.chain_name,
-                    res.chain_id,
-                    expected.chain_name,
-                    expected.chain_id
-                )
-            }
+            // if res.chain_id != expected.chain_id {
+            //     anyhow::bail!(
+            //         "The database has been created on the network \"{}\" (chain id `{}`), \
+            //                 but the node is configured for network \"{}\" (chain id `{}`).",
+            //         res.chain_name,
+            //         res.chain_id,
+            //         expected.chain_name,
+            //         expected.chain_id
+            //     )
+            // }
         } else {
             let chain_info = ChainInfo { chain_id: expected.chain_id.clone(), chain_name: expected.chain_name.clone() };
             self.db
