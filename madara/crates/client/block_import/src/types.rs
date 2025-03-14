@@ -218,3 +218,10 @@ pub struct BlockImportResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingBlockImportResult {}
+
+/// Output of a [`crate::reorg`] operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReorgResult {
+    pub from: Felt,
+    pub to: Felt,
+}

@@ -1,7 +1,8 @@
 use crate::{
     global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
-    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
+    PreValidatedBlock, PreValidatedPendingBlock, ReorgResult, UnverifiedHeader, ValidatedCommitments,
 };
+use bonsai_trie::id::BasicId;
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::BlockTag;
@@ -176,6 +177,14 @@ fn check_parent_hash_and_num(
         (0, Felt::ZERO)
     };
 
+    // TODO: this originally was checked after block number, but we need to check this first to detect a reorg.
+    // TODO: this fn shouldn't be responsible for reorg detection anyway...
+    if let Some(parent_block_hash) = parent_block_hash {
+        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
+            return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
+        }
+    }
+
     let block_number = if let Some(block_n) = unverified_block_number {
         if block_n != expected_block_number && !validation.ignore_block_order {
             return Err(BlockImportError::LatestBlockN { expected: expected_block_number, got: block_n });
@@ -184,12 +193,6 @@ fn check_parent_hash_and_num(
     } else {
         expected_block_number
     };
-
-    if let Some(parent_block_hash) = parent_block_hash {
-        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
-            return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
-        }
-    }
 
     Ok((block_number, expected_parent_block_hash))
 }
@@ -323,6 +326,47 @@ fn block_hash(
     }
 
     Ok((block_hash, header))
+}
+
+// TODO: document
+fn reorg(
+    backend: &MadaraBackend,
+    block: &PreValidatedBlock,
+) -> Result<ReorgResult, BlockImportError> {
+
+	// TODO: return proper error
+	let block_number = block.unverified_block_number.expect("Can't reorg without block number");
+	let block_id = BasicId::new(block_number);
+
+	// TODO: the error type returned from revert_to is slightly different from others, so
+	// make_db_error() doesn't work
+
+    backend
+		.contract_trie()
+		.revert_to(block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract trie: {}", error))))?;
+
+    backend
+		.contract_storage_trie()
+		.revert_to(block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error))))?;
+
+    backend
+		.class_trie()
+		.revert_to(block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
+
+    backend.revert_to(block_number.checked_sub(1).unwrap())
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
+
+    // TODO: should reorg actually append new blocks? if not, it should be renamed to `revert_to`
+
+	// TODO: proper results
+	Ok(ReorgResult {
+		from: Default::default(),
+		to: Default::default(),
+	})
+
 }
 
 #[cfg(test)]
@@ -810,6 +854,111 @@ mod verify_apply_tests {
                 Some(unexpected_pending_info),
                 "Unexpected pending block should not be stored"
             );
+        }
+    }
+
+    mod reorg_tests {
+        use super::*;
+
+        // other ideas for testing:
+        // * basic tests
+        //   * deeper reorgs
+        //   * reorgs not from block 0
+        //   * multiple reorgs
+        //   * reorg back-and-forth
+        //   * show that we can build blocks (grow) on top of reorg
+        //   * actually change some state in blocks, reorg, show that state changes
+        //   * show that parent height / hash work properly after reorgs
+        //   * verify various storage has been erased
+        // * test MPT
+        //   * can include some of the basic test mentioned above
+        //   * verify proofs after reorg
+        //   * introduce patricia trie shape changes, verify proof
+        //   * verify non-inclusion proofs
+        // * negative tests
+        //   * reject reorgs from finalized blocks
+        //   * reject reorgs with no known parent
+        //   * reject reorgs for wrong height
+        //   * reject long distance reorgs (perhaps when L1 hasn't been processed recently?)
+
+        struct ReorgTestArgs {
+            /// original chain depth (including block 0)
+            original_chain_depth: u64,
+            /// the parent (in block height) whose child will be reorged away from
+            reorg_parent_height: u64,
+            /// number of blocks of the reorg (0 == no reorg)
+            num_reorg_blocks: u64,
+        }
+
+        /// TODO: document
+        #[rstest]
+        #[case::reorg_from_genesis(
+            ReorgTestArgs{
+                original_chain_depth: 2,
+                reorg_parent_height: 0,
+                num_reorg_blocks: 1,
+            },
+        )]
+        #[case::success(
+            ReorgTestArgs{
+                original_chain_depth: 6,
+                reorg_parent_height: 3,
+                num_reorg_blocks: 2,
+            },
+        )]
+        #[tokio::test]
+        async fn test_reorg(
+            setup_test_backend: Arc<MadaraBackend>,
+            #[case] args: ReorgTestArgs,
+        ) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            // appends an empty block to the given parent block, returning the new block's hash
+            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
+                println!("attempting to add block {}", new_block_height);
+                let mut block = create_dummy_block();
+                block.unverified_block_number = Some(new_block_height);
+                block.unverified_global_state_root = Some(felt!("0x0"));
+                block.header.parent_block_hash = parent_hash;
+                let block_import = verify_apply_inner(&backend, block, validation.clone()).expect("verify_apply_inner failed");
+                println!("added block {} (0x{:x})", new_block_height, block_import.block_hash);
+
+                block_import.block_hash
+            };
+
+            // create the original chain
+            let mut parent_hash = None;
+            let mut reorg_parent_hash = None;
+            for i in 0..args.original_chain_depth {
+                let new_block_hash = append_empty_block(i, parent_hash);
+                if i == args.reorg_parent_height {
+                    reorg_parent_hash = Some(new_block_hash);
+                }
+                parent_hash = Some(new_block_hash);
+            }
+
+            assert!(reorg_parent_hash.is_some());
+            println!("Reorging from parent {} ({:?})", args.reorg_parent_height, reorg_parent_hash);
+
+            let mut reorg_block = create_dummy_block();
+            reorg_block.unverified_block_number = Some(args.reorg_parent_height + 1);
+            reorg_block.unverified_global_state_root = Some(felt!("0x0"));
+            reorg_block.header.parent_block_hash = reorg_parent_hash;
+            let _ = reorg(&backend, &reorg_block).expect("reorg failed");
+            let _block_import = verify_apply_inner(&backend, reorg_block, validation.clone()).expect("verify_apply_inner failed on reorg block");
+
+            // reorg after given parent (start with 1 since we already added our reorg block)
+            for i in 1..args.num_reorg_blocks {
+                let block_height = args.reorg_parent_height + i;
+                let new_block_hash = append_empty_block(block_height, parent_hash);
+                parent_hash = Some(new_block_hash);
+            }
+
+            let latest_block_n = backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
+            assert_eq!(args.reorg_parent_height + args.num_reorg_blocks, latest_block_n);
+            let latest_block_hash = backend.get_block_hash(&BlockId::Number(latest_block_n)).expect("get_block_hash failed after reorg");
+            assert_eq!(latest_block_hash, parent_hash);
         }
     }
 }
