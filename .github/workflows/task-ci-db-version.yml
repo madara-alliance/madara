@@ -21,15 +21,7 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Install yq
-        shell: bash
-        run: |
-          which wget > /dev/null || (apt-get update && apt-get install -y wget)
-          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq &&\
-            chmod +x /usr/bin/yq
-          echo "yq version:"
-          yq --version
-
+      - uses: chrisdickinson/setup-yq@latest
       - name: Check if PR already bumped
         id: check_bump
         run: |
