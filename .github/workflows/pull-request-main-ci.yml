@@ -68,3 +68,9 @@ jobs:
     with:
       madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
     secrets: inherit
+
+  # Run CLI tests against the built binary
+  test-cli:
+    needs: update-db-version
+    uses: ./.github/workflows/task-test-cli.yml
+    secrets: inherit

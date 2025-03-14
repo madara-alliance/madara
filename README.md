@@ -316,6 +316,12 @@ change its value. For example:
 These variables allow you to adjust the node's configuration without using
 command-line arguments, which can be useful in CI pipelines or with docker.
 
+### Configuration files
+
+You can load the arguments directly from a file for ease of use.
+The supported file formats are `json`, `toml` and `yaml`.
+You can find examples on [configs](configs/).
+
 > [!NOTE]
 > If the command-line argument is specified then it takes precedent over the
 > environment variable.
