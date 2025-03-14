@@ -45,7 +45,7 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 /// Start RPC server listening on given address.
 ///
 /// This future will complete once the server has been shutdown.
-pub async fn start_server<'a>(
+pub async fn start_server(
     config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,

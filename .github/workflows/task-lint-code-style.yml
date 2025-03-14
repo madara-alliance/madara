@@ -1,0 +1,59 @@
+---
+name: Task - Lint Code Style
+
+# This workflow runs code style linters for non-Rust code
+# including Prettier, Markdown, and TOML formatting checks
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  MARKDOWN_CONFIG: "./.markdownlint.json"
+  TAPLO_VERSION: "0.9.3"
+  TAPLO_CONFIG: "./taplo/taplo.toml"
+
+jobs:
+  # Run prettier for code formatting
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run prettier
+        run: npx prettier --check .
+
+  # Check markdown files for style consistency
+  markdown-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint root markdown
+        uses: avto-dev/markdown-lint@v1
+        with:
+          config: ${{ env.MARKDOWN_CONFIG }}
+          args: "."
+          ignore: "./target"
+
+  # Check TOML files for formatting
+  toml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Taplo Format Check
+        uses: addnab/docker-run-action@v3
+        with:
+          image: tamasfe/taplo:0.9.3
+          options: -v ${{ github.workspace }}:/src -w /src
+          run: taplo fmt --config ${{ env.TAPLO_CONFIG }} --check
+          args: Cargo.toml
+
+      - name: Check orchestrator toml files
+        uses: addnab/docker-run-action@v3
+        with:
+          image: tamasfe/taplo:0.9.3
+          options: -v ${{ github.workspace }}:/src -w /src/orchestrator
+          run: taplo fmt --check
+          args: Cargo.toml
