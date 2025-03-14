@@ -70,6 +70,9 @@ git clone https://github.com/madara-alliance/madara .
 
 #### 2. Build Madara
 
+> [!TIP]  
+> Ensure `make snos` has been run prior to building Madara.
+
 You can choose between different build modes:
 
 - **Debug** (low performance, fastest builds, _for testing purposes only_):
