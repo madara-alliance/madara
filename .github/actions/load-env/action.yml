@@ -4,7 +4,7 @@ description: "Loads the environment variables to be used in the workflows"
 runs:
   using: "composite"
   steps:
-    - uses: dcarbone/install-yq-action@latest
+    - uses: dcarbone/install-yq-action@v1
     - run: yq --version
       shell: bash
     - name: Load config
