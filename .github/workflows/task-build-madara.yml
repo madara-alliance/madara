@@ -72,17 +72,21 @@ jobs:
           echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
 
-      - name: Cache Madara binary
-        uses: actions/cache/save@v4
+      # Upload Madara binary as artifact
+      - name: Upload Madara binary
+        uses: actions/upload-artifact@v4
         with:
+          name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
           path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+          retention-days: 1
 
-      - name: Cache Ochestrator binary
-        uses: actions/cache/save@v4
+      # Upload Orchestrator binary as artifact
+      - name: Upload Orchestrator binary
+        uses: actions/upload-artifact@v4
         with:
+          name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
           path: target/release/orchestrator
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+          retention-days: 1
 
       # Generate hash for Cairo artifacts
       - name: Generate Cairo artifacts hash
@@ -99,6 +103,27 @@ jobs:
           # Save hash to file for artifact sharing
           echo "$HASH" > cairo_artifacts_hash.txt
           echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+
+      # Upload Cairo artifacts as artifact
+      - name: Upload Cairo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.hash }}
+          path: cairo/target
+          retention-days: 1
+
+      # Keep the cache operations for runners of the same type
+      - name: Cache Madara binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+
+      - name: Cache Ochestrator binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/orchestrator
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
 
       - name: Cache Cairo build artifacts
         uses: actions/cache/save@v4

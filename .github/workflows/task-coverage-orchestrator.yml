@@ -67,14 +67,16 @@ jobs:
           scarb fmt --check
           scarb build
 
-      - name: Restore Madara binary
+      - name: Download Madara binary
         if: inputs.madara-binary-hash != ''
-        uses: actions/cache/restore@v4
-        id: cache-madara
+        uses: actions/download-artifact@v4
         with:
-          path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ inputs.madara-binary-hash }}
-          fail-on-cache-miss: true
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Make Madara binary executable
+        if: inputs.madara-binary-hash != ''
+        run: chmod +x target/release/madara
 
       - name: Prepare Madara Environment (Orchestrator)
         run: |

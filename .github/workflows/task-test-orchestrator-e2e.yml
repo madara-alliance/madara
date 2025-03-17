@@ -40,6 +40,15 @@ jobs:
       # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
 
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
