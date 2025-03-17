@@ -49,6 +49,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 fdlimit.workspace = true
+figment = { workspace = true, features = ["toml", "json", "yaml"] }
 futures = { workspace = true, features = ["thread-pool"] }
 http.workspace = true
 hyper = { version = "0.14", features = ["server"] }

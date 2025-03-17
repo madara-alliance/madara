@@ -8,6 +8,10 @@ mod util;
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
+use figment::{
+    providers::{Format, Json, Serialized, Toml, Yaml},
+    Figment,
+};
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_block_import::BlockImporter;
@@ -23,6 +27,7 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
+use std::{env, path::Path};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -32,7 +37,40 @@ async fn main() -> anyhow::Result<()> {
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
-    let mut run_cmd = RunCmd::parse().apply_arg_preset();
+    // Create config builder.
+    let mut config: Figment = Figment::new();
+
+    // This loads the arguments in priority
+    // If there are cli arguments, check if they are pointing to a file
+    // If yes, load from that file. If not, load the values from the cli
+    // If there are no cli args, load the default file
+    if env::args().count() > 1 {
+        // This is done to overwrite the preset with the args
+        let cli_args = RunCmd::parse().apply_arg_preset();
+
+        if let Some(config_path) = cli_args.config_file.clone() {
+            config = match config_path.extension() {
+                None => bail!("Unsupported file type for config file."),
+                Some(os_str) => match os_str.to_str() {
+                    Some("toml") => config.merge(Toml::file(config_path)),
+                    Some("json") => config.merge(Json::file(config_path)),
+                    Some("yaml") => config.merge(Yaml::file(config_path)),
+                    _ => bail!("Unsupported file type for config file."),
+                },
+            }
+        } else {
+            config = config.merge(Serialized::defaults(cli_args));
+        }
+    } else {
+        let path = Path::new("./configs/args/config.json");
+        if path.exists() {
+            config = config.merge(Json::file(path));
+        }
+    }
+
+    // Extracts the arguments into the struct
+    let mut run_cmd: RunCmd = config.extract()?;
+    run_cmd.check_mode()?;
 
     // Setting up analytics
 
