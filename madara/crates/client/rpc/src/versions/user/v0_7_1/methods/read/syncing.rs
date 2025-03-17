@@ -1,6 +1,5 @@
-use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockId, BlockTag};
-use mp_rpc::{SyncStatus, SyncingStatus};
+use mp_rpc::{BlockHash, SyncStatus, SyncingStatus};
 
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
@@ -17,13 +16,16 @@ use crate::Starknet;
 /// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
 pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
-    // obtain best seen (highest) block number
+    // Get the sync status from the provider
+    let sync_status = starknet.sync_status().await.or_internal_server_error("Error getting sync status")?;
+
+    // Get current block info
     let Some(current_block_info) = starknet
         .backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .or_internal_server_error("Error getting latest block")?
     else {
-        return Ok(SyncingStatus::NotSyncing); // TODO: This doesn't really make sense? This can only happen when there are no block in the db at all.
+        return Ok(SyncingStatus::NotSyncing);
     };
 
     let current_block_info =
@@ -31,35 +33,38 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     let current_block_num = current_block_info.header.block_number;
     let current_block_hash = current_block_info.block_hash;
 
-    // Get the starting block (the one the node started syncing from)
-    let starting_block_num = 0; // We'll use 0 as the starting block for now
-    let starting_block_info = starknet.get_block_info(&BlockId::Number(starting_block_num))?;
-    let starting_block_info =
-        starting_block_info.as_nonpending().ok_or_internal_server_error("Block cannot be pending")?;
-    let starting_block_hash = starting_block_info.block_hash;
+    // Get the starting block number from sync status
+    let starting_block_num = sync_status.starting_block_num;
 
-    // Create a GatewayProvider to fetch the latest block from the network
-    let chain_config = starknet.clone_chain_config();
-    let gateway_url = chain_config.gateway_url.clone();
-    let feeder_gateway_url = chain_config.feeder_gateway_url.clone();
+    // Get the starting block hash - if it's not in sync status or is zero, fetch it from the backend
+    let starting_block_hash = if sync_status.starting_block_hash == BlockHash::default() {
+        // We need to fetch the starting block hash from the backend
+        let Some(starting_block_info) = starknet
+            .backend
+            .get_block_info(&BlockId::Number(starting_block_num))
+            .or_internal_server_error("Error getting starting block")?
+        else {
+            // If we can't get the starting block info, use a default hash
+            // This is a fallback and shouldn't normally happen
+            tracing::warn!("Could not get starting block info for block {}", starting_block_num);
+            return Ok(SyncingStatus::NotSyncing);
+        };
 
-    let provider = GatewayProvider::new(gateway_url, feeder_gateway_url);
+        let starting_block_info =
+            starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
 
-    // Fetch the latest block from the network
-    let network_latest_block = provider
-        .get_block(BlockId::Tag(BlockTag::Latest))
-        .await
-        .or_internal_server_error("Error fetching latest block from network")?;
+        starting_block_info.block_hash
+    } else {
+        // Use the hash from sync status
+        sync_status.starting_block_hash
+    };
 
-    let network_latest_block = network_latest_block
-        .non_pending()
-        .ok_or_internal_server_error("Latest block from network cannot be pending")?;
+    // Get highest block info from sync status
+    let highest_block_num = sync_status.highest_block_num;
+    let highest_block_hash = sync_status.highest_block_hash;
 
-    let highest_block_num = network_latest_block.block_number;
-    let highest_block_hash = network_latest_block.block_hash;
-
-    // If we're not syncing or we've caught up with the network, return NotSyncing
-    if highest_block_num <= current_block_num {
+    // If highest block number is 0 or less than current, we're not syncing
+    if highest_block_num == 0 || highest_block_num - 6 <= current_block_num {
         return Ok(SyncingStatus::NotSyncing);
     }
 
