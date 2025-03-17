@@ -82,7 +82,6 @@ runs:
         key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Setup Rust toolchain
-      if: steps.cache-cargo.outputs.cache-hit != 'true'
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ inputs.rust-version }}
