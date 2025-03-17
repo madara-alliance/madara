@@ -473,7 +473,7 @@ mod l1_messaging_tests {
                     Arc::new(eth_client),
                     chain_config.chain_id.clone(),
                     mempool,
-                    ServiceContext::new_for_testing(),
+                    ServiceContext::new(),
                 )
                 .await
             })

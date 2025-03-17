@@ -1,3 +1,11 @@
-[submodule "crates/madara/primitives/proto/starknet-p2p-specs"]
-	path = crates/madara/primitives/proto/starknet-p2p-specs
+[submodule "cairo-lang"]
+	path = orchestrator/cairo-lang
+    url = https://github.com/starkware-libs/cairo-lang.git
+    ignore = all
+[submodule "madara-bootstrapper"]
+	path = orchestrator/madara-bootstrapper
+	url = https://github.com/madara-alliance/madara-bootstrapper.git
+	ignore = all
+[submodule "madara/crates/primitives/proto/starknet-p2p-specs"]
+	path = madara/crates/primitives/proto/starknet-p2p-specs
 	url = https://github.com/starknet-io/starknet-p2p-specs
