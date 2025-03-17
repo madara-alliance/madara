@@ -1,3 +1,12 @@
+//! Utility functions and structures for Starknet interaction and testing.
+//!
+//! This module provides tools for:
+//! - Managing Madara nodes for testing
+//! - Creating and managing Starknet accounts
+//! - Deploying contracts
+//! - Sending state updates and transactions
+//! - Handling test contexts and cleanup
+
 use crate::state_update::StateUpdate;
 use assert_matches::assert_matches;
 use lazy_static::lazy_static;
@@ -23,11 +32,17 @@ use url::Url;
 use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
 use std::time::Duration;
 
+/// Deployer Starknet account address used for testing
 pub const DEPLOYER_ADDRESS: &str = "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
+/// Private key for the deployer account used in tests
 pub const DEPLOYER_PRIVATE_KEY: &str = "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07";
+/// Universal Deployer Contract address on Starknet
 pub const UDC_ADDRESS: &str = "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf";
+/// Default port for Madara node
 pub const MADARA_PORT: &str = "19944";
+/// Path to the Madara binary for testing
 pub const MADARA_BINARY_PATH: &str = "../../../../target/debug/madara";
+/// Path to the Madara configuration file for devnet setup
 pub const MADARA_CONFIG_PATH: &str = "../../../../configs/presets/devnet.yaml";
 
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
@@ -35,17 +50,36 @@ pub const APPCHAIN_CONTRACT_CASM_HASH: &str = "0x07f36e830605ddeb7c4c094639b628d
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/messaging_test.casm.json
 pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x077de37b708f9abe01c1a797856398c5e1e5dfde8213f884668fa37b13d77e30";
 
+/// Type alias for a Starknet account used in tests
 pub type StarknetAccount = SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>;
+/// Type alias for transaction receipt results with error handling
 pub type TransactionReceiptResult = Result<TransactionReceiptWithBlockInfo, ProviderError>;
 
+/// Represents a running Madara process for testing
+///
+/// This struct manages the lifecycle of a Madara node process
+/// and provides access to its port and other properties.
 pub struct MadaraProcess {
+    /// The child process handle for the Madara node
     pub process: Child,
     #[allow(dead_code)]
+    /// Path to the Madara binary
     pub binary_path: PathBuf,
+    /// Port on which the Madara node is running
     pub port: u16,
 }
 
 impl MadaraProcess {
+    /// Creates a new Madara process for testing
+    ///
+    /// Attempts to find an available port in the range 19944-20044,
+    /// starts a Madara node on that port, and waits for it to become available.
+    ///
+    /// # Arguments
+    /// * `binary_path` - Path to the Madara binary
+    ///
+    /// # Returns
+    /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
         // Try ports in range 19944-20044
         let port_range = 19944..20045;
@@ -100,12 +134,16 @@ impl MadaraProcess {
         Ok(Self { process, binary_path, port })
     }
 
+    /// Returns the port on which the Madara node is running
     pub fn port(&self) -> u16 {
         self.port
     }
 }
 
 impl Drop for MadaraProcess {
+    /// Cleans up the Madara process when dropped
+    ///
+    /// Kills the process and removes the database directory
     fn drop(&mut self) {
         if let Err(e) = self.process.kill() {
             eprintln!("Failed to kill Madara process: {}", e);
@@ -116,31 +154,45 @@ impl Drop for MadaraProcess {
     }
 }
 
-// TestContext now only contains what tests need
+/// Test context containing necessary components for Starknet testing
+///
+/// Provides access to the Starknet URL, account, and deployed contract addresses
 pub struct TestContext {
+    /// URL for the Starknet node
     pub url: Url,
+    /// Account for interacting with Starknet
     pub account: StarknetAccount,
+    /// Address of the deployed appchain or messaging contract
     pub deployed_appchain_contract_address: Felt,
+    /// Port on which the Madara node is running
     pub port: u16,
 }
 
-// Separate struct to hold the Madara process
+/// Internal struct for holding the Madara process instance
 struct MadaraInstance {
     #[allow(dead_code)]
     process: MadaraProcess,
 }
 
 lazy_static! {
+    /// Mutex for the Madara instance to ensure thread safety
     static ref MADARA: Mutex<Option<MadaraInstance>> = Mutex::new(None);
+    /// Mutex for the test context to ensure thread safety
     static ref TEST_CONTEXT: Mutex<Option<TestContext>> = Mutex::new(None);
+    /// Once flag to ensure initialization happens only once
     static ref INIT: Once = Once::new();
+    /// Lock for state update operations to prevent race conditions
     static ref STATE_UPDATE_LOCK: Mutex<()> = Mutex::new(());
 }
 
-// Create a guard struct that cleans up resources when dropped
+/// Resource guard that ensures cleanup of test resources when dropped
 pub struct TestGuard;
 
 impl Drop for TestGuard {
+    /// Cleans up test resources when the guard is dropped
+    ///
+    /// Attempts to clean up in different runtime contexts to ensure
+    /// resources are properly released
     fn drop(&mut self) {
         println!("TestGuard: Cleaning up test resources...");
 
@@ -191,7 +243,16 @@ impl Drop for TestGuard {
     }
 }
 
-// Modify init functions to return a guard
+/// Initializes a test context for appchain testing
+///
+/// Starts a Madara node if not already running, creates a Starknet account,
+/// and deploys the appchain test contract.
+///
+/// # Returns
+/// A TestGuard that will clean up resources when dropped and a Result
+///
+/// # Errors
+/// Returns an error if initialization fails
 pub async fn init_test_context() -> anyhow::Result<TestGuard> {
     // First, ensure any existing Madara instance is dropped
     {
@@ -226,7 +287,13 @@ pub async fn init_test_context() -> anyhow::Result<TestGuard> {
     Ok(TestGuard)
 }
 
-// Helper to get test context
+/// Retrieves the current test context
+///
+/// # Returns
+/// A Result containing the TestContext or an error if not initialized
+///
+/// # Errors
+/// Returns an error if the test context has not been initialized
 pub async fn get_test_context() -> anyhow::Result<TestContext> {
     let context = TEST_CONTEXT.lock().await;
     match context.as_ref() {
@@ -243,7 +310,16 @@ pub async fn get_test_context() -> anyhow::Result<TestContext> {
     }
 }
 
-// Modify messaging test context init to return a guard too
+/// Initializes a test context for messaging contract testing
+///
+/// Similar to init_test_context, but deploys the messaging test contract
+/// instead of the appchain contract.
+///
+/// # Returns
+/// A TestGuard that will clean up resources when dropped and a Result
+///
+/// # Errors
+/// Returns an error if initialization fails
 pub async fn init_messaging_test_context() -> anyhow::Result<TestGuard> {
     {
         let mut madara_guard = MADARA.lock().await;
@@ -277,7 +353,16 @@ pub async fn init_messaging_test_context() -> anyhow::Result<TestGuard> {
     Ok(TestGuard)
 }
 
-// Add a function to create a Starknet account with a specific port
+/// Creates a Starknet account connected to a specific port
+///
+/// # Arguments
+/// * `port` - The port to connect to
+///
+/// # Returns
+/// A Result containing the Starknet account or an error
+///
+/// # Errors
+/// Returns an error if account creation fails
 pub fn starknet_account_with_port(port: u16) -> anyhow::Result<StarknetAccount> {
     let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(format!("http://127.0.0.1:{}", port).as_str())?));
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_str(DEPLOYER_PRIVATE_KEY)?));
@@ -293,7 +378,16 @@ pub fn starknet_account_with_port(port: u16) -> anyhow::Result<StarknetAccount> 
     Ok(account)
 }
 
-// Update the original function to use the dynamic port from the test context
+/// Creates a Starknet account with the default port
+///
+/// This is a fallback method that should be avoided in favor of
+/// starknet_account_with_port with the correct port.
+///
+/// # Returns
+/// A Result containing the Starknet account or an error
+///
+/// # Errors
+/// Returns an error if account creation fails
 pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
     // This is a fallback that should ideally not be used directly
     // Better to use starknet_account_with_port with the correct port
@@ -303,6 +397,18 @@ pub fn starknet_account() -> anyhow::Result<StarknetAccount> {
     starknet_account_with_port(MADARA_PORT.parse().unwrap())
 }
 
+/// Sends a state update to the appchain contract
+///
+/// # Arguments
+/// * `account` - The Starknet account to use for the transaction
+/// * `appchain_contract_address` - The address of the appchain contract
+/// * `update` - The state update to send
+///
+/// # Returns
+/// A Result containing the block number where the update was included
+///
+/// # Errors
+/// Returns an error if the transaction fails
 pub async fn send_state_update(
     account: &StarknetAccount,
     appchain_contract_address: Felt,
@@ -326,6 +432,17 @@ pub async fn send_state_update(
     }
 }
 
+/// Fires a messaging event in the messaging contract
+///
+/// # Arguments
+/// * `account` - The Starknet account to use for the transaction
+/// * `appchain_contract_address` - The address of the messaging contract
+///
+/// # Returns
+/// A Result containing the block number where the event was included
+///
+/// # Errors
+/// Returns an error if the transaction fails
 pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
     let call = account
         .execute_v1(vec![Call {
@@ -345,6 +462,17 @@ pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_a
     }
 }
 
+/// Cancels a messaging event in the messaging contract
+///
+/// # Arguments
+/// * `account` - The Starknet account to use for the transaction
+/// * `appchain_contract_address` - The address of the messaging contract
+///
+/// # Returns
+/// A Result containing the block number where the cancellation was included
+///
+/// # Errors
+/// Returns an error if the transaction fails
 pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
     let call = account
         .execute_v1(vec![Call {
@@ -364,6 +492,18 @@ pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract
     }
 }
 
+/// Deploys a contract to Starknet
+///
+/// # Arguments
+/// * `account` - The Starknet account to use for deployment
+/// * `sierra` - The Sierra code of the contract
+/// * `casm_hash` - The CASM hash of the contract
+///
+/// # Returns
+/// A Result containing the address of the deployed contract
+///
+/// # Errors
+/// Returns an error if deployment fails
 pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8], casm_hash: &str) -> anyhow::Result<Felt> {
     let contract_artifact: SierraClass = serde_json::from_slice(sierra)?;
     let flattened_class = contract_artifact.flatten()?;
@@ -383,6 +523,17 @@ pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8], casm_hash
     Ok(deployed_contract_address)
 }
 
+/// Extracts the deployed contract address from a transaction receipt
+///
+/// # Arguments
+/// * `txn_hash` - The transaction hash of the deployment transaction
+/// * `provider` - The Starknet provider
+///
+/// # Returns
+/// A Result containing the address of the deployed contract
+///
+/// # Errors
+/// Returns an error if the address cannot be extracted
 pub async fn get_deployed_contract_address(
     txn_hash: Felt,
     provider: &JsonRpcClient<HttpTransport>,
@@ -397,6 +548,16 @@ pub async fn get_deployed_contract_address(
     Ok(contract_address)
 }
 
+/// Gets a transaction receipt with retry logic
+///
+/// Polls for the transaction receipt until it is available or the max poll count is reached.
+///
+/// # Arguments
+/// * `rpc` - The Starknet RPC client
+/// * `transaction_hash` - The transaction hash to get the receipt for
+///
+/// # Returns
+/// A TransactionReceiptResult containing the receipt or an error
 pub async fn get_transaction_receipt(
     rpc: &JsonRpcClient<HttpTransport>,
     transaction_hash: Felt,
@@ -407,6 +568,15 @@ pub async fn get_transaction_receipt(
     rpc.get_transaction_receipt(transaction_hash).await
 }
 
+/// Polls a condition until it returns true or the max poll count is reached
+///
+/// # Arguments
+/// * `f` - A function that returns a Future resolving to a boolean
+/// * `polling_time_ms` - Time in milliseconds between polls
+/// * `max_poll_count` - Maximum number of times to poll
+///
+/// # Panics
+/// Panics if the max poll count is reached without the condition returning true
 pub async fn assert_poll<F, Fut>(f: F, polling_time_ms: u64, max_poll_count: u32)
 where
     F: Fn() -> Fut,
@@ -421,6 +591,15 @@ where
     panic!("Max poll count exceeded.");
 }
 
+/// Waits for a port to become available
+///
+/// # Arguments
+/// * `port` - The port to check
+/// * `timeout_secs` - Timeout in seconds for each connection attempt
+/// * `max_retries` - Maximum number of connection attempts
+///
+/// # Returns
+/// A boolean indicating whether the port became available
 fn wait_for_port(port: u16, timeout_secs: u64, max_retries: u32) -> bool {
     let mut attempts = 0;
     println!("Waiting for port {} to be available...", port);
@@ -442,16 +621,32 @@ fn wait_for_port(port: u16, timeout_secs: u64, max_retries: u32) -> bool {
     false
 }
 
+/// Checks if a port is available by attempting to connect to it
+///
+/// # Arguments
+/// * `port` - The port to check
+/// * `timeout_secs` - Timeout in seconds for the connection attempt
+///
+/// # Returns
+/// A boolean indicating whether the port is available
 fn check_port(port: u16, timeout_secs: u64) -> bool {
     TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_secs(timeout_secs))
         .is_ok()
 }
 
-// Export the lock for tests to use
+/// Returns the state update lock for thread synchronization
+///
+/// This lock is used to prevent race conditions when updating state.
+///
+/// # Returns
+/// A reference to the state update mutex
 pub fn get_state_update_lock() -> &'static Mutex<()> {
     &STATE_UPDATE_LOCK
 }
 
+/// Cleans up the test context
+///
+/// Releases the Madara instance and test context resources.
 pub async fn cleanup_test_context() {
     let mut madara_guard = MADARA.lock().await;
     *madara_guard = None;
