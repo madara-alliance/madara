@@ -247,7 +247,7 @@ async fn l2_highest_block_fetch(
                     ProviderBlockPendingMaybe::NonPending(block_info) => {
                         // For a regular block, we have both number and hash
                         let block_number = block_info.block_number;
-                        let block_hash = block_info.block_hash.clone();
+                        let block_hash = block_info.block_hash;
 
                         // Update the sync status provider with the highest block info
                         sync_status_provider.set_highest_block_num(block_number).await;

@@ -7,6 +7,12 @@ pub struct SyncStatusProvider {
     sync_status: Arc<Mutex<SyncStatus>>,
 }
 
+impl Default for SyncStatusProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyncStatusProvider {
     /// Create a new SyncStatusProvider with default values
     pub fn new() -> Self {
