@@ -1,13 +1,19 @@
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
+use crate::eth::error::EthereumClientError;
+use crate::eth::StarknetCoreContract::LogMessageToL2;
+use crate::starknet::error::StarknetClientError;
 use alloy::primitives::B256;
+use alloy::rpc::types::Log;
 use futures::{Stream, StreamExt};
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
 use mc_mempool::{Mempool, MempoolProvider};
+use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
+use starknet_core::types::EmittedEvent;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -23,6 +29,107 @@ pub struct L1toL2MessagingEventData {
     pub message_hash: Option<Felt>,
     pub block_number: u64,
     pub event_index: Option<u64>,
+}
+
+// Ethereum event conversion
+impl TryFrom<(LogMessageToL2, Log)> for L1toL2MessagingEventData {
+    type Error = SettlementClientError;
+
+    fn try_from((event, log): (LogMessageToL2, Log)) -> Result<Self, Self::Error> {
+        Ok(Self {
+            from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
+            to: event.toAddress.to_felt(),
+            selector: event.selector.to_felt(),
+            nonce: event.nonce.to_felt(),
+            payload: event.payload.iter().try_fold(
+                Vec::with_capacity(event.payload.len()),
+                |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
+                    acc.push(ele.to_felt());
+                    Ok(acc)
+                },
+            )?,
+            fee: Some(event.fee.try_into().map_err(|_| -> SettlementClientError {
+                EthereumClientError::Conversion("Fee value too large for u128 conversion".to_string()).into()
+            })?),
+            transaction_hash: Felt::from_bytes_be_slice(
+                log.transaction_hash
+                    .ok_or_else(|| -> SettlementClientError {
+                        EthereumClientError::MissingField("transaction_hash in Ethereum log").into()
+                    })?
+                    .to_vec()
+                    .as_slice(),
+            ),
+            message_hash: None,
+            block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
+                EthereumClientError::MissingField("block_number in Ethereum log").into()
+            })?,
+            event_index: Some(log.log_index.ok_or_else(|| -> SettlementClientError {
+                EthereumClientError::MissingField("log_index in Ethereum log").into()
+            })?),
+        })
+    }
+}
+
+// Starknet event conversion
+impl TryFrom<EmittedEvent> for L1toL2MessagingEventData {
+    type Error = SettlementClientError;
+
+    fn try_from(event: EmittedEvent) -> Result<Self, Self::Error> {
+        let block_number = event.block_number.ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Unable to get block number from event".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let selector = event.data.first().ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing selector in event data".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let nonce = event.data.get(1).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing nonce in event data".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let from = event.keys.get(2).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing from_address in event keys".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let to = event.keys.get(3).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing to_address in event keys".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let message_hash = event.keys.get(1).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing message_hash in event keys".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        Ok(Self {
+            from: *from,
+            to: *to,
+            selector: *selector,
+            nonce: *nonce,
+            payload: event.data.iter().skip(3).copied().collect(),
+            fee: Some(1), // TODO: blockifier fails when fee is None
+            transaction_hash: event.transaction_hash,
+            message_hash: Some(*message_hash),
+            block_number,
+            event_index: None,
+        })
+    }
 }
 
 pub async fn sync<C, S>(

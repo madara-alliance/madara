@@ -104,65 +104,21 @@ impl Stream for StarknetEventStream {
                     match result {
                         Ok((Some(event), updated_filter)) => {
                             self.filter = updated_filter;
-
-                            let nonce = event.data.get(1).ok_or_else(|| {
-                                SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                    message: "Missing nonce in event data".to_string(),
-                                    event_id: "MessageSent".to_string(),
-                                })
-                            })?;
-                            self.processed_events.insert(*nonce);
-
-                            let event_data = event
-                                .block_number
-                                .ok_or_else(|| {
-                                    SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                        message: "Unable to get block number from event".to_string(),
-                                        event_id: "MessageSent".to_string(),
-                                    })
-                                })
-                                .map(|block_number| {
-                                    let selector = event.data.first().ok_or_else(|| {
-                                        SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                            message: "Missing selector in event data".to_string(),
+                            let nonce = match event.data.get(1) {
+                                Some(nonce) => *nonce,
+                                None => {
+                                    return Poll::Ready(Some(Err(SettlementClientError::Starknet(
+                                        StarknetClientError::EventProcessing {
+                                            message: "Missing nonce in event data".to_string(),
                                             event_id: "MessageSent".to_string(),
-                                        })
-                                    })?;
-                                    let from = event.keys.get(2).ok_or_else(|| {
-                                        SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                            message: "Missing from_address in event keys".to_string(),
-                                            event_id: "MessageSent".to_string(),
-                                        })
-                                    })?;
-                                    let to = event.keys.get(3).ok_or_else(|| {
-                                        SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                            message: "Missing to_address in event keys".to_string(),
-                                            event_id: "MessageSent".to_string(),
-                                        })
-                                    })?;
-                                    let message_hash = event.keys.get(1).ok_or_else(|| {
-                                        SettlementClientError::Starknet(StarknetClientError::EventProcessing {
-                                            message: "Missing message_hash in event keys".to_string(),
-                                            event_id: "MessageSent".to_string(),
-                                        })
-                                    })?;
+                                        }
+                                        .into(),
+                                    ))))
+                                }
+                            };
+                            self.processed_events.insert(nonce);
 
-                                    Ok(L1toL2MessagingEventData {
-                                        from: *from,
-                                        to: *to,
-                                        selector: *selector,
-                                        nonce: *nonce,
-                                        payload: event.data.iter().skip(3).copied().collect(),
-                                        fee: Some(1), // TODO: blockifier failes when fee is None
-                                        transaction_hash: event.transaction_hash,
-                                        message_hash: Some(*message_hash),
-                                        block_number,
-                                        event_index: None,
-                                    })
-                                })
-                                .and_then(|result| result);
-
-                            match event_data {
+                            match L1toL2MessagingEventData::try_from(event) {
                                 Ok(data) => Poll::Ready(Some(Ok(data))),
                                 Err(e) => Poll::Ready(Some(Err(e))),
                             }

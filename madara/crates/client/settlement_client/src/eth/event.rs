@@ -6,8 +6,6 @@ use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
 use futures::Stream;
-use mp_convert::ToFelt;
-use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
@@ -30,44 +28,10 @@ impl Stream for EthereumEventStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(result)) => match result {
-                Ok((event, log)) => {
-                    let event_data = (|| -> Result<L1toL2MessagingEventData, SettlementClientError> {
-                        Ok(L1toL2MessagingEventData {
-                            from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
-                            to: event.toAddress.to_felt(),
-                            selector: event.selector.to_felt(),
-                            nonce: event.nonce.to_felt(),
-                            payload: event.payload.iter().try_fold(
-                                Vec::with_capacity(event.payload.len()),
-                                |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
-                                    acc.push(ele.to_felt());
-                                    Ok(acc)
-                                },
-                            )?,
-                            fee: Some(event.fee.try_into().map_err(|_| -> SettlementClientError {
-                                EthereumClientError::Conversion("Fee value too large for u128 conversion".to_string())
-                                    .into()
-                            })?),
-                            transaction_hash: Felt::from_bytes_be_slice(
-                                log.transaction_hash
-                                    .ok_or_else(|| -> SettlementClientError {
-                                        EthereumClientError::MissingField("transaction_hash in Ethereum log").into()
-                                    })?
-                                    .to_vec()
-                                    .as_slice(),
-                            ),
-                            message_hash: None,
-                            block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
-                                EthereumClientError::MissingField("block_number in Ethereum log").into()
-                            })?,
-                            event_index: Some(log.log_index.ok_or_else(|| -> SettlementClientError {
-                                EthereumClientError::MissingField("log_index in Ethereum log").into()
-                            })?),
-                        })
-                    })();
-
-                    Poll::Ready(Some(event_data))
-                }
+                Ok((event, log)) => match L1toL2MessagingEventData::try_from((event, log)) {
+                    Ok(event_data) => Poll::Ready(Some(Ok(event_data))),
+                    Err(e) => Poll::Ready(Some(Err(e))),
+                },
                 Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(EthereumClientError::EventStream {
                     message: format!("Error processing Ethereum event stream: {}", e),
                 })))),
@@ -86,6 +50,7 @@ pub mod eth_event_stream_tests {
     use futures::stream::iter;
     use futures::StreamExt;
     use rstest::*;
+    use starknet_types_core::felt::Felt;
     use std::str::FromStr;
 
     #[fixture]
