@@ -46,6 +46,9 @@ runs:
         packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
         version: 1.0
         execute_install_scripts: true
+    - run: |
+        apt-get update
+        apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
 
     # SCCACHE is disabled due to https://github.com/mozilla/sccache/issues/2359
     # TODO: re-enable when fixed
