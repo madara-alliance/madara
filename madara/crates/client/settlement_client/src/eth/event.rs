@@ -2,11 +2,11 @@ use crate::error::SettlementClientError;
 use crate::eth::error::EthereumClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::L1toL2MessagingEventData;
-use crate::utils::u256_to_felt;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
 use futures::Stream;
+use mp_convert::ToFelt;
 use starknet_types_core::felt::Felt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -34,28 +34,13 @@ impl Stream for EthereumEventStream {
                     let event_data = (|| -> Result<L1toL2MessagingEventData, SettlementClientError> {
                         Ok(L1toL2MessagingEventData {
                             from: Felt::from_bytes_be_slice(event.fromAddress.as_slice()),
-                            to: u256_to_felt(event.toAddress).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(format!("Failed to convert toAddress to Felt: {}", e))
-                                    .into()
-                            })?,
-                            selector: u256_to_felt(event.selector).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(format!("Failed to convert selector to Felt: {}", e))
-                                    .into()
-                            })?,
-                            nonce: u256_to_felt(event.nonce).map_err(|e| -> SettlementClientError {
-                                EthereumClientError::Conversion(format!("Failed to convert nonce to Felt: {}", e))
-                                    .into()
-                            })?,
+                            to: event.toAddress.to_felt(),
+                            selector: event.selector.to_felt(),
+                            nonce: event.nonce.to_felt(),
                             payload: event.payload.iter().try_fold(
                                 Vec::with_capacity(event.payload.len()),
                                 |mut acc, ele| -> Result<Vec<Felt>, SettlementClientError> {
-                                    acc.push(u256_to_felt(*ele).map_err(|e| -> SettlementClientError {
-                                        EthereumClientError::Conversion(format!(
-                                            "Failed to convert payload element to Felt: {}",
-                                            e
-                                        ))
-                                        .into()
-                                    })?);
+                                    acc.push(ele.to_felt());
                                     Ok(acc)
                                 },
                             )?,

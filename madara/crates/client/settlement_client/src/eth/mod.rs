@@ -8,7 +8,7 @@ use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInsta
 use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::{update_l1, StateUpdate};
-use crate::utils::{convert_log_state_update, felt_to_u256, u256_to_felt};
+use crate::utils::convert_log_state_update;
 use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
@@ -22,9 +22,11 @@ use error::EthereumClientError;
 use futures::StreamExt;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
+use mp_convert::{felt_to_u256, ToFelt};
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
@@ -72,6 +74,9 @@ impl EthereumClient {
         }
     }
 }
+
+const HISTORY_SIZE: usize = 300; // Number of blocks to use for gas price calculation (approx. 1 hour at 12 sec block time)
+const POLL_INTERVAL: Duration = Duration::from_secs(5); // Interval between event polling attempts
 
 #[async_trait]
 impl SettlementClientTrait for EthereumClient {
@@ -136,9 +141,7 @@ impl SettlementClientTrait for EthereumClient {
             EthereumClientError::Contract(format!("Failed to get state root from L1: {}", e)).into()
         })?;
 
-        u256_to_felt(state_root._0).map_err(|e| -> SettlementClientError {
-            EthereumClientError::Conversion(format!("Failed to convert state root from U256 to Felt: {}", e)).into()
-        })
+        Ok(state_root._0.to_felt())
     }
 
     /// Get the last Starknet block hash verified on L1
@@ -147,9 +150,7 @@ impl SettlementClientTrait for EthereumClient {
             EthereumClientError::Contract(format!("Failed to get state block hash from L1: {}", e)).into()
         })?;
 
-        u256_to_felt(block_hash._0).map_err(|e| -> SettlementClientError {
-            EthereumClientError::Conversion(format!("Failed to convert block hash from U256 to Felt: {}", e)).into()
-        })
+        Ok(block_hash._0.to_felt())
     }
 
     async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError> {
@@ -160,6 +161,14 @@ impl SettlementClientTrait for EthereumClient {
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
 
+    /// Listen for state update events from the L1 core contract and process them
+    ///
+    /// This function runs a blocking loop that continuously polls for new state update events.
+    /// It will run until the context is cancelled. Each event is processed and used to update
+    /// the L1 state in the backend database.
+    ///
+    /// # Note
+    /// This is a long-running function that blocks the current task until cancelled.
     async fn listen_for_update_state_events(
         &self,
         backend: Arc<MadaraBackend>,
@@ -177,7 +186,17 @@ impl SettlementClientTrait for EthereumClient {
             None => return Ok(()),
         };
 
-        while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
+        // Create a ticker that fires at regular intervals
+        let mut interval = tokio::time::interval(POLL_INTERVAL);
+
+        // Process events in a loop until the context is cancelled
+        while let Some(Some(event_result)) = ctx
+            .run_until_cancelled(async {
+                interval.tick().await; // Wait for the next interval tick
+                event_stream.next().await
+            })
+            .await
+        {
             let log = event_result.map_err(|e| -> SettlementClientError {
                 EthereumClientError::EventStream { message: format!("Failed to process event: {}", e) }.into()
             })?;
@@ -197,33 +216,29 @@ impl SettlementClientTrait for EthereumClient {
 
     async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError> {
         let block_number = self.get_latest_block_number().await?;
-        let fee_history =
-            self.provider.get_fee_history(300, BlockNumberOrTag::Number(block_number), &[]).await.map_err(
-                |e| -> SettlementClientError {
-                    EthereumClientError::GasPriceCalculation {
-                        message: format!("Failed to get fee history for block {}: {}", block_number, e),
-                    }
-                    .into()
-                },
-            )?;
+        let fee_history = self
+            .provider
+            .get_fee_history(HISTORY_SIZE as u64, BlockNumberOrTag::Number(block_number), &[])
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::GasPriceCalculation {
+                    message: format!("Failed to get fee history for block {}: {}", block_number, e),
+                }
+                .into()
+            })?;
 
-        // The RPC responds with 301 elements for some reason. It's also just safer to manually
-        // take the last 300. We choose 300 to get average gas price for last one hour (300 * 12 sec block
-        // time).
-        let blob_fee_history_one_hour = if fee_history.base_fee_per_blob_gas.len() > 300 {
-            // If we have more than 300 entries, take the last 300
-            &fee_history.base_fee_per_blob_gas[fee_history.base_fee_per_blob_gas.len() - 300..]
-        } else {
-            // If we have less than 300 entries, take all of them
-            // This handles cases where the chain might be new or the RPC returns fewer entries
-            &fee_history.base_fee_per_blob_gas[..]
-        };
-
-        let avg_blob_base_fee = if !blob_fee_history_one_hour.is_empty() {
-            blob_fee_history_one_hour.iter().sum::<u128>() / blob_fee_history_one_hour.len() as u128
-        } else {
-            0 // in case blob_fee_history_one_hour has 0 length
-        };
+        // Calculate average blob base fee from recent blocks
+        // We use reverse iteration and take() to handle cases where the RPC might return
+        // more or fewer elements than requested, ensuring we use at most HISTORY_SIZE blocks
+        // for a more stable and representative average gas price
+        let avg_blob_base_fee = fee_history
+            .base_fee_per_blob_gas
+            .iter()
+            .rev()
+            .take(HISTORY_SIZE)
+            .sum::<u128>()
+            .checked_div(fee_history.base_fee_per_blob_gas.len() as u128)
+            .unwrap_or(0);
 
         let eth_gas_price = fee_history.base_fee_per_gas.last().ok_or_else(|| -> SettlementClientError {
             EthereumClientError::MissingField("base_fee_per_gas in fee history response").into()
@@ -285,13 +300,7 @@ impl SettlementClientTrait for EthereumClient {
                 },
             )?;
 
-        u256_to_felt(cancellation_timestamp._0).map_err(|e| -> SettlementClientError {
-            EthereumClientError::Conversion(format!(
-                "Failed to convert cancellation timestamp from U256 to Felt: {}",
-                e
-            ))
-            .into()
-        })
+        Ok(cancellation_timestamp._0.to_felt())
     }
 
     async fn get_messaging_stream(
@@ -409,7 +418,7 @@ pub mod eth_client_getter_test {
     async fn get_last_verified_block_hash_works(eth_client: EthereumClient) {
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
-        let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
+        let expected = U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap().to_felt();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
@@ -417,7 +426,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_last_state_root_works(eth_client: EthereumClient) {
         let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
-        let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
+        let expected = U256::from_str_radix(L2_STATE_ROOT, 10).unwrap().to_felt();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 

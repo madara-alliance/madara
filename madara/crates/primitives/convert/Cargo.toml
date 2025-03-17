@@ -22,6 +22,7 @@ serde_with.workspace = true
 starknet-core.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
+alloy.workspace = true
 
 # Other
 primitive-types.workspace = true
@@ -30,3 +31,4 @@ thiserror.workspace = true
 [dev-dependencies]
 assert_matches.workspace = true
 serde_json.workspace = true
+rstest.workspace = true

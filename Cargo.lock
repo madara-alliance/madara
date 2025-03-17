@@ -9290,8 +9290,10 @@ dependencies = [
 name = "mp-convert"
 version = "0.8.0"
 dependencies = [
+ "alloy 0.8.3",
  "assert_matches",
  "primitive-types",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "serde_with 3.11.0",
