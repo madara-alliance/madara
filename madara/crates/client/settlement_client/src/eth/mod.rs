@@ -95,7 +95,7 @@ impl SettlementClientTrait for EthereumClient {
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })
     }
 
-    /// Get the block number of the last occurrence of a given event.
+    /// Get the block number of the last occurrence of the LogStateUpdate event.
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
 
@@ -111,10 +111,10 @@ impl SettlementClientTrait for EthereumClient {
             .await
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?;
 
-        let filtered_logs =
+        let latest_logs =
             logs.into_iter().rev().map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>()).next();
 
-        match filtered_logs {
+        match latest_logs {
             Some(Ok(log)) => log
                 .block_number
                 .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
@@ -338,8 +338,11 @@ pub mod eth_client_getter_test {
     use tokio;
 
     // Constants remain the same
+    // transaction on ethereum mainnet:https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81
+    // mapping of the l2<>l1 block number: https://voyager.online/l1/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
+    // block on the starknet mainnet: https://voyager.online/block/0x13ec4dc67608729b9169a916ceec3a1bf2e940082211253fc8f9dbf2c594ff8
     const L2_BLOCK_NUMBER: u64 = 662703;
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
@@ -349,10 +352,10 @@ pub mod eth_client_getter_test {
     fn get_anvil() -> Arc<AnvilInstance> {
         ANVIL_INSTANCE
             .get_or_init(|| {
-                // let fork_url = std::env::var("ETH_FORK_URL")
-                //     .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
+                let fork_url = std::env::var("ETH_FORK_URL")
+                    .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
                 let anvil = Anvil::new()
-                    .fork("https://eth-mainnet.g.alchemy.com/v2/gbyYKt74AtTbRcgTSFP45xXuFUFdTH3D")
+                    .fork(fork_url)
                     .fork_block_number(L1_BLOCK_NUMBER)
                     .timeout(60_000)
                     .try_spawn()

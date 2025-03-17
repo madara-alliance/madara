@@ -156,6 +156,7 @@ frestart: fclean
 	@make --silent start
 
 
+.PHONY: snos
 snos:
 	python3.9 -m venv orchestrator_venv && \
 	. ./orchestrator_venv/bin/activate && \

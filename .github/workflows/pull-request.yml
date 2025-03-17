@@ -20,10 +20,6 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/db-version.yml
 
-  # changelog_orchestrator:
-  #   name: Update Orchestrator Changelog
-  #   uses: ./.github/workflows/orchestrator-changelog.yml
-
   linters:
     name: Run linters
     needs: update_db_version

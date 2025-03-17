@@ -188,7 +188,6 @@ starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
-# alloy = { version = "0.8.3", features = [
 alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
