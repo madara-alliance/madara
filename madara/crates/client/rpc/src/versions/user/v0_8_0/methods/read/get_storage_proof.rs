@@ -356,10 +356,16 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         // collect all proof nodes into one big hash map. since the keys are hashes of the nodes
-        // themselves, there should be no collisions.
+        // themselves, there should be no collisions. Duplicates are normal since we are asking for
+        // multiple proofs out of the same MPT, but they should be identical k:v pairs (as opposed
+        // to a collision where k is identical but v is not).
         let mut proof_nodes = HashMap::new();
         for node in storage_proof_result.contracts_storage_proofs.into_iter().flatten() {
-            proof_nodes.insert(node.node_hash, node.node);
+            let previous = proof_nodes.insert(node.node_hash, node.node.clone());
+            if let Some(previous) = previous {
+                // if there is a hash collision, the value should be the same
+                assert!(previous == node.node);
+            }
         }
 
         // for each contract we have a proof for, walk through the proof for all storage keys requested
