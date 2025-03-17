@@ -102,6 +102,8 @@ pub enum StarknetRpcApiError {
     InternalServerError,
     #[error("Unimplemented method")]
     UnimplementedMethod,
+    #[error("Sync status not available")]
+    SyncStatusNotAvailable,
     #[error("Proof limit exceeded")]
     ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
     #[error("Cannot create a storage proof for a block that old")]
@@ -142,6 +144,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
+            StarknetRpcApiError::SyncStatusNotAvailable => 502,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
             StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }

@@ -37,6 +37,7 @@ mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-oracle = { workspace = true }
 mp-utils = { workspace = true }
+mp-sync = { workspace = true }
 
 # Starknet
 blockifier.workspace = true

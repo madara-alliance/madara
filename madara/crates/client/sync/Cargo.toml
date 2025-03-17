@@ -43,6 +43,8 @@ mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
 mp-utils.workspace = true
+mp-rpc.workspace = true
+mp-sync.workspace = true
 
 # Starknet
 starknet-types-core.workspace = true

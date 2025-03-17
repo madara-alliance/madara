@@ -20,6 +20,7 @@ members = [
   "madara/crates/primitives/class",
   "madara/crates/primitives/gateway",
   "madara/crates/primitives/rpc",
+  "madara/crates/primitives/sync",
   "madara/crates/primitives/receipt",
   "madara/crates/primitives/state_update",
   "madara/crates/primitives/chain_config",
@@ -67,6 +68,7 @@ default-members = [
   "madara/crates/primitives/gateway",
   "madara/crates/primitives/rpc",
   "madara/crates/primitives/receipt",
+  "madara/crates/primitives/sync",
   "madara/crates/primitives/state_update",
   "madara/crates/primitives/chain_config",
   "madara/crates/primitives/utils",
@@ -143,6 +145,7 @@ mp-transactions = { path = "madara/crates/primitives/transactions", default-feat
 mp-class = { path = "madara/crates/primitives/class", default-features = false }
 mp-gateway = { path = "madara/crates/primitives/gateway", default-features = false }
 mp-rpc = { path = "madara/crates/primitives/rpc", default-features = false }
+mp-sync = { path = "madara/crates/primitives/sync", default-features = false }
 mp-receipt = { path = "madara/crates/primitives/receipt", default-features = false }
 mp-state-update = { path = "madara/crates/primitives/state_update", default-features = false }
 mp-utils = { path = "madara/crates/primitives/utils", default-features = false }

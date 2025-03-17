@@ -17,6 +17,8 @@ use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
+use mp_rpc::SyncStatus;
+use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
 use providers::AddTransactionProvider;
 use starknet_types_core::felt::Felt;
@@ -49,6 +51,7 @@ pub struct Starknet {
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
     storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
+    sync_status_provider: Option<Arc<SyncStatusProvider>>,
 }
 
 impl Starknet {
@@ -57,8 +60,9 @@ impl Starknet {
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
         storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
+        sync_status_provider: Option<Arc<SyncStatusProvider>>,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, ctx }
+        Self { backend, add_transaction_provider, storage_proof_config, ctx, sync_status_provider }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -107,6 +111,15 @@ impl Starknet {
             .get_l1_last_confirmed_block()
             .or_internal_server_error("Error getting L1 last confirmed block")?
             .unwrap_or_default())
+    }
+
+    pub async fn sync_status(&self) -> StarknetRpcResult<SyncStatus> {
+        Ok(self
+            .sync_status_provider
+            .as_ref()
+            .ok_or(StarknetRpcApiError::SyncStatusNotAvailable)?
+            .get_sync_status()
+            .await)
     }
 }
 
