@@ -36,9 +36,9 @@ mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
+mp-sync = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
-mp-sync = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }

@@ -24,4 +24,4 @@ mp-rpc.workspace = true
 
 # Other dependencies
 anyhow.workspace = true
-serde = { workspace = true, features = ["derive"] } 
+serde = { workspace = true, features = ["derive"] }
