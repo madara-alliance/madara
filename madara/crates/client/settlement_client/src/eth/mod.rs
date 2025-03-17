@@ -153,7 +153,7 @@ impl SettlementClientTrait for EthereumClient {
         Ok(block_hash._0.to_felt())
     }
 
-    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError> {
+    async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let block_number = self.get_last_verified_block_number().await?;
         let block_hash = self.get_last_verified_block_hash().await?;
         let global_root = self.get_last_verified_state_root().await?;

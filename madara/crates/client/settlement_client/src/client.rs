@@ -102,7 +102,7 @@ pub trait SettlementClientTrait: Send + Sync {
     ///
     /// This is called once during node startup to synchronize the initial state,
     /// except during testing where it may cause issues with test environments.
-    async fn get_initial_state(&self) -> Result<StateUpdate, SettlementClientError>;
+    async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError>;
 
     /// Listens for and processes state update events from the settlement layer
     ///

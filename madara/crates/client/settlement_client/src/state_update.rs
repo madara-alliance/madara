@@ -61,7 +61,7 @@ where
     #[cfg(not(test))]
     {
         let initial_state = settlement_client
-            .get_initial_state()
+            .get_current_core_contract_state()
             .await
             .map_err(|e| SettlementClientError::StateInitialization(format!("Failed to get initial state: {}", e)))?;
 
