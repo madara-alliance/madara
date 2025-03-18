@@ -30,6 +30,7 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
+use std::net::TcpListener;
 use std::time::Duration;
 
 /// Deployer Starknet account address used for testing
@@ -81,28 +82,8 @@ impl MadaraProcess {
     /// # Returns
     /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
-        // Try ports in range 19944-20044
-        let port_range = 19944..20045;
-        let mut selected_port = None;
-
-        for port in port_range {
-            // Check if port is available
-            if TcpStream::connect_timeout(
-                &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-                Duration::from_millis(100),
-            )
-            .is_err()
-            {
-                // Port is available if connection fails
-                selected_port = Some(port);
-                break;
-            }
-        }
-
-        let port = selected_port.unwrap_or_else(|| {
-            eprintln!("Warning: Could not find available port, using default");
-            MADARA_PORT.parse().unwrap()
-        });
+        // Get the port assigned by the OS
+        let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
 
         println!("Starting Madara on port {}", port);
 
