@@ -218,8 +218,7 @@ impl Stream for StarknetEventStream {
                                         StarknetClientError::EventProcessing {
                                             message: "Missing nonce in event data".to_string(),
                                             event_id: "MessageSent".to_string(),
-                                        }
-                                        .into(),
+                                        },
                                     ))))
                                 }
                             };
