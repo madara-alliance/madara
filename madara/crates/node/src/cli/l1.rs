@@ -1,12 +1,12 @@
 use alloy::primitives::private::derive_more::FromStr;
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum MadaraSettlementLayer {
     Eth,
     Starknet,

@@ -123,14 +123,10 @@ impl SettlementClientTrait for EthereumClient {
             None => {
                 let from_block = latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE);
                 Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
-                    message: format!(
-                        "no LogStateUpdate event found in block range [{}, {}]", 
-                        from_block, 
-                        latest_block
-                    ),
+                    message: format!("no LogStateUpdate event found in block range [{}, {}]", from_block, latest_block),
                     block_number: latest_block,
                 }))
-            },
+            }
         }
     }
 
