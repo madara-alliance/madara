@@ -392,7 +392,8 @@ pub mod eth_client_getter_test {
         let anvil = get_anvil();
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
         let rpc_url: Url = anvil.endpoint_url();
-        let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
+        let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None)
+            .expect("Should parse valid Ethereum address in test");
         let ethereum_client_config = EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address };
         let new_client_result = EthereumClient::new(ethereum_client_config).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
@@ -401,8 +402,12 @@ pub mod eth_client_getter_test {
     #[rstest]
     #[tokio::test]
     async fn get_latest_block_number_works(eth_client: EthereumClient) {
-        let block_number =
-            eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
+        let block_number = eth_client
+            .provider
+            .get_block_number()
+            .await
+            .expect("Should successfully fetch the forked block number")
+            .as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
@@ -412,31 +417,41 @@ pub mod eth_client_getter_test {
         let block_number = eth_client
             .get_last_event_block_number()
             .await
-            .expect("issue while getting the last block number with given event");
+            .expect("Should successfully fetch the last block number with LogStateUpdate event");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
     #[rstest]
     #[tokio::test]
     async fn get_last_verified_block_hash_works(eth_client: EthereumClient) {
-        let block_hash =
-            eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
-        let expected = U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap().to_felt();
+        let block_hash = eth_client
+            .get_last_verified_block_hash()
+            .await
+            .expect("Should successfully retrieve the last verified block hash from L1 contract");
+        let expected =
+            U256::from_str_radix(L2_BLOCK_HASH, 10).expect("Should parse the predefined L2 block hash").to_felt();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
     #[rstest]
     #[tokio::test]
     async fn get_last_state_root_works(eth_client: EthereumClient) {
-        let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
-        let expected = U256::from_str_radix(L2_STATE_ROOT, 10).unwrap().to_felt();
+        let state_root = eth_client
+            .get_last_verified_state_root()
+            .await
+            .expect("Should successfully retrieve the verified state root from L1 contract");
+        let expected =
+            U256::from_str_radix(L2_STATE_ROOT, 10).expect("Should parse the predefined L2 state root").to_felt();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
     #[rstest]
     #[tokio::test]
     async fn get_last_verified_block_number_works(eth_client: EthereumClient) {
-        let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
+        let block_number = eth_client
+            .get_last_verified_block_number()
+            .await
+            .expect("Should successfully retrieve the last verified block number from L1 contract");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
 }
@@ -613,7 +628,7 @@ mod l1_messaging_tests {
         let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
-        // Start worker
+        // Start worker handle
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
@@ -622,8 +637,8 @@ mod l1_messaging_tests {
         };
 
         // Set canceled status and fire event
-        let _ = contract.setIsCanceled(false).send().await.expect("Failed to set canceled status");
-        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+        let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
+        let _ = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -633,18 +648,27 @@ mod l1_messaging_tests {
         assert!(logs_contain("fromAddress: \"0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419\""));
 
         // Assert the tx hash computed by the worker is correct
-        let event_hash = contract.getL1ToL2MsgHash().call().await.expect("failed to get hash")._0.to_string();
+        let event_hash = contract
+            .getL1ToL2MsgHash()
+            .call()
+            .await
+            .expect("Should successfully get the message hash from the contract")
+            ._0
+            .to_string();
         assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
         // TODO : Assert that the tx has been included in the mempool
 
         // Assert that the event is well stored in db
-        let last_block =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block = db
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("Should successfully retrieve the last synced L1 block with messaging event")
+            .unwrap();
         assert_ne!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        // TODO: Assert that the transaction has been executed successfully
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
-        // TODO : Assert that the tx was correctly executed
 
         // Explicitly cancel the listen task, else it would be running in the background
         worker_handle.abort();
@@ -667,7 +691,7 @@ mod l1_messaging_tests {
         let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
-        // Start worker
+        // Start worker handle
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
@@ -676,19 +700,22 @@ mod l1_messaging_tests {
         };
 
         // Set canceled status and fire first event
-        let _ = contract.setIsCanceled(false).send().await.expect("Failed to set canceled status");
-        let _ = contract.fireEvent().send().await.expect("Failed to fire first event");
+        let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
+        let _ = contract.fireEvent().send().await.expect("Should successfully fire first messaging event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block = db
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("Should successfully retrieve the last synced block after first event")
+            .unwrap();
         assert_ne!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
 
         // Fire second event
-        let _ = contract.fireEvent().send().await.expect("Failed to fire second event");
+        let _ = contract.fireEvent().send().await.expect("Should successfully fire second messaging event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -697,7 +724,7 @@ mod l1_messaging_tests {
             last_block.block_number,
             db.backend()
                 .messaging_last_synced_l1_block_with_event()
-                .expect("failed to retrieve block")
+                .expect("Should successfully retrieve the last synced block after second event")
                 .unwrap()
                 .block_number
         );
@@ -721,7 +748,7 @@ mod l1_messaging_tests {
         let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
             setup_test_env.await;
 
-        // Start worker
+        // Start worker handle
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
@@ -730,15 +757,18 @@ mod l1_messaging_tests {
         };
 
         // Mock cancelled message
-        let _ = contract.setIsCanceled(true).send().await.expect("Failed to set canceled status");
-        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+        let _ = contract.setIsCanceled(true).send().await.expect("Should successfully set canceled status to true");
+        let _ = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block =
-            db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
+        let last_block = db
+            .backend()
+            .messaging_last_synced_l1_block_with_event()
+            .expect("Should successfully retrieve the last synced block after canceled event")
+            .unwrap();
         assert_eq!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
         assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
@@ -759,12 +789,15 @@ mod l1_messaging_tests {
                 from: Felt::from_bytes_be_slice(
                     Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap().0 .0.to_vec().as_slice(),
                 ),
-                to: Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82").unwrap(),
-                selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5").unwrap(),
+                to: Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82")
+                    .expect("Should parse valid destination address hex"),
+                selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5")
+                    .expect("Should parse valid selector hex"),
                 payload: vec![
-                    Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7").unwrap(),
-                    Felt::from_hex("0x2c68af0bb140000").unwrap(),
-                    Felt::from_hex("0x0").unwrap(),
+                    Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7")
+                        .expect("Should parse valid payload[0] hex"),
+                    Felt::from_hex("0x2c68af0bb140000").expect("Should parse valid payload[1] hex"),
+                    Felt::from_hex("0x0").expect("Should parse valid payload[2] hex"),
                 ],
                 nonce: Felt::from_bytes_be_slice(U256::from(775628).to_be_bytes_vec().as_slice()),
                 fee: Some(u128::try_from(Felt::from_bytes_be_slice(U256::ZERO.to_be_bytes_vec().as_slice())).unwrap()),
@@ -773,10 +806,10 @@ mod l1_messaging_tests {
                 block_number: 0,
                 event_index: None,
             })
-            .expect("Failed to compute l1 to l2 msg hash");
+            .expect("Should successfully compute L1 to L2 message hash");
 
-        let expected_hash =
-            <[u8; 32]>::from_hex("c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3").unwrap();
+        let expected_hash = <[u8; 32]>::from_hex("c51a543ef9563ad2545342b390b67edfcddf9886aa36846cf70382362fc5fab3")
+            .expect("Should parse valid expected hash hex");
 
         assert_eq!(msg, expected_hash);
     }
@@ -866,14 +899,16 @@ mod eth_client_event_subscription_test {
             })
         };
 
-        let _ = contract.fireEvent().send().await.expect("Failed to fire event");
+        let _ = contract.fireEvent().send().await.expect("Should successfully fire state update event");
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(EVENT_PROCESSING_TIME)).await;
 
         // Verify the block number
-        let block_in_db =
-            db.backend().get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
+        let block_in_db = db
+            .backend()
+            .get_l1_last_confirmed_block()
+            .expect("Should successfully retrieve the last confirmed block number from the database");
 
         // Explicitly cancel the listen task, else it would be running in the background
         listen_handle.abort();

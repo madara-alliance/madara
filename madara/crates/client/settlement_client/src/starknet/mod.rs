@@ -400,16 +400,16 @@ pub mod starknet_client_tests {
     use tokio::time::sleep;
 
     /// This struct holds all commonly used test resources
-    pub struct TestFixture<'a> {
+    pub struct StarknetClientTextFixture<'a> {
         pub context: crate::starknet::utils::TestContext,
         pub client: StarknetClient,
-        // These fields ensure resources are properly cleaned up when TestFixture is dropped
+        // These fields ensure resources are properly cleaned up when StarknetClientTextFixture is dropped
         _lock_guard: MutexGuard<'a, ()>,
         _test_guard: TestGuard,
     }
 
     #[fixture]
-    async fn test_fixture<'a>() -> anyhow::Result<TestFixture<'a>> {
+    async fn test_fixture<'a>() -> anyhow::Result<StarknetClientTextFixture<'a>> {
         // Acquire state update lock
         let lock_guard = get_state_update_lock().lock().await;
 
@@ -425,13 +425,13 @@ pub mod starknet_client_tests {
         .await?;
 
         // Return all resources bundled together
-        Ok(TestFixture { context, client, _lock_guard: lock_guard, _test_guard: test_guard })
+        Ok(StarknetClientTextFixture { context, client, _lock_guard: lock_guard, _test_guard: test_guard })
     }
 
     #[rstest]
     #[tokio::test]
     async fn fail_create_new_client_contract_does_not_exists<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
@@ -448,7 +448,7 @@ pub mod starknet_client_tests {
     #[rstest]
     #[tokio::test]
     async fn create_new_client_contract_exists_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
@@ -460,7 +460,7 @@ pub mod starknet_client_tests {
     #[rstest]
     #[tokio::test]
     async fn get_last_event_block_number_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
@@ -470,8 +470,8 @@ pub mod starknet_client_tests {
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
                 block_number: 99,
-                global_root: Felt::from_hex("0xdeadbeef")?,
-                block_hash: Felt::from_hex("0xdeadbeef")?,
+                global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
+                block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
         )
         .await?;
@@ -481,8 +481,8 @@ pub mod starknet_client_tests {
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
                 block_number: 100,
-                global_root: Felt::from_hex("0xdeadbeef")?,
-                block_hash: Felt::from_hex("0xdeadbeef")?,
+                global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
+                block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
         )
         .await?;
@@ -498,13 +498,13 @@ pub mod starknet_client_tests {
     #[rstest]
     #[tokio::test]
     async fn get_last_verified_block_hash_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
         // sending state updates:
-        let block_hash_event = Felt::from_hex("0xdeadbeef")?;
-        let global_root_event = Felt::from_hex("0xdeadbeef")?;
+        let block_hash_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
+        let global_root_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
         let block_number = send_state_update(
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
@@ -522,13 +522,13 @@ pub mod starknet_client_tests {
     #[rstest]
     #[tokio::test]
     async fn get_last_state_root_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
         // sending state updates:
-        let block_hash_event = Felt::from_hex("0xdeadbeef")?;
-        let global_root_event = Felt::from_hex("0xdeadbeef")?;
+        let block_hash_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
+        let global_root_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
         let block_number = send_state_update(
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
@@ -546,12 +546,12 @@ pub mod starknet_client_tests {
     #[rstest]
     #[tokio::test]
     async fn get_last_verified_block_number_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
         // sending state updates:
-        let data_felt = Felt::from_hex("0xdeadbeef")?;
+        let data_felt = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
         let block_number = 100;
         let event_block_number = send_state_update(
             &fixture.context.account,
@@ -617,18 +617,18 @@ mod starknet_client_messaging_test {
     use tracing_test::traced_test;
 
     /// This struct holds all commonly used test resources
-    pub struct TestFixture<'a> {
+    pub struct StarknetClientTextFixture<'a> {
         pub context: crate::starknet::utils::TestContext,
         pub db_service: Arc<DatabaseService>,
         pub starknet_client: StarknetClient,
         pub mempool: Arc<Mempool>,
-        // These fields ensure resources are properly cleaned up when TestFixture is dropped
+        // These fields ensure resources are properly cleaned up when StarknetClientTextFixture is dropped
         _lock_guard: MutexGuard<'a, ()>,
         _test_guard: TestGuard,
     }
 
     #[fixture]
-    async fn test_fixture<'a>() -> anyhow::Result<TestFixture<'a>> {
+    async fn test_fixture<'a>() -> anyhow::Result<StarknetClientTextFixture<'a>> {
         // Acquire state update lock
         let lock_guard = get_state_update_lock().lock().await;
 
@@ -658,7 +658,7 @@ mod starknet_client_messaging_test {
         ));
 
         // Return all resources bundled together
-        Ok(TestFixture {
+        Ok(StarknetClientTextFixture {
             context,
             db_service: db,
             starknet_client,
@@ -672,7 +672,7 @@ mod starknet_client_messaging_test {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow_starknet<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
@@ -706,10 +706,10 @@ mod starknet_client_messaging_test {
             .db_service
             .backend()
             .messaging_last_synced_l1_block_with_event()
-            .expect("failed to retrieve block")
+            .expect("Should successfully retrieve the last synced L1 block with messaging event")
             .unwrap();
         assert_eq!(last_block.block_number, fire_event_block_number);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
         assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce)?);
 
         // Cancelling worker
@@ -722,7 +722,7 @@ mod starknet_client_messaging_test {
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_message_canceled_starknet<'a>(
-        #[future] test_fixture: anyhow::Result<TestFixture<'a>>,
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
 
@@ -743,7 +743,7 @@ mod starknet_client_messaging_test {
             .db_service
             .backend()
             .messaging_last_synced_l1_block_with_event()
-            .expect("failed to retrieve block")
+            .expect("Should successfully retrieve last synced block before cancellation")
             .unwrap();
 
         cancel_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
@@ -755,10 +755,10 @@ mod starknet_client_messaging_test {
             .db_service
             .backend()
             .messaging_last_synced_l1_block_with_event()
-            .expect("failed to retrieve block")
+            .expect("Should successfully retrieve last synced block after cancellation")
             .unwrap();
         assert_eq!(last_block_post_cancellation.block_number, last_block_pre_cancellation.block_number);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce).unwrap());
         assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
@@ -817,7 +817,7 @@ mod starknet_client_event_subscription_test {
                     Arc::new(l1_block_metrics),
                 )
                 .await
-                .expect("Failed to init state update worker.")
+                .expect("Should successfully init state update worker.")
             })
         };
 
@@ -837,8 +837,10 @@ mod starknet_client_event_subscription_test {
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Verify the block number
-        let block_in_db =
-            db.backend().get_l1_last_confirmed_block().expect("Failed to get L2 last confirmed block number");
+        let block_in_db = db
+            .backend()
+            .get_l1_last_confirmed_block()
+            .expect("Should successfully retrieve the last confirmed block number from the database");
 
         // Abort the worker before ending the test
         listen_handle.abort();

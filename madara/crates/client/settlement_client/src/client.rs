@@ -46,7 +46,6 @@ pub mod test_types {
 /// # Type Parameters
 ///
 /// * `Config` - Configuration type specific to the settlement layer implementation
-/// * `Error` - Client-specific error type that must be convertible to SettlementClientError
 /// * `StreamType` - Stream implementation for processing L1 events
 ///
 /// # Error Handling
