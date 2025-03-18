@@ -243,9 +243,8 @@ pub async fn init_test_context() -> anyhow::Result<TestGuard> {
 
     // Then initialize new instance
     let mut madara_guard = MADARA.lock().await;
-    if madara_guard.is_none() {
-        *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
-    }
+
+    *madara_guard = Some(MadaraInstance { process: MadaraProcess::new(PathBuf::from(MADARA_BINARY_PATH))? });
 
     // Get the port from the Madara instance
     let port = madara_guard.as_ref().unwrap().process.port();

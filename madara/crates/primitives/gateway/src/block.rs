@@ -1,5 +1,4 @@
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
-use crate::transaction::L1HandlerTransaction;
 use anyhow::Context;
 use mp_block::header::{BlockTimestamp, L1DataAvailabilityMode};
 use mp_chain_config::StarknetVersion;
@@ -283,12 +282,6 @@ fn starknet_version(version: StarknetVersion) -> Option<String> {
     }
 }
 
-fn l1_handler_to_msg_to_l2(l1_handler: &L1HandlerTransaction) -> Option<mp_receipt::MsgToL2> {
-    let mp_l1_handler: mp_transactions::L1HandlerTransaction = l1_handler.clone().into();
-
-    mp_receipt::MsgToL2::try_from(&mp_l1_handler).ok()
-}
-
 fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transaction]) -> Vec<ConfirmedReceipt> {
     receipts
         .into_iter()
@@ -296,7 +289,10 @@ fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transa
         .enumerate()
         .map(|(index, (receipt, tx))| {
             let l1_to_l2_consumed_message = match tx {
-                Transaction::L1Handler(l1_handler) => l1_handler_to_msg_to_l2(l1_handler),
+                Transaction::L1Handler(l1_handler) => {
+                    let mp_l1_handler: mp_transactions::L1HandlerTransaction = l1_handler.clone().into();
+                    mp_receipt::MsgToL2::try_from(&mp_l1_handler).ok()
+                }
                 _ => None,
             };
             ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
