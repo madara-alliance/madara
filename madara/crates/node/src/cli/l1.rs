@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
 use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
 
-#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct L1SyncParams {
     /// Disable L1 sync.
     #[clap(env = "MADARA_SYNC_L1_DISABLED", long, alias = "no-l1-sync", conflicts_with = "l1_endpoint")]

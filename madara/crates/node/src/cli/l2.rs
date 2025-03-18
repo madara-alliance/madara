@@ -6,13 +6,12 @@ use starknet_api::core::ChainId;
 
 use mc_sync::fetch::fetchers::FetchConfig;
 use mp_utils::parsers::{parse_duration, parse_url};
-use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::FGW_DEFAULT_PORT;
 use super::RPC_DEFAULT_PORT_ADMIN;
 
-#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct L2SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]

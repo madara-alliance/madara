@@ -39,7 +39,8 @@ jobs:
           install-mold: true
           install-scarb: true
           install-foundry: true
-          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          # This is because runner too out of date to support nightly
+          foundry-version: stable
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
@@ -47,6 +48,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Start Anvil
         run: |
+          ldd --version
           if command -v anvil &> /dev/null
           then
               echo "Anvil is installed. Version information:"

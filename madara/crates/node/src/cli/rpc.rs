@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -22,7 +21,7 @@ pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
 /// is allowed to keep in memory per connection.
 pub const RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN: u32 = 64;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub enum Cors {
     /// All hosts allowed.
     All,
@@ -54,7 +53,7 @@ impl FromStr for Cors {
     }
 }
 
-#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct RpcParams {
     /// Disables the user RPC endpoint. This includes all methods which are part
     /// of the official starknet specs.

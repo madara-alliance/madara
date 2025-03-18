@@ -101,6 +101,7 @@ mod test {
     /// * `base` - Base number used as prefix for all values
     /// * `num_events` - Number of events to generate
     /// * `keys_per_event` - Number of keys per event
+
     fn generate_receipt(base: u64, num_events: usize, keys_per_event: usize) -> TransactionReceipt {
         // Transaction hash is just the base shifted
         let tx_hash = Felt::from(base << 32);

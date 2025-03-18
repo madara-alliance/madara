@@ -117,7 +117,7 @@ pub async fn subscribe_new_heads(
     }
 }
 
-async fn send_block_header(
+async fn send_block_header<'a>(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     block_info: mp_block::MadaraBlockInfo,
     block_n: u64,

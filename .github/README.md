@@ -83,7 +83,9 @@ Having different cache for build environments allows to reduce the total cache s
 
 [Act](https://github.com/nektos/act) is a tool that allows you to run GitHub Actions workflows locally. This is useful for testing and debugging workflows without having to push changes to GitHub.
 
-**Warning**: Currently `act` doesn't work well with multiple level of dockerization. Meaning workflows which are using `uses: task-...` as jobs (ex: `pull-request-...` or `push-...`) won't work. However all the `task-...` workflows should work properly.
+> [!WARNING]  
+> Currently `act` doesn't work well with multiple level of dockerization - workflows which are using `uses: task-...` as jobs (ex: `pull-request-...` or `push-...`) won't work.
+> **However** all the `task-...` workflows should work properly.
 
 ### Common usages
 

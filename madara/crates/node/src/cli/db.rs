@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, clap::Args, Serialize, Deserialize)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct DbParams {
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]

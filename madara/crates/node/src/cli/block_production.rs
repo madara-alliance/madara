@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 /// Parameters used to config block production.
-#[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
+#[derive(Clone, Debug, clap::Parser)]
 pub struct BlockProductionParams {
     /// Disable the block production service.
     /// The block production service is only enabled with the authority (sequencer) mode.
