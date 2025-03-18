@@ -354,7 +354,11 @@ impl BlockImporterCtx {
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
                     info: SierraClassInfo { contract_class: sierra.contract_class, compiled_class_hash },
-                    compiled: Arc::new(compiled_class),
+                    compiled: Arc::new(
+                        (&compiled_class)
+                            .try_into()
+                            .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?,
+                    ),
                 }))
             }
             ClassInfo::Legacy(legacy) => {
@@ -536,9 +540,9 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_block::{BlockHeaderWithSignatures, Header};
     use mp_chain_config::ChainConfig;
+    use mp_convert::felt;
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
     use rstest::*;
-    use starknet_api::felt;
     use starknet_core::types::Felt;
     use std::sync::Arc;
 

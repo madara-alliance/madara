@@ -6,7 +6,7 @@ mod block_tests {
     use crate::{block_db::TxIndex, db_block_id::DbBlockId};
     use mp_block::{BlockId, Header};
     use mp_chain_config::ChainConfig;
-    use starknet_api::felt;
+    use mp_convert::felt;
 
     #[tokio::test]
     async fn test_chain_info() {

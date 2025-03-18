@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{bail, Context};
+use blockifier::blockifier::config::ConcurrencyConfig;
 use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
 use mp_utils::crypto::ZeroingPrivateKey;
@@ -9,10 +10,7 @@ use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_block::H160;
-use mp_chain_config::{
-    deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
-    ChainConfig, StarknetVersion,
-};
+use mp_chain_config::{deserialize_starknet_version, serialize_starknet_version, ChainConfig, StarknetVersion};
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
     deserialize_duration, deserialize_optional_duration, deserialize_private_key, serialize_duration,
@@ -98,7 +96,6 @@ pub struct ChainConfigOverridesInner {
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub pending_block_update_time: Duration,
     pub execution_batch_size: usize,
-    #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: H160,
@@ -112,6 +109,7 @@ pub struct ChainConfigOverridesInner {
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+    pub concurrency_config: ConcurrencyConfig,
 }
 
 impl ChainConfigOverrideParams {
@@ -138,6 +136,7 @@ impl ChainConfigOverrideParams {
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
+            concurrency_config: chain_config.concurrency_config,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -191,6 +190,7 @@ impl ChainConfigOverrideParams {
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
+            concurrency_config: chain_config_overrides.concurrency_config,
         })
     }
 }

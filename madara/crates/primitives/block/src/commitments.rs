@@ -190,16 +190,16 @@ pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator
 mod tests {
     use super::*;
     use crate::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode};
-    use mp_convert::ToFelt;
+    use mp_convert::{felt, ToFelt};
     use rstest::*;
-    use starknet_api::{core::ChainId, felt};
+    use starknet_api::core::ChainId;
 
     #[test]
     fn test_compute_root() {
         let values = vec![Felt::ONE, Felt::TWO, Felt::THREE];
         let root = compute_merkle_root::<Poseidon>(values);
 
-        assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
+        assert_eq!(root, felt!("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 
     fn dummy_header() -> PendingHeader {

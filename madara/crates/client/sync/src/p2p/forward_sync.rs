@@ -49,7 +49,6 @@ use std::time::Duration;
 /// catch up with the latest block on L1. Syncing will switch in forward mode after that point, and consensus signatures
 /// will be checked from that point on.
 /// Until snap-sync is a thing, we also have to sync all state diffs in forward more.
-
 pub struct ForwardSyncConfig {
     pub headers_parallelization: usize,
     pub headers_batch_size: usize,

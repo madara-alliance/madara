@@ -26,7 +26,7 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraPendingBlock, VisitedSegments};
+use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
 use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
@@ -46,15 +46,17 @@ mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 struct ContinueBlockStats {
     /// Number of batches executed before reaching the bouncer capacity.
     pub n_batches: usize,
-    /// Number of transactions included into the block
+    /// Number of transactions included into the block.
     pub n_added_to_block: usize,
+    /// Transactions that were popped from the mempool but not executed, and so they are re-added back into the mempool.
     pub n_re_added_to_mempool: usize,
+    /// Rejected transactions are failing transactions that are included in the block.
     pub n_reverted: usize,
-    /// Rejected are txs that were unsucessful and but that were not revertible.
+    /// Rejected are txs are failing transactions that are not revertible. They are thus not included in the block
     pub n_rejected: usize,
 }
 
@@ -79,12 +81,6 @@ pub enum Error {
 struct ContinueBlockResult {
     /// The accumulated state changes from executing transactions in this continuation
     state_diff: StateDiff,
-
-    /// Tracks which segments of Cairo program code were accessed during transaction execution,
-    /// organized by class hash. This information is used as input for SNOS (Starknet OS)
-    /// when generating proofs of execution.
-    #[allow(unused)]
-    visited_segments: VisitedSegments,
 
     /// The current state of resource consumption tracked by the bouncer
     #[allow(unused)]
@@ -264,7 +260,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             if to_take > 0 {
                 self.mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
 
-                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.clone_tx()));
+                txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.tx.clone()));
             }
 
             if txs_to_process.is_empty() {
@@ -289,7 +285,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 self.backend.remove_mempool_transaction(&mempool_tx.tx_hash().to_felt())?;
 
                 match exec_result {
-                    Ok(execution_info) => {
+                    Ok((execution_info, _)) => {
                         // Reverted transactions appear here as Ok too.
                         tracing::debug!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
 
@@ -305,8 +301,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         self.block
                             .inner
                             .receipts
-                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.clone_tx()));
-                        let converted_tx = TransactionWithHash::from(mempool_tx.clone_tx());
+                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.tx.clone()));
+                        let converted_tx = TransactionWithHash::from(mempool_tx.tx.clone());
                         self.block.info.tx_hashes.push(converted_tx.hash);
                         self.block.inner.transactions.push(converted_tx.transaction);
                     }
@@ -333,7 +329,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let on_top_of = self.executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
 
-        let (state_diff, visited_segments, bouncer_weights) =
+        let (state_diff, bouncer_weights) =
             finalize_execution_state::finalize_execution_state(&mut self.executor, &self.backend, &on_top_of)?;
 
         // Add back the unexecuted transactions to the mempool.
@@ -349,7 +345,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             stats.n_re_added_to_mempool
         );
 
-        Ok(ContinueBlockResult { state_diff, visited_segments, bouncer_weights, stats, block_now_full })
+        Ok(ContinueBlockResult { state_diff, bouncer_weights, stats, block_now_full })
     }
 
     /// Closes the current block and prepares for the next one
@@ -462,13 +458,12 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         let start_time = Instant::now();
 
-        let ContinueBlockResult {
-            state_diff: mut new_state_diff,
-            visited_segments: _,
-            bouncer_weights: _,
-            stats,
-            block_now_full,
-        } = self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+        tracing::debug!("{:?}", self.backend.chain_config().bouncer_config.block_max_capacity);
+
+        let ContinueBlockResult { state_diff: mut new_state_diff, bouncer_weights: _, stats, block_now_full } =
+            self.continue_block(self.backend.chain_config().bouncer_config.block_max_capacity)?;
+
+        tracing::debug!("{:?} {:?}", stats, block_now_full);
 
         if stats.n_added_to_block > 0 {
             tracing::info!(
@@ -589,11 +584,10 @@ mod tests {
     use crate::{
         finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, BlockProductionTask,
     };
+    use blockifier::transaction::transaction_execution::Transaction as BTransaction;
     use blockifier::{
         bouncer::{BouncerConfig, BouncerWeights},
-        compiled_class_hash, nonce,
         state::cached_state::StateMaps,
-        storage_key,
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
@@ -603,7 +597,7 @@ mod tests {
         MadaraPendingBlock,
     };
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
+    use mp_convert::{felt, ToFelt};
     use mp_rpc::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, DaMode, InvokeTxnV3,
         ResourceBounds, ResourceBoundsMapping,
@@ -613,13 +607,10 @@ mod tests {
         StorageEntry,
     };
     use mp_transactions::{BroadcastedTransactionExt, Transaction};
-    use starknet_api::{
-        class_hash, contract_address,
-        core::{ClassHash, ContractAddress, PatriciaKey},
-        felt, patricia_key,
-    };
+    use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
     use starknet_types_core::felt::Felt;
     use std::{collections::HashMap, sync::Arc, time::Duration};
+    use tracing_test::traced_test;
 
     type TxFixtureInfo = (Transaction, mp_receipt::TransactionReceipt);
 
@@ -634,23 +625,11 @@ mod tests {
         // that when loaded, the block will close after one transaction
         // is added to it, to test the pending tick closing the block
         BouncerWeights {
-            builtin_count: blockifier::bouncer::BuiltinCount {
-                add_mod: 100000,
-                bitwise: 100000,
-                ecdsa: 100000,
-                ec_op: 100000,
-                keccak: 100000,
-                mul_mod: 100000,
-                pedersen: 100000,
-                poseidon: 100000,
-                range_check: 100000,
-                range_check96: 100000,
-            },
-            gas: 100000,
-            message_segment_length: 100000,
-            n_events: 100000,
-            n_steps: 100000,
-            state_diff_size: 100000,
+            sierra_gas: starknet_api::execution_resources::GasAmount(10000000),
+            message_segment_length: 10000,
+            n_events: 10000,
+            state_diff_size: 10000,
+            l1_gas: 10000,
         }
     }
 
@@ -834,9 +813,14 @@ mod tests {
         });
 
         let (blockifier_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                /* validate */ true,
+                /* charge_fee */ true,
+            )
             .unwrap();
-        let signature = contract.secret.sign(&mc_mempool::transaction_hash(&blockifier_tx)).unwrap();
+        let signature = contract.secret.sign(&BTransaction::tx_hash(&blockifier_tx).0).unwrap();
 
         let tx_signature = match &mut declare_txn {
             BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -888,9 +872,14 @@ mod tests {
         });
 
         let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                /* validate */ true,
+                /* charge_fee */ true,
+            )
             .unwrap();
-        let signature = contract_sender.secret.sign(&mc_mempool::transaction_hash(&blockifier_tx)).unwrap();
+        let signature = contract_sender.secret.sign(&BTransaction::tx_hash(&blockifier_tx)).unwrap();
 
         let tx_signature = match &mut invoke_txn {
             BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -906,91 +895,85 @@ mod tests {
     #[rstest::rstest]
     fn test_block_prod_state_map_to_state_diff(backend: Arc<MadaraBackend>) {
         let mut nonces = HashMap::new();
-        nonces.insert(contract_address!(1u32), nonce!(1));
-        nonces.insert(contract_address!(2u32), nonce!(2));
-        nonces.insert(contract_address!(3u32), nonce!(3));
+        nonces.insert(felt!("1").try_into().unwrap(), Nonce(felt!("1")));
+        nonces.insert(felt!("2").try_into().unwrap(), Nonce(felt!("2")));
+        nonces.insert(felt!("3").try_into().unwrap(), Nonce(felt!("3")));
 
         let mut class_hashes = HashMap::new();
-        class_hashes.insert(contract_address!(1u32), class_hash!("0xc1a551"));
-        class_hashes.insert(contract_address!(2u32), class_hash!("0xc1a552"));
-        class_hashes.insert(contract_address!(3u32), class_hash!("0xc1a553"));
+        class_hashes.insert(felt!("1").try_into().unwrap(), ClassHash(felt!("0xc1a551")));
+        class_hashes.insert(felt!("2").try_into().unwrap(), ClassHash(felt!("0xc1a552")));
+        class_hashes.insert(felt!("3").try_into().unwrap(), ClassHash(felt!("0xc1a553")));
 
         let mut storage = HashMap::new();
-        storage.insert((contract_address!(1u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(1u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(1u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
-        storage.insert((contract_address!(2u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(2u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(2u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
-        storage.insert((contract_address!(3u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(3u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(3u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
         let mut compiled_class_hashes = HashMap::new();
         // "0xc1a553" is marked as deprecated by not having a compiled
         // class hashe
-        compiled_class_hashes.insert(class_hash!("0xc1a551"), compiled_class_hash!(0x1));
-        compiled_class_hashes.insert(class_hash!("0xc1a552"), compiled_class_hash!(0x2));
+        compiled_class_hashes.insert(ClassHash(felt!("0xc1a551")), CompiledClassHash(felt!("0x1")));
+        compiled_class_hashes.insert(ClassHash(felt!("0xc1a552")), CompiledClassHash(felt!("0x2")));
 
         let mut declared_contracts = HashMap::new();
-        declared_contracts.insert(class_hash!("0xc1a551"), true);
-        declared_contracts.insert(class_hash!("0xc1a552"), true);
-        declared_contracts.insert(class_hash!("0xc1a553"), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a551")), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a552")), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a553")), true);
 
         let state_map = StateMaps { nonces, class_hashes, storage, compiled_class_hashes, declared_contracts };
 
         let storage_diffs = vec![
             ContractStorageDiffItem {
-                address: felt!(1u32),
+                address: felt!("1"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
             ContractStorageDiffItem {
-                address: felt!(2u32),
+                address: felt!("2"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
             ContractStorageDiffItem {
-                address: felt!(3u32),
+                address: felt!("3"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
         ];
 
-        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+        let deprecated_declared_classes = vec![felt!("0xc1a553")];
 
         let declared_classes = vec![
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a551").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
-            },
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a552").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
-            },
+            DeclaredClassItem { class_hash: felt!("0xc1a551"), compiled_class_hash: felt!("0x1") },
+            DeclaredClassItem { class_hash: felt!("0xc1a552"), compiled_class_hash: felt!("0x2") },
         ];
 
         let nonces = vec![
-            NonceUpdate { contract_address: felt!(1u32), nonce: felt!(1u32) },
-            NonceUpdate { contract_address: felt!(2u32), nonce: felt!(2u32) },
-            NonceUpdate { contract_address: felt!(3u32), nonce: felt!(3u32) },
+            NonceUpdate { contract_address: felt!("1"), nonce: felt!("1") },
+            NonceUpdate { contract_address: felt!("2"), nonce: felt!("2") },
+            NonceUpdate { contract_address: felt!("3"), nonce: felt!("3") },
         ];
 
         let deployed_contracts = vec![
-            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
-            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
-            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+            DeployedContractItem { address: felt!("1"), class_hash: felt!("0xc1a551") },
+            DeployedContractItem { address: felt!("2"), class_hash: felt!("0xc1a552") },
+            DeployedContractItem { address: felt!("3"), class_hash: felt!("0xc1a553") },
         ];
 
         let replaced_classes = vec![];
@@ -2036,6 +2019,7 @@ mod tests {
     // if the bouncer capacity is reached
     #[rstest::rstest]
     #[tokio::test]
+    #[traced_test]
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_on_pending_block_tick_closes_block(
         #[future]
@@ -2087,9 +2071,9 @@ mod tests {
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
-        assert!(!mempool.is_empty());
         assert_eq!(pending_block.inner.transactions.len(), 0);
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+        assert!(!mempool.is_empty());
     }
 
     // This test makes sure that the block time tick correctly

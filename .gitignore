@@ -53,6 +53,9 @@ starknet-e2e-test/contracts/build
 # vscode settings
 .vscode/settings.json
 
+# zed settings
+.zed
+
 # vscode workspaces
 *.code-workspace
 

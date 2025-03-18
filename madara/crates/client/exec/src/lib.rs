@@ -3,12 +3,12 @@ use core::fmt;
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{
-        errors::TransactionExecutionError,
-        objects::{FeeType, GasVector, TransactionExecutionInfo},
-        transaction_types::TransactionType,
+        errors::TransactionExecutionError, objects::TransactionExecutionInfo, transaction_types::TransactionType,
     },
 };
 use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
+use starknet_api::block::FeeType;
+use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 
@@ -59,10 +59,10 @@ pub enum Error {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Executing tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
+#[error("Executing tx {hash:#x} (index {index}) on top of {block_n}: {err:#}")]
 pub struct TxExecError {
     block_n: OnTopOf,
-    hash: TransactionHash,
+    hash: Felt,
     index: usize,
     #[source]
     err: TransactionExecutionError,

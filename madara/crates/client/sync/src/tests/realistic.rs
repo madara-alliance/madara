@@ -6,11 +6,11 @@ use crate::{
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_chain_config::ChainConfig;
+use mp_convert::felt;
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::NonceUpdate;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
-use starknet_api::felt;
 use std::sync::Arc;
 use tracing_test::traced_test;
 

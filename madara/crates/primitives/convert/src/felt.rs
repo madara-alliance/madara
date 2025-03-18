@@ -1,6 +1,14 @@
 use primitive_types::H160;
-use starknet_types_core::felt::Felt;
 use std::cmp::Ordering;
+
+pub use starknet_types_core::felt::Felt;
+
+#[macro_export]
+macro_rules! felt {
+    ($arg:expr) => {
+        $crate::Felt::from_hex_unchecked($arg)
+    };
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Malformated field element.")]

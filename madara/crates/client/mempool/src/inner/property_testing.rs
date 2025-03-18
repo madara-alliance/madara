@@ -68,43 +68,46 @@ pub enum TxTy {
 impl TxTy {
     fn tx(self, contract_address: Felt) -> blockifier::transaction::transaction_execution::Transaction {
         match self {
-            Self::Declare => blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Declare(
-                    blockifier::transaction::transactions::DeclareTransaction::new(
-                        starknet_api::transaction::DeclareTransaction::V0(
+            Self::Declare => blockifier::transaction::transaction_execution::Transaction::Account(AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Declare(
+                    starknet_api::executable_transaction::DeclareTransaction {
+                        tx: starknet_api::transaction::DeclareTransaction::V0(
                             starknet_api::transaction::DeclareTransactionV0V1 {
                                 sender_address: ContractAddress::try_from(contract_address).unwrap(),
                                 ..Default::default()
                             },
                         ),
-                        starknet_api::transaction::TransactionHash::default(),
-                        blockifier::execution::contract_class::ClassInfo::new(
-                            &blockifier::execution::contract_class::ContractClass::V0(
-                                blockifier::execution::contract_class::ContractClassV0::default(),
+                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        class_info: starknet_api::contract_class::ClassInfo::new(
+                            &starknet_api::contract_class::ContractClass::V0(
+                                starknet_api::deprecated_contract_class::ContractClass::default(),
                             ),
                             0,
                             0,
+                            starknet_api::contract_class::SierraVersion::DEPRECATED,
                         )
                         .unwrap(),
-                    )
-                    .unwrap(),
-                ),
-            ),
-            Self::DeployAccount => blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-                    blockifier::transaction::transactions::DeployAccountTransaction {
-                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                            starknet_api::transaction::DeployAccountTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        only_query: false,
                     },
                 ),
-            ),
-            Self::Invoke => blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
+                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+            }),
+            Self::DeployAccount => {
+                blockifier::transaction::transaction_execution::Transaction::Account(AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                        starknet_api::executable_transaction::DeployAccountTransaction {
+                            tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                                starknet_api::transaction::DeployAccountTransactionV1::default(),
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                })
+            }
+            Self::Invoke => blockifier::transaction::transaction_execution::Transaction::Account(AccountTransaction {
+                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                    starknet_api::executable_transaction::InvokeTransaction {
                         tx: starknet_api::transaction::InvokeTransaction::V0(
                             starknet_api::transaction::InvokeTransactionV0 {
                                 contract_address: ContractAddress::try_from(contract_address).unwrap(),
@@ -112,18 +115,18 @@ impl TxTy {
                             },
                         ),
                         tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: false,
                     },
                 ),
-            ),
-            Self::L1Handler => blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(
-                blockifier::transaction::transactions::L1HandlerTransaction {
+                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+            }),
+            Self::L1Handler => blockifier::transaction::transaction_execution::Transaction::L1Handler(
+                starknet_api::executable_transaction::L1HandlerTransaction {
                     tx: starknet_api::transaction::L1HandlerTransaction {
                         contract_address: ContractAddress::try_from(contract_address).unwrap(),
                         ..Default::default()
                     },
                     tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    paid_fee_on_l1: starknet_api::transaction::Fee::default(),
+                    paid_fee_on_l1: starknet_api::transaction::fields::Fee::default(),
                 },
             ),
         }

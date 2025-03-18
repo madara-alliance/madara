@@ -1,5 +1,4 @@
 use anyhow::Context;
-use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, PendingHeader},
@@ -9,6 +8,7 @@ use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use starknet_api::abi::abi_utils::get_storage_var_address;
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::{
@@ -209,10 +209,11 @@ impl ChainGenesisDescription {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use blockifier::transaction::transaction_execution::Transaction;
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
-    use mc_mempool::{transaction_hash, L1DataProvider, Mempool, MockL1DataProvider};
+    use mc_mempool::{L1DataProvider, Mempool, MockL1DataProvider};
     use mc_mempool::{MempoolLimits, MempoolProvider};
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
@@ -247,9 +248,11 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
+            let signature = contract.secret.sign(&Transaction::tx_hash(&blockifier_tx).0).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -273,9 +276,11 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
+            let signature = contract.secret.sign(&Transaction::tx_hash(&blockifier_tx).0).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -297,9 +302,11 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&transaction_hash(&blockifier_tx)).unwrap();
+            let signature = contract.secret.sign(&Transaction::tx_hash(&blockifier_tx).0).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeployAccountTxn::V1(tx) => &mut tx.signature,

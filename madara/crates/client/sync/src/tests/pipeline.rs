@@ -12,9 +12,9 @@ use crate::{
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_eth::state_update::L1StateUpdate;
 use mp_chain_config::ChainConfig;
+use mp_convert::felt;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
-use starknet_api::felt;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
