@@ -62,3 +62,8 @@ jobs:
     needs: build
     uses: ./.github/workflows/e2e-test.yml
     secrets: inherit
+
+  cli_test:
+    name: Run CLI Tests
+    needs: rust_check
+    uses: ./.github/workflows/cli-test.yml

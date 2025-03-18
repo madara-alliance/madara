@@ -1,5 +1,6 @@
 use alloy::primitives::private::derive_more::FromStr;
 use std::fmt;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use url::Url;
 
@@ -32,7 +33,7 @@ impl fmt::Display for MadaraSettlementLayer {
     }
 }
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct L1SyncParams {
     /// Disable L1 sync.
     #[clap(env = "MADARA_SYNC_L1_DISABLED", long, alias = "no-l1-sync", conflicts_with = "l1_endpoint")]
