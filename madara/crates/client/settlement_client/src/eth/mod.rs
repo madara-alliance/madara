@@ -77,6 +77,7 @@ impl EthereumClient {
 
 const HISTORY_SIZE: usize = 300; // Number of blocks to use for gas price calculation (approx. 1 hour at 12 sec block time)
 const POLL_INTERVAL: Duration = Duration::from_secs(5); // Interval between event polling attempts
+const EVENT_SEARCH_BLOCK_RANGE: u64 = 6000; // Number of blocks to search backwards for events (approx. 24h at 15 sec block time)
 
 #[async_trait]
 impl SettlementClientTrait for EthereumClient {
@@ -101,7 +102,7 @@ impl SettlementClientTrait for EthereumClient {
 
         // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
         let filter = Filter::new()
-            .from_block(latest_block.saturating_sub(6000))
+            .from_block(latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE))
             .to_block(latest_block)
             .address(*self.l1_core_contract.address());
 
@@ -119,10 +120,17 @@ impl SettlementClientTrait for EthereumClient {
                 .block_number
                 .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
             Some(Err(e)) => Err(SettlementClientError::Ethereum(EthereumClientError::Contract(e.to_string()))),
-            None => Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
-                message: "no event found".to_string(),
-                block_number: latest_block,
-            })),
+            None => {
+                let from_block = latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE);
+                Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
+                    message: format!(
+                        "no LogStateUpdate event found in block range [{}, {}]", 
+                        from_block, 
+                        latest_block
+                    ),
+                    block_number: latest_block,
+                }))
+            },
         }
     }
 
