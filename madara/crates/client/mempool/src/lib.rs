@@ -3,14 +3,12 @@ use async_trait::async_trait;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use header::make_pending_header;
-use mc_db::db_block_id::DbBlockId;
 use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo};
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use metrics::MempoolMetrics;
-use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
+use mp_block::{BlockId, BlockTag};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::{
@@ -32,17 +30,17 @@ use std::time::SystemTime;
 use tx::blockifier_to_saved_tx;
 use tx::saved_to_blockifier_tx;
 
+mod inner;
+mod l1;
+mod tx;
+
+pub use inner::*;
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 
 pub mod header;
-mod inner;
-mod l1;
 pub mod metrics;
-mod tx;
-
-pub use inner::*;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MempoolError {
@@ -98,17 +96,15 @@ pub trait MempoolProvider: Send + Sync {
 
 pub struct Mempool {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
     metrics: MempoolMetrics,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
 }
 
 impl Mempool {
-    pub fn new(backend: Arc<MadaraBackend>, l1_data_provider: Arc<dyn L1DataProvider>, limits: MempoolLimits) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, limits: MempoolLimits) -> Self {
         Mempool {
             backend,
-            l1_data_provider,
             inner: RwLock::new(MempoolInner::new(limits)),
             metrics: MempoolMetrics::register(),
             nonce_cache: RwLock::new(BTreeMap::new()),
@@ -140,23 +136,6 @@ impl Mempool {
         arrived_at: SystemTime,
         nonce_info: NonceInfo,
     ) -> Result<(), MempoolError> {
-        // Get pending block.
-        let pending_block_info = if let Some(block) = self.backend.get_block_info(&DbBlockId::Pending)? {
-            block
-        } else {
-            // No current pending block, we'll make an unsaved empty one for
-            // the sake of validating this tx.
-            let parent_block_hash = self
-                .backend
-                .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
-                .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
-            MadaraPendingBlockInfo::new(
-                make_pending_header(parent_block_hash, self.backend.chain_config(), self.l1_data_provider.as_ref()),
-                vec![],
-            )
-            .into()
-        };
-
         // If the contract has been deployed for the same block is is invoked, we need to skip validations.
         // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
         //  may appear during that time - but it is not a problem.
@@ -172,11 +151,11 @@ impl Mempool {
                 None
             };
 
-        let tx_hash = tx.tx_hash().0;
+        let tx_hash = Transaction::tx_hash(&tx).0;
         tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
         // Perform validations
-        let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&self.backend), &pending_block_info)?;
+        let exec_context = ExecutionContext::new_on_pending(Arc::clone(&self.backend))?;
         let mut validator = exec_context.tx_validator();
 
         if let Transaction::Account(account_tx) = tx.clone() {
@@ -500,20 +479,6 @@ mod test {
         backend
     }
 
-    #[rstest::fixture]
-    fn l1_data_provider() -> Arc<MockL1DataProvider> {
-        let mut mock = MockL1DataProvider::new();
-        mock.expect_get_gas_prices().return_const(mp_block::header::GasPrices {
-            eth_l1_gas_price: 0,
-            strk_l1_gas_price: 0,
-            eth_l1_data_gas_price: 0,
-            strk_l1_data_gas_price: 0,
-        });
-        mock.expect_get_gas_prices_last_update().return_const(std::time::SystemTime::now());
-        mock.expect_get_da_mode().return_const(mp_block::header::L1DataAvailabilityMode::Calldata);
-        Arc::new(mock)
-    }
-
     const CONTRACT_ADDRESS: Felt = felt!("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
     #[rstest::fixture]
@@ -600,11 +565,10 @@ mod test {
     #[tokio::test]
     async fn mempool_accept_tx_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
         let result = mempool.accept_tx(tx_account_v0_valid, None, ArrivedAtTimestamp::now(), NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
 
@@ -618,14 +582,13 @@ mod test {
     #[tokio::test]
     async fn mempool_accept_tx_ready(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
 
         let nonce = Nonce(Felt::ZERO);
 
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
         let arrived_at = ArrivedAtTimestamp::now();
         let result = mempool.accept_tx(tx_account_v0_valid, None, arrived_at, NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
@@ -649,11 +612,10 @@ mod test {
     #[tokio::test]
     async fn mempool_accept_tx_fail_validate(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
         let result = mempool.accept_tx(tx_account_v1_invalid, None, ArrivedAtTimestamp::now(), NonceInfo::default());
         assert_matches::assert_matches!(result, Err(crate::MempoolError::Validation(_)));
 
@@ -667,11 +629,10 @@ mod test {
     #[tokio::test]
     async fn mempool_take_tx_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mut mempool = Mempool::new(backend, MempoolLimits::for_testing());
         let timestamp = ArrivedAtTimestamp::now();
         let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
@@ -692,11 +653,10 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_count(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
@@ -729,12 +689,11 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_replace(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
         tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
@@ -793,12 +752,11 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_replace2(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         // First, we insert the deploy account transaction
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
@@ -855,13 +813,11 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_remove_age_exceeded(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(
             backend,
-            l1_data_provider,
             MempoolLimits { max_age: Some(Duration::from_secs(3_600)), ..MempoolLimits::for_testing() },
         );
 
@@ -919,7 +875,6 @@ mod test {
     #[tokio::test]
     async fn mempool_remove_aged_tx_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         #[from(tx_account_v0_valid)] // We are reusing the tx_account_v0_valid fixture...
         #[with(Felt::ZERO)] // ...with different arguments
         tx_new_1: blockifier::transaction::transaction_execution::Transaction,
@@ -945,7 +900,6 @@ mod test {
         let backend = backend.await;
         let mempool = Mempool::new(
             backend,
-            l1_data_provider,
             MempoolLimits { max_age: Some(Duration::from_secs(3600)), ..MempoolLimits::for_testing() },
         );
 
@@ -1307,11 +1261,10 @@ mod test {
     #[tokio::test]
     async fn mempool_remove_aged_tx_pass_l1_handler(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         tx_l1_handler_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
@@ -1358,12 +1311,11 @@ mod test {
     #[tokio::test]
     async fn mempool_readiness_check(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mut mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         // Insert pending transaction
 
@@ -1482,12 +1434,11 @@ mod test {
     #[tokio::test]
     async fn mempool_readiness_check_against_db(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         // Insert the first transaction
 
@@ -1564,12 +1515,9 @@ mod test {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_readiness_check_agains_nonce_cache(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
-    ) {
+    async fn mempool_readiness_check_agains_nonce_cache(#[future] backend: Arc<mc_db::MadaraBackend>) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         let contract_address = Felt::ZERO;
         let nonce = Nonce(Felt::ONE);
@@ -1595,12 +1543,9 @@ mod test {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_retrieve_nonce_info(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
-    ) {
+    async fn mempool_retrieve_nonce_info(#[future] backend: Arc<mc_db::MadaraBackend>) {
         let backend = backend.await;
-        let mempool = Mempool::new(Arc::clone(&backend), l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(Arc::clone(&backend), MempoolLimits::for_testing());
 
         backend
             .store_block(
@@ -1683,7 +1628,6 @@ mod test {
     #[tokio::test]
     async fn mempool_replace_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        l1_data_provider: Arc<MockL1DataProvider>,
         #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)]
@@ -1691,7 +1635,7 @@ mod test {
         tx_3: blockifier::transaction::transaction_execution::Transaction,
     ) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, MempoolLimits::for_testing());
 
         // Insert the first transaction
 

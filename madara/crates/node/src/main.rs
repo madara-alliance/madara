@@ -145,11 +145,7 @@ async fn main() -> anyhow::Result<()> {
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mut mempool = Mempool::new(
-        Arc::clone(service_db.backend()),
-        Arc::clone(&l1_data_provider),
-        MempoolLimits::new(&chain_config),
-    );
+    let mut mempool = Mempool::new(Arc::clone(service_db.backend()), MempoolLimits::new(&chain_config));
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 

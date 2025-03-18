@@ -10,6 +10,7 @@ use crate::sync::{ForwardPipeline, SyncController, SyncControllerConfig};
 use crate::{apply_state::ApplyStateSync, p2p::P2pPipelineArguments};
 use anyhow::Context;
 use futures::TryStreamExt;
+use mc_db::db_block_id::RawDbBlockId;
 use mc_db::stream::BlockStreamConfig;
 use mc_db::MadaraBackend;
 use mc_p2p::{P2pCommands, PeerId};
@@ -256,7 +257,22 @@ impl ForwardPipeline for P2pForwardSync {
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
-                self.backend.on_block(block_n).await?;
+                let block_info = self
+                    .backend
+                    .get_block_info(&RawDbBlockId::Number(block_n))
+                    .context("Getting block info")?
+                    .context("Block not found")?
+                    .into_closed()
+                    .context("Block is pending")?;
+
+                let inner = self
+                    .backend
+                    .get_block_inner(&RawDbBlockId::Number(block_n))
+                    .context("Getting block inner")?
+                    .context("Block not found")?;
+                let block_events = inner.events();
+
+                self.backend.on_full_block(block_info.into(), block_events).await?;
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }

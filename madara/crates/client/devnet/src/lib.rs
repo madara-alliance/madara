@@ -343,7 +343,7 @@ mod tests {
             strk_l1_data_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), Arc::clone(&l1_data_provider), mempool_limits));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), mempool_limits));
         let metrics = BlockProductionMetrics::register();
 
         let block_production = BlockProductionTask::new(
@@ -361,7 +361,7 @@ mod tests {
     #[rstest]
     #[case(m_cairo_test_contracts::TEST_CONTRACT_SIERRA)]
     #[tokio::test]
-    async fn test_erc_20_declare(#[case] contract: &[u8]) {
+    async fn test_declare(#[case] contract: &[u8]) {
         let mut chain = chain_with_mempool_limits(MempoolLimits::for_testing()).await;
         tracing::info!("{}", chain.contracts);
 

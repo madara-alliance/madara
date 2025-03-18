@@ -136,7 +136,7 @@ pub async fn headers_sync(
     for res in ite {
         let header = res.or_internal_server_error("Error while reading from block stream")?;
         let header = BlockHeaderWithSignatures {
-            header: header.header,
+            header: header.header.clone(),
             block_hash: header.block_hash,
             consensus_signatures: vec![ConsensusSignature { r: Felt::ONE, s: Felt::ONE }],
         };

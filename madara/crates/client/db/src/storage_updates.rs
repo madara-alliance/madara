@@ -82,7 +82,9 @@ impl MadaraBackend {
         );
         let block_hash = block.block_hash;
 
-        self.store_full_block(block)?;
+        let events = block.events.clone();
+
+        let block_info = self.store_full_block(block)?;
         self.head_status.headers.set(Some(block_n));
         self.head_status.transactions.set(Some(block_n));
         self.head_status.state_diffs.set(Some(block_n));
@@ -93,15 +95,15 @@ impl MadaraBackend {
 
         self.head_status.global_trie.set(Some(block_n));
 
-        self.on_block(block_n).await?;
+        self.on_full_block(block_info.into(), events).await?;
         self.flush()?;
 
         Ok(block_hash)
     }
 
-    fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
+    fn store_full_block(&self, block: FullBlock) -> Result<MadaraBlockInfo, MadaraStorageError> {
         let block_n = block.header.block_number;
-        self.store_block_header(BlockHeaderWithSignatures {
+        let block_info = self.store_block_header(BlockHeaderWithSignatures {
             header: block.header,
             block_hash: block.block_hash,
             consensus_signatures: vec![],
@@ -109,6 +111,16 @@ impl MadaraBackend {
         self.store_transactions(block_n, block.transactions)?;
         self.store_state_diff(block_n, block.state_diff)?;
         self.store_events(block_n, block.events)?;
+        Ok(block_info)
+    }
+
+    pub fn store_pending_block_with_classes(
+        &self,
+        block: PendingFullBlock,
+        converted_classes: &[ConvertedClass],
+    ) -> Result<(), MadaraStorageError> {
+        self.class_db_store_pending(converted_classes)?;
+        self.store_pending_block(block)?;
         Ok(())
     }
 
@@ -121,12 +133,14 @@ impl MadaraBackend {
         let mut inner = MadaraBlockInner { transactions, receipts };
         store_events_to_receipts(&mut inner.receipts, block.events)?;
 
-        self.block_db_store_pending(&MadaraPendingBlock { info, inner }, &block.state_diff)?;
+        self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
         self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
+
+        self.watch.update_pending(info.into());
         Ok(())
     }
 
-    pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
+    pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<MadaraBlockInfo, MadaraStorageError> {
         // Clear pending block when storing a new block header. This is the best place to do it IMO since
         // it would make no sense to be able to store a block header if there is also a pending block, and
         // we want to be sure to clear the pending block if we restart the sync pipeline.
@@ -145,7 +159,7 @@ impl MadaraBackend {
         tx.put_cf(&block_hash_to_block_n, &bincode::serialize(&header.block_hash)?, &block_n_encoded);
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
-        Ok(())
+        Ok(info)
     }
 
     pub fn store_transactions(
@@ -228,12 +242,14 @@ impl MadaraBackend {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
 
-        // Clear in every case, even when storing a pending block
-        self.clear_pending_block()?;
-
         let task_block_db = || match block.info {
             MadaraMaybePendingBlockInfo::Pending(info) => {
-                self.block_db_store_pending(&MadaraPendingBlock { info, inner: block.inner }, &state_diff_cpy)
+                self.block_db_store_pending(
+                    &MadaraPendingBlock { info: info.clone(), inner: block.inner },
+                    &state_diff_cpy,
+                )?;
+                self.watch.update_pending(info.into());
+                Ok(())
             }
             MadaraMaybePendingBlockInfo::NotPending(info) => {
                 self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)

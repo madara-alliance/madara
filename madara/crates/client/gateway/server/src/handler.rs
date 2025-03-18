@@ -156,7 +156,7 @@ pub async fn handle_get_state_update(
                 .or_internal_server_error("Retrieving old state root on latest block")?
                 .map(|block| {
                     block
-                        .as_nonpending()
+                        .as_closed()
                         .map(|block| block.header.global_state_root)
                         .ok_or_internal_server_error("Converting block to non-pending")
                 })
@@ -185,7 +185,7 @@ pub async fn handle_get_state_update(
                 .or_internal_server_error(format!("Retrieving block info at block {resolved_block_id}"))?
                 .ok_or(StarknetError::block_not_found())?;
             let block_info = resolved_block
-                .as_nonpending()
+                .as_closed()
                 .ok_or_internal_server_error("Converting potentially pending block to non-pending")?;
 
             let old_root = match block_info.header.block_number.checked_sub(1) {
@@ -194,7 +194,7 @@ pub async fn handle_get_state_update(
                     .or_internal_server_error("Retrieving old state root on latest block")?
                     .map(|block| {
                         block
-                            .as_nonpending()
+                            .as_closed()
                             .map(|block| block.header.global_state_root)
                             .ok_or_internal_server_error("Converting block to non-pending")
                     })

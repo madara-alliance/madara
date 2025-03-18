@@ -1,5 +1,5 @@
 use crate::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
-use crate::{Column, DatabaseExt};
+use crate::{ClosedBlocksReceiver, Column, DatabaseExt};
 use futures::{stream, Stream};
 use mp_block::MadaraBlockInfo;
 use std::iter;
@@ -9,7 +9,7 @@ use std::{
     ops::{Bound, RangeBounds},
     sync::Arc,
 };
-use tokio::sync::broadcast::{error::RecvError, Receiver};
+use tokio::sync::broadcast::error::RecvError;
 
 /// Returns (inclusive start, optional limit).
 /// When the start is unbounded, we start at 0.
@@ -89,7 +89,7 @@ impl MadaraBackend {
     pub fn block_info_iterator(
         self: &Arc<Self>,
         iteration: BlockStreamConfig,
-    ) -> impl Iterator<Item = Result<MadaraBlockInfo, MadaraStorageError>> {
+    ) -> impl Iterator<Item = Result<Arc<MadaraBlockInfo>, MadaraStorageError>> {
         // The important thing here is to avoid keeping iterators around in the iterator state,
         // as an iterator instance will pin the memtables.
         // To avoid that, we buffer a few blocks ahead to still benefit from the rocksdb iterators.
@@ -99,13 +99,13 @@ impl MadaraBackend {
         struct State {
             backend: Arc<MadaraBackend>,
             iteration: BlockStreamConfig,
-            buf: VecDeque<MadaraBlockInfo>,
+            buf: VecDeque<Arc<MadaraBlockInfo>>,
             next_block_n: Option<u64>,
             total_got: u64,
         }
 
         impl State {
-            fn next_item(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+            fn next_item(&mut self) -> Result<Option<Arc<MadaraBlockInfo>>, MadaraStorageError> {
                 if self.buf.is_empty() {
                     if self.iteration.limit.is_some_and(|limit| self.total_got >= limit) {
                         return Ok(None);
@@ -197,7 +197,7 @@ impl MadaraBackend {
     pub fn block_info_stream(
         self: &Arc<Self>,
         iteration: BlockStreamConfig,
-    ) -> impl Stream<Item = Result<MadaraBlockInfo, MadaraStorageError>> {
+    ) -> impl Stream<Item = Result<Arc<MadaraBlockInfo>, MadaraStorageError>> {
         // So, this is a somewhat funny problem: by the time we return the blocks until the current latest_block in db,
         //  the database may actually have new blocks now!
         // Remember that we're returning a stream here, which means that the time between polls varies with the caller - and,
@@ -230,7 +230,7 @@ impl MadaraBackend {
             /// This is `+ 1` because we want to handle returning genesis. If the chain is empty (does not even have a genesis
             /// block), this field will be 0.
             latest_plus_one: Option<u64>,
-            subscription: Option<Receiver<MadaraBlockInfo>>,
+            subscription: Option<ClosedBlocksReceiver>,
         }
 
         impl State {
@@ -246,7 +246,7 @@ impl MadaraBackend {
                 Ok(latest_plus_one)
             }
 
-            async fn next_forward(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+            async fn next_forward(&mut self) -> Result<Option<Arc<MadaraBlockInfo>>, MadaraStorageError> {
                 'retry: loop {
                     let Some(next_to_return) = self.next_to_return else { return Ok(None) };
 
@@ -279,27 +279,27 @@ impl MadaraBackend {
 
                     if latest_plus_one <= next_to_return {
                         // caught up with the db :)
-                        self.subscription = Some(self.backend.subscribe_block_info());
+                        self.subscription = Some(self.backend.subscribe_closed_blocks());
                         // get latest_block_n again after subscribing, because it could have changed during subscribing
                         self.latest_plus_one = None;
                         self.get_latest_plus_one()?;
                         continue 'retry;
                     }
 
-                    let block_info = &self.backend.get_block_info(&DbBlockId::Number(next_to_return))?.ok_or(
+                    let block_info = self.backend.get_block_info(&DbBlockId::Number(next_to_return))?.ok_or(
                         MadaraStorageError::InconsistentStorage("latest_block_n points to a non existent block".into()),
                     )?;
                     let block_info = block_info
-                        .as_nonpending()
+                        .into_closed()
                         .ok_or(MadaraStorageError::InconsistentStorage("Closed block should not be pending".into()))?;
 
                     self.next_to_return = next_to_return.checked_add(self.iteration.step.get());
-                    return Ok(Some(block_info.clone()));
+                    return Ok(Some(block_info.into()));
                 }
             }
 
             // Implement backward mode in another function.
-            async fn next_backward(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+            async fn next_backward(&mut self) -> Result<Option<Arc<MadaraBlockInfo>>, MadaraStorageError> {
                 // This makes sure we're starting from a block that actually exists. It bounds the `next_to_return` variable.
                 if self.latest_plus_one.is_none() {
                     let Some(next_to_return) = self.next_to_return else { return Ok(None) };
@@ -310,19 +310,19 @@ impl MadaraBackend {
 
                 let Some(next_to_return) = self.next_to_return else { return Ok(None) };
 
-                let block_info = &self.backend.get_block_info(&DbBlockId::Number(next_to_return))?.ok_or(
+                let block_info = self.backend.get_block_info(&DbBlockId::Number(next_to_return))?.ok_or(
                     MadaraStorageError::InconsistentStorage("latest_block_n points to a non existent block".into()),
                 )?;
                 let block_info = block_info
-                    .as_nonpending()
+                    .into_closed()
                     .ok_or(MadaraStorageError::InconsistentStorage("Closed block should not be pending".into()))?;
 
                 // The None here will stop the iteration once we passed genesis.
                 self.next_to_return = next_to_return.checked_sub(self.iteration.step.get());
-                Ok(Some(block_info.clone()))
+                Ok(Some(block_info.clone().into()))
             }
 
-            async fn try_next(&mut self) -> Result<Option<MadaraBlockInfo>, MadaraStorageError> {
+            async fn try_next(&mut self) -> Result<Option<Arc<MadaraBlockInfo>>, MadaraStorageError> {
                 if self.iteration.limit.is_some_and(|limit| self.num_blocks_returned >= limit) {
                     return Ok(None);
                 }
@@ -380,12 +380,13 @@ mod tests {
     use stream::{StreamExt, TryStreamExt};
     use tokio::{pin, time::timeout};
 
-    fn block_info(block_number: u64) -> MadaraBlockInfo {
+    fn block_info(block_number: u64) -> Arc<MadaraBlockInfo> {
         MadaraBlockInfo {
             header: Header { block_number, ..Default::default() },
             block_hash: Felt::from(block_number),
             tx_hashes: Default::default(),
         }
+        .into()
     }
 
     fn store_block(backend: &MadaraBackend, block_number: u64) {
@@ -393,7 +394,7 @@ mod tests {
             .store_block(
                 MadaraMaybePendingBlock {
                     inner: Default::default(),
-                    info: MadaraMaybePendingBlockInfo::NotPending(block_info(block_number)),
+                    info: MadaraMaybePendingBlockInfo::NotPending(Arc::unwrap_or_clone(block_info(block_number))),
                 },
                 Default::default(),
                 Default::default(),

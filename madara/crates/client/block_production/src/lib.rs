@@ -17,6 +17,7 @@
 
 use crate::close_block::close_and_save_block;
 use crate::metrics::BlockProductionMetrics;
+use anyhow::Context;
 use blockifier::blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR};
 use blockifier::bouncer::BouncerWeights;
 use blockifier::transaction::errors::TransactionExecutionError;
@@ -26,11 +27,12 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
-use mp_block::{BlockId, BlockTag, MadaraPendingBlock};
+use mp_block::header::PendingHeader;
+use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo, PendingFullBlock, TransactionWithReceipt};
 use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_receipt::from_blockifier_execution_info;
+use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
 use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
@@ -94,6 +96,66 @@ struct ContinueBlockResult {
     block_now_full: bool,
 }
 
+#[derive(Debug, Clone)]
+struct PendingBlockState {
+    pub header: PendingHeader,
+    pub transactions: Vec<TransactionWithReceipt>,
+    pub events: Vec<EventWithTransactionHash>,
+    pub declared_classes: Vec<ConvertedClass>,
+}
+
+impl PendingBlockState {
+    pub fn new(header: PendingHeader) -> Self {
+        Self { header, transactions: vec![], events: vec![], declared_classes: vec![] }
+    }
+
+    pub fn into_full_block_with_classes(self, state_diff: StateDiff) -> (PendingFullBlock, Vec<ConvertedClass>) {
+        (
+            PendingFullBlock { header: self.header, state_diff, transactions: self.transactions, events: self.events },
+            self.declared_classes,
+        )
+    }
+}
+
+// TODO: move to backend
+pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(PendingFullBlock, Vec<ConvertedClass>)> {
+    let pending_block = backend
+        .get_block(&DbBlockId::Pending)
+        .context("Getting pending block")?
+        .context("No pending block")?
+        .into_pending()
+        .context("Block is not pending")?;
+    let state_diff = backend.get_pending_block_state_update().context("Getting pending state update")?;
+
+    let classes: Vec<_> = state_diff
+        .deprecated_declared_classes
+        .iter()
+        .chain(state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, .. }| class_hash))
+        .map(|class_hash| {
+            backend
+                .get_converted_class(&BlockId::Tag(BlockTag::Pending), class_hash)
+                .with_context(|| format!("Retrieving pending declared class with hash {class_hash:#x}"))?
+                .with_context(|| format!("Pending declared class with hash {class_hash:#x} not found"))
+        })
+        .collect::<Result<_, _>>()?;
+
+    // Close and import the pending block
+    let block = PendingFullBlock {
+        header: pending_block.info.header,
+        events: pending_block.inner.events().collect(),
+        transactions: pending_block
+            .inner
+            .transactions
+            .into_iter()
+            .zip(pending_block.inner.receipts)
+            .map(|(transaction, receipt)| TransactionWithReceipt { transaction, receipt })
+            .collect(),
+        state_diff,
+    };
+
+    Ok((block, classes))
+}
+
 /// The block production task consumes transactions from the mempool in batches.
 ///
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
@@ -104,8 +166,7 @@ struct ContinueBlockResult {
 pub struct BlockProductionTask<Mempool: MempoolProvider> {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
-    block: MadaraPendingBlock,
-    declared_classes: Vec<ConvertedClass>,
+    pending_block: PendingBlockState,
     pub(crate) executor: TransactionExecutor<BlockifierStateAdapter>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
@@ -123,67 +184,34 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     ///
     /// This avoids re-executing transaction by re-adding them to the [Mempool],
     /// as was done before.
-    pub async fn close_pending_block(
-        backend: &MadaraBackend,
-        metrics: &BlockProductionMetrics,
-    ) -> Result<(), Cow<'static, str>> {
-        let err_pending_block = |err| format!("Getting pending block: {err:#}");
-        let err_pending_state_diff = |err| format!("Getting pending state update: {err:#}");
-        let err_pending_clear = |err| format!("Clearing pending block: {err:#}");
-        let err_latest_block_n = |err| format!("Failed to get latest block number: {err:#}");
-
+    pub async fn close_pending_block(backend: &MadaraBackend, metrics: &BlockProductionMetrics) -> anyhow::Result<()> {
         let start_time = Instant::now();
 
         // We cannot use `backend.get_block` to check for the existence of the
         // pending block as it will ALWAYS return a pending block, even if there
         // is none in db (it uses the Default::default in that case).
-        if !backend.has_pending_block().map_err(err_pending_block)? {
+        if !backend.has_pending_block().context("Error checking if pending block exists")? {
             return Ok(());
         }
 
-        let pending_block = backend
-            .get_block(&DbBlockId::Pending)
-            .map_err(err_pending_block)?
-            .map(|block| MadaraPendingBlock::try_from(block).expect("Ready block stored in place of pending"))
-            .expect("Checked above");
-
-        let pending_state_diff = backend.get_pending_block_state_update().map_err(err_pending_state_diff)?;
-
-        let mut classes = pending_state_diff
-            .deprecated_declared_classes
-            .iter()
-            .chain(pending_state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, .. }| class_hash));
-        let capacity = pending_state_diff.deprecated_declared_classes.len() + pending_state_diff.declared_classes.len();
-
-        let declared_classes = classes.try_fold(Vec::with_capacity(capacity), |mut acc, class_hash| {
-            match backend.get_converted_class(&BlockId::Tag(BlockTag::Pending), class_hash) {
-                Ok(Some(class)) => {
-                    acc.push(class);
-                    Ok(acc)
-                }
-                Ok(None) => {
-                    Err(format!("Failed to retrieve pending declared class at hash {class_hash:#x}: not found in db"))
-                }
-                Err(err) => Err(format!("Failed to retrieve pending declared class at hash {class_hash:#x}: {err:#}")),
-            }
-        })?;
+        let (block, declared_classes) = get_pending_block_from_db(backend)?;
 
         // NOTE: we disabled the Write Ahead Log when clearing the pending block
         // so this will be done atomically at the same time as we close the next
         // block, after we manually flush the db.
-        backend.clear_pending_block().map_err(err_pending_clear)?;
+        backend.clear_pending_block().context("Error clearing pending block")?;
 
-        let block_n = backend.get_latest_block_n().map_err(err_latest_block_n)?.map(|n| n + 1).unwrap_or(0);
-        let n_txs = pending_block.inner.transactions.len();
+        let block_n = backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
+        let n_txs = block.transactions.len();
 
         // Close and import the pending block
-        close_and_save_block(backend, pending_block, pending_state_diff, block_n, declared_classes)
+        close_and_save_block(backend, block, declared_classes, block_n)
             .await
-            .map_err(|err| format!("Failed to close pending block: {err:#}"))?;
+            .context("Failed to close pending block")?;
 
         // Flush changes to disk, pending block removal and adding the next
         // block happens atomically
-        backend.flush().map_err(|err| format!("DB flushing error: {err:#}"))?;
+        backend.flush().context("DB flushing error")?;
 
         let end_time = start_time.elapsed();
         tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
@@ -217,25 +245,22 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
             .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
 
-        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
+        let pending_block = PendingBlockState::new(make_pending_header(
             parent_block_hash,
             backend.chain_config(),
             l1_data_provider.as_ref(),
         ));
 
-        let executor = ExecutionContext::new_at_block_start(Arc::clone(&backend), &pending_block.info.clone().into())?
-            .tx_executor();
+        let executor = ExecutionContext::new_at_block_start(
+            Arc::clone(&backend),
+            &mp_block::MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: pending_block.header.clone(),
+                tx_hashes: vec![],
+            }),
+        )?
+        .tx_executor();
 
-        Ok(Self {
-            backend,
-            mempool,
-            executor,
-            current_pending_tick: 0,
-            block: pending_block,
-            declared_classes: Default::default(),
-            l1_data_provider,
-            metrics,
-        })
+        Ok(Self { backend, mempool, executor, current_pending_tick: 0, pending_block, l1_data_provider, metrics })
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockProductionTask"))]
@@ -294,17 +319,22 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             stats.n_reverted += 1;
                         }
 
-                        if let Some(class) = mem::take(&mut mempool_tx.converted_class) {
-                            self.declared_classes.push(class);
-                        }
-
-                        self.block
-                            .inner
-                            .receipts
-                            .push(from_blockifier_execution_info(&execution_info, &mempool_tx.tx.clone()));
+                        let receipt = from_blockifier_execution_info(&execution_info, &mempool_tx.tx);
                         let converted_tx = TransactionWithHash::from(mempool_tx.tx.clone());
-                        self.block.info.tx_hashes.push(converted_tx.hash);
-                        self.block.inner.transactions.push(converted_tx.transaction);
+
+                        if let Some(class) = mempool_tx.converted_class.take() {
+                            self.pending_block.declared_classes.push(class);
+                        }
+                        self.pending_block.events.extend(
+                            receipt
+                                .events()
+                                .iter()
+                                .cloned()
+                                .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
+                        );
+                        self.pending_block
+                            .transactions
+                            .push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
                     }
                     Err(err) => {
                         // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
@@ -341,7 +371,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         tracing::debug!(
             "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",
             stats.n_added_to_block,
-            self.block.inner.transactions.len(),
+            self.pending_block.transactions.len(),
             stats.n_re_added_to_mempool
         );
 
@@ -354,22 +384,21 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let block_n = self.block_n();
         // Convert the pending block to a closed block and save to db
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
+        let new_empty_block = PendingBlockState::new(make_pending_header(
             parent_block_hash,
             self.backend.chain_config(),
             self.l1_data_provider.as_ref(),
         ));
 
-        let block_to_close = mem::replace(&mut self.block, new_empty_block);
-        let declared_classes = mem::take(&mut self.declared_classes);
+        let block_to_close = mem::replace(&mut self.pending_block, new_empty_block);
+        let (full_pending_block, classes) = block_to_close.into_full_block_with_classes(state_diff.clone());
 
-        let n_txs = block_to_close.inner.transactions.len();
+        let n_txs = full_pending_block.transactions.len();
 
         // Close and import the block
-        let block_hash =
-            close_and_save_block(&self.backend, block_to_close, state_diff.clone(), block_n, declared_classes)
-                .await
-                .map_err(|err| Error::Unexpected(format!("Error closing block: {err:#}").into()))?;
+        let block_hash = close_and_save_block(&self.backend, full_pending_block, classes, block_n)
+            .await
+            .map_err(|err| Error::Unexpected(format!("Error closing block: {err:#}").into()))?;
 
         // Removes nonces in the mempool nonce cache which have been included
         // into the current block.
@@ -381,12 +410,17 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
 
         // Update parent hash for new pending block
-        self.block.info.header.parent_block_hash = block_hash;
+        self.pending_block.header.parent_block_hash = block_hash;
 
         // Prepare executor for next block
-        self.executor =
-            ExecutionContext::new_at_block_start(Arc::clone(&self.backend), &self.block.info.clone().into())?
-                .tx_executor();
+        self.executor = ExecutionContext::new_at_block_start(
+            Arc::clone(&self.backend),
+            &mp_block::MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
+                header: self.pending_block.header.clone(),
+                tx_hashes: vec![],
+            }),
+        )?
+        .tx_executor();
         self.current_pending_tick = 0;
 
         let end_time = start_time.elapsed();
@@ -485,7 +519,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         }
 
         // Store pending block
-        self.backend.store_block(self.block.clone().into(), new_state_diff, self.declared_classes.clone())?;
+        // self.backend.store_pending_block(block)
+        let (block, classes) = self.pending_block.clone().into_full_block_with_classes(new_state_diff);
+        self.backend.store_pending_block_with_classes(block, &classes)?;
         // do not forget to flush :)
         self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
 
@@ -582,7 +618,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, BlockProductionTask,
+        finalize_execution_state::state_map_to_state_diff, get_pending_block_from_db, metrics::BlockProductionMetrics,
+        BlockProductionTask, PendingBlockState,
     };
     use blockifier::transaction::transaction_execution::Transaction as BTransaction;
     use blockifier::{
@@ -592,10 +629,7 @@ mod tests {
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
     use mc_mempool::{Mempool, MempoolLimits, MempoolProvider, MockL1DataProvider};
-    use mp_block::{
-        header::{GasPrices, L1DataAvailabilityMode},
-        MadaraPendingBlock,
-    };
+    use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_chain_config::ChainConfig;
     use mp_convert::{felt, ToFelt};
     use mp_rpc::{
@@ -684,7 +718,7 @@ mod tests {
             Arc::clone(&backend),
             Arc::new(BlockProductionMetrics::register()),
             Arc::clone(&l1_data_provider),
-            Arc::new(Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing())),
+            Arc::new(Mempool::new(backend, MempoolLimits::for_testing())),
             contracts,
         )
     }
@@ -1383,7 +1417,7 @@ mod tests {
             .expect("Failed to retrieve block 0 from db")
             .expect("Missing block 0");
 
-        assert_eq!(block.info.as_nonpending().unwrap().header.parent_block_hash, Felt::ZERO);
+        assert_eq!(block.info.as_closed().unwrap().header.parent_block_hash, Felt::ZERO);
         assert_eq!(block.inner, ready_inner);
 
         let block = backend
@@ -1391,7 +1425,7 @@ mod tests {
             .expect("Failed to retrieve latest block from db")
             .expect("Missing latest block");
 
-        assert_eq!(block.info.as_nonpending().unwrap().header.parent_block_hash, Felt::ZERO);
+        assert_eq!(block.info.as_closed().unwrap().header.parent_block_hash, Felt::ZERO);
         assert_eq!(block.inner, pending_inner);
 
         // Block 0 should not have been overridden!
@@ -1597,6 +1631,7 @@ mod tests {
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing class.
     #[rstest::rstest]
+    #[traced_test]
     #[tokio::test]
     #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_fail_missing_class(
@@ -1685,14 +1720,14 @@ mod tests {
         let err =
             BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
-        assert!(err.contains("Failed to retrieve pending declared class at hash"));
-        assert!(err.contains("not found in db"));
+        assert!(format!("{err:#}").contains("not found"), "{err:#}");
     }
 
     /// This test makes sure that closing the pending block from db will fail if
     /// the pending state diff references a non-existing legacy class.
     #[rstest::rstest]
     #[tokio::test]
+    #[traced_test]
     #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_fail_missing_class_legacy(
         setup: (Arc<MadaraBackend>, Arc<BlockProductionMetrics>),
@@ -1780,8 +1815,7 @@ mod tests {
         let err =
             BlockProductionTask::<Mempool>::close_pending_block(&backend, &metrics).await.expect_err("Should error");
 
-        assert!(err.contains("Failed to retrieve pending declared class at hash"));
-        assert!(err.contains("not found in db"));
+        assert!(format!("{err:#}").contains("not found"), "{err:#}");
     }
 
     // This test makes sure that the pending tick updates correctly
@@ -2277,15 +2311,13 @@ mod tests {
         // ================================================================== //
 
         // Here we purposefully change the block being worked on
-        let pending_block = MadaraPendingBlock {
-            info: mp_block::MadaraPendingBlockInfo {
-                header: mp_block::header::PendingHeader::default(),
-                tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-            },
-            inner: pending_inner.clone(),
+        let (pending_block, classes) = get_pending_block_from_db(&backend).unwrap();
+        block_production_task.pending_block = PendingBlockState {
+            header: pending_block.header,
+            transactions: pending_block.transactions,
+            events: pending_block.events,
+            declared_classes: classes,
         };
-
-        block_production_task.block = pending_block;
 
         // ================================================================== //
         //                      PART 6: call on block time                    //

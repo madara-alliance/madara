@@ -520,7 +520,7 @@ impl BlockImporterCtx {
                     context: format!("Cannot find block info for block #{block_n}").into(),
                 })?
                 .context("Block header cannot be found")?
-                .as_nonpending_owned()
+                .into_closed()
                 .context("Block is pending")?
                 .header
                 .global_state_root;

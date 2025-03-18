@@ -4,12 +4,12 @@
 # Usage: `./scripts/e2e-tests.sh <name of the tests to run>`
 set -e
 
+cargo build --profile dev --bin madara
+
 # Configuration
 export PROPTEST_CASES=10
 export ETH_FORK_URL=https://eth.merkle.io
 export COVERAGE_BIN=$(realpath target/debug/madara)
-
-cargo build --profile dev --bin madara
 
 # Run the tests
 if cargo test --profile dev "${@:-"--workspace"}"; then
