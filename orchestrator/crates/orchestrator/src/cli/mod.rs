@@ -559,6 +559,7 @@ pub mod validate_params {
                     .atlantic_prover_type
                     .clone()
                     .expect("Atlantic prover type is required"),
+                atlantic_network: atlantic_args.atlantic_network.clone().expect("Atlantic network is required"),
             })),
             (false, false) => Err("Prover is required".to_string()),
         }

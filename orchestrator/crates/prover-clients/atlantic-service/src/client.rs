@@ -69,6 +69,7 @@ impl AtlanticClient {
         proof_layout: LayoutName,
         atlantic_api_key: impl AsRef<str>,
         n_steps: Option<usize>,
+        atlantic_network: impl AsRef<str>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = match proof_layout {
             LayoutName::dynamic => "dynamic",
@@ -81,9 +82,11 @@ impl AtlanticClient {
                 self.client
                     .request()
                     .method(Method::POST)
+                    .path("atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
+                    .form_text("network", atlantic_network.as_ref())
                     .form_file("pieFile", pie_file, "pie.zip")?,
             )
             .send()
