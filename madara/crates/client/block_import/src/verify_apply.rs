@@ -865,27 +865,6 @@ mod verify_apply_tests {
     mod reorg_tests {
         use super::*;
 
-        // other ideas for testing:
-        // * basic tests
-        //   * deeper reorgs
-        //   * reorgs not from block 0
-        //   * multiple reorgs
-        //   * reorg back-and-forth
-        //   * show that we can build blocks (grow) on top of reorg
-        //   * actually change some state in blocks, reorg, show that state changes
-        //   * show that parent height / hash work properly after reorgs
-        //   * verify various storage has been erased
-        // * test MPT
-        //   * can include some of the basic test mentioned above
-        //   * verify proofs after reorg
-        //   * introduce patricia trie shape changes, verify proof
-        //   * verify non-inclusion proofs
-        // * negative tests
-        //   * reject reorgs from finalized blocks
-        //   * reject reorgs with no known parent
-        //   * reject reorgs for wrong height
-        //   * reject long distance reorgs (perhaps when L1 hasn't been processed recently?)
-
         /// This struct provides the inputs to the reorg tests. It does so based on integers
         /// representing a few different lengths of different parts of a forked chain, where one
         /// side of the fork is first created, a reorg occurs, and then the other side of the fork
@@ -920,22 +899,33 @@ mod verify_apply_tests {
             new_chain_length: u64,
         }
 
-        /// TODO: document
         #[rstest]
-        /*
         #[case::reorg_from_genesis(
             ReorgTestArgs{
-                original_chain_length: 2,
+                original_chain_length: 1,
+                orphaned_chain_length: 2,
+                new_chain_length: 1,
+            },
+        )]
+        #[case::empty_orphan_reorg(
+            ReorgTestArgs{
+                original_chain_length: 1,
                 orphaned_chain_length: 0,
                 new_chain_length: 1,
             },
         )]
-        */
         #[case::success(
             ReorgTestArgs{
                 original_chain_length: 6,
                 orphaned_chain_length: 3,
                 new_chain_length: 2,
+            },
+        )]
+        #[case::deep_reorg(
+            ReorgTestArgs{
+                original_chain_length: 32,
+                orphaned_chain_length: 32,
+                new_chain_length: 32,
             },
         )]
         #[tokio::test]
@@ -980,10 +970,6 @@ mod verify_apply_tests {
             // build a soon-to-be-orphaned chain on top of the original
             println!("-----------------------");
             println!("creating orphaned chain (length: {})", args.orphaned_chain_length);
-            assert!(
-                args.orphaned_chain_length > 0,
-                "Must have at least one block to reorg"
-            );
             for i in 0..args.orphaned_chain_length {
                 let parent_height = args.original_chain_length + i;
                 let (new_block_hash, _) = append_empty_block(parent_height, parent_hash);
