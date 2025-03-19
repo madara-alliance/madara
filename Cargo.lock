@@ -8465,6 +8465,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-oracle",
+ "mp-sync",
  "mp-utils",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -8975,6 +8976,7 @@ dependencies = [
  "mp-receipt",
  "mp-rpc",
  "mp-state-update",
+ "mp-sync",
  "mp-transactions",
  "mp-utils",
  "rstest 0.18.2",
@@ -9007,6 +9009,8 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-gateway",
+ "mp-rpc",
+ "mp-sync",
  "mp-utils",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -9396,6 +9400,17 @@ dependencies = [
  "mp-rpc",
  "serde",
  "starknet-types-core",
+]
+
+[[package]]
+name = "mp-sync"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "mp-rpc",
+ "serde",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

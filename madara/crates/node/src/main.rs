@@ -22,6 +22,7 @@ use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxP
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
+use mp_sync::SyncStatusProvider;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, L2SyncService, RpcService};
 use starknet_api::core::ChainId;
@@ -258,6 +259,8 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let sync_status_provider = Arc::new(SyncStatusProvider::new());
+    // fix: create a mutex arc of sync status, that would have information like starting block, current synced block and block till what we have to sync
     let service_l2_sync = L2SyncService::new(
         &run_cmd.l2_sync_params,
         Arc::clone(&chain_config),
@@ -265,6 +268,7 @@ async fn main() -> anyhow::Result<()> {
         importer,
         service_telemetry.new_handle(),
         warp_update,
+        Arc::clone(&sync_status_provider),
     )
     .await
     .context("Initializing sync service")?;
@@ -304,6 +308,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         Arc::clone(&add_tx_provider_l2_sync),
         Arc::clone(&add_tx_provider_mempool),
+        Arc::clone(&sync_status_provider),
     );
 
     // Admin-facing RPC (for node operators)
@@ -313,6 +318,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         Arc::clone(&add_tx_provider_l2_sync),
         Arc::clone(&add_tx_provider_mempool),
+        Arc::clone(&sync_status_provider),
     );
 
     // Feeder gateway
