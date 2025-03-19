@@ -30,7 +30,7 @@
 ### IDE is stuck on `Installing Server`
 
 Sadly this step takes a long time.
-Be patient and it *should* eventually install the backend into the container to allow it to communicate to VSCode.
+Be patient and it _should_ eventually install the backend into the container to allow it to communicate to VSCode.
 
 ### Dev Container Requires Update
 
