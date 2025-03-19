@@ -87,6 +87,7 @@ impl ProverClient for AtlanticProverService {
         let res = self.atlantic_client.get_job_status(job_key).await?;
 
         match res.atlantic_query.status {
+            AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
             AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
 
             AtlanticQueryStatus::Done => {

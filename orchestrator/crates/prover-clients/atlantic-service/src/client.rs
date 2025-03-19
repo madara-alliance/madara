@@ -110,7 +110,11 @@ impl AtlanticClient {
             .await
             .map_err(AtlanticError::GetJobStatusFailure)?;
 
+        tracing::info!(">>>>>>>> response: {:?}", response);
+
         if response.status().is_success() {
+            tracing::info!(">>>>>>>> inside the if condition now");
+            // println!(">>>>>>>> response.json().await: {:?}", response.json().await);
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
             Err(AtlanticError::SharpService(response.status()))
