@@ -15,18 +15,22 @@
    ```
 
 2. **Open in Dev Container:**
-   - In VS Code, click the green button in the bottom-left corner
+   - In VS Code, click the `><` in the bottom-left corner
    - Select "Reopen in Container"
    - VS Code will build and start the dev container with all dependencies pre-installed
 
 ## Features
 
 - Pre-configured Rust development environment
-- All dependencies already installed
+- Python, Node, Rust already installed
 - Consistent development environment across team members
-- No need to install tools on your local machine
 
 ## Troubleshooting
+
+### IDE is stuck on `Installing Server`
+
+Sadly this step takes a long time.
+Be patient and it *should* eventually install the backend into the container to allow it to communicate to VSCode.
 
 ### Dev Container Requires Update
 
