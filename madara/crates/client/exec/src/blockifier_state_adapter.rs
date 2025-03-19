@@ -1,4 +1,4 @@
-use blockifier::execution::contract_class::ContractClass;
+use blockifier::execution::contract_class::RunnableCompiledClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
@@ -9,6 +9,12 @@ use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress,
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+
+static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Felt, RunnableCompiledClass>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+
+#[cfg(feature = "cairo_native")]
+use blockifier::execution::native::contract_class::NativeCompiledClassV1;
 
 /// Adapter for the db queries made by blockifier.
 ///
@@ -105,8 +111,12 @@ impl StateReader for BlockifierStateAdapter {
         ))
     }
 
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
+
+        if let Some(cached) = CACHE.get(&class_hash.0) {
+            return Ok(cached.clone());
+        }
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
@@ -121,10 +131,16 @@ impl StateReader for BlockifierStateAdapter {
             return Err(StateError::UndeclaredClassHash(class_hash));
         };
 
-        converted_class.to_blockifier_class().map_err(|err| {
+        let res: Result<RunnableCompiledClass, StateError> = (&converted_class).try_into().map_err(|err| {
             tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
-        })
+        });
+
+        if let Ok(ref class) = res {
+            CACHE.insert(class_hash.0, class.clone());
+        }
+
+        res
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {

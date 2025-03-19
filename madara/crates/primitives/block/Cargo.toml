@@ -30,7 +30,7 @@ mp-transactions = { workspace = true }
 # Starknet
 blockifier = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api.workspace = true
+starknet_api = { workspace = true }
 
 # Other
 primitive-types.workspace = true

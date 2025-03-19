@@ -58,6 +58,9 @@ impl StarknetVersion {
     pub const V0_13_1: StarknetVersion = StarknetVersion([0, 13, 1, 0]);
     pub const V0_13_1_1: StarknetVersion = StarknetVersion([0, 13, 1, 1]);
     pub const V0_13_2: StarknetVersion = StarknetVersion([0, 13, 2, 0]);
+    pub const V0_13_2_1: StarknetVersion = StarknetVersion([0, 13, 2, 1]);
+    pub const V0_13_3: StarknetVersion = StarknetVersion([0, 13, 3, 0]);
+    pub const V0_13_4: StarknetVersion = StarknetVersion([0, 13, 4, 0]);
     pub const LATEST: StarknetVersion = Self::V0_13_2;
 
     pub fn is_pre_v0_7(&self) -> bool {

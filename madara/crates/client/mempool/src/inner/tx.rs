@@ -1,4 +1,3 @@
-use crate::{clone_transaction, contract_addr, nonce, tx_hash};
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_exec::execution::TxInfo;
 use mp_class::ConvertedClass;
@@ -16,6 +15,7 @@ pub type ArrivedAtTimestamp = SystemTime;
 /// by the [Mempool]
 ///
 /// [Mempool]: super::super::Mempool
+#[derive(Clone)]
 pub struct MempoolTransaction {
     pub tx: Transaction,
     /// Time at which the transaction was inserted into the mempool (+ or -)
@@ -49,40 +49,24 @@ impl fmt::Debug for MempoolTransaction {
     }
 }
 
-impl Clone for MempoolTransaction {
-    fn clone(&self) -> Self {
-        Self {
-            tx: clone_transaction(&self.tx),
-            arrived_at: self.arrived_at,
-            converted_class: self.converted_class.clone(),
-            nonce: self.nonce,
-            nonce_next: self.nonce_next,
-        }
-    }
-}
-
 impl MempoolTransaction {
     pub fn new_from_blockifier_tx(
         tx: Transaction,
         arrived_at: ArrivedAtTimestamp,
         converted_class: Option<ConvertedClass>,
     ) -> Result<Self, StarknetApiError> {
-        let nonce = nonce(&tx);
+        let nonce = tx.nonce();
         let nonce_next = nonce.try_increment()?;
 
         Ok(Self { tx, arrived_at, converted_class, nonce, nonce_next })
     }
-
-    pub fn clone_tx(&self) -> Transaction {
-        clone_transaction(&self.tx)
-    }
     pub fn nonce(&self) -> Nonce {
-        nonce(&self.tx)
+        self.tx.nonce()
     }
     pub fn contract_address(&self) -> ContractAddress {
-        contract_addr(&self.tx)
+        self.tx.sender_address()
     }
     pub fn tx_hash(&self) -> TransactionHash {
-        tx_hash(&self.tx)
+        self.tx.tx_hash()
     }
 }

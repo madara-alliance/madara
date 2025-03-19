@@ -10,7 +10,7 @@ use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
 use mc_mempool::{Mempool, MempoolProvider};
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
+use starknet_api::transaction::{fields::Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -98,7 +98,6 @@ pub async fn sync(
             }
 
             match process_l1_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
-                .await
             {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
@@ -128,7 +127,7 @@ pub async fn sync(
     Ok(())
 }
 
-async fn process_l1_message(
+fn process_l1_message(
     backend: &MadaraBackend,
     event: &LogMessageToL2,
     l1_block_number: &Option<u64>,

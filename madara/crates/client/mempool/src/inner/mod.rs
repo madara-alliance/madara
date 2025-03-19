@@ -10,6 +10,7 @@ use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mc_exec::execution::TxInfo;
 use mp_convert::ToFelt;
 use starknet_api::core::{ContractAddress, Nonce};
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
 use starknet_types_core::felt::Felt;
 use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap};
 
@@ -217,7 +218,9 @@ impl CheckInvariants for MempoolInner {
             assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
             assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+            if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) =
+                &mempool_tx.tx
+            {
                 let contract_address = tx.contract_address;
                 assert!(
                     self.has_deployed_contract(&contract_address),
@@ -262,7 +265,10 @@ impl CheckInvariants for MempoolInner {
                 assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
                 assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+                if let Transaction::Account(AccountTransaction {
+                    tx: ApiAccountTransaction::DeployAccount(tx), ..
+                }) = &mempool_tx.tx
+                {
                     let contract_address = tx.contract_address;
                     assert!(
                         self.has_deployed_contract(&contract_address),
@@ -347,7 +353,9 @@ impl MempoolInner {
         let contract_address = mempool_tx.contract_address().to_felt();
         let arrived_at = mempool_tx.arrived_at;
         let deployed_contract_address =
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+            if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) =
+                &mempool_tx.tx
+            {
                 Some(tx.contract_address)
             } else {
                 None
@@ -562,7 +570,10 @@ impl MempoolInner {
 
                 // We must remember to update the deploy contract count on
                 // removal!
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
+                if let Transaction::Account(AccountTransaction {
+                    tx: ApiAccountTransaction::DeployAccount(tx), ..
+                }) = &mempool_tx.tx
+                {
                     self.deployed_contracts.decrement(tx.contract_address);
                 }
 
@@ -616,7 +627,10 @@ impl MempoolInner {
                 // tx_intent_queue_pending_by_timestamp
 
                 let mempool_tx = nonce_mapping_entry.remove(); // *- snip -*
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
+                if let Transaction::Account(AccountTransaction {
+                    tx: ApiAccountTransaction::DeployAccount(tx), ..
+                }) = &mempool_tx.tx
+                {
                     // Remember to update the deployed contract count along the
                     // way!
                     self.deployed_contracts.decrement(tx.contract_address);
@@ -735,7 +749,9 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
+        if let Transaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(ref tx), .. }) =
+            &mempool_tx.tx
+        {
             self.deployed_contracts.decrement(tx.contract_address);
         }
 

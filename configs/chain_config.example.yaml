@@ -44,27 +44,16 @@ execution_batch_size: 16
 # The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
 bouncer_config:
   block_max_capacity:
-    builtin_count:
-      add_mod: 18446744073709551615
-      bitwise: 18446744073709551615
-      ecdsa: 18446744073709551615
-      ec_op: 18446744073709551615
-      keccak: 18446744073709551615
-      mul_mod: 18446744073709551615
-      pedersen: 18446744073709551615
-      poseidon: 18446744073709551615
-      range_check: 18446744073709551615
-      range_check96: 18446744073709551615
     # Maximum gas limit per block
-    gas: 5000000
-    # Maximum number of steps per block
-    n_steps: 40000000
+    sierra_gas: 500000000
     # Maximum length of message segments
     message_segment_length: 18446744073709551615
     # Maximum number of events per block
     n_events: 18446744073709551615
     # Maximum size of state differences per block
     state_diff_size: 131072
+    # Maximum L1 gas
+    l1_gas: 5000000
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
