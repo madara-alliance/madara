@@ -827,6 +827,7 @@ pub mod validate_params {
                 atlantic_settlement_layer: Some("".to_string()),
                 atlantic_mock_fact_hash: Some("".to_string()),
                 atlantic_prover_type: Some("".to_string()),
+                atlantic_network: Some("".to_string()),
             };
             let prover_params = validate_prover_params(&sharp_args, &atlantic_args);
             if is_sharp ^ is_atlantic {

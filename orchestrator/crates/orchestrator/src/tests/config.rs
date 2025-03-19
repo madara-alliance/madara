@@ -312,7 +312,6 @@ pub mod implement_client {
     use crate::cli::alert::AlertValidatedArgs;
     use crate::cli::da::DaValidatedArgs;
     use crate::cli::database::DatabaseValidatedArgs;
-    use crate::cli::prover::ProverValidatedArgs;
     use crate::cli::queue::QueueValidatedArgs;
     use crate::cli::settlement::SettlementValidatedArgs;
     use crate::cli::storage::StorageValidatedArgs;

@@ -24,6 +24,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
         atlantic_verifier_contract_address: get_env_var_or_panic(
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -63,6 +64,7 @@ async fn atlantic_client_get_task_status_works() {
         atlantic_verifier_contract_address: get_env_var_or_panic(
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 

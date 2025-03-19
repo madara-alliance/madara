@@ -15,7 +15,7 @@ pub enum ProvingInputType {
 ///
 /// # Field Management
 /// All fields are initialized by the worker during job creation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProvingMetadata {
     /// Block number to prove
     pub block_number: u64,
@@ -29,16 +29,4 @@ pub struct ProvingMetadata {
     /// in the provided storage.
     pub download_proof: Option<String>,
     pub n_steps: Option<usize>,
-}
-
-impl Default for ProvingMetadata {
-    fn default() -> Self {
-        Self {
-            block_number: 0,
-            input_path: None,
-            ensure_on_chain_registration: None,
-            download_proof: None,
-            n_steps: None,
-        }
-    }
 }

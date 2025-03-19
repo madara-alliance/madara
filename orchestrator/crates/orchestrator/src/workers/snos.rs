@@ -63,8 +63,7 @@ impl Worker for SnosWorker {
                     cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
                     snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
                     program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
-                    snos_fact: None,
-                    snos_n_steps: None,
+                    ..Default::default()
                 }),
             };
 
