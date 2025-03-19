@@ -46,6 +46,9 @@ jobs:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
 
@@ -84,4 +87,4 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           # Uses the --release to benefit from "build" cache
-          RUST_LOG=info cargo +nightly-2024-09-05 test --release --features testing --workspace test_orchestrator_workflow -- --nocapture
+          RUST_LOG=info cargo +nightly-2024-09-05 nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)'
