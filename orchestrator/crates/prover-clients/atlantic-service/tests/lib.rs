@@ -31,7 +31,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
 
     // Create a mock for the submit endpoint
     let submit_mock = mock_server.mock(|when, then| {
-        when.method("POST").path("/v1/l1/atlantic-query/proof-generation-verification");
+        when.method("POST").path("/atlantic-query");
         then.status(200).header("content-type", "application/json").json_body(serde_json::json!({
             "atlanticQueryId": "mock_query_id_123"
         }));
@@ -68,7 +68,7 @@ async fn atlantic_client_get_task_status_works() {
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 
-    let atlantic_query_id = "01JDY6EKVQD8QYR8HE64WZC9VB";
+    let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
     assert!(task_result.is_ok());
 }
