@@ -15,9 +15,14 @@ use crate::Starknet;
 ///
 /// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
+///
+/// Following the spec: https://github.com/starkware-libs/starknet-specs/blob/2030a650be4e40cfa34d5051a0334f375384a421/api/starknet_api_openrpc.json#L765
+/// if the node is synced it will return a SyncingStatus::NotSyncing which is a boolean false and in case of syncing it will return a SyncStatus struct
 pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
-    // Get the sync status from the provider
-    let sync_status = starknet.sync_status().await.or_internal_server_error("Error getting sync status")?;
+    // Get the sync status from the provider with retry logic
+    let sync_status = get_sync_status_with_retry(starknet)
+        .await
+        .or_internal_server_error("Error getting sync status after retries")?;
 
     // Get current block info
     let Some(current_block_info) = starknet
@@ -76,4 +81,46 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
         current_block_num,
         current_block_hash,
     }))
+}
+
+// Helper function to get sync status with exponential backoff retry
+async fn get_sync_status_with_retry(starknet: &Starknet) -> Result<mp_rpc::SyncStatus, anyhow::Error> {
+    use std::time::Duration;
+    use tokio::time;
+
+    const MAX_RETRIES: u32 = 3;
+    const INITIAL_TIMEOUT_MS: u64 = 1000;
+
+    let mut retries = 0;
+    let mut timeout_ms = INITIAL_TIMEOUT_MS;
+
+    loop {
+        match time::timeout(Duration::from_millis(timeout_ms), starknet.sync_status()).await {
+            // Successful response within timeout
+            Ok(Ok(status)) => return Ok(status),
+
+            // Timeout occurred
+            Err(_) => {
+                tracing::warn!("Timeout getting sync status after {}ms", timeout_ms);
+            }
+
+            // Error occurred within timeout
+            Ok(Err(err)) => {
+                tracing::warn!("Error getting sync status: {}", err);
+            }
+        }
+
+        // Check if we've reached the maximum number of retries
+        retries += 1;
+        if retries >= MAX_RETRIES {
+            return Err(anyhow::anyhow!("Failed to get sync status after {} retries", MAX_RETRIES));
+        }
+
+        // Exponential backoff
+        timeout_ms *= 2;
+        tracing::debug!("Retrying sync status (attempt {}/{}), timeout: {}ms", retries + 1, MAX_RETRIES, timeout_ms);
+
+        // Add a small delay before retrying
+        time::sleep(Duration::from_millis(100)).await;
+    }
 }
