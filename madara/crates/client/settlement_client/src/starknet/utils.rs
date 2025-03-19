@@ -73,7 +73,7 @@ pub struct MadaraProcess {
 impl MadaraProcess {
     /// Creates a new Madara process for testing
     ///
-    /// Attempts to find an available port in the range 19944-20044,
+    /// Uses the operating system to allocate an available port,
     /// starts a Madara node on that port, and waits for it to become available.
     ///
     /// # Arguments

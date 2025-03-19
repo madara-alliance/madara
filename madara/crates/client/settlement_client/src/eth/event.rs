@@ -5,9 +5,11 @@ use crate::messaging::L1toL2MessagingEventData;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
+use futures::ready;
 use futures::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
 type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
 
@@ -26,8 +28,8 @@ impl Stream for EthereumEventStream {
     type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.stream.as_mut().poll_next(cx) {
-            Poll::Ready(Some(result)) => match result {
+        match ready!(self.stream.as_mut().poll_next(cx)) {
+            Some(result) => match result {
                 Ok((event, log)) => match L1toL2MessagingEventData::try_from((event, log)) {
                     Ok(event_data) => Poll::Ready(Some(Ok(event_data))),
                     Err(e) => Poll::Ready(Some(Err(e))),
@@ -36,8 +38,7 @@ impl Stream for EthereumEventStream {
                     message: format!("Error processing Ethereum event stream: {}", e),
                 })))),
             },
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
+            None => Poll::Ready(None),
         }
     }
 }
