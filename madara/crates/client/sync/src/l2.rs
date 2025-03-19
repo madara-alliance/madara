@@ -236,6 +236,10 @@ async fn l2_highest_block_fetch(
     let mut interval = tokio::time::interval(Duration::from_secs(10));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Track consecutive failures to prevent endless loops
+    let mut consecutive_failures = 0;
+    const MAX_CONSECUTIVE_FAILURES: usize = 5;
+
     // Keep running until cancelled
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
         tracing::debug!("Getting highest block...");
@@ -254,16 +258,34 @@ async fn l2_highest_block_fetch(
                         sync_status_provider.set_highest_block_hash(block_hash).await;
 
                         tracing::debug!("Updated highest block: number={}, hash={}", block_number, block_hash);
+
+                        // Reset failure counter after successful processing
+                        consecutive_failures = 0;
                     }
                     _ => {
-                        tracing::warn!("Got unexpected block type from provider");
-                        continue;
+                        tracing::error!("Got unexpected block type from provider that wasn't handled");
+                        consecutive_failures += 1;
                     }
                 }
             }
             Err(e) => {
                 tracing::error!("Error getting latest block: {:?}", e);
+                consecutive_failures += 1;
             }
+        }
+
+        // If we've had too many consecutive failures, break out of the loop
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+            let error_msg = format!(
+                "Received unexpected block types or errors for {MAX_CONSECUTIVE_FAILURES} consecutive attempts"
+            );
+            tracing::error!("{}", error_msg);
+            return Err(anyhow::anyhow!(error_msg));
+        }
+
+        // If we had failures but not enough to terminate, add a small delay
+        if consecutive_failures > 0 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
