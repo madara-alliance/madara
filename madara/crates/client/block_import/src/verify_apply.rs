@@ -332,6 +332,8 @@ fn block_hash(
 /// new fork can then be played on top.
 /// 
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
+/// 
+/// TODO: consider renaming this in order to distinguish between "reorg" and "reverting".
 fn reorg(
     backend: &MadaraBackend,
     new_parent: &PreValidatedBlock, // TODO: we don't need a PreValidatedBlock, do we?
@@ -359,7 +361,7 @@ fn reorg(
 		.revert_to(block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
 
-    backend.revert_to(block_number.checked_sub(1).unwrap())
+    backend.revert_to(block_number)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
 
     // TODO: should reorg actually append new blocks? if not, it should be renamed to `revert_to`
@@ -900,8 +902,8 @@ mod verify_apply_tests {
         ///       /   \
         ///      N     X
         ///      |     |
-        ///      N     X     --- the "X" chain is added and removed when we reorg, its length is
-        ///      |               "orphaned_chain_length"
+        ///      N     X     --- the "X" chain is added and later removed when we reorg, its length
+        ///      |               is "orphaned_chain_length"
         ///      N
         ///      |
         ///      N           --- the "N" chain is the new chain which is created after we reorg back
@@ -961,18 +963,19 @@ mod verify_apply_tests {
             println!("-----------------------");
             println!("creating original chain (length: {})", args.original_chain_length);
             let mut parent_hash = None;
+            let mut reorg_parent_block = None;
             assert!(
                 args.original_chain_length > 0,
                 "Cannot create an empty chain, we always need at least genesis"
             );
             for i in 0..args.original_chain_length {
-                let (new_block_hash, _) = append_empty_block(i, parent_hash);
+                let (new_block_hash, new_parent_block) = append_empty_block(i, parent_hash);
                 parent_hash = Some(new_block_hash);
+                reorg_parent_block = Some(new_parent_block);
             }
             let reorg_parent_height = args.original_chain_length - 1;
             let reorg_parent_hash = parent_hash.clone().expect(
                 "logic error, we created at least one block which is our parent");
-            let mut reorg_parent_block = None;
 
             // build a soon-to-be-orphaned chain on top of the original
             println!("-----------------------");
@@ -982,10 +985,9 @@ mod verify_apply_tests {
                 "Must have at least one block to reorg"
             );
             for i in 0..args.orphaned_chain_length {
-                let parent_height = args.original_chain_length -1 + i;
-                let (new_block_hash, new_parent_block) = append_empty_block(parent_height, parent_hash);
+                let parent_height = args.original_chain_length + i;
+                let (new_block_hash, _) = append_empty_block(parent_height, parent_hash);
                 parent_hash = Some(new_block_hash);
-                reorg_parent_block = Some(new_parent_block);
             }
 
             println!("-----------------------");
@@ -993,24 +995,20 @@ mod verify_apply_tests {
 
             let reorg_parent_block = reorg_parent_block.expect("Should have a parent by now");
             let _ = reorg(&backend, &reorg_parent_block).expect("reorg failed");
-            let _block_import = verify_apply_inner(
-                &backend,
-                reorg_parent_block,
-                validation.clone(),
-            ).expect("verify_apply_inner failed on reorg block");
 
             println!("-----------------------");
-            println!("Extending reorg'ed chain on top of {} ({:?})", args.orphaned_chain_length, reorg_parent_hash);
+            println!("Extending reorg'ed chain on top of {} ({:?})", args.original_chain_length, reorg_parent_hash);
 
             // reorg after given parent (start with 1 since we already added our reorg block)
-            for i in 1..args.new_chain_length {
-                let block_height = args.orphaned_chain_length + i;
-                let (new_block_hash, _) = append_empty_block(block_height, Some(reorg_parent_hash));
+            parent_hash = Some(reorg_parent_hash);
+            for i in 0..args.new_chain_length {
+                let block_height = args.original_chain_length + i;
+                let (new_block_hash, _) = append_empty_block(block_height, parent_hash);
                 parent_hash = Some(new_block_hash);
             }
 
             let latest_block_n = backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
-            assert_eq!(args.orphaned_chain_length + args.new_chain_length, latest_block_n);
+            assert_eq!(args.original_chain_length + args.new_chain_length - 1, latest_block_n);
             let latest_block_hash = backend.get_block_hash(&BlockId::Number(latest_block_n)).expect("get_block_hash failed after reorg");
             assert_eq!(latest_block_hash, parent_hash);
         }
