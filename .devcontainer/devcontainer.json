@@ -13,12 +13,11 @@
         "terminal.integrated.profiles.linux": { "zsh": { "path": "/bin/zsh" } }
       },
       "extensions": [
-        "rust-lang.rust-analyzer",
-        "1YiB.rust-bundle",
-        "tamasfe.even-better-toml",
-        "serayuzgur.crates",
-        "vivaxy.vscode-conventional-commits",
-        "streetsidesoftware.code-spell-checker"
+        //        "1YiB.rust-bundle",
+        //        "tamasfe.even-better-toml",
+        //        "serayuzgur.crates",
+        //        "vivaxy.vscode-conventional-commits",
+        //        "streetsidesoftware.code-spell-checker"
       ]
     }
   },
