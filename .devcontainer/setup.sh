@@ -5,9 +5,9 @@ echo ">> Starting setup.sh script execution."
 # Uncomment this if you want to remove the db on each container start
 # rm -rf /tmp/madara
 
-# Sets up Madara environment
-cargo run -- setup --chain starknet --from-remote --base-path /tmp/madara \
-&& cargo fmt
+rustup show
+node --version
+python --version
 
 # Uncomment this if you want to run madara on container start
 # cargo run -- \
