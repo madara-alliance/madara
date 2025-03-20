@@ -8,10 +8,11 @@ pub struct MqReceiver<T: Send + Clone> {
     wake: std::sync::Arc<tokio::sync::Notify>,
 }
 
-pub struct MqGuard<T: Send + Clone> {
+pub struct MqGuard<'a, T: Send + Clone> {
     ack: bool,
     queue: std::sync::Arc<MessageQueue<T>>,
     cell_ptr: std::ptr::NonNull<AckCell<T>>,
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 struct MessageQueue<T: Send + Clone> {
@@ -36,12 +37,11 @@ struct WriteRegion {
     size: std::sync::atomic::AtomicUsize,
 }
 
-impl<T: Send + Clone> Drop for MqGuard<T> {
+impl<'a, T: Send + Clone> Drop for MqGuard<'a, T> {
     fn drop(&mut self) {
         // If the element was not acknowledged, we add it back to the queue to be picked up again.
         if !self.ack {
-            let elem = self.retrieve();
-            self.queue.write(elem);
+            self.queue.write(self.retrieve());
         }
     }
 }
@@ -50,8 +50,8 @@ impl<T: Send + Clone> Drop for MessageQueue<T> {
     fn drop(&mut self) {
         self.reader.size.store(0, std::sync::atomic::Ordering::Release);
 
-        let start = self.writter.start();
-        let stop = start + self.writter.size();
+        let start = self.reader.start();
+        let stop = start + self.reader.size();
 
         for i in (start..stop).map(|i| fast_mod(i, self.cap)) {
             unsafe { std::ptr::read(self.ring.as_ptr().add(i)) };
@@ -98,9 +98,9 @@ impl<T: Send + Clone> MqReceiver<T> {
     }
 }
 
-impl<T: Send + Clone> MqGuard<T> {
+impl<'a, T: Send + Clone> MqGuard<'a, T> {
     pub fn new(queue: std::sync::Arc<MessageQueue<T>>, cell_ptr: std::ptr::NonNull<AckCell<T>>) -> Self {
-        MqGuard { ack: false, queue, cell_ptr }
+        MqGuard { ack: false, queue, cell_ptr, _phantom: std::marker::PhantomData }
     }
 
     pub fn acknowledge(mut self) -> T {
@@ -108,17 +108,60 @@ impl<T: Send + Clone> MqGuard<T> {
         self.retrieve()
     }
 
+    // Invariant: calling this twice will result in a double free
     fn retrieve(&self) -> T {
         let cell = unsafe { std::ptr::read(self.cell_ptr.as_ptr()) };
-        cell.ack.store(true, std::sync::atomic::Ordering::Release);
-        cell.elem.clone()
+        let ack = std::mem::ManuallyDrop::new(cell.ack);
+
+        // It is worth taking a moment to understand why this is here.
+        //
+        // > "If an atomic store in thread A is tagged memory_order_release, an atomic load in
+        // > thread B from the same variable is tagged memory_order_acquire, and the load in thread
+        // > B reads a value written by the store in thread A, then the store in thread A
+        // > synchronizes with the load in thread B.
+        // >
+        // > All memory writes (including non-atomic and relaxed atomic) that happened-before the
+        // > atomic store from the point of view of thread A, become visible side-effects in thread
+        // > B. That is, once the atomic load is completed, thread B is guaranteed to see everything
+        // > thread A wrote to memory. This promise only holds if B actually returns the value that
+        // > A stored, or a value from later in the release sequence."
+        //
+        // https://en.cppreference.com/w/cpp/atomic/memory_order#Release-Acquire_ordering
+        //
+        // So first of all note that by using a `Relaxed` ordering on the subsequent store, we are
+        // guaranteeing that `drop` happens before other threads can see the effects of the store.
+        //
+        // When a `MessageQueue` is dropped, it will drop the elements in its read region, as these
+        // have not yet been received by any thread but itself. It does not have any mechanism to
+        // handle the dropping of elements which have already been read, whether acknowledged or
+        // not. For this reason we need to handle this here. The invariant of this method asks that
+        // we call it only once, and it operates on a reference because this logic also applies when
+        // dropping the guard if the element has not been acknowledged.
+        //
+        // Why is the atomic store important? Because we use it as a mechanism in `WriteRegion` to
+        // check if a `AcqCell` has been acknowledged or not. We do not want this cell to be marked
+        // as ready for write while its contents have not been freed yet! Notice that this is a
+        // delicate dance we are playing: `WriteRegion` will be reading the atomic ack state of the
+        // cell, while the elem it stores has already been dropped! Since we are not reading the
+        // element this is okay. It is also very unsafe. A better way to represent this would be to
+        // use `MaybeUninitialized`, but that is for another day.
+        //
+        // Finally, notice the lifetime attached to `MqGuard`: this ensure that the guard's lifetime
+        // is tied to its receiver, and hence to the underlying `MessageQueue`. This ensures that
+        // the message queue and its underlying array are not dropped and freed while or before we
+        // are dropping and (potentially) freeing this element.
+        let elem = cell.elem.clone();
+        drop(cell.elem);
+        ack.store(true, std::sync::atomic::Ordering::Release);
+
+        elem
     }
 }
 
 impl<T: Send + Clone> MessageQueue<T> {
     fn new(cap: usize) -> Self {
         assert_ne!(std::mem::size_of::<T>(), 0, "T cannot be a ZST");
-        assert!(cap == 0, "Tried to create a message queue with a capacity < 1");
+        assert!(cap > 0, "Tried to create a message queue with a capacity < 1");
 
         let cap = cap.checked_next_power_of_two().expect("failed to retrieve the next power of 2 to cap");
         let layout = std::alloc::Layout::array::<AckCell<T>>(cap).unwrap();
@@ -225,7 +268,7 @@ impl WriteRegion {
     }
 
     fn size(&self) -> usize {
-        self.start.load(std::sync::atomic::Ordering::Acquire)
+        self.size.load(std::sync::atomic::Ordering::Acquire)
     }
 
     fn write<T: Clone>(&self, elem: T, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Option<T> {
@@ -273,12 +316,10 @@ impl WriteRegion {
         let cell = unsafe { std::ptr::read(buf.as_ptr().add(stop)) };
         let ack = cell.ack.load(std::sync::atomic::Ordering::Acquire);
 
+        // See the note in `MqGuard` to understand why this comparison is risky!
         let res = if ack {
             debug_assert!(size + 1 <= cap);
             self.size.store(size + 1, std::sync::atomic::Ordering::Release);
-
-            // we need to drop the element since it might be overwritten in the future
-            drop(cell.elem);
             Ok(())
         } else {
             Err("Failed to grow write region, next element has not been acknowledged yet")
