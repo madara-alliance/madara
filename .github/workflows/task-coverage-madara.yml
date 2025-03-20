@@ -107,6 +107,7 @@ jobs:
             --output-path lcov.info \
             --package "mc-*" \
             --package "mp-*" \
+            --test-threads=1 \
             --no-fail-fast
 
       - name: Upload coverage to Coveralls

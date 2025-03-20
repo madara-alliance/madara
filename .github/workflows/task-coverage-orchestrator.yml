@@ -68,7 +68,7 @@ jobs:
             ${{ runner.os }}-orchestrator-cov-${{ hashFiles('orchestrator/Cargo.lock') }}
             ${{ runner.os }}-orchestrator-cov-
 
-      - name: Install cargo-llvm-cov & nextest
+      - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install nextest
