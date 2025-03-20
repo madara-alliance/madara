@@ -61,8 +61,8 @@ jobs:
           path: |
             orchestrator/crates/settlement-clients/starknet/src/tests/mock_contracts/target
             orchestrator/target/nextest
-            orchestrator/target/debug/deps
-            orchestrator/target/debug/build
+            orchestrator/target/release/deps
+            orchestrator/target/release/build
           key: ${{ runner.os }}-orchestrator-cov-${{ hashFiles('orchestrator/**/*.rs', 'orchestrator/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-orchestrator-cov-${{ hashFiles('orchestrator/Cargo.lock') }}

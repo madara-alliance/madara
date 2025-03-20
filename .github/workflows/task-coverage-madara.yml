@@ -99,7 +99,7 @@ jobs:
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
         run: |
           rm -f target/madara-* lcov.info
-          export COVERAGE_BIN=$(realpath target/debug/madara)
+          export COVERAGE_BIN=$(realpath target/release/madara)
           # run tests for madara client / primitive crates
           RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
             --release \

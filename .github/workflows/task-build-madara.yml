@@ -49,8 +49,10 @@ jobs:
       - name: Cargo build binaries
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
+
           # We build the whole workspace to ensure nothing broke.
           # Builds "madara", the "orchestrator" and the "m-cairo-test-contracts" package
+
           cargo build --release --workspace
 
       # Generate hash for the Madara binary
@@ -113,26 +115,23 @@ jobs:
           retention-days: 1
 
       # Keep the cache operations for runners of the same type
-      - name: Cache Madara binary
-        uses: actions/cache/save@v4
-        with:
-          path: target/release/madara
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+      # - name: Cache Madara binary
+      #   uses: actions/cache/save@v4
+      #   with:
+      #     path: target/release/madara
+      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
 
-      - name: Cache Ochestrator binary
-        uses: actions/cache/save@v4
-        with:
-          path: target/release/orchestrator
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+      # - name: Cache Ochestrator binary
+      #   uses: actions/cache/save@v4
+      #   with:
+      #     path: target/release/orchestrator
+      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
 
-      - name: Cache Cairo build artifacts
-        uses: actions/cache/save@v4
-        with:
-          path: cairo/target
-          key: ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-${{ hashFiles('cairo/**/*.cairo', 'cairo/**/Scarb.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-${{ hashFiles('cairo/**/Scarb.toml') }}
-            ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-
+      # - name: Cache Cairo build artifacts
+      #   uses: actions/cache/save@v4
+      #   with:
+      #     path: cairo/target
+      #     key: ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-${{ hashFiles('cairo/**/*.cairo', 'cairo/**/Scarb.toml') }}
 
       - name: Display hashes
         run: |
