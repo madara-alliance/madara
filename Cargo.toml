@@ -371,4 +371,4 @@ starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch =
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
 
 [patch."https://github.com/madara-alliance/bonsai-trie"]
-bonsai-trie = { path = "../bonsai-trie" }
+bonsai-trie = { git = "https://github.com/notlesh/bonsai-trie", branch = "notlesh/fix-revert" }
