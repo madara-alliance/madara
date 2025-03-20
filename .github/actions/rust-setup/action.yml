@@ -70,16 +70,28 @@ runs:
     #     sccache --show-stats
 
     # Cache everything that is needed/produced for cargo build
+
     - uses: actions/cache@v4
       id: cache-cargo
       with:
         path: |
-          ~/.cargo/bin
           ~/.cargo/registry
           ~/.cargo/git
-          target/
-          cairo/target/
-        key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - uses: actions/cache@v4
+      id: cache-build-deps
+      with:
+        path: |
+          target/release/deps
+          target/release/build
+          target/release/.fingerprint
+        key: ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
