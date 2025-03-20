@@ -41,9 +41,9 @@ jobs:
 
   # Generate coverage report for Madara
   coverage-madara:
-  needs: [update-db-version, build-madara-cairo]
-  uses: ./.github/workflows/task-coverage-madara.yml
-  secrets: inherit
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-coverage-madara.yml
+    secrets: inherit
 
   # Generate coverage report for Orchestrator. Requires Madara binary
   coverage-orchestrator:
