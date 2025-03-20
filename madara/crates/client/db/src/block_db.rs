@@ -371,9 +371,7 @@ impl MadaraBackend {
         tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
 
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
-        println!("reverting to {} from {}", revert_to, latest_block_n);
         for block_n in (revert_to + 1..latest_block_n + 1).rev() {
-            println!("reverting block {}", block_n);
 
             let block_n_encoded = bincode::serialize(&block_n)?;
 
@@ -387,9 +385,6 @@ impl MadaraBackend {
             }
 
             let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
-
-            println!("  - original block hash: {:x}", block_info.block_hash);
-            println!("  - block height/hash: {} => {:x?}", block_n, block_hash_encoded);
 
             tx.delete_cf(&block_n_to_block, &block_n_encoded);
             tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
