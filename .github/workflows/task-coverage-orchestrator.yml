@@ -63,10 +63,10 @@ jobs:
             orchestrator/target/nextest
             orchestrator/target/debug/deps
             orchestrator/target/debug/build
-          key: ${{ runner.os }}-orchestrator-test-${{ hashFiles('orchestrator/**/*.rs', 'orchestrator/Cargo.lock') }}
+          key: ${{ runner.os }}-orchestrator-cov-${{ hashFiles('orchestrator/**/*.rs', 'orchestrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-orchestrator-test-${{ hashFiles('orchestrator/Cargo.lock') }}
-            ${{ runner.os }}-orchestrator-test-
+            ${{ runner.os }}-orchestrator-cov-${{ hashFiles('orchestrator/Cargo.lock') }}
+            ${{ runner.os }}-orchestrator-cov-
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov

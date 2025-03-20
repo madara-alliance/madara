@@ -49,6 +49,8 @@ jobs:
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Start Anvil
         run: |
           ldd --version
@@ -84,17 +86,17 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
         run: |
-          export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info
-
+          export COVERAGE_BIN=$(realpath target/debug/madara)
           # run tests for madara client / primitive crates
-          cargo llvm-cov --release --package "mc-*" --package "mp-*" --no-report
-
-      - name: Generate coverage info
-        run: |
-          # Find all profraw files and create the report
-          find . -name "*.profraw" -type f
-          cargo llvm-cov report --lcov --output-path lcov.info --release
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+            --release \
+            --lcov \
+            --output-path lcov.info \
+            --workspace \
+            --package "mc-*" \
+            --package "mp-*" \
+            --no-fail-fast
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
