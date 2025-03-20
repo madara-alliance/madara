@@ -372,14 +372,14 @@ impl MadaraBackend {
 
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
         println!("reverting to {} from {}", revert_to, latest_block_n);
-        for block_n in (revert_to + 1 .. latest_block_n + 1).rev() {
+        for block_n in (revert_to + 1..latest_block_n + 1).rev() {
             println!("reverting block {}", block_n);
 
             let block_n_encoded = bincode::serialize(&block_n)?;
 
             let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;
             let block_info: MadaraBlockInfo = bincode::deserialize(&res.unwrap())?; // TODO: unwrap
-            
+
             // clear all txns from this block
             for txn_hash in block_info.tx_hashes {
                 let txn_hash_encoded = bincode::serialize(&txn_hash)?;
@@ -395,7 +395,6 @@ impl MadaraBackend {
             tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
             tx.delete_cf(&block_n_to_block_inner, &block_n_encoded);
             tx.delete_cf(&block_n_to_state_diff, &block_n_encoded);
-
         }
 
         let latest_block_n_encoded = bincode::serialize(&revert_to)?;

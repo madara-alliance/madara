@@ -330,36 +330,35 @@ fn block_hash(
 
 /// Reorgs the blockchain from its current tip back to `new_tip` from which a new fork can then be
 /// played on top.
-/// 
+///
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
-/// 
+///
 /// TODO: consider renaming this in order to distinguish between "reorg" and "reverting".
 fn reorg(
     backend: &MadaraBackend,
     new_tip: &PreValidatedBlock, // TODO: we don't need a PreValidatedBlock, do we?
 ) -> Result<ReorgResult, BlockImportError> {
-
-	let block_number = new_tip.unverified_block_number.expect("Can't reorg without block number");
+    let block_number = new_tip.unverified_block_number.expect("Can't reorg without block number");
     // TODO: we should ensure this exact block exists in our db
     let block_hash = new_tip.unverified_block_hash.expect("Can't reorg without a block hash");
-	let block_id = BasicId::new(block_number);
+    let block_id = BasicId::new(block_number);
 
     backend
-		.contract_trie()
-		.revert_to(block_id)
+        .contract_trie()
+        .revert_to(block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract trie: {}", error))))?;
 
-    backend
-		.contract_storage_trie()
-		.revert_to(block_id)
-        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error))))?;
+    backend.contract_storage_trie().revert_to(block_id).map_err(|error| {
+        BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error)))
+    })?;
 
     backend
-		.class_trie()
-		.revert_to(block_id)
+        .class_trie()
+        .revert_to(block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
 
-    backend.revert_to(block_number)
+    backend
+        .revert_to(block_number)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
 
     // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
@@ -368,13 +367,12 @@ fn reorg(
         .map_err(make_db_error("getting latest block info"))?
         .ok_or(BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
 
-	Ok(ReorgResult {
+    Ok(ReorgResult {
         starting_block_hash: block_hash,
         starting_block_number: block_number,
         ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
         ending_block_number: latest_block_info.block_n().expect("how would a block not have a block number?"), // TODO
-	})
-
+    })
 }
 
 #[cfg(test)]
@@ -872,9 +870,9 @@ mod verify_apply_tests {
         /// representing a few different lengths of different parts of a forked chain, where one
         /// side of the fork is first created, a reorg occurs, and then the other side of the fork
         /// is created.
-        /// 
+        ///
         /// Consider this diagram:
-        /// 
+        ///
         ///         O        ---
         ///         |          | "original_chain_length"
         ///         O          | This part of the chain is not reorged, the last block is the parent
@@ -964,10 +962,7 @@ mod verify_apply_tests {
             },
         )]
         #[tokio::test]
-        async fn test_reorg(
-            setup_test_backend: Arc<MadaraBackend>,
-            #[case] args: ReorgTestArgs,
-        ) {
+        async fn test_reorg(setup_test_backend: Arc<MadaraBackend>, #[case] args: ReorgTestArgs) {
             let backend = setup_test_backend;
             let validation = create_validation_context(false);
 
@@ -978,7 +973,8 @@ mod verify_apply_tests {
                 block.unverified_block_number = Some(new_block_height);
                 block.unverified_global_state_root = Some(felt!("0x0"));
                 block.header.parent_block_hash = parent_hash;
-                let block_import = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+                let block_import =
+                    verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
                 println!("added block {} (0x{:x})", new_block_height, block_import.block_hash);
 
                 block.unverified_block_hash = Some(block_import.block_hash);
@@ -991,22 +987,19 @@ mod verify_apply_tests {
             println!("creating original chain (length: {})", args.original_chain_length);
             let mut parent_hash = None;
             let mut reorg_parent_block = None;
-            assert!(
-                args.original_chain_length > 0,
-                "Cannot create an empty chain, we always need at least genesis"
-            );
+            assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
             for i in 0..args.original_chain_length {
                 let (new_block_hash, new_parent_block) = append_empty_block(i, parent_hash);
                 parent_hash = Some(new_block_hash);
                 reorg_parent_block = Some(new_parent_block);
             }
-            let mut reorg_parent_hash = parent_hash.clone().expect(
-                "logic error: we should have created at least one block which is our parent");
-            
+            let mut reorg_parent_hash = parent_hash
+                .clone()
+                .expect("logic error: we should have created at least one block which is our parent");
+
             let mut parent_height = args.original_chain_length;
             assert!(args.passes > 0);
             for _ in 0..args.passes {
-
                 // build a soon-to-be-orphaned chain on top of the original
                 println!("-----------------------");
                 println!("creating orphaned chain (length: {})", args.orphaned_chain_length);
@@ -1019,7 +1012,8 @@ mod verify_apply_tests {
                 println!("-----------------------");
                 println!("Reorging back to parent {} ({:?})", parent_height, reorg_parent_hash);
 
-                let _ = reorg(&backend, &reorg_parent_block.clone().expect("Should have a parent by now")).expect("reorg failed");
+                let _ = reorg(&backend, &reorg_parent_block.clone().expect("Should have a parent by now"))
+                    .expect("reorg failed");
                 parent_height -= args.orphaned_chain_length;
                 // TODO: need to reset parent hash here, we can get this by having reorg() properly return to/from values
 
@@ -1038,9 +1032,12 @@ mod verify_apply_tests {
                 }
                 reorg_parent_hash = parent_hash.expect("parent_hash should be set by now");
 
-                let latest_block_n = backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
+                let latest_block_n =
+                    backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
                 // assert_eq!(args.original_chain_length + args.new_chain_length - 1, latest_block_n); // doesn't make sense with multiple passes
-                let latest_block_hash = backend.get_block_hash(&BlockId::Number(latest_block_n)).expect("get_block_hash failed after reorg");
+                let latest_block_hash = backend
+                    .get_block_hash(&BlockId::Number(latest_block_n))
+                    .expect("get_block_hash failed after reorg");
                 assert_eq!(latest_block_hash, parent_hash);
             }
         }
