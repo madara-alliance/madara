@@ -20,9 +20,9 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/db-version.yml
 
-  changelog_orchestrator:
-    name: Update Orchestrator Changelog
-    uses: ./.github/workflows/orchestrator-changelog.yml
+  # changelog_orchestrator:
+  #   name: Update Orchestrator Changelog
+  #   uses: ./.github/workflows/orchestrator-changelog.yml
 
   linters:
     name: Run linters
@@ -66,3 +66,8 @@ jobs:
     needs: build
     uses: ./.github/workflows/e2e-test.yml
     secrets: inherit
+
+  cli_test:
+    name: Run CLI Tests
+    needs: rust_check
+    uses: ./.github/workflows/cli-test.yml
