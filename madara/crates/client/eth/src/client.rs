@@ -9,12 +9,11 @@ use alloy::{
     sol,
     transports::http::{Client, Http},
 };
-use mc_analytics::register_gauge_metric_instrument;
-use opentelemetry::{global, KeyValue};
-use opentelemetry::{global::Error, metrics::Gauge};
-
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
+use mc_analytics::register_gauge_metric_instrument;
+use opentelemetry::metrics::Gauge;
+use opentelemetry::{global, InstrumentationScope, KeyValue};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -29,31 +28,29 @@ pub struct L1BlockMetrics {
 }
 
 impl L1BlockMetrics {
-    pub fn register() -> Result<Self, Error> {
-        let common_scope_attributes = vec![KeyValue::new("crate", "L1 Block")];
-        let eth_meter = global::meter_with_version(
-            "crates.l1block.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
+    pub fn register() -> anyhow::Result<Self> {
+        let meter = global::meter_with_scope(
+            InstrumentationScope::builder("crates.eth.opentelemetry")
+                .with_attributes([KeyValue::new("crate", "eth")])
+                .build(),
         );
 
         let l1_block_number = register_gauge_metric_instrument(
-            &eth_meter,
+            &meter,
             "l1_block_number".to_string(),
             "Gauge for madara L1 block number".to_string(),
             "".to_string(),
         );
 
         let l1_gas_price_wei = register_gauge_metric_instrument(
-            &eth_meter,
+            &meter,
             "l1_gas_price_wei".to_string(),
             "Gauge for madara L1 gas price in wei".to_string(),
             "".to_string(),
         );
 
         let l1_gas_price_strk = register_gauge_metric_instrument(
-            &eth_meter,
+            &meter,
             "l1_gas_price_strk".to_string(),
             "Gauge for madara L1 gas price in strk".to_string(),
             "".to_string(),

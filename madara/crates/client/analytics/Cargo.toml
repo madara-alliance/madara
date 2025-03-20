@@ -12,22 +12,28 @@ homepage.workspace = true
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-#Instrumentation
+mp-utils = { workspace = true }
+
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 console = "0.15" # for styled output
 futures = { workspace = true }
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["server"] }
+hyper-util.workspace = true
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-  "tonic",
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }
+opentelemetry-prometheus = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
-time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
+prometheus = { workspace = true }
+time = { workspace = true, features = ["formatting", "local-offset", "macros"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }

@@ -179,7 +179,7 @@ impl Mempool {
 
         if !self.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
-            
+
             // Perform validations
             if let Transaction::Account(account_tx) = tx.clone() {
                 let exec_context = ExecutionContext::new_on_pending(Arc::clone(&self.backend))?;

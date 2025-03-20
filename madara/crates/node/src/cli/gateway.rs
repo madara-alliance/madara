@@ -18,7 +18,7 @@ pub struct GatewayParams {
     #[arg(env = "MADARA_GATEWAY_EXTERNAL", long)]
     pub gateway_external: bool,
 
-    /// The gateway port to listen at.
-    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "GATEWAY PORT", default_value_t = FGW_DEFAULT_PORT)]
+    /// The gateway port to listen on.
+    #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "PORT", default_value_t = FGW_DEFAULT_PORT)]
     pub gateway_port: u16,
 }

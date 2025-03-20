@@ -64,5 +64,5 @@ pub async fn start_server(
         }
     }
 
-    anyhow::Ok(())
+    Ok(())
 }
