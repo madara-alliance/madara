@@ -54,6 +54,20 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
+      - name: Cache Orchestrator test fixtures
+        uses: actions/cache@v4
+        id: cache-orchestrator-tests
+        with:
+          path: |
+            orchestrator/crates/settlement-clients/starknet/src/tests/mock_contracts/target
+            orchestrator/target/nextest
+            orchestrator/target/debug/deps
+            orchestrator/target/debug/build
+          key: ${{ runner.os }}-orchestrator-test-${{ hashFiles('orchestrator/**/*.rs', 'orchestrator/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-orchestrator-test-${{ hashFiles('orchestrator/Cargo.lock') }}
+            ${{ runner.os }}-orchestrator-test-
+
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
 
