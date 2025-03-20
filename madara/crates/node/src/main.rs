@@ -12,7 +12,7 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
@@ -145,7 +145,8 @@ async fn main() -> anyhow::Result<()> {
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mut mempool = Mempool::new(Arc::clone(service_db.backend()), MempoolLimits::new(&chain_config));
+    let mut mempool =
+        Mempool::new(Arc::clone(service_db.backend()), run_cmd.mempool_params.as_mempool_config(&chain_config));
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 

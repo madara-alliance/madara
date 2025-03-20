@@ -213,7 +213,7 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
-    use mc_mempool::{L1DataProvider, Mempool, MockL1DataProvider};
+    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MockL1DataProvider};
     use mc_mempool::{MempoolLimits, MempoolProvider};
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
@@ -343,7 +343,7 @@ mod tests {
             strk_l1_data_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), mempool_limits));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::new(mempool_limits)));
         let metrics = BlockProductionMetrics::register();
 
         let block_production = BlockProductionTask::new(

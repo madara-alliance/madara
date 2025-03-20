@@ -21,7 +21,7 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter> {
+    pub fn executor_for_block_production(&self) -> TransactionExecutor<BlockifierStateAdapter> {
         let concurrency_config = self.backend.chain_config().concurrency_config.clone();
         TransactionExecutor::new(
             self.init_cached_state(),

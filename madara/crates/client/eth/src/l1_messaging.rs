@@ -233,7 +233,7 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::{DatabaseService, MadaraBackendConfig};
-    use mc_mempool::{Mempool, MempoolLimits};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -356,7 +356,7 @@ mod l1_messaging_tests {
         // let l1_gas_setter = GasPriceProvider::new();
         // let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolLimits::for_testing()));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Set up metrics service
         let l1_block_metrics = L1BlockMetrics::register().unwrap();

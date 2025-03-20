@@ -258,7 +258,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 tx_hashes: vec![],
             }),
         )?
-        .tx_executor();
+        .executor_for_block_production();
 
         Ok(Self { backend, mempool, executor, current_pending_tick: 0, pending_block, l1_data_provider, metrics })
     }
@@ -420,7 +420,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 tx_hashes: vec![],
             }),
         )?
-        .tx_executor();
+        .executor_for_block_production();
         self.current_pending_tick = 0;
 
         let end_time = start_time.elapsed();
@@ -628,7 +628,7 @@ mod tests {
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
-    use mc_mempool::{Mempool, MempoolLimits, MempoolProvider, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig, MempoolProvider, MockL1DataProvider};
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_chain_config::ChainConfig;
     use mp_convert::{felt, ToFelt};
@@ -718,7 +718,7 @@ mod tests {
             Arc::clone(&backend),
             Arc::new(BlockProductionMetrics::register()),
             Arc::clone(&l1_data_provider),
-            Arc::new(Mempool::new(backend, MempoolLimits::for_testing())),
+            Arc::new(Mempool::new(backend, MempoolConfig::for_testing())),
             contracts,
         )
     }
