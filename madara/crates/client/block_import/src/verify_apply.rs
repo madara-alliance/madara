@@ -968,14 +968,12 @@ mod verify_apply_tests {
 
             // utility fn to append an empty block to the given parent block, returning the new block's hash
             let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> (Felt, PreValidatedBlock) {
-                println!("attempting to add block {}", new_block_height);
                 let mut block = create_dummy_block();
                 block.unverified_block_number = Some(new_block_height);
                 block.unverified_global_state_root = Some(felt!("0x0"));
                 block.header.parent_block_hash = parent_hash;
                 let block_import =
                     verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
-                println!("added block {} (0x{:x})", new_block_height, block_import.block_hash);
 
                 block.unverified_block_hash = Some(block_import.block_hash);
 
@@ -983,8 +981,6 @@ mod verify_apply_tests {
             };
 
             // create the original chain
-            println!("-----------------------");
-            println!("creating original chain (length: {})", args.original_chain_length);
             let mut parent_hash = None;
             let mut reorg_parent_block = None;
             assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
@@ -1000,24 +996,16 @@ mod verify_apply_tests {
             assert!(args.passes > 0);
             for _ in 0..args.passes {
                 // build a soon-to-be-orphaned chain on top of the original
-                println!("-----------------------");
-                println!("creating orphaned chain (length: {})", args.orphaned_chain_length);
                 for _ in 0..args.orphaned_chain_length {
                     let (new_block_hash, _) = append_empty_block(parent_height, parent_hash);
                     parent_hash = Some(new_block_hash);
                     parent_height += 1;
                 }
 
-                println!("-----------------------");
-                println!("Reorging back to parent {} ({:?})", parent_height, reorg_parent_hash);
-
                 let _ = reorg(&backend, &reorg_parent_block.clone().expect("Should have a parent by now"))
                     .expect("reorg failed");
                 parent_height -= args.orphaned_chain_length;
                 // TODO: need to reset parent hash here, we can get this by having reorg() properly return to/from values
-
-                println!("-----------------------");
-                println!("Extending reorg'ed chain on top of {} ({:?})", args.original_chain_length, reorg_parent_hash);
 
                 // reorg after given parent (start with 1 since we already added our reorg block)
                 parent_hash = Some(reorg_parent_hash);
