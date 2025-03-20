@@ -51,6 +51,18 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
+
+      - name: Cache nextest
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/nextest
+            target/nextest-*
+          key: ${{ runner.os }}-nextest-cov-madara-${{ hashFiles('madara/**/*.rs','**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-nextest-cov-madara-${{ hashFiles('**/Cargo.lock') }}
+            ${{ runner.os }}-nextest-cov-madara-
+
       - name: Start Anvil
         run: |
           ldd --version
@@ -93,7 +105,6 @@ jobs:
             --release \
             --lcov \
             --output-path lcov.info \
-            --workspace \
             --package "mc-*" \
             --package "mp-*" \
             --no-fail-fast

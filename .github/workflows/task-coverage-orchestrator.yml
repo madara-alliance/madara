@@ -105,6 +105,17 @@ jobs:
       - name: Check rust version
         run: rustup show
 
+      - name: Cache nextest
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/nextest
+            target/nextest-*
+          key: ${{ runner.os }}-nextest-cov-orchestrator-${{ hashFiles('orchestrator/**/*.rs','**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-nextest-cov-orchestrator-${{ hashFiles('**/Cargo.lock') }}
+            ${{ runner.os }}-nextest-cov-orchestrator-
+
       - name: Run llvm-cov tests
         continue-on-error: true
         env:
