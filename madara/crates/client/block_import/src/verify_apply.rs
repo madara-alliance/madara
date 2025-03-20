@@ -994,7 +994,6 @@ mod verify_apply_tests {
                 reorg_parent_block = Some(new_parent_block);
             }
             let mut reorg_parent_hash = parent_hash
-                .clone()
                 .expect("logic error: we should have created at least one block which is our parent");
 
             let mut parent_height = args.original_chain_length;
