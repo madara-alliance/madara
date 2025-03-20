@@ -284,10 +284,17 @@ impl Mempool {
     fn retrieve_nonce_info_l1_handler(&self, nonce: Felt) -> Result<NonceInfo, MempoolError> {
         let nonce = Nonce(nonce);
         let nonce_next = nonce.try_increment()?;
-        let nonce_target =
-            self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
 
-        match nonce_next.cmp(&nonce_target) {
+        // TODO: This would break if the txs are not ordered --> l1 nonce latest should be updated only after execution
+        // Currently is updated after inclusion in mempool
+        let current_nonce = self.backend.get_l1_messaging_nonce_latest()?;
+        // first l1 handler tx, where get_l1_messaging_nonce_latest returns None
+        let target_nonce = match current_nonce {
+            Some(nonce) => nonce.try_increment()?,
+            None => Nonce(Felt::ZERO),
+        };
+
+        match nonce.cmp(&target_nonce) {
             std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
             std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
             std::cmp::Ordering::Greater => Ok(NonceInfo::pending(nonce, nonce_next)),
@@ -1708,24 +1715,23 @@ mod test {
     ) {
         let mempool = Mempool::new(Arc::clone(&backend), l1_data_provider, MempoolLimits::for_testing());
 
-        // Transactions with any nonce should be marked as ready if there is
-        // nothing else in db
-
+        // First l1 handler tx (nonce == 0) is ready if there are nothing in db yet
         assert_eq!(
             mempool.retrieve_nonce_info_l1_handler(Felt::ZERO).unwrap(),
             NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE))
         );
 
+        // Non-zero l1 handler txs is accepted in pending state if older ones are still not processed
         assert_eq!(
             mempool.retrieve_nonce_info_l1_handler(Felt::ONE).unwrap(),
-            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO))
+            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO))
         );
 
         // Updates the latest l1 nonce in db
         backend.set_l1_messaging_nonce(Nonce(Felt::ZERO)).expect("Failed to update l1 messaging nonce in db");
 
-        // A l1 transaction has been stored in db! Now proper nonce ordering is
-        // enforced.
+        // First l1 transaction has been stored in db. If we receive anything less than the next Nonce 
+        // We get an error
 
         assert_matches::assert_matches!(
             mempool.retrieve_nonce_info_l1_handler(Felt::ZERO),
