@@ -10252,6 +10252,7 @@ dependencies = [
  "mp-proto",
  "mp-transactions",
  "starknet-types-core",
+ "tokio",
 ]
 
 [[package]]

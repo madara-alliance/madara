@@ -1,27 +1,27 @@
 pub struct MqSender<T: Send + Clone> {
     queue: std::sync::Arc<MessageQueue<T>>,
-    reader: std::sync::Arc<ReadRegion>,
-    writer: WriteRegion,
+    wake: std::sync::Arc<tokio::sync::Notify>,
 }
 
 pub struct MqReceiver<T: Send + Clone> {
     queue: std::sync::Arc<MessageQueue<T>>,
-    reader: std::sync::Arc<ReadRegion>,
+    wake: std::sync::Arc<tokio::sync::Notify>,
 }
 
 pub struct MqGuard<T: Send + Clone> {
-    elem: T,
-    // Well this is VERY unsafe. This is a pointer to the element the guard is holding but in the
-    // actual message queue. This is so that the guard can mark it as acknowledged on drop.
-    cell: std::ptr::NonNull<AckCell<T>>,
+    ack: bool,
+    queue: std::sync::Arc<MessageQueue<T>>,
+    cell_ptr: std::ptr::NonNull<AckCell<T>>,
 }
 
 struct MessageQueue<T: Send + Clone> {
     ring: std::ptr::NonNull<AckCell<T>>,
+    writter: WriteRegion,
+    reader: ReadRegion,
     cap: usize,
 }
 
-struct AckCell<T> {
+struct AckCell<T: Clone> {
     elem: T,
     ack: std::sync::atomic::AtomicBool,
 }
@@ -32,96 +32,86 @@ struct ReadRegion {
 }
 
 struct WriteRegion {
-    start: usize,
-    size: usize,
-    // WriteRegion is NOT `Send` and follows a single source of mutation
-    _phantom: std::marker::PhantomData<*const ()>,
-}
-
-impl<T: Send + Clone> Drop for MqSender<T> {
-    fn drop(&mut self) {
-        self.reader.size.store(0, std::sync::atomic::Ordering::Release);
-
-        let start = self.writer.start;
-        let stop = start + self.writer.size;
-
-        for i in (start..stop).map(|i| fast_mod(i, self.queue.cap)) {
-            unsafe { drop(std::ptr::read(self.queue.ring.as_ptr().add(i))) }
-        }
-    }
+    start: std::sync::atomic::AtomicUsize,
+    size: std::sync::atomic::AtomicUsize,
 }
 
 impl<T: Send + Clone> Drop for MqGuard<T> {
     fn drop(&mut self) {
-        let cell = unsafe { std::ptr::read(self.cell.as_ptr()) };
-        cell.ack.store(true, std::sync::atomic::Ordering::Release);
+        // If the element was not acknowledged, we add it back to the queue to be picked up again.
+        if !self.ack {
+            let elem = self.retrieve();
+            self.queue.write(elem);
+        }
     }
 }
 
 impl<T: Send + Clone> Drop for MessageQueue<T> {
     fn drop(&mut self) {
+        self.reader.size.store(0, std::sync::atomic::Ordering::Release);
+
+        let start = self.writter.start();
+        let stop = start + self.writter.size();
+
+        for i in (start..stop).map(|i| fast_mod(i, self.cap)) {
+            unsafe { std::ptr::read(self.ring.as_ptr().add(i)) };
+        }
+
         let layout = std::alloc::Layout::array::<T>(self.cap).unwrap();
         unsafe { std::alloc::dealloc(self.ring.as_ptr() as *mut u8, layout) }
     }
 }
 
-impl<T: Send + Clone> std::ops::Deref for MqGuard<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.elem
-    }
-}
-
-impl<T: Send + Clone> std::ops::DerefMut for MqGuard<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.elem
-    }
-}
-
 pub fn channel<T: Send + Clone>(cap: usize) -> (MqSender<T>, MqReceiver<T>) {
-    let mq_s = std::sync::Arc::new(MessageQueue::new(cap));
-    let mq_r = std::sync::Arc::clone(&mq_s);
-    let reader_s = std::sync::Arc::new(ReadRegion::new());
-    let reader_r = std::sync::Arc::clone(&reader_s);
-    let writer = WriteRegion::new(cap);
+    let queue_s = std::sync::Arc::new(MessageQueue::new(cap));
+    let queue_r = std::sync::Arc::clone(&queue_s);
 
-    let sx = MqSender { queue: mq_s, reader: reader_s, writer };
-    let rx = MqReceiver { queue: mq_r, reader: reader_r };
+    let wake_s = std::sync::Arc::new(tokio::sync::Notify::new());
+    let wake_r = std::sync::Arc::clone(&wake_s);
+
+    let sx = MqSender { queue: queue_s, wake: wake_s };
+    let rx = MqReceiver { queue: queue_r, wake: wake_r };
 
     (sx, rx)
 }
 
 impl<T: Send + Clone> MqSender<T> {
-    pub fn send(&mut self, elem: T) -> Option<T> {
-        let res = self.writer.write(elem, self.queue.ring, self.queue.cap);
-        self.reader.grow(self.queue.cap);
-
-        res
-    }
-
-    pub fn resubscribe(&self) -> MqReceiver<T> {
-        let queue = std::sync::Arc::clone(&self.queue);
-        let reader = std::sync::Arc::clone(&self.reader);
-
-        MqReceiver { queue, reader }
+    pub async fn send(&self, elem: T) -> Option<T> {
+        match self.queue.write(elem) {
+            Some(elem) => Some(elem), // Failed to write to the queue
+            None => {
+                self.wake.notify_waiters();
+                None
+            }
+        }
     }
 }
 
 impl<T: Send + Clone> MqReceiver<T> {
-    pub async fn read(&self) -> Option<MqGuard<T>> {
-        // TODO: this is not really correct. We currently don't have a good way to check and see if
-        // the message queue was closed by the sender. An Arc<AtomicBool> shared between sender and
-        // receivers seems like it could be a good idea?
-        while self.reader.size.load(std::sync::atomic::Ordering::Relaxed) == 0 {}
-        self.reader.read(self.queue.ring, self.queue.cap)
+    pub async fn rcv(&self) -> Option<MqGuard<T>> {
+        loop {
+            match self.queue.read() {
+                Some(cell_ptr) => break Some(MqGuard::new(std::sync::Arc::clone(&self.queue), cell_ptr)),
+                None => self.wake.notified().await,
+            }
+        }
+    }
+}
+
+impl<T: Send + Clone> MqGuard<T> {
+    pub fn new(queue: std::sync::Arc<MessageQueue<T>>, cell_ptr: std::ptr::NonNull<AckCell<T>>) -> Self {
+        MqGuard { ack: false, queue, cell_ptr }
     }
 
-    pub fn resubscribe(&self) -> MqReceiver<T> {
-        let queue = std::sync::Arc::clone(&self.queue);
-        let reader = std::sync::Arc::clone(&self.reader);
+    pub fn acknowledge(mut self) -> T {
+        self.ack = true;
+        self.retrieve()
+    }
 
-        MqReceiver { queue, reader }
+    fn retrieve(&self) -> T {
+        let cell = unsafe { std::ptr::read(self.cell_ptr.as_ptr()) };
+        cell.ack.store(true, std::sync::atomic::Ordering::Release);
+        cell.elem.clone()
     }
 }
 
@@ -147,11 +137,26 @@ impl<T: Send + Clone> MessageQueue<T> {
             None => std::alloc::handle_alloc_error(layout),
         };
 
-        Self { ring, cap }
+        let writter = WriteRegion::new(cap);
+        let reader = ReadRegion::new();
+
+        Self { ring, cap, writter, reader }
+    }
+
+    fn read(&self) -> Option<std::ptr::NonNull<AckCell<T>>> {
+        self.reader.read(self.ring, self.cap)
+    }
+
+    fn write(&self, elem: T) -> Option<T> {
+        let res = self.writter.write(elem, self.ring, self.cap);
+        if res.is_none() {
+            self.reader.grow(self.cap);
+        }
+        res
     }
 }
 
-impl<T> AckCell<T> {
+impl<T: Clone> AckCell<T> {
     fn new(elem: T) -> Self {
         Self { elem, ack: std::sync::atomic::AtomicBool::new(false) }
     }
@@ -170,25 +175,25 @@ impl ReadRegion {
         self.size.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    fn read<T: Send + Clone>(&self, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Option<MqGuard<T>> {
+    fn read<T: Send + Clone>(
+        &self,
+        buf: std::ptr::NonNull<AckCell<T>>,
+        cap: usize,
+    ) -> Option<std::ptr::NonNull<AckCell<T>>> {
         let size = self.size();
         let res = if size == 0 {
             // Note that we do not try to grow the read region in case there is nothing left to
             // read. This is because while cells have and `ack` state to attest if they have been
             // read, we do not store any extra information concerning their write status. Instead,
-            // it is the responsibility of the `MqSender` to grow the read region whenever it sends
-            // a value.
+            // it is the responsibility of the queue to grow the read region whenever it sends a new
+            // value.
             None
         } else {
             let start = self.start();
             self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
             self.size.store(size - 1, std::sync::atomic::Ordering::Release); // checked above
 
-            let ptr = unsafe { buf.as_ptr().add(start) };
-            let elem = unsafe { std::ptr::read(ptr).elem.clone() };
-            let cell = std::ptr::NonNull::new(ptr).expect("Memory is already initialized");
-
-            Some(MqGuard { elem, cell })
+            Some(unsafe { buf.add(start) })
         };
 
         // Since we perform atomic loads and stores separately, this fence is required to ensure
@@ -204,32 +209,51 @@ impl ReadRegion {
     }
 
     fn grow(&self, cap: usize) {
-        todo!()
+        let size = self.size.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        debug_assert_ne!(size, cap);
     }
 }
 
 impl WriteRegion {
     fn new(size: usize) -> Self {
         assert!(size > 0);
-        Self { start: 0, size, _phantom: std::marker::PhantomData }
+        Self { start: std::sync::atomic::AtomicUsize::new(0), size: std::sync::atomic::AtomicUsize::new(size) }
     }
 
-    fn write<T>(&mut self, elem: T, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Option<T> {
-        if self.size == 0 && self.grow(buf, cap).is_err() {
+    fn start(&self) -> usize {
+        self.start.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn size(&self) -> usize {
+        self.start.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn write<T: Clone>(&self, elem: T, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Option<T> {
+        let size = self.size();
+        let res = if size == 0 && self.grow(buf, cap).is_err() {
             Some(elem)
         } else {
-            unsafe { std::ptr::write(buf.as_ptr().add(self.start), AckCell::new(elem)) };
-            self.start = fast_mod(self.start + 1, cap);
-            self.size -= 1; // checked above, `grow` will increment size by 1 if it succeeds
+            let start = self.start();
+
+            // size - 1 is checked above and `grow` will increment size by 1 if it succeeds, so
+            // whatever happens size > 0
+            self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
+            self.size.store(size - 1, std::sync::atomic::Ordering::Release);
+
+            unsafe { std::ptr::write(buf.as_ptr().add(start), AckCell::new(elem)) };
             None
-        }
+        };
+
+        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+        res
     }
 
-    fn grow<T>(&mut self, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Result<(), &'static str> {
+    fn grow<T: Clone>(&self, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Result<(), &'static str> {
         // We are indexing the element right AFTER the end of the write region to see if we can
         // overwrite it (ie: it has been read and acknowledged)
-        let stop = fast_mod(self.start + self.size, cap);
-        let cell = unsafe { std::ptr::read(buf.as_ptr().add(stop)) };
+        let size = self.size();
+        let start = self.start();
+        let stop = fast_mod(start + size, cap);
 
         // There are a few invariants which guarantee that this will never index into uninitialized
         // memory:
@@ -246,11 +270,12 @@ impl WriteRegion {
         // Note that the `ack` state of that value/cell might have been updated by a `MqGuard` in
         // the meantime, which is what we are checking for: we cannot grow and mark a value as ready
         // to write to if it has not already been read and acknowledged.
+        let cell = unsafe { std::ptr::read(buf.as_ptr().add(stop)) };
         let ack = cell.ack.load(std::sync::atomic::Ordering::Acquire);
 
         let res = if ack {
-            self.size += 1;
-            debug_assert!(self.size <= cap);
+            debug_assert!(size + 1 <= cap);
+            self.size.store(size + 1, std::sync::atomic::Ordering::Release);
 
             // we need to drop the element since it might be overwritten in the future
             drop(cell.elem);

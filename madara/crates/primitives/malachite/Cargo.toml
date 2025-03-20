@@ -21,5 +21,8 @@ starknet-types-core.workspace = true
 libp2p.workspace = true
 malachite-core-types.workspace = true
 
+# Async
+tokio.workspace = true
+
 [lints]
 workspace = true
