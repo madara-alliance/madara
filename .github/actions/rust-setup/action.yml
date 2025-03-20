@@ -139,28 +139,28 @@ runs:
       uses: actions/cache@v4
       with:
         path: orchestrator/build
-        key: snos-${{ inputs.python-version }}-${{ env.CAIRO_LANG_COMMIT }}
+        key: snos-${{ inputs.python-version }}-${{ env.CAIRO_LANG_COMMIT }}-${{ hashFiles('orchestrator/cairo-lang/**/*.py') }}
+        restore-keys: |
+          snos-${{ inputs.python-version }}-${{ env.CAIRO_LANG_COMMIT }}-
+          snos-${{ inputs.python-version }}-
 
     - name: Cache Python packages
       id: cache-python
-      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.build-snos == 'true'  }}
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: pip-${{ runner.os }}-python-${{ inputs.python-version }}
 
     - name: Install Cairo 0
-      if: ${{ inputs.build-snos == 'true'  && steps.cache-snos.outputs.cache-hit != 'true' && steps.cache-python.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.build-snos == 'true' }}
       shell: bash
       run: |
-        # Installing deps
         pip3 install ecdsa fastecdsa sympy
-
-        # Installing cairo lang
         pip3 install cairo-lang
 
     - name: Build SNOS files
-      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.build-snos == 'true'}}
       shell: bash
       run: |
         make snos

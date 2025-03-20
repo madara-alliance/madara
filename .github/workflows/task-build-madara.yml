@@ -129,7 +129,10 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
+          key: ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-${{ hashFiles('cairo/**/*.cairo', 'cairo/**/Scarb.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-${{ hashFiles('cairo/**/Scarb.toml') }}
+            ${{ runner.os }}-cairo-${{ env.BUILD_SCARB_VERSION }}-
 
       - name: Display hashes
         run: |
