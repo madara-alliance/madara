@@ -219,9 +219,16 @@ pub struct BlockImportResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingBlockImportResult {}
 
-/// Output of a [`crate::reorg`] operation.
+/// Output of a [`crate::reorg`] operation. Fields are designed after `ReorgData` from the v0.8 RPC
+/// spec (https://github.com/starkware-libs/starknet-specs/blob/6e5a577802a5e117da747296bed0545ee41f451d/api/starknet_ws_api.json#L348)
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReorgResult {
-    pub from: Felt,
-    pub to: Felt,
+    /// Hash of the first known block of the orphaned chain
+    pub starting_block_hash: Felt,
+    /// Number of the first known block of the orphaned chain
+    pub starting_block_number: u64,
+    /// The last known block of the orphaned chain
+    pub ending_block_hash: Felt,
+    /// Number of the last known block of the orphaned chain
+    pub ending_block_number: u64,
 }
