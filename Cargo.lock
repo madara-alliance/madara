@@ -9403,18 +9403,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "malachite"
-version = "0.8.0"
-dependencies = [
- "informalsystems-malachitebft-core-types",
- "libp2p",
- "mp-block",
- "mp-proto",
- "mp-transactions",
- "starknet-types-core",
-]
-
-[[package]]
 name = "match_cfg"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10252,6 +10240,18 @@ dependencies = [
  "starknet-types-core",
  "thiserror 2.0.3",
  "url",
+]
+
+[[package]]
+name = "mp-malachite"
+version = "0.8.0"
+dependencies = [
+ "informalsystems-malachitebft-core-types",
+ "libp2p",
+ "mp-block",
+ "mp-proto",
+ "mp-transactions",
+ "starknet-types-core",
 ]
 
 [[package]]

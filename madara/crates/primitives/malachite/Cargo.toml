@@ -1,5 +1,5 @@
 [package]
-name = "malachite"
+name = "mp-malachite"
 authors.workspace = true
 homepage.workspace = true
 edition.workspace = true

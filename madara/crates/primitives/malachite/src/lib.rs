@@ -1,3 +1,4 @@
+mod channel;
 mod context;
 mod proposal;
 mod types;
