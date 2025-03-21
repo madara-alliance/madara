@@ -99,6 +99,12 @@ RUN cargo build --profile=production --all
 FROM debian:stable-slim
 LABEL description="Production Binary for Madara Nodes"
 
+# Define port arguments with defaults
+ARG PARACHAIN_P2P_PORT=30333
+ARG RELAYCHAIN_P2P_PORT=30334
+ARG RPC_PORT=9944
+ARG PROMETHEUS_PORT=9615
+
 # Required for libssl
 RUN apt-get update && apt-get install --assume-yes openssl
 
@@ -123,7 +129,7 @@ RUN chmod uog+x /madara/madara /madara/orchestrator
 # 30334 for relaychain p2p
 # 9944 for Websocket & RPC call
 # 9615 for Prometheus (metrics)
-EXPOSE 30333 30334 9944 9615
+EXPOSE ${PARACHAIN_P2P_PORT} ${RELAYCHAIN_P2P_PORT} ${RPC_PORT} ${PROMETHEUS_PORT}
 
 VOLUME ["/data"]
 
