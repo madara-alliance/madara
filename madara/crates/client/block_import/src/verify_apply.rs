@@ -334,6 +334,7 @@ fn block_hash(
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
 ///
 /// TODO: consider renaming this in order to distinguish between "reorg" and "reverting".
+#[allow(dead_code)] // not used yet outside of tests
 fn reorg(
     backend: &MadaraBackend,
     new_tip: &PreValidatedBlock, // TODO: we don't need a PreValidatedBlock, do we?
