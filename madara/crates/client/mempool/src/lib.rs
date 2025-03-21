@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use blockifier::blockifier::stateful_validator::StatefulValidatorError;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo};
+use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo, SerializedMempoolTx};
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
@@ -27,8 +27,8 @@ use starknet_types_core::felt::Felt;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
-use tx::blockifier_to_saved_tx;
 use tx::saved_to_blockifier_tx;
+use tx::{blockifier_to_saved_tx, SavedToBlockifierTxError};
 
 mod inner;
 mod l1;
@@ -54,12 +54,19 @@ pub enum MempoolError {
     Exec(#[from] mc_exec::Error),
     #[error(transparent)]
     StarknetApi(#[from] StarknetApiError),
-    #[error("Preprocessing transaction: {0:#}")]
+    #[error("Preprocessing broadcasted transaction: {0:#}")]
     BroadcastedToBlockifier(#[from] ToBlockifierError),
+    #[error("Preprocessing saved transaction: {0:#}")]
+    SavedToBlockifier(#[from] SavedToBlockifierTxError),
 }
 impl MempoolError {
     pub fn is_internal(&self) -> bool {
-        matches!(self, MempoolError::StorageError(_) | MempoolError::BroadcastedToBlockifier(_))
+        matches!(
+            self,
+            MempoolError::StorageError(_)
+                | MempoolError::BroadcastedToBlockifier(_)
+                | MempoolError::SavedToBlockifier(_)
+        )
     }
 }
 
@@ -83,6 +90,13 @@ pub trait MempoolProvider: Send + Sync {
         tx: L1HandlerTransaction,
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError>;
+    fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> Result<(), MempoolError>;
+
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
@@ -145,7 +159,7 @@ impl Mempool {
             let (tx, arrived_at) = saved_to_blockifier_tx(saved_tx, tx_hash, &converted_class)
                 .context("Converting saved tx to blockifier")?;
 
-            if let Err(err) = self.accept_tx(tx, converted_class, arrived_at, nonce_readiness) {
+            if let Err(err) = self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_readiness) {
                 match err {
                     MempoolError::InnerMempool(TxInsertionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
@@ -188,29 +202,42 @@ impl Mempool {
             }
         }
 
+        // Add to the mempool.
         if !is_only_query(&tx) {
-            tracing::debug!("Adding to inner mempool tx_hash={:#x}", tx_hash);
-            // Add to db
             let saved_tx = blockifier_to_saved_tx(&tx, arrived_at);
-
             // TODO: should we update this to store only if the mempool accepts
             // this transaction?
             self.backend.save_mempool_transaction(&saved_tx, tx_hash, &converted_class, &nonce_info)?;
 
-            // Add it to the inner mempool
-            let force = false;
-            let nonce = nonce_info.nonce;
-            let nonce_next = nonce_info.nonce_next;
-            self.inner.write().expect("Poisoned lock").insert_tx(
-                MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
-                force,
-                true,
-                nonce_info,
-            )?;
-
-            self.metrics.accepted_transaction_counter.add(1, &[]);
+            self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)?;
         }
 
+        Ok(())
+    }
+
+    /// Does not save to the database.
+    fn add_to_inner_mempool(
+        &self,
+        tx_hash: Felt,
+        tx: Transaction,
+        arrived_at: SystemTime,
+        converted_class: Option<ConvertedClass>,
+        nonce_info: NonceInfo,
+    ) -> Result<(), MempoolError> {
+        tracing::debug!("Adding to inner mempool tx_hash={:#x}", tx_hash);
+
+        // Add it to the inner mempool
+        let force = false;
+        let nonce = nonce_info.nonce;
+        let nonce_next = nonce_info.nonce_next;
+        self.inner.write().expect("Poisoned lock").insert_tx(
+            MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
+            force,
+            true,
+            nonce_info,
+        )?;
+
+        self.metrics.accepted_transaction_counter.add(1, &[]);
         Ok(())
     }
 
@@ -339,7 +366,7 @@ impl MempoolProvider for Mempool {
         tx: L1HandlerTransaction,
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError> {
-        let nonce = Nonce(Felt::from(tx.nonce));
+        let nonce = Nonce(Felt::from(tx.nonce)); // TODO: this is wrong.
         let (btx, class) =
             tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
 
@@ -401,6 +428,19 @@ impl MempoolProvider for Mempool {
         };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceInfo::default())?;
         Ok(res)
+    }
+
+    fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> Result<(), MempoolError> {
+        let nonce_info = self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce())?;
+        self.backend.save_mempool_transaction(&tx, tx_hash, &converted_class, &nonce_info)?;
+        let (tx, arrived_at) = saved_to_blockifier_tx(tx, tx_hash, &converted_class)?;
+
+        self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)
     }
 
     // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]

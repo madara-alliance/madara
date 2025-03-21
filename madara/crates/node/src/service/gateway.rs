@@ -38,11 +38,8 @@ impl Service for GatewayService {
             mc_gateway_server::service::start_server(
                 db_backend,
                 add_tx_provider,
-                config.feeder_gateway_enable,
-                config.gateway_enable,
-                config.gateway_external,
-                config.gateway_port,
                 ctx,
+                config.as_gateway_server_config(),
             )
         });
         Ok(())

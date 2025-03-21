@@ -26,7 +26,9 @@ mp-utils = { workspace = true, features = ["testing"] }
 m-proc-macros = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
-mc-gateway-client = { workspace = true }
+mc-gateway-client = { workspace = true, features = [
+  "add_verified_transaction",
+] }
 mc-mempool = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }

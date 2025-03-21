@@ -66,6 +66,18 @@ pub enum Transaction {
     DeployAccount(DeployAccountTransaction),
 }
 
+impl Transaction {
+    pub fn nonce(&self) -> Felt {
+        match self {
+            Transaction::Invoke(tx) => *tx.nonce(),
+            Transaction::L1Handler(tx) => tx.nonce.into(), // TODO: this looks wrong
+            Transaction::Declare(tx) => *tx.nonce(),
+            Transaction::Deploy(_tx) => Felt::ZERO,
+            Transaction::DeployAccount(tx) => *tx.nonce(),
+        }
+    }
+}
+
 impl From<InvokeTransactionV0> for Transaction {
     fn from(tx: InvokeTransactionV0) -> Self {
         Transaction::Invoke(InvokeTransaction::V0(tx))

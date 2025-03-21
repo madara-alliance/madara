@@ -4,9 +4,12 @@ pub mod mempool;
 use std::sync::Arc;
 
 pub use forward_to_provider::*;
+use mc_db::mempool_db::SerializedMempoolTx;
 pub use mempool::*;
 
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_class::ConvertedClass;
+use mp_convert::Felt;
 use mp_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -18,6 +21,7 @@ use crate::utils::OptionExt;
 
 #[async_trait]
 pub trait AddTransactionProvider: Send + Sync {
+    /// Madara specific.
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTransactionV0,
@@ -33,6 +37,14 @@ pub trait AddTransactionProvider: Send + Sync {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult>;
+
+    /// Madara specific.
+    async fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> RpcResult<()>;
 }
 
 /// A simple struct whose sole purpose is to toggle between a L2 sync and local
@@ -109,5 +121,17 @@ impl AddTransactionProvider for AddTransactionProviderGroup {
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
         self.provider().ok_or_internal_server_error(Self::ERROR)?.add_invoke_transaction(invoke_transaction).await
+    }
+
+    async fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> RpcResult<()> {
+        self.provider()
+            .ok_or_internal_server_error(Self::ERROR)?
+            .add_trusted_validated_transaction(tx_hash, tx, converted_class)
+            .await
     }
 }

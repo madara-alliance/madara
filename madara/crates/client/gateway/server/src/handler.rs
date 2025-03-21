@@ -1,16 +1,21 @@
-use std::sync::Arc;
-
+use super::{
+    error::{GatewayError, OptionExt, ResultExt},
+    helpers::{
+        block_id_from_params, create_json_response, create_response_with_json_body, create_string_response,
+        get_params_from_request, include_block_params,
+    },
+};
 use bytes::Buf;
 use http_body_util::BodyExt;
-use hyper::{body::Incoming, Request, Response};
-use mc_db::MadaraBackend;
+use hyper::{body::Incoming, Request, Response, StatusCode};
+use mc_db::{mempool_db::SerializedMempoolTx, MadaraBackend};
 use mc_rpc::{
     providers::AddTransactionProvider,
     versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
     Starknet,
 };
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
-use mp_class::{ClassInfo, ContractClass};
+use mp_class::{ClassInfo, ContractClass, ConvertedClass};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
@@ -22,17 +27,10 @@ use mp_gateway::{
 };
 use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_utils::service::ServiceContext;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-
-use super::{
-    error::{GatewayError, OptionExt, ResultExt},
-    helpers::{
-        block_id_from_params, create_json_response, create_response_with_json_body, create_string_response,
-        get_params_from_request, include_block_params,
-    },
-};
+use std::sync::Arc;
 
 pub async fn handle_get_block(
     req: Request<Incoming>,
@@ -326,6 +324,33 @@ pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Resul
 pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<String>, GatewayError> {
     let public_key = &backend.chain_config().private_key.public;
     Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
+}
+
+pub async fn handle_add_verified_transaction(
+    req: Request<Incoming>,
+    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+) -> Result<Response<String>, GatewayError> {
+    let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
+
+    #[derive(Serialize, Deserialize)]
+    struct AddVerifiedTransaction {
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    }
+
+    let transaction = bincode::deserialize_from::<_, AddVerifiedTransaction>(whole_body.reader())
+        .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
+
+    add_transaction_provider
+        .add_trusted_validated_transaction(transaction.tx_hash, transaction.tx, transaction.converted_class)
+        .await
+        .map_err(|e| GatewayError::InternalServerError(format!("{e:#}")))?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(String::new())
+        .map_err(|e| GatewayError::InternalServerError(format!("Building response: {e:#}")))
 }
 
 pub async fn handle_add_transaction(

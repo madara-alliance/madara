@@ -14,7 +14,15 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+default = []
+add_verified_transaction = ["mc-db", "bincode"]
+
 [dependencies]
+
+# add_verified_transaction feature
+bincode = { workspace = true, optional = true }
+mc-db = { workspace = true, optional = true }
 
 # Madara
 mp-block.workspace = true

@@ -1,8 +1,11 @@
 use super::AddTransactionProvider;
 use crate::{errors::StarknetRpcApiError, utils::display_internal_server_error};
 use jsonrpsee::core::{async_trait, RpcResult};
+use mc_db::mempool_db::SerializedMempoolTx;
 use mc_mempool::Mempool;
 use mc_mempool::MempoolProvider;
+use mp_class::ConvertedClass;
+use mp_convert::Felt;
 use mp_rpc::AddInvokeTransactionResult;
 use mp_rpc::{
     BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -73,5 +76,17 @@ impl AddTransactionProvider for MempoolAddTxProvider {
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
         Ok(self.mempool.tx_accept_invoke(invoke_transaction).map_err(StarknetRpcApiError::from)?)
+    }
+
+    async fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> RpcResult<()> {
+        Ok(self
+            .mempool
+            .add_trusted_validated_transaction(tx_hash, tx, converted_class)
+            .map_err(StarknetRpcApiError::from)?)
     }
 }

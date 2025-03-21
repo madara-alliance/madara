@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use blockifier::transaction::{account_transaction::AccountTransaction, errors::TransactionExecutionError};
-use mc_db::mempool_db::SavedTransaction;
+use mc_db::mempool_db::SerializedMempoolTx;
 use mp_class::{compile::ClassCompilationError, ConvertedClass};
 use mp_convert::ToFelt;
 use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
@@ -16,41 +16,41 @@ use starknet_types_core::felt::Felt;
 pub fn blockifier_to_saved_tx(
     tx: &blockifier::transaction::transaction_execution::Transaction,
     arrived_at: SystemTime,
-) -> SavedTransaction {
+) -> SerializedMempoolTx {
     let arrived_at = arrived_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
     match tx {
         BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::Declare(tx), execution_flags }) => {
-            SavedTransaction {
+            SerializedMempoolTx {
                 only_query: execution_flags.only_query,
                 tx: StarknetApiTransaction::Declare(tx.tx.clone()).into(),
                 paid_fee_on_l1: None,
-                contract_address: None,
+                contract_address: **tx.tx.sender_address(),
                 arrived_at,
             }
         }
         BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), execution_flags }) => {
-            SavedTransaction {
+            SerializedMempoolTx {
                 only_query: execution_flags.only_query,
                 tx: StarknetApiTransaction::DeployAccount(tx.tx.clone()).into(),
                 paid_fee_on_l1: None,
-                contract_address: Some(tx.contract_address.to_felt()),
+                contract_address: tx.contract_address.to_felt(),
                 arrived_at,
             }
         }
         BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::Invoke(tx), execution_flags }) => {
-            SavedTransaction {
+            SerializedMempoolTx {
                 only_query: execution_flags.only_query,
                 tx: StarknetApiTransaction::Invoke(tx.tx.clone()).into(),
                 paid_fee_on_l1: None,
-                contract_address: None,
+                contract_address: **tx.tx.sender_address(),
                 arrived_at,
             }
         }
-        BTransaction::L1Handler(tx) => SavedTransaction {
+        BTransaction::L1Handler(tx) => SerializedMempoolTx {
             only_query: false,
             tx: StarknetApiTransaction::L1Handler(tx.tx.clone()).into(),
             paid_fee_on_l1: Some(tx.paid_fee_on_l1.0),
-            contract_address: None,
+            contract_address: **tx.tx.contract_address,
             arrived_at,
         },
     }
@@ -71,7 +71,7 @@ pub enum SavedToBlockifierTxError {
 }
 
 pub fn saved_to_blockifier_tx(
-    saved_tx: SavedTransaction,
+    saved_tx: SerializedMempoolTx,
     tx_hash: Felt,
     converted_class: &Option<ConvertedClass>,
 ) -> Result<(BTransaction, SystemTime), SavedToBlockifierTxError> {
@@ -103,7 +103,6 @@ pub fn saved_to_blockifier_tx(
                 tx_hash,
                 contract_address: saved_tx
                     .contract_address
-                    .ok_or(SavedToBlockifierTxError::MissingField("contract_address"))?
                     .try_into()
                     .map_err(|_| SavedToBlockifierTxError::InvalidContractAddress)?,
             }),

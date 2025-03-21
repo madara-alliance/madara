@@ -1,20 +1,15 @@
-use std::sync::Arc;
-
+use self::server::rpc_api_build;
+use crate::cli::RpcParams;
 use jsonrpsee::server::ServerHandle;
-
 use mc_db::MadaraBackend;
 use mc_rpc::{
     providers::{AddTransactionProvider, AddTransactionProviderGroup},
     rpc_api_admin, rpc_api_user, Starknet,
 };
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-
 use metrics::RpcMetrics;
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use server::{start_server, ServerConfig};
-
-use crate::cli::RpcParams;
-
-use self::server::rpc_api_build;
+use std::sync::Arc;
 
 mod metrics;
 mod middleware;

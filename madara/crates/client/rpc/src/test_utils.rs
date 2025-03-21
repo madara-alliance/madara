@@ -1,11 +1,12 @@
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_db::MadaraBackend;
+use mc_db::{mempool_db::SerializedMempoolTx, MadaraBackend};
 use mp_block::{
     header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
 use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_class::ConvertedClass;
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
@@ -50,6 +51,14 @@ impl AddTransactionProvider for TestTransactionProvider {
         &self,
         _invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
+        unimplemented!()
+    }
+    async fn add_trusted_validated_transaction(
+        &self,
+        _tx_hash: Felt,
+        _tx: SerializedMempoolTx,
+        _converted_class: Option<ConvertedClass>,
+    ) -> RpcResult<()> {
         unimplemented!()
     }
 }

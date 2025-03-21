@@ -55,10 +55,10 @@ impl Default for NonceInfo {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SavedTransaction {
+pub struct SerializedMempoolTx {
     pub tx: mp_transactions::Transaction,
     pub paid_fee_on_l1: Option<u128>,
-    pub contract_address: Option<Felt>,
+    pub contract_address: Felt,
     pub only_query: bool,
     pub arrived_at: u128,
 }
@@ -67,7 +67,7 @@ pub struct SavedTransaction {
 /// This struct is used as a template to serialize Mempool transactions from the
 /// database without any further allocation.
 struct DbMempoolTxInfoEncoder<'a> {
-    saved_tx: &'a SavedTransaction,
+    saved_tx: &'a SerializedMempoolTx,
     converted_class: &'a Option<ConvertedClass>,
     nonce_info: &'a NonceInfo,
 }
@@ -76,7 +76,7 @@ struct DbMempoolTxInfoEncoder<'a> {
 /// This struct is used as a template to deserialize Mempool transactions from
 /// the database.
 pub struct DbMempoolTxInfoDecoder {
-    pub saved_tx: SavedTransaction,
+    pub saved_tx: SerializedMempoolTx,
     pub converted_class: Option<ConvertedClass>,
     pub nonce_readiness: NonceInfo,
 }
@@ -109,7 +109,7 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self, saved_tx), fields(module = "MempoolDB"))]
     pub fn save_mempool_transaction(
         &self,
-        saved_tx: &SavedTransaction,
+        saved_tx: &SerializedMempoolTx,
         tx_hash: Felt,
         converted_class: &Option<ConvertedClass>,
         nonce_info: &NonceInfo,

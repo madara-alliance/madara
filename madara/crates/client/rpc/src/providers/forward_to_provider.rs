@@ -1,14 +1,16 @@
+use super::AddTransactionProvider;
 use crate::{bail_internal_server_error, errors::StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
+use mc_db::mempool_db::SerializedMempoolTx;
 use mc_gateway_client::GatewayProvider;
+use mp_class::ConvertedClass;
+use mp_convert::Felt;
 use mp_gateway::error::SequencerError;
 use mp_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::BroadcastedDeclareTransactionV0;
-
-use super::AddTransactionProvider;
 
 pub struct ForwardToProvider {
     provider: GatewayProvider,
@@ -79,5 +81,21 @@ impl AddTransactionProvider for ForwardToProvider {
         };
 
         Ok(sequencer_response)
+    }
+
+    async fn add_trusted_validated_transaction(
+        &self,
+        tx_hash: Felt,
+        tx: SerializedMempoolTx,
+        converted_class: Option<ConvertedClass>,
+    ) -> RpcResult<()> {
+        match self.provider.add_verified_transaction(tx_hash, tx, converted_class).await {
+            Ok(response) => response,
+            Err(SequencerError::StarknetError(e)) => {
+                return Err(StarknetRpcApiError::from(e).into());
+            }
+            Err(e) => bail_internal_server_error!("Failed to add invoke transaction to sequencer: {e}"),
+        }
+        Ok(())
     }
 }

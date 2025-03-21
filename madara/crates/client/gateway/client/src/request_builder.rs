@@ -1,7 +1,7 @@
 use super::builder::PausedClient;
-use bytes::Buf;
+use bytes::{Buf, Bytes};
 use http::Method;
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
@@ -81,11 +81,32 @@ impl<'a> RequestBuilder<'a> {
 
         req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let req = req_builder.body(String::new())?;
+        let req = req_builder.body(Full::new(Bytes::from(String::new())))?;
 
         let response: Response<Incoming> =
             self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         Ok(response)
+    }
+
+    #[cfg(feature = "add_verified_transaction")]
+    pub async fn send_post_bincode<T, D>(self, body: D) -> Result<T, SequencerError>
+    where
+        T: DeserializeOwned,
+        D: Serialize,
+    {
+        let uri = self.build_uri()?;
+
+        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
+
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
+
+        let body = bincode::serialize(&body).map_err(|err| SequencerError::HttpCallError(err))?;
+        let body = Bytes::from(body);
+
+        let req = req_builder.body(Full::new(body))?;
+
+        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+        unpack(response).await
     }
 
     pub async fn send_post<T, D>(self, body: D) -> Result<T, SequencerError>
@@ -101,7 +122,7 @@ impl<'a> RequestBuilder<'a> {
 
         let body = serde_json::to_string(&body).map_err(SequencerError::SerializeRequest)?;
 
-        let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
+        let req = req_builder.header(CONTENT_TYPE, "application/json").body(Full::new(Bytes::from(body)))?;
 
         let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         unpack(response).await
