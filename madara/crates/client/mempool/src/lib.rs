@@ -87,7 +87,7 @@ pub trait MempoolProvider: Send + Sync {
         paid_fees_on_l1: u128,
     ) -> Result<L1HandlerTransactionResult, MempoolError>;
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
-    fn tx_take(&mut self) -> Option<MempoolTransaction>;
+    fn tx_take(&self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
     fn txs_re_add(
         &self,
@@ -98,7 +98,7 @@ pub trait MempoolProvider: Send + Sync {
 }
 
 pub struct Mempool {
-    backend: Arc<MadaraBackend>,
+    pub backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     inner: RwLock<MempoolInner>,
     metrics: MempoolMetrics,
@@ -275,13 +275,16 @@ impl Mempool {
         }
     }
 
+    /// This function determines the Nonce status (NonceInfo) for incoming L1 transactions 
+    /// based on the last processed nonce (current_nonce) in the system.
+    ///
     /// L1 Handler nonces represent the ordering of L1 transactions sent by the
     /// core L1 contract. In principle this is a bit strange, as there currently
     /// is only 1 core L1 contract, so all transactions should be ordered by
     /// default. Moreover, these transaction are infrequent, so the risk that
     /// two transactions are emitted at very short intervals seems unlikely.
     /// Still, who knows?
-    fn retrieve_nonce_info_l1_handler(&self, nonce: Felt) -> Result<NonceInfo, MempoolError> {
+    pub fn resolve_nonce_info_l1_handler(&self, nonce: Felt) -> Result<NonceInfo, MempoolError> {
         let nonce = Nonce(nonce);
         let nonce_next = nonce.try_increment()?;
 
@@ -371,7 +374,7 @@ impl MempoolProvider for Mempool {
 
         // INFO: L1 nonce are stored differently in the db because of this, which is
         // why we do not use `retrieve_nonce_readiness`.
-        let nonce_info = self.retrieve_nonce_info_l1_handler(nonce)?;
+        let nonce_info = self.resolve_nonce_info_l1_handler(nonce)?;
 
         let res = L1HandlerTransactionResult { transaction_hash: transaction_hash(&btx) };
         self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
@@ -430,7 +433,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_take(&mut self) -> Option<MempoolTransaction> {
+    fn tx_take(&self) -> Option<MempoolTransaction> {
         if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
             let contract_address = mempool_tx.contract_address().to_felt();
             let nonce_next = mempool_tx.nonce_next;
@@ -1705,11 +1708,11 @@ mod test {
         );
     }
 
-    /// This test makes sure that retrieve_nonce_info_l1_handler has proper
+    /// This test makes sure that resolve_nonce_info_l1_handler has proper
     /// error handling and returns correct values based on the state of the db.
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
-    fn mempool_retrieve_nonce_info_l1_handler(
+    fn mempool_resolve_nonce_info_l1_handler(
         backend: Arc<mc_db::MadaraBackend>,
         l1_data_provider: Arc<MockL1DataProvider>,
     ) {
@@ -1717,13 +1720,13 @@ mod test {
 
         // First l1 handler tx (nonce == 0) is ready if there are nothing in db yet
         assert_eq!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::ZERO).unwrap(),
+            mempool.resolve_nonce_info_l1_handler(Felt::ZERO).unwrap(),
             NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE))
         );
 
         // Non-zero l1 handler txs is accepted in pending state if older ones are still not processed
         assert_eq!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::ONE).unwrap(),
+            mempool.resolve_nonce_info_l1_handler(Felt::ONE).unwrap(),
             NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO))
         );
 
@@ -1734,28 +1737,28 @@ mod test {
         // We get an error
 
         assert_matches::assert_matches!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::ZERO),
+            mempool.resolve_nonce_info_l1_handler(Felt::ZERO),
             Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
         );
 
         // Following nonces should be marked as ready...
 
         assert_eq!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::ONE).unwrap(),
+            mempool.resolve_nonce_info_l1_handler(Felt::ONE).unwrap(),
             NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO))
         );
 
         // ...otherwise they should be marked as pending
 
         assert_eq!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::TWO).unwrap(),
+            mempool.resolve_nonce_info_l1_handler(Felt::TWO).unwrap(),
             NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE))
         );
 
         // We need to compute the next nonce inside retrieve nonce_info, so
         // passing Felt::MAX is not allowed.
         assert_matches::assert_matches!(
-            mempool.retrieve_nonce_info_l1_handler(Felt::MAX),
+            mempool.resolve_nonce_info_l1_handler(Felt::MAX),
             Err(MempoolError::StarknetApi(StarknetApiError::OutOfRange { .. }))
         );
     }

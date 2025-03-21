@@ -30,6 +30,7 @@ mp-utils.workspace = true
 # Starknet
 starknet-types-core.workspace = true
 starknet_api.workspace = true
+blockifier = { workspace = true, features = ["testing"] }
 
 
 # Other

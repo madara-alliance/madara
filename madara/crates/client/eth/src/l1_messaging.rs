@@ -216,6 +216,7 @@ fn get_l1_to_l2_msg_hash(event: &LogMessageToL2) -> anyhow::Result<FixedBytes<32
 
 #[cfg(test)]
 mod l1_messaging_tests {
+    use super::*;
 
     use std::{sync::Arc, time::Duration};
 
@@ -242,6 +243,7 @@ mod l1_messaging_tests {
     use mp_utils::service::ServiceContext;
     use rstest::*;
     use starknet_api::core::Nonce;
+    use blockifier::transaction::transaction_execution::Transaction;
     use starknet_types_core::felt::Felt;
     use tempfile::TempDir;
     use tracing_test::traced_test;
@@ -289,7 +291,7 @@ mod l1_messaging_tests {
                 payload[4] = 4543560;
                 payload[5] = 1082959358903034162641917759097118582889062097851;
                 payload[6] = 221696535382753200248526706088340988821219073423817576256483558730535647368;
-                uint256 nonce = 10000000000000000;
+                uint256 nonce = 0;
                 uint256 fee = 0;
 
                 return MessageData(fromAddress, toAddress, selector, payload, nonce, fee);
@@ -409,6 +411,7 @@ mod l1_messaging_tests {
         // Start worker
         let worker_handle = {
             let db = Arc::clone(&db);
+            let mempool = mempool.clone();
             tokio::spawn(async move {
                 sync(
                     Arc::clone(db.backend()),
@@ -425,6 +428,38 @@ mod l1_messaging_tests {
         // Send a Event and wait for processing, Panic if fail
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
         tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let expected_nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string")); 
+        let current_nonce = mempool.backend.get_l1_messaging_nonce_latest().unwrap().unwrap();
+        assert_eq!(current_nonce, expected_nonce);
+
+        // This will never work as we need to receive L1 handler in order, startin from 0
+        let (handler_tx, handler_tx_hash) = match mempool.tx_take().unwrap().tx {
+            Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
+            Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
+        };
+        
+        // assert_eq!(handler_tx.nonce, nonce);
+        // assert_eq!(
+        //     handler_tx.contract_address,
+        //     ContractAddress::try_from(
+        //         Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370")
+        //             .unwrap()
+        //     )
+        //     .unwrap()
+        // );
+        // assert_eq!(
+        //     handler_tx.entry_point_selector,
+        //     EntryPointSelector(
+        //         Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537")
+        //             .unwrap()
+        //     )
+        // );
+        // assert_eq!(
+        //     handler_tx.calldata.0[0],
+        //     Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
+        // );
+        
 
         // Assert that event was caught by the worker with correct data
         // TODO: Maybe add some more assert
