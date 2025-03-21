@@ -87,11 +87,10 @@ jobs:
           rm -f target/madara-* lcov.info
 
           # run tests for madara client / primitive crates
-          cargo test --release --package "mc-*" --package "mp-*"
+          cargo llvm-cov --release --package "mc-*" --package "mp-*" --no-report
 
       - name: Generate coverage info
         run: |
-          source <(cargo llvm-cov show-env --export-prefix)
           cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload coverage to Coveralls

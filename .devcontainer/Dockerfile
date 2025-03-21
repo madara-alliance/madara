@@ -30,14 +30,20 @@ RUN sudo apt-get update \
     protobuf-compiler \
     build-essential \
     clang \
+    gcc \
+    g++ \
     zsh \
     htop \
     jq \
     tree \
     curl \
     git \
+    llvm \
     wget \
     gnupg \
+    libudev-dev \
+    pkg-config \
+    libgmp3-dev \
     software-properties-common \
     lsb-release \
     ca-certificates \
