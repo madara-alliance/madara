@@ -186,8 +186,6 @@ fn check_parent_hash_and_num(
         expected_block_number
     };
 
-    // TODO: this originally was checked after block number, but we need to check this first to detect a reorg.
-    // TODO: this fn shouldn't be responsible for reorg detection anyway...
     if let Some(parent_block_hash) = parent_block_hash {
         if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
             return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
