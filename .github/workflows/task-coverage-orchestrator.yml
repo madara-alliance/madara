@@ -68,14 +68,12 @@ jobs:
           scarb build
 
       - name: Download Madara binary
-        if: inputs.madara-binary-hash != ''
         uses: actions/download-artifact@v4
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
       - name: Make Madara binary executable
-        if: inputs.madara-binary-hash != ''
         run: chmod +x target/release/madara
 
       - name: Prepare Madara Environment (Orchestrator)
