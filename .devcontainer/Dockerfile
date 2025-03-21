@@ -76,6 +76,11 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.starkup.dev | sh -s -- -y\
     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> $HOME/.zshrc \
     && echo 'export PATH="$HOME/.asdf/shims:$PATH"' >> $HOME/.zshrc
 
+RUN curl -L https://foundry.paradigm.xyz | bash \
+    && echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> $HOME/.zshrc
+
+RUN curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+
 RUN $HOME/.pyenv/bin/pyenv install 3.9 \
     && $HOME/.pyenv/bin/pyenv global 3.9
 

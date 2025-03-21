@@ -11,6 +11,10 @@ rustup show
 echo ">> Node version:"
 node --version
 
+foundryup --install nightly
+echo ">> Foundry version:"
+foundryup --version
+
 asdf install scarb 2.8.2
 asdf set -u scarb 2.8.2 
 echo ">> Scarb version:"
