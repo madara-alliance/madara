@@ -1,4 +1,4 @@
-use mc_db::{MadaraBackendConfig, TrieLogConfig};
+use mc_db::{MadaraBackendConfig, RocksDBConfig, TrieLogConfig};
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -50,19 +50,55 @@ pub struct DbParams {
     /// might be an issue for chains which synchronize slowly.
     #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub flush_every_n_blocks: Option<u64>,
+
+    /// Enable rocksdb statistics. This has a small performance cost for every database operation.
+    #[clap(env = "MADARA_DB_ENABLE_STATISTICS", long)]
+    pub db_enable_statistics: bool,
+
+    /// If not zero, the rocksdb statistics will be dumped into the db LOG file with this frequency.
+    /// Default: 60s.
+    #[clap(env = "MADARA_DB_STATISTICS_PERIOD_SEC", long, default_value_t = 60)]
+    pub db_statistics_period_sec: u32,
+
+    /// Set the memtable budget for a column.
+    #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
+    pub db_memtable_blocks_budget_mib: usize,
+
+    /// Set the memtable budget for a column.
+    #[clap(env = "MADARA_DB_MEMTABLE_CONTRACTS_BUDGET_MIB", long, default_value_t = 128)]
+    pub db_memtable_contracts_budget_mib: usize,
+
+    /// Set the memtable budget for a column.
+    #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 128)]
+    pub db_memtable_other_budget_mib: usize,
+
+    /// Set the memtable budget for a column.
+    #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 0.0)]
+    pub db_memtable_prefix_bloom_filter_ratio: f64,
 }
 
 impl DbParams {
     pub fn backend_config(&self) -> MadaraBackendConfig {
-        MadaraBackendConfig::new(&self.base_path)
-            .restore_from_latest_backup(self.restore_from_latest_backup)
-            .backup_dir(self.backup_dir.clone())
-            .trie_log(TrieLogConfig {
+        MadaraBackendConfig {
+            base_path: self.base_path.clone(),
+            backup_dir: self.backup_dir.clone(),
+            restore_from_latest_backup: self.restore_from_latest_backup,
+            trie_log: TrieLogConfig {
                 max_saved_trie_logs: self.db_max_saved_trie_logs,
                 max_kept_snapshots: self.db_max_kept_snapshots,
                 snapshot_interval: self.db_snapshot_interval,
-            })
-            .backup_every_n_blocks(self.backup_every_n_blocks)
-            .flush_every_n_blocks(self.flush_every_n_blocks)
+            },
+            backup_every_n_blocks: self.backup_every_n_blocks,
+            flush_every_n_blocks: self.flush_every_n_blocks,
+            temp_dir: None,
+            rocksdb: RocksDBConfig {
+                enable_statistics: self.db_enable_statistics,
+                statistics_period_sec: self.db_statistics_period_sec,
+                memtable_blocks_budget_mib: self.db_memtable_blocks_budget_mib,
+                memtable_contracts_budget_mib: self.db_memtable_contracts_budget_mib,
+                memtable_other_budget_mib: self.db_memtable_other_budget_mib,
+                memtable_prefix_bloom_filter_ratio: self.db_memtable_prefix_bloom_filter_ratio,
+            },
+        }
     }
 }

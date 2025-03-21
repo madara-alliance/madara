@@ -55,9 +55,9 @@ impl ContractDbBlockUpdate {
 }
 
 // NB: Columns cf needs prefix extractor of these length during creation
-pub(crate) const CONTRACT_STORAGE_PREFIX_EXTRACTOR: usize = 64;
-pub(crate) const CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR: usize = 32;
-pub(crate) const CONTRACT_NONCES_PREFIX_EXTRACTOR: usize = 32;
+pub(crate) const CONTRACT_STORAGE_PREFIX_LEN: usize = 64;
+pub(crate) const CONTRACT_CLASS_HASH_PREFIX_LEN: usize = 32;
+pub(crate) const CONTRACT_NONCES_PREFIX_LEN: usize = 32;
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
 

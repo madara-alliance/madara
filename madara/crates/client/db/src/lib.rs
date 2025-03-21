@@ -85,6 +85,7 @@ mod update_global_trie;
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
+pub use rocksdb_options::RocksDBConfig;
 pub use watch::{ClosedBlocksReceiver, PendingBlockReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
@@ -92,13 +93,13 @@ pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
-pub fn open_rocksdb(path: &Path) -> anyhow::Result<Arc<DB>> {
-    let opts = rocksdb_global_options()?;
+fn open_rocksdb(path: &Path, config: &RocksDBConfig) -> anyhow::Result<Arc<DB>> {
+    let opts = rocksdb_global_options(config)?;
     tracing::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
         path,
-        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
+        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options(config))),
     )?;
 
     Ok(Arc::new(db))
@@ -413,8 +414,11 @@ pub struct MadaraBackendConfig {
     pub trie_log: TrieLogConfig,
     pub backup_every_n_blocks: Option<u64>,
     pub flush_every_n_blocks: Option<u64>,
+    pub rocksdb: RocksDBConfig,
     #[cfg(any(test, feature = "testing"))]
-    pub _temp_dir: Option<tempfile::TempDir>,
+    pub temp_dir: Option<tempfile::TempDir>,
+    #[cfg(not(any(test, feature = "testing")))]
+    pub temp_dir: Option<()>,
 }
 
 impl MadaraBackendConfig {
@@ -426,14 +430,14 @@ impl MadaraBackendConfig {
             trie_log: Default::default(),
             backup_every_n_blocks: None,
             flush_every_n_blocks: None,
-            #[cfg(any(test, feature = "testing"))]
-            _temp_dir: None,
+            rocksdb: Default::default(),
+            temp_dir: None,
         }
     }
     #[cfg(any(test, feature = "testing"))]
     pub fn new_temp_dir(temp_dir: tempfile::TempDir) -> Self {
         let config = Self::new(temp_dir.as_ref());
-        Self { _temp_dir: Some(temp_dir), ..config }
+        Self { temp_dir: Some(temp_dir), ..config }
     }
     pub fn backup_dir(self, backup_dir: Option<PathBuf>) -> Self {
         Self { backup_dir, ..self }
@@ -488,8 +492,9 @@ impl MadaraBackend {
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let db = open_rocksdb(temp_dir.as_ref()).unwrap();
-        Arc::new(Self::new(None, db, chain_config, MadaraBackendConfig::new_temp_dir(temp_dir)).unwrap())
+        let config = MadaraBackendConfig::new_temp_dir(temp_dir);
+        let db = open_rocksdb(config.temp_dir.as_ref().unwrap().path(), &config.rocksdb).unwrap();
+        Arc::new(Self::new(None, db, chain_config, config).unwrap())
     }
 
     /// Open the db.
@@ -534,7 +539,7 @@ impl MadaraBackend {
             None
         };
 
-        let db = open_rocksdb(&db_path)?;
+        let db = open_rocksdb(&db_path, &config.rocksdb)?;
 
         let mut backend = Self::new(backup_handle, db, chain_config, config)?;
         backend.check_configuration()?;
