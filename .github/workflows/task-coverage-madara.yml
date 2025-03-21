@@ -81,8 +81,8 @@ jobs:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
+          LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
         run: |
-          source <(cargo llvm-cov show-env --export-prefix)
           export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info
 
@@ -91,6 +91,8 @@ jobs:
 
       - name: Generate coverage info
         run: |
+          # Find all profraw files and create the report
+          find . -name "*.profraw" -type f
           cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload coverage to Coveralls
