@@ -11,14 +11,7 @@
       "settings": {
         "terminal.integrated.defaultProfile.linux": "zsh",
         "terminal.integrated.profiles.linux": { "zsh": { "path": "/bin/zsh" } }
-      },
-      "extensions": [
-        //        "1YiB.rust-bundle",
-        //        "tamasfe.even-better-toml",
-        //        "serayuzgur.crates",
-        //        "vivaxy.vscode-conventional-commits",
-        //        "streetsidesoftware.code-spell-checker"
-      ]
+      }
     }
   },
 
