@@ -275,7 +275,7 @@ impl Mempool {
         }
     }
 
-    /// This function determines the Nonce status (NonceInfo) for incoming L1 transactions 
+    /// This function determines the Nonce status (NonceInfo) for incoming L1 transactions
     /// based on the last processed nonce (current_nonce) in the system.
     ///
     /// L1 Handler nonces represent the ordering of L1 transactions sent by the
