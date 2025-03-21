@@ -9,10 +9,13 @@ const KiB: usize = 1024;
 const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
+pub use rocksdb::statistics::StatsLevel;
+
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
     pub enable_statistics: bool,
     pub statistics_period_sec: u32,
+    pub statistics_level: StatsLevel,
     pub memtable_blocks_budget_mib: usize,
     pub memtable_contracts_budget_mib: usize,
     pub memtable_other_budget_mib: usize,
@@ -24,6 +27,7 @@ impl Default for RocksDBConfig {
         Self {
             enable_statistics: false,
             statistics_period_sec: 60,
+            statistics_level: StatsLevel::All,
             memtable_blocks_budget_mib: 1 * GiB,
             memtable_contracts_budget_mib: 128 * MiB,
             memtable_other_budget_mib: 128 * MiB,
@@ -52,6 +56,7 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
     if config.enable_statistics {
         options.enable_statistics();
+        options.set_statistics_level(config.statistics_level);
     }
     options.set_stats_dump_period_sec(config.statistics_period_sec);
 

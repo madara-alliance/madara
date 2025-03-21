@@ -175,7 +175,7 @@ pub(crate) fn host_filtering(
     if enabled {
         // NOTE: The listening addresses are whitelisted by default.
 
-        let mut hosts = Vec::new();
+        let mut hosts: Vec<String> = Vec::new();
 
         if addr.is_ipv4() {
             hosts.push(format!("localhost:{}", addr.port()));

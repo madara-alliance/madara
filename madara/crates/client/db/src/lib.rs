@@ -85,7 +85,7 @@ mod update_global_trie;
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
-pub use rocksdb_options::RocksDBConfig;
+pub use rocksdb_options::{RocksDBConfig, StatsLevel};
 pub use watch::{ClosedBlocksReceiver, PendingBlockReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;

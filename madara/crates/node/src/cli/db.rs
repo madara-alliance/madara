@@ -1,6 +1,40 @@
 use mc_db::{MadaraBackendConfig, RocksDBConfig, TrieLogConfig};
 use std::path::PathBuf;
 
+/// Starknet network types.
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
+pub enum StatsLevel {
+    /// Disable all metrics
+    DisableAll = 0,
+    /// Disable timer stats, and skip histogram stats
+    ExceptHistogramOrTimers = 2,
+    /// Skip timer stats
+    ExceptTimers,
+    /// Collect all stats except time inside mutex lock AND time spent on
+    /// compression.
+    ExceptDetailedTimers,
+    /// Collect all stats except the counters requiring to get time inside the
+    /// mutex lock.
+    ExceptTimeForMutex,
+    /// Collect all stats, including measuring duration of mutex operations.
+    /// If getting time is expensive on the platform to run, it can
+    /// reduce scalability to more threads, especially for writes.
+    All,
+}
+
+impl From<StatsLevel> for mc_db::StatsLevel {
+    fn from(value: StatsLevel) -> Self {
+        match value {
+            StatsLevel::DisableAll => Self::DisableAll,
+            StatsLevel::ExceptHistogramOrTimers => Self::ExceptHistogramOrTimers,
+            StatsLevel::ExceptTimers => Self::ExceptTimers,
+            StatsLevel::ExceptDetailedTimers => Self::ExceptDetailedTimers,
+            StatsLevel::ExceptTimeForMutex => Self::ExceptTimeForMutex,
+            StatsLevel::All => Self::All,
+        }
+    }
+}
+
 #[derive(Clone, Debug, clap::Args)]
 pub struct DbParams {
     /// The path where madara will store the database. You should probably change it.
@@ -56,9 +90,14 @@ pub struct DbParams {
     pub db_enable_statistics: bool,
 
     /// If not zero, the rocksdb statistics will be dumped into the db LOG file with this frequency.
-    /// Default: 60s.
+    /// The argument `--db-enable-statistics` is needed for this argument to have an effect.
     #[clap(env = "MADARA_DB_STATISTICS_PERIOD_SEC", long, default_value_t = 60)]
     pub db_statistics_period_sec: u32,
+
+    /// Level of statistics. Collection all statistics may have a performance hit.
+    /// The argument `--db-enable-statistics` is needed for this argument to have an effect.
+    #[clap(env = "MADARA_DB_STATISTICS_LEVEL", long)]
+    pub db_statistics_level: Option<StatsLevel>,
 
     /// Set the memtable budget for a column.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
@@ -94,6 +133,7 @@ impl DbParams {
             rocksdb: RocksDBConfig {
                 enable_statistics: self.db_enable_statistics,
                 statistics_period_sec: self.db_statistics_period_sec,
+                statistics_level: self.db_statistics_level.unwrap_or(StatsLevel::All).into(),
                 memtable_blocks_budget_mib: self.db_memtable_blocks_budget_mib,
                 memtable_contracts_budget_mib: self.db_memtable_contracts_budget_mib,
                 memtable_other_budget_mib: self.db_memtable_other_budget_mib,
