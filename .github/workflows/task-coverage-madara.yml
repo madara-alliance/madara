@@ -75,7 +75,7 @@ jobs:
         run: |
           curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
                -H "Content-Type: application/json" http://localhost:8545
-               
+
       - name: Run tests with coverage
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
