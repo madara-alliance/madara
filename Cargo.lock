@@ -9286,7 +9286,10 @@ checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
 dependencies = [
  "cfg-if",
  "generator",
+ "pin-utils",
  "scoped-tls",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
 ]
@@ -10272,14 +10275,17 @@ dependencies = [
 name = "mp-malachite"
 version = "0.8.0"
 dependencies = [
+ "assert_matches",
  "informalsystems-malachitebft-core-types",
  "libp2p",
  "loom",
  "mp-block",
  "mp-proto",
  "mp-transactions",
+ "rstest 0.18.2",
  "starknet-types-core",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

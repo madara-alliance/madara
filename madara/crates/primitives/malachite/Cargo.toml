@@ -27,6 +27,14 @@ malachite-core-types.workspace = true
 # Async
 tokio.workspace = true
 
+# Logging
+tracing.workspace = true
+
 [dev-dependencies]
 
+# Async
 loom.workspace = true
+
+# Testing
+assert_matches.workspace = true
+rstest.workspace = true
