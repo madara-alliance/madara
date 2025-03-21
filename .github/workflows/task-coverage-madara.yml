@@ -22,7 +22,7 @@ on:
         required: false
 
 jobs:
-  coverage-madara:
+  test-with-coverage-madara:
     permissions:
       pull-requests: write
     runs-on: karnot-arc-runner-set
@@ -75,8 +75,8 @@ jobs:
         run: |
           curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
                -H "Content-Type: application/json" http://localhost:8545
-      - name: Build and run tests
-        continue-on-error: true
+               
+      - name: Run tests with coverage
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
@@ -93,7 +93,7 @@ jobs:
         run: |
           # Find all profraw files and create the report
           find . -name "*.profraw" -type f
-          cargo llvm-cov report --lcov --output-path lcov.info
+          cargo llvm-cov report --lcov --output-path lcov.info --release
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
