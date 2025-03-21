@@ -394,15 +394,6 @@ impl MadaraBackend {
         let latest_block_n_encoded = bincode::serialize(&revert_to)?;
         tx.put_cf(&meta, ROW_SYNC_TIP, latest_block_n_encoded);
 
-        /*
-        pub fn get_latest_block_n(db: &DB) -> Result<Option<u64>> {
-            let col = db.get_column(Column::BlockStorageMeta);
-            let Some(res) = db.get_cf(&col, ROW_SYNC_TIP)? else { return Ok(None) };
-            let res = bincode::deserialize(&res)?;
-            Ok(Some(res))
-        }
-        */
-
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;

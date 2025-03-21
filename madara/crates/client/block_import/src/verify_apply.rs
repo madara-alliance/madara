@@ -177,14 +177,6 @@ fn check_parent_hash_and_num(
         (0, Felt::ZERO)
     };
 
-    // TODO: this originally was checked after block number, but we need to check this first to detect a reorg.
-    // TODO: this fn shouldn't be responsible for reorg detection anyway...
-    if let Some(parent_block_hash) = parent_block_hash {
-        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
-            return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
-        }
-    }
-
     let block_number = if let Some(block_n) = unverified_block_number {
         if block_n != expected_block_number && !validation.ignore_block_order {
             return Err(BlockImportError::LatestBlockN { expected: expected_block_number, got: block_n });
@@ -193,6 +185,14 @@ fn check_parent_hash_and_num(
     } else {
         expected_block_number
     };
+
+    // TODO: this originally was checked after block number, but we need to check this first to detect a reorg.
+    // TODO: this fn shouldn't be responsible for reorg detection anyway...
+    if let Some(parent_block_hash) = parent_block_hash {
+        if parent_block_hash != expected_parent_block_hash && !validation.ignore_block_order {
+            return Err(BlockImportError::ParentHash { expected: expected_parent_block_hash, got: parent_block_hash });
+        }
+    }
 
     Ok((block_number, expected_parent_block_hash))
 }
@@ -332,8 +332,6 @@ fn block_hash(
 /// played on top.
 ///
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
-///
-/// TODO: consider renaming this in order to distinguish between "reorg" and "reverting".
 #[allow(dead_code)] // not used yet outside of tests
 fn reorg(
     backend: &MadaraBackend,
@@ -1006,7 +1004,6 @@ mod verify_apply_tests {
                 let _ = reorg(&backend, &reorg_parent_block.clone().expect("Should have a parent by now"))
                     .expect("reorg failed");
                 parent_height -= args.orphaned_chain_length;
-                // TODO: need to reset parent hash here, we can get this by having reorg() properly return to/from values
 
                 // reorg after given parent (start with 1 since we already added our reorg block)
                 parent_hash = Some(reorg_parent_hash);
