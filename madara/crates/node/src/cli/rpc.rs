@@ -12,9 +12,9 @@ pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
 /// The default max request size in MB.
-pub const RPC_DEFAULT_MAX_REQUEST_SIZE_MB: u32 = 15;
+pub const RPC_DEFAULT_MAX_REQUEST_SIZE_MiB: u32 = 15;
 /// The default max response size in MB.
-pub const RPC_DEFAULT_MAX_RESPONSE_SIZE_MB: u32 = 15;
+pub const RPC_DEFAULT_MAX_RESPONSE_SIZE_MiB: u32 = 15;
 /// The default number of connection..
 pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
 /// The default number of messages the RPC server
@@ -78,12 +78,12 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_ADMIN_EXTERNAL", long, default_value_t = false)]
     pub rpc_admin_external: bool,
 
-    /// Set the maximum RPC request payload size for both HTTP and WebSockets in megabytes.
-    #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB)]
+    /// Set the maximum RPC request payload size for both HTTP and WebSockets in mebibytes.
+    #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MiB)]
     pub rpc_max_request_size: u32,
 
-    /// Set the maximum RPC response payload size for both HTTP and WebSockets in megabytes.
-    #[arg(env = "MADARA_RPC_MAX_RESPONSE_SIZE", long, default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB)]
+    /// Set the maximum RPC response payload size for both HTTP and WebSockets in mebibytes.
+    #[arg(env = "MADARA_RPC_MAX_RESPONSE_SIZE", long, default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MiB)]
     pub rpc_max_response_size: u32,
 
     /// Set the maximum concurrent subscriptions per connection.
