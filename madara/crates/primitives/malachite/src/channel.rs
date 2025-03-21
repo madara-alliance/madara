@@ -8,6 +8,7 @@ pub struct MqReceiver<T: Send + Clone> {
     wake: std::sync::Arc<tokio::sync::Notify>,
 }
 
+#[must_use]
 pub struct MqGuard<'a, T: Send + Clone> {
     ack: bool,
     queue: std::sync::Arc<MessageQueue<T>>,
@@ -22,16 +23,23 @@ struct MessageQueue<T: Send + Clone> {
     cap: usize,
 }
 
+/// An atomic acknowledge cell, use to ensure an element has been read.
 struct AckCell<T: Clone> {
-    elem: T,
+    elem: std::mem::MaybeUninit<T>,
     ack: std::sync::atomic::AtomicBool,
 }
 
+/// A region in a pointer array in which we are allowed to [read].
+///
+/// [read]: Self::read
 struct ReadRegion {
     start: std::sync::atomic::AtomicUsize,
     size: std::sync::atomic::AtomicUsize,
 }
 
+/// A region in a pointer array in which we are allowed to [write].
+///
+/// [write]: Self::write
 struct WriteRegion {
     start: std::sync::atomic::AtomicUsize,
     size: std::sync::atomic::AtomicUsize,
@@ -39,9 +47,19 @@ struct WriteRegion {
 
 impl<'a, T: Send + Clone> Drop for MqGuard<'a, T> {
     fn drop(&mut self) {
-        // If the element was not acknowledged, we add it back to the queue to be picked up again.
+        // If the element was not acknowledged, we add it back to the queue to be picked up again,
+        // taking special care to drop the element in the process. We do not need to do this if the
+        // element was acknowledged since the drop logic is implemented in `elem_drop` and this is
+        // handled by `acknowledge` if it is called (which also sets the `ack` flag so we don't
+        // double free here).
         if !self.ack {
-            self.queue.write(self.retrieve());
+            // Tangential fact but view types could simplify this by allowing for
+            // `self.queue.write(self.read())` :)
+            //
+            // https://smallcultfollowing.com/babysteps/blog/2025/02/25/view-types-redux/
+            let elem = self.read();
+            self.elem_drop();
+            self.queue.write(elem);
         }
     }
 }
@@ -54,10 +72,10 @@ impl<T: Send + Clone> Drop for MessageQueue<T> {
         let stop = start + self.reader.size();
 
         for i in (start..stop).map(|i| fast_mod(i, self.cap)) {
-            unsafe { std::ptr::read(self.ring.as_ptr().add(i)) };
+            unsafe { self.ring.add(i).read() };
         }
 
-        let layout = std::alloc::Layout::array::<T>(self.cap).unwrap();
+        let layout = std::alloc::Layout::array::<AckCell<T>>(self.cap).unwrap();
         unsafe { std::alloc::dealloc(self.ring.as_ptr() as *mut u8, layout) }
     }
 }
@@ -78,7 +96,9 @@ pub fn channel<T: Send + Clone>(cap: usize) -> (MqSender<T>, MqReceiver<T>) {
 impl<T: Send + Clone> MqSender<T> {
     pub async fn send(&self, elem: T) -> Option<T> {
         match self.queue.write(elem) {
-            Some(elem) => Some(elem), // Failed to write to the queue
+            // Failed to write to the queue. This can happen if the next element right after the
+            // write region has been read but not acknowledge yet.
+            Some(elem) => Some(elem),
             None => {
                 self.wake.notify_waiters();
                 None
@@ -103,16 +123,20 @@ impl<'a, T: Send + Clone> MqGuard<'a, T> {
         MqGuard { ack: false, queue, cell_ptr, _phantom: std::marker::PhantomData }
     }
 
-    pub fn acknowledge(mut self) -> T {
+    pub fn read(&self) -> T {
+        unsafe {
+            let cell = self.cell_ptr.as_ref();
+            cell.elem.assume_init_ref().clone()
+        }
+    }
+
+    pub fn acknowledge(mut self) {
         self.ack = true;
-        self.retrieve()
+        self.elem_drop()
     }
 
     // Invariant: calling this twice will result in a double free
-    fn retrieve(&self) -> T {
-        let cell = unsafe { std::ptr::read(self.cell_ptr.as_ptr()) };
-        let ack = std::mem::ManuallyDrop::new(cell.ack);
-
+    fn elem_drop(&mut self) {
         // It is worth taking a moment to understand why this is here.
         //
         // > "If an atomic store in thread A is tagged memory_order_release, an atomic load in
@@ -129,7 +153,8 @@ impl<'a, T: Send + Clone> MqGuard<'a, T> {
         // https://en.cppreference.com/w/cpp/atomic/memory_order#Release-Acquire_ordering
         //
         // So first of all note that by using a `Relaxed` ordering on the subsequent store, we are
-        // guaranteeing that `drop` happens before other threads can see the effects of the store.
+        // guaranteeing that `assume_init_drop` happens before other threads can see the effects of
+        // the store.
         //
         // When a `MessageQueue` is dropped, it will drop the elements in its read region, as these
         // have not yet been received by any thread but itself. It does not have any mechanism to
@@ -140,21 +165,19 @@ impl<'a, T: Send + Clone> MqGuard<'a, T> {
         //
         // Why is the atomic store important? Because we use it as a mechanism in `WriteRegion` to
         // check if a `AcqCell` has been acknowledged or not. We do not want this cell to be marked
-        // as ready for write while its contents have not been freed yet! Notice that this is a
-        // delicate dance we are playing: `WriteRegion` will be reading the atomic ack state of the
-        // cell, while the elem it stores has already been dropped! Since we are not reading the
-        // element this is okay. It is also very unsafe. A better way to represent this would be to
-        // use `MaybeUninitialized`, but that is for another day.
+        // as ready for write while its contents have not been freed yet! Note we use `MaybeUnit`
+        // to express that elements which are not in the read region are not safe to read yet.
         //
         // Finally, notice the lifetime attached to `MqGuard`: this ensure that the guard's lifetime
         // is tied to its receiver, and hence to the underlying `MessageQueue`. This ensures that
         // the message queue and its underlying array are not dropped and freed while or before we
         // are dropping and (potentially) freeing this element.
-        let elem = cell.elem.clone();
-        drop(cell.elem);
-        ack.store(true, std::sync::atomic::Ordering::Release);
-
-        elem
+        unsafe {
+            let cell = self.cell_ptr.as_mut();
+            cell.elem.assume_init_drop();
+            cell.elem = std::mem::MaybeUninit::uninit();
+            cell.ack.store(true, std::sync::atomic::Ordering::Release);
+        }
     }
 }
 
@@ -201,7 +224,7 @@ impl<T: Send + Clone> MessageQueue<T> {
 
 impl<T: Clone> AckCell<T> {
     fn new(elem: T) -> Self {
-        Self { elem, ack: std::sync::atomic::AtomicBool::new(false) }
+        Self { elem: std::mem::MaybeUninit::new(elem), ack: std::sync::atomic::AtomicBool::new(false) }
     }
 }
 
@@ -228,14 +251,17 @@ impl ReadRegion {
             // Note that we do not try to grow the read region in case there is nothing left to
             // read. This is because while cells have and `ack` state to attest if they have been
             // read, we do not store any extra information concerning their write status. Instead,
-            // it is the responsibility of the queue to grow the read region whenever it sends a new
-            // value.
+            // it is the responsibility of the queue to grow the read region whenever it writes a
+            // new value.
             None
         } else {
             let start = self.start();
             self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
             self.size.store(size - 1, std::sync::atomic::Ordering::Release); // checked above
 
+            // Notice how we use the value of `start` before the store. Here the store acts as a
+            // locking mechanism, reserving this slot in the queue so that other threads will not
+            // read it.
             Some(unsafe { buf.add(start) })
         };
 
@@ -283,7 +309,7 @@ impl WriteRegion {
             self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
             self.size.store(size - 1, std::sync::atomic::Ordering::Release);
 
-            unsafe { std::ptr::write(buf.as_ptr().add(start), AckCell::new(elem)) };
+            unsafe { buf.add(start).write(AckCell::new(elem)) };
             None
         };
 
@@ -313,11 +339,34 @@ impl WriteRegion {
         // Note that the `ack` state of that value/cell might have been updated by a `MqGuard` in
         // the meantime, which is what we are checking for: we cannot grow and mark a value as ready
         // to write to if it has not already been read and acknowledged.
-        let cell = unsafe { std::ptr::read(buf.as_ptr().add(stop)) };
-        let ack = cell.ack.load(std::sync::atomic::Ordering::Acquire);
+        //
+        // See the note in `MqGuard` to understand why we only read the `ack` state!
+        let cell = unsafe { buf.add(stop).as_ref() };
 
-        // See the note in `MqGuard` to understand why this comparison is risky!
-        let res = if ack {
+        // Why would this fail? Consider the following buffer state:
+        //
+        //    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
+        // B: │!a │ a │ a │ r │ r │ w │ w │ w │ w │
+        //    └───┴───┴───┴───┴───┴───┴───┴───┴───┘
+        //      0   1   2   3   4   5   6   7   8
+        //
+        //    ┌───────────────────────────────────┐
+        //    │ .B: buffer                        │
+        //    │ .r: read region                   │
+        //    │ .w: write region                  │
+        //    │ .a: acknowledged                  │
+        //    │ !a: NOT acknowledged              │
+        //    └───────────────────────────────────┘
+        //
+        // Notice how the element at index 0 has been read but not acknowledge yet: this means we
+        // cannot overwrite it as another thread might read it in the future! In contrary, the
+        // elements at index 1 and 2 have been read and acknowledged, meaning they are safe to
+        // overwrite. However, since element 0 precedes them, we cannot grow the write region to
+        // encompass them.
+        //
+        // This is done to avoid fragmenting the buffer and keep read and write operations simple
+        // and efficient.
+        let res = if cell.ack.load(std::sync::atomic::Ordering::Acquire) {
             debug_assert!(size + 1 <= cap);
             self.size.store(size + 1, std::sync::atomic::Ordering::Release);
             Ok(())
