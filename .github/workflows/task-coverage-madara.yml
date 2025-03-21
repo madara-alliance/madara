@@ -11,6 +11,10 @@ on:
         required: false
         type: string
         default: "10"
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
     secrets:
       ETH_FORK_URL:
         required: true
@@ -60,6 +64,13 @@ jobs:
               echo "Anvil is not installed or not in PATH"
               exit 1
           fi
+      - name: Download Madara binary
+        if: inputs.madara-binary-hash != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
       - name: Check anvil running
         run: |
           curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \

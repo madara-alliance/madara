@@ -11,7 +11,7 @@ rustup show
 echo ">> Node version:"
 node --version
 
-foundryup --install nightly
+foundryup
 echo ">> Foundry version:"
 foundryup --version
 
