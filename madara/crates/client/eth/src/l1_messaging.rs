@@ -153,8 +153,6 @@ async fn process_l1_message(
         _ => {}
     };
 
-    // TODO: we might want to move this to AFTER the insertion into the mempool,
-    // rn this is causing a panic in certain prod systems if we do so.
     let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
 
     // HERMAN TODO: Actually this should be updated after the tx l1 handler is executed
@@ -437,7 +435,6 @@ mod l1_messaging_tests {
         let current_nonce = mempool.backend.get_l1_messaging_nonce_latest().unwrap().unwrap();
         assert_eq!(current_nonce, expected_nonce);
 
-        // This will never work as we need to receive L1 handler in order, startin from 0
         let (handler_tx, _handler_tx_hash) = match mempool.tx_take().unwrap().tx {
             Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
             Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
