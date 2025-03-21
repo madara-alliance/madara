@@ -21,6 +21,9 @@ on:
 jobs:
   test-rust:
     runs-on: karnot-arc-runner-set
+    env:
+      ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+      PROPTEST_CASES: ${{ inputs.proptest-cases }}
     steps:
       - uses: actions/checkout@v4
 
