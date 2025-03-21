@@ -87,4 +87,4 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           # Uses the --release to benefit from "build" cache
-          RUST_LOG=info cargo +nightly-2024-09-05 nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)'
+          RUST_LOG=info cargo +nightly-2024-09-05 nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast

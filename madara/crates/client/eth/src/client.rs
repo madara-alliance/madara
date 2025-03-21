@@ -203,7 +203,7 @@ pub mod eth_client_getter_test {
                     poisoned.into_inner()
                 }
             };
-            
+
             guard.to_reuse.push(self.0);
         }
     }
@@ -216,7 +216,7 @@ pub mod eth_client_getter_test {
                 poisoned.into_inner()
             }
         };
-        
+
         if let Some(el) = guard.to_reuse.pop() {
             return AnvilPortNum(el);
         }
@@ -238,7 +238,7 @@ pub mod eth_client_getter_test {
                     poisoned.into_inner()
                 }
             };
-            
+
             if Arc::strong_count(&self.instance) <= 2 {
                 println!("Cleaning up Anvil instance");
                 *guard = None;
@@ -262,7 +262,7 @@ pub mod eth_client_getter_test {
                 poisoned.into_inner()
             }
         };
-        
+
         if guard.is_none() {
             *guard = Some(Arc::new(create_anvil_instance()));
         }
