@@ -1,17 +1,27 @@
+#[cfg(test)]
+use loom::alloc;
+#[cfg(test)]
+use loom::sync;
+
+#[cfg(not(test))]
+use std::alloc;
+#[cfg(not(test))]
+use std::sync;
+
 pub struct MqSender<T: Send + Clone> {
-    queue: std::sync::Arc<MessageQueue<T>>,
-    wake: std::sync::Arc<tokio::sync::Notify>,
+    queue: sync::Arc<MessageQueue<T>>,
+    wake: sync::Arc<tokio::sync::Notify>,
 }
 
 pub struct MqReceiver<T: Send + Clone> {
-    queue: std::sync::Arc<MessageQueue<T>>,
-    wake: std::sync::Arc<tokio::sync::Notify>,
+    queue: sync::Arc<MessageQueue<T>>,
+    wake: sync::Arc<tokio::sync::Notify>,
 }
 
 #[must_use]
 pub struct MqGuard<'a, T: Send + Clone> {
     ack: bool,
-    queue: std::sync::Arc<MessageQueue<T>>,
+    queue: sync::Arc<MessageQueue<T>>,
     cell_ptr: std::ptr::NonNull<AckCell<T>>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -26,23 +36,23 @@ struct MessageQueue<T: Send + Clone> {
 /// An atomic acknowledge cell, use to ensure an element has been read.
 struct AckCell<T: Clone> {
     elem: std::mem::MaybeUninit<T>,
-    ack: std::sync::atomic::AtomicBool,
+    ack: sync::atomic::AtomicBool,
 }
 
 /// A region in a pointer array in which we are allowed to [read].
 ///
 /// [read]: Self::read
 struct ReadRegion {
-    start: std::sync::atomic::AtomicUsize,
-    size: std::sync::atomic::AtomicUsize,
+    start: sync::atomic::AtomicUsize,
+    size: sync::atomic::AtomicUsize,
 }
 
 /// A region in a pointer array in which we are allowed to [write].
 ///
 /// [write]: Self::write
 struct WriteRegion {
-    start: std::sync::atomic::AtomicUsize,
-    size: std::sync::atomic::AtomicUsize,
+    start: sync::atomic::AtomicUsize,
+    size: sync::atomic::AtomicUsize,
 }
 
 impl<'a, T: Send + Clone> Drop for MqGuard<'a, T> {
@@ -59,6 +69,9 @@ impl<'a, T: Send + Clone> Drop for MqGuard<'a, T> {
             // https://smallcultfollowing.com/babysteps/blog/2025/02/25/view-types-redux/
             let elem = self.read();
             self.elem_drop();
+
+            // This can still fail, but without async drop there isn't really anything better we can
+            // do. Should we panic?
             self.queue.write(elem);
         }
     }
@@ -66,7 +79,7 @@ impl<'a, T: Send + Clone> Drop for MqGuard<'a, T> {
 
 impl<T: Send + Clone> Drop for MessageQueue<T> {
     fn drop(&mut self) {
-        self.reader.size.store(0, std::sync::atomic::Ordering::Release);
+        self.reader.size.store(0, sync::atomic::Ordering::Release);
 
         let start = self.reader.start();
         let stop = start + self.reader.size();
@@ -75,17 +88,17 @@ impl<T: Send + Clone> Drop for MessageQueue<T> {
             unsafe { self.ring.add(i).read() };
         }
 
-        let layout = std::alloc::Layout::array::<AckCell<T>>(self.cap).unwrap();
-        unsafe { std::alloc::dealloc(self.ring.as_ptr() as *mut u8, layout) }
+        let layout = alloc::Layout::array::<AckCell<T>>(self.cap).unwrap();
+        unsafe { alloc::dealloc(self.ring.as_ptr() as *mut u8, layout) }
     }
 }
 
 pub fn channel<T: Send + Clone>(cap: usize) -> (MqSender<T>, MqReceiver<T>) {
-    let queue_s = std::sync::Arc::new(MessageQueue::new(cap));
-    let queue_r = std::sync::Arc::clone(&queue_s);
+    let queue_s = sync::Arc::new(MessageQueue::new(cap));
+    let queue_r = sync::Arc::clone(&queue_s);
 
-    let wake_s = std::sync::Arc::new(tokio::sync::Notify::new());
-    let wake_r = std::sync::Arc::clone(&wake_s);
+    let wake_s = sync::Arc::new(tokio::sync::Notify::new());
+    let wake_r = sync::Arc::clone(&wake_s);
 
     let sx = MqSender { queue: queue_s, wake: wake_s };
     let rx = MqReceiver { queue: queue_r, wake: wake_r };
@@ -110,8 +123,11 @@ impl<T: Send + Clone> MqSender<T> {
 impl<T: Send + Clone> MqReceiver<T> {
     pub async fn rcv(&self) -> Option<MqGuard<T>> {
         loop {
+            // TODO: we still don't have a good way to represent channel closure!
             match self.queue.read() {
-                Some(cell_ptr) => break Some(MqGuard::new(std::sync::Arc::clone(&self.queue), cell_ptr)),
+                // FIXME: this will lock indefinitely if all senders are dropped before the
+                // receivers!
+                Some(cell_ptr) => break Some(MqGuard::new(sync::Arc::clone(&self.queue), cell_ptr)),
                 None => self.wake.notified().await,
             }
         }
@@ -119,7 +135,7 @@ impl<T: Send + Clone> MqReceiver<T> {
 }
 
 impl<'a, T: Send + Clone> MqGuard<'a, T> {
-    pub fn new(queue: std::sync::Arc<MessageQueue<T>>, cell_ptr: std::ptr::NonNull<AckCell<T>>) -> Self {
+    pub fn new(queue: sync::Arc<MessageQueue<T>>, cell_ptr: std::ptr::NonNull<AckCell<T>>) -> Self {
         MqGuard { ack: false, queue, cell_ptr, _phantom: std::marker::PhantomData }
     }
 
@@ -176,7 +192,7 @@ impl<'a, T: Send + Clone> MqGuard<'a, T> {
             let cell = self.cell_ptr.as_mut();
             cell.elem.assume_init_drop();
             cell.elem = std::mem::MaybeUninit::uninit();
-            cell.ack.store(true, std::sync::atomic::Ordering::Release);
+            cell.ack.store(true, sync::atomic::Ordering::Release);
         }
     }
 }
@@ -187,7 +203,7 @@ impl<T: Send + Clone> MessageQueue<T> {
         assert!(cap > 0, "Tried to create a message queue with a capacity < 1");
 
         let cap = cap.checked_next_power_of_two().expect("failed to retrieve the next power of 2 to cap");
-        let layout = std::alloc::Layout::array::<AckCell<T>>(cap).unwrap();
+        let layout = alloc::Layout::array::<AckCell<T>>(cap).unwrap();
 
         // From the `Layout` docs: "All layouts have an associated size and a power-of-two alignment.
         // The size, when rounded up to the nearest multiple of align, does not overflow isize (i.e.
@@ -197,7 +213,7 @@ impl<T: Send + Clone> MessageQueue<T> {
         // sure here, is this really necessary?
         assert!(layout.size() <= std::isize::MAX as usize);
 
-        let ptr = unsafe { std::alloc::alloc(layout) };
+        let ptr = unsafe { alloc::alloc(layout) };
         let ring = match std::ptr::NonNull::new(ptr as *mut AckCell<T>) {
             Some(p) => p,
             None => std::alloc::handle_alloc_error(layout),
@@ -224,21 +240,21 @@ impl<T: Send + Clone> MessageQueue<T> {
 
 impl<T: Clone> AckCell<T> {
     fn new(elem: T) -> Self {
-        Self { elem: std::mem::MaybeUninit::new(elem), ack: std::sync::atomic::AtomicBool::new(false) }
+        Self { elem: std::mem::MaybeUninit::new(elem), ack: sync::atomic::AtomicBool::new(false) }
     }
 }
 
 impl ReadRegion {
     fn new() -> Self {
-        Self { start: std::sync::atomic::AtomicUsize::new(0), size: std::sync::atomic::AtomicUsize::new(0) }
+        Self { start: sync::atomic::AtomicUsize::new(0), size: sync::atomic::AtomicUsize::new(0) }
     }
 
     fn start(&self) -> usize {
-        self.start.load(std::sync::atomic::Ordering::Acquire)
+        self.start.load(sync::atomic::Ordering::Acquire)
     }
 
     fn size(&self) -> usize {
-        self.size.load(std::sync::atomic::Ordering::Acquire)
+        self.size.load(sync::atomic::Ordering::Acquire)
     }
 
     fn read<T: Send + Clone>(
@@ -256,8 +272,8 @@ impl ReadRegion {
             None
         } else {
             let start = self.start();
-            self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
-            self.size.store(size - 1, std::sync::atomic::Ordering::Release); // checked above
+            self.start.store(fast_mod(start + 1, cap), sync::atomic::Ordering::Release);
+            self.size.store(size - 1, sync::atomic::Ordering::Release); // checked above
 
             // Notice how we use the value of `start` before the store. Here the store acts as a
             // locking mechanism, reserving this slot in the queue so that other threads will not
@@ -273,12 +289,12 @@ impl ReadRegion {
         //
         // Thread 1: * loads [0] ---> * stores [1] ---> *fence
         // Thread 2: -- * loads ......................... [1] ---> * stores [2] ---> *fence
-        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+        sync::atomic::fence(sync::atomic::Ordering::Acquire);
         res
     }
 
     fn grow(&self, cap: usize) {
-        let size = self.size.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let size = self.size.fetch_add(1, sync::atomic::Ordering::AcqRel);
         debug_assert_ne!(size, cap);
     }
 }
@@ -286,15 +302,15 @@ impl ReadRegion {
 impl WriteRegion {
     fn new(size: usize) -> Self {
         assert!(size > 0);
-        Self { start: std::sync::atomic::AtomicUsize::new(0), size: std::sync::atomic::AtomicUsize::new(size) }
+        Self { start: sync::atomic::AtomicUsize::new(0), size: sync::atomic::AtomicUsize::new(size) }
     }
 
     fn start(&self) -> usize {
-        self.start.load(std::sync::atomic::Ordering::Acquire)
+        self.start.load(sync::atomic::Ordering::Acquire)
     }
 
     fn size(&self) -> usize {
-        self.size.load(std::sync::atomic::Ordering::Acquire)
+        self.size.load(sync::atomic::Ordering::Acquire)
     }
 
     fn write<T: Clone>(&self, elem: T, buf: std::ptr::NonNull<AckCell<T>>, cap: usize) -> Option<T> {
@@ -306,14 +322,14 @@ impl WriteRegion {
 
             // size - 1 is checked above and `grow` will increment size by 1 if it succeeds, so
             // whatever happens size > 0
-            self.start.store(fast_mod(start + 1, cap), std::sync::atomic::Ordering::Release);
-            self.size.store(size - 1, std::sync::atomic::Ordering::Release);
+            self.start.store(fast_mod(start + 1, cap), sync::atomic::Ordering::Release);
+            self.size.store(size - 1, sync::atomic::Ordering::Release);
 
             unsafe { buf.add(start).write(AckCell::new(elem)) };
             None
         };
 
-        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+        sync::atomic::fence(sync::atomic::Ordering::Acquire);
         res
     }
 
@@ -366,15 +382,15 @@ impl WriteRegion {
         //
         // This is done to avoid fragmenting the buffer and keep read and write operations simple
         // and efficient.
-        let res = if cell.ack.load(std::sync::atomic::Ordering::Acquire) {
+        let res = if cell.ack.load(sync::atomic::Ordering::Acquire) {
             debug_assert!(size + 1 <= cap);
-            self.size.store(size + 1, std::sync::atomic::Ordering::Release);
+            self.size.store(size + 1, sync::atomic::Ordering::Release);
             Ok(())
         } else {
             Err("Failed to grow write region, next element has not been acknowledged yet")
         };
 
-        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+        sync::atomic::fence(sync::atomic::Ordering::Acquire);
         res
     }
 }
@@ -382,3 +398,6 @@ impl WriteRegion {
 fn fast_mod(n: usize, pow_of_2: usize) -> usize {
     n & (pow_of_2 - 1)
 }
+
+#[cfg(test)]
+mod test {}

@@ -7,6 +7,9 @@ repository.workspace = true
 version.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 
 # Madara
@@ -24,5 +27,6 @@ malachite-core-types.workspace = true
 # Async
 tokio.workspace = true
 
-[lints]
-workspace = true
+[dev-dependencies]
+
+loom.workspace = true
