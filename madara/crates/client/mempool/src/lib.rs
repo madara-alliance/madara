@@ -1730,7 +1730,7 @@ mod test {
         // Updates the latest l1 nonce in db
         backend.set_l1_messaging_nonce(Nonce(Felt::ZERO)).expect("Failed to update l1 messaging nonce in db");
 
-        // First l1 transaction has been stored in db. If we receive anything less than the next Nonce 
+        // First l1 transaction has been stored in db. If we receive anything less than the next Nonce
         // We get an error
 
         assert_matches::assert_matches!(
