@@ -732,7 +732,7 @@ mod test {
         l1_data_provider: Arc<MockL1DataProvider>,
         tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
         let timestamp = ArrivedAtTimestamp::now();
         let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceInfo::default());
         assert_matches::assert_matches!(result, Ok(()));
@@ -1410,7 +1410,7 @@ mod test {
         #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
         #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
     ) {
-        let mut mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
+        let mempool = Mempool::new(backend, l1_data_provider, MempoolLimits::for_testing());
 
         // Insert pending transaction
 
