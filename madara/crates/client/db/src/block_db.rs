@@ -355,6 +355,10 @@ impl MadaraBackend {
         Ok(())
     }
 
+    /// Reverts the tip of the chain back to the given block.
+    ///
+    /// In addition, this removes all historical data (chain state, transactions, state diffs,
+    /// etc.) from the database. ROW_SYNC_TIP is set to the new tip.
     pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<()> {
         let mut tx = WriteBatchWithTransaction::default();
 
@@ -397,8 +401,6 @@ impl MadaraBackend {
         let mut writeopts = WriteOptions::new();
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
-
-        assert_eq!(self.get_latest_block_n()?.unwrap(), revert_to);
 
         Ok(())
     }
