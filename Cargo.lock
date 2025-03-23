@@ -10286,6 +10286,7 @@ dependencies = [
  "starknet-types-core",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

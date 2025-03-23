@@ -12,8 +12,14 @@ use std::sync;
 #[cfg(not(test))]
 use tokio::sync::Notify;
 
+const STRT_MSK: u64 = 0xffffffff00000000;
+const SIZE_MSK: u64 = 0x00000000ffffffff;
+const STRT_INC: u64 = 0x0000000100000000;
+const SIZE_INC: u64 = 0x0000000000000001;
+
 pub struct MqSender<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     queue: sync::Arc<MessageQueue<T>>,
+    close: sync::Arc<sync::atomic::AtomicBool>,
     wake: sync::Arc<Notify>,
 }
 
@@ -35,7 +41,7 @@ struct MessageQueue<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     senders: sync::atomic::AtomicUsize,
     writer: WriteRegion,
     reader: ReadRegion,
-    cap: usize,
+    cap: u32,
 }
 
 /// An atomic acknowledge cell, use to ensure an element has been read.
@@ -48,16 +54,17 @@ struct AckCell<T: Clone + std::fmt::Debug + tracing::Value> {
 ///
 /// [read]: Self::read
 struct ReadRegion {
-    start: sync::atomic::AtomicUsize,
-    size: sync::atomic::AtomicUsize,
+    /// We use a single atomic in which we store the start and size of a region as two [`u32`] ints.
+    /// This is done so that updates to the start and the size of the region happen as a single
+    /// atomic unit, with no possibility of another thread slotting a `store` or `load` in between.
+    strt_and_size: sync::atomic::AtomicU64,
 }
 
 /// A region in a pointer array in which we are allowed to [write].
 ///
 /// [write]: Self::write
 struct WriteRegion {
-    start: sync::atomic::AtomicUsize,
-    size: sync::atomic::AtomicUsize,
+    strt_and_size: sync::atomic::AtomicU64,
 }
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> std::fmt::Debug for MqSender<T> {
@@ -92,30 +99,32 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> std::fmt::Debug for Mes
 
 impl std::fmt::Debug for ReadRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let start = self.start.load(sync::atomic::Ordering::Acquire);
-        let size = self.start.load(sync::atomic::Ordering::Acquire);
-        sync::atomic::fence(sync::atomic::Ordering::Acquire);
-        f.debug_struct("ReadRegion").field("start", &start).field("size", &size).finish()
+        let raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+        let strt = get_strt(raw_bytes);
+        let size = get_size(raw_bytes);
+        f.debug_struct("ReadRegion").field("strt", &strt).field("size", &size).finish()
     }
 }
 
 impl std::fmt::Debug for WriteRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let start = self.start.load(sync::atomic::Ordering::Acquire);
-        let size = self.start.load(sync::atomic::Ordering::Acquire);
-        sync::atomic::fence(sync::atomic::Ordering::Acquire);
-        f.debug_struct("WriteRegion").field("start", &start).field("size", &size).finish()
+        let raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+        let strt = get_strt(raw_bytes);
+        let size = get_size(raw_bytes);
+        f.debug_struct("WriteRegion").field("strt", &strt).field("size", &size).finish()
     }
 }
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MqSender<T> {
     fn drop(&mut self) {
-        self.queue.sender_unregister();
+        if !self.close.load(sync::atomic::Ordering::Acquire) {
+            self.queue.sender_unregister();
 
-        #[cfg(test)]
-        self.wake.notify();
-        #[cfg(not(test))]
-        self.wake.notify_one();
+            #[cfg(test)]
+            self.wake.notify();
+            #[cfg(not(test))]
+            self.wake.notify_waiters();
+        }
     }
 }
 
@@ -143,22 +152,24 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MqGuard<'a
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MessageQueue<T> {
     fn drop(&mut self) {
-        self.reader.size.store(0, sync::atomic::Ordering::Release);
+        let raw_bytes = self.reader.strt_and_size.swap(0, sync::atomic::Ordering::Release);
 
-        let start = self.reader.start();
-        let stop = start + self.reader.size();
+        let strt = get_strt(raw_bytes);
+        let size = get_size(raw_bytes);
+        // FIXME: this risks overflowing!
+        let stop = strt + size;
 
-        for i in (start..stop).map(|i| fast_mod(i, self.cap)) {
-            unsafe { self.ring.add(i).read() };
+        for i in (strt..stop).map(|i| fast_mod(i, self.cap)) {
+            unsafe { self.ring.add(i as usize).read() };
         }
 
-        let layout = alloc::Layout::array::<AckCell<T>>(self.cap).unwrap();
+        let layout = alloc::Layout::array::<AckCell<T>>(self.cap as usize).unwrap();
         unsafe { alloc::dealloc(self.ring.as_ptr() as *mut u8, layout) }
     }
 }
 
 #[tracing::instrument]
-pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: usize) -> (MqSender<T>, MqReceiver<T>) {
+pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: u32) -> (MqSender<T>, MqReceiver<T>) {
     tracing::debug!("Creating new channel");
 
     let queue_s = sync::Arc::new(MessageQueue::new(cap));
@@ -176,7 +187,7 @@ pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: usize) -
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
     fn new(queue: sync::Arc<MessageQueue<T>>, wake: sync::Arc<Notify>) -> Self {
         queue.sender_register();
-        Self { queue, wake }
+        Self { queue, close: sync::Arc::new(sync::atomic::AtomicBool::new(false)), wake }
     }
 
     #[tracing::instrument(skip(self))]
@@ -200,6 +211,16 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
                 None
             }
         }
+    }
+
+    pub fn close(self) {
+        self.close.store(true, sync::atomic::Ordering::Release);
+        self.queue.sender_unregister_all();
+
+        #[cfg(test)]
+        self.wake.notify();
+        #[cfg(not(test))]
+        self.wake.notify_waiters();
     }
 }
 
@@ -251,7 +272,7 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> MqGuard<'a, T> {
         }
     }
 
-    pub fn read_acknowledge(mut self) -> T {
+    pub fn read_acknowledge(self) -> T {
         let elem = self.read();
         self.acknowledge();
         elem
@@ -310,13 +331,13 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> MqGuard<'a, T> {
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
     #[tracing::instrument]
-    fn new(cap: usize) -> Self {
+    fn new(cap: u32) -> Self {
         assert_ne!(std::mem::size_of::<T>(), 0, "T cannot be a ZST");
         assert!(cap > 0, "Tried to create a message queue with a capacity < 1");
 
         let cap = cap.checked_next_power_of_two().expect("failed to retrieve the next power of 2 to cap");
         tracing::debug!(cap, "Determining array layout");
-        let layout = alloc::Layout::array::<AckCell<T>>(cap).unwrap();
+        let layout = alloc::Layout::array::<AckCell<T>>(cap as usize).unwrap();
 
         // From the `Layout` docs: "All layouts have an associated size and a power-of-two alignment.
         // The size, when rounded up to the nearest multiple of align, does not overflow isize (i.e.
@@ -353,8 +374,16 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
         debug_assert_ne!(senders, 0);
     }
 
+    fn sender_unregister_all(&self) {
+        let senders = self.senders.swap(0, sync::atomic::Ordering::Release);
+        debug_assert_ne!(senders, 0);
+    }
+
+    #[tracing::instrument(skip(self))]
     fn sender_available(&self) -> bool {
-        self.senders.load(sync::atomic::Ordering::Acquire) > 0
+        let senders = self.senders.load(sync::atomic::Ordering::Acquire);
+        tracing::debug!(senders, "Senders available");
+        senders > 0
     }
 
     fn read(&self) -> Option<std::ptr::NonNull<AckCell<T>>> {
@@ -380,89 +409,117 @@ impl ReadRegion {
     #[tracing::instrument]
     fn new() -> Self {
         tracing::debug!("Creating new read region");
-        Self { start: sync::atomic::AtomicUsize::new(0), size: sync::atomic::AtomicUsize::new(0) }
+        Self { strt_and_size: sync::atomic::AtomicU64::new(0) }
     }
 
-    fn start(&self) -> usize {
-        self.start.load(sync::atomic::Ordering::Acquire)
+    fn strt(&self) -> u32 {
+        get_strt(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
     }
 
-    fn size(&self) -> usize {
-        self.size.load(sync::atomic::Ordering::Acquire)
+    fn size(&self) -> u32 {
+        get_size(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
     }
 
     #[tracing::instrument(skip(self, buf, cap))]
     fn read<T: Send + Clone + std::fmt::Debug + tracing::Value>(
         &self,
         buf: std::ptr::NonNull<AckCell<T>>,
-        cap: usize,
+        cap: u32,
     ) -> Option<std::ptr::NonNull<AckCell<T>>> {
-        let size = self.size();
-        tracing::debug!(size, "Trying to read from buffer");
+        let mut raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+        loop {
+            let strt = get_strt(raw_bytes);
+            let size = get_size(raw_bytes);
+            tracing::debug!(strt, size, "Trying to read from buffer");
 
-        let res = if size == 0 {
-            // Note that we do not try to grow the read region in case there is nothing left to
-            // read. This is because while cells have and `ack` state to attest if they have been
-            // read, we do not store any extra information concerning their write status. Instead,
-            // it is the responsibility of the queue to grow the read region whenever it writes a
-            // new value.
-            tracing::debug!("Failed to read from buffer");
-            None
-        } else {
-            let start = self.start();
-            tracing::debug!(start, "Reading from buffer");
+            if size == 0 {
+                // Note that we do not try to grow the read region in case there is nothing left to
+                // read. This is because while cells have and `ack` state to attest if they have
+                // been read, we do not store any extra information concerning their write status.
+                // Instead, it is the responsibility of the queue to grow the read region whenever
+                // it writes a new value.
+                tracing::debug!("Failed to read from buffer");
+                break None;
+            } else {
+                tracing::debug!(strt, "Reading from buffer");
 
-            let s = fast_mod(start + 1, cap);
-            self.start.store(s, sync::atomic::Ordering::Release);
-            tracing::debug!(start = s, "Updated read region start");
+                let strt_new = fast_mod(strt + 1, cap);
+                let size_new = size - 1; // checked above
+                let raw_bytes_new = get_raw_bytes(strt_new, size_new);
+                tracing::debug!(start = strt_new, size = size_new, "Updated read region");
 
-            let s = size - 1;
-            self.size.store(s, sync::atomic::Ordering::Release); // checked above
-            tracing::debug!(size = s, "Updated read region size");
+                // So, this is a bit complicated. The issue is that we are mixing atomic (`load`,
+                // `store`) with non atomic (mod, decrement) operations. Why is this a problem?
+                // Well, when performing a `fetch_add` for example, the operation takes place as a
+                // single atomic transaction (the fetch and the add happen simultaneously, and its
+                // changes can be seen across threads as long as you use `AcRel` ordering). This is
+                // not the case here: we `load` an atomic, we compute a change and then we `store`
+                // it. Critically, we can only guarantee the ordering of atomic operations across
+                // threads. We cannot guarantee that our (non-atomic) computation of `strt_new` and
+                // `size_new` will be synchronized with other threads. In other words, it is
+                // possible for the value of `start_and_size` to _change_ between our `load` and
+                // `store`. Atomic fences will _not_ solve this problem since they only guarantee
+                // relative ordering between atomic operations.
+                //
+                // `compare_exchange` allows us to work around this problem by updating an atomic
+                // _only if its value has not changed from what we expect_. In other words, we ask
+                // it to update `strt_and_size` only if `strt_and_size` has not been changed by
+                // another thread in the meantime. If this is not the case, we re-try the whole
+                // operations (checking `size`, computing `strt_new`, `size_new`) with the updated
+                // information.
+                //
+                // We are making two assumptions here:
+                //
+                // 1. We will not loop indefinitely.
+                // 2. The time it takes us to loop is very small, such that there is a good chance
+                //    we will only ever loop a very small number of times before settling on a
+                //    decision.
+                //
+                // Assumption [1] is satisfied by the fact that if other readers or writers keep
+                // updating the message queue, we will eventually reach the condition `size == 0` or
+                // we will succeed in a write. We can assume this since the operations between loop
+                // cycles are very simple (in the order of single instructions), therefore it is
+                // reasonable to expect we will NOT keep missing the store, which satisfiesS
+                // assumption [2].
+                if let Err(bytes) = self.strt_and_size.compare_exchange(
+                    raw_bytes,
+                    raw_bytes_new,
+                    sync::atomic::Ordering::Release,
+                    sync::atomic::Ordering::Acquire,
+                ) {
+                    raw_bytes = bytes;
+                    continue;
+                };
 
-            // Notice how we use the value of `start` before the store. Here the store acts as a
-            // locking mechanism, reserving this slot in the queue so that other threads will not
-            // read it.
-            Some(unsafe { buf.add(start) })
-        };
-
-        // Since we perform atomic loads and stores separately, this fence is required to ensure
-        // those operations remain ordered across multiple invocations of this function and from
-        // different threads.
-        //
-        // Example:
-        //
-        // Thread 1: * loads [0] ---> * stores [1] ---> *fence
-        // Thread 2: -- * loads ......................... [1] ---> * stores [2] ---> *fence
-        sync::atomic::fence(sync::atomic::Ordering::Acquire);
-        res
+                break Some(unsafe { buf.add(strt as usize) });
+            }
+        }
     }
 
     #[tracing::instrument(skip(self, cap))]
-    fn grow(&self, cap: usize) {
-        sync::atomic::fence(sync::atomic::Ordering::AcqRel);
+    fn grow(&self, cap: u32) {
         tracing::debug!("Growing read region");
-        let size = self.size.fetch_add(1, sync::atomic::Ordering::AcqRel);
-
+        let size = get_size(self.strt_and_size.fetch_add(SIZE_INC, sync::atomic::Ordering::AcqRel));
         tracing::debug!(size = size + 1, "Growing successful");
+
         debug_assert_ne!(size, cap);
     }
 }
 
 impl WriteRegion {
     #[tracing::instrument]
-    fn new(size: usize) -> Self {
+    fn new(size: u32) -> Self {
         tracing::debug!("Creating new write region");
         assert!(size > 0);
-        Self { start: sync::atomic::AtomicUsize::new(0), size: sync::atomic::AtomicUsize::new(size) }
+        Self { strt_and_size: sync::atomic::AtomicU64::new(size as u64) }
     }
 
-    fn start(&self) -> usize {
-        self.start.load(sync::atomic::Ordering::Acquire)
+    fn strt(&self) -> u32 {
+        get_strt(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
     }
 
-    fn size(&self) -> usize {
-        self.size.load(sync::atomic::Ordering::Acquire)
+    fn size(&self) -> u32 {
+        get_size(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
     }
 
     #[tracing::instrument(skip(self, buf, cap))]
@@ -470,47 +527,60 @@ impl WriteRegion {
         &self,
         elem: T,
         buf: std::ptr::NonNull<AckCell<T>>,
-        cap: usize,
+        cap: u32,
     ) -> Option<T> {
-        let size = self.size();
-        tracing::debug!(size, "Trying to write to buffer");
+        let mut raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+        loop {
+            let strt = get_strt(raw_bytes);
+            let size = get_size(raw_bytes);
+            tracing::debug!(size, "Trying to write to buffer");
 
-        let res = if size == 0 && self.grow(buf, cap).is_err() {
-            tracing::debug!("Failed to grow write region");
-            Some(elem)
-        } else {
-            let start = self.start();
-            tracing::debug!(start, "Writing to buffer");
+            if size == 0 {
+                if let Ok(bytes) = self.grow(buf, raw_bytes, cap) {
+                    raw_bytes = bytes;
+                    continue;
+                }
 
-            // size - 1 is checked above and `grow` will increment size by 1 if it succeeds, so
-            // whatever happens size > 0
-            let s = fast_mod(start + 1, cap);
-            self.start.store(s, sync::atomic::Ordering::Release);
-            tracing::debug!(start = s, "Updated write region start");
+                tracing::debug!("Failed to grow write region");
+                break Some(elem);
+            } else {
+                tracing::debug!(strt, "Writing to buffer");
 
-            let s = size - 1;
-            self.size.store(s, sync::atomic::Ordering::Release);
-            tracing::debug!(size = s, "Updated write region size");
+                // size - 1 is checked above and `grow` will increment size by 1 if it succeeds, so
+                // whatever happens size > 0
+                let strt_new = fast_mod(strt + 1, cap);
+                let size_new = size - 1;
+                let raw_bytes_new = get_raw_bytes(strt_new, size_new);
+                tracing::debug!(start = strt_new, size = size_new, "Updated write region");
 
-            let cell = AckCell::new(elem);
-            unsafe { buf.add(start).write(cell) };
-            None
-        };
+                if let Err(bytes) = self.strt_and_size.compare_exchange(
+                    raw_bytes,
+                    raw_bytes_new,
+                    sync::atomic::Ordering::Release,
+                    sync::atomic::Ordering::Acquire,
+                ) {
+                    raw_bytes = bytes;
+                    continue;
+                };
 
-        sync::atomic::fence(sync::atomic::Ordering::Acquire);
-        res
+                let cell = AckCell::new(elem);
+                unsafe { buf.add(strt as usize).write(cell) };
+                break None;
+            }
+        }
     }
 
     fn grow<T: Clone + std::fmt::Debug + tracing::Value>(
         &self,
         buf: std::ptr::NonNull<AckCell<T>>,
-        cap: usize,
-    ) -> Result<(), &'static str> {
+        raw_bytes: u64,
+        cap: u32,
+    ) -> Result<u64, &'static str> {
         // We are indexing the element right AFTER the end of the write region to see if we can
         // overwrite it (ie: it has been read and acknowledged)
-        let size = self.size();
-        let start = self.start();
-        let stop = fast_mod(start + size, cap);
+        let strt = get_strt(raw_bytes);
+        let size = get_size(raw_bytes);
+        let stop = fast_mod(strt + size, cap);
 
         // There are a few invariants which guarantee that this will never index into uninitialized
         // memory:
@@ -529,7 +599,7 @@ impl WriteRegion {
         // to write to if it has not already been read and acknowledged.
         //
         // See the note in `MqGuard` to understand why we only read the `ack` state!
-        let cell = unsafe { buf.add(stop).as_ref() };
+        let cell = unsafe { buf.add(stop as usize).as_ref() };
 
         // Why would this fail? Consider the following buffer state:
         //
@@ -554,21 +624,46 @@ impl WriteRegion {
         //
         // This is done to avoid fragmenting the buffer and keep read and write operations simple
         // and efficient.
-        let res = if cell.ack.load(sync::atomic::Ordering::Acquire) {
-            debug_assert!(size + 1 <= cap);
-            self.size.store(size + 1, sync::atomic::Ordering::Release);
-            Ok(())
+        if cell.ack.load(sync::atomic::Ordering::Acquire) {
+            let strt_new = strt;
+            let size_new = size + 1;
+            let raw_bytes_new = get_raw_bytes(strt_new, size_new);
+            debug_assert!(size_new <= cap);
+
+            // Notice that we are not re-trying this operation in case the atomic has been updated
+            // since we last loaded it. This is because we only ever call this method as part of
+            // `write` and we use the retry loop there to handle failures in `grow`.
+            match self.strt_and_size.compare_exchange(
+                raw_bytes,
+                raw_bytes_new,
+                sync::atomic::Ordering::Release,
+                sync::atomic::Ordering::Acquire,
+            ) {
+                Err(bytes) => Ok(bytes),
+                Ok(bytes) => Ok(bytes),
+            }
         } else {
             Err("Failed to grow write region, next element has not been acknowledged yet")
-        };
-
-        sync::atomic::fence(sync::atomic::Ordering::Acquire);
-        res
+        }
     }
 }
 
-fn fast_mod(n: usize, pow_of_2: usize) -> usize {
+fn fast_mod(n: u32, pow_of_2: u32) -> u32 {
     n & (pow_of_2 - 1)
+}
+
+#[tracing::instrument]
+fn get_strt(raw_bytes: u64) -> u32 {
+    tracing::debug!("Getting start");
+    ((raw_bytes & STRT_MSK) >> 32) as u32
+}
+
+fn get_size(raw_bytes: u64) -> u32 {
+    (raw_bytes & SIZE_MSK) as u32
+}
+
+fn get_raw_bytes(strt: u32, size: u32) -> u64 {
+    (strt as u64) << 32 | size as u64
 }
 
 #[cfg(test)]
@@ -620,6 +715,30 @@ mod test {
     /// > `LOOM_CHECKPOINT_FILE` before running the tests again. Otherwise loom will complain about
     /// > having reached an unexpected execution path.
     ///
+    /// # Complexity explosion
+    ///
+    /// Due to the way in which loom checks for concurrent access permutations, execution time will
+    /// grow exponentially with the size of the model. For this reason, it might be necessary to
+    /// limit the breath of checks done by loom.
+    ///
+    /// ```bash
+    /// LOOM_MAX_PREEMPTIONS=3 \
+    ///     LOOM_LOCATION=1 \
+    ///     LOOM_CHECKPOINT_INTERVAL=1 \
+    ///     LOOM_CHECKPOINT_FILE=test_name.json \
+    ///     cargo test test_name --release
+    /// ```
+    ///
+    /// From the loom docs:
+    ///
+    /// > _"you may need to not run an exhaustive check, and instead tell loom to prune out
+    /// > interleavings that are unlikely to reveal additional bugs. You do this by providing loom
+    /// > with a thread pre-emption bound. If you set such a bound, loom will check all possible
+    /// > executions that include at most n thread pre-emptions (where one thread is forcibly
+    /// > stopped and another one runs in its place. In practice, setting the thread pre-emption
+    /// > bound to 2 or 3 is enough to catch most bugs while significantly reducing the number of
+    /// > possible executions."_
+    ///
     /// [SeqCst]: std::sync::atomic::Ordering::SeqCst
     /// [Relaxed]: std::sync::atomic::Ordering::Relaxed
 
@@ -628,9 +747,9 @@ mod test {
         loom::model(|| {
             let (sx, rx) = channel(1);
 
-            assert_eq!(sx.queue.writer.start(), 0);
+            assert_eq!(sx.queue.writer.strt(), 0);
             assert_eq!(sx.queue.writer.size(), 1);
-            assert_eq!(sx.queue.reader.start(), 0);
+            assert_eq!(sx.queue.reader.strt(), 0);
             assert_eq!(sx.queue.reader.size(), 0);
 
             loom::thread::spawn(move || {
@@ -662,9 +781,9 @@ mod test {
         loom::model(|| {
             let (sx, rx) = channel(3);
 
-            assert_eq!(sx.queue.writer.start(), 0);
+            assert_eq!(sx.queue.writer.strt(), 0);
             assert_eq!(sx.queue.writer.size(), 4); // closest power of 2
-            assert_eq!(sx.queue.reader.start(), 0);
+            assert_eq!(sx.queue.reader.strt(), 0);
             assert_eq!(sx.queue.reader.size(), 0);
 
             loom::thread::spawn(move || {
