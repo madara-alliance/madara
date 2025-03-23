@@ -67,6 +67,15 @@ struct WriteRegion {
     strt_and_size: sync::atomic::AtomicU64,
 }
 
+unsafe impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Send for MqSender<T> {}
+unsafe impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Sync for MqSender<T> {}
+
+unsafe impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Send for MqReceiver<T> {}
+unsafe impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Sync for MqReceiver<T> {}
+
+unsafe impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> Send for MqGuard<'a, T> {}
+unsafe impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> Sync for MqGuard<'a, T> {}
+
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> std::fmt::Debug for MqSender<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MqSender").field("queue", &self.queue).finish()
@@ -229,8 +238,12 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqReceiver<T> {
         Self { queue, wake }
     }
 
+    fn resubscribe(&self) -> Self {
+        Self { queue: sync::Arc::clone(&self.queue), wake: sync::Arc::clone(&self.wake) }
+    }
+
     #[tracing::instrument(skip(self))]
-    pub async fn rcv(&self) -> Option<MqGuard<T>> {
+    pub async fn recv(&self) -> Option<MqGuard<T>> {
         tracing::debug!("Trying to receive value");
         loop {
             match self.queue.read() {
@@ -446,7 +459,6 @@ impl ReadRegion {
                 let strt_new = fast_mod(strt + 1, cap);
                 let size_new = size - 1; // checked above
                 let raw_bytes_new = get_raw_bytes(strt_new, size_new);
-                tracing::debug!(start = strt_new, size = size_new, "Updated read region");
 
                 // So, this is a bit complicated. The issue is that we are mixing atomic (`load`,
                 // `store`) with non atomic (mod, decrement) operations. Why is this a problem?
@@ -487,10 +499,12 @@ impl ReadRegion {
                     sync::atomic::Ordering::Release,
                     sync::atomic::Ordering::Acquire,
                 ) {
+                    tracing::debug!(bytes, "Inter-thread update on read region, trying again");
                     raw_bytes = bytes;
                     continue;
                 };
 
+                tracing::debug!(start = strt_new, size = size_new, "Updated read region");
                 break Some(unsafe { buf.add(strt as usize) });
             }
         }
@@ -551,7 +565,6 @@ impl WriteRegion {
                 let strt_new = fast_mod(strt + 1, cap);
                 let size_new = size - 1;
                 let raw_bytes_new = get_raw_bytes(strt_new, size_new);
-                tracing::debug!(start = strt_new, size = size_new, "Updated write region");
 
                 if let Err(bytes) = self.strt_and_size.compare_exchange(
                     raw_bytes,
@@ -559,10 +572,12 @@ impl WriteRegion {
                     sync::atomic::Ordering::Release,
                     sync::atomic::Ordering::Acquire,
                 ) {
+                    tracing::debug!(bytes, "Inter-thread update on write region, trying again");
                     raw_bytes = bytes;
                     continue;
                 };
 
+                tracing::debug!(start = strt_new, size = size_new, "Updated write region");
                 let cell = AckCell::new(elem);
                 unsafe { buf.add(strt as usize).write(cell) };
                 break None;
@@ -652,9 +667,7 @@ fn fast_mod(n: u32, pow_of_2: u32) -> u32 {
     n & (pow_of_2 - 1)
 }
 
-#[tracing::instrument]
 fn get_strt(raw_bytes: u64) -> u32 {
-    tracing::debug!("Getting start");
     ((raw_bytes & STRT_MSK) >> 32) as u32
 }
 
@@ -752,7 +765,7 @@ mod test {
             assert_eq!(sx.queue.reader.strt(), 0);
             assert_eq!(sx.queue.reader.size(), 0);
 
-            loom::thread::spawn(move || {
+            let handle = loom::thread::spawn(move || {
                 assert_matches::assert_matches!(
                     sx.send(42),
                     None,
@@ -762,7 +775,7 @@ mod test {
             });
 
             loom::future::block_on(async move {
-                let guard = rx.rcv().await;
+                let guard = rx.recv().await;
                 assert_matches::assert_matches!(
                     guard,
                     Some(guard) => { assert_eq!(guard.read_acknowledge(), 42) },
@@ -770,9 +783,11 @@ mod test {
                     rx.queue
                 );
 
-                let guard = rx.rcv().await;
+                let guard = rx.recv().await;
                 assert!(guard.is_none(), "Guard acquired on supposedly empty message queue: {:?}", guard.unwrap());
-            })
+            });
+
+            handle.join().unwrap();
         })
     }
 
@@ -786,7 +801,7 @@ mod test {
             assert_eq!(sx.queue.reader.strt(), 0);
             assert_eq!(sx.queue.reader.size(), 0);
 
-            loom::thread::spawn(move || {
+            let handle = loom::thread::spawn(move || {
                 for i in 0..4 {
                     assert_matches::assert_matches!(
                         sx.send(i),
@@ -800,7 +815,7 @@ mod test {
             loom::future::block_on(async move {
                 for i in 0..4 {
                     tracing::info!(i, "Waiting for element");
-                    let guard = rx.rcv().await;
+                    let guard = rx.recv().await;
                     assert_matches::assert_matches!(
                         guard,
                         Some(guard) => { assert_eq!(guard.read_acknowledge(), i) },
@@ -809,42 +824,83 @@ mod test {
                     );
                 }
 
-                let guard = rx.rcv().await;
+                let guard = rx.recv().await;
                 assert!(guard.is_none(), "Guard acquired on supposedly empty message queue: {:?}", guard.unwrap());
-            })
+            });
+
+            handle.join().unwrap();
         })
     }
 
     #[test]
-    fn debug() {
+    fn receive_multiple() {
         loom::model(|| {
-            let atomic_1 = loom::sync::Arc::new(loom::sync::atomic::AtomicUsize::new(0));
-            let atomic_2 = loom::sync::Arc::clone(&atomic_1);
-            let atomic_3 = loom::sync::Arc::clone(&atomic_1);
+            let (sx, rx1) = channel(3);
+            let rx2 = rx1.resubscribe();
+            let rx3 = rx1.resubscribe();
+            let witness1 = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::default()));
+            let witness2 = std::sync::Arc::clone(&witness1);
+            let witness3 = std::sync::Arc::clone(&witness1);
 
-            let handle_1 = loom::thread::spawn(move || {
-                atomic_1.fetch_add(1, loom::sync::atomic::Ordering::AcqRel);
-            });
+            assert_eq!(sx.queue.writer.strt(), 0);
+            assert_eq!(sx.queue.writer.size(), 4); // closest power of 2
+            assert_eq!(sx.queue.reader.strt(), 0);
+            assert_eq!(sx.queue.reader.size(), 0);
 
-            let handle_2 = loom::thread::spawn(move || {
-                let mut n = atomic_2.load(loom::sync::atomic::Ordering::Acquire);
-                loop {
-                    n = match atomic_2.compare_exchange(
-                        n,
-                        n + 1,
-                        loom::sync::atomic::Ordering::Release,
-                        loom::sync::atomic::Ordering::Acquire,
-                    ) {
-                        Ok(_) => break,
-                        Err(n) => n,
-                    }
+            loom::thread::spawn(move || {
+                for i in 0..2 {
+                    assert_matches::assert_matches!(
+                        sx.send(i),
+                        None,
+                        "Failed to send {i}, message queue is {:#?}",
+                        sx.queue
+                    )
                 }
             });
 
-            handle_1.join().unwrap();
-            handle_2.join().unwrap();
+            let handle1 = loom::thread::spawn(move || {
+                loom::future::block_on(async move {
+                    tracing::info!("Waiting for element");
+                    let guard = rx1.recv().await;
+                    assert_matches::assert_matches!(
+                        guard,
+                        Some(guard) => { witness1.lock().await.push(guard.read_acknowledge()) },
+                        "Failed to acquire acknowledge guard, message queue is {:#?}",
+                        rx1.queue
+                    );
+                })
+            });
 
-            assert_eq!(atomic_3.load(loom::sync::atomic::Ordering::Acquire), 2);
+            let handle2 = loom::thread::spawn(move || {
+                loom::future::block_on(async move {
+                    tracing::info!("Waiting for element");
+                    let guard = rx2.recv().await;
+                    assert_matches::assert_matches!(
+                        guard,
+                        Some(guard) => { witness2.lock().await.push(guard.read_acknowledge()) },
+                        "Failed to acquire acknowledge guard, message queue is {:#?}",
+                        rx2.queue
+                    );
+                })
+            });
+
+            handle1.join().unwrap();
+            handle2.join().unwrap();
+
+            loom::future::block_on(async move {
+                tracing::info!(?rx3, "Checking close correctness");
+
+                let guard = rx3.recv().await;
+                assert!(guard.is_none(), "Guard acquired on supposedly empty message queue: {:?}", guard.unwrap());
+
+                let mut witness = witness3.lock().await;
+                tracing::info!(witness = ?*witness, "Checking receive correctness");
+
+                witness.sort();
+                for (expected, actual) in witness.iter().enumerate() {
+                    assert_eq!(*actual, expected)
+                }
+            });
         })
     }
 }
