@@ -43,6 +43,15 @@ jobs:
   coverage-madara:
     needs: [update-db-version, build-madara-cairo]
     uses: ./.github/workflows/task-coverage-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  test-madara:
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-test-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
     secrets: inherit
 
   # Generate coverage report for Orchestrator. Requires Madara binary
