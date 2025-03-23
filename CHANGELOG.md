@@ -620,3 +620,4 @@
 - dev: Get the block status from the actual block in get_block_with_tx_hashes
 - fix: l1-l2 messaging
 - dev : clean contracts and compiled files
+  [v0.8.7]: <https://github.com/crystalin/madara/compare/v0.8.0...v0.8.7>
