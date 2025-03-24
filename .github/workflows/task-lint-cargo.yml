@@ -1,0 +1,37 @@
+name: Task - Lint Cargo
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  cargo-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: ${{ env.CLIPPY_RUST_CACHE_KEY }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: false
+          install-scarb: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      - name: Madara Format and clippy
+        run: |
+          cargo fmt -- --check
+          cargo clippy --workspace --no-deps -- -D warnings
+          cargo clippy --workspace --tests --no-deps -- -D warnings
+      - name: Orchestrator Format and clippy
+        working-directory: orchestrator
+        run: |
+          cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
+          cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
