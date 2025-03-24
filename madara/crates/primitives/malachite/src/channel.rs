@@ -24,11 +24,17 @@ const READ_SIZE_INCR: u64 = 0x0000000000000001;
 pub struct MqSender<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     queue: sync::Arc<MessageQueue<T>>,
     close: sync::Arc<sync::atomic::AtomicBool>,
+    #[cfg(feature = "loom")]
+    wake: sync::Arc<sync::Mutex<std::collections::VecDeque<sync::Arc<Notify>>>>,
+    #[cfg(not(feature = "loom"))]
     wake: sync::Arc<Notify>,
 }
 
 pub struct MqReceiver<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     queue: sync::Arc<MessageQueue<T>>,
+    #[cfg(feature = "loom")]
+    wake: sync::Arc<sync::Mutex<std::collections::VecDeque<sync::Arc<Notify>>>>,
+    #[cfg(not(feature = "loom"))]
     wake: sync::Arc<Notify>,
 }
 
@@ -98,7 +104,13 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MqSender<T> {
             self.queue.sender_unregister();
 
             #[cfg(feature = "loom")]
-            self.wake.notify();
+            {
+                let lock = self.wake.lock().unwrap();
+                for notify in lock.iter() {
+                    notify.notify();
+                }
+            }
+            // self.wake.notify();
             #[cfg(not(feature = "loom"))]
             self.wake.notify_waiters();
         }
@@ -151,6 +163,11 @@ pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: u16) -> 
     let queue_s = sync::Arc::new(MessageQueue::new(cap));
     let queue_r = sync::Arc::clone(&queue_s);
 
+    #[cfg(feature = "loom")]
+    let wake_s = sync::Arc::new(sync::Mutex::new(std::collections::VecDeque::from_iter(
+        [sync::Arc::new(Notify::new())].into_iter(),
+    )));
+    #[cfg(not(feature = "loom"))]
     let wake_s = sync::Arc::new(Notify::new());
     let wake_r = sync::Arc::clone(&wake_s);
 
@@ -161,6 +178,16 @@ pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: u16) -> 
 }
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
+    #[cfg(feature = "loom")]
+    fn new(
+        queue: sync::Arc<MessageQueue<T>>,
+        wake: sync::Arc<sync::Mutex<std::collections::VecDeque<sync::Arc<Notify>>>>,
+    ) -> Self {
+        queue.sender_register();
+        Self { queue, close: sync::Arc::new(sync::atomic::AtomicBool::new(false)), wake }
+    }
+
+    #[cfg(not(feature = "loom"))]
     fn new(queue: sync::Arc<MessageQueue<T>>, wake: sync::Arc<Notify>) -> Self {
         queue.sender_register();
         Self { queue, close: sync::Arc::new(sync::atomic::AtomicBool::new(false)), wake }
@@ -180,7 +207,13 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
                 tracing::debug!("Value sent successfully");
 
                 #[cfg(feature = "loom")]
-                self.wake.notify();
+                {
+                    let lock = self.wake.lock().unwrap();
+                    for notify in lock.iter() {
+                        notify.notify();
+                    }
+                }
+                // self.wake.notify();
                 #[cfg(not(feature = "loom"))]
                 self.wake.notify_one();
 
@@ -194,18 +227,36 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
         self.queue.sender_unregister_all();
 
         #[cfg(feature = "loom")]
-        self.wake.notify();
+        {
+            let lock = self.wake.lock().unwrap();
+            for notify in lock.iter() {
+                notify.notify();
+            }
+        }
+        // self.wake.notify();
         #[cfg(not(feature = "loom"))]
         self.wake.notify_waiters();
     }
 }
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqReceiver<T> {
+    #[cfg(feature = "loom")]
+    fn new(
+        queue: sync::Arc<MessageQueue<T>>,
+        wake: sync::Arc<sync::Mutex<std::collections::VecDeque<sync::Arc<Notify>>>>,
+    ) -> Self {
+        Self { queue, wake }
+    }
+
+    #[cfg(not(feature = "loom"))]
     fn new(queue: sync::Arc<MessageQueue<T>>, wake: sync::Arc<Notify>) -> Self {
         Self { queue, wake }
     }
 
     fn resubscribe(&self) -> Self {
+        #[cfg(feature = "loom")]
+        self.wake.lock().unwrap().push_back(sync::Arc::new(Notify::new()));
+
         Self { queue: sync::Arc::clone(&self.queue), wake: sync::Arc::clone(&self.wake) }
     }
 
@@ -228,7 +279,19 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqReceiver<T> {
                         tracing::debug!("Waiting for a send");
 
                         #[cfg(feature = "loom")]
-                        self.wake.wait();
+                        {
+                            let mut lock = self.wake.lock().unwrap();
+                            let len = lock.len();
+                            let notify = lock.pop_front().unwrap();
+
+                            tracing::debug!(len, "Retrieved notifier");
+
+                            lock.push_back(sync::Arc::clone(&notify));
+                            drop(lock);
+
+                            notify.wait();
+                        }
+                        // self.wake.wait();
                         #[cfg(not(feature = "loom"))]
                         self.wake.notified().await;
 
@@ -788,7 +851,7 @@ mod test_loom {
             assert_eq!(sx.queue.read_indx(), 0);
             assert_eq!(sx.queue.read_size(), 0);
 
-            loom::thread::spawn(move || {
+            let handle1 = loom::thread::spawn(move || {
                 for i in 0..2 {
                     assert_matches::assert_matches!(
                         sx.send(i),
@@ -799,7 +862,7 @@ mod test_loom {
                 }
             });
 
-            let handle1 = loom::thread::spawn(move || {
+            let handle2 = loom::thread::spawn(move || {
                 loom::future::block_on(async move {
                     tracing::info!("Waiting for element");
                     let guard = rx1.recv().await;
@@ -812,7 +875,7 @@ mod test_loom {
                 })
             });
 
-            let handle2 = loom::thread::spawn(move || {
+            let handle3 = loom::thread::spawn(move || {
                 loom::future::block_on(async move {
                     tracing::info!("Waiting for element");
                     let guard = rx2.recv().await;
@@ -827,6 +890,7 @@ mod test_loom {
 
             handle1.join().unwrap();
             handle2.join().unwrap();
+            handle3.join().unwrap();
 
             loom::future::block_on(async move {
                 tracing::info!(?rx3, "Checking close correctness");
