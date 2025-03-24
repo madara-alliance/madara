@@ -88,13 +88,16 @@ jobs:
           rm -f target/madara-* lcov.info
 
           # run tests for madara client / primitive crates
-          cargo llvm-cov --release --package "mc-*" --package "mp-*" --no-report
-
-      - name: Generate coverage info
-        run: |
-          # Find all profraw files and create the report
-          find . -name "*.profraw" -type f
-          cargo llvm-cov report --lcov --output-path lcov.info --release
+          cargo llvm-cov nextest \
+              --release \
+              --features testing \
+              --lcov \
+              --test-threads=1 \
+              --output-path lcov.info \
+              --package "mc-*" \
+              --package "mp-*" \
+              --package "m-proc-*" \
+              --no-fail-fast
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
