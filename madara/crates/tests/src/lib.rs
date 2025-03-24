@@ -68,12 +68,18 @@ impl MadaraCmd {
         let endpoint = self.rpc_url.join("/health").unwrap();
         wait_for_cond(
             || async {
-                let res = reqwest::get(endpoint.clone()).await?;
-                res.error_for_status()?;
-                anyhow::Ok(())
+                match reqwest::get(endpoint.clone()).await {
+                    Ok(res) => res.error_for_status().map_err(|e| e.into()),
+                    Err(e) => {
+                        if e.is_connect() {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        Err(e.into())
+                    }
+                }
             },
             Duration::from_millis(500),
-            50,
+            100,
         )
         .await;
         self.ready = true;
@@ -108,19 +114,15 @@ impl MadaraCmd {
 impl Drop for MadaraCmd {
     fn drop(&mut self) {
         let Some(mut child) = self.process.take() else { return };
-
-        // Send SIGTERM signal to gracefully terminate the process
         let termination_result = Command::new("kill").arg("-TERM").arg(child.id().to_string()).status();
 
-        // Force kill if graceful termination failed
         if termination_result.is_err() {
             let _ = child.kill();
         }
 
-        let grace_period = Duration::from_secs(2);
+        let grace_period = Duration::from_secs(5);
         let termination_start = std::time::Instant::now();
 
-        // Wait for process exit or force kill after grace period
         while let Ok(None) = child.try_wait() {
             if termination_start.elapsed() >= grace_period {
                 let _ = child.kill();
@@ -129,11 +131,11 @@ impl Drop for MadaraCmd {
             std::thread::sleep(Duration::from_millis(100));
         }
 
-        // Ensure process cleanup
         let _ = child.wait();
+        
+        std::thread::sleep(Duration::from_millis(500));
     }
 }
-
 // this really should use unix sockets, sad
 
 const PORT_RANGE: Range<u16> = 19944..20000;
@@ -158,11 +160,28 @@ impl Drop for MadaraPortNum {
 
 pub fn get_port() -> MadaraPortNum {
     let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
-    if let Some(el) = guard.to_reuse.pop() {
-        return MadaraPortNum(el);
+    
+    while let Some(port) = guard.to_reuse.pop() {
+        if is_port_available(port) {
+            return MadaraPortNum(port);
+        }
     }
-    let port = guard.next.next().expect("no more port to use");
-    MadaraPortNum(port)
+    
+    loop {
+        let port = guard.next.next().expect("no more port to use");
+        if is_port_available(port) {
+            return MadaraPortNum(port);
+        }
+    }
+}
+
+fn is_port_available(port: u16) -> bool {
+    use std::net::TcpListener;
+    
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(_) => true,
+        Err(_) => false,
+    }
 }
 
 /// Note: the builder is [`Clone`]able. When cloned, it will keep the same tempdir.
