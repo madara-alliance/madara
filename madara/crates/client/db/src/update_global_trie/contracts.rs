@@ -137,10 +137,9 @@ fn contract_state_leaf_hash(
 
 #[cfg(test)]
 mod contract_trie_root_tests {
+    use super::*;
     use crate::update_global_trie::tests::setup_test_backend;
     use mp_chain_config::ChainConfig;
-
-    use super::*;
     use rstest::*;
     use std::sync::Arc;
 

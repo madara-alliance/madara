@@ -30,7 +30,7 @@ impl TestContext {
             ForwardSyncConfig::default(),
         );
 
-        sync.run(ServiceContext::default()).await.unwrap();
+        sync.run(ServiceContext::new_for_testing()).await.unwrap();
     }
 }
 

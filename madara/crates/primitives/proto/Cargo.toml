@@ -1,0 +1,61 @@
+[package]
+name = "mp-proto"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Madara
+mc-db.workspace = true
+mp-block.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-receipt.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
+
+m-proc-macros.workspace = true
+
+# Starknet
+starknet-core.workspace = true
+starknet-types-core.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Async
+futures.workspace = true
+tokio-test.workspace = true
+tokio.workspace = true
+
+# Protobuf
+base64.workspace = true
+bytes.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unsigned-varint.workspace = true
+
+# P2P
+libp2p.workspace = true
+malachite-core-types.workspace = true
+
+# Debug and testing
+assert_matches.workspace = true
+proptest-derive.workspace = true
+proptest-state-machine.workspace = true
+proptest.workspace = true
+rand.workspace = true
+rstest.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+prost-build.workspace = true

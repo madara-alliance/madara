@@ -38,7 +38,7 @@ impl MadaraBackend {
 
             state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
         }
-        state_root.ok_or_else(|| MadaraStorageError::EmptyBatch)
+        state_root.ok_or(MadaraStorageError::EmptyBatch)
     }
 }
 

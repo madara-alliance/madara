@@ -328,6 +328,35 @@ pub fn versioned_rpc(attr: TokenStream, input: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Decorate a protobuf model function with runtime information about the model
+/// type it is operating on.
+#[proc_macro_attribute]
+pub fn model_describe(args: TokenStream, input: TokenStream) -> TokenStream {
+    // Parse the input function
+    let input_fn = syn::parse_macro_input!(input as syn::ItemFn);
+
+    // Parse the attribute arguments
+    let model_type = syn::parse_macro_input!(args as syn::Path);
+    let Some(model_type) = model_type.segments.last() else {
+        return syn::Error::new(model_type.span(), "Missing model type").into_compile_error().into();
+    };
+
+    // Get the original function name and body
+    let fn_body = &input_fn.block;
+    let fn_vis = &input_fn.vis;
+    let fn_sig = &input_fn.sig;
+
+    // Generate the new function with the added const declaration
+    let output = quote! {
+        #fn_vis #fn_sig {
+            const __MODEL: &str = stringify!(#model_type);
+            #fn_body
+        }
+    };
+
+    output.into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

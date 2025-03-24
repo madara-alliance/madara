@@ -1,5 +1,3 @@
-use std::time::{Duration, SystemTime};
-
 use blockifier::{
     execution::{contract_class::ClassInfo as BClassInfo, errors::ContractClassError},
     transaction::{
@@ -17,6 +15,7 @@ use starknet_api::{
     transaction::{Fee, Transaction as StarknetApiTransaction, TransactionHash},
 };
 use starknet_types_core::felt::Felt;
+use std::time::{Duration, SystemTime};
 
 pub fn blockifier_to_saved_tx(tx: &BTransaction, arrived_at: SystemTime) -> SavedTransaction {
     let arrived_at = arrived_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();

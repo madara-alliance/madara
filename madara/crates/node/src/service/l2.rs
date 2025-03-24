@@ -8,7 +8,7 @@ use mc_sync::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider, ServiceRunner};
 use std::sync::Arc;
 use url::Url;
 
@@ -141,11 +141,11 @@ impl Service for SyncService {
                     }
 
                     for svc_id in deferred_service_stop {
-                        ctx.service_remove(svc_id);
+                        ctx.service_deactivate(svc_id).await;
                     }
 
                     for svc_id in deferred_service_start {
-                        ctx.service_add(svc_id);
+                        ctx.service_activate(svc_id).await;
                     }
                 }
 
@@ -180,15 +180,13 @@ impl Service for SyncService {
                 .run(ctx)
                 .await
             }
-        });
-
-        Ok(())
+        })
     }
 }
 
-impl ServiceId for SyncService {
+impl ServiceIdProvider for SyncService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::L2Sync.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::L2Sync
     }
 }

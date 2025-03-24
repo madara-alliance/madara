@@ -6,3 +6,6 @@
 	path = orchestrator/madara-bootstrapper
 	url = https://github.com/madara-alliance/madara-bootstrapper.git
 	ignore = all
+[submodule "madara/crates/primitives/proto/starknet-p2p-specs"]
+	path = madara/crates/primitives/proto/starknet-p2p-specs
+	url = https://github.com/starknet-io/starknet-p2p-specs

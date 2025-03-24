@@ -6023,6 +6023,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-where"
+version = "1.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
+]
+
+[[package]]
 name = "derive_more"
 version = "0.99.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6924,6 +6935,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "generator"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc6bd114ceda131d3b1d665eba35788690ad37f5916457286b32ab6fd3c438dd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "windows 0.58.0",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7768,7 +7792,7 @@ dependencies = [
  "iana-time-zone-haiku",
  "js-sys",
  "wasm-bindgen",
- "windows-core",
+ "windows-core 0.52.0",
 ]
 
 [[package]]
@@ -7983,7 +8007,7 @@ dependencies = [
  "smol",
  "system-configuration 0.6.1",
  "tokio",
- "windows",
+ "windows 0.52.0",
 ]
 
 [[package]]
@@ -8104,6 +8128,16 @@ name = "indoc"
 version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
+
+[[package]]
+name = "informalsystems-malachitebft-core-types"
+version = "0.0.1"
+source = "git+https://github.com/informalsystems/malachite.git#3a837e3caf4c11b84eb290c7b023cb7d7455dac0"
+dependencies = [
+ "bytes",
+ "derive-where",
+ "thiserror 2.0.3",
+]
 
 [[package]]
 name = "inout"
@@ -9245,6 +9279,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "loom"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
+dependencies = [
+ "cfg-if",
+ "generator",
+ "pin-utils",
+ "scoped-tls",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lru"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9787,6 +9837,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-proto",
  "mp-receipt",
  "mp-state-update",
  "mp-transactions",
@@ -9813,6 +9864,7 @@ dependencies = [
  "anyhow",
  "bitvec",
  "blockifier",
+ "futures",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -10100,6 +10152,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "informalsystems-malachitebft-core-types",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
@@ -10219,6 +10272,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "mp-malachite"
+version = "0.8.0"
+dependencies = [
+ "assert_matches",
+ "informalsystems-malachitebft-core-types",
+ "libp2p",
+ "loom",
+ "mp-block",
+ "mp-proto",
+ "mp-transactions",
+ "rstest 0.18.2",
+ "starknet-types-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mp-oracle"
 version = "0.8.0"
 dependencies = [
@@ -10227,6 +10298,44 @@ dependencies = [
  "mp-utils",
  "reqwest 0.12.8",
  "serde",
+]
+
+[[package]]
+name = "mp-proto"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "base64 0.22.1",
+ "bytes",
+ "futures",
+ "informalsystems-malachitebft-core-types",
+ "libp2p",
+ "m-proc-macros",
+ "mc-db",
+ "mp-block",
+ "mp-class",
+ "mp-convert",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
+ "mp-utils",
+ "proptest",
+ "proptest-derive",
+ "proptest-state-machine",
+ "prost 0.13.3",
+ "prost-build",
+ "rand",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-core",
+ "starknet-types-core",
+ "thiserror 2.0.3",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "unsigned-varint 0.8.0",
 ]
 
 [[package]]
@@ -10302,9 +10411,12 @@ name = "mp-utils"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "async-trait",
  "crypto-bigint 0.5.5",
+ "dashmap 6.1.0",
  "futures",
+ "itertools 0.13.0",
  "num-traits 0.2.19",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -10312,7 +10424,8 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
- "paste",
+ "proptest",
+ "proptest-state-machine",
  "rand",
  "rayon",
  "rstest 0.18.2",
@@ -10321,7 +10434,9 @@ dependencies = [
  "starknet-core",
  "starknet-crypto 0.7.2",
  "starknet-types-core",
+ "thiserror 2.0.3",
  "tokio",
+ "tokio-test",
  "tokio-util",
  "tracing",
  "tracing-core",
@@ -13277,6 +13392,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoped-tls"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14522,7 +14643,7 @@ dependencies = [
  "ntapi",
  "once_cell",
  "rayon",
- "windows",
+ "windows 0.52.0",
 ]
 
 [[package]]
@@ -15881,7 +16002,17 @@ version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be"
 dependencies = [
- "windows-core",
+ "windows-core 0.52.0",
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
+dependencies = [
+ "windows-core 0.58.0",
  "windows-targets 0.52.6",
 ]
 
@@ -15892,6 +16023,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
 dependencies = [
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
+dependencies = [
+ "windows-implement",
+ "windows-interface",
+ "windows-result",
+ "windows-strings",
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-implement"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
+]
+
+[[package]]
+name = "windows-interface"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "053c4c462dc91d3b1504c6fe5a726dd15e216ba718e84a0e46a88fbe5ded3515"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
 ]
 
 [[package]]

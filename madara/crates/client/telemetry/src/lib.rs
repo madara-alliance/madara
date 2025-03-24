@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use futures::SinkExt;
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceContext, ServiceId, ServiceRunner};
+use mp_utils::service::{MadaraServiceId, Service, ServiceContext, ServiceId, ServiceIdProvider, ServiceRunner};
 use reqwest_websocket::{Message, RequestBuilderExt, WebSocket};
 
 mod sysinfo;
@@ -84,16 +84,14 @@ impl Service for TelemetryService {
         let rx = self.telemetry_handle.0.subscribe();
         let clients = start_clients(&self.telemetry_endpoints).await;
 
-        runner.service_loop(move |ctx| start_telemetry(rx, ctx, clients));
-
-        anyhow::Ok(())
+        runner.service_loop(move |ctx| start_telemetry(rx, ctx, clients))
     }
 }
 
-impl ServiceId for TelemetryService {
+impl ServiceIdProvider for TelemetryService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::Telemetry.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::Telemetry
     }
 }
 

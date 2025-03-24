@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c4d09be174ad59bd3d0bf905b9c8bff4ac9181985e3b48b1966a15154d9e5081 # shrinks to (initial_state, transitions, seen_counter) = (OrderedStreamReference { messsages_to_send: "... (46)", messages_processed: "... (0)", stream_id: ConsensusStreamId { height: 0, round: 1 }, lag_cap: 1000, fin: None }, [Send("Content")], None)

@@ -42,7 +42,7 @@ use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_rpc::EmittedEvent;
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceIdProvider};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded, WriteOptions,
@@ -516,10 +516,10 @@ impl DatabaseService {
 
 impl Service for DatabaseService {}
 
-impl ServiceId for DatabaseService {
+impl ServiceIdProvider for DatabaseService {
     #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::Database.svc_id()
+    fn id_provider(&self) -> impl ServiceId {
+        MadaraServiceId::Database
     }
 }
 
