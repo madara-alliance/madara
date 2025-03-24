@@ -47,9 +47,10 @@ jobs:
           path: target/release/
       - run: chmod +x target/release/madara
 
-      - name: Run madara tests
+      - name: Run madara tests (parallel)
+        run: |
+          cargo nextest run --release --tests --package "mp-*" --package "m-proc-*" --no-fail-fast
+      - name: Run madara crate tests (single-threaded)
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
-          cargo test --release --package "mc-*" --package "mp-*"
-        env:
-          PROPTEST_CASES: 2
+          cargo nextest run --release --tests --package "mc-*" --no-fail-fast -j 1
