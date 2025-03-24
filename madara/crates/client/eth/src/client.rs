@@ -268,7 +268,7 @@ pub mod eth_client_getter_test {
         }
         AnvilHandle { instance: Arc::clone(guard.as_ref().unwrap()) }
     }
-
+pub fn create_network(networkSpec: Spec)
     pub fn create_anvil_instance() -> AnvilInstance {
         let port = get_port();
         let anvil = Anvil::new()
@@ -302,6 +302,7 @@ pub mod eth_client_getter_test {
 
         let rpc_url: Url = anvil.endpoint_url();
 
+        let api_resp = api::query::system
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
 

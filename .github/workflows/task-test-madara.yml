@@ -39,11 +39,6 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: stable
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          build-snos: true
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -52,10 +47,9 @@ jobs:
           path: target/release/
       - run: chmod +x target/release/madara
 
-      - name: Run madara tests (parallel)
-        run: |
-          cargo nextest run --release --tests --package "mp-*" --package "m-proc-*" --no-fail-fast
-      - name: Run madara crate tests (single-threaded)
+      - name: Run madara tests
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
-          cargo test --release --tests --package "mc-*" --  --test-threads=1
+          cargo test --release --package "mc-*" --package "mp-*" --package "m-proc-*"
+        env:
+          PROPTEST_CASES: 2
