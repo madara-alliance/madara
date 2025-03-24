@@ -4,8 +4,6 @@ use loom::alloc;
 use loom::sync;
 #[cfg(feature = "loom")]
 use loom::sync::Notify;
-#[cfg(feature = "loom")]
-use loom::thread;
 
 #[cfg(not(feature = "loom"))]
 use std::alloc;
@@ -16,10 +14,8 @@ use tokio::sync::Notify;
 
 const WRIT_INDX_MASK: u64 = 0xffff000000000000;
 const WRIT_SIZE_MASK: u64 = 0x0000ffff00000000;
-const WRIT_SIZE_INCR: u64 = 0x0000000100000000;
 const READ_INDX_MASK: u64 = 0x00000000ffff0000;
 const READ_SIZE_MASK: u64 = 0x000000000000ffff;
-const READ_SIZE_INCR: u64 = 0x0000000000000001;
 
 pub struct MqSender<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     queue: sync::Arc<MessageQueue<T>>,
@@ -191,6 +187,15 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
     fn new(queue: sync::Arc<MessageQueue<T>>, wake: sync::Arc<Notify>) -> Self {
         queue.sender_register();
         Self { queue, close: sync::Arc::new(sync::atomic::AtomicBool::new(false)), wake }
+    }
+
+    fn resubscribe(&self) -> Self {
+        self.queue.sender_register();
+        Self {
+            queue: sync::Arc::clone(&self.queue),
+            close: sync::Arc::clone(&self.close),
+            wake: sync::Arc::clone(&self.wake),
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -516,7 +521,7 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
                     writ_indx,
                     writ_size,
                     read_idx = read_indx_new,
-                    read_size = read_size + 1,
+                    read_size = read_size - 1,
                     "Updated read region"
                 );
                 break Some(unsafe { self.ring.add(read_indx as usize) });
@@ -755,8 +760,9 @@ mod test_loom {
     /// [SeqCst]: std::sync::atomic::Ordering::SeqCst
     /// [Relaxed]: std::sync::atomic::Ordering::Relaxed
 
+    /// Single Producer Single Consumer, one message
     #[test]
-    fn send_single() {
+    fn spsc_1() {
         loom::model(|| {
             let (sx, rx) = channel(1);
             let elem = 42;
@@ -794,8 +800,9 @@ mod test_loom {
         })
     }
 
+    /// Single Produce Single Consumer, multiple messages
     #[test]
-    fn send_multiple() {
+    fn spsc_2() {
         loom::model(|| {
             let (sx, rx) = channel(3);
 
@@ -836,8 +843,9 @@ mod test_loom {
         })
     }
 
+    /// Single Producer Multiple Consumer, multiple messages
     #[test]
-    fn receive_multiple() {
+    fn spmc() {
         loom::model(|| {
             let (sx, rx1) = channel(3);
             let rx2 = rx1.resubscribe();
@@ -908,4 +916,71 @@ mod test_loom {
             });
         })
     }
+
+    /// Multiple Producer Multiple Consumer, multiple messages
+    #[test]
+    fn mpsc() {
+        loom::model(|| {
+            let (sx1, rx) = channel(3);
+            let sx2 = sx1.resubscribe();
+
+            assert_eq!(sx1.queue.writ_indx(), 0);
+            assert_eq!(sx1.queue.writ_size(), 4); // closest power of 2
+            assert_eq!(sx1.queue.read_indx(), 0);
+            assert_eq!(sx1.queue.read_size(), 0);
+
+            let handle1 = loom::thread::spawn(move || {
+                assert_matches::assert_matches!(
+                    sx1.send(42),
+                    None,
+                    "Failed to send 42, message queue is {:#?}",
+                    sx1.queue
+                )
+            });
+
+            let handle2 = loom::thread::spawn(move || {
+                assert_matches::assert_matches!(
+                    sx2.send(69),
+                    None,
+                    "Failed to send 69, message queue is {:#?}",
+                    sx2.queue
+                )
+            });
+
+            loom::future::block_on(async move {
+                let mut res = vec![];
+
+                for i in 0..2 {
+                    tracing::info!("Waiting for element");
+                    let guard = rx.recv().await;
+                    assert_matches::assert_matches!(
+                        guard,
+                        Some(guard) => { res.push(guard.read_acknowledge()) },
+                        "Failed to acquire acknowledge guard {i}, message queue is {:#?}",
+                        rx.queue
+                    );
+                }
+
+                tracing::info!("Checking close correctness");
+                let guard = rx.recv().await;
+                assert!(guard.is_none(), "Guard acquired on supposedly empty message queue: {:?}", guard.unwrap());
+
+                res.sort();
+                tracing::info!(?res, "Checking receive correctness");
+
+                assert_eq!(res.len(), 2);
+                assert_eq!(res[0], 42);
+                assert_eq!(res[1], 69);
+            });
+
+            handle1.join().unwrap();
+            handle2.join().unwrap();
+        })
+    }
+
+    // TEST: wrap around
+    // TEST: overflow
+    // TEST: drop count
+    // TEST: failure conditions
+    // TEST: proptest
 }
