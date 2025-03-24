@@ -1,21 +1,25 @@
-#[cfg(test)]
+#[cfg(feature = "loom")]
 use loom::alloc;
-#[cfg(test)]
+#[cfg(feature = "loom")]
 use loom::sync;
-#[cfg(test)]
+#[cfg(feature = "loom")]
 use loom::sync::Notify;
+#[cfg(feature = "loom")]
+use loom::thread;
 
-#[cfg(not(test))]
+#[cfg(not(feature = "loom"))]
 use std::alloc;
-#[cfg(not(test))]
+#[cfg(not(feature = "loom"))]
 use std::sync;
-#[cfg(not(test))]
+#[cfg(not(feature = "loom"))]
 use tokio::sync::Notify;
 
-const STRT_MSK: u64 = 0xffffffff00000000;
-const SIZE_MSK: u64 = 0x00000000ffffffff;
-const STRT_INC: u64 = 0x0000000100000000;
-const SIZE_INC: u64 = 0x0000000000000001;
+const WRIT_INDX_MASK: u64 = 0xffff000000000000;
+const WRIT_SIZE_MASK: u64 = 0x0000ffff00000000;
+const WRIT_SIZE_INCR: u64 = 0x0000000100000000;
+const READ_INDX_MASK: u64 = 0x00000000ffff0000;
+const READ_SIZE_MASK: u64 = 0x000000000000ffff;
+const READ_SIZE_INCR: u64 = 0x0000000000000001;
 
 pub struct MqSender<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     queue: sync::Arc<MessageQueue<T>>,
@@ -39,32 +43,14 @@ pub struct MqGuard<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> {
 struct MessageQueue<T: Send + Clone + std::fmt::Debug + tracing::Value> {
     ring: std::ptr::NonNull<AckCell<T>>,
     senders: sync::atomic::AtomicUsize,
-    writer: WriteRegion,
-    reader: ReadRegion,
-    cap: u32,
+    read_write: sync::atomic::AtomicU64,
+    cap: u16,
 }
 
 /// An atomic acknowledge cell, use to ensure an element has been read.
 struct AckCell<T: Clone + std::fmt::Debug + tracing::Value> {
     elem: std::mem::MaybeUninit<T>,
     ack: sync::atomic::AtomicBool,
-}
-
-/// A region in a pointer array in which we are allowed to [read].
-///
-/// [read]: Self::read
-struct ReadRegion {
-    /// We use a single atomic in which we store the start and size of a region as two [`u32`] ints.
-    /// This is done so that updates to the start and the size of the region happen as a single
-    /// atomic unit, with no possibility of another thread slotting a `store` or `load` in between.
-    strt_and_size: sync::atomic::AtomicU64,
-}
-
-/// A region in a pointer array in which we are allowed to [write].
-///
-/// [write]: Self::write
-struct WriteRegion {
-    strt_and_size: sync::atomic::AtomicU64,
 }
 
 unsafe impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Send for MqSender<T> {}
@@ -97,30 +83,12 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> std::fmt::Debug for
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> std::fmt::Debug for MessageQueue<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let senders = self.senders.load(sync::atomic::Ordering::Acquire);
+        let read_write = self.read_write.load(sync::atomic::Ordering::Acquire);
         f.debug_struct("MessageQueue")
             .field("senders", &senders)
-            .field("writer", &self.writer)
-            .field("reader", &self.reader)
+            .field("read_write", &read_write)
             .field("cap", &self.cap)
             .finish()
-    }
-}
-
-impl std::fmt::Debug for ReadRegion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
-        let strt = get_strt(raw_bytes);
-        let size = get_size(raw_bytes);
-        f.debug_struct("ReadRegion").field("strt", &strt).field("size", &size).finish()
-    }
-}
-
-impl std::fmt::Debug for WriteRegion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
-        let strt = get_strt(raw_bytes);
-        let size = get_size(raw_bytes);
-        f.debug_struct("WriteRegion").field("strt", &strt).field("size", &size).finish()
     }
 }
 
@@ -129,9 +97,9 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MqSender<T> {
         if !self.close.load(sync::atomic::Ordering::Acquire) {
             self.queue.sender_unregister();
 
-            #[cfg(test)]
+            #[cfg(feature = "loom")]
             self.wake.notify();
-            #[cfg(not(test))]
+            #[cfg(not(feature = "loom"))]
             self.wake.notify_waiters();
         }
     }
@@ -161,14 +129,13 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MqGuard<'a
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MessageQueue<T> {
     fn drop(&mut self) {
-        let raw_bytes = self.reader.strt_and_size.swap(0, sync::atomic::Ordering::Release);
+        let raw_bytes = self.read_write.swap(0, sync::atomic::Ordering::Release);
 
-        let strt = get_strt(raw_bytes);
-        let size = get_size(raw_bytes);
-        // FIXME: this risks overflowing!
-        let stop = strt + size;
+        let read_indx = get_read_indx(raw_bytes) as u64;
+        let read_size = get_read_size(raw_bytes) as u64;
+        let stop = read_indx + read_size;
 
-        for i in (strt..stop).map(|i| fast_mod(i, self.cap)) {
+        for i in (read_indx..stop).map(|i| fast_mod(i, self.cap)) {
             unsafe { self.ring.add(i as usize).read() };
         }
 
@@ -178,7 +145,7 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> Drop for MessageQueue<T
 }
 
 #[tracing::instrument]
-pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: u32) -> (MqSender<T>, MqReceiver<T>) {
+pub fn channel<T: Send + Clone + std::fmt::Debug + tracing::Value>(cap: u16) -> (MqSender<T>, MqReceiver<T>) {
     tracing::debug!("Creating new channel");
 
     let queue_s = sync::Arc::new(MessageQueue::new(cap));
@@ -212,9 +179,9 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
             None => {
                 tracing::debug!("Value sent successfully");
 
-                #[cfg(test)]
+                #[cfg(feature = "loom")]
                 self.wake.notify();
-                #[cfg(not(test))]
+                #[cfg(not(feature = "loom"))]
                 self.wake.notify_one();
 
                 None
@@ -226,9 +193,9 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqSender<T> {
         self.close.store(true, sync::atomic::Ordering::Release);
         self.queue.sender_unregister_all();
 
-        #[cfg(test)]
+        #[cfg(feature = "loom")]
         self.wake.notify();
-        #[cfg(not(test))]
+        #[cfg(not(feature = "loom"))]
         self.wake.notify_waiters();
     }
 }
@@ -254,15 +221,15 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MqReceiver<T> {
                 }
                 None => {
                     tracing::debug!("Failed to receive value");
-                    if !self.queue.sender_available() && self.queue.reader.size() == 0 {
+                    if !self.queue.sender_available() && self.queue.read_size() == 0 {
                         tracing::debug!("No sender available");
                         break None;
                     } else {
                         tracing::debug!("Waiting for a send");
 
-                        #[cfg(test)]
+                        #[cfg(feature = "loom")]
                         self.wake.wait();
-                        #[cfg(not(test))]
+                        #[cfg(not(feature = "loom"))]
                         self.wake.notified().await;
 
                         tracing::debug!("A send was detected");
@@ -344,7 +311,7 @@ impl<'a, T: Send + Clone + std::fmt::Debug + tracing::Value> MqGuard<'a, T> {
 
 impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
     #[tracing::instrument]
-    fn new(cap: u32) -> Self {
+    fn new(cap: u16) -> Self {
         assert_ne!(std::mem::size_of::<T>(), 0, "T cannot be a ZST");
         assert!(cap > 0, "Tried to create a message queue with a capacity < 1");
 
@@ -367,10 +334,9 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
         };
 
         let senders = sync::atomic::AtomicUsize::new(0);
-        let writter = WriteRegion::new(cap);
-        let reader = ReadRegion::new();
+        let read_write = sync::atomic::AtomicU64::new(get_raw_bytes(0, cap, 0, 0));
 
-        Self { ring, cap, senders, writer: writter, reader }
+        Self { ring, cap, senders, read_write }
     }
 
     #[tracing::instrument(skip(self))]
@@ -399,53 +365,33 @@ impl<T: Send + Clone + std::fmt::Debug + tracing::Value> MessageQueue<T> {
         senders > 0
     }
 
+    fn writ_indx(&self) -> u16 {
+        get_writ_indx(self.read_write.load(sync::atomic::Ordering::Acquire))
+    }
+
+    fn writ_size(&self) -> u16 {
+        get_writ_size(self.read_write.load(sync::atomic::Ordering::Acquire))
+    }
+
+    fn read_indx(&self) -> u16 {
+        get_read_indx(self.read_write.load(sync::atomic::Ordering::Acquire))
+    }
+
+    fn read_size(&self) -> u16 {
+        get_read_size(self.read_write.load(sync::atomic::Ordering::Acquire))
+    }
+
+    #[tracing::instrument(skip(self))]
     fn read(&self) -> Option<std::ptr::NonNull<AckCell<T>>> {
-        self.reader.read(self.ring, self.cap)
-    }
-
-    fn write(&self, elem: T) -> Option<T> {
-        let res = self.writer.write(elem, self.ring, self.cap);
-        if res.is_none() {
-            self.reader.grow(self.cap);
-        }
-        res
-    }
-}
-
-impl<T: Clone + std::fmt::Debug + tracing::Value> AckCell<T> {
-    fn new(elem: T) -> Self {
-        Self { elem: std::mem::MaybeUninit::new(elem), ack: sync::atomic::AtomicBool::new(false) }
-    }
-}
-
-impl ReadRegion {
-    #[tracing::instrument]
-    fn new() -> Self {
-        tracing::debug!("Creating new read region");
-        Self { strt_and_size: sync::atomic::AtomicU64::new(0) }
-    }
-
-    fn strt(&self) -> u32 {
-        get_strt(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
-    }
-
-    fn size(&self) -> u32 {
-        get_size(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
-    }
-
-    #[tracing::instrument(skip(self, buf, cap))]
-    fn read<T: Send + Clone + std::fmt::Debug + tracing::Value>(
-        &self,
-        buf: std::ptr::NonNull<AckCell<T>>,
-        cap: u32,
-    ) -> Option<std::ptr::NonNull<AckCell<T>>> {
-        let mut raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+        let mut raw_bytes = self.read_write.load(sync::atomic::Ordering::SeqCst);
         loop {
-            let strt = get_strt(raw_bytes);
-            let size = get_size(raw_bytes);
-            tracing::debug!(strt, size, "Trying to read from buffer");
+            let writ_indx = get_writ_indx(raw_bytes);
+            let writ_size = get_writ_size(raw_bytes);
+            let read_indx = get_read_indx(raw_bytes);
+            let read_size = get_read_size(raw_bytes);
+            tracing::debug!(writ_indx, writ_size, read_indx, read_size, "Trying to read from buffer");
 
-            if size == 0 {
+            if read_size == 0 {
                 // Note that we do not try to grow the read region in case there is nothing left to
                 // read. This is because while cells have and `ack` state to attest if they have
                 // been read, we do not store any extra information concerning their write status.
@@ -454,11 +400,10 @@ impl ReadRegion {
                 tracing::debug!("Failed to read from buffer");
                 break None;
             } else {
-                tracing::debug!(strt, "Reading from buffer");
+                tracing::debug!(read_indx, "Reading from buffer");
 
-                let strt_new = fast_mod(strt + 1, cap);
-                let size_new = size - 1; // checked above
-                let raw_bytes_new = get_raw_bytes(strt_new, size_new);
+                let read_indx_new = fast_mod(read_indx + 1, self.cap);
+                let raw_bytes_new = get_raw_bytes(writ_indx, writ_size, read_indx_new, read_size - 1);
 
                 // So, this is a bit complicated. The issue is that we are mixing atomic (`load`,
                 // `store`) with non atomic (mod, decrement) operations. Why is this a problem?
@@ -493,7 +438,7 @@ impl ReadRegion {
                 // cycles are very simple (in the order of single instructions), therefore it is
                 // reasonable to expect we will NOT keep missing the store, which satisfiesS
                 // assumption [2].
-                if let Err(bytes) = self.strt_and_size.compare_exchange(
+                if let Err(bytes) = self.read_write.compare_exchange(
                     raw_bytes,
                     raw_bytes_new,
                     sync::atomic::Ordering::Release,
@@ -504,53 +449,30 @@ impl ReadRegion {
                     continue;
                 };
 
-                tracing::debug!(start = strt_new, size = size_new, "Updated read region");
-                break Some(unsafe { buf.add(strt as usize) });
+                tracing::debug!(
+                    writ_indx,
+                    writ_size,
+                    read_idx = read_indx_new,
+                    read_size = read_size + 1,
+                    "Updated read region"
+                );
+                break Some(unsafe { self.ring.add(read_indx as usize) });
             }
         }
     }
 
-    #[tracing::instrument(skip(self, cap))]
-    fn grow(&self, cap: u32) {
-        tracing::debug!("Growing read region");
-        let size = get_size(self.strt_and_size.fetch_add(SIZE_INC, sync::atomic::Ordering::AcqRel));
-        tracing::debug!(size = size + 1, "Growing successful");
-
-        debug_assert_ne!(size, cap);
-    }
-}
-
-impl WriteRegion {
-    #[tracing::instrument]
-    fn new(size: u32) -> Self {
-        tracing::debug!("Creating new write region");
-        assert!(size > 0);
-        Self { strt_and_size: sync::atomic::AtomicU64::new(size as u64) }
-    }
-
-    fn strt(&self) -> u32 {
-        get_strt(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
-    }
-
-    fn size(&self) -> u32 {
-        get_size(self.strt_and_size.load(sync::atomic::Ordering::Acquire))
-    }
-
-    #[tracing::instrument(skip(self, buf, cap))]
-    fn write<T: Clone + std::fmt::Debug + tracing::Value>(
-        &self,
-        elem: T,
-        buf: std::ptr::NonNull<AckCell<T>>,
-        cap: u32,
-    ) -> Option<T> {
-        let mut raw_bytes = self.strt_and_size.load(sync::atomic::Ordering::Acquire);
+    #[tracing::instrument(skip(self))]
+    fn write(&self, elem: T) -> Option<T> {
+        let mut raw_bytes = self.read_write.load(sync::atomic::Ordering::Acquire);
         loop {
-            let strt = get_strt(raw_bytes);
-            let size = get_size(raw_bytes);
-            tracing::debug!(size, "Trying to write to buffer");
+            let writ_indx = get_writ_indx(raw_bytes);
+            let writ_size = get_writ_size(raw_bytes);
+            let read_indx = get_read_indx(raw_bytes);
+            let read_size = get_read_size(raw_bytes);
+            tracing::debug!(writ_indx, writ_size, read_indx, read_size, "Trying to write to buffer");
 
-            if size == 0 {
-                if let Ok(bytes) = self.grow(buf, raw_bytes, cap) {
+            if writ_size == 0 {
+                if let Ok(bytes) = self.grow(raw_bytes) {
                     raw_bytes = bytes;
                     continue;
                 }
@@ -558,15 +480,14 @@ impl WriteRegion {
                 tracing::debug!("Failed to grow write region");
                 break Some(elem);
             } else {
-                tracing::debug!(strt, "Writing to buffer");
+                tracing::debug!(writ_indx, "Writing to buffer");
 
                 // size - 1 is checked above and `grow` will increment size by 1 if it succeeds, so
                 // whatever happens size > 0
-                let strt_new = fast_mod(strt + 1, cap);
-                let size_new = size - 1;
-                let raw_bytes_new = get_raw_bytes(strt_new, size_new);
+                let writ_indx_new = fast_mod(writ_indx + 1, self.cap);
+                let raw_bytes_new = get_raw_bytes(writ_indx_new, writ_size - 1, read_indx, read_size + 1);
 
-                if let Err(bytes) = self.strt_and_size.compare_exchange(
+                if let Err(bytes) = self.read_write.compare_exchange(
                     raw_bytes,
                     raw_bytes_new,
                     sync::atomic::Ordering::Release,
@@ -577,25 +498,28 @@ impl WriteRegion {
                     continue;
                 };
 
-                tracing::debug!(start = strt_new, size = size_new, "Updated write region");
+                tracing::debug!(
+                    writ_indx = writ_indx_new,
+                    writ_size = writ_size - 1,
+                    read_indx,
+                    read_size = read_size + 1,
+                    "Updated write region"
+                );
                 let cell = AckCell::new(elem);
-                unsafe { buf.add(strt as usize).write(cell) };
+                unsafe { self.ring.add(writ_indx as usize).write(cell) };
                 break None;
             }
         }
     }
 
-    fn grow<T: Clone + std::fmt::Debug + tracing::Value>(
-        &self,
-        buf: std::ptr::NonNull<AckCell<T>>,
-        raw_bytes: u64,
-        cap: u32,
-    ) -> Result<u64, &'static str> {
+    fn grow(&self, raw_bytes: u64) -> Result<u64, &'static str> {
         // We are indexing the element right AFTER the end of the write region to see if we can
         // overwrite it (ie: it has been read and acknowledged)
-        let strt = get_strt(raw_bytes);
-        let size = get_size(raw_bytes);
-        let stop = fast_mod(strt + size, cap);
+        let writ_indx = get_writ_indx(raw_bytes);
+        let writ_size = get_writ_size(raw_bytes);
+        let read_indx = get_read_indx(raw_bytes);
+        let read_size = get_read_size(raw_bytes);
+        let stop = fast_mod(writ_indx + writ_size, self.cap);
 
         // There are a few invariants which guarantee that this will never index into uninitialized
         // memory:
@@ -614,7 +538,7 @@ impl WriteRegion {
         // to write to if it has not already been read and acknowledged.
         //
         // See the note in `MqGuard` to understand why we only read the `ack` state!
-        let cell = unsafe { buf.add(stop as usize).as_ref() };
+        let cell = unsafe { self.ring.add(stop as usize).as_ref() };
 
         // Why would this fail? Consider the following buffer state:
         //
@@ -640,15 +564,13 @@ impl WriteRegion {
         // This is done to avoid fragmenting the buffer and keep read and write operations simple
         // and efficient.
         if cell.ack.load(sync::atomic::Ordering::Acquire) {
-            let strt_new = strt;
-            let size_new = size + 1;
-            let raw_bytes_new = get_raw_bytes(strt_new, size_new);
-            debug_assert!(size_new <= cap);
+            let raw_bytes_new = get_raw_bytes(writ_indx, writ_size + 1, read_indx, read_size);
+            debug_assert!(writ_size <= self.cap);
 
             // Notice that we are not re-trying this operation in case the atomic has been updated
             // since we last loaded it. This is because we only ever call this method as part of
             // `write` and we use the retry loop there to handle failures in `grow`.
-            match self.strt_and_size.compare_exchange(
+            match self.read_write.compare_exchange(
                 raw_bytes,
                 raw_bytes_new,
                 sync::atomic::Ordering::Release,
@@ -663,24 +585,39 @@ impl WriteRegion {
     }
 }
 
-fn fast_mod(n: u32, pow_of_2: u32) -> u32 {
-    n & (pow_of_2 - 1)
+impl<T: Clone + std::fmt::Debug + tracing::Value> AckCell<T> {
+    fn new(elem: T) -> Self {
+        Self { elem: std::mem::MaybeUninit::new(elem), ack: sync::atomic::AtomicBool::new(false) }
+    }
 }
 
-fn get_strt(raw_bytes: u64) -> u32 {
-    ((raw_bytes & STRT_MSK) >> 32) as u32
+fn fast_mod(n: impl Into<u64>, pow_of_2: impl Into<u64>) -> u16 {
+    (n.into() & (pow_of_2.into() - 1)) as u16
 }
 
-fn get_size(raw_bytes: u64) -> u32 {
-    (raw_bytes & SIZE_MSK) as u32
+fn get_writ_indx(raw_bytes: u64) -> u16 {
+    ((raw_bytes & WRIT_INDX_MASK) >> 48) as u16
 }
 
-fn get_raw_bytes(strt: u32, size: u32) -> u64 {
-    (strt as u64) << 32 | size as u64
+fn get_writ_size(raw_bytes: u64) -> u16 {
+    ((raw_bytes & WRIT_SIZE_MASK) >> 32) as u16
 }
 
-#[cfg(test)]
-mod test {
+fn get_read_indx(raw_bytes: u64) -> u16 {
+    ((raw_bytes & READ_INDX_MASK) >> 16) as u16
+}
+
+fn get_read_size(raw_bytes: u64) -> u16 {
+    (raw_bytes & READ_SIZE_MASK) as u16
+}
+
+#[tracing::instrument(skip_all)]
+fn get_raw_bytes(writ_indx: u16, writ_size: u16, read_indx: u16, read_size: u16) -> u64 {
+    (writ_indx as u64) << 48 | (writ_size as u64) << 32 | (read_indx as u64) << 16 | read_size as u64
+}
+
+#[cfg(all(test, feature = "loom"))]
+mod test_loom {
     use super::*;
 
     /// [loom] is a deterministic concurrent permutation simulator. From the loom docs:
@@ -698,7 +635,7 @@ mod test {
     /// LOOM_LOCATION=1 \
     ///     LOOM_CHECKPOINT_INTERVAL=1 \
     ///     LOOM_CHECKPOINT_FILE=test_name.json \
-    ///     cargo test test_name --release
+    ///     cargo test test_name --release --features loom
     /// ```
     ///
     /// This will begin by running loom with no logs, checking all possible permutations of
@@ -718,7 +655,7 @@ mod test {
     ///     LOOM_LOCATION=1 \
     ///     LOOM_CHECKPOINT_INTERVAL=1 \
     ///     LOOM_CHECKPOINT_FILE=test_name.json \
-    ///     cargo test test_name --release
+    ///     cargo test test_name --release --features loom
     /// ```
     ///
     /// This will resume testing with the previously failing case. We enable logging this time as
@@ -739,7 +676,7 @@ mod test {
     ///     LOOM_LOCATION=1 \
     ///     LOOM_CHECKPOINT_INTERVAL=1 \
     ///     LOOM_CHECKPOINT_FILE=test_name.json \
-    ///     cargo test test_name --release
+    ///     cargo test test_name --release --features loom
     /// ```
     ///
     /// From the loom docs:
@@ -759,26 +696,29 @@ mod test {
     fn send_single() {
         loom::model(|| {
             let (sx, rx) = channel(1);
+            let elem = 42;
 
-            assert_eq!(sx.queue.writer.strt(), 0);
-            assert_eq!(sx.queue.writer.size(), 1);
-            assert_eq!(sx.queue.reader.strt(), 0);
-            assert_eq!(sx.queue.reader.size(), 0);
+            assert_eq!(sx.queue.writ_indx(), 0);
+            assert_eq!(sx.queue.writ_size(), 1); // closest power of 2
+            assert_eq!(sx.queue.read_indx(), 0);
+            assert_eq!(sx.queue.read_size(), 0);
 
             let handle = loom::thread::spawn(move || {
+                tracing::info!(elem, "Sending element");
                 assert_matches::assert_matches!(
-                    sx.send(42),
+                    sx.send(elem),
                     None,
                     "Failed to send value, message queue is {:#?}",
                     sx.queue
-                )
+                );
             });
 
             loom::future::block_on(async move {
+                tracing::info!(elem, "Waiting for element");
                 let guard = rx.recv().await;
                 assert_matches::assert_matches!(
                     guard,
-                    Some(guard) => { assert_eq!(guard.read_acknowledge(), 42) },
+                    Some(guard) => { assert_eq!(guard.read_acknowledge(), elem) },
                     "Failed to acquire acknowledge guard, message queue is {:#?}",
                     rx.queue
                 );
@@ -796,13 +736,14 @@ mod test {
         loom::model(|| {
             let (sx, rx) = channel(3);
 
-            assert_eq!(sx.queue.writer.strt(), 0);
-            assert_eq!(sx.queue.writer.size(), 4); // closest power of 2
-            assert_eq!(sx.queue.reader.strt(), 0);
-            assert_eq!(sx.queue.reader.size(), 0);
+            assert_eq!(sx.queue.writ_indx(), 0);
+            assert_eq!(sx.queue.writ_size(), 4); // closest power of 2
+            assert_eq!(sx.queue.read_indx(), 0);
+            assert_eq!(sx.queue.read_size(), 0);
 
             let handle = loom::thread::spawn(move || {
-                for i in 0..4 {
+                for i in 0..2 {
+                    tracing::info!(i, "Sending element");
                     assert_matches::assert_matches!(
                         sx.send(i),
                         None,
@@ -813,7 +754,7 @@ mod test {
             });
 
             loom::future::block_on(async move {
-                for i in 0..4 {
+                for i in 0..2 {
                     tracing::info!(i, "Waiting for element");
                     let guard = rx.recv().await;
                     assert_matches::assert_matches!(
@@ -842,10 +783,10 @@ mod test {
             let witness2 = std::sync::Arc::clone(&witness1);
             let witness3 = std::sync::Arc::clone(&witness1);
 
-            assert_eq!(sx.queue.writer.strt(), 0);
-            assert_eq!(sx.queue.writer.size(), 4); // closest power of 2
-            assert_eq!(sx.queue.reader.strt(), 0);
-            assert_eq!(sx.queue.reader.size(), 0);
+            assert_eq!(sx.queue.writ_indx(), 0);
+            assert_eq!(sx.queue.writ_size(), 4); // closest power of 2
+            assert_eq!(sx.queue.read_indx(), 0);
+            assert_eq!(sx.queue.read_size(), 0);
 
             loom::thread::spawn(move || {
                 for i in 0..2 {

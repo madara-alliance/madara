@@ -26,6 +26,8 @@ malachite-core-types.workspace = true
 
 # Async
 tokio.workspace = true
+loom.workspace = true
+loom.optional = true
 
 # Logging
 tracing.workspace = true
@@ -33,9 +35,10 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 
-# Async
-loom.workspace = true
-
 # Testing
 assert_matches.workspace = true
 rstest.workspace = true
+
+[features]
+default = []
+loom = ["dep:loom"]
