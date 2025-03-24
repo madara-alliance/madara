@@ -39,6 +39,9 @@ jobs:
           install-scarb: true
           install-foundry: true
           foundry-version: stable
+          
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
