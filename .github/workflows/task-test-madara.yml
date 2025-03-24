@@ -34,9 +34,13 @@ jobs:
         with:
           cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
-          install-scarb: false
-          install-foundry: false
+          install-scarb: true
+          install-foundry: true
+          foundry-version: stable
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
