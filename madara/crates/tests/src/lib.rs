@@ -132,7 +132,7 @@ impl Drop for MadaraCmd {
         }
 
         let _ = child.wait();
-        
+
         std::thread::sleep(Duration::from_millis(500));
     }
 }
@@ -160,13 +160,13 @@ impl Drop for MadaraPortNum {
 
 pub fn get_port() -> MadaraPortNum {
     let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
-    
+
     while let Some(port) = guard.to_reuse.pop() {
         if is_port_available(port) {
             return MadaraPortNum(port);
         }
     }
-    
+
     loop {
         let port = guard.next.next().expect("no more port to use");
         if is_port_available(port) {
@@ -177,7 +177,7 @@ pub fn get_port() -> MadaraPortNum {
 
 fn is_port_available(port: u16) -> bool {
     use std::net::TcpListener;
-    
+
     match TcpListener::bind(("127.0.0.1", port)) {
         Ok(_) => true,
         Err(_) => false,
