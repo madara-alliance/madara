@@ -320,6 +320,14 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                 // Cloning transactions: That's a lot of cloning, but we're kind of forced to do that because blockifier takes
                 // a `&[Transaction]` slice. In addition, declare transactions have their class behind an Arc.
                 loop {
+                    tracing::debug!("New weights: {:?}", executor.bouncer.get_accumulated_weights());
+                    tracing::debug!("Stats: {:?}", stats);
+                    tracing::debug!("Block now full: {:?}", block_now_full);
+
+                    if block_now_full {
+                        break;
+                    }
+
                     // Take transactions from mempool.
                     let to_take = batch_size.saturating_sub(txs_to_process.len());
                     let cur_len = txs_to_process.len();
@@ -392,10 +400,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
                         executed_txs.push(mempool_tx)
                     }
-
-                    if block_now_full {
-                        break;
-                    }
                 }
 
                 let on_top_of = executor.block_state.as_ref().expect(BLOCK_STATE_ACCESS_ERR).state.on_top_of_block_id;
@@ -429,9 +433,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             n_tx,
             res.stats.n_re_added_to_mempool,
         );
-        tracing::debug!("New weights: {:?}", res.bouncer_weights);
-        tracing::debug!("Block now full: {:?}", res.block_now_full);
-        tracing::debug!("Stats: {:?}", res.stats);
 
         Ok(res)
     }
