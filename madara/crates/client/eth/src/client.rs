@@ -142,7 +142,7 @@ impl EthereumClient {
     /// Get the last Starknet block number verified on L1
     pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
         let block_number = self.l1_core_contract.stateBlockNumber().call().await?;
-        let last_block_number: u64 = (block_number._0).as_u64();
+        let last_block_number: u64 = block_number._0.as_u64();
         Ok(last_block_number)
     }
 
@@ -196,26 +196,20 @@ pub mod eth_client_getter_test {
     pub struct AnvilPortNum(pub u16);
     impl Drop for AnvilPortNum {
         fn drop(&mut self) {
-            let mut guard = match AVAILABLE_PORTS.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    println!("Recovered from poisoned lock in AnvilPortNum::drop");
-                    poisoned.into_inner()
-                }
-            };
+            let mut guard = AVAILABLE_PORTS.lock().unwrap_or_else(|poisoned| {
+                println!("Recovered from poisoned lock in AnvilPortNum::drop");
+                poisoned.into_inner()
+            });
 
             guard.to_reuse.push(self.0);
         }
     }
 
     pub fn get_port() -> AnvilPortNum {
-        let mut guard = match AVAILABLE_PORTS.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                println!("Recovered from poisoned lock in get_port");
-                poisoned.into_inner()
-            }
-        };
+        let mut guard = AVAILABLE_PORTS.lock().unwrap_or_else(|poisoned| {
+            println!("Recovered from poisoned lock in get_port");
+            poisoned.into_inner()
+        });
 
         if let Some(el) = guard.to_reuse.pop() {
             return AnvilPortNum(el);
@@ -231,13 +225,10 @@ pub mod eth_client_getter_test {
 
     impl Drop for AnvilHandle {
         fn drop(&mut self) {
-            let mut guard = match ANVIL.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    println!("Recovered from poisoned lock in AnvilHandle::drop");
-                    poisoned.into_inner()
-                }
-            };
+            let mut guard = ANVIL.lock().unwrap_or_else(|poisoned| {
+                println!("Recovered from poisoned lock in AnvilHandle::drop");
+                poisoned.into_inner()
+            });
 
             if Arc::strong_count(&self.instance) <= 2 {
                 println!("Cleaning up Anvil instance");
@@ -255,13 +246,10 @@ pub mod eth_client_getter_test {
     }
 
     pub fn get_shared_anvil() -> AnvilHandle {
-        let mut guard = match ANVIL.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                println!("Recovered from poisoned lock in get_shared_anvil");
-                poisoned.into_inner()
-            }
-        };
+        let mut guard = ANVIL.lock().unwrap_or_else(|poisoned| {
+            println!("Recovered from poisoned lock in get_shared_anvil");
+            poisoned.into_inner()
+        });
 
         if guard.is_none() {
             *guard = Some(Arc::new(create_anvil_instance()));

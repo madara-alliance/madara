@@ -137,11 +137,7 @@ impl Drop for MadaraCmd {
 
 fn is_port_available(port: u16) -> bool {
     use std::net::TcpListener;
-
-    match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 // this really should use unix sockets, sad
