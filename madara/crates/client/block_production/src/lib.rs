@@ -100,6 +100,7 @@ struct ContinueBlockResult {
     state_diff: StateDiff,
 
     /// The current state of resource consumption tracked by the bouncer
+    #[allow(unused)]
     bouncer_weights: BouncerWeights,
 
     /// Statistics about transaction processing during this continuation
@@ -362,7 +363,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                         match exec_result {
                             Ok((execution_info, _)) => {
                                 // Reverted transactions appear here as Ok too.
-                                tracing::debug!(
+                                tracing::trace!(
                                     "Successful execution of transaction {:#x}",
                                     mempool_tx.tx_hash().to_felt()
                                 );

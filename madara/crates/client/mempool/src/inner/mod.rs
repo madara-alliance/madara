@@ -760,10 +760,7 @@ impl MempoolInner {
 
     pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) -> usize {
         let mut taken = 0;
-        dest.extend((0..n).map_while(|_| {
-            taken += 1;
-            self.pop_next()
-        }));
+        dest.extend((0..n).map_while(|_| self.pop_next()).inspect(|_| taken += 1));
         taken
     }
 
