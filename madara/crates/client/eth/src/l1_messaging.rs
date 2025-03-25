@@ -402,6 +402,10 @@ mod l1_messaging_tests {
     /// 7. Assert that the tx is succesfully submited to the mempool
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
+    /// 
+    /// TODO: Test more cases:
+    /// - Nonce 1 arrives first and is labeled as Pending
+    /// - Nonce 1 arrives first, then Zero and are correctly executed
     #[rstest]
     #[traced_test]
     #[tokio::test]
@@ -525,8 +529,8 @@ mod l1_messaging_tests {
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_ne!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
-        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
+        let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
+        assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
 
         // Send the event a second time
         let _ = contract.fireEvent().send().await.expect("Failed to fire event");
@@ -582,9 +586,9 @@ mod l1_messaging_tests {
         let last_block =
             db.backend().messaging_last_synced_l1_block_with_event().expect("failed to retrieve block").unwrap();
         assert_eq!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("failed to parse nonce string"));
+        let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
         // cancelled message nonce should be inserted to avoid reprocessing
-        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
+        assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
         assert!(logs_contain("L1 Message was cancelled in block at timestamp : 0x66b4f105"));
 
         worker_handle.abort();
