@@ -45,7 +45,7 @@ jobs:
       - uses: ./.github/actions/rust-setup
         with:
           # Uses the testing cache key as we are using the --profile dev later
-          cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}
+          cache-key: COVERAGE
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
@@ -53,6 +53,7 @@ jobs:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+          install-mold: true
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
