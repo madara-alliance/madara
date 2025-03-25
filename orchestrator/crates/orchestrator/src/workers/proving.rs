@@ -55,6 +55,8 @@ impl Worker for ProvingWorker {
                     download_proof: None,
                     // Set SNOS fact for on-chain verification
                     ensure_on_chain_registration: Some(snos_fact),
+                    // Set number of steps
+                    n_steps: snos_metadata.snos_n_steps,
                 }),
             };
 

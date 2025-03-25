@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// # Field Management
 /// - Worker-initialized fields: block_number and blob_data_path
 /// - Job-populated fields: tx_hash (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct DaMetadata {
     // Worker-initialized fields
     /// Block number for data availability
