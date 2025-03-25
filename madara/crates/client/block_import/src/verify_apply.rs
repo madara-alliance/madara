@@ -333,11 +333,16 @@ fn block_hash(
 #[allow(dead_code)] // not used yet outside of tests
 fn reorg(
     backend: &MadaraBackend,
-    new_tip: &PreValidatedBlock, // TODO: we don't need a PreValidatedBlock, do we?
+    new_tip_block_hash: &Felt,
 ) -> Result<ReorgData, BlockImportError> {
-    let block_number = new_tip.unverified_block_number.expect("Can't reorg without block number");
-    // TODO: we should ensure this exact block exists in our db
-    let block_hash = new_tip.unverified_block_hash.expect("Can't reorg without a block hash");
+
+    // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
+    let block_info = backend
+        .get_block_info(&BlockId::Hash(*new_tip_block_hash))
+        .map_err(make_db_error("getting block info for new tip"))?
+        .ok_or(BlockImportError::Internal(Cow::Owned(format!("no block found for requested tip {}", new_tip_block_hash).to_string())))?;
+
+    let block_number = block_info.block_n().expect("Block must have a block number");
     let block_id = BasicId::new(block_number);
 
     backend
@@ -365,7 +370,7 @@ fn reorg(
         .ok_or(BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
 
     Ok(ReorgData {
-        starting_block_hash: block_hash,
+        starting_block_hash: *new_tip_block_hash,
         starting_block_number: block_number,
         ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
         ending_block_number: latest_block_info.block_n().expect("how would a block not have a block number?"), // TODO
@@ -964,7 +969,7 @@ mod verify_apply_tests {
             let validation = create_validation_context(false);
 
             // utility fn to append an empty block to the given parent block, returning the new block's hash
-            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> (Felt, PreValidatedBlock) {
+            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
                 let mut block = create_dummy_block();
                 block.unverified_block_number = Some(new_block_height);
                 block.unverified_global_state_root = Some(felt!("0x0"));
@@ -972,19 +977,15 @@ mod verify_apply_tests {
                 let block_import =
                     verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
 
-                block.unverified_block_hash = Some(block_import.block_hash);
-
-                (block_import.block_hash, block)
+                block_import.block_hash
             };
 
             // create the original chain
             let mut parent_hash = None;
-            let mut reorg_parent_block = None;
             assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
             for i in 0..args.original_chain_length {
-                let (new_block_hash, new_parent_block) = append_empty_block(i, parent_hash);
+                let new_block_hash = append_empty_block(i, parent_hash);
                 parent_hash = Some(new_block_hash);
-                reorg_parent_block = Some(new_parent_block);
             }
             let mut reorg_parent_hash =
                 parent_hash.expect("logic error: we should have created at least one block which is our parent");
@@ -994,24 +995,20 @@ mod verify_apply_tests {
             for _ in 0..args.passes {
                 // build a soon-to-be-orphaned chain on top of the original
                 for _ in 0..args.orphaned_chain_length {
-                    let (new_block_hash, _) = append_empty_block(parent_height, parent_hash);
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
                     parent_hash = Some(new_block_hash);
                     parent_height += 1;
                 }
 
-                let _ = reorg(&backend, &reorg_parent_block.clone().expect("Should have a parent by now"))
-                    .expect("reorg failed");
+                let _ = reorg(&backend, &reorg_parent_hash).expect("reorg failed");
                 parent_height -= args.orphaned_chain_length;
 
                 // reorg after given parent (start with 1 since we already added our reorg block)
                 parent_hash = Some(reorg_parent_hash);
                 for _ in 0..args.new_chain_length {
-                    let (new_block_hash, new_block) = append_empty_block(parent_height, parent_hash);
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
                     parent_hash = Some(new_block_hash);
                     parent_height += 1;
-
-                    // next iteration we will want to reorg back to this point
-                    reorg_parent_block = Some(new_block);
                 }
                 reorg_parent_hash = parent_hash.expect("parent_hash should be set by now");
 
