@@ -168,7 +168,7 @@ mc-devnet = { path = "madara/crates/client/devnet" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+# cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -183,8 +183,8 @@ blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "mad
   "testing",
 ] }
 starknet_api = "=0.13.0-rc.1"
-cairo-lang-starknet-classes = "=2.8.4"
-cairo-lang-utils = "=2.8.4"
+cairo-lang-starknet-classes = "=2.8.2"
+cairo-lang-utils = "=2.8.2"
 
 # alloy = { version = "0.8.3", features = [
 alloy = { version = "0.8.3", features = [
@@ -342,8 +342,20 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
-prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+# starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+# prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }
+
+jemallocator = "0.5.4"
+
+# Snos & Sharp (Starkware)
+# TODO: need to update this once the updated PR merges
+starknet-os = { git = "https://github.com/Mohiiit/snos", rev = "cad469b0650eed7763e8eedaba5c445fdfd7cfa1" }
+prove_block = { git = "https://github.com/Mohiiit/snos", rev = "cad469b0650eed7763e8eedaba5c445fdfd7cfa1" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -368,4 +380,10 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
 ] }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex"}
+
+# cairo-lang-utils = { git = "https://github.com/starkware-libs/cairo", tag = "v2.8.4" }
+
+# Also patch blockifier to use a version compatible with cairo-lang-utils 2.8.2
+# blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = ["testing"], package = "blockifier" }
+
