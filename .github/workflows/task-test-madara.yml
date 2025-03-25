@@ -50,6 +50,6 @@ jobs:
       - name: Run madara tests
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
-          cargo test --release --package "mc-*" --package "mp-*" --package "m-proc-*"
+          cargo test --release --package "mc-*" --package "mp-*" --package "m-proc-*" --no-fail-fast
         env:
           PROPTEST_CASES: 2
