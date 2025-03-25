@@ -41,12 +41,25 @@ use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::mem;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
 
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
+
+async fn spawn_compute<R: Send + 'static>(
+    name: impl Into<String>,
+    f: impl FnOnce() -> R + Send + 'static,
+) -> anyhow::Result<R> {
+    let (sender, recv) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || sender.send(std::panic::catch_unwind(AssertUnwindSafe(f))))
+        .context("Error when spawning thread")?;
+    Ok(recv.await.context("Channel dropped")?.expect("Compute thread panicked"))
+}
 
 #[derive(Default, Clone, Debug)]
 struct ContinueBlockStats {
@@ -291,7 +304,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let mut pending_block = self.pending_block.take().expect("Pending block already in use.");
 
         let (res, executor, pending_block) =
-            tokio::task::spawn_blocking(move || {
+            spawn_compute("block_production", move || {
                 let mut stats = ContinueBlockStats::default();
                 let mut block_now_full = false;
 
