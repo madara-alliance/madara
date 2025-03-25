@@ -15,6 +15,7 @@ members = [
   "madara/crates/client/block_production",
   "madara/crates/client/p2p",
   "madara/crates/client/p2p_stream",
+  "madara/crates/client/submit_tx",
   "madara/crates/node",
   "madara/crates/primitives/block",
   "madara/crates/primitives/convert",
@@ -67,6 +68,7 @@ default-members = [
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
   "madara/crates/client/analytics",
+  "madara/crates/client/submit_tx",
   "madara/crates/node",
   "madara/crates/primitives/block",
   "madara/crates/primitives/convert",
@@ -171,6 +173,7 @@ mc-eth = { path = "madara/crates/client/eth" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
 mc-devnet = { path = "madara/crates/client/devnet" }
+mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }

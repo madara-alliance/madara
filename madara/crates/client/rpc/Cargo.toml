@@ -27,9 +27,10 @@ m-proc-macros = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-gateway-client = { workspace = true, features = [
-  "add_verified_transaction",
+  "add_validated_transaction",
 ] }
 mc-mempool = { workspace = true }
+mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }

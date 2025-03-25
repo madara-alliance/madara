@@ -128,25 +128,15 @@ impl GatewayProvider {
         request.send_post(transaction).await
     }
 
-    #[cfg(feature = "add_verified_transaction")]
-    pub async fn add_verified_transaction(
+    #[cfg(feature = "add_validated_transaction")]
+    pub async fn add_validated_transaction(
         &self,
-        tx_hash: Felt,
-        tx: mc_db::mempool_db::SerializedMempoolTx,
-        converted_class: Option<mp_class::ConvertedClass>,
+        transaction: mp_transactions::validated::ValidatedMempoolTx,
     ) -> Result<(), SequencerError> {
-        #[derive(serde::Serialize, serde::Deserialize)]
-        struct AddVerifiedTransaction {
-            tx_hash: Felt,
-            tx: mc_db::mempool_db::SerializedMempoolTx,
-            converted_class: Option<mp_class::ConvertedClass>,
-        }
-        let transaction = AddVerifiedTransaction { tx_hash, tx, converted_class };
-
         let url = self.madara_specific_url.as_ref().ok_or(SequencerError::NoUrl)?;
 
         let request = RequestBuilder::new(&self.client, url.clone(), self.headers.clone())
-            .add_uri_segment("trusted_add_verified_transaction")
+            .add_uri_segment("trusted_add_validated_transaction")
             .expect("Failed to add URI segment. This should not fail in prod.");
 
         request.send_post_bincode(transaction).await

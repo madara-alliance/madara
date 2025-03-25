@@ -213,8 +213,8 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
-    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MockL1DataProvider};
-    use mc_mempool::{MempoolLimits, MempoolProvider};
+    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MempoolLimits, MockL1DataProvider};
+    use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, TransactionValidator, TransactionValidatorConfig};
     use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::{ClassInfo, FlattenedSierraClass};
@@ -236,14 +236,15 @@ mod tests {
         contracts: DevnetKeys,
         block_production: BlockProductionTask<Mempool>,
         mempool: Arc<Mempool>,
+        tx_validator: Arc<TransactionValidator>,
     }
 
     impl DevnetForTesting {
-        pub fn sign_and_add_invoke_tx(
+        pub async fn sign_and_add_invoke_tx(
             &self,
             mut tx: BroadcastedInvokeTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<AddInvokeTransactionResult, mc_mempool::MempoolError> {
+        ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -264,14 +265,14 @@ mod tests {
 
             tracing::debug!("tx: {:?}", tx);
 
-            self.mempool.tx_accept_invoke(tx)
+            self.tx_validator.submit_invoke_transaction(tx).await
         }
 
-        pub fn sign_and_add_declare_tx(
+        pub async fn sign_and_add_declare_tx(
             &self,
             mut tx: BroadcastedDeclareTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ClassAndTxnHash, mc_mempool::MempoolError> {
+        ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -290,14 +291,14 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.tx_accept_declare(tx)
+            self.tx_validator.submit_declare_transaction(tx).await
         }
 
-        pub fn sign_and_add_deploy_account_tx(
+        pub async fn sign_and_add_deploy_account_tx(
             &self,
             mut tx: BroadcastedDeployAccountTxn,
             contract: &DevnetPredeployedContract,
-        ) -> Result<ContractAndTxnHash, mc_mempool::MempoolError> {
+        ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
             let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
@@ -315,7 +316,7 @@ mod tests {
             };
             *tx_signature = vec![signature.r, signature.s];
 
-            self.mempool.tx_accept_deploy_account(tx)
+            self.tx_validator.submit_deploy_account_transaction(tx).await
         }
 
         /// (STRK in FRI, ETH in WEI)
@@ -355,7 +356,13 @@ mod tests {
         .await
         .unwrap();
 
-        DevnetForTesting { backend, contracts, block_production, mempool }
+        let tx_validator = Arc::new(TransactionValidator::new(
+            Arc::clone(&mempool) as _,
+            Arc::clone(&backend),
+            TransactionValidatorConfig::default(),
+        ));
+
+        DevnetForTesting { backend, contracts, block_production, mempool, tx_validator }
     }
 
     #[rstest]
@@ -391,7 +398,7 @@ mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address).unwrap();
+        let res = chain.sign_and_add_declare_tx(declare_txn, sender_address).await.unwrap();
 
         let calculated_class_hash = sierra_class.class_hash().unwrap();
 
@@ -465,6 +472,7 @@ mod tests {
                 }),
                 contract_0,
             )
+            .await
             .unwrap();
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
@@ -498,7 +506,7 @@ mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).unwrap();
+        let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).await.unwrap();
 
         chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
         chain.block_production.on_pending_time_tick().await.unwrap();
@@ -559,6 +567,7 @@ mod tests {
                 }),
                 contract_0,
             )
+            .await
             .unwrap();
 
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
@@ -692,41 +701,46 @@ mod tests {
                     }),
                     contract_0,
                 )
+                .await
                 .unwrap();
         }
 
-        let result = chain.sign_and_add_invoke_tx(
-            BroadcastedInvokeTxn::V3(InvokeTxnV3 {
-                sender_address: contract_0.address,
-                calldata: Multicall::default()
-                    .with(Call {
-                        to: ERC20_STRK_CONTRACT_ADDRESS,
-                        selector: Selector::from("transfer"),
-                        calldata: vec![contract_1.address, 15.into(), Felt::ZERO],
-                    })
-                    .flatten()
-                    .collect(),
-                signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
-                nonce: 5.into(),
-                resource_bounds: ResourceBoundsMapping {
-                    l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                    l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                },
-                tip: 0,
-                paymaster_data: vec![],
-                account_deployment_data: vec![],
-                nonce_data_availability_mode: DaMode::L1,
-                fee_data_availability_mode: DaMode::L1,
-            }),
-            contract_0,
-        );
+        let result = chain
+            .sign_and_add_invoke_tx(
+                BroadcastedInvokeTxn::V3(InvokeTxnV3 {
+                    sender_address: contract_0.address,
+                    calldata: Multicall::default()
+                        .with(Call {
+                            to: ERC20_STRK_CONTRACT_ADDRESS,
+                            selector: Selector::from("transfer"),
+                            calldata: vec![contract_1.address, 15.into(), Felt::ZERO],
+                        })
+                        .flatten()
+                        .collect(),
+                    signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                    nonce: 5.into(),
+                    resource_bounds: ResourceBoundsMapping {
+                        l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    },
+                    tip: 0,
+                    paymaster_data: vec![],
+                    account_deployment_data: vec![],
+                    nonce_data_availability_mode: DaMode::L1,
+                    fee_data_availability_mode: DaMode::L1,
+                }),
+                contract_0,
+            )
+            .await;
 
         assert_matches!(
             result,
-            Err(mc_mempool::MempoolError::InnerMempool(mc_mempool::TxInsertionError::Limit(
-                mc_mempool::MempoolLimitReached::MaxTransactions { max: 5 }
-            )))
-        )
+            Err(mc_submit_tx::SubmitTransactionError::Rejected(mc_submit_tx::RejectedTransactionError {
+                kind: mc_submit_tx::RejectedTransactionErrorKind::TransactionLimitExceeded,
+                message: _
+            }))
+        );
+        assert!(format!("{:#}", result.unwrap_err()).contains("The mempool has reached the limit of 5 transactions"));
     }
 
     #[rstest]
@@ -770,6 +784,7 @@ mod tests {
                 }),
                 contract_0,
             )
+            .await
             .unwrap();
 
         std::thread::sleep(max_age); // max age reached

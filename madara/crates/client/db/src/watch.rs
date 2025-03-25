@@ -6,6 +6,24 @@ use tokio::sync::{broadcast, watch};
 pub type ClosedBlocksReceiver = broadcast::Receiver<Arc<MadaraBlockInfo>>;
 pub type PendingBlockReceiver = watch::Receiver<Arc<MadaraPendingBlockInfo>>;
 
+fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<MadaraPendingBlockInfo> {
+    let Some(parent_block) = parent_block else {
+        return Default::default(); // No genesis block, we have make it all up
+    };
+    MadaraPendingBlockInfo {
+        header: PendingHeader {
+            parent_block_hash: parent_block.block_hash,
+            sequencer_address: parent_block.header.sequencer_address,
+            block_timestamp: parent_block.header.block_timestamp, // Junk timestamp: unix epoch
+            protocol_version: parent_block.header.protocol_version,
+            l1_gas_price: parent_block.header.l1_gas_price.clone(),
+            l1_da_mode: parent_block.header.l1_da_mode,
+        },
+        tx_hashes: vec![],
+    }
+    .into()
+}
+
 pub(crate) struct BlockWatch {
     closed_blocks: broadcast::Sender<Arc<MadaraBlockInfo>>,
     pending_block: watch::Sender<Arc<MadaraPendingBlockInfo>>,
@@ -13,7 +31,10 @@ pub(crate) struct BlockWatch {
 
 impl BlockWatch {
     pub fn new() -> Self {
-        Self { closed_blocks: broadcast::channel(100).0, pending_block: watch::channel(Default::default()).0 }
+        Self {
+            closed_blocks: broadcast::channel(100).0,
+            pending_block: watch::channel(make_fake_pending_block(None)).0,
+        }
     }
 
     pub fn init_initial_values(&self, db: &MadaraBackend) -> Result<(), MadaraStorageError> {
@@ -26,21 +47,13 @@ impl BlockWatch {
         self.pending_block.send_replace(block);
     }
 
-    pub fn on_new_block(&self, block: Arc<MadaraBlockInfo>) {
-        let new_pending = MadaraPendingBlockInfo {
-            header: PendingHeader {
-                parent_block_hash: block.block_hash,
-                sequencer_address: block.header.sequencer_address,
-                block_timestamp: block.header.block_timestamp, // Junk timestamp: unix epoch
-                protocol_version: block.header.protocol_version,
-                l1_gas_price: block.header.l1_gas_price.clone(),
-                l1_da_mode: block.header.l1_da_mode,
-            },
-            tx_hashes: vec![],
-        };
-        let _no_listener_error = self.closed_blocks.send(block);
+    pub fn clear_pending(&self, parent_block: Option<&MadaraBlockInfo>) {
+        self.update_pending(make_fake_pending_block(parent_block));
+    }
 
-        self.update_pending(new_pending.into());
+    pub fn on_new_block(&self, block: Arc<MadaraBlockInfo>) {
+        let _no_listener_error = self.closed_blocks.send(Arc::clone(&block));
+        self.update_pending(make_fake_pending_block(Some(&block)));
     }
 
     pub fn subscribe_closed_blocks(&self) -> ClosedBlocksReceiver {

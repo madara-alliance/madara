@@ -1,6 +1,6 @@
 use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
-use mp_class::ConvertedClass;
+use mp_transactions::validated::ValidatedMempoolTx;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
@@ -54,21 +54,11 @@ impl Default for NonceInfo {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct SerializedMempoolTx {
-    pub tx: mp_transactions::Transaction,
-    pub paid_fee_on_l1: Option<u128>,
-    pub contract_address: Felt,
-    pub only_query: bool,
-    pub arrived_at: u128,
-}
-
 #[derive(Serialize)]
 /// This struct is used as a template to serialize Mempool transactions from the
 /// database without any further allocation.
 struct DbMempoolTxInfoEncoder<'a> {
-    saved_tx: &'a SerializedMempoolTx,
-    converted_class: &'a Option<ConvertedClass>,
+    tx: &'a ValidatedMempoolTx,
     nonce_info: &'a NonceInfo,
 }
 
@@ -76,8 +66,7 @@ struct DbMempoolTxInfoEncoder<'a> {
 /// This struct is used as a template to deserialize Mempool transactions from
 /// the database.
 pub struct DbMempoolTxInfoDecoder {
-    pub saved_tx: SerializedMempoolTx,
-    pub converted_class: Option<ConvertedClass>,
+    pub tx: ValidatedMempoolTx,
     pub nonce_readiness: NonceInfo,
 }
 
@@ -106,21 +95,16 @@ impl MadaraBackend {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, saved_tx), fields(module = "MempoolDB"))]
-    pub fn save_mempool_transaction(
-        &self,
-        saved_tx: &SerializedMempoolTx,
-        tx_hash: Felt,
-        converted_class: &Option<ConvertedClass>,
-        nonce_info: &NonceInfo,
-    ) -> Result<()> {
+    #[tracing::instrument(skip(self, tx), fields(module = "MempoolDB"))]
+    pub fn save_mempool_transaction(&self, tx: &ValidatedMempoolTx, nonce_info: &NonceInfo) -> Result<()> {
         // Note: WAL is used here
         // This is because we want it to be saved even if the node crashes before the next flush
 
+        let hash = tx.tx_hash;
         let col = self.db.get_column(Column::MempoolTransactions);
-        let tx_with_class = DbMempoolTxInfoEncoder { saved_tx, converted_class, nonce_info };
-        self.db.put_cf(&col, bincode::serialize(&tx_hash)?, bincode::serialize(&tx_with_class)?)?;
-        tracing::debug!("save_mempool_tx {:?}", tx_hash);
+        let tx_with_class = DbMempoolTxInfoEncoder { tx, nonce_info };
+        self.db.put_cf(&col, bincode::serialize(&hash)?, bincode::serialize(&tx_with_class)?)?;
+        tracing::debug!("save_mempool_tx {:?}", hash);
         Ok(())
     }
 }

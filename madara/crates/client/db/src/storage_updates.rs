@@ -1,4 +1,5 @@
 use crate::contract_db::ContractDbBlockUpdate;
+use crate::db_block_id::DbBlockId;
 use crate::Column;
 use crate::DatabaseExt;
 use crate::MadaraBackend;
@@ -291,6 +292,19 @@ impl MadaraBackend {
     }
 
     pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
+        let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
+            Some(
+                self.get_block_info(&DbBlockId::Number(block_n))?
+                    .ok_or(MadaraStorageError::InconsistentStorage("Can't find block info".into()))?
+                    .into_closed()
+                    .ok_or(MadaraStorageError::InconsistentStorage(
+                        "Got a pending block when trying to get a closed one".into(),
+                    ))?,
+            )
+        } else {
+            None
+        };
+        self.watch.clear_pending(parent_block.as_ref());
         self.block_db_clear_pending()?;
         self.contract_db_clear_pending()?;
         self.class_db_clear_pending()?;

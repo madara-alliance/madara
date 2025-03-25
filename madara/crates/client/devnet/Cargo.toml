@@ -19,6 +19,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
+mc-submit-tx = { workspace = true }
 mc-block-production = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 proptest.workspace = true

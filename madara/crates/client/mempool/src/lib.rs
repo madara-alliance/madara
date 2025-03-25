@@ -1,38 +1,27 @@
 use anyhow::Context;
 use async_trait::async_trait;
-use blockifier::blockifier::stateful_validator::StatefulValidatorError;
-use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::transaction_execution::Transaction;
-use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo, SerializedMempoolTx};
+use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo};
 use mc_db::{MadaraBackend, MadaraStorageError};
-use mc_exec::execution::TxInfo;
-use mc_exec::ExecutionContext;
+use mc_submit_tx::{
+    RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransactionError,
+    SubmitValidatedTransaction,
+};
 use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
-};
-use mp_transactions::BroadcastedDeclareTransactionV0;
-use mp_transactions::BroadcastedTransactionExt;
+use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx, ValidatedToBlockifierTxError};
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
-use mp_transactions::ToBlockifierError;
 use starknet_api::core::Nonce;
-use starknet_api::executable_transaction::AccountTransaction as ApiExecutableTransaction;
-use starknet_api::StarknetApiError;
 use starknet_types_core::felt::Felt;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
-use tx::saved_to_blockifier_tx;
-use tx::{blockifier_to_saved_tx, SavedToBlockifierTxError};
 
 mod inner;
 mod l1;
-mod tx;
 
 pub use inner::*;
 #[cfg(any(test, feature = "testing"))]
@@ -46,28 +35,12 @@ pub mod metrics;
 pub enum MempoolError {
     #[error("Storage error: {0:#}")]
     StorageError(#[from] MadaraStorageError),
-    #[error("Validation error: {0:#}")]
-    Validation(#[from] StatefulValidatorError),
+    #[error(transparent)]
+    Internal(anyhow::Error),
     #[error(transparent)]
     InnerMempool(#[from] TxInsertionError),
-    #[error(transparent)]
-    Exec(#[from] mc_exec::Error),
-    #[error(transparent)]
-    StarknetApi(#[from] StarknetApiError),
-    #[error("Preprocessing broadcasted transaction: {0:#}")]
-    BroadcastedToBlockifier(#[from] ToBlockifierError),
-    #[error("Preprocessing saved transaction: {0:#}")]
-    SavedToBlockifier(#[from] SavedToBlockifierTxError),
-}
-impl MempoolError {
-    pub fn is_internal(&self) -> bool {
-        matches!(
-            self,
-            MempoolError::StorageError(_)
-                | MempoolError::BroadcastedToBlockifier(_)
-                | MempoolError::SavedToBlockifier(_)
-        )
-    }
+    #[error("Converting validated transaction: {0:#}")]
+    ValidatedToBlockifier(#[from] ValidatedToBlockifierTxError),
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -81,22 +54,6 @@ pub(crate) trait CheckInvariants {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
-    fn tx_accept_invoke(&self, tx: BroadcastedInvokeTxn) -> Result<AddInvokeTransactionResult, MempoolError>;
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError>;
-    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn) -> Result<ClassAndTxnHash, MempoolError>;
-    fn tx_accept_deploy_account(&self, tx: BroadcastedDeployAccountTxn) -> Result<ContractAndTxnHash, MempoolError>;
-    fn tx_accept_l1_handler(
-        &self,
-        tx: L1HandlerTransaction,
-        paid_fees_on_l1: u128,
-    ) -> Result<L1HandlerTransactionResult, MempoolError>;
-    fn add_trusted_validated_transaction(
-        &self,
-        tx_hash: Felt,
-        tx: SerializedMempoolTx,
-        converted_class: Option<ConvertedClass>,
-    ) -> Result<(), MempoolError>;
-
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
@@ -112,24 +69,16 @@ pub trait MempoolProvider: Send + Sync {
 pub struct MempoolConfig {
     /// Mempool limits
     pub limits: MempoolLimits,
-    /// Disable mempool validation: no prior validation will be made before inserting into the mempool.
-    /// See: Mempool validation in [Starknet docs Transaction Validation](https://docs.starknet.io/architecture-and-concepts/network-architecture/transaction-life-cycle/)
-    pub disable_validation: bool,
 }
 
 impl MempoolConfig {
     pub fn new(limits: MempoolLimits) -> Self {
-        Self { limits, disable_validation: false }
-    }
-
-    pub fn with_disable_validation(mut self, disable_validation: bool) -> Self {
-        self.disable_validation = disable_validation;
-        self
+        Self { limits }
     }
 
     #[cfg(any(test, feature = "testing"))]
     pub fn for_testing() -> Self {
-        Self { limits: MempoolLimits::for_testing(), disable_validation: false }
+        Self { limits: MempoolLimits::for_testing() }
     }
 }
 
@@ -138,7 +87,61 @@ pub struct Mempool {
     inner: RwLock<MempoolInner>,
     metrics: MempoolMetrics,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
-    disable_validation: bool,
+}
+
+impl From<MempoolError> for SubmitTransactionError {
+    fn from(value: MempoolError) -> Self {
+        use MempoolError as E;
+        use RejectedTransactionErrorKind::*;
+        use SubmitTransactionError::*;
+
+        fn rejected(
+            kind: RejectedTransactionErrorKind,
+            message: impl Into<Cow<'static, str>>,
+        ) -> SubmitTransactionError {
+            SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
+        }
+
+        match value {
+            err @ (E::StorageError(_) | E::ValidatedToBlockifier(_) | E::Internal(_)) => Internal(anyhow::anyhow!(err)),
+            E::InnerMempool(TxInsertionError::DuplicateTxn) => {
+                rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
+            }
+            E::InnerMempool(TxInsertionError::Limit(limit)) => rejected(TransactionLimitExceeded, format!("{limit:#}")),
+            E::InnerMempool(TxInsertionError::NonceConflict) => {
+                rejected(DuplicatedTransaction, "A transaction with this nonce already exists in the transaction pool")
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl SubmitValidatedTransaction for Mempool {
+    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
+        Ok(self.accept_validated_tx(tx)?)
+    }
+}
+
+#[async_trait]
+impl SubmitL1HandlerTransaction for Mempool {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransaction,
+        paid_fees_on_l1: u128,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
+        let arrived_at = TxTimestamp::now();
+        let (tx, converted_class) = tx
+            .into_blockifier(
+                self.backend.chain_config().chain_id.to_felt(),
+                self.backend.chain_config().latest_protocol_version,
+                paid_fees_on_l1,
+            )
+            .context("Converting l1 handler tx to blockifier")
+            .map_err(SubmitTransactionError::Internal)?;
+        let res = L1HandlerTransactionResult { transaction_hash: Transaction::tx_hash(&tx).to_felt() };
+        self.accept_validated_tx(ValidatedMempoolTx::from_blockifier(tx, arrived_at, converted_class))?;
+        Ok(res)
+    }
 }
 
 impl Mempool {
@@ -148,16 +151,18 @@ impl Mempool {
             inner: RwLock::new(MempoolInner::new(config.limits)),
             metrics: MempoolMetrics::register(),
             nonce_cache: RwLock::new(BTreeMap::new()),
-            disable_validation: config.disable_validation,
         }
     }
 
     pub fn load_txs_from_db(&mut self) -> Result<(), anyhow::Error> {
         for res in self.backend.get_mempool_transactions() {
-            let (tx_hash, DbMempoolTxInfoDecoder { saved_tx, converted_class, nonce_readiness }) =
-                res.context("Getting mempool transactions")?;
-            let (tx, arrived_at) = saved_to_blockifier_tx(saved_tx, tx_hash, &converted_class)
-                .context("Converting saved tx to blockifier")?;
+            let (_, DbMempoolTxInfoDecoder { tx, nonce_readiness }) = res.context("Getting mempool transactions")?;
+
+            let tx_hash = tx.tx_hash;
+            let (tx, arrived_at, converted_class) = tx
+                .into_blockifier()
+                .context("Converting validated tx to blockifier")
+                .map_err(SubmitTransactionError::Internal)?;
 
             if let Err(err) = self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_readiness) {
                 match err {
@@ -169,50 +174,27 @@ impl Mempool {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn accept_tx(
+    fn accept_validated_tx_with_nonce_info(
         &self,
-        tx: Transaction,
-        converted_class: Option<ConvertedClass>,
-        arrived_at: SystemTime,
+        tx: ValidatedMempoolTx,
         nonce_info: NonceInfo,
     ) -> Result<(), MempoolError> {
-        // If the contract has been deployed for the same block is is invoked, we need to skip some of the validations.
-        // This is blockifier's role, but it can't know of this edge case by itself so we have to tell it.
-        // NB: the lock is NOT taken the entire time the tx is being validated. As such, the deploy tx
-        //  may appear during that time - but it should not be a big problem.
-        let deploy_account_skip_validation =
-            if let Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::Invoke(tx), .. }) = &tx {
-                let mempool = self.inner.read().expect("Poisoned lock");
-                mempool.has_deployed_contract(&tx.tx.sender_address())
-            } else {
-                false
-            };
+        // TODO: should we update this to store only if the mempool accepts
+        // this transaction?
+        self.backend.save_mempool_transaction(&tx, &nonce_info).map_err(MempoolError::from)?;
 
-        let tx_hash = Transaction::tx_hash(&tx).0;
+        let tx_hash = tx.tx_hash;
+        let (tx, arrived_at, converted_class) = tx.into_blockifier()?;
 
-        if !self.disable_validation {
-            tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
-
-            // Perform validations
-            if let Transaction::Account(account_tx) = tx.clone() {
-                let exec_context = ExecutionContext::new_on_pending(Arc::clone(&self.backend))?;
-                let mut validator = exec_context.tx_validator();
-                validator.perform_validations(account_tx, deploy_account_skip_validation)?
-            }
-        }
-
-        // Add to the mempool.
-        if !is_only_query(&tx) {
-            let saved_tx = blockifier_to_saved_tx(&tx, arrived_at);
-            // TODO: should we update this to store only if the mempool accepts
-            // this transaction?
-            self.backend.save_mempool_transaction(&saved_tx, tx_hash, &converted_class, &nonce_info)?;
-
-            self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)?;
-        }
+        self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)?;
 
         Ok(())
+    }
+
+    fn accept_validated_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
+        // TODO: wrong for l1handlertx (and probably for declarev0)
+        let nonce_info = self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce())?;
+        self.accept_validated_tx_with_nonce_info(tx, nonce_info)
     }
 
     /// Does not save to the database.
@@ -220,7 +202,7 @@ impl Mempool {
         &self,
         tx_hash: Felt,
         tx: Transaction,
-        arrived_at: SystemTime,
+        arrived_at: TxTimestamp,
         converted_class: Option<ConvertedClass>,
         nonce_info: NonceInfo,
     ) -> Result<(), MempoolError> {
@@ -257,7 +239,7 @@ impl Mempool {
     /// ready.
     fn retrieve_nonce_info(&self, sender_address: Felt, nonce: Felt) -> Result<NonceInfo, MempoolError> {
         let nonce = Nonce(nonce);
-        let nonce_next = nonce.try_increment()?;
+        let nonce_next = nonce.try_increment().context("Nonce overflow").map_err(MempoolError::Internal)?;
 
         let nonce_prev_check = {
             // We don't need an underflow check here as nonces are incremental
@@ -308,141 +290,8 @@ impl Mempool {
     }
 }
 
-fn declare_class_hash(tx: &Transaction) -> Option<Felt> {
-    match tx {
-        Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::Declare(tx), .. }) => {
-            Some(*tx.class_hash())
-        }
-        _ => None,
-    }
-}
-
-fn deployed_contract_address(tx: &Transaction) -> Option<Felt> {
-    match tx {
-        Transaction::Account(AccountTransaction { tx: ApiExecutableTransaction::DeployAccount(tx), .. }) => {
-            Some(**tx.contract_address)
-        }
-        _ => None,
-    }
-}
-
 #[async_trait]
 impl MempoolProvider for Mempool {
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_invoke(&self, tx: BroadcastedInvokeTxn) -> Result<AddInvokeTransactionResult, MempoolError> {
-        let nonce_info = match &tx {
-            BroadcastedInvokeTxn::V1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedInvokeTxn::V3(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedInvokeTxn::QueryV1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedInvokeTxn::QueryV3(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedInvokeTxn::V0(_) | &BroadcastedInvokeTxn::QueryV0(_) => NonceInfo::default(),
-        };
-
-        let tx = BroadcastedTxn::Invoke(tx);
-        let (btx, class) =
-            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
-
-        let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().0 };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError> {
-        let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
-
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().0,
-            class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
-        };
-
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceInfo::default())?;
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_l1_handler(
-        &self,
-        tx: L1HandlerTransaction,
-        paid_fees_on_l1: u128,
-    ) -> Result<L1HandlerTransactionResult, MempoolError> {
-        let nonce = Nonce(Felt::from(tx.nonce)); // TODO: this is wrong.
-        let (btx, class) =
-            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, paid_fees_on_l1)?;
-
-        // L1 Handler nonces represent the ordering of L1 transactions sent by
-        // the core L1 contract. In principle this is a bit strange, as there
-        // currently is only 1 core L1 contract, so all transactions should be
-        // ordered by default. Moreover, these transaction are infrequent, so
-        // the risk that two transactions are emitted at very short intervals
-        // seems unlikely. Still, who knows?
-        //
-        // INFO: L1 nonce are stored differently in the db because of this, which is
-        // why we do not use `retrieve_nonce_readiness`.
-        let nonce_next = nonce.try_increment()?;
-        let nonce_target =
-            self.backend.get_l1_messaging_nonce_latest()?.map(|nonce| nonce.try_increment()).unwrap_or(Ok(nonce))?;
-        let nonce_info = if nonce != nonce_target {
-            NonceInfo::pending(nonce, nonce_next)
-        } else {
-            NonceInfo::ready(nonce, nonce_next)
-        };
-
-        let res = L1HandlerTransactionResult { transaction_hash: btx.tx_hash().0 };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn) -> Result<ClassAndTxnHash, MempoolError> {
-        let nonce_info = match &tx {
-            BroadcastedDeclareTxn::V1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedDeclareTxn::V2(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedDeclareTxn::V3(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedDeclareTxn::QueryV1(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedDeclareTxn::QueryV2(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-            BroadcastedDeclareTxn::QueryV3(ref tx) => self.retrieve_nonce_info(tx.sender_address, tx.nonce)?,
-        };
-
-        let tx = BroadcastedTxn::Declare(tx);
-        let (btx, class) =
-            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
-
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().0,
-            class_hash: declare_class_hash(&btx).expect("Created transaction should be declare"),
-        };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), nonce_info)?;
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_deploy_account(&self, tx: BroadcastedDeployAccountTxn) -> Result<ContractAndTxnHash, MempoolError> {
-        let tx = BroadcastedTxn::DeployAccount(tx);
-        let (btx, class) =
-            tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version, true, true)?;
-
-        let res = ContractAndTxnHash {
-            transaction_hash: btx.tx_hash().0,
-            contract_address: deployed_contract_address(&btx).expect("Created transaction should be deploy account"),
-        };
-        self.accept_tx(btx, class, ArrivedAtTimestamp::now(), NonceInfo::default())?;
-        Ok(res)
-    }
-
-    fn add_trusted_validated_transaction(
-        &self,
-        tx_hash: Felt,
-        tx: SerializedMempoolTx,
-        converted_class: Option<ConvertedClass>,
-    ) -> Result<(), MempoolError> {
-        let nonce_info = self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce())?;
-        self.backend.save_mempool_transaction(&tx, tx_hash, &converted_class, &nonce_info)?;
-        let (tx, arrived_at) = saved_to_blockifier_tx(tx, tx_hash, &converted_class)?;
-
-        self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)
-    }
-
     // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
@@ -517,24 +366,15 @@ impl MempoolProvider for Mempool {
     }
 }
 
-pub(crate) fn is_only_query(tx: &Transaction) -> bool {
-    match tx {
-        Transaction::Account(account_tx) => account_tx.execution_flags.only_query,
-        Transaction::L1Handler(_) => false,
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
-
+    use super::*;
     use mc_db::mempool_db::NonceStatus;
     use mp_block::{MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
     use mp_convert::felt;
     use mp_state_update::{NonceUpdate, StateDiff};
     use starknet_api::{core::ContractAddress, transaction::fields::Fee};
-
-    use super::*;
+    use std::time::Duration;
 
     #[rstest::fixture]
     async fn backend() -> Arc<mc_db::MadaraBackend> {
@@ -548,81 +388,91 @@ mod test {
     const CONTRACT_ADDRESS: Felt = felt!("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
     #[rstest::fixture]
-    fn tx_account_v0_valid(
-        #[default(CONTRACT_ADDRESS)] contract_address: Felt,
-    ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::Account(
-            blockifier::transaction::account_transaction::AccountTransaction {
-                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
-                    starknet_api::executable_transaction::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V0(
-                            starknet_api::transaction::InvokeTransactionV0 {
-                                contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                                max_fee: Fee(10000),
-                                ..Default::default()
-                            },
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    },
-                ),
-                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
-            },
-        )
-    }
-
-    #[rstest::fixture]
-    fn tx_account_v1_invalid() -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::Account(
-            blockifier::transaction::account_transaction::AccountTransaction {
-                tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
-                    starknet_api::executable_transaction::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V1(
-                            starknet_api::transaction::InvokeTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    },
-                ),
-                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
-            },
-        )
-    }
-
-    #[rstest::fixture]
-    fn tx_deploy_v1_valid(
-        #[default(CONTRACT_ADDRESS)] contract_address: Felt,
-    ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::Account(
-            blockifier::transaction::account_transaction::AccountTransaction {
-                tx: starknet_api::executable_transaction::AccountTransaction::DeployAccount(
-                    starknet_api::executable_transaction::DeployAccountTransaction {
-                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                            starknet_api::transaction::DeployAccountTransactionV1 {
-                                max_fee: Fee(10000),
-                                ..Default::default()
-                            },
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                    },
-                ),
-                execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
-            },
-        )
-    }
-
-    #[rstest::fixture]
-    fn tx_l1_handler_valid(
-        #[default(CONTRACT_ADDRESS)] contract_address: Felt,
-    ) -> blockifier::transaction::transaction_execution::Transaction {
-        blockifier::transaction::transaction_execution::Transaction::L1Handler(
-            starknet_api::executable_transaction::L1HandlerTransaction {
-                tx: starknet_api::transaction::L1HandlerTransaction {
-                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                    ..Default::default()
+    fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+        ValidatedMempoolTx::from_blockifier(
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                        starknet_api::executable_transaction::InvokeTransaction {
+                            tx: starknet_api::transaction::InvokeTransaction::V0(
+                                starknet_api::transaction::InvokeTransactionV0 {
+                                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                                    max_fee: Fee(10000),
+                                    ..Default::default()
+                                },
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
                 },
-                tx_hash: starknet_api::transaction::TransactionHash::default(),
-                paid_fee_on_l1: starknet_api::transaction::fields::Fee::default(),
-            },
+            ),
+            TxTimestamp::now(),
+            None,
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_account_v1_invalid() -> ValidatedMempoolTx {
+        ValidatedMempoolTx::from_blockifier(
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                        starknet_api::executable_transaction::InvokeTransaction {
+                            tx: starknet_api::transaction::InvokeTransaction::V1(
+                                starknet_api::transaction::InvokeTransactionV1::default(),
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                },
+            ),
+            TxTimestamp::now(),
+            None,
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+        ValidatedMempoolTx::from_blockifier(
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                        starknet_api::executable_transaction::DeployAccountTransaction {
+                            tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                                starknet_api::transaction::DeployAccountTransactionV1 {
+                                    max_fee: Fee(10000),
+                                    ..Default::default()
+                                },
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                },
+            ),
+            TxTimestamp::now(),
+            None,
+        )
+    }
+
+    #[rstest::fixture]
+    fn tx_l1_handler_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+        ValidatedMempoolTx::from_blockifier(
+            blockifier::transaction::transaction_execution::Transaction::L1Handler(
+                starknet_api::executable_transaction::L1HandlerTransaction {
+                    tx: starknet_api::transaction::L1HandlerTransaction {
+                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                        ..Default::default()
+                    },
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    paid_fee_on_l1: starknet_api::transaction::fields::Fee::default(),
+                },
+            ),
+            TxTimestamp::now(),
+            None,
         )
     }
 
@@ -631,11 +481,11 @@ mod test {
     #[tokio::test]
     async fn mempool_accept_tx_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_account_v0_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let result = mempool.accept_tx(tx_account_v0_valid, None, ArrivedAtTimestamp::now(), NonceInfo::default());
+        let result = mempool.accept_validated_tx(tx_account_v0_valid);
         assert_matches::assert_matches!(result, Ok(()));
 
         mempool.inner.read().expect("Poisoned lock").check_invariants();
@@ -648,15 +498,15 @@ mod test {
     #[tokio::test]
     async fn mempool_accept_tx_ready(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_account_v0_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
 
         let nonce = Nonce(Felt::ZERO);
 
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let arrived_at = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_account_v0_valid, None, arrived_at, NonceInfo::default());
+        let arrived_at = tx_account_v0_valid.arrived_at;
+        let result = mempool.accept_validated_tx(tx_account_v0_valid);
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().expect("Poisoned lock");
@@ -668,24 +518,9 @@ mod test {
             nonce: Nonce(Felt::ZERO),
             nonce_next: Nonce(Felt::ONE),
             phantom: std::marker::PhantomData,
-        }));
+        }),);
 
         assert!(inner.nonce_is_ready(CONTRACT_ADDRESS, nonce));
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
-    #[tokio::test]
-    async fn mempool_accept_tx_fail_validate(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v1_invalid: blockifier::transaction::transaction_execution::Transaction,
-    ) {
-        let backend = backend.await;
-        let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let result = mempool.accept_tx(tx_account_v1_invalid, None, ArrivedAtTimestamp::now(), NonceInfo::default());
-        assert_matches::assert_matches!(result, Err(crate::MempoolError::Validation(_)));
-
-        mempool.inner.read().expect("Poisoned lock").check_invariants();
     }
 
     /// This test makes sure that taking a transaction from the mempool works as
@@ -695,12 +530,13 @@ mod test {
     #[tokio::test]
     async fn mempool_take_tx_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+        mut tx_account_v0_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mut mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let timestamp = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_account_v0_valid, None, timestamp, NonceInfo::default());
+        let timestamp = TxTimestamp::now();
+        tx_account_v0_valid.arrived_at = timestamp;
+        let result = mempool.accept_validated_tx(tx_account_v0_valid);
         assert_matches::assert_matches!(result, Ok(()));
 
         let mempool_tx = mempool.tx_take().expect("Mempool should contain a transaction");
@@ -719,15 +555,15 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_count(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_deploy_v1_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -755,16 +591,16 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_replace(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
-        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_account_v0_valid: ValidatedMempoolTx,
+        tx_deploy_v1_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -788,8 +624,8 @@ mod test {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -818,8 +654,8 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_replace2(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
-        tx_account_v0_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_deploy_v1_valid: ValidatedMempoolTx,
+        tx_account_v0_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
@@ -827,8 +663,8 @@ mod test {
         // First, we insert the deploy account transaction
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -849,8 +685,8 @@ mod test {
         // Now we replace the previous transaction with a non-deploy account tx
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -879,7 +715,7 @@ mod test {
     #[tokio::test]
     async fn mempool_deploy_remove_age_exceeded(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_deploy_v1_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_deploy_v1_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(
@@ -893,8 +729,8 @@ mod test {
         // First, we insert the deploy account transaction
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid,
-            arrived_at: ArrivedAtTimestamp::UNIX_EPOCH,
+            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::UNIX_EPOCH,
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -946,25 +782,25 @@ mod test {
         #[future] backend: Arc<mc_db::MadaraBackend>,
         #[from(tx_account_v0_valid)] // We are reusing the tx_account_v0_valid fixture...
         #[with(Felt::ZERO)] // ...with different arguments
-        tx_new_1: blockifier::transaction::transaction_execution::Transaction,
+        tx_new_1: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::ONE)]
-        tx_new_2: blockifier::transaction::transaction_execution::Transaction,
+        tx_new_2: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::TWO)]
-        tx_new_3: blockifier::transaction::transaction_execution::Transaction,
+        tx_new_3: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::ZERO)]
-        tx_old_1: blockifier::transaction::transaction_execution::Transaction,
+        tx_old_1: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::ONE)]
-        tx_old_2: blockifier::transaction::transaction_execution::Transaction,
+        tx_old_2: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::TWO)]
-        tx_old_3: blockifier::transaction::transaction_execution::Transaction,
+        tx_old_3: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::THREE)]
-        tx_old_4: blockifier::transaction::transaction_execution::Transaction,
+        tx_old_4: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(
@@ -981,9 +817,9 @@ mod test {
 
         // First, we begin by inserting all our transactions and making sure
         // they are in the ready as well as the pending intent queues.
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = TxTimestamp::now();
         let tx_new_1_mempool = MempoolTransaction {
-            tx: tx_new_1,
+            tx: tx_new_1.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ZERO),
@@ -1009,9 +845,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = TxTimestamp::now();
         let tx_new_2_mempool = MempoolTransaction {
-            tx: tx_new_2,
+            tx: tx_new_2.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ZERO),
@@ -1037,9 +873,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = TxTimestamp::now();
         let tx_new_3_mempool = MempoolTransaction {
-            tx: tx_new_3,
+            tx: tx_new_3.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -1072,9 +908,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_1_mempool = MempoolTransaction {
-            tx: tx_old_1,
+            tx: tx_old_1.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -1100,9 +936,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_2_mempool = MempoolTransaction {
-            tx: tx_old_2,
+            tx: tx_old_2.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -1128,9 +964,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_3_mempool = MempoolTransaction {
-            tx: tx_old_3,
+            tx: tx_old_3.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::TWO),
@@ -1163,9 +999,9 @@ mod test {
             mempool.inner.read().expect("Poisoned lock").tx_intent_queue_pending_by_nonce
         );
 
-        let arrived_at = ArrivedAtTimestamp::UNIX_EPOCH;
+        let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_4_mempool = MempoolTransaction {
-            tx: tx_old_4,
+            tx: tx_old_4.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -1333,15 +1169,15 @@ mod test {
     #[tokio::test]
     async fn mempool_remove_aged_tx_pass_l1_handler(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_l1_handler_valid: blockifier::transaction::transaction_execution::Transaction,
+        tx_l1_handler_valid: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_l1_handler_valid,
-            arrived_at: ArrivedAtTimestamp::now(),
+            tx: tx_l1_handler_valid.into_blockifier().unwrap().0,
+            arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
@@ -1383,8 +1219,8 @@ mod test {
     #[tokio::test]
     async fn mempool_readiness_check(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        #[from(tx_account_v0_valid)] tx_ready: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_pending: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] mut tx_ready: ValidatedMempoolTx,
+        #[from(tx_account_v0_valid)] mut tx_pending: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mut mempool = Mempool::new(backend, MempoolConfig::for_testing());
@@ -1392,8 +1228,9 @@ mod test {
         // Insert pending transaction
 
         let nonce_info = NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO));
-        let timestamp_pending = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_pending, None, timestamp_pending, nonce_info);
+        let timestamp_pending = TxTimestamp::now();
+        tx_pending.arrived_at = timestamp_pending;
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_pending, nonce_info);
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().expect("Poisoned lock");
@@ -1418,8 +1255,9 @@ mod test {
         // Insert ready transaction
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
-        let timestamp_ready = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_ready, None, timestamp_ready, nonce_info);
+        let timestamp_ready = TxTimestamp::now();
+        tx_ready.arrived_at = timestamp_ready;
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_ready, nonce_info);
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().expect("Poisoned lock");
@@ -1506,8 +1344,8 @@ mod test {
     #[tokio::test]
     async fn mempool_readiness_check_against_db(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] mut tx_1: ValidatedMempoolTx,
+        #[from(tx_account_v0_valid)] mut tx_2: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
@@ -1516,8 +1354,10 @@ mod test {
 
         let nonce_info =
             mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ZERO).expect("Failed to retrieve nonce info");
-        let timestamp_1 = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_1, None, timestamp_1, nonce_info);
+        let timestamp_1 = TxTimestamp::now();
+        tx_1.arrived_at = timestamp_1;
+
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_1, nonce_info);
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().expect("Poisoned lock");
@@ -1547,8 +1387,10 @@ mod test {
 
         let nonce_info =
             mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ONE).expect("Failed to retrieve nonce info");
-        let timestamp_2 = ArrivedAtTimestamp::now();
-        let result = mempool.accept_tx(tx_2, None, timestamp_2, nonce_info);
+
+        let timestamp_2 = TxTimestamp::now();
+        tx_2.arrived_at = timestamp_2;
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_2, nonce_info);
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().expect("Poisoned lock");
@@ -1587,7 +1429,7 @@ mod test {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_readiness_check_agains_nonce_cache(#[future] backend: Arc<mc_db::MadaraBackend>) {
+    async fn mempool_readiness_check_against_nonce_cache(#[future] backend: Arc<mc_db::MadaraBackend>) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
 
@@ -1681,7 +1523,7 @@ mod test {
         // passing Felt::MAX is not allowed.
         assert_matches::assert_matches!(
             mempool.retrieve_nonce_info(Felt::ZERO, Felt::MAX),
-            Err(MempoolError::StarknetApi(StarknetApiError::OutOfRange { .. }))
+            Err(MempoolError::Internal(_))
         );
     }
 
@@ -1700,11 +1542,11 @@ mod test {
     #[tokio::test]
     async fn mempool_replace_pass(
         #[future] backend: Arc<mc_db::MadaraBackend>,
-        #[from(tx_account_v0_valid)] tx_1: blockifier::transaction::transaction_execution::Transaction,
-        #[from(tx_account_v0_valid)] tx_2: blockifier::transaction::transaction_execution::Transaction,
+        #[from(tx_account_v0_valid)] tx_1: ValidatedMempoolTx,
+        #[from(tx_account_v0_valid)] tx_2: ValidatedMempoolTx,
         #[from(tx_account_v0_valid)]
         #[with(Felt::ONE)]
-        tx_3: blockifier::transaction::transaction_execution::Transaction,
+        tx_3: ValidatedMempoolTx,
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
@@ -1714,10 +1556,10 @@ mod test {
         let force = true;
         let update_tx_limits = true;
 
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = TxTimestamp::now();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_1_mempool = MempoolTransaction {
-            tx: tx_1,
+            tx: tx_1.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -1758,10 +1600,10 @@ mod test {
         let force = true;
         let update_tx_limits = true;
 
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = arrived_at.checked_add(Duration::from_secs(1)).unwrap();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_2_mempool = MempoolTransaction {
-            tx: tx_2,
+            tx: tx_2.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -1815,10 +1657,10 @@ mod test {
         let force = true;
         let update_tx_limits = true;
 
-        let arrived_at = ArrivedAtTimestamp::now();
+        let arrived_at = arrived_at.checked_add(Duration::from_secs(1)).unwrap();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_3_mempool = MempoolTransaction {
-            tx: tx_3,
+            tx: tx_3.into_blockifier().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,

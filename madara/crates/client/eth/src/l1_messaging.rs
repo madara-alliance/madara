@@ -7,7 +7,7 @@ use alloy::sol_types::SolValue;
 use anyhow::Context;
 use futures::StreamExt;
 use mc_db::{l1_db::LastSyncedEventBlock, MadaraBackend};
-use mc_mempool::{Mempool, MempoolProvider};
+use mc_submit_tx::SubmitL1HandlerTransaction;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ChainId, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::transaction::{fields::Calldata, L1HandlerTransaction, TransactionVersion};
@@ -39,7 +39,7 @@ pub async fn sync(
     backend: Arc<MadaraBackend>,
     client: Arc<EthereumClient>,
     chain_id: ChainId,
-    mempool: Arc<Mempool>,
+    submit_tx: Arc<dyn SubmitL1HandlerTransaction>,
     mut ctx: ServiceContext,
 ) -> anyhow::Result<()> {
     tracing::info!("⟠ Starting L1 Messages Syncing...");
@@ -97,7 +97,15 @@ pub async fn sync(
                 continue;
             }
 
-            match process_l1_message(&backend, &event, &meta.block_number, &meta.log_index, &chain_id, mempool.clone())
+            match process_l1_message(
+                &backend,
+                &event,
+                &meta.block_number,
+                &meta.log_index,
+                &chain_id,
+                submit_tx.clone(),
+            )
+            .await
             {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
@@ -127,13 +135,13 @@ pub async fn sync(
     Ok(())
 }
 
-fn process_l1_message(
+async fn process_l1_message(
     backend: &MadaraBackend,
     event: &LogMessageToL2,
     l1_block_number: &Option<u64>,
     event_index: &Option<u64>,
     _chain_id: &ChainId,
-    mempool: Arc<Mempool>,
+    submit_tx: Arc<dyn SubmitL1HandlerTransaction>,
 ) -> anyhow::Result<Option<Felt>> {
     let transaction = parse_handle_l1_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
@@ -154,7 +162,10 @@ fn process_l1_message(
         }
     };
 
-    let res = mempool.tx_accept_l1_handler(transaction.into(), fees)?;
+    let res = submit_tx
+        .submit_l1_handler_transaction(transaction.into(), fees)
+        .await
+        .context("Submitting l1 handler transaction")?;
 
     // TODO: remove unwraps
     // Ques: shall it panic if no block number of event_index?

@@ -28,6 +28,7 @@
 
 use super::*;
 use ::proptest::prelude::*;
+use mp_transactions::validated::TxTimestamp;
 use proptest_derive::Arbitrary;
 use proptest_state_machine::{ReferenceStateMachine, StateMachineTest};
 use starknet_types_core::felt::Felt;
@@ -164,9 +165,9 @@ prop_compose! {
         // is anywhere between 1h30 before now, or 1h30 into the future. Note
         // that the transaction age limit for the mempool is set to 1h.
         let arrived_at = if dt < 0 {
-            ArrivedAtTimestamp::now().checked_sub(Duration::from_secs(dt.unsigned_abs() as u64)).unwrap()
+            TxTimestamp::now().checked_sub(Duration::from_secs(dt.unsigned_abs() as u64)).unwrap()
         } else {
-            ArrivedAtTimestamp::now().checked_add(Duration::from_secs(dt as u64)).unwrap()
+            TxTimestamp::now().checked_add(Duration::from_secs(dt as u64)).unwrap()
         };
         let tx = txty.tx(contract_address);
 
@@ -296,7 +297,7 @@ impl StateMachineTest for MempoolInner {
 
                 // age check
                 let arrived_at = tx.arrived_at;
-                let now = ArrivedAtTimestamp::now();
+                let now = TxTimestamp::now();
                 let too_old = if arrived_at < now {
                     now.duration_since(arrived_at).unwrap() > state.limiter.config.max_age.unwrap_or(Duration::MAX)
                 } else {

@@ -1,3 +1,5 @@
+use crate::helpers::not_found_response;
+
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
     helpers::{
@@ -8,14 +10,14 @@ use super::{
 use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response, StatusCode};
-use mc_db::{mempool_db::SerializedMempoolTx, MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_rpc::{
-    providers::AddTransactionProvider,
     versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
     Starknet,
 };
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
-use mp_class::{ClassInfo, ContractClass, ConvertedClass};
+use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
@@ -26,8 +28,9 @@ use mp_gateway::{
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
 };
 use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
+use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::service::ServiceContext;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -228,7 +231,7 @@ pub async fn handle_get_state_update(
 pub async fn handle_get_block_traces(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
     ctx: ServiceContext,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
@@ -326,24 +329,18 @@ pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Respon
     Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
 }
 
-pub async fn handle_add_verified_transaction(
+pub async fn handle_add_validated_transaction(
     req: Request<Incoming>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
 ) -> Result<Response<String>, GatewayError> {
+    let Some(submit_validated) = submit_validated else { return Ok(not_found_response()) };
     let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
-    #[derive(Serialize, Deserialize)]
-    struct AddVerifiedTransaction {
-        tx_hash: Felt,
-        tx: SerializedMempoolTx,
-        converted_class: Option<ConvertedClass>,
-    }
-
-    let transaction = bincode::deserialize_from::<_, AddVerifiedTransaction>(whole_body.reader())
+    let transaction: ValidatedMempoolTx = bincode::deserialize_from(whole_body.reader())
         .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
 
-    add_transaction_provider
-        .add_trusted_validated_transaction(transaction.tx_hash, transaction.tx, transaction.converted_class)
+    submit_validated
+        .submit_validated_transaction(transaction)
         .await
         .map_err(|e| GatewayError::InternalServerError(format!("{e:#}")))?;
 
@@ -355,7 +352,7 @@ pub async fn handle_add_verified_transaction(
 
 pub async fn handle_add_transaction(
     req: Request<Incoming>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, GatewayError> {
     let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
@@ -373,7 +370,7 @@ pub async fn handle_add_transaction(
 
 async fn declare_transaction(
     tx: UserDeclareTransaction,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
     let tx: BroadcastedDeclareTxn = match tx.try_into() {
         Ok(tx) => tx,
@@ -383,28 +380,28 @@ async fn declare_transaction(
         }
     };
 
-    match add_transaction_provider.add_declare_transaction(tx).await {
+    match add_transaction_provider.submit_declare_transaction(tx).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
-        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+        Err(e) => GatewayError::from(e).into(),
     }
 }
 
 async fn deploy_account_transaction(
     tx: UserDeployAccountTransaction,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
-    match add_transaction_provider.add_deploy_account_transaction(tx.into()).await {
+    match add_transaction_provider.submit_deploy_account_transaction(tx.into()).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
-        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+        Err(e) => GatewayError::from(e).into(),
     }
 }
 
 async fn invoke_transaction(
     tx: UserInvokeFunctionTransaction,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
-    match add_transaction_provider.add_invoke_transaction(tx.into()).await {
+    match add_transaction_provider.submit_invoke_transaction(tx.into()).await {
         Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
-        Err(e) => create_json_response(hyper::StatusCode::OK, &e),
+        Err(e) => GatewayError::from(e).into(),
     }
 }

@@ -11,6 +11,12 @@ homepage.workspace = true
 [lints]
 workspace = true
 
+[features]
+# TODO(v0.13.4): re-add this flag.
+# default = ["deny_unknown_fields"]
+default = []
+deny_unknown_fields = []
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 

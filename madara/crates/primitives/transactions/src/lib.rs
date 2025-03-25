@@ -16,6 +16,7 @@ mod to_starknet_types;
 
 // pub mod broadcasted;
 pub mod compute_hash;
+pub mod validated;
 
 pub use to_blockifier::{BroadcastedTransactionExt, ToBlockifierError};
 

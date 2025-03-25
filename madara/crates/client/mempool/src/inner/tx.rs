@@ -2,14 +2,13 @@ use blockifier::transaction::transaction_execution::Transaction;
 use mc_exec::execution::TxInfo;
 use mp_class::ConvertedClass;
 use mp_convert::FeltHexDisplay;
+use mp_transactions::validated::TxTimestamp;
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
     StarknetApiError,
 };
-use std::{fmt, time::SystemTime};
-
-pub type ArrivedAtTimestamp = SystemTime;
+use std::fmt;
 
 /// Wrapper around a blockifier [Transaction] with some added information needed
 /// by the [Mempool]
@@ -19,7 +18,7 @@ pub type ArrivedAtTimestamp = SystemTime;
 pub struct MempoolTransaction {
     pub tx: Transaction,
     /// Time at which the transaction was inserted into the mempool (+ or -)
-    pub arrived_at: ArrivedAtTimestamp,
+    pub arrived_at: TxTimestamp,
     /// TODO: What is this?
     pub converted_class: Option<ConvertedClass>,
     /// We need this to be able to retrieve the transaction once from the
@@ -52,7 +51,7 @@ impl fmt::Debug for MempoolTransaction {
 impl MempoolTransaction {
     pub fn new_from_blockifier_tx(
         tx: Transaction,
-        arrived_at: ArrivedAtTimestamp,
+        arrived_at: TxTimestamp,
         converted_class: Option<ConvertedClass>,
     ) -> Result<Self, StarknetApiError> {
         let nonce = tx.nonce();

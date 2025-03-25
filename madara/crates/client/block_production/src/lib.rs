@@ -628,7 +628,8 @@ mod tests {
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
-    use mc_mempool::{Mempool, MempoolConfig, MempoolProvider, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
     use mp_block::header::{GasPrices, L1DataAvailabilityMode};
     use mp_chain_config::ChainConfig;
     use mp_convert::{felt, ToFelt};
@@ -678,7 +679,14 @@ mod tests {
         #[default(Duration::from_secs(30))] block_time: Duration,
         #[default(Duration::from_secs(2))] pending_block_update_time: Duration,
         #[default(false)] use_bouncer_weights: bool,
-    ) -> (Arc<MadaraBackend>, Arc<BlockProductionMetrics>, Arc<MockL1DataProvider>, Arc<Mempool>, DevnetKeys) {
+    ) -> (
+        Arc<MadaraBackend>,
+        Arc<BlockProductionMetrics>,
+        Arc<MockL1DataProvider>,
+        Arc<Mempool>,
+        Arc<TransactionValidator>,
+        DevnetKeys,
+    ) {
         let mut genesis = ChainGenesisDescription::base_config().unwrap();
         let contracts = genesis.add_devnet_contracts(10).unwrap();
 
@@ -714,11 +722,19 @@ mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider);
 
-        (
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
+        let tx_validator = Arc::new(TransactionValidator::new(
+            Arc::clone(&mempool) as _,
             Arc::clone(&backend),
+            TransactionValidatorConfig::default(),
+        ));
+
+        (
+            backend,
             Arc::new(BlockProductionMetrics::register()),
             Arc::clone(&l1_data_provider),
-            Arc::new(Mempool::new(backend, MempoolConfig::for_testing())),
+            mempool,
+            tx_validator,
             contracts,
         )
     }
@@ -814,10 +830,10 @@ mod tests {
         })
     }
 
-    fn sign_and_add_declare_tx(
+    async fn sign_and_add_declare_tx(
         contract: &DevnetPredeployedContract,
         backend: &Arc<MadaraBackend>,
-        mempool: &Arc<Mempool>,
+        validator: &Arc<TransactionValidator>,
         nonce: Felt,
     ) {
         let sierra_class: starknet_core::types::contract::SierraClass =
@@ -864,14 +880,14 @@ mod tests {
         };
         *tx_signature = vec![signature.r, signature.s];
 
-        mempool.tx_accept_declare(declare_txn).expect("Should accept the transaction");
+        validator.submit_declare_transaction(declare_txn).await.expect("Should accept the transaction");
     }
 
-    fn sign_and_add_invoke_tx(
+    async fn sign_and_add_invoke_tx(
         contract_sender: &DevnetPredeployedContract,
         contract_receiver: &DevnetPredeployedContract,
         backend: &Arc<MadaraBackend>,
-        mempool: &Arc<Mempool>,
+        validator: &Arc<TransactionValidator>,
         nonce: Felt,
     ) {
         let erc20_contract_address =
@@ -923,7 +939,7 @@ mod tests {
         };
         *tx_signature = vec![signature.r, signature.s];
 
-        mempool.tx_accept_invoke(invoke_txn).expect("Should accept the transaction");
+        validator.submit_invoke_transaction(invoke_txn).await.expect("Should accept the transaction");
     }
 
     #[rstest::rstest]
@@ -1829,10 +1845,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -1841,7 +1858,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -1888,6 +1905,7 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
 
@@ -1915,7 +1933,7 @@ mod tests {
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -1924,7 +1942,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2033,7 +2051,7 @@ mod tests {
         //           PART 6: add more transactions to the mempool             //
         // ================================================================== //
 
-        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ONE);
+        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &tx_validator, Felt::ONE).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2063,10 +2081,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add transactions to the mempool              //
@@ -2075,8 +2094,8 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ZERO);
-        sign_and_add_declare_tx(&contracts.0[1], &backend, &mempool, Felt::ZERO);
+        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &tx_validator, Felt::ZERO).await;
+        sign_and_add_declare_tx(&contracts.0[1], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2122,10 +2141,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -2134,7 +2154,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2178,6 +2198,7 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
 
@@ -2205,7 +2226,7 @@ mod tests {
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -2214,7 +2235,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2344,10 +2365,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -2356,7 +2378,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2413,10 +2435,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //             PART 1: we add a transaction to the mempool            //
@@ -2425,7 +2448,7 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2469,10 +2492,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //             PART 1: we add a transaction to the mempool            //
@@ -2481,8 +2505,8 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
-        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ONE);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
+        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &tx_validator, Felt::ONE).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2532,10 +2556,11 @@ mod tests {
             Arc<BlockProductionMetrics>,
             Arc<MockL1DataProvider>,
             Arc<Mempool>,
+            Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, contracts) = devnet_setup.await;
+        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //             PART 1: we add a transaction to the mempool            //
@@ -2544,8 +2569,8 @@ mod tests {
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
         assert!(mempool.is_empty());
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::ZERO);
-        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &mempool, Felt::ONE);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::ZERO).await;
+        sign_and_add_invoke_tx(&contracts.0[0], &contracts.0[1], &backend, &tx_validator, Felt::ONE).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //
@@ -2586,7 +2611,7 @@ mod tests {
 
         // The transaction itself is meaningless, it's just to check
         // if the task correctly reads it and process it
-        sign_and_add_declare_tx(&contracts.0[0], &backend, &mempool, Felt::TWO);
+        sign_and_add_declare_tx(&contracts.0[0], &backend, &tx_validator, Felt::TWO).await;
         assert!(!mempool.is_empty());
 
         // ================================================================== //

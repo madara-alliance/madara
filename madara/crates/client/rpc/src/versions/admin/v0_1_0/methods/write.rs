@@ -1,8 +1,7 @@
+use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::ClassAndTxnHash;
 use mp_transactions::BroadcastedDeclareTransactionV0;
-
-use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet};
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -19,6 +18,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTransactionV0,
     ) -> RpcResult<ClassAndTxnHash> {
-        self.add_transaction_provider.add_declare_v0_transaction(declare_transaction).await
+        Ok(self
+            .add_transaction_provider
+            .submit_declare_v0_transaction(declare_transaction)
+            .await
+            .map_err(StarknetRpcApiError::from)?)
     }
 }

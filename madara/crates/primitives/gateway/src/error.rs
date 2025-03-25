@@ -10,7 +10,7 @@ pub enum SequencerError {
     #[error("Starknet error: {0:#}")]
     StarknetError(#[from] StarknetError),
     #[error("Hyper error: {0:#}")]
-    ReqwestError(#[from] hyper::Error),
+    HyperError(#[from] hyper::Error),
     #[error("No URL available to use this request")]
     NoUrl,
     #[error("Invalid URL: {0}")]

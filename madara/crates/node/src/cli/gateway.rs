@@ -19,10 +19,13 @@ pub struct GatewayParams {
     #[arg(env = "MADARA_GATEWAY_EXTERNAL", long)]
     pub gateway_external: bool,
 
-    /// Enable the madara-specific add_verified_transaction. Beware that this endpoint should not be exposed, this
+    /// Enable the madara-specific add_validated_transaction. Beware that this endpoint should not be exposed, this
     /// is for internal trusted madara-to-madara communication only.
-    #[arg(env = "GATEWAY_MADARA_ENABLE_TRUSTED_ADD_VERIFIED_TRANSACTION", long)]
-    pub gateway_enable_trusted_add_verified_transaction: bool,
+    /// This endpoint allows madara to accept pre-validated transactions, with already-compiled classes.
+    /// The version of the madara node consuming this HTTP interface must match the version of the gateway server, as they
+    /// use internal unstable types.
+    #[arg(env = "GATEWAY_MADARA_ENABLE_TRUSTED_ADD_TRANSACTION_ENDPOINT", long)]
+    pub gateway_enable_trusted_add_transaction_endpoint: bool,
 
     /// The gateway port to listen on.
     #[arg(env = "MADARA_GATEWAY_PORT", long, value_name = "PORT", default_value_t = FGW_DEFAULT_PORT)]
@@ -36,7 +39,7 @@ impl GatewayParams {
             gateway_enable: self.gateway_enable,
             gateway_external: self.gateway_external,
             gateway_port: self.gateway_port,
-            enable_trusted_add_verified_transaction: self.gateway_enable_trusted_add_verified_transaction,
+            enable_trusted_add_validated_transaction: self.gateway_enable_trusted_add_transaction_endpoint,
         }
     }
 }

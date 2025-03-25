@@ -13,10 +13,10 @@ pub mod db;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
-pub mod mempool;
 pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
+pub mod validator;
 
 pub use analytics::*;
 pub use block_production::*;
@@ -24,10 +24,10 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
 pub use l1::*;
-pub use mempool::*;
 pub use p2p::*;
 pub use rpc::*;
 pub use telemetry::*;
+pub use validator::*;
 
 /// Combines multiple cli args into a single easy to use preset
 ///
@@ -182,7 +182,7 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
-    pub mempool_params: MempoolParams,
+    pub validator_params: ValidatorParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

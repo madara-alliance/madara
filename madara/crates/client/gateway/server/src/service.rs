@@ -3,7 +3,7 @@ use anyhow::Context;
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use mc_db::MadaraBackend;
-use mc_rpc::providers::AddTransactionProvider;
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use std::{
     net::{Ipv4Addr, SocketAddr},
@@ -17,7 +17,7 @@ pub struct GatewayServerConfig {
     pub gateway_enable: bool,
     pub gateway_external: bool,
     pub gateway_port: u16,
-    pub enable_trusted_add_verified_transaction: bool,
+    pub enable_trusted_add_validated_transaction: bool,
 }
 impl Default for GatewayServerConfig {
     fn default() -> Self {
@@ -26,18 +26,19 @@ impl Default for GatewayServerConfig {
             gateway_enable: false,
             gateway_external: false,
             gateway_port: 8080,
-            enable_trusted_add_verified_transaction: false,
+            enable_trusted_add_validated_transaction: false,
         }
     }
 }
 
 pub async fn start_server(
     db_backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     mut ctx: ServiceContext,
     config: GatewayServerConfig,
 ) -> anyhow::Result<()> {
-    if !config.feeder_gateway_enable && !config.gateway_enable && !config.enable_trusted_add_verified_transaction {
+    if !config.feeder_gateway_enable && !config.gateway_enable && !config.enable_trusted_add_validated_transaction {
         return Ok(());
     }
 
@@ -58,6 +59,7 @@ pub async fn start_server(
 
             let db_backend = Arc::clone(&db_backend);
             let add_transaction_provider = add_transaction_provider.clone();
+            let submit_validated = submit_validated.clone();
             let ctx = ctx.clone();
             let config = config.clone();
 
@@ -67,6 +69,7 @@ pub async fn start_server(
                         req,
                         Arc::clone(&db_backend),
                         add_transaction_provider.clone(),
+                        submit_validated.clone(),
                         ctx.clone(),
                         config.clone(),
                     )

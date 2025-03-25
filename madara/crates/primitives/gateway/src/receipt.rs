@@ -1,3 +1,7 @@
+use crate::transaction::{
+    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
+    Transaction,
+};
 use mp_block::H160;
 use mp_convert::FeltExt;
 use mp_receipt::{Event, L1Gas, MsgToL1};
@@ -6,13 +10,8 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use starknet_types_core::felt::Felt;
 
-use crate::transaction::{
-    DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
-    Transaction,
-};
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct ConfirmedReceipt {
     pub transaction_hash: Felt,
     pub transaction_index: u64,
@@ -146,7 +145,7 @@ fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_recei
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,
@@ -225,6 +224,7 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[serde(default)]
 pub struct BuiltinCounters {
     #[serde(skip_serializing_if = "is_zero")]

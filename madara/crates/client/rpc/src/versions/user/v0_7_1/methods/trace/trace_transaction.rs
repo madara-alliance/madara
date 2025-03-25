@@ -25,7 +25,7 @@ pub async fn trace_transaction(
         .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
     if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let exec_context = ExecutionContext::new_at_block_start(Arc::clone(&starknet.backend), &block.info)?;

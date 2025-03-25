@@ -12,15 +12,15 @@ pub fn get_compiled_casm(starknet: &Starknet, class_hash: Felt) -> StarknetRpcRe
         .backend
         .get_class_info(&BlockId::Tag(BlockTag::Latest), &class_hash)
         .or_internal_server_error("Error getting contract class info")?
-        .ok_or(StarknetRpcApiError::ClassHashNotFound)?
+        .ok_or(StarknetRpcApiError::class_hash_not_found())?
         .compiled_class_hash()
-        .ok_or(StarknetRpcApiError::ClassHashNotFound)?;
+        .ok_or(StarknetRpcApiError::class_hash_not_found())?;
 
     let compiled_class = starknet
         .backend
         .get_sierra_compiled(&BlockId::Tag(BlockTag::Latest), &compiled_class_hash)
         .or_internal_server_error("Error getting compiled contract class")?
-        .ok_or(StarknetRpcApiError::ClassHashNotFound)?;
+        .ok_or(StarknetRpcApiError::class_hash_not_found())?;
 
     // Using `Value::from_str` to deserialize `compiled_class` from a JSON string stored in the database.
     // Since `compiled_class` is stored as a raw JSON string in the DB, we need to parse it into a
