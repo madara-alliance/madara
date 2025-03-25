@@ -82,8 +82,8 @@ pub enum BlockImportError {
     #[error("Block number mismatch: expected {expected:#x}, got {got:#x}")]
     BlockNumber { got: u64, expected: u64 },
 
-    #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
-    GlobalStateRoot { got: Felt, expected: Felt },
+    #[error("Global state root mismatch for block_n={block_n}: expected {expected:#x}, got {got:#x}")]
+    GlobalStateRoot { block_n: u64, got: Felt, expected: Felt },
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
     InternalDb { context: Cow<'static, str>, error: MadaraStorageError },
@@ -526,7 +526,7 @@ impl BlockImporterCtx {
                 .global_state_root;
 
             if expected != got {
-                return Err(BlockImportError::GlobalStateRoot { got, expected });
+                return Err(BlockImportError::GlobalStateRoot { block_n, got, expected });
             }
         }
 
@@ -572,7 +572,7 @@ mod tests {
             felt!("0xb"), // A non-zero global state root
             StateDiff::default(), // Empty state diff
             // Expected result: a GlobalStateRoot error due to mismatch
-            Err(BlockImportError::GlobalStateRoot { expected: felt!("0xb"), got: felt!("0x0") })
+            Err(BlockImportError::GlobalStateRoot { expected: felt!("0xb"), got: felt!("0x0"), block_n: 0 })
         )]
     #[case::empty_state_diff(
             felt!("0x0"), // Zero global state root

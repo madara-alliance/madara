@@ -255,16 +255,15 @@ async fn setup_app() -> anyhow::Result<ServiceMonitor> {
         run_cmd.validator_params.as_validator_config(),
     ));
 
-    let gateway_submit_tx: Arc<dyn SubmitTransaction> =
-        if run_cmd.validator_params.enable_gateway_redirect_transaction_validator {
-            Arc::new(TransactionValidator::new(
-                Arc::clone(&gateway_client) as _,
-                Arc::clone(service_db.backend()),
-                run_cmd.validator_params.as_validator_config(),
-            ))
-        } else {
-            Arc::clone(&gateway_client) as _
-        };
+    let gateway_submit_tx: Arc<dyn SubmitTransaction> = if run_cmd.validator_params.validate_then_forward_txs {
+        Arc::new(TransactionValidator::new(
+            Arc::clone(&gateway_client) as _,
+            Arc::clone(service_db.backend()),
+            run_cmd.validator_params.as_validator_config(),
+        ))
+    } else {
+        Arc::clone(&gateway_client) as _
+    };
 
     let tx_submit =
         MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx) as _, Arc::clone(&mempool_tx_validator) as _);
@@ -354,6 +353,8 @@ async fn setup_app() -> anyhow::Result<ServiceMonitor> {
     if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
         app.activate(MadaraServiceId::Telemetry);
     }
+
+    app.activate(MadaraServiceId::Analytics);
 
     Ok(app)
 }

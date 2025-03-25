@@ -4,10 +4,10 @@ use mc_submit_tx::TransactionValidatorConfig;
 /// Parameters used to config the mempool.
 #[derive(Debug, Clone, Args)]
 pub struct ValidatorParams {
-    /// When enabled, transactions will be validated, even when redirecting the transaction to a gateway.
-    /// By default, the validator is only enabled when inserting into the local mempool.
-    #[arg(env = "MADARA_ENABLE_TRANSACTION_VALIDATOR", long)]
-    pub enable_gateway_redirect_transaction_validator: bool,
+    /// When enabled, incoming transactions will be validated and then forwarded to the madara-specific validated transaction
+    /// gateway. This allows for the separation of the sequencer and gateway (transaction validators) on different machines.
+    #[arg(env = "MADARA_VALIDATE_THEN_FORWARD_TXS", long)]
+    pub validate_then_forward_txs: bool,
 
     /// Disable transaction validation: no prior validation will be made before inserting into the mempool.
     /// See: Trasaction validation in [Starknet docs Transaction Validation](https://docs.starknet.io/architecture-and-concepts/network-architecture/transaction-life-cycle/)

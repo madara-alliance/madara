@@ -214,7 +214,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         backend.flush().context("DB flushing error")?;
 
         let end_time = start_time.elapsed();
-        tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
+        tracing::info!("⛏️  Closed block #{} with {} transactions - {:.3?}", block_n, n_txs, end_time);
 
         // Record metrics
         let attributes = [

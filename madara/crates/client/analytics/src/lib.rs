@@ -41,6 +41,7 @@ impl Default for AnalyticsConfig {
     }
 }
 
+#[derive(Clone)]
 struct Providers {
     meter_provider: SdkMeterProvider,
     tracer_provider: SdkTracerProvider,
@@ -74,6 +75,7 @@ impl AnalyticsService {
             let exporter = endpoint.exporter.take().expect("Endpoint already setup");
             let provider = SdkMeterProvider::builder().with_reader(exporter).build();
             global::set_meter_provider(provider);
+            tracing_subscriber.init();
             Ok(())
         } else {
             let Some(otel_endpoint) = &self.config.collection_endpoint else {

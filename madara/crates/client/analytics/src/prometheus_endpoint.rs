@@ -51,7 +51,7 @@ impl PrometheusEndpoint {
         let addr = SocketAddr::new(listen_addr.into(), self.config.listen_port);
         let listener = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
 
-        tracing::info!("🌐 Running prometheus telemetry endpoint at http://{}/metrics", addr);
+        tracing::info!("🌐 Running prometheus metrics endpoint at http://{}/metrics", addr);
 
         while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
             let (stream, _addr) = match res {

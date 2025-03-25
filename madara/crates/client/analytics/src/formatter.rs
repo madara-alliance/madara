@@ -219,7 +219,7 @@ where
 
                 writeln!(
                     writer,
-                    "{} {}{}{} {} {} {} bytes - {:?}",
+                    "{} {}{}{} {} {} {} bytes - {:.3?}",
                     self.timestamp_fmt(&ts),
                     self.open_bracket,
                     rpc_style.apply_to("HTTP"),
