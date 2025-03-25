@@ -50,7 +50,6 @@ impl AtlanticClient {
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
             .default_form_data("mockFactHash", &mock_fact_hash)
-            .default_form_data("proverType", &prover_type)
             .build()
             .expect("Failed to build HTTP client");
 
@@ -86,6 +85,8 @@ impl AtlanticClient {
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
+                    .form_text("cairoVersion", "cairo0")
+                    .form_text("cairoVm", "rust")
                     .form_text("network", atlantic_network.as_ref())
                     .form_file("pieFile", pie_file, "pie.zip")?,
             )
