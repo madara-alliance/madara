@@ -53,7 +53,7 @@ pub(crate) trait CheckInvariants {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait MempoolProvider: Send + Sync {
+pub trait MempoolProvider: Send + Sync + 'static {
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
