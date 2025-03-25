@@ -67,6 +67,8 @@ struct ContinueBlockStats {
     pub n_batches: usize,
     /// Number of transactions included into the block.
     pub n_added_to_block: usize,
+    /// Number of transactions taken from the mempool.
+    pub n_taken: usize,
     /// Transactions that were popped from the mempool but not executed, and so they are re-added back into the mempool.
     pub n_re_added_to_mempool: usize,
     /// Rejected transactions are failing transactions that are included in the block.
@@ -98,7 +100,6 @@ struct ContinueBlockResult {
     state_diff: StateDiff,
 
     /// The current state of resource consumption tracked by the bouncer
-    #[allow(unused)]
     bouncer_weights: BouncerWeights,
 
     /// Statistics about transaction processing during this continuation
@@ -304,7 +305,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let mut pending_block = self.pending_block.take().expect("Pending block already in use.");
 
         let (res, executor, pending_block) =
-            spawn_compute("block_production", move || {
+            spawn_compute("blockprod", move || {
                 let mut stats = ContinueBlockStats::default();
                 let mut block_now_full = false;
 
@@ -323,7 +324,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     let to_take = batch_size.saturating_sub(txs_to_process.len());
                     let cur_len = txs_to_process.len();
                     if to_take > 0 {
-                        mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
+                        stats.n_taken += mempool.txs_take_chunk(/* extend */ &mut txs_to_process, batch_size);
 
                         txs_to_process_blockifier.extend(txs_to_process.iter().skip(cur_len).map(|tx| tx.tx.clone()));
                     }
@@ -416,6 +417,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             })
             .await
             .map_err(|err| Error::Unexpected(format!("Spawn blocking error: {err:#}").into()))??;
+            
 
         let n_tx = pending_block.transactions.len();
         self.executor = Some(executor);
@@ -425,8 +427,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             "Finished tick with {} new transactions, now at {} - re-adding {} txs to mempool",
             res.stats.n_added_to_block,
             n_tx,
-            res.stats.n_re_added_to_mempool
+            res.stats.n_re_added_to_mempool,
         );
+        tracing::debug!("New weights: {:?}", res.bouncer_weights);
+        tracing::debug!("Block now full: {:?}", res.block_now_full);
+        tracing::debug!("Stats: {:?}", res.stats);
 
         Ok(res)
     }

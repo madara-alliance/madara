@@ -231,7 +231,7 @@ where
                     time_style.apply_to(&Duration::from_micros(rpc_call_event.response_time as u64)),
                 )
             }
-            (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().blue()),
+            (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().green()),
             (&Level::WARN, _) => {
                 self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().yellow())
             }
@@ -240,7 +240,8 @@ where
                 self.format_without_target(&mut writer, event, &ts, level, &Style::new().red())
             }
             (&Level::ERROR, _) => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().red()),
-            _ => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new()),
+            (&Level::DEBUG, _) => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().blue()),
+            (&Level::TRACE, _) => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().cyan()),
         }
     }
 }

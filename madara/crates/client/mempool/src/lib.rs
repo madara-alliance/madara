@@ -54,7 +54,7 @@ pub(crate) trait CheckInvariants {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync + 'static {
-    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize);
+    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) -> usize;
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
     fn tx_mark_included(&self, contract_address: &Felt);
     fn txs_re_add(
@@ -293,18 +293,19 @@ impl Mempool {
 #[async_trait]
 impl MempoolProvider for Mempool {
     // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
-    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {
+    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) -> usize {
         let mut inner = self.inner.write().expect("Poisoned lock");
         let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
 
         let from = dest.len();
-        inner.pop_next_chunk(dest, n);
+        let taken = inner.pop_next_chunk(dest, n);
 
         for mempool_tx in dest.iter().skip(from) {
             let contract_address = mempool_tx.contract_address().to_felt();
             let nonce_next = mempool_tx.nonce_next;
             nonce_cache.insert(contract_address, nonce_next);
         }
+        taken
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]

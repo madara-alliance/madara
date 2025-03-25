@@ -758,8 +758,13 @@ impl MempoolInner {
         mempool_tx
     }
 
-    pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) {
-        dest.extend((0..n).map_while(|_| self.pop_next()))
+    pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) -> usize {
+        let mut taken = 0;
+        dest.extend((0..n).map_while(|_| {
+            taken += 1;
+            self.pop_next()
+        }));
+        taken
     }
 
     /// This is called by the block production after a batch of transaction is executed.
