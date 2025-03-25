@@ -1,6 +1,6 @@
 use crate::{
     global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
-    PreValidatedBlock, PreValidatedPendingBlock, ReorgResult, UnverifiedHeader, ValidatedCommitments,
+    PreValidatedBlock, PreValidatedPendingBlock, ReorgData, UnverifiedHeader, ValidatedCommitments,
 };
 use bonsai_trie::id::BasicId;
 use itertools::Itertools;
@@ -334,7 +334,7 @@ fn block_hash(
 fn reorg(
     backend: &MadaraBackend,
     new_tip: &PreValidatedBlock, // TODO: we don't need a PreValidatedBlock, do we?
-) -> Result<ReorgResult, BlockImportError> {
+) -> Result<ReorgData, BlockImportError> {
     let block_number = new_tip.unverified_block_number.expect("Can't reorg without block number");
     // TODO: we should ensure this exact block exists in our db
     let block_hash = new_tip.unverified_block_hash.expect("Can't reorg without a block hash");
@@ -364,7 +364,7 @@ fn reorg(
         .map_err(make_db_error("getting latest block info"))?
         .ok_or(BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
 
-    Ok(ReorgResult {
+    Ok(ReorgData {
         starting_block_hash: block_hash,
         starting_block_number: block_number,
         ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
