@@ -30,7 +30,7 @@ inputs:
     required: false
   build-snos:
     description: "Whether to build SNOS files"
-    required: false
+    required: true
     default: "false"
 
 runs:

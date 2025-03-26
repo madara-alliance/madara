@@ -22,6 +22,7 @@ jobs:
           install-mold: true
           install-scarb: true
           install-foundry: true
+          build-snos: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Run cli without arguments

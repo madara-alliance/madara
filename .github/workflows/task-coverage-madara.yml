@@ -94,7 +94,6 @@ jobs:
               --release \
               --features testing \
               --lcov \
-              --test-threads=1 \
               --output-path lcov.info \
               --package "mc-*" \
               --package "mp-*" \
