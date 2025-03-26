@@ -56,4 +56,3 @@ jobs:
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           cargo nextest run --release --package "mp-*" --package "m-proc-*" --package "mc-*" --no-fail-fast --tests
-       
