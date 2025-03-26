@@ -142,7 +142,7 @@ impl EthereumClient {
     /// Get the last Starknet block number verified on L1
     pub async fn get_last_verified_block_number(&self) -> anyhow::Result<u64> {
         let block_number = self.l1_core_contract.stateBlockNumber().call().await?;
-        let last_block_number: u64 = (block_number._0).as_u64();
+        let last_block_number: u64 = block_number._0.as_u64();
         Ok(last_block_number)
     }
 
@@ -167,9 +167,8 @@ pub mod eth_client_getter_test {
         primitives::U256,
     };
 
-    use std::ops::{Deref, Range};
-    use std::sync::Mutex;
     use tokio;
+    use tokio::sync::OnceCell;
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
@@ -183,99 +182,24 @@ pub mod eth_client_getter_test {
         static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
     }
 
-    const PORT_RANGE: Range<u16> = 19500..20000;
+    static SHARED_ANVIL: OnceCell<AnvilInstance> = OnceCell::const_new();
 
-    struct AvailablePorts<I: Iterator<Item = u16>> {
-        to_reuse: Vec<u16>,
-        next: I,
+    pub async fn get_shared_anvil_instance() -> &'static AnvilInstance {
+        SHARED_ANVIL
+            .get_or_init(|| async {
+                println!("Initializing shared Anvil instance...");
+                tokio::task::spawn_blocking(create_anvil_instance)
+                    .await
+                    .expect("Failed to spawn Anvil instance in blocking task")
+            })
+            .await
     }
-
-    lazy_static::lazy_static! {
-        static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE });
-    }
-    pub struct AnvilPortNum(pub u16);
-    impl Drop for AnvilPortNum {
-        fn drop(&mut self) {
-            let mut guard = match AVAILABLE_PORTS.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    println!("Recovered from poisoned lock in AnvilPortNum::drop");
-                    poisoned.into_inner()
-                }
-            };
-
-            guard.to_reuse.push(self.0);
-        }
-    }
-
-    pub fn get_port() -> AnvilPortNum {
-        let mut guard = match AVAILABLE_PORTS.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                println!("Recovered from poisoned lock in get_port");
-                poisoned.into_inner()
-            }
-        };
-
-        if let Some(el) = guard.to_reuse.pop() {
-            return AnvilPortNum(el);
-        }
-        AnvilPortNum(guard.next.next().expect("no more port to use"))
-    }
-    static ANVIL: Mutex<Option<Arc<AnvilInstance>>> = Mutex::new(None);
-
-    /// Wrapper for an Anvil instance that automatically cleans up when all handles are dropped
-    pub struct AnvilHandle {
-        instance: Arc<AnvilInstance>,
-    }
-
-    impl Drop for AnvilHandle {
-        fn drop(&mut self) {
-            let mut guard = match ANVIL.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    println!("Recovered from poisoned lock in AnvilHandle::drop");
-                    poisoned.into_inner()
-                }
-            };
-
-            if Arc::strong_count(&self.instance) <= 2 {
-                println!("Cleaning up Anvil instance");
-                *guard = None;
-            }
-        }
-    }
-
-    impl Deref for AnvilHandle {
-        type Target = AnvilInstance;
-
-        fn deref(&self) -> &Self::Target {
-            &self.instance
-        }
-    }
-
-    pub fn get_shared_anvil() -> AnvilHandle {
-        let mut guard = match ANVIL.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                println!("Recovered from poisoned lock in get_shared_anvil");
-                poisoned.into_inner()
-            }
-        };
-
-        if guard.is_none() {
-            *guard = Some(Arc::new(create_anvil_instance()));
-        }
-        AnvilHandle { instance: Arc::clone(guard.as_ref().unwrap()) }
-    }
-
     pub fn create_anvil_instance() -> AnvilInstance {
-        let port = get_port();
         let anvil = Anvil::new()
             .fork(FORK_URL.clone())
             .fork_block_number(L1_BLOCK_NUMBER)
-            .port(port.0)
-            .timeout(60_000)
+            .port(0u16)
+            .timeout(480_000)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
@@ -296,7 +220,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
 
@@ -311,7 +235,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_latest_block_number_works() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
@@ -320,7 +244,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_event_block_number_works() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
@@ -331,7 +255,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_verified_block_hash_works() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
@@ -341,7 +265,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_state_root_works() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
@@ -350,7 +274,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_verified_block_number_works() {
-        let anvil = get_shared_anvil();
+        let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");

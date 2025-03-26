@@ -60,6 +60,7 @@ jobs:
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
+          install-mold: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true

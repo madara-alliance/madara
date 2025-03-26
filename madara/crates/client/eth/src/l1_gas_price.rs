@@ -25,13 +25,13 @@ pub async fn gas_price_worker_once(
     let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
     let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp)?;
 
-    let last_update_timestemp =
+    let last_update_timestamp =
         last_update_timestamp.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!").as_micros();
     if duration_since_last_update > 10 * gas_price_poll_ms {
         anyhow::bail!(
             "Gas prices have not been updated for {} ms. Last update was at {}",
             duration_since_last_update.as_micros(),
-            last_update_timestemp
+            last_update_timestamp
         );
     }
 
@@ -132,7 +132,7 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::{create_ethereum_client, get_shared_anvil};
+    use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use std::time::SystemTime;
@@ -141,7 +141,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = get_shared_anvil();
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -184,7 +184,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
-        let anvil = get_shared_anvil();
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -202,7 +202,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
-        let anvil = get_shared_anvil();
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
@@ -222,7 +222,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let anvil = get_shared_anvil();
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
@@ -307,7 +307,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn update_gas_price_works() {
-        let anvil = get_shared_anvil();
+        let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 

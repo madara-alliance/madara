@@ -112,7 +112,6 @@ mod eth_client_event_subscription_test {
     );
 
     const L2_BLOCK_NUMBER: u64 = 662703;
-    const ANOTHER_ANVIL_PORT: u16 = 8548;
     const EVENT_PROCESSING_TIME: u64 = 2; // Time to allow for event processing in seconds
 
     /// Test the event subscription and state update functionality
@@ -131,7 +130,8 @@ mod eth_client_event_subscription_test {
         let anvil = Anvil::new()
             .block_time(1)
             .chain_id(1337)
-            .port(ANOTHER_ANVIL_PORT)
+            // OS assigned port
+            .port(0u16)
             .try_spawn()
             .expect("failed to spawn anvil instance");
         println!("Anvil started and running at `{}`", anvil.endpoint());
