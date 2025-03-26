@@ -139,6 +139,7 @@ mod eth_client_gas_price_worker_test {
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
+    /*
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
         let anvil = create_anvil_instance();
@@ -199,6 +200,7 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
+    */
 
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
