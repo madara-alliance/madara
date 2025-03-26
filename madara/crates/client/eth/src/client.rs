@@ -188,7 +188,7 @@ pub mod eth_client_getter_test {
         SHARED_ANVIL
             .get_or_init(|| async {
                 println!("Initializing shared Anvil instance...");
-                tokio::task::spawn_blocking(|| create_anvil_instance())
+                tokio::task::spawn_blocking(create_anvil_instance)
                     .await
                     .expect("Failed to spawn Anvil instance in blocking task")
             })

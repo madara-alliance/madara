@@ -14,10 +14,8 @@ use std::{
     env,
     future::Future,
     io::{BufRead, BufReader},
-    ops::Deref,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
-    str::FromStr,
     sync::{
         mpsc::{self, TryRecvError},
         Arc,
@@ -147,7 +145,7 @@ pub fn extract_port_from_stderr(process: &mut Child) -> Result<u16, String> {
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Some(addr_part) = line.split("Running JSON-RPC server at ").nth(1) {
                 if let Some(ip_port) = addr_part.split_whitespace().next() {
                     if let Some(port_str) = ip_port.rsplit(':').next() {
