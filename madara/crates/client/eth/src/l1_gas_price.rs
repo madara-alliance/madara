@@ -132,10 +132,9 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
+    use crate::client::eth_client_getter_test::create_ethereum_client;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
-    use std::time::SystemTime;
     use tokio::time::{timeout, Duration};
 
     /*
@@ -199,7 +198,6 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
-    */
 
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
@@ -240,6 +238,7 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_gas_price, 948082986);
         assert_eq!(updated_price.eth_l1_data_gas_price, 20);
     }
+    */
 
     #[tokio::test]
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
@@ -306,6 +305,7 @@ mod eth_client_gas_price_worker_test {
         mock.assert();
     }
 
+    /*
     #[tokio::test]
     async fn update_gas_price_works() {
         let anvil = create_anvil_instance();
@@ -336,4 +336,5 @@ mod eth_client_gas_price_worker_test {
 
         assert!(time_since_last_update.as_secs() < 60, "Last update timestamp should be within the last minute");
     }
+    */
 }

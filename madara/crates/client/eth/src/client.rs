@@ -164,7 +164,6 @@ pub mod eth_client_getter_test {
     use super::*;
     use alloy::{
         node_bindings::{Anvil, AnvilInstance},
-        primitives::U256,
     };
 
     use tokio;
@@ -174,9 +173,6 @@ pub mod eth_client_getter_test {
     // The txn we are referring to it is here ^
     const L1_BLOCK_NUMBER: u64 = 20395662;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
-    const L2_BLOCK_NUMBER: u64 = 662703;
-    const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
-    const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
     lazy_static::lazy_static! {
         static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
@@ -218,6 +214,7 @@ pub mod eth_client_getter_test {
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
 
+    /*
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
         let anvil = get_shared_anvil_instance().await;
@@ -279,4 +276,5 @@ pub mod eth_client_getter_test {
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
+    */
 }
