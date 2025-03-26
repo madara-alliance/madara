@@ -168,7 +168,6 @@ pub mod eth_client_getter_test {
     };
 
     use tokio;
-    
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
