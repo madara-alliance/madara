@@ -472,10 +472,17 @@ pub mod validate_params {
         match (ethereum_args.settle_on_ethereum, starknet_args.settle_on_starknet) {
             (true, true) => Err("Cannot settle on both Ethereum and Starknet".to_string()),
             (true, false) => {
-                let l1_core_contract_address = Address::from_str(
-                    &ethereum_args.l1_core_contract_address.clone().expect("L1 core contract address is required"),
-                )
-                .expect("Invalid L1 core contract address");
+                let l1_core_contract_address_str = format!(
+                    "{:0>40}",
+                    &ethereum_args
+                        .l1_core_contract_address
+                        .clone()
+                        .expect("L1 core contract address is required")
+                        .trim_start_matches("0x")
+                );
+                let l1_core_contract_address =
+                    Address::from_str(&l1_core_contract_address_str).expect("Invalid Starknet operator address");
+
                 let starknet_operator_address = Address::from_str(
                     &ethereum_args.starknet_operator_address.clone().expect("Starknet operator address is required"),
                 )
