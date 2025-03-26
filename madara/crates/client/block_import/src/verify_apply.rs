@@ -1,7 +1,8 @@
 use crate::{
     global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
-    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
+    PreValidatedBlock, PreValidatedPendingBlock, ReorgData, UnverifiedHeader, ValidatedCommitments,
 };
+use bonsai_trie::id::BasicId;
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::BlockTag;
@@ -323,6 +324,57 @@ fn block_hash(
     }
 
     Ok((block_hash, header))
+}
+
+/// Reorgs the blockchain from its current tip back to `new_tip` from which a new fork can then be
+/// played on top.
+///
+/// Returns the result of the reorg, which describes the part of the chain that was orphaned.
+#[allow(dead_code)] // not used yet outside of tests
+fn reorg(
+    backend: &MadaraBackend,
+    new_tip_block_hash: &Felt,
+) -> Result<ReorgData, BlockImportError> {
+
+    // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
+    let block_info = backend
+        .get_block_info(&BlockId::Hash(*new_tip_block_hash))
+        .map_err(make_db_error("getting block info for new tip"))?
+        .ok_or(BlockImportError::Internal(Cow::Owned(format!("no block found for requested tip {}", new_tip_block_hash).to_string())))?;
+
+    let block_number = block_info.block_n().expect("Block must have a block number");
+    let block_id = BasicId::new(block_number);
+
+    backend
+        .contract_trie()
+        .revert_to(block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract trie: {}", error))))?;
+
+    backend.contract_storage_trie().revert_to(block_id).map_err(|error| {
+        BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error)))
+    })?;
+
+    backend
+        .class_trie()
+        .revert_to(block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
+
+    backend
+        .revert_to(block_number)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
+
+    // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
+    let latest_block_info = backend
+        .get_block_info(&BlockId::Tag(BlockTag::Latest))
+        .map_err(make_db_error("getting latest block info"))?
+        .ok_or(BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
+
+    Ok(ReorgData {
+        starting_block_hash: *new_tip_block_hash,
+        starting_block_number: block_number,
+        ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
+        ending_block_number: latest_block_info.block_n().expect("how would a block not have a block number?"), // TODO
+    })
 }
 
 #[cfg(test)]
@@ -810,6 +862,164 @@ mod verify_apply_tests {
                 Some(unexpected_pending_info),
                 "Unexpected pending block should not be stored"
             );
+        }
+    }
+
+    mod reorg_tests {
+        use super::*;
+
+        /// This struct provides the inputs to the reorg tests. It does so based on integers
+        /// representing a few different lengths of different parts of a forked chain, where one
+        /// side of the fork is first created, a reorg occurs, and then the other side of the fork
+        /// is created.
+        ///
+        /// Consider this diagram:
+        ///
+        ///         O        ---
+        ///         |          | "original_chain_length"
+        ///         O          | This part of the chain is not reorged, the last block is the parent
+        ///         |          | of the fork that we reorg across
+        ///         O        ---
+        ///        / \
+        ///       /   \
+        ///      N     X
+        ///      |     |
+        ///      N     X     --- the "X" chain is added and later removed when we reorg, its length
+        ///      |               is "orphaned_chain_length"
+        ///      N
+        ///      |
+        ///      N           --- the "N" chain is the new chain which is created after we reorg back
+        ///                      to the end of the "O" part of the chain, its length is
+        ///                      "new_chain_length"
+        struct ReorgTestArgs {
+            /// original chain length, including block 0 (e.g. "1" means only genesis block).
+            /// must be > 0.
+            original_chain_length: u64,
+            /// the length of the orphaned chain
+            orphaned_chain_length: u64,
+            /// the length of the new chain
+            new_chain_length: u64,
+            /// how many passes of reorgs to make. each pass does:
+            /// * append `orphaned_chain_length` blocks to the tip
+            /// * revert back to tip
+            /// * append `new_chain_length` blocks
+            passes: u64,
+        }
+
+        #[rstest]
+        #[case::reorg_from_genesis(
+            ReorgTestArgs{
+                original_chain_length: 1,
+                orphaned_chain_length: 2,
+                new_chain_length: 1,
+                passes: 1,
+            },
+        )]
+        #[case::empty_orphan_reorg(
+            ReorgTestArgs{
+                original_chain_length: 1,
+                orphaned_chain_length: 0,
+                new_chain_length: 1,
+                passes: 1,
+            },
+        )]
+        #[case::success(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 2,
+                passes: 1,
+            },
+        )]
+        #[case::multiple_passes(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 2,
+                passes: 5,
+            },
+        )]
+        #[case::multiple_passes_no_new_chain(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 0,
+                passes: 5,
+            },
+        )]
+        #[case::multiple_passes_repetitive_fork(
+            ReorgTestArgs{
+                original_chain_length: 2,
+                orphaned_chain_length: 2,
+                new_chain_length: 2,
+                passes: 5,
+            },
+        )]
+        #[case::deep_reorg(
+            ReorgTestArgs{
+                original_chain_length: 32,
+                orphaned_chain_length: 32,
+                new_chain_length: 32,
+                passes: 1,
+            },
+        )]
+        #[tokio::test]
+        async fn test_reorg(setup_test_backend: Arc<MadaraBackend>, #[case] args: ReorgTestArgs) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            // utility fn to append an empty block to the given parent block, returning the new block's hash
+            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
+                let mut block = create_dummy_block();
+                block.unverified_block_number = Some(new_block_height);
+                block.unverified_global_state_root = Some(felt!("0x0"));
+                block.header.parent_block_hash = parent_hash;
+                let block_import =
+                    verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+                block_import.block_hash
+            };
+
+            // create the original chain
+            let mut parent_hash = None;
+            assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
+            for i in 0..args.original_chain_length {
+                let new_block_hash = append_empty_block(i, parent_hash);
+                parent_hash = Some(new_block_hash);
+            }
+            let mut reorg_parent_hash =
+                parent_hash.expect("logic error: we should have created at least one block which is our parent");
+
+            let mut parent_height = args.original_chain_length;
+            assert!(args.passes > 0);
+            for _ in 0..args.passes {
+                // build a soon-to-be-orphaned chain on top of the original
+                for _ in 0..args.orphaned_chain_length {
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
+                    parent_hash = Some(new_block_hash);
+                    parent_height += 1;
+                }
+
+                let _ = reorg(&backend, &reorg_parent_hash).expect("reorg failed");
+                parent_height -= args.orphaned_chain_length;
+
+                // reorg after given parent (start with 1 since we already added our reorg block)
+                parent_hash = Some(reorg_parent_hash);
+                for _ in 0..args.new_chain_length {
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
+                    parent_hash = Some(new_block_hash);
+                    parent_height += 1;
+                }
+                reorg_parent_hash = parent_hash.expect("parent_hash should be set by now");
+
+                let latest_block_n =
+                    backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
+                // assert_eq!(args.original_chain_length + args.new_chain_length - 1, latest_block_n); // doesn't make sense with multiple passes
+                let latest_block_hash = backend
+                    .get_block_hash(&BlockId::Number(latest_block_n))
+                    .expect("get_block_hash failed after reorg");
+                assert_eq!(latest_block_hash, parent_hash);
+            }
         }
     }
 }
