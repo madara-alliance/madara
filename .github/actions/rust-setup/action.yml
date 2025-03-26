@@ -43,13 +43,13 @@ runs:
     # Install ubuntu packages (using cache if available)
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
+        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
         version: 1.0
         execute_install_scripts: true
     - shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
+        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
 
     # SCCACHE is disabled due to https://github.com/mozilla/sccache/issues/2359
     # TODO: re-enable when fixed
