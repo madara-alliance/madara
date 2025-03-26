@@ -1,0 +1,3 @@
+[profile.default]
+slow-timeout = { period = "1m", terminate-after = 5 }
+test-timeout = "500s"

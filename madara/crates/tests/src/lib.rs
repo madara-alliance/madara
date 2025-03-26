@@ -9,16 +9,21 @@ use anyhow::bail;
 use rstest::rstest;
 use starknet_providers::Provider;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
-use std::ops::{Deref, Range};
-use std::sync::{Arc, Mutex};
 use std::{
     collections::HashMap,
     env,
     future::Future,
+    io::{BufRead, BufReader},
+    ops::Deref,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
     str::FromStr,
-    time::Duration,
+    sync::{
+        mpsc::{self, TryRecvError},
+        Arc,
+    },
+    thread,
+    time::{Duration, Instant},
 };
 use tempfile::TempDir;
 
@@ -35,7 +40,8 @@ async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(
 
         attempt += 1;
         if attempt >= max_attempts {
-            panic!("No answer from the node after {attempt} attempts: {:#}", err)
+            let elapsed = (attempt as f64 * duration.as_secs() as f64) / 60.0;
+            panic!("No answer from the node after {:.1} minutes: {:#}", elapsed, err);
         }
 
         tokio::time::sleep(duration).await;
@@ -48,7 +54,7 @@ pub struct MadaraCmd {
     json_rpc: JsonRpcClient<HttpTransport>,
     rpc_url: Url,
     tempdir: Arc<TempDir>,
-    _port: MadaraPortNum,
+    _port: u16,
 }
 
 impl MadaraCmd {
@@ -98,7 +104,7 @@ impl MadaraCmd {
                 }
             },
             Duration::from_secs(2),
-            100,
+            400,
         )
         .await;
         self
@@ -131,58 +137,42 @@ impl Drop for MadaraCmd {
 
         // Ensure process cleanup
         let _ = child.wait();
-        std::thread::sleep(Duration::from_millis(500));
     }
 }
 
-fn is_port_available(port: u16) -> bool {
-    use std::net::TcpListener;
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
-}
+pub fn extract_port_from_stderr(process: &mut Child) -> Result<u16, String> {
+    let stderr = process.stderr.take().ok_or_else(|| "Could not capture stderr from Madara process".to_string())?;
 
-// this really should use unix sockets, sad
+    let reader = BufReader::new(stderr);
+    let (tx, rx) = mpsc::channel();
 
-const PORT_RANGE: Range<u16> = 19944..20000;
-
-struct AvailablePorts<I: Iterator<Item = u16>> {
-    to_reuse: Vec<u16>,
-    next: I,
-}
-
-lazy_static::lazy_static! {
-    static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE });
-}
-
-#[derive(Clone)]
-pub struct MadaraPortNum(pub u16);
-impl Drop for MadaraPortNum {
-    fn drop(&mut self) {
-        let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
-        guard.to_reuse.push(self.0);
-    }
-}
-
-pub fn get_port() -> MadaraPortNum {
-    let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
-
-    // First try ports from the reuse pool
-    if let Some(el) = guard.to_reuse.pop() {
-        if is_port_available(el) {
-            return MadaraPortNum(el);
+    thread::spawn(move || {
+        for line in reader.lines().flatten() {
+            if let Some(addr_part) = line.split("Running JSON-RPC server at ").nth(1) {
+                if let Some(ip_port) = addr_part.split_whitespace().next() {
+                    if let Some(port_str) = ip_port.rsplit(':').next() {
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            let _ = tx.send(port);
+                            return;
+                        }
+                    }
+                }
+            }
         }
-        // If the port from reuse pool isn't available, it's lost and we'll try to get a new one
-    }
+    });
 
-    // Try to find an available port within 20 attempts
-    for _ in 0..20 {
-        let port = guard.next.next().expect("no more port to use");
-        if is_port_available(port) {
-            return MadaraPortNum(port);
+    let timeout = Duration::from_secs(30);
+    let start = Instant::now();
+
+    while start.elapsed() < timeout {
+        match rx.try_recv() {
+            Ok(port) => return Ok(port),
+            Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(100)),
+            Err(TryRecvError::Disconnected) => return Err("Port extraction thread terminated unexpectedly".to_string()),
         }
     }
 
-    // If we reach here, we couldn't find an available port after 20 attempts
-    panic!("Failed to find an available port after 20 attempts");
+    Err(format!("Timed out after {:?} waiting for Madara to start", timeout))
 }
 
 /// Note: the builder is [`Clone`]able. When cloned, it will keep the same tempdir.
@@ -196,7 +186,6 @@ pub struct MadaraCmdBuilder {
     args: Vec<String>,
     env: HashMap<String, String>,
     tempdir: Arc<TempDir>,
-    port: MadaraPortNum,
 }
 
 impl Default for MadaraCmdBuilder {
@@ -211,7 +200,6 @@ impl MadaraCmdBuilder {
             args: Default::default(),
             env: Default::default(),
             tempdir: Arc::new(TempDir::with_prefix("madara-test").unwrap()),
-            port: get_port(),
         }
     }
 
@@ -226,40 +214,50 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script");
-        let target_bin = PathBuf::from_str(&target_bin).expect("COVERAGE_BIN to be a path");
-        if !target_bin.exists() {
-            panic!("No binary to run: {:?}", target_bin)
-        }
+        self.run_with_option(true)
+    }
 
-        // This is an optional argument to sync faster from the FGW if gateway_key is set
-        let gateway_key_arg = env::var("GATEWAY_KEY").ok().map(|gateway_key| ["--gateway-key".into(), gateway_key]);
+    pub fn run_with_option(self, wait_for_port: bool) -> MadaraCmd {
+        let target_bin = PathBuf::from(env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script"));
 
-        let process = Command::new(target_bin)
-            .envs(self.env)
-            .args(
-                self.args
-                    .into_iter()
-                    .chain([
-                        "--base-path".into(),
-                        format!("{}", self.tempdir.deref().as_ref().display()),
-                        "--rpc-port".into(),
-                        format!("{}", self.port.0),
-                    ])
-                    .chain(gateway_key_arg.into_iter().flatten()),
-            )
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+        assert!(target_bin.exists(), "No binary to run: {:?}", target_bin);
 
-        let rpc_url = Url::parse(&format!("http://127.0.0.1:{}/", self.port.0)).unwrap();
+        let gateway_key_args =
+            env::var("GATEWAY_KEY").ok().map(|key| vec!["--gateway-key".into(), key]).unwrap_or_default();
+
+        let mut cmd = Command::new(target_bin);
+        cmd.envs(self.env)
+            .args(self.args)
+            .args([
+                "--base-path".into(),
+                self.tempdir.path().display().to_string(),
+                "--rpc-port".into(),
+                "0".into(), // OS Assigned
+            ])
+            .args(gateway_key_args)
+            .stdout(if wait_for_port { Stdio::inherit() } else { Stdio::piped() })
+            .stderr(Stdio::piped());
+
+        let mut process = cmd.spawn().expect("Failed to spawn Madara process");
+
+        let port = if wait_for_port {
+            let actual_port =
+                extract_port_from_stderr(&mut process).expect("Failed to extract port from Madara process");
+            tracing::info!("Detected Madara running on port: {}", actual_port);
+            actual_port
+        } else {
+            0
+        };
+
+        let rpc_url = Url::parse(&format!("http://127.0.0.1:{}/", port)).unwrap();
+
         MadaraCmd {
             process: Some(process),
             ready: false,
             json_rpc: JsonRpcClient::new(HttpTransport::new(rpc_url.clone())),
             rpc_url,
             tempdir: self.tempdir,
-            _port: self.port,
+            _port: port,
         }
     }
 }
@@ -268,7 +266,7 @@ impl MadaraCmdBuilder {
 fn madara_help_shows() {
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-    let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
+    let output = MadaraCmdBuilder::new().args(["--help"]).run_with_option(false).wait_with_output();
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Madara: High performance Starknet sequencer/full-node"), "stdout: {stdout}");

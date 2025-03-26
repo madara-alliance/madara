@@ -19,7 +19,7 @@ on:
         required: true
 
 jobs:
-  test-rust:
+  test-madara:
     runs-on: karnot-arc-runner-set
     env:
       ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
@@ -50,13 +50,10 @@ jobs:
           path: target/release/
       - run: chmod +x target/release/madara
 
-      - name: Run madara tests (parallel)
-        run: |
-          cargo nextest run --release --package "mp-*" --package "m-proc-*" --no-fail-fast --tests
-
-      - name: Run madara tests (sequential)
-        run: |
-          export COVERAGE_BIN=$(realpath target/release/madara)
-          cargo nextest run --release --package "mc-*" --no-fail-fast -j 1
+      - name: Run madara tests
         env:
           PROPTEST_CASES: 2
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/madara)
+          cargo nextest run --release --package "mp-*" --package "m-proc-*" --package "mc-*" --no-fail-fast --tests
+       
