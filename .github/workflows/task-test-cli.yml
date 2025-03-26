@@ -20,6 +20,7 @@ jobs:
           install-mold: true
           install-scarb: true
           build-snos: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Run cli without arguments
         run: |

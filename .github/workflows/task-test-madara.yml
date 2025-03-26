@@ -40,6 +40,7 @@ jobs:
           install-foundry: true
           foundry-version: stable
           build-snos: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
