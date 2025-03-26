@@ -16,7 +16,12 @@ use orchestrator_gps_fact_checker::FactCheckerError;
 #[async_trait]
 pub trait ProverClient: Send + Sync {
     async fn submit_task(&self, task: Task, proof_layout: LayoutName) -> Result<String, ProverClientError>;
-    async fn get_task_status(&self, task_id: &str, fact: &str) -> Result<TaskStatus, ProverClientError>;
+    async fn get_task_status(
+        &self,
+        task_id: &str,
+        fact: Option<String>,
+        cross_verify: bool,
+    ) -> Result<TaskStatus, ProverClientError>;
 }
 
 pub enum Task {

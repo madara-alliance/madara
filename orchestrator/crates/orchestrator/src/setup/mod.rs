@@ -62,7 +62,7 @@ pub async fn setup_cloud(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
     // Cron
     println!("Setting up cron. ⏳");
     // Sleeping for few seconds to let AWS index the newly created queues to be used for setting up cron
-    sleep(Duration::from_secs(100)).await;
+    sleep(Duration::from_secs(60)).await;
     let cron_params = setup_cmd.validate_cron_params().expect("Failed to validate cron params");
     match cron_params {
         CronValidatedArgs::AWSEventBridge(aws_event_bridge_params) => {

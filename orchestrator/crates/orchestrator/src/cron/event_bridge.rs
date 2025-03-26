@@ -89,7 +89,7 @@ impl Cron for AWSEventBridge {
             "Statement": [{
                 "Effect": "Allow",
                 "Principal": {
-                    "Service": "scheduler.amazonaws.com"
+                    "Service": ["scheduler.amazonaws.com", "events.amazonaws.com"]
                 },
                 "Action": "sts:AssumeRole"
             }]
@@ -143,7 +143,6 @@ impl Cron for AWSEventBridge {
     ) -> color_eyre::Result<()> {
         let message = get_worker_trigger_message(trigger_type.clone())?;
         let trigger_name = format!("{}-{}", self.trigger_rule_name, trigger_type);
-        println!("trigger_nametrigger_nametrigger_name {}", trigger_name);
 
         match self.client.clone() {
             EventBridgeClient::Rule(client) => {

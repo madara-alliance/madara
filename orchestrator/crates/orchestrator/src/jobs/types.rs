@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-
-// TODO: job types shouldn't depend on mongodb
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
@@ -10,6 +7,8 @@ use orchestrator_da_client_interface::DaVerificationStatus;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::jobs::metadata::JobMetadata;
 
 /// An external id.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -103,6 +102,8 @@ pub enum JobStatus {
     VerificationFailed,
     /// The job failed completing
     Failed,
+    /// The job is being retried
+    PendingRetry,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -120,7 +121,7 @@ pub struct JobItem {
     /// or job_id from SHARP
     pub external_id: ExternalId,
     /// additional field to store values related to the job
-    pub metadata: HashMap<String, String>,
+    pub metadata: JobMetadata,
     /// helps to keep track of the version of the item for optimistic locking
     pub version: i32,
     /// timestamp when the job was created
@@ -140,7 +141,7 @@ pub struct JobItemUpdates {
     pub job_type: Option<JobType>,
     pub status: Option<JobStatus>,
     pub external_id: Option<ExternalId>,
-    pub metadata: Option<HashMap<String, String>>,
+    pub metadata: Option<JobMetadata>,
 }
 
 /// implements only needed singular changes
@@ -173,7 +174,7 @@ impl JobItemUpdates {
         self.external_id = Some(external_id);
         self
     }
-    pub fn update_metadata(mut self, metadata: HashMap<String, String>) -> JobItemUpdates {
+    pub fn update_metadata(mut self, metadata: JobMetadata) -> JobItemUpdates {
         self.metadata = Some(metadata);
         self
     }

@@ -6,25 +6,95 @@ use std::sync::Arc;
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
 use num_bigint::BigUint;
+use starknet_os::io::output::StarknetOsOutput;
 
+use super::{JobError, OtherError};
 use crate::config::Config;
-use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME};
-
 /// Fetching the blob data (stored in remote storage during DA job) for a particular block
-pub async fn fetch_blob_data_for_block(block_number: u64, config: Arc<Config>) -> color_eyre::Result<Vec<Vec<u8>>> {
+pub async fn fetch_blob_data_for_block(
+    block_index: usize,
+    config: Arc<Config>,
+    blob_data_paths: &[String],
+) -> Result<Vec<Vec<u8>>, JobError> {
+    tracing::debug!("Fetching blob data for block index {}", block_index);
+
     let storage_client = config.storage();
-    let key = block_number.to_string() + "/" + BLOB_DATA_FILE_NAME;
-    let blob_data = storage_client.get_data(&key).await?;
+
+    // Get the path for this block
+    let path = blob_data_paths.get(block_index).ok_or_else(|| {
+        tracing::error!("Blob data path not found for index {}", block_index);
+        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", block_index)))
+    })?;
+
+    tracing::debug!("Retrieving blob data from path: {}", path);
+    let blob_data = storage_client.get_data(path).await.map_err(|e| {
+        tracing::error!("Failed to retrieve blob data from path {}: {}", path, e);
+        JobError::Other(OtherError(e))
+    })?;
+
+    tracing::debug!("Successfully retrieved blob data for block index {}", block_index);
     Ok(vec![blob_data.to_vec()])
 }
 
-/// Fetching the blob data (stored in remote storage during DA job) for a particular block
-pub async fn fetch_program_data_for_block(block_number: u64, config: Arc<Config>) -> color_eyre::Result<Vec<[u8; 32]>> {
+/// Retrieves the SNOS output for the corresponding block.
+pub async fn fetch_snos_for_block(
+    internal_id: String,
+    index: usize,
+    config: Arc<Config>,
+    snos_output_paths: &[String],
+) -> Result<StarknetOsOutput, JobError> {
+    tracing::debug!(job_id = %internal_id, "Fetching SNOS output for block index {}", index);
+
     let storage_client = config.storage();
-    let key = block_number.to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
-    let blob_data = storage_client.get_data(&key).await?;
-    let transformed_blob_vec_u8 = bytes_to_vec_u8(blob_data.as_ref())?;
-    Ok(transformed_blob_vec_u8)
+
+    let snos_path = snos_output_paths.get(index).ok_or_else(|| {
+        tracing::error!(job_id = %internal_id, "SNOS path not found for index {}", index);
+        JobError::Other(OtherError(eyre!("Failed to get the SNOS path for job ID {}", internal_id)))
+    })?;
+
+    tracing::debug!(job_id = %internal_id, "Retrieving SNOS output from path: {}", snos_path);
+    let snos_output_bytes = storage_client.get_data(snos_path).await.map_err(|e| {
+        tracing::error!(job_id = %internal_id, "Failed to retrieve SNOS data from path {}: {}", snos_path, e);
+        JobError::Other(OtherError(e))
+    })?;
+
+    tracing::debug!(job_id = %internal_id, "Deserializing SNOS output from path: {}", snos_path);
+    serde_json::from_slice(snos_output_bytes.iter().as_slice()).map_err(|e| {
+        tracing::error!(
+            job_id = %internal_id,
+            "Failed to deserialize SNOS output from path {}: {}",
+            snos_path, e
+        );
+        JobError::Other(OtherError(eyre!("Failed to deserialize SNOS output from path {}: {}", snos_path, e)))
+    })
+}
+
+pub async fn fetch_program_output_for_block(
+    block_index: usize,
+    config: Arc<Config>,
+    program_output_paths: &[String],
+) -> Result<Vec<[u8; 32]>, JobError> {
+    tracing::debug!("Fetching program output for block index {}", block_index);
+
+    let storage_client = config.storage();
+
+    // Get the path for this block
+    let path = program_output_paths.get(block_index).ok_or_else(|| {
+        tracing::error!("Program output path not found for index {}", block_index);
+        JobError::Other(OtherError(eyre!("Program output path not found for index {}", block_index)))
+    })?;
+
+    tracing::debug!("Retrieving program output from path: {}", path);
+    let program_output = storage_client.get_data(path).await.map_err(|e| {
+        tracing::error!("Failed to retrieve program output from path {}: {}", path, e);
+        JobError::Other(OtherError(e))
+    })?;
+
+    tracing::debug!("Deserializing program output from path: {}", path);
+    bincode::deserialize(&program_output).map_err(|e| {
+        tracing::error!("Failed to deserialize program output from path {}: {}", path, e);
+        JobError::Other(OtherError(eyre!("Failed to deserialize program output from path {}: {}", path, e)))
+    })
 }
 
 // Util Functions

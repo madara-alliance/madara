@@ -58,7 +58,7 @@ impl AnvilSetup {
         let provider = ProviderBuilder::new().with_recommended_fillers().wallet(wallet).on_http(self.rpc_url.clone());
 
         let starknet_core_contract_client = StarknetCoreContract::deploy(&provider).await.unwrap();
-        log::debug!("📦 Deployed starknet_core_contract at address: {}", starknet_core_contract_client.address());
+        log::info!("📦 Deployed starknet_core_contract at address: {}", starknet_core_contract_client.address());
         let verifier_client = GPSVerifier::deploy(&provider).await.unwrap();
 
         // This is the fact hash calculated from get_fact_info() or mongodb job metadata
