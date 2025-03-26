@@ -10,9 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Setup the environment with all necessary dependencies
       - uses: ./.github/actions/load-env
-
       - uses: ./.github/actions/rust-setup
         with:
           cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
@@ -23,7 +21,6 @@ jobs:
           install-scarb: true
           install-foundry: true
           build-snos: true
-          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Run cli without arguments
         run: |
