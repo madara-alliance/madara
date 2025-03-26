@@ -10,5 +10,16 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - name: Cleanup PR caches
+        run: |
+          echo "Fetching list of cache keys for this PR"
+          cacheKeysForPR=$(gh cache list --ref refs/pull/${{ github.event.pull_request.number }}/merge --limit 100 --json id --jq '.[].id')
+
+          echo "Deleting caches..."
+          for cacheKey in $cacheKeysForPR
+          do
+            gh cache delete $cacheKey
+          done
+          echo "Done"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
