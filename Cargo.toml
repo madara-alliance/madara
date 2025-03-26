@@ -265,6 +265,7 @@ num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
+zeroize = "1.8"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
