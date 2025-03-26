@@ -1,0 +1,108 @@
+name: Task - Integration Tests and Coverage
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      proptest-cases:
+        description: "Number of test cases for property testing"
+        required: false
+        type: string
+        default: "10"
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETH_FORK_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  test-with-coverage-madara:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          # Uses the dev cache key as we are using the --profile dev later
+          cache-key: COVERAGE
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: stable
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Start Anvil
+        run: |
+          ldd --version
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+              nohup anvil --block-time 1 --host 0.0.0.0 > nohup.log 2>&1 &
+              ANVIL_PID=$!
+              echo "Started Anvil with PID: $ANVIL_PID"
+              sleep 2
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - run: chmod +x target/release/madara
+
+      - name: Check anvil running
+        run: |
+          curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+               -H "Content-Type: application/json" http://localhost:8545
+
+      - name: Run tests with coverage
+        continue-on-error: true
+        env:
+          ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
+          PROPTEST_CASES: ${{ inputs.proptest-cases }}
+          LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/madara)
+          rm -f target/madara-* lcov.info
+
+          # run tests for madara client / primitive crates
+          cargo llvm-cov nextest \
+              --release \
+              --features testing \
+              --lcov \
+              --output-path lcov.info \
+              --package "mc-*" \
+              --package "mp-*" \
+              --package "m-proc-*" \
+              --no-fail-fast
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info
+          debug: true
