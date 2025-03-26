@@ -19,7 +19,6 @@ jobs:
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
           install-scarb: true
-          install-foundry: true
           build-snos: true
 
       - name: Run cli without arguments
