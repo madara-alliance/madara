@@ -136,7 +136,6 @@ mod eth_client_gas_price_worker_test {
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use std::time::SystemTime;
-    use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
     /*
