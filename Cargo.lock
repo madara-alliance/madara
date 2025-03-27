@@ -8782,6 +8782,7 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "anyhow",
+ "async-trait",
  "bigdecimal 0.4.5",
  "bitvec",
  "dotenv",
