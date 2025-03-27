@@ -27,6 +27,7 @@ inputs:
     required: false
   python-version:
     description: "Python version to use for Cairo 0/SNOS"
+    default: "3.9"
     required: false
   build-snos:
     description: "Whether to build SNOS files"
@@ -119,8 +120,7 @@ runs:
         version: ${{ inputs.foundry-version }}
 
     - name: Setup Python for Cairo 0
-      if: ${{ inputs.build-snos == 'true' }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
 
