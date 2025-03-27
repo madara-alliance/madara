@@ -1,7 +1,9 @@
 // source of truth for the data here is the juno rpc. for each method tested here, same call was
 // made to the juno rpc.
+use serial_test::serial;
 
 #[cfg(test)]
+#[serial]
 mod test_rpc_read_calls {
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
@@ -27,7 +29,6 @@ mod test_rpc_read_calls {
     use std::fmt::Write;
     use std::io::Read;
     use tokio::sync::OnceCell;
-
     static MADARA_INSTANCE: OnceCell<MadaraCmd> = OnceCell::const_new();
 
     pub async fn get_madara() -> &'static MadaraCmd {

@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-
+use serial_test::serial;
 use mp_utils::service::ServiceContext;
 use std::time::SystemTime;
 
@@ -130,6 +130,7 @@ async fn update_l1_block_metrics(
 }
 
 #[cfg(test)]
+#[serial]
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};

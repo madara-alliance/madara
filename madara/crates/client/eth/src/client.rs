@@ -14,6 +14,7 @@ use opentelemetry::{global::Error, metrics::Gauge};
 
 use anyhow::{bail, Context};
 use bitvec::macros::internal::funty::Fundamental;
+use serial_test::serial;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use url::Url;
@@ -160,6 +161,7 @@ impl EthereumClient {
 }
 
 #[cfg(test)]
+#[serial]
 pub mod eth_client_getter_test {
     use super::*;
     use alloy::{
