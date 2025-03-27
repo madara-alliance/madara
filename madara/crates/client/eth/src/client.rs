@@ -172,6 +172,10 @@ pub mod eth_client_getter_test {
 
     static SHARED_MAINNET_ANVIL: SharedAnvil<MainnetFork> = SharedAnvil::new();
 
+    lazy_static::lazy_static! {
+        static ref SHARED_METRICS: L1BlockMetrics = L1BlockMetrics::register().expect("Failed to register L1BlockMetrics");
+    }
+
     pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
         let rpc_url: Url = url.unwrap_or("http://localhost:8545").parse().expect("issue while parsing URL");
 
@@ -179,7 +183,8 @@ pub mod eth_client_getter_test {
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
 
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
+        // Use the shared metrics instance instead of registering new ones
+        let l1_block_metrics = SHARED_METRICS.clone();
 
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract.clone(), l1_block_metrics }
     }
