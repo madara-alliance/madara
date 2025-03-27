@@ -198,7 +198,7 @@ pub mod eth_client_getter_test {
         let rpc_url: Url = anvil.endpoint_url();
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
-        let l1_block_metrics = L1BlockMetrics::register().unwrap();
+        let l1_block_metrics = SHARED_METRICS.clone();
 
         let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");

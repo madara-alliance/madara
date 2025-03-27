@@ -93,6 +93,7 @@ runs:
         key: ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
         restore-keys: |
           ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
