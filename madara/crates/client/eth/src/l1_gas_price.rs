@@ -4,13 +4,13 @@ use alloy::providers::Provider;
 use anyhow::Context;
 use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
+use mp_utils::service::ServiceContext;
+use serial_test::serial;
+use std::time::SystemTime;
 use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use serial_test::serial;
-use mp_utils::service::ServiceContext;
-use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(
     eth_client: &EthereumClient,
@@ -130,7 +130,6 @@ async fn update_l1_block_metrics(
 }
 
 #[cfg(test)]
-#[serial]
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
@@ -184,6 +183,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn gas_price_worker_when_infinite_loop_false_works() {
         let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -202,6 +202,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn gas_price_worker_when_gas_price_fix_works() {
         let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -222,6 +223,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
         let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -242,6 +244,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
@@ -307,6 +310,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn update_gas_price_works() {
         let anvil = create_anvil_instance();
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));

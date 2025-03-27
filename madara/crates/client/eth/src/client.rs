@@ -161,7 +161,6 @@ impl EthereumClient {
 }
 
 #[cfg(test)]
-#[serial]
 pub mod eth_client_getter_test {
     use super::*;
     use alloy::{
@@ -221,6 +220,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn fail_create_new_client_invalid_core_contract() {
         let anvil = get_shared_anvil_instance().await;
         // Sepolia core contract instead of mainnet
@@ -236,6 +236,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_latest_block_number_works() {
         let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -245,6 +246,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_last_event_block_number_works() {
         let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -256,6 +258,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_last_verified_block_hash_works() {
         let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -266,6 +269,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_last_state_root_works() {
         let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -275,6 +279,7 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_last_verified_block_number_works() {
         let anvil = get_shared_anvil_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
