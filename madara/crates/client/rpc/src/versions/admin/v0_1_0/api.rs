@@ -1,7 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
-use mp_rpc::ClassAndTxnHash;
-use mp_transactions::BroadcastedDeclareTransactionV0;
+use mp_rpc::{admin::BroadcastedDeclareTxnV0, ClassAndTxnHash};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +19,7 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "addDeclareV0Transaction")]
     async fn add_declare_v0_transaction(
         &self,
-        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash>;
 }
 
