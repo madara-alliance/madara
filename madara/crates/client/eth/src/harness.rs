@@ -48,7 +48,7 @@ pub fn create_anvil_instance() -> AnvilInstance {
         .fork(fork_url)
         .fork_block_number(L1_BLOCK_NUMBER)
         .port(0u16)
-        .timeout(480_000)
+        .timeout(1_800_000) // 30 mins
         .try_spawn()
         .expect("failed to spawn anvil instance")
 }
