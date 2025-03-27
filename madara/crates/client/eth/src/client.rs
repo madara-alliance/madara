@@ -8,12 +8,11 @@ use alloy::{
     sol,
     transports::http::{Client, Http},
 };
+use anyhow::{bail, Context};
+use bitvec::macros::internal::funty::Fundamental;
 use mc_analytics::register_gauge_metric_instrument;
 use opentelemetry::{global, KeyValue};
 use opentelemetry::{global::Error, metrics::Gauge};
-
-use anyhow::{bail, Context};
-use bitvec::macros::internal::funty::Fundamental;
 use serial_test::serial;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -163,17 +162,16 @@ impl EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
+    use crate::anvil::{AnvilInstanceInitializer, MainnetFork, SharedAnvil, L1_BLOCK_NUMBER};
     use alloy::{
         node_bindings::{Anvil, AnvilInstance},
         primitives::U256,
     };
-
+    use async_trait::async_trait;
+    use futures::future::Shared;
     use tokio;
     use tokio::sync::OnceCell;
 
-    // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
-    // The txn we are referring to it is here ^
-    const L1_BLOCK_NUMBER: u64 = 20395662;
     const CORE_CONTRACT_ADDRESS: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     const L2_BLOCK_NUMBER: u64 = 662703;
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
@@ -184,7 +182,11 @@ pub mod eth_client_getter_test {
     }
 
     static SHARED_ANVIL: OnceCell<AnvilInstance> = OnceCell::const_new();
+    static SHARED_MAINNET_ANVIL: SharedAnvil<MainnetFork> = SharedAnvil::new();
 
+    pub async fn get_shared_anvil() -> &'static AnvilInstance {
+        SHARED_MAINNET_ANVIL.get_instance().await
+    }
     pub async fn get_shared_anvil_instance() -> &'static AnvilInstance {
         SHARED_ANVIL
             .get_or_init(|| async {
@@ -222,7 +224,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn fail_create_new_client_invalid_core_contract() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
 
@@ -238,7 +240,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn get_latest_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
@@ -248,7 +250,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn get_last_event_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
@@ -260,7 +262,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn get_last_verified_block_hash_works() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
@@ -271,7 +273,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn get_last_state_root_works() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
@@ -281,7 +283,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     #[serial]
     async fn get_last_verified_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
+        let anvil = get_shared_anvil().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");

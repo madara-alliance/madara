@@ -1,3 +1,4 @@
+mod anvil;
 pub mod client;
 pub mod error;
 pub mod l1_gas_price;
