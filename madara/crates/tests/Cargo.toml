@@ -29,6 +29,3 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-
-[dev-dependencies]
-serial_test = "3.2.0"

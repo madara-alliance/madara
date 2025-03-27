@@ -87,4 +87,3 @@ tracing-test = "0.2.5"
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
-serial_test = "3.2.0"

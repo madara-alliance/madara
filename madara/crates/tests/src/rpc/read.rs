@@ -1,9 +1,7 @@
 // source of truth for the data here is the juno rpc. for each method tested here, same call was
 // made to the juno rpc.
-use serial_test::serial;
 
 #[cfg(test)]
-#[serial]
 mod test_rpc_read_calls {
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
