@@ -56,6 +56,7 @@ url.workspace = true
 
 
 #Instrumentation
+async-trait.workspace = true
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -66,12 +67,10 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
-serial_test = "3.2.0"
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-async-trait.workspace = true
 
 
 [features]
@@ -88,3 +87,4 @@ tracing-test = "0.2.5"
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
+serial_test = "3.2.0"

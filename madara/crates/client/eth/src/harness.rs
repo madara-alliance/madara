@@ -21,8 +21,14 @@ impl<T: AnvilInstanceInitializer> SharedAnvil<T> {
         Self { cell: OnceCell::const_new(), _marker: std::marker::PhantomData }
     }
 
-    pub async fn get_instance(&'static self) -> &AnvilInstance {
+    pub async fn get_instance(&'static self) -> &'static AnvilInstance {
         self.cell.get_or_init(T::init).await
+    }
+}
+
+impl<T: AnvilInstanceInitializer> Default for SharedAnvil<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -38,13 +44,11 @@ impl AnvilInstanceInitializer for MainnetFork {
 
 pub fn create_anvil_instance() -> AnvilInstance {
     let fork_url = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
-    let anvil = Anvil::new()
+    Anvil::new()
         .fork(fork_url)
         .fork_block_number(L1_BLOCK_NUMBER)
         .port(0u16)
         .timeout(480_000)
         .try_spawn()
-        .expect("failed to spawn anvil instance");
-    println!("Anvil started and running at `{}`", anvil.endpoint());
-    anvil
+        .expect("failed to spawn anvil instance")
 }
