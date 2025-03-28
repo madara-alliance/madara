@@ -129,6 +129,7 @@ dependencies = [
  "alloy-core 0.8.18",
  "alloy-eips 0.8.3",
  "alloy-genesis 0.8.3",
+ "alloy-json-rpc 0.8.3",
  "alloy-network 0.8.3",
  "alloy-node-bindings 0.8.3",
  "alloy-provider 0.8.3",
@@ -746,7 +747,7 @@ dependencies = [
  "alloy-rpc-client 0.2.1",
  "alloy-rpc-types-anvil 0.2.1",
  "alloy-rpc-types-eth 0.2.1",
- "alloy-rpc-types-trace",
+ "alloy-rpc-types-trace 0.2.1",
  "alloy-signer-local 0.2.1",
  "alloy-transport 0.2.1",
  "alloy-transport-http 0.2.1",
@@ -785,7 +786,9 @@ dependencies = [
  "alloy-pubsub 0.8.3",
  "alloy-rpc-client 0.8.3",
  "alloy-rpc-types-anvil 0.8.3",
+ "alloy-rpc-types-debug",
  "alloy-rpc-types-eth 0.8.3",
+ "alloy-rpc-types-trace 0.8.3",
  "alloy-signer 0.8.3",
  "alloy-signer-local 0.8.3",
  "alloy-transport 0.8.3",
@@ -979,7 +982,7 @@ checksum = "e6c31a3750b8f5a350d17354e46a52b0f2f19ec5f2006d816935af599dedc521"
 dependencies = [
  "alloy-rpc-types-engine 0.2.1",
  "alloy-rpc-types-eth 0.2.1",
- "alloy-rpc-types-trace",
+ "alloy-rpc-types-trace 0.2.1",
  "alloy-serde 0.2.1",
  "serde",
 ]
@@ -993,6 +996,7 @@ dependencies = [
  "alloy-primitives 0.8.18",
  "alloy-rpc-types-engine 0.8.3",
  "alloy-rpc-types-eth 0.8.3",
+ "alloy-rpc-types-trace 0.8.3",
  "alloy-serde 0.8.3",
  "serde",
 ]
@@ -1029,6 +1033,16 @@ dependencies = [
  "alloy-consensus-any",
  "alloy-rpc-types-eth 0.8.3",
  "alloy-serde 0.8.3",
+]
+
+[[package]]
+name = "alloy-rpc-types-debug"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1dec1c1b65614ebd5834a7dfddf525a186962082023718e10f4f64ed2d02514"
+dependencies = [
+ "alloy-primitives 0.8.18",
+ "serde",
 ]
 
 [[package]]
@@ -1116,6 +1130,20 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.65",
+]
+
+[[package]]
+name = "alloy-rpc-types-trace"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db14a83665cd28ffd01939f04c2adf0e0fd9bb648b73ca651dcaa0869dae027f"
+dependencies = [
+ "alloy-primitives 0.8.18",
+ "alloy-rpc-types-eth 0.8.3",
+ "alloy-serde 0.8.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -6062,8 +6090,8 @@ checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 name = "e2e-tests"
 version = "0.1.0"
 dependencies = [
- "alloy 0.2.1",
- "alloy-primitives 0.7.7",
+ "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
  "alloy-sol-types 0.8.18",
  "async-trait",
  "aws-config",
@@ -9922,6 +9950,7 @@ name = "orchestrator-atlantic-service"
 version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
  "async-trait",
  "base64 0.22.1",
  "cairo-vm",
@@ -10083,8 +10112,8 @@ dependencies = [
 name = "orchestrator-ethereum-settlement-client"
 version = "0.8.0"
 dependencies = [
- "alloy 0.2.1",
- "alloy-primitives 0.7.7",
+ "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
  "async-trait",
  "bytes",
  "c-kzg",
@@ -10120,6 +10149,7 @@ name = "orchestrator-gps-fact-checker"
 version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
@@ -10177,6 +10207,7 @@ name = "orchestrator-sharp-service"
 version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
  "async-trait",
  "base64 0.22.1",
  "cairo-vm",
@@ -10251,6 +10282,7 @@ dependencies = [
 name = "orchestrator-utils"
 version = "0.8.0"
 dependencies = [
+ "alloy 0.8.3",
  "alloy-primitives 0.8.18",
  "base64 0.22.1",
  "color-eyre",
