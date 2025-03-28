@@ -4,6 +4,7 @@ use crate::MadaraStorageError;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::VisitedSegments;
 use mp_block::{MadaraBlock, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_bloom_filter::EventBloomWriter;
 use mp_class::ConvertedClass;
 use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
@@ -18,6 +19,7 @@ impl MadaraBackend {
         block: MadaraMaybePendingBlock,
         state_diff: StateDiff,
         converted_classes: Vec<ConvertedClass>,
+        events_bloom: Option<EventBloomWriter>,
         visited_segments: Option<VisitedSegments>,
         bouncer_weights: Option<BouncerWeights>,
     ) -> Result<(), MadaraStorageError> {
@@ -35,7 +37,7 @@ impl MadaraBackend {
                 bouncer_weights,
             ),
             MadaraMaybePendingBlockInfo::NotPending(info) => {
-                self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
+                self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy, events_bloom)
             }
         };
 

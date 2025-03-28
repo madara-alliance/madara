@@ -29,6 +29,7 @@ mc-exec = { workspace = true }
 mc-gateway-client = { workspace = true }
 mc-mempool = { workspace = true }
 mp-block = { workspace = true, default-features = true }
+mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
