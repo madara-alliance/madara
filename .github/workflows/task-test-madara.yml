@@ -24,6 +24,7 @@ jobs:
     env:
       ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
       PROPTEST_CASES: ${{ inputs.proptest-cases }}
+      ANVIL_URL: http://localhost:8545
     steps:
       - uses: actions/checkout@v4
 
@@ -62,6 +63,7 @@ jobs:
             --fork-url ${{ secrets.ETH_FORK_URL }} \
             --fork-block-number $ANVIL_BLOCK_NUMBER \
             --timeout 300000 \
+            --port 8545 \
             --fork-retry-backoff 30000 \
             > anvil.log 2>&1 &
 
