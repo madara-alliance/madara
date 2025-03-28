@@ -20,7 +20,7 @@ on:
 
 jobs:
   test-madara:
-    runs-on: karnot-arc-runner-set
+    runs-on: madara-msl-runner
     env:
       ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
       PROPTEST_CASES: ${{ inputs.proptest-cases }}
