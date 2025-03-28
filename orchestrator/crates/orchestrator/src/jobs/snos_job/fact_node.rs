@@ -183,7 +183,7 @@ fn calculate_node_hash(node_data: &[u8]) -> B256 {
 mod test {
     use std::str::FromStr;
 
-    use alloy::primitives::B256;
+    use alloy_primitives::B256;
     use cairo_vm::Felt252;
 
     use crate::jobs::snos_job::fact_node::generate_merkle_root;
