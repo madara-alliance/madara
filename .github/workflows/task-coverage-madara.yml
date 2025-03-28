@@ -90,6 +90,7 @@ jobs:
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
+          ANVIL_URL: http://localhost:8545
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info
