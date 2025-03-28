@@ -162,13 +162,7 @@ impl EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
-    use alloy::{
-        node_bindings::{Anvil, AnvilInstance},
-        primitives::U256,
-    };
-
-    use tokio;
-    use tokio::sync::OnceCell;
+    use alloy::primitives::U256;
 
     // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
     // The txn we are referring to it is here ^
@@ -178,37 +172,12 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
-    lazy_static::lazy_static! {
-        static ref FORK_URL: String = std::env::var("ETH_FORK_URL").expect("ETH_FORK_URL not set");
+    pub fn get_anvil_url() -> String {
+        std::env::var("ANVIL_URL").expect("ANVIL_URL environment variable not set")
     }
 
-    static SHARED_ANVIL: OnceCell<AnvilInstance> = OnceCell::const_new();
-
-    pub async fn get_shared_anvil_instance() -> &'static AnvilInstance {
-        SHARED_ANVIL
-            .get_or_init(|| async {
-                println!("Initializing shared Anvil instance...");
-                tokio::task::spawn_blocking(create_anvil_instance)
-                    .await
-                    .expect("Failed to spawn Anvil instance in blocking task")
-            })
-            .await
-    }
-    pub fn create_anvil_instance() -> AnvilInstance {
-        let anvil = Anvil::new()
-            .fork(FORK_URL.clone())
-            .fork_block_number(L1_BLOCK_NUMBER)
-            .port(0u16)
-            .timeout(480_000)
-            .try_spawn()
-            .expect("failed to spawn anvil instance");
-        println!("Anvil started and running at `{}`", anvil.endpoint());
-        anvil
-    }
-
-    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
-        let rpc_url: Url = url.unwrap_or("http://localhost:8545").parse().expect("issue while parsing URL");
-
+    pub fn create_ethereum_client(url: String) -> EthereumClient {
+        let rpc_url: Url = url.parse().expect("issue while parsing URL");
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
@@ -220,23 +189,19 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
-        let anvil = get_shared_anvil_instance().await;
         // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
-
-        let rpc_url: Url = anvil.endpoint_url();
 
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None).unwrap();
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
 
-        let new_client_result = EthereumClient::new(rpc_url, core_contract_address, l1_block_metrics).await;
+        let new_client_result = EthereumClient::new(get_anvil_url().parse().unwrap(), core_contract_address, l1_block_metrics).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
     #[tokio::test]
     async fn get_latest_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(get_anvil_url());
         let block_number =
             eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
@@ -244,8 +209,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_event_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(get_anvil_url());
         let block_number = eth_client
             .get_last_event_block_number::<StarknetCoreContract::LogStateUpdate>()
             .await
@@ -255,8 +219,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_verified_block_hash_works() {
-        let anvil = get_shared_anvil_instance().await;
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(get_anvil_url());
         let block_hash =
             eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected = u256_to_felt(U256::from_str_radix(L2_BLOCK_HASH, 10).unwrap()).unwrap();
@@ -265,8 +228,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_state_root_works() {
-        let anvil = get_shared_anvil_instance().await;
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(get_anvil_url());
         let state_root = eth_client.get_last_state_root().await.expect("issue while getting the state root");
         let expected = u256_to_felt(U256::from_str_radix(L2_STATE_ROOT, 10).unwrap()).unwrap();
         assert_eq!(state_root, expected, "latest block state root not matching");
@@ -274,8 +236,7 @@ pub mod eth_client_getter_test {
 
     #[tokio::test]
     async fn get_last_verified_block_number_works() {
-        let anvil = get_shared_anvil_instance().await;
-        let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
+        let eth_client = create_ethereum_client(get_anvil_url());
         let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
