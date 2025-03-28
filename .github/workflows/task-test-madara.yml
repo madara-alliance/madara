@@ -24,6 +24,7 @@ jobs:
     env:
       ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
       PROPTEST_CASES: ${{ inputs.proptest-cases }}
+      ANVIL_URL: http://localhost:8545
     steps:
       - uses: actions/checkout@v4
 
@@ -52,9 +53,40 @@ jobs:
           path: target/release/
       - run: chmod +x target/release/madara
 
+      - name: Start Anvil with fork
+        run: |
+          # Define the block number for forking
+          export ANVIL_BLOCK_NUMBER=20395662
+
+          # Start Anvil with appropriate parameters
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number $ANVIL_BLOCK_NUMBER \
+            --timeout 300000 \
+            --port 8545 \
+            --fork-retry-backoff 30000 \
+            > anvil.log 2>&1 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          sleep 5
+
       - name: Run madara tests
         env:
           PROPTEST_CASES: 2
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           cargo nextest run --release --package "mp-*" --package "m-proc-*" --package "mc-*" --no-fail-fast --tests
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
