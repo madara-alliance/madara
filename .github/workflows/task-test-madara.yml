@@ -56,22 +56,21 @@ jobs:
         run: |
           # Define the block number for forking
           export ANVIL_BLOCK_NUMBER=20395662
-          
+
           # Start Anvil with appropriate parameters
           nohup anvil \
-            --fork ${{ secrets.ETH_FORK_URL }} \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
             --fork-block-number $ANVIL_BLOCK_NUMBER \
             --timeout 300000 \
             --fork-retry-backoff 30000 \
-            --host 0.0.0.0 \
             > anvil.log 2>&1 &
-          
+
           # Store the PID for later cleanup
           echo "ANVIL_PID=$!" >> $GITHUB_ENV
-          
+
           # Wait for Anvil to start
           sleep 5
-          
+
           # Check if Anvil is running
           if ps -p $ANVIL_PID > /dev/null; then
             echo "Anvil started successfully with PID: $ANVIL_PID"
