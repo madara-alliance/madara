@@ -8790,6 +8790,7 @@ dependencies = [
  "futures",
  "httpmock 0.7.0",
  "lazy_static",
+ "log",
  "mc-analytics",
  "mc-db",
  "mc-mempool",

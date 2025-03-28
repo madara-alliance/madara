@@ -140,6 +140,7 @@ mod eth_client_gas_price_worker_test {
     static SHARED_MAINNET_ANVIL: SharedAnvil<MainnetFork> = SharedAnvil::new();
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
         let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -183,6 +184,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
         let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -201,6 +203,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn gas_price_worker_when_gas_price_fix_works() {
         let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -221,6 +224,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
         let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
@@ -241,6 +245,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
@@ -306,6 +311,7 @@ mod eth_client_gas_price_worker_test {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn update_gas_price_works() {
         let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));

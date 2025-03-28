@@ -5,6 +5,7 @@ use reqwest::Client;
 use serde_json::json;
 use tokio::sync::OnceCell;
 use url::Url;
+use log::trace;
 
 // https://etherscan.io/tx/0xcadb202495cd8adba0d9b382caff907abf755cd42633d23c4988f875f2995d81#eventlog
 // The txn we are referring to it is here ^
@@ -44,6 +45,7 @@ impl AnvilInstanceInitializer for MainnetFork {
 }
 
 pub async fn create_anvil_instance() -> Result<AnvilInstance, Error> {
+    tracing::info!("Creating anvil instance ...");
     let fork_url = std::env::var("ETH_FORK_URL").map_err(|_| Error::MissingForkUrl)?;
     let fork_url = Url::parse(&fork_url).map_err(|_| Error::InvalidForkUrl)?;
     check_endpoint_alive(fork_url.as_str()).await?;
@@ -58,6 +60,7 @@ pub async fn create_anvil_instance() -> Result<AnvilInstance, Error> {
         .try_spawn()
         .map_err(Error::NodeSpawnFailed)?;
 
+    tracing::info!("Finished creating anvil instance");
     Ok(instance)
 }
 
