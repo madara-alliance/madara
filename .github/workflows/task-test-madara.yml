@@ -71,17 +71,6 @@ jobs:
           # Wait for Anvil to start
           sleep 5
 
-          # Check if Anvil is running
-          if ps -p $ANVIL_PID > /dev/null; then
-            echo "Anvil started successfully with PID: $ANVIL_PID"
-            # Set Anvil URL as environment variable for tests
-            echo "ANVIL_URL=http://localhost:8545" >> $GITHUB_ENV
-          else
-            echo "Failed to start Anvil. Check anvil.log for details:"
-            cat anvil.log
-            exit 1
-          fi
-
       - name: Run madara tests
         env:
           PROPTEST_CASES: 2
