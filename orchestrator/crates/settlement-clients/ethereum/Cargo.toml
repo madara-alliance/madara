@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-alloy = { version = "0.2.1", features = [
+alloy = {workspace = true, features = [
   "full",
   "node-bindings",
   "rpc-types-debug",
@@ -12,7 +12,7 @@ alloy = { version = "0.2.1", features = [
   "json-rpc",
   "rpc-client",
 ] }
-alloy-primitives = { version = "0.7.7", default-features = false }
+alloy-primitives = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 c-kzg = { workspace = true }
