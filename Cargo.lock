@@ -8782,6 +8782,7 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "anyhow",
+ "async-trait",
  "bigdecimal 0.4.5",
  "bitvec",
  "blockifier",
@@ -8804,6 +8805,7 @@ dependencies = [
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "regex",
+ "reqwest 0.11.27",
  "rstest 0.18.2",
  "serde",
  "serde_json",
