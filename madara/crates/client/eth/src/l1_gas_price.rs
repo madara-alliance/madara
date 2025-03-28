@@ -4,13 +4,12 @@ use alloy::providers::Provider;
 use anyhow::Context;
 use bigdecimal::BigDecimal;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
+use mp_utils::service::ServiceContext;
+use std::time::SystemTime;
 use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-
-use mp_utils::service::ServiceContext;
-use std::time::SystemTime;
 
 pub async fn gas_price_worker_once(
     eth_client: &EthereumClient,
@@ -120,28 +119,29 @@ async fn update_l1_block_metrics(
     tracing::debug!("Gas price fetched is: {:?}", eth_gas_price);
 
     // Update the metrics
-
     eth_client.l1_block_metrics.l1_block_number.record(latest_block_number, &[]);
     eth_client.l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
 
     // We're ignoring l1_gas_price_strk
-
     Ok(())
 }
 
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::client::eth_client_getter_test::{create_anvil_instance, create_ethereum_client};
+    use crate::client::eth_client_getter_test::create_ethereum_client;
+    use crate::harness::{MainnetFork, SharedAnvil};
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
+    static SHARED_MAINNET_ANVIL: SharedAnvil<MainnetFork> = SharedAnvil::new();
+
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_true_works() {
-        let anvil = create_anvil_instance();
+        let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -184,7 +184,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_infinite_loop_false_works() {
-        let anvil = create_anvil_instance();
+        let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 
@@ -202,7 +202,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_gas_price_fix_works() {
-        let anvil = create_anvil_instance();
+        let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
@@ -222,7 +222,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let anvil = create_anvil_instance();
+        let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
@@ -307,7 +307,7 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn update_gas_price_works() {
-        let anvil = create_anvil_instance();
+        let anvil = SHARED_MAINNET_ANVIL.get_instance().await;
         let eth_client = create_ethereum_client(Some(anvil.endpoint().as_str()));
         let l1_gas_provider = GasPriceProvider::new();
 

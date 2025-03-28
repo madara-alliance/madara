@@ -55,7 +55,7 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          cache-key: orchestrator-e2e
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
