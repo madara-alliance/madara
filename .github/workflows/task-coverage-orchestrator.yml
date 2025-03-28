@@ -92,6 +92,26 @@ jobs:
       - name: Check rust version
         run: rustup show
 
+      - name: Start Anvil with fork
+        run: |
+          # Define the block number for forking
+          export ANVIL_BLOCK_NUMBER=20395662
+
+          # Start Anvil with appropriate parameters
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number $ANVIL_BLOCK_NUMBER \
+            --timeout 300000 \
+            --port 8545 \
+            --fork-retry-backoff 30000 \
+            > anvil.log 2>&1 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          sleep 5
+
       - name: Run llvm-cov tests
         continue-on-error: true
         env:
@@ -109,6 +129,17 @@ jobs:
             --test-threads=1 \
             --package "orchestrator-*" \
             --no-fail-fast
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
