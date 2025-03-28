@@ -10,16 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/load-env
+      - uses: ./.github/actions/rust-setup
         with:
-          shared-key: "cache"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.81
-
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          # This used to be 1.81, but we are using 1.85 now. Keep an eye on this.
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          build-snos: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Run cli without arguments
         run: |
