@@ -10251,6 +10251,7 @@ dependencies = [
 name = "orchestrator-utils"
 version = "0.8.0"
 dependencies = [
+ "alloy-primitives 0.8.18",
  "base64 0.22.1",
  "color-eyre",
  "dotenv",
