@@ -51,21 +51,26 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-      - name: Start Anvil
+      - name: Start Anvil with fork
         run: |
-          ldd --version
-          if command -v anvil &> /dev/null
-          then
-              echo "Anvil is installed. Version information:"
-              anvil --version
-              nohup anvil --block-time 1 --host 0.0.0.0 > nohup.log 2>&1 &
-              ANVIL_PID=$!
-              echo "Started Anvil with PID: $ANVIL_PID"
-              sleep 2
-          else
-              echo "Anvil is not installed or not in PATH"
-              exit 1
-          fi
+          # Define the block number for forking
+          export ANVIL_BLOCK_NUMBER=20395662
+
+          # Start Anvil with appropriate parameters
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number $ANVIL_BLOCK_NUMBER \
+            --timeout 300000 \
+            --port 8545 \
+            --fork-retry-backoff 30000 \
+            > anvil.log 2>&1 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          sleep 5
+
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
@@ -100,6 +105,16 @@ jobs:
               --package "m-proc-*" \
               --no-fail-fast
 
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
