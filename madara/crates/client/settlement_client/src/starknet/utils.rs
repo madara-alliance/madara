@@ -83,7 +83,12 @@ impl MadaraProcess {
     /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
         // Get the port assigned by the OS
-        let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
+        let port = {
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            let port = listener.local_addr()?.port();
+            // Listener is dropped here when this block ends, releasing the port
+            port
+        };
 
         println!("Starting Madara on port {}", port);
 
