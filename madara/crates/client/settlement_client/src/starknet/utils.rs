@@ -85,18 +85,19 @@ impl MadaraProcess {
         // Get the port assigned by the OS
         let port = {
             let listener = TcpListener::bind("127.0.0.1:0")?;
-            let port = listener.local_addr()?.port();
-            // Listener is dropped here when this block ends, releasing the port
-            port
+            listener.local_addr()?.port()
         };
 
-        println!("Starting Madara on port {}", port);
+        // Create a unique database path based on port, PID, or a random identifier
+        let unique_db_path = format!("../madara-db-{}-{}", port, std::process::id());
+
+        println!("Starting Madara on port {} with database {}", port, unique_db_path);
 
         let process = Command::new(&binary_path)
             .arg("--name")
             .arg("madara")
             .arg("--base-path")
-            .arg("../madara-db33")
+            .arg(&unique_db_path)  // Use the unique path
             .arg("--rpc-port")
             .arg(port.to_string())
             .arg("--rpc-cors")
