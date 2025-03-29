@@ -68,6 +68,7 @@ pub struct MadaraProcess {
     pub binary_path: PathBuf,
     /// Port on which the Madara node is running
     pub port: u16,
+    db_path: String, // Store the database path
 }
 
 impl MadaraProcess {
@@ -82,8 +83,14 @@ impl MadaraProcess {
     /// # Returns
     /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
-        // Get the port assigned by the OS
+        // Get the port assigned by the OS for RPC
         let port = {
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            listener.local_addr()?.port()
+        };
+
+        // Get another port for the gateway
+        let gateway_port = {
             let listener = TcpListener::bind("127.0.0.1:0")?;
             listener.local_addr()?.port()
         };
@@ -91,7 +98,7 @@ impl MadaraProcess {
         // Create a unique database path based on port, PID, or a random identifier
         let unique_db_path = format!("../madara-db-{}-{}", port, std::process::id());
 
-        println!("Starting Madara on port {} with database {}", port, unique_db_path);
+        println!("Starting Madara on port {} with gateway port {} and database {}", port, gateway_port, unique_db_path);
 
         let process = Command::new(&binary_path)
             .arg("--name")
@@ -110,20 +117,30 @@ impl MadaraProcess {
             .arg("--gateway-enable")
             .arg("--gateway-external")
             .arg("--gateway-port")
-            .arg("8080")
+            .arg(gateway_port.to_string())  // Use dynamic gateway port
             .arg("--no-l1-sync")
             .arg("--chain-config-override=block_time=5s,pending_block_update_time=1s")
             .spawn()?;
 
         wait_for_port(port, 2, 10);
 
-        // Store the selected port in a field so it can be used elsewhere
-        Ok(Self { process, binary_path, port })
+        // Expand the struct to store the unique db path
+        Ok(Self {
+            process,
+            binary_path,
+            port,
+            db_path: unique_db_path, // Store the path
+        })
     }
 
     /// Returns the port on which the Madara node is running
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    // Add db_path accessor
+    pub fn db_path(&self) -> &str {
+        &self.db_path
     }
 }
 
@@ -135,8 +152,12 @@ impl Drop for MadaraProcess {
         if let Err(e) = self.process.kill() {
             eprintln!("Failed to kill Madara process: {}", e);
         } else {
-            Command::new("rm").arg("-rf").arg("../madara-db33").status().expect("Failed to delete the madara db");
-            println!("Madara process killed successfully");
+            // Use the stored unique db_path instead of hardcoded path
+            Command::new("rm").arg("-rf").arg(&self.db_path).status().unwrap_or_else(|e| {
+                eprintln!("Failed to delete the Madara DB at {}: {}", self.db_path, e);
+                std::process::ExitStatus::from_raw(1)
+            });
+            println!("Madara process killed successfully and database {} removed", self.db_path);
         }
     }
 }
