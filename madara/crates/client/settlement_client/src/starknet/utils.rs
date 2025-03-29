@@ -153,10 +153,11 @@ impl Drop for MadaraProcess {
             eprintln!("Failed to kill Madara process: {}", e);
         } else {
             // Use the stored unique db_path instead of hardcoded path
-            Command::new("rm").arg("-rf").arg(&self.db_path).status().unwrap_or_else(|e| {
-                eprintln!("Failed to delete the Madara DB at {}: {}", self.db_path, e);
-                std::process::ExitStatus::from_raw(1)
-            });
+            Command::new("rm")
+                .arg("-rf")
+                .arg(&self.db_path)
+                .status()
+                .expect("Failed to delete the madara db after test");
             println!("Madara process killed successfully and database {} removed", self.db_path);
         }
     }
