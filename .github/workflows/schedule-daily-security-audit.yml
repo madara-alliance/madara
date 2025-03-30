@@ -9,6 +9,7 @@ on:
 jobs:
   security_audit:
     name: Security - Audit check
+    if: ${{ github.repository_owner == 'madara-alliance' || github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
