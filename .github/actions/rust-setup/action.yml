@@ -129,8 +129,8 @@ runs:
       if: ${{ inputs.build-snos == 'true' }}
       shell: bash
       run: |
-        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | cut -d' ' -f1 | grep -o '[A-z0-9]*')
-        echo "SNOS Cache hash: CAIRO_LANG_COMMIT"
+        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | tr -s ' ' | cut -d' ' -f2)
+        echo "SNOS Cache hash: $CAIRO_LANG_COMMIT"
         echo "CAIRO_LANG_COMMIT=$CAIRO_LANG_COMMIT" >> $GITHUB_ENV
 
     - name: Cache SNOS packages
