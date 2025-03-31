@@ -30,7 +30,6 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
-use std::net::TcpListener;
 use std::time::Duration;
 
 /// Deployer Starknet account address used for testing
