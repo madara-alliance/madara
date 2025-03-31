@@ -12,7 +12,7 @@ use super::error::JobRouteError;
 use super::types::{ApiResponse, JobId, JobRouteResult};
 use crate::config::Config;
 use crate::jobs::{queue_job_for_processing, queue_job_for_verification, retry_job};
-use crate::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
 /// Handles HTTP requests to process a job.
 ///
