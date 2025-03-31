@@ -173,7 +173,7 @@ pub mod eth_client_getter_test {
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
     pub fn get_anvil_url() -> String {
-        std::env::var("ANVIL_URL").expect("ANVIL_URL environment variable not set")
+        std::env::var("ANVIL_URL").unwrap_or_else(|_| panic!("ANVIL_URL environment variable not set. Make sure anvil is running in fork mode from block number {}", L1_BLOCK_NUMBER))
     }
 
     pub fn create_ethereum_client(url: String) -> EthereumClient {
