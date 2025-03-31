@@ -13,7 +13,7 @@ cargo build --bin madara --profile dev
 export COVERAGE_BIN=$(realpath target/debug/madara)
 
 # Run the tests
-if cargo test --profile dev "${@:-"--workspace"}"; then
+if cargo nextest run --profile dev "${@:-"--workspace"}"; then
   echo "✅ All tests passed successfully!"
 else
   echo "❌ Some tests failed."

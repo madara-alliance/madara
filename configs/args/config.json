@@ -1,0 +1,105 @@
+{
+  "name": "madara",
+  "sequencer": false,
+  "full": false,
+  "devnet": true,
+  "devnet_unsafe": false,
+  "network": null,
+  "chain_config_path": null,
+  "preset": null,
+  "args_preset": {
+    "warp_update_sender": false,
+    "warp_update_receiver": false,
+    "gateway": false,
+    "rpc": false
+  },
+  "db_params": {
+    "base_path": "../madara-db",
+    "backup_dir": null,
+    "restore_from_latest_backup": false,
+    "db_max_saved_trie_logs": 0,
+    "db_max_kept_snapshots": 0,
+    "db_snapshot_interval": 5
+  },
+  "l2_sync_params": {
+    "l2_sync_disabled": false,
+    "unsafe_starting_block": null,
+    "disable_root": false,
+    "gateway_key": null,
+    "gateway_url": null,
+    "warp_update_port_rpc": 9943,
+    "warp_update_port_fgw": 8080,
+    "warp_update_shutdown_sender": false,
+    "warp_update_shutdown_receiver": false,
+    "sync_polling_interval": {
+      "secs": 4,
+      "nanos": 0
+    },
+    "pending_block_poll_interval": {
+      "secs": 2,
+      "nanos": 0
+    },
+    "no_sync_polling": false,
+    "n_blocks_to_sync": null,
+    "stop_on_sync": false,
+    "backup_every_n_blocks": null,
+    "flush_every_n_blocks": 1000,
+    "flush_every_n_seconds": 5,
+    "sync_parallelism": 10
+  },
+  "l1_sync_params": {
+    "l1_sync_disabled": false,
+    "l1_endpoint": null,
+    "gas_price": null,
+    "blob_gas_price": null,
+    "strk_gas_price": null,
+    "strk_blob_gas_price": null,
+    "oracle_url": null,
+    "oracle_api_key": null,
+    "gas_price_poll": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "settlement_layer": "Eth"
+  },
+  "analytics_params": {
+    "analytics_service_name": "madara_analytics",
+    "analytics_collection_endpoint": null
+  },
+  "telemetry_params": {
+    "telemetry": false,
+    "telemetry_endpoints": [["wss://starknodes.com/submit", 0]]
+  },
+  "gateway_params": {
+    "feeder_gateway_enable": false,
+    "gateway_enable": false,
+    "gateway_external": false,
+    "gateway_port": 8080
+  },
+  "rpc_params": {
+    "rpc_disable": false,
+    "rpc_external": false,
+    "rpc_admin": false,
+    "rpc_admin_external": false,
+    "rpc_max_request_size": 15,
+    "rpc_max_response_size": 15,
+    "rpc_max_subscriptions_per_connection": 1024,
+    "rpc_port": 9944,
+    "rpc_admin_port": 9943,
+    "rpc_max_connections": 100,
+    "rpc_message_buffer_capacity_per_connection": 64,
+    "rpc_disable_batch_requests": false,
+    "rpc_max_batch_request_len": null,
+    "rpc_cors": null,
+    "rpc_storage_proof_max_distance": 0,
+    "rpc_storage_proof_max_keys": 1024,
+    "rpc_storage_proof_max_tries": 5
+  },
+  "block_production_params": {
+    "block_production_disabled": false,
+    "devnet_contracts": 10
+  },
+  "chain_config_override": {
+    "overrides": []
+  }
+}

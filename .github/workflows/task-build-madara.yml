@@ -1,0 +1,138 @@
+name: Task - Build all
+
+# This workflow builds the main Madara binary and related components
+# It also caches the build artifacts for other workflows to use
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      madara-binary-hash:
+        description: "Hash of the built madara binary"
+        value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
+      orchestrator-binary-hash:
+        description: "Hash of the built orchestror binary"
+        value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
+      cairo-artifacts-hash:
+        description: "Hash of Cairo artifacts"
+        value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
+
+jobs:
+  build-binaries:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+    outputs:
+      madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+      orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+      cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      # Build Madara, Orchestrator and test contracts
+      - name: Cargo build binaries
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          # We build the whole workspace to ensure nothing broke.
+          # Builds "madara", the "orchestrator" and the "m-cairo-test-contracts" package
+          cargo build --release --workspace
+
+      # Generate hash for the Madara binary
+      - name: Generate binary hashes
+        id: generate-binary-hash
+        run: |
+          # Get current Unix timestamp for uniqueness
+          TIMESTAMP=$(date +%s)
+
+          # Path to the compiled Madara binary
+          BINARY_PATH=./target/release/madara
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
+
+          # Path to the compiled Orchestrator binary
+          BINARY_PATH=./target/release/orchestrator
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
+
+      # Upload Madara binary as artifact
+      - name: Upload Madara binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
+          path: target/release/madara
+          retention-days: 1
+
+      # Upload Orchestrator binary as artifact
+      - name: Upload Orchestrator binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+          path: target/release/orchestrator
+          retention-days: 1
+
+      # Generate hash for Cairo artifacts
+      - name: Generate Cairo artifacts hash
+        id: generate_cairo_hash
+        run: |
+          # Get current Unix timestamp for uniqueness
+          TIMESTAMP=$(date +%s)
+          # Generate hash of all files in cairo/target directory
+          FILES_HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          # Combine timestamp with files hash for unique identifier
+          HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
+          # Set output for use in subsequent steps
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          # Save hash to file for artifact sharing
+          echo "$HASH" > cairo_artifacts_hash.txt
+          echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+
+      # Upload Cairo artifacts as artifact
+      - name: Upload Cairo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.hash }}
+          path: cairo/target
+          retention-days: 1
+
+      # Keep the cache operations for runners of the same type
+      - name: Cache Madara binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/madara
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
+
+      - name: Cache Ochestrator binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/orchestrator
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+
+      - name: Cache Cairo build artifacts
+        uses: actions/cache/save@v4
+        with:
+          path: cairo/target
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
+
+      - name: Display hashes
+        run: |
+          echo "madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}"
+          echo "orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}"
+          echo "cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}"

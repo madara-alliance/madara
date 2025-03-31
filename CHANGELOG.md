@@ -3,6 +3,8 @@
 ## Next release
 
 - feat: settlement client introduced instead of just ethereum, starknet client added for settlement
+- fix(gateway-client): fix v0.13.4 gateway deserialization
+- chore: Merge entire madara-orchestrator project into this one
 - fix(primitives): limit legacy class sizes
 - fix(block_production): dynamic block closing now adds special address with prev block hash
 - fix(rpc): call, simulate, estimate rpcs executed on top of the block, not at the start of it
@@ -619,3 +621,4 @@
 - dev: Get the block status from the actual block in get_block_with_tx_hashes
 - fix: l1-l2 messaging
 - dev : clean contracts and compiled files
+  [v0.8.7]: <https://github.com/crystalin/madara/compare/v0.8.0...v0.8.7>
