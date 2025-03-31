@@ -55,23 +55,26 @@ jobs:
 
       - name: Start Anvil with fork
         run: |
-          # Define the block number for forking
-          export ANVIL_BLOCK_NUMBER=20395662
-
-          # Start Anvil with appropriate parameters
           nohup anvil \
             --fork-url ${{ secrets.ETH_FORK_URL }} \
-            --fork-block-number $ANVIL_BLOCK_NUMBER \
+            --fork-block-number ${{ env.ANVIL_FORK_BLOCK_NUMBER }} \
             --timeout 300000 \
-            --port 8545 \
-            --fork-retry-backoff 30000 \
-            > anvil.log 2>&1 &
+            --port ${{ env.ANVIL_DEFAULT_PORT }} \
+            --fork-retry-backoff 30000 &
 
           # Store the PID for later cleanup
           echo "ANVIL_PID=$!" >> $GITHUB_ENV
 
           # Wait for Anvil to start
-          sleep 5
+          echo "Waiting for Anvil to start..."
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
 
       - name: Run madara tests
         env:
