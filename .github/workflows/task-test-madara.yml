@@ -24,7 +24,6 @@ jobs:
     env:
       ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
       PROPTEST_CASES: ${{ inputs.proptest-cases }}
-      ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +78,7 @@ jobs:
       - name: Run madara tests
         env:
           PROPTEST_CASES: 2
+          ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           cargo nextest run --release --package "mp-*" --package "m-proc-*" --package "mc-*" --no-fail-fast --tests
