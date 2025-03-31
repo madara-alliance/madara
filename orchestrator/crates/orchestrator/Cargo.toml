@@ -103,6 +103,7 @@ tracing-error = "0.2"
 tracing-log = "0.2.0"
 
 jemallocator = "0.5.4"
+tokio-util = "0.7.12"
 
 [features]
 default = ["ethereum"]
