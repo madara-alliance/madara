@@ -71,10 +71,10 @@ jobs:
 
           # Wait for Anvil to start
           echo "Waiting for Anvil to start..."
-          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ ANVIL_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
 
           if [ $? -eq 0 ]; then
-            echo "Anvil is running in url: ${{ env.ANVIL_URL }}"
+            echo "Anvil is running in url: ${{ ANVIL_URL }}"
           else
             echo "Failed to connect to Anvil within timeout"
             exit 1
@@ -87,7 +87,7 @@ jobs:
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
-          ANVIL_URL: ${{ env.ANVIL_URL }}
+          ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info
