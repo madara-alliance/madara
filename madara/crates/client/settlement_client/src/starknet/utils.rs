@@ -83,19 +83,16 @@ impl MadaraProcess {
     /// # Returns
     /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
-        // Get the port assigned by the OS for RPC
-        let port = {
-            let listener = TcpListener::bind("127.0.0.1:0")?;
-            listener.local_addr()?.port()
-        };
+        // Generate a unique port based on process ID instead of OS allocation
+        // This ensures different test processes use different ports
+        let base_port = 30000;
+        let offset = (std::process::id() % 10000) as u16;
+        let port = base_port + offset;
 
-        // Get another port for the gateway
-        let gateway_port = {
-            let listener = TcpListener::bind("127.0.0.1:0")?;
-            listener.local_addr()?.port()
-        };
+        // Gateway port with a different offset
+        let gateway_port = base_port + 10000 + offset;
 
-        // Create a unique database path based on port, PID, or a random identifier
+        // Create a unique database path
         let unique_db_path = format!("../madara-db-{}-{}", port, std::process::id());
 
         println!("Starting Madara on port {} with gateway port {} and database {}", port, gateway_port, unique_db_path);
@@ -104,7 +101,7 @@ impl MadaraProcess {
             .arg("--name")
             .arg("madara")
             .arg("--base-path")
-            .arg(&unique_db_path)  // Use the unique path
+            .arg(&unique_db_path)
             .arg("--rpc-port")
             .arg(port.to_string())
             .arg("--rpc-cors")
@@ -117,20 +114,14 @@ impl MadaraProcess {
             .arg("--gateway-enable")
             .arg("--gateway-external")
             .arg("--gateway-port")
-            .arg(gateway_port.to_string())  // Use dynamic gateway port
+            .arg(gateway_port.to_string())
             .arg("--no-l1-sync")
             .arg("--chain-config-override=block_time=5s,pending_block_update_time=1s")
             .spawn()?;
 
         wait_for_port(port, 2, 10);
 
-        // Expand the struct to store the unique db path
-        Ok(Self {
-            process,
-            binary_path,
-            port,
-            db_path: unique_db_path, // Store the path
-        })
+        Ok(Self { process, binary_path, port, db_path: unique_db_path })
     }
 
     /// Returns the port on which the Madara node is running
