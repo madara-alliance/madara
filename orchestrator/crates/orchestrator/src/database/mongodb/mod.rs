@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::database::Database;
 use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 use crate::jobs::JobError;
-use crate::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
 mod utils;
 

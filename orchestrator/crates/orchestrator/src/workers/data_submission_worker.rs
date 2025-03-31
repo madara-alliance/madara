@@ -8,7 +8,7 @@ use crate::constants::BLOB_DATA_FILE_NAME;
 use crate::jobs::create_job;
 use crate::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::jobs::types::{JobStatus, JobType};
-use crate::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
 
 pub struct DataSubmissionWorker;

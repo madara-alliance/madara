@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::{JobError, OtherError};
 use crate::config::Config;
 use crate::data_storage::DataStorage;
-use crate::helpers;
+use crate::utils::helpers;
 use crate::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::jobs::snos_job::error::FactError;
 use crate::jobs::snos_job::fact_info::get_fact_info;

@@ -21,12 +21,12 @@ use types::{ExternalId, JobItemUpdates};
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::helpers::JobProcessingState;
+use crate::utils::helpers::JobProcessingState;
 #[double]
 use crate::jobs::job_handler_factory::factory;
 use crate::jobs::metadata::JobMetadata;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::queue::job_queue::{add_job_to_process_queue, add_job_to_verification_queue, ConsumptionError};
 
 pub mod conversion;

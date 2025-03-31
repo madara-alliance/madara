@@ -36,10 +36,6 @@ pub fn setup_analytics(instrumentation: &InstrumentationParams) -> Option<SdkMet
         let meter_provider = init_metric_provider(&otel_config);
         let tracer = init_tracer_provider(&otel_config);
 
-        // Opentelemetry will not provide a global API to manage the logger
-        // provider. Application users must manage the lifecycle of the logger
-        // provider on their own. Dropping logger providers will disable log
-        // emitting.
         let logger_provider = init_logs(&otel_config).unwrap();
         // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
         let layer = OpenTelemetryTracingBridge::new(&logger_provider);
@@ -81,8 +77,8 @@ pub fn shutdown_analytics(meter_provider: Option<SdkMeterProvider>, instrumentat
 
 pub fn init_tracer_provider(otel_config: &OTELConfig) -> Tracer {
     let batch_config = BatchConfigBuilder::default()
-    // Increasing the queue size and batch size, only increase in queue size delays full channel error.
-    .build();
+        // Increasing the queue size and batch size, only increase in queue size delays full channel error.
+        .build();
 
     let provider = opentelemetry_otlp::new_pipeline()
         .tracing()
@@ -105,8 +101,6 @@ pub fn init_metric_provider(otel_config: &OTELConfig) -> SdkMeterProvider {
 
     // Creates and builds the OTLP exporter
     let exporter = opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
-        // TODO: highly likely that changing these configs will result in correct collection of traces, inhibiting full
-        // channel issue
         Box::new(DefaultAggregationSelector::new()),
         Box::new(DefaultTemporalitySelector::new()),
     );
@@ -144,9 +138,8 @@ mod tests {
     use once_cell::sync::Lazy;
     use orchestrator_utils::metrics::lib::Metrics;
     use orchestrator_utils::register_metric;
-
+    use crate::utils::metrics::OrchestratorMetrics;
     use super::*;
-    use crate::metrics::OrchestratorMetrics;
 
     #[tokio::test]
     #[allow(clippy::needless_return)]

@@ -19,7 +19,7 @@ use uuid::Uuid;
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::{Job, JobError, OtherError};
 use crate::config::Config;
-use crate::helpers;
+use crate::utils::helpers;
 use crate::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::jobs::state_update_job::utils::biguint_vec_to_u8_vec;
 

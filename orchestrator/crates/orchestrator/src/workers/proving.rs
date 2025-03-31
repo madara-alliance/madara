@@ -9,7 +9,7 @@ use crate::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
 use crate::jobs::types::{JobStatus, JobType};
-use crate::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
 
 pub struct ProvingWorker;

@@ -34,11 +34,11 @@ use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
 use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::mongodb::MongoDBValidatedArgs;
 use crate::database::{Database, MockDatabase};
-use crate::helpers::{JobProcessingState, ProcessingLocks};
+use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::AWSSQSValidatedArgs;
 use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::routes::{get_server_url, setup_server, ServerParams};
-use crate::telemetry::InstrumentationParams;
+use crate::utils::telemetry::InstrumentationParams;
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
 
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html

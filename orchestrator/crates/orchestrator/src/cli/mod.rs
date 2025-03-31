@@ -15,7 +15,7 @@ use url::Url;
 
 use crate::config::ServiceParams;
 use crate::routes::ServerParams;
-use crate::telemetry::InstrumentationParams;
+use crate::utils::telemetry::InstrumentationParams;
 
 pub mod alert;
 pub mod cron;
@@ -341,7 +341,7 @@ pub mod validate_params {
     use crate::database::mongodb::MongoDBValidatedArgs;
     use crate::queue::sqs::AWSSQSValidatedArgs;
     use crate::routes::ServerParams;
-    use crate::telemetry::InstrumentationParams;
+    use crate::utils::telemetry::InstrumentationParams;
 
     pub(crate) fn validate_provider_params(
         aws_config_args: &AWSConfigCliArgs,
