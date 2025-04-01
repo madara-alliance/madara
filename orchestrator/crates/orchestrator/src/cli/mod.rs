@@ -51,7 +51,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 #[clap(
     group(
@@ -618,7 +618,6 @@ pub mod validate_params {
 
     #[cfg(test)]
     pub mod test {
-
         use rstest::rstest;
         use url::Url;
 

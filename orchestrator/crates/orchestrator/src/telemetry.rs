@@ -146,7 +146,7 @@ mod tests {
     use orchestrator_utils::register_metric;
 
     use super::*;
-    use crate::metrics::OrchestratorMetrics;
+    use crate::utils::metrics::OrchestratorMetrics;
 
     #[tokio::test]
     #[allow(clippy::needless_return)]

@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::{JobError, OtherError};
 use crate::config::Config;
-use crate::helpers;
+use crate::utils::helpers;
 use crate::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::jobs::state_update_job::utils::{
     fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,

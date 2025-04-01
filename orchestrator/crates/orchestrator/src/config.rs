@@ -35,7 +35,7 @@ use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::DataStorage;
 use crate::database::mongodb::MongoDb;
 use crate::database::Database;
-use crate::helpers::{JobProcessingState, ProcessingLocks};
+use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
 use crate::routes::ServerParams;

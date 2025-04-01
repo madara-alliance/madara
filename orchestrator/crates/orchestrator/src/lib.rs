@@ -11,13 +11,10 @@ pub mod cron;
 pub mod data_storage;
 /// Contains the trait that all database clients must implement
 pub mod database;
-pub mod helpers;
 /// Contains the trait that all jobs must implement. Also
 /// contains the root level functions for which detect the job
 /// type and call the corresponding job
 pub mod jobs;
-/// contains trait level metrics.
-pub mod metrics;
 /// Contains the trait that all queues must implement
 pub mod queue;
 /// Contains the routes for the service
@@ -33,6 +30,8 @@ pub mod workers;
 
 /// Contains the CLI arguments for the service
 pub mod cli;
+/// Contains the core logic for the service
+pub mod core;
 /// Contains the error handling / errors that can be returned by the service
 pub mod error;
 /// Contains the utils that are used by the service
@@ -41,3 +40,8 @@ pub mod params;
 // Re-export commonly used ite
 pub use error::{OrchestratorError, OrchestratorResult};
 
+// Re-export client abstractions for convenience
+pub use core::client::{
+    database::DatabaseClient, event_bus::EventBusClient, notification::NotificationClient, queue::QueueClient,
+    scheduler::SchedulerClient, storage::StorageClient,
+};

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::{Job, JobError, OtherError};
 use crate::config::Config;
-use crate::helpers;
+use crate::utils::helpers;
 use crate::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 
 #[derive(Error, Debug, PartialEq)]
