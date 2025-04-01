@@ -739,10 +739,7 @@ impl From<mp_rpc::DaMode> for DataAvailabilityMode {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
-    use mp_class::{CompressedLegacyContractClass, LegacyEntryPointsByType};
 
     #[test]
     fn test_tx_with_hash() {
@@ -1010,60 +1007,6 @@ mod tests {
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);
-    }
-
-    #[test]
-    fn test_broadcasted_declare_transaction_v0_serialization() {
-        let contract_class = CompressedLegacyContractClass {
-            program: "".as_bytes().to_vec(),
-            entry_points_by_type: LegacyEntryPointsByType {
-                constructor: Vec::new(),
-                external: Vec::new(),
-                l1_handler: Vec::new(),
-            },
-            abi: None,
-        };
-
-        let tx = BroadcastedDeclareTransactionV0 {
-            sender_address: Felt::from(1),
-            max_fee: Felt::from(1000),
-            signature: vec![Felt::from(2), Felt::from(3)],
-            contract_class: Arc::new(contract_class),
-            is_query: false,
-        };
-
-        let serialized = serde_json::to_string(&tx).unwrap();
-        let deserialized: BroadcastedDeclareTransactionV0 = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(tx, deserialized);
-    }
-
-    #[test]
-    fn test_broadcasted_declare_transaction_v0_deserialization() {
-        let json = r#"
-        {
-            "sender_address": "0x1",
-            "max_fee": "0x3e8",
-            "signature": ["0x2", "0x3"],
-            "contract_class": {
-                "program": [],
-                "entry_points_by_type": {
-                    "CONSTRUCTOR": [],
-                    "EXTERNAL": [],
-                    "L1_HANDLER": []
-                },
-                "abi": null
-            },
-            "is_query": false
-        }
-        "#;
-
-        let deserialized: BroadcastedDeclareTransactionV0 = serde_json::from_str(json).unwrap();
-
-        assert_eq!(deserialized.sender_address, Felt::from(1));
-        assert_eq!(deserialized.max_fee, Felt::from(1000));
-        assert_eq!(deserialized.signature, vec![Felt::from(2), Felt::from(3)]);
-        assert!(!deserialized.is_query);
     }
 
     pub(crate) fn dummy_tx_invoke_v0() -> InvokeTransactionV0 {
