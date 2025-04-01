@@ -1,0 +1,67 @@
+[package]
+name = "madara-bootstrapper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.80"
+ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "f0e5b194f09c533feb10d1a686ddb9e5946ec107" }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
+reqwest = { version = "0.11.22", default-features = false }
+serde = { version = "1.0.192", default-features = false, features = ["std"] }
+serde_json = { version = "1.0.108", default-features = false, features = [
+  "std",
+] }
+serde_with = { version = "2.3.3", default-features = false }
+url = "2.4.1"
+
+# Zaun Deps
+ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-manager-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-registry-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-core-contract-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-erc20-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-eth-bridge-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-proxy-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-token-bridge-client", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+zaun-utils = { git = "https://github.com/karnotxyz/zaun", package = "utils", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }
+
+# Starknet Deps
+starknet = "0.11.0"
+starknet-accounts = "0.11.0"
+starknet-core = "0.11"
+starknet-crypto = "0.7"
+starknet-providers = "0.11"
+starknet-signers = "0.9"
+starknet-types-core = { version = "0.1.5", default-features = false, features = [
+  "hash",
+] }
+starknet_api = { git = "https://github.com/bidzyyys/starknet-api.git", branch = "feature/scale-codec" }
+
+# Third Party
+assert_matches = "1.5.0"
+async-trait = "0.1.74"
+clap = { version = "4.4.11", features = ["derive", "env"] }
+color-eyre = "0.6.2"
+dotenv = "0.15.0"
+env_logger = "0.11.3"
+log = "0.4.21"
+num-bigint = "0.4"
+parity-scale-codec = { version = "3.2.2", default-features = false, features = [
+  "std",
+] }
+rstest = "0.18.1"
+scale-info = { version = "2.10.0", default-features = false, features = [
+  "std",
+] }
+thiserror = "1.0.50"
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+
+# Subxt Dependencies
+bytes = "1.6.0"
+flate2 = "1.0.30"
+indexmap = "2.2.6"
+inline_colorization = "0.1.6"
+lazy_static = "1.4.0"
+subxt-lightclient = { version = "0.35.3", optional = true, default-features = false }
+tempfile = "3.10.1"

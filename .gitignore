@@ -71,3 +71,6 @@ tmp/
 .secrets
 image.tar.gz
 
+# Bootstrapper
+venv
+artifacts
