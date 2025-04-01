@@ -32,7 +32,7 @@ jobs:
 
       - uses: ./.github/actions/rust-setup
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          cache-key: test-madara
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: true
