@@ -145,13 +145,7 @@ impl CustomFormatter {
         level_style: &Style,
     ) -> fmt::Result {
         visit_message(event, |message| {
-            writeln!(
-                writer,
-                "{} {} {:?}",
-                self.timestamp_fmt(ts),
-                level_style.apply_to(level),
-                message,
-            )
+            writeln!(writer, "{} {} {:?}", self.timestamp_fmt(ts), level_style.apply_to(level), message,)
         })
     }
 

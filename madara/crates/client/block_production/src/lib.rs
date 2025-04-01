@@ -373,7 +373,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let ExecutorState::Executing(state) = self.current_state.as_mut().context("No current state")? {
-            tracing::debug!("Store pending block");
+            tracing::debug!("Store pending block block_n={}", state.block_n);
             self.backend
                 .remove_mempool_transactions(state.tx_executed_for_tick.drain(..))
                 .context("Removing mempool transactions from the database")?;

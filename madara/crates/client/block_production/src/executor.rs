@@ -213,6 +213,7 @@ impl Executor {
             Ok(Some((block_n, block_hash)))
         } else {
             // only subscribe when block is not found
+            tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
             loop {
                 let mut receiver = self.backend.subscribe_closed_blocks();
                 if let Some(block_hash) = get_hash_from_db()? {
@@ -352,7 +353,7 @@ impl Executor {
                     let (execution_state, initial_state_diffs) =
                         self.create_execution_state(state_new_block).context("Creating execution state")?;
 
-                    tracing::debug!("Starting new block.");
+                    tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_n);
                     if self
                         .replies_sender
                         .blocking_send(ExecutorMessage::StartNewBlock {
@@ -449,7 +450,7 @@ impl Executor {
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
             if block_full || block_time_deadline_reached {
-                tracing::debug!("Ending block.");
+                tracing::debug!("Ending block block_n={}", execution_state.exec_ctx.block_n);
 
                 if self.replies_sender.blocking_send(ExecutorMessage::EndBlock).is_err() {
                     // Receiver closed
