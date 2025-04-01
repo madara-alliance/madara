@@ -1,10 +1,9 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer};
-use starknet_types_core::felt::Felt;
 use url::Url;
 
-use crate::{crypto::ZeroingPrivateKey, parsers::parse_duration, parsers::parse_url};
+use crate::{parsers::parse_duration, parsers::parse_url};
 
 pub fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
@@ -59,12 +58,4 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(url.as_str())
-}
-
-pub fn deserialize_private_key<'de, D>(deserializer: D) -> Result<ZeroingPrivateKey, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let mut private = Felt::deserialize(deserializer)?;
-    Ok(ZeroingPrivateKey::new(&mut private))
 }

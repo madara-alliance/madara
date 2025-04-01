@@ -24,7 +24,7 @@ use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 use url::Url;
 
-use mp_utils::serde::{deserialize_duration, deserialize_optional_duration, deserialize_private_key};
+use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 
 use crate::StarknetVersion;
 
@@ -125,9 +125,7 @@ pub struct ChainConfig {
     /// > [!NOTE]
     /// > This key will be auto-generated on startup if none is provided.
     /// > This also means the private key is by default regenerated on boot
-    #[serde(default)]
-    #[serde(skip_serializing)]
-    #[serde(deserialize_with = "deserialize_private_key")]
+    #[serde(skip)]
     pub private_key: ZeroingPrivateKey,
 
     /// Transaction limit in the mempool.

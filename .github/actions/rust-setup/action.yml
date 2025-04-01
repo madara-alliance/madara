@@ -27,6 +27,7 @@ inputs:
     required: false
   python-version:
     description: "Python version to use for Cairo 0/SNOS"
+    default: "3.9"
     required: false
   build-snos:
     description: "Whether to build SNOS files"
@@ -92,6 +93,7 @@ runs:
         key: ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
         restore-keys: |
           ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -119,7 +121,6 @@ runs:
         version: ${{ inputs.foundry-version }}
 
     - name: Setup Python for Cairo 0
-      if: ${{ inputs.build-snos == 'true' }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
