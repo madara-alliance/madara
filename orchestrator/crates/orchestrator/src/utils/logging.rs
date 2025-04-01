@@ -7,7 +7,16 @@ use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
 use tracing_subscriber::registry::LookupSpan;
 
 // Pretty formatter is formatted for console readability
-struct PrettyFormatter;
+struct PrettyFormatter {
+    service_name: String,
+}
+impl PrettyFormatter {
+    fn new(service_name: &str) -> Self {
+        Self {
+            service_name: service_name.into(),
+        }
+    }
+}
 
 impl<S, N> FormatEvent<S, N> for PrettyFormatter
 where
@@ -31,6 +40,7 @@ where
         let id_color = "\x1b[35m"; // Magenta
         let file_color = "\x1b[90m"; // Bright Black
         let msg_color = "\x1b[97m"; // Bright White
+        let fixed_field_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";
 
         // Format line
@@ -46,6 +56,12 @@ where
         if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
             write!(writer, "{}{}:{}:{} ", file_color, file, line, reset)?;
         }
+
+        write!(
+            writer,
+            "{}[service={}]{} ",
+            fixed_field_color, self.service_name, reset
+        )?;
 
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);
@@ -94,14 +110,14 @@ impl tracing::field::Visit for FieldExtractor {
 /// - JsonFormatter for json logging (for integration with orchestrator)
 ///
 /// This will also install color_eyre to handle the panic in the application
-pub fn init_logging() {
+pub fn init_logging(service_name: &str) {
     color_eyre::install().expect("Unable to install color_eyre");
     LogTracer::init().expect("Failed to set logger");
     let subscriber = fmt::Subscriber::builder()
         .with_thread_names(true)
         .with_thread_ids(true)
         .with_target(false)
-        .event_format(PrettyFormatter)
+        .event_format(PrettyFormatter::new(service_name))
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).unwrap();

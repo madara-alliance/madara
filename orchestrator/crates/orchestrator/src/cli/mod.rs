@@ -9,8 +9,7 @@ use provider::ProviderValidatedArgs;
 use snos::SNOSParams;
 use url::Url;
 
-use crate::resource::args::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
-pub use instrumentation::InstrumentationCliArgs as InstrumentationParams;
+use crate::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs, OTELConfig};
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
 
@@ -48,7 +47,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 #[clap(
     group(
@@ -104,10 +103,10 @@ pub struct RunCmd {
 
     // Settlement Layer
     #[clap(flatten)]
-    ethereum_args: settlement::ethereum::EthereumSettlementCliArgs,
+    pub(crate) ethereum_args: settlement::ethereum::EthereumSettlementCliArgs,
 
     #[clap(flatten)]
-    starknet_args: settlement::starknet::StarknetSettlementCliArgs,
+    pub(crate) starknet_args: settlement::starknet::StarknetSettlementCliArgs,
 
     // Storage
     #[clap(flatten)]
@@ -190,7 +189,7 @@ impl RunCmd {
         validate_params::validate_prover_params(&self.sharp_args, &self.atlantic_args)
     }
 
-    pub fn validate_instrumentation_params(&self) -> Result<InstrumentationParams, String> {
+    pub fn validate_instrumentation_params(&self) -> Result<OTELConfig, String> {
         validate_params::validate_instrumentation_params(&self.instrumentation_args)
     }
 
@@ -318,7 +317,6 @@ pub mod validate_params {
     use super::settlement::SettlementValidatedArgs;
     use super::snos::{SNOSCliArgs, SNOSParams};
     use super::storage::aws_s3::AWSS3CliArgs;
-    use crate::resource::args::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
     use alloy::primitives::Address;
     use cairo_vm::types::layout_name::LayoutName;
     use orchestrator_atlantic_service::AtlanticValidatedArgs;
@@ -326,7 +324,7 @@ pub mod validate_params {
     use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
     use orchestrator_sharp_service::SharpValidatedArgs;
     use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
-    use super::instrumentation::InstrumentationCliArgs as InstrumentationParams;
+    use crate::params::{AlertArgs, OTELConfig, CronArgs, QueueArgs, StorageArgs};
     use super::prover_layout::ProverLayoutCliArgs;
     use super::server::ServerCliArgs as ServerParams;
     use super::service::ServiceCliArgs as ServiceParams;
@@ -567,11 +565,8 @@ pub mod validate_params {
 
     pub(crate) fn validate_instrumentation_params(
         instrumentation_args: &InstrumentationCliArgs,
-    ) -> Result<InstrumentationParams, String> {
-        Ok(InstrumentationParams {
-            otel_service_name: instrumentation_args.otel_service_name.clone(),
-            otel_collector_endpoint: instrumentation_args.otel_collector_endpoint.clone(),
-        })
+    ) -> Result<OTELConfig, String> {
+        Ok(OTELConfig::from(instrumentation_args))
     }
 
     pub(crate) fn validate_server_params(server_args: &ServerCliArgs) -> Result<ServerParams, String> {

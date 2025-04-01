@@ -239,3 +239,14 @@ pub async fn setup_cloud_provider(setup_cmd: &SetupCmd) -> OrchestratorResult<Ar
 
     Ok(cloud_provider)
 }
+
+pub async fn setup_db() -> color_eyre::Result<()> {
+    // We run the js script in the folder root:
+    println!("Setting up database.");
+
+    // Command::new("node").arg("migrate-mongo-config.js").output()?;
+
+    println!("Database setup completed ✅");
+
+    Ok(())
+}

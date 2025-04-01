@@ -19,8 +19,6 @@ pub mod jobs;
 pub mod queue;
 /// Contains the routes for the service
 pub mod routes;
-/// Contains setup functions to set up db and cloud.
-pub mod setup;
 #[cfg(test)]
 pub mod tests;
 /// Contains workers which act like cron jobs
@@ -40,6 +38,9 @@ pub mod resource;
 pub mod utils;
 /// Service that contains the business logic for the service
 pub mod service;
+pub mod params;
+/// api server code for the service
+pub mod server;
 
 // Re-export commonly used ite
 pub use error::{OrchestratorError, OrchestratorResult};

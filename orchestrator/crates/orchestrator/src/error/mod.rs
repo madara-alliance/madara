@@ -1,5 +1,8 @@
+use alloy::hex::FromHexError;
 use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::list_buckets::ListBucketsError;
+use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use thiserror::Error;
@@ -16,6 +19,18 @@ pub enum OrchestratorError {
     /// Setup Command error
     #[error("Setup Command Error: {0}")]
     SetupCommandError(String),
+    /// Setup Command error
+    #[error("Error While Downcasting from object: {0}")]
+    FromDownstreamError(String),
+    /// Error while instrumenting the logger
+    #[error("OTL Logger Error: {0}")]
+    OTLogError(#[from] opentelemetry::logs::LogError),
+    #[error("OLT Metrics Error: {0}")]
+    OTLMetricsError(#[from] opentelemetry::metrics::MetricsError),
+    #[error("OLT Trace Error: {0}")]
+    OLTTraceError(#[from] opentelemetry::trace::TraceError),
+    #[error("Invalid layout name: {0}")]
+    InvalidLayoutError(String),
     /// Configuration error
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -40,7 +55,11 @@ pub enum OrchestratorError {
     /// AWS SQS error
     #[error("AWS SQS error: {0}")]
     AWSSQSError(#[from] SdkError<SetQueueAttributesError>),
-
+    /// AWS S3 error
+    #[error("AWS S3 error: {0}")]
+    AWSS3Error(#[from] SdkError<GetObjectError>),
+    #[error("AWS S3 error: {0}")]
+    AWSS3StreamError(String),
     /// Unknown Resource error
     #[error("Resource provided is not defined: {0}")]
     UnidentifiedResourceError(String),
@@ -96,4 +115,7 @@ pub enum OrchestratorError {
     /// JSON error
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
+    #[error("Invalid address: {0}")]
+    InvalidAddress(#[from] FromHexError)
+
 }

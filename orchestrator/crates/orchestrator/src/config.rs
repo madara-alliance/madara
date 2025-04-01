@@ -38,7 +38,6 @@ use crate::database::Database;
 use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
-use crate::resource::args::StorageArgs;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
