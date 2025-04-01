@@ -3,11 +3,11 @@ use crate::{errors::StarknetRpcApiError, utils::display_internal_server_error};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_mempool::Mempool;
 use mc_mempool::MempoolProvider;
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::AddInvokeTransactionResult;
 use mp_rpc::{
     BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::BroadcastedDeclareTransactionV0;
 use std::sync::Arc;
 
 /// This [`AddTransactionProvider`] adds the received transactions to a mempool.
@@ -55,7 +55,7 @@ impl From<mc_mempool::MempoolError> for StarknetRpcApiError {
 impl AddTransactionProvider for MempoolAddTxProvider {
     async fn add_declare_v0_transaction(
         &self,
-        declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash> {
         Ok(self.mempool.tx_accept_declare_v0(declare_v0_transaction).map_err(StarknetRpcApiError::from)?)
     }
