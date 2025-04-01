@@ -8429,10 +8429,12 @@ name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "async-std",
  "bitvec",
  "blockifier",
  "jsonrpsee",
  "m-proc-macros",
+ "mc-block-import",
  "mc-db",
  "mc-exec",
  "mc-gateway-client",
