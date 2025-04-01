@@ -37,9 +37,13 @@ impl From<BlockStatus> for mp_rpc::BlockStatus {
 pub struct BlockTimestamp(pub u64);
 impl BlockTimestamp {
     pub fn now() -> Self {
-        Self(
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs(),
-        )
+        SystemTime::now().into()
+    }
+}
+
+impl From<SystemTime> for BlockTimestamp {
+    fn from(value: SystemTime) -> Self {
+        Self(value.duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs())
     }
 }
 

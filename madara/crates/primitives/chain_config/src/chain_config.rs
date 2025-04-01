@@ -79,6 +79,10 @@ pub struct ChainConfig {
     #[serde(deserialize_with = "deserialize_duration")]
     pub block_time: Duration,
 
+    /// Do not produce empty blocks.
+    #[serde(default)]
+    pub no_empty_blocks: bool,
+
     /// Only used for block production.
     /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
     #[serde(deserialize_with = "deserialize_duration")]
@@ -203,6 +207,7 @@ impl ChainConfig {
             block_time: Duration::from_secs(30),
             pending_block_update_time: Duration::from_secs(2),
 
+            no_empty_blocks: false,
             execution_batch_size: 16,
 
             bouncer_config: BouncerConfig {

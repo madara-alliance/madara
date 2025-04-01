@@ -211,6 +211,7 @@ mod tests {
     use assert_matches::assert_matches;
     use blockifier::transaction::transaction_execution::Transaction;
     use mc_block_production::metrics::BlockProductionMetrics;
+    use mc_block_production::BlockProductionStateNotification;
     use mc_block_production::BlockProductionTask;
     use mc_db::MadaraBackend;
     use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MempoolLimits, MockL1DataProvider};
@@ -226,6 +227,8 @@ mod tests {
     };
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::BroadcastedTransactionExt;
+    use mp_utils::service::ServiceContext;
+    use mp_utils::AbortOnDrop;
     use rstest::rstest;
     use starknet_core::types::contract::SierraClass;
     use std::sync::Arc;
@@ -234,7 +237,7 @@ mod tests {
     struct DevnetForTesting {
         backend: Arc<MadaraBackend>,
         contracts: DevnetKeys,
-        block_production: BlockProductionTask<Mempool>,
+        block_production: Option<BlockProductionTask<Mempool>>,
         mempool: Arc<Mempool>,
         tx_validator: Arc<TransactionValidator>,
     }
@@ -353,7 +356,6 @@ mod tests {
             Arc::new(metrics),
             Arc::clone(&l1_data_provider),
         )
-        .await
         .unwrap();
 
         let tx_validator = Arc::new(TransactionValidator::new(
@@ -362,7 +364,7 @@ mod tests {
             TransactionValidatorConfig::default(),
         ));
 
-        DevnetForTesting { backend, contracts, block_production, mempool, tx_validator }
+        DevnetForTesting { backend, contracts, block_production: Some(block_production), mempool, tx_validator }
     }
 
     #[rstest]
@@ -404,8 +406,11 @@ mod tests {
 
         assert_eq!(res.class_hash, calculated_class_hash);
 
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().await.unwrap();
+        let mut block_production = chain.block_production.take().unwrap();
+        let mut notifications = block_production.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -476,8 +481,11 @@ mod tests {
             .unwrap();
         tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
-        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().await.unwrap();
+        let mut block_production = chain.block_production.take().unwrap();
+        let mut notifications = block_production.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
 
         // =====================================================================================
 
@@ -508,8 +516,7 @@ mod tests {
 
         let res = chain.sign_and_add_deploy_account_tx(deploy_account_txn, &account).await.unwrap();
 
-        chain.block_production.set_current_pending_tick(chain.backend.chain_config().n_pending_ticks_per_block());
-        chain.block_production.on_pending_time_tick().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
 
         assert_eq!(res.contract_address, account.address);
 
@@ -572,8 +579,11 @@ mod tests {
 
         tracing::info!("tx hash: {:#x}", result.transaction_hash);
 
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().await.unwrap();
+        let mut block_production = chain.block_production.take().unwrap();
+        let mut notifications = block_production.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -788,8 +798,11 @@ mod tests {
             .unwrap();
 
         std::thread::sleep(max_age); // max age reached
-        chain.block_production.set_current_pending_tick(1);
-        chain.block_production.on_pending_time_tick().await.unwrap();
+        let mut block_production = chain.block_production.take().unwrap();
+        let mut notifications = block_production.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 

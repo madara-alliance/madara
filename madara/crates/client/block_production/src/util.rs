@@ -1,28 +1,120 @@
-use crate::Error;
 use blockifier::{
-    blockifier::transaction_executor::{TransactionExecutor, BLOCK_STATE_ACCESS_ERR},
-    bouncer::BouncerWeights,
-    state::{cached_state::StateMaps, state_api::StateReader},
-    transaction::errors::TransactionExecutionError,
+    blockifier::{
+        config::TransactionExecutorConfig,
+        transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
+    },
+    context::{BlockContext, ChainInfo, FeeTokenAddresses},
+    state::cached_state::{CachedState, StateMaps},
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_convert::ToFelt;
+use mc_exec::{BlockifierStateAdapter, CachedStateAdaptor};
+use mc_mempool::L1DataProvider;
+use mp_block::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader};
+use mp_chain_config::StarknetVersion;
+use mp_convert::{Felt, ToFelt};
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use starknet_api::core::ContractAddress;
-use std::collections::{hash_map, HashMap};
+use starknet_api::{block::BlockNumber, core::ContractAddress};
+use std::{
+    collections::{hash_map, HashMap},
+    sync::Arc,
+    time::SystemTime,
+};
 
-#[derive(Debug, thiserror::Error)]
-#[error("Error converting state diff to state map")]
-pub struct StateDiffToStateMapError;
+pub(crate) fn create_blockifier_state_adaptor(
+    backend: &Arc<MadaraBackend>,
+    on_block_n: Option<u64>,
+) -> CachedStateAdaptor {
+    let block_n = on_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+    CachedStateAdaptor::new(BlockifierStateAdapter::new(
+        Arc::clone(backend),
+        block_n,
+        on_block_n.map(DbBlockId::Number),
+    ))
+}
+
+/// This is a pending header, without parent_block_hash. Parent block hash is not visible to the execution,
+/// and in addition, we can't know it yet without closing the block and updating the global trie to compute
+/// the global state root.
+/// See [`crate::executor::Executor`]; we want to be able to start the execution of new blocks without waiting
+/// on the earlier to be closed.
+#[derive(Debug)]
+pub(crate) struct BlockExecutionContext {
+    /// The Starknet address of the sequencer who created this block.
+    pub sequencer_address: Felt,
+    /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
+    pub block_timestamp: SystemTime, // We use a systemtime here for better logging.
+    /// The version of the Starknet protocol used when creating this block
+    pub protocol_version: StarknetVersion,
+    /// Gas prices for this block
+    pub l1_gas_price: GasPrices,
+    /// The mode of data availability for this block
+    pub l1_da_mode: L1DataAvailabilityMode,
+}
+
+impl BlockExecutionContext {
+    pub fn into_header(self, parent_block_hash: Felt) -> PendingHeader {
+        PendingHeader {
+            parent_block_hash,
+            sequencer_address: self.sequencer_address,
+            block_timestamp: self.block_timestamp.into(),
+            protocol_version: self.protocol_version,
+            l1_gas_price: self.l1_gas_price,
+            l1_da_mode: self.l1_da_mode,
+        }
+    }
+}
+
+pub(crate) fn create_blockifier_executor(
+    adaptor: CachedStateAdaptor,
+    backend: &Arc<MadaraBackend>,
+    l1_data_provider: &Arc<dyn L1DataProvider>,
+    on_block_n: Option<u64>,
+) -> anyhow::Result<(TransactionExecutor<CachedStateAdaptor>, BlockExecutionContext)> {
+    let block_n = on_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+    let chain_config = backend.chain_config();
+
+    let ctx = BlockExecutionContext {
+        sequencer_address: **chain_config.sequencer_address,
+        block_timestamp: SystemTime::now(),
+        protocol_version: chain_config.latest_protocol_version,
+        l1_gas_price: l1_data_provider.get_gas_prices(),
+        l1_da_mode: l1_data_provider.get_da_mode(),
+    };
+
+    // We dont care about the parent block hash, it is not used during execution.
+    let concurrency_config = chain_config.concurrency_config.clone();
+
+    let versioned_constants = chain_config.exec_constants_by_protocol_version(ctx.protocol_version)?;
+    let chain_info = ChainInfo {
+        chain_id: chain_config.chain_id.clone(),
+        fee_token_addresses: FeeTokenAddresses {
+            strk_fee_token_address: chain_config.native_fee_token_address,
+            eth_fee_token_address: chain_config.parent_fee_token_address,
+        },
+    };
+    let block_info = starknet_api::block::BlockInfo {
+        block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(ctx.block_timestamp).0),
+        block_number: BlockNumber(block_n),
+        sequencer_address: chain_config.sequencer_address,
+        gas_prices: (&ctx.l1_gas_price).into(),
+        use_kzg_da: ctx.l1_da_mode == L1DataAvailabilityMode::Blob,
+    };
+    let blockifier_executor = TransactionExecutor::new(
+        CachedState::new(adaptor),
+        BlockContext::new(block_info, chain_info, versioned_constants, chain_config.bouncer_config.clone()),
+        TransactionExecutorConfig { concurrency_config, stack_size: DEFAULT_STACK_SIZE },
+    );
+    Ok((blockifier_executor, ctx))
+}
 
 pub(crate) fn state_map_to_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     diff: StateMaps,
-) -> Result<StateDiff, Error> {
+) -> anyhow::Result<StateDiff> {
     let mut backing_map = HashMap::<ContractAddress, usize>::default();
     let mut storage_diffs = Vec::<ContractStorageDiffItem>::default();
     for ((address, key), value) in diff.storage {
@@ -98,23 +190,6 @@ pub(crate) fn state_map_to_state_diff(
         deployed_contracts,
         replaced_classes,
     })
-}
-
-pub(crate) fn finalize_execution_state<S: StateReader>(
-    tx_executor: &mut TransactionExecutor<S>,
-    backend: &MadaraBackend,
-    on_top_of: &Option<DbBlockId>,
-) -> Result<(StateDiff, BouncerWeights), Error> {
-    let state_map = tx_executor
-        .block_state
-        .as_mut()
-        .expect(BLOCK_STATE_ACCESS_ERR)
-        .to_state_diff()
-        .map_err(TransactionExecutionError::StateError)?
-        .state_maps;
-    let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
-
-    Ok((state_update, *tx_executor.bouncer.get_accumulated_weights()))
 }
 
 #[cfg(test)]

@@ -42,6 +42,7 @@ mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true

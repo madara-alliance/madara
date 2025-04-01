@@ -31,6 +31,7 @@ lazy_static.workspace = true
 serde_json.workspace = true
 starknet-types-core = { workspace = true, features = ["arbitrary"] }
 mc-devnet.workspace = true
+futures.workspace = true
 
 [features]
 testing = ["mc-db/testing", "mockall"]

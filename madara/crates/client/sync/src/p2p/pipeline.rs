@@ -2,12 +2,12 @@ use super::peer_set::{PeerGuard, PeerSet};
 use crate::{
     import::BlockImportError,
     pipeline::{ApplyOutcome, PipelineSteps},
-    util::AbortOnDrop,
 };
 use anyhow::Context;
 use futures::Future;
 use mc_p2p::PeerId;
 use mc_p2p::SyncHandlerError;
+use mp_utils::AbortOnDrop;
 use std::{borrow::Cow, ops::Range, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]

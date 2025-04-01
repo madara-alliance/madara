@@ -19,6 +19,7 @@ use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
+use tokio::sync::Notify;
 
 mod inner;
 mod l1;
@@ -53,9 +54,13 @@ pub(crate) trait CheckInvariants {
 }
 
 #[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
 pub trait MempoolProvider: Send + Sync + 'static {
-    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) -> usize;
+    fn txs_take_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize;
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
+
+    async fn take_chunk_or_wait(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize;
+
     fn tx_mark_included(&self, contract_address: &Felt);
     fn txs_re_add(
         &self,
@@ -63,6 +68,7 @@ pub trait MempoolProvider: Send + Sync + 'static {
         consumed_txs: Vec<MempoolTransaction>,
     ) -> Result<(), MempoolError>;
     fn chain_id(&self) -> Felt;
+    fn is_empty(&self) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +91,8 @@ impl MempoolConfig {
 pub struct Mempool {
     backend: Arc<MadaraBackend>,
     inner: RwLock<MempoolInner>,
+    // Notify listener when the mempool goes from empty to non-empty.
+    notify: Notify,
     metrics: MempoolMetrics,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
 }
@@ -151,6 +159,7 @@ impl Mempool {
             inner: RwLock::new(MempoolInner::new(config.limits)),
             metrics: MempoolMetrics::register(),
             nonce_cache: RwLock::new(BTreeMap::new()),
+            notify: Notify::new(),
         }
     }
 
@@ -218,6 +227,8 @@ impl Mempool {
             true,
             nonce_info,
         )?;
+
+        self.notify.notify_waiters();
 
         self.metrics.accepted_transaction_counter.add(1, &[]);
         Ok(())
@@ -292,8 +303,51 @@ impl Mempool {
 
 #[async_trait]
 impl MempoolProvider for Mempool {
+    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
+    fn tx_take(&mut self) -> Option<MempoolTransaction> {
+        if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
+            let contract_address = mempool_tx.contract_address().to_felt();
+            let nonce_next = mempool_tx.nonce_next;
+            self.nonce_cache.write().expect("Poisoned lock").insert(contract_address, nonce_next);
+
+            Some(mempool_tx)
+        } else {
+            None
+        }
+    }
+
+    async fn take_chunk_or_wait(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize {
+        let from = dest.len();
+        let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
+        tokio::pin!(permit);
+        loop {
+            {
+                let mut inner = self.inner.write().expect("Poisoned lock");
+                let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
+                let taken = inner.pop_next_chunk(dest, n);
+
+                if taken > 0 {
+                    for mempool_tx in dest.iter().skip(from) {
+                        let contract_address = mempool_tx.contract_address().to_felt();
+                        let nonce_next = mempool_tx.nonce_next;
+                        nonce_cache.insert(contract_address, nonce_next);
+                    }
+                    return taken;
+                }
+                // Note: we put ourselves in the notify list BEFORE giving back the lock.
+                // Otherwise, some transactions could be missed.
+                permit.as_mut().enable(); // Register us to be notified.
+
+                // drop the locks here
+            }
+            permit.as_mut().await; // Wait until we're notified.
+            permit.set(self.notify.notified());
+        }
+    }
+
     // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
-    fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) -> usize {
+    fn txs_take_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize {
         let mut inner = self.inner.write().expect("Poisoned lock");
         let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
 
@@ -306,19 +360,6 @@ impl MempoolProvider for Mempool {
             nonce_cache.insert(contract_address, nonce_next);
         }
         taken
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_take(&mut self) -> Option<MempoolTransaction> {
-        if let Some(mempool_tx) = self.inner.write().expect("Poisoned lock").pop_next() {
-            let contract_address = mempool_tx.contract_address().to_felt();
-            let nonce_next = mempool_tx.nonce_next;
-            self.nonce_cache.write().expect("Poisoned lock").insert(contract_address, nonce_next);
-
-            Some(mempool_tx)
-        } else {
-            None
-        }
     }
 
     // #[tracing::instrument(skip(self, contract_address), fields(module = "Mempool"))]
@@ -351,19 +392,21 @@ impl MempoolProvider for Mempool {
             debug_assert!(removed.is_some());
         }
 
-        let hashes = consumed_txs.iter().map(|tx| tx.tx_hash()).collect::<Vec<_>>();
+        // let hashes = consumed_txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>();
         inner.re_add_txs(txs, consumed_txs);
         drop(inner);
 
-        for tx_hash in hashes {
-            self.backend.remove_mempool_transaction(&tx_hash.to_felt())?;
-        }
+        // self.backend.remove_mempool_transaction(hashes)?;
 
         Ok(())
     }
 
     fn chain_id(&self) -> Felt {
         Felt::from_bytes_be_slice(format!("{}", self.backend.chain_config().chain_id).as_bytes())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.read().expect("Poisoned lock").is_empty()
     }
 }
 

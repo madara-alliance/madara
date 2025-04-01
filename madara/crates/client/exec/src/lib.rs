@@ -21,7 +21,7 @@ mod trace;
 pub mod transaction;
 
 pub use block_context::ExecutionContext;
-pub use blockifier_state_adapter::BlockifierStateAdapter;
+pub use blockifier_state_adapter::*;
 pub use trace::execution_result_to_tx_trace;
 
 #[derive(Debug)]

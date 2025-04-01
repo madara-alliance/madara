@@ -1,7 +1,7 @@
 use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
 use mp_transactions::validated::ValidatedMempoolTx;
-use rocksdb::IteratorMode;
+use rocksdb::{IteratorMode, WriteBatch};
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
@@ -83,15 +83,20 @@ impl MadaraBackend {
         })
     }
 
-    #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]
-    pub fn remove_mempool_transaction(&self, tx_hash: &Felt) -> Result<()> {
+    pub fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         // Note: We do not use WAL here, as it will be flushed by saving the block. This is to
         // ensure saving the block and removing the tx from the saved mempool are both done at once
         // atomically.
 
         let col = self.db.get_column(Column::MempoolTransactions);
-        self.db.delete_cf_opt(&col, bincode::serialize(tx_hash)?, &self.writeopts_no_wal)?;
-        tracing::debug!("remove_mempool_tx {:?}", tx_hash);
+
+        let mut batch = WriteBatch::default();
+        for tx_hash in tx_hashes {
+            tracing::debug!("remove_mempool_tx {:#x}", tx_hash);
+            batch.delete_cf(&col, bincode::serialize(&tx_hash)?);
+        }
+
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
         Ok(())
     }
 

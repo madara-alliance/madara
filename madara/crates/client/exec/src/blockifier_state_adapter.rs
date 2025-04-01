@@ -1,4 +1,5 @@
 use blockifier::execution::contract_class::RunnableCompiledClass;
+use blockifier::state::cached_state::StateMaps;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::db_block_id::DbBlockId;
@@ -8,6 +9,7 @@ use mp_convert::ToFelt;
 use starknet_api::core::{ChainId, ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Felt, RunnableCompiledClass>> =
@@ -15,6 +17,79 @@ static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Fe
 
 #[cfg(feature = "cairo_native")]
 use blockifier::execution::native::contract_class::NativeCompiledClassV1;
+
+struct CacheByBlock {
+    pub block_n: u64,
+    pub state_diff: StateMaps,
+    pub classes: HashMap<ClassHash, RunnableCompiledClass>,
+}
+
+/// This cache allows us to execute blocks past what the db currently has saved.
+pub struct CachedStateAdaptor {
+    pub inner: BlockifierStateAdapter,
+    cached_states_by_block_n: VecDeque<CacheByBlock>,
+}
+impl CachedStateAdaptor {
+    pub fn new(inner: BlockifierStateAdapter) -> Self {
+        Self { inner, cached_states_by_block_n: Default::default() }
+    }
+    pub fn remove_cache_older_than(&mut self, block_n: u64) {
+        while self.cached_states_by_block_n.back().is_some_and(|cache| cache.block_n < block_n) {
+            self.cached_states_by_block_n.pop_back();
+        }
+    }
+    pub fn push_to_cache(
+        &mut self,
+        block_n: u64,
+        state_diff: StateMaps,
+        classes: HashMap<ClassHash, RunnableCompiledClass>,
+    ) {
+        self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes });
+    }
+}
+
+impl StateReader for CachedStateAdaptor {
+    fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
+        for s in &self.cached_states_by_block_n {
+            if let Some(el) = s.state_diff.storage.get(&(contract_address, key)) {
+                return Ok(*el);
+            }
+        }
+        self.inner.get_storage_at(contract_address, key)
+    }
+    fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
+        for s in &self.cached_states_by_block_n {
+            if let Some(el) = s.state_diff.nonces.get(&contract_address) {
+                return Ok(*el);
+            }
+        }
+        self.inner.get_nonce_at(contract_address)
+    }
+    fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
+        for s in &self.cached_states_by_block_n {
+            if let Some(el) = s.state_diff.class_hashes.get(&contract_address) {
+                return Ok(*el);
+            }
+        }
+        self.inner.get_class_hash_at(contract_address)
+    }
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
+        for s in &self.cached_states_by_block_n {
+            if let Some(el) = s.classes.get(&class_hash) {
+                return Ok(el.clone());
+            }
+        }
+        self.inner.get_compiled_class(class_hash)
+    }
+    fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
+        for s in &self.cached_states_by_block_n {
+            if let Some(el) = s.state_diff.compiled_class_hashes.get(&class_hash) {
+                return Ok(*el);
+            }
+        }
+        self.inner.get_compiled_class_hash(class_hash)
+    }
+}
 
 /// Adapter for the db queries made by blockifier.
 ///

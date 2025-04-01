@@ -2,7 +2,6 @@ use crate::{
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     probe::ThrottledRepeatedFuture,
-    util::AbortOnDrop,
 };
 use anyhow::Context;
 use mc_db::MadaraBackend;
@@ -13,6 +12,7 @@ use mp_gateway::{
     state_update::ProviderStateUpdateWithBlockPendingMaybe,
 };
 use mp_state_update::StateDiff;
+use mp_utils::AbortOnDrop;
 use starknet_core::types::Felt;
 use std::{ops::Range, sync::Arc, time::Duration};
 

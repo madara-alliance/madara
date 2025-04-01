@@ -48,9 +48,9 @@ impl Service for BlockProductionService {
             Arc::clone(metrics),
             Arc::clone(l1_data_provider),
         )
-        .await?;
+        .context("Creating block production task")?;
 
-        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
+        runner.service_loop(move |ctx| block_production_task.run(ctx));
 
         Ok(())
     }
