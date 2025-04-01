@@ -279,10 +279,6 @@ mod tests {
         let serialized = serde_json::to_string(&writer).unwrap();
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-        // Empty vec array should be ignored
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![Felt::from(3)]]));
-        assert!(searcher.search(&reader), "Search should succeed when empty arrays are ignored");
-
         // Only empty arrays should work
         let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![]]));
         assert!(searcher.search(&reader), "Search with only empty arrays should work");
@@ -306,7 +302,7 @@ mod tests {
         let serialized = serde_json::to_string(&writer).unwrap();
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![Felt::from(2)]]));
+        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
     }
 
@@ -318,6 +314,10 @@ mod tests {
 
         // Should match either key
         let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![Felt::from(3)]]));
+        assert!(searcher.search(&reader));
+
+        let searcher =
+            EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![Felt::from(3), Felt::from(4)]]));
         assert!(searcher.search(&reader));
     }
 
