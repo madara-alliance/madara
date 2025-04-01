@@ -13,20 +13,11 @@ pub struct OTELConfig {
 impl TryFrom<InstrumentationCliArgs> for OTELConfig {
     type Error = OrchestratorError;
     fn try_from(args: InstrumentationCliArgs) -> Result<Self, Self::Error> {
-        let endpoint = args.otel_collector_endpoint.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
-        let service_name = args.otel_service_name.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
+        let endpoint = args.otel_collector_endpoint.clone().ok_or_else(|| OrchestratorError::FromDownstreamError("otel_collector_endpoint not given".to_string()))?;
+        let service_name = args.otel_service_name.clone().ok_or_else(|| OrchestratorError::FromDownstreamError("otel_service_name not given".to_string()))?;
         Ok(Self {
             endpoint,
             service_name,
         })
-    }
-}
-
-impl From<InstrumentationCliArgs> for OTELConfig {
-    fn from(args: InstrumentationCliArgs) -> Self {
-        Self {
-            endpoint: args.otel_collector_endpoint.unwrap(),
-            service_name: args.otel_service_name.unwrap(),
-        }
     }
 }
