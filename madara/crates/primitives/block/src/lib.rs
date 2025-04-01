@@ -342,7 +342,7 @@ pub struct VisitedSegmentEntry {
     pub segments: Vec<usize>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FullBlock {
     pub block_hash: Felt,
     pub header: Header,
@@ -352,7 +352,7 @@ pub struct FullBlock {
 }
 
 /// A pending block is a block that has not yet been closed.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PendingFullBlock {
     pub header: PendingHeader,
     pub state_diff: StateDiff,

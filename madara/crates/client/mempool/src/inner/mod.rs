@@ -862,7 +862,6 @@ impl MempoolInner {
         mempool_tx.tx_hash() == tx_hash
     }
 
-    #[cfg(any(test, feature = "testing"))]
     pub fn is_empty(&self) -> bool {
         self.tx_intent_queue_ready.is_empty()
     }

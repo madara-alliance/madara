@@ -160,7 +160,7 @@ impl TransactionValidator {
         Self { inner, backend, config }
     }
 
-    #[tracing::instrument(skip(self), fields(module = "TxValidation"))]
+    #[tracing::instrument(skip(self, tx, converted_class), fields(module = "TxValidation"))]
     async fn accept_tx(
         &self,
         tx: BTransaction,

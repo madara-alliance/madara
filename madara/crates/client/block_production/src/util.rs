@@ -40,8 +40,10 @@ pub(crate) fn create_blockifier_state_adaptor(
 /// the global state root.
 /// See [`crate::executor::Executor`]; we want to be able to start the execution of new blocks without waiting
 /// on the earlier to be closed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BlockExecutionContext {
+    /// The new block_n.
+    pub block_n: u64,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
     /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
@@ -67,22 +69,29 @@ impl BlockExecutionContext {
     }
 }
 
-pub(crate) fn create_blockifier_executor(
-    adaptor: CachedStateAdaptor,
-    backend: &Arc<MadaraBackend>,
+pub(crate) fn create_execution_context(
     l1_data_provider: &Arc<dyn L1DataProvider>,
+    backend: &Arc<MadaraBackend>,
     on_block_n: Option<u64>,
-) -> anyhow::Result<(TransactionExecutor<CachedStateAdaptor>, BlockExecutionContext)> {
-    let block_n = on_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+) -> BlockExecutionContext {
     let chain_config = backend.chain_config();
-
-    let ctx = BlockExecutionContext {
+    let block_n = on_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+    BlockExecutionContext {
         sequencer_address: **chain_config.sequencer_address,
         block_timestamp: SystemTime::now(),
         protocol_version: chain_config.latest_protocol_version,
         l1_gas_price: l1_data_provider.get_gas_prices(),
         l1_da_mode: l1_data_provider.get_da_mode(),
-    };
+        block_n,
+    }
+}
+
+pub(crate) fn create_blockifier_executor(
+    adaptor: CachedStateAdaptor,
+    backend: &Arc<MadaraBackend>,
+    ctx: &BlockExecutionContext,
+) -> anyhow::Result<TransactionExecutor<CachedStateAdaptor>> {
+    let chain_config = backend.chain_config();
 
     // We dont care about the parent block hash, it is not used during execution.
     let concurrency_config = chain_config.concurrency_config.clone();
@@ -97,7 +106,7 @@ pub(crate) fn create_blockifier_executor(
     };
     let block_info = starknet_api::block::BlockInfo {
         block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(ctx.block_timestamp).0),
-        block_number: BlockNumber(block_n),
+        block_number: BlockNumber(ctx.block_n),
         sequencer_address: chain_config.sequencer_address,
         gas_prices: (&ctx.l1_gas_price).into(),
         use_kzg_da: ctx.l1_da_mode == L1DataAvailabilityMode::Blob,
@@ -107,7 +116,7 @@ pub(crate) fn create_blockifier_executor(
         BlockContext::new(block_info, chain_info, versioned_constants, chain_config.bouncer_config.clone()),
         TransactionExecutorConfig { concurrency_config, stack_size: DEFAULT_STACK_SIZE },
     );
-    Ok((blockifier_executor, ctx))
+    Ok(blockifier_executor)
 }
 
 pub(crate) fn state_map_to_state_diff(

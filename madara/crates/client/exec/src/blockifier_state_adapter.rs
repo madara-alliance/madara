@@ -12,12 +12,14 @@ use starknet_types_core::felt::Felt;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Felt, RunnableCompiledClass>> =
-    std::sync::LazyLock::new(dashmap::DashMap::new);
+// // TODO: this leaks, right??
+// static CACHE: std::sync::LazyLock<dashmap::DashMap<starknet_types_core::felt::Felt, RunnableCompiledClass>> =
+//     std::sync::LazyLock::new(dashmap::DashMap::new);
 
 #[cfg(feature = "cairo_native")]
 use blockifier::execution::native::contract_class::NativeCompiledClassV1;
 
+#[derive(Debug)]
 struct CacheByBlock {
     pub block_n: u64,
     pub state_diff: StateMaps,
@@ -35,7 +37,8 @@ impl CachedStateAdaptor {
     }
     pub fn remove_cache_older_than(&mut self, block_n: u64) {
         while self.cached_states_by_block_n.back().is_some_and(|cache| cache.block_n < block_n) {
-            self.cached_states_by_block_n.pop_back();
+            let popped = self.cached_states_by_block_n.pop_back().expect("Checked that back exists just above.");
+            tracing::debug!("Popped cache {:?}", popped.block_n);
         }
     }
     pub fn push_to_cache(
@@ -44,6 +47,7 @@ impl CachedStateAdaptor {
         state_diff: StateMaps,
         classes: HashMap<ClassHash, RunnableCompiledClass>,
     ) {
+        tracing::debug!("Push to cache {block_n}");
         self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes });
     }
 }
@@ -189,9 +193,9 @@ impl StateReader for BlockifierStateAdapter {
     fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         tracing::debug!("get_compiled_contract_class for {:#x}", class_hash.to_felt());
 
-        if let Some(cached) = CACHE.get(&class_hash.0) {
-            return Ok(cached.clone());
-        }
+        // if let Some(cached) = CACHE.get(&class_hash.0) {
+        //     return Ok(cached.clone());
+        // }
 
         let Some(on_top_of_block_id) = self.on_top_of_block_id else {
             return Err(StateError::UndeclaredClassHash(class_hash));
@@ -211,9 +215,9 @@ impl StateReader for BlockifierStateAdapter {
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
         });
 
-        if let Ok(ref class) = res {
-            CACHE.insert(class_hash.0, class.clone());
-        }
+        // if let Ok(ref class) = res {
+        //     CACHE.insert(class_hash.0, class.clone());
+        // }
 
         res
     }

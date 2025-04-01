@@ -3600,7 +3600,7 @@ version = "1.0.0-alpha.6"
 source = "git+https://github.com/starkware-libs/cairo?tag=v1.0.0-alpha.6#439da05a031c2eda263c4ce12d0b71d20f38205f"
 dependencies = [
  "chrono",
- "env_logger",
+ "env_logger 0.9.3",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -3615,7 +3615,7 @@ name = "cairo-lang-utils"
 version = "1.0.0-rc0"
 source = "git+https://github.com/starkware-libs/cairo?tag=v1.0.0-rc0#05867c82de42d5ee5cfa953dcca1cb826402f74b"
 dependencies = [
- "env_logger",
+ "env_logger 0.9.3",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -3632,7 +3632,7 @@ version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af180baa613acd5b03179f8766a50087d44702b78c0b49a887fdb06d40226064"
 dependencies = [
- "env_logger",
+ "env_logger 0.9.3",
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "log",
@@ -4591,6 +4591,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4601,6 +4610,18 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3716d7a920fb4fac5d84e9d4bce8ceb321e9414b4409da61b07b75c1e3d0697"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "log",
 ]
 
 [[package]]
@@ -7366,6 +7387,7 @@ dependencies = [
  "mp-rpc",
  "mp-state-update",
  "mp-transactions",
+ "mp-utils",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -7380,6 +7402,7 @@ dependencies = [
  "starknet-signers",
  "starknet-types-core",
  "starknet_api",
+ "test-log",
  "tokio",
  "tracing",
  "tracing-core",
@@ -7556,6 +7579,7 @@ dependencies = [
  "async-trait",
  "bitvec",
  "blockifier",
+ "futures",
  "lazy_static",
  "mc-analytics",
  "mc-db",
@@ -11290,6 +11314,28 @@ name = "termtree"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
+
+[[package]]
+name = "test-log"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7f46083d221181166e5b6f6b1e5f1d499f3a76888826e6cb1d057554157cd0f"
+dependencies = [
+ "env_logger 0.11.7",
+ "test-log-macros",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "test-log-macros"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "888d0c3c6db53c0fdab160d2ed5e12ba745383d3e85813f2ea0f2b1475ab553f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
+]
 
 [[package]]
 name = "thiserror"

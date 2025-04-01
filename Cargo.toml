@@ -224,6 +224,7 @@ tracing-subscriber = { version = "0.3.19", features = [
 ] }
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.29.0"
+test-log = { version = "0.2", features = ["trace"] }
 time = "0.3"
 unsigned-varint = { version = "0.8.0", features = ["futures"] }
 
