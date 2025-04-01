@@ -104,15 +104,20 @@ pub struct CustomFormatter {
     dim_style: Style,
     open_bracket: StyledObject<&'static str>,
     closed_bracket: StyledObject<&'static str>,
+    open_bracket_dim: StyledObject<&'static str>,
+    closed_bracket_dim: StyledObject<&'static str>,
     ts_format: Vec<format_description::BorrowedFormatItem<'static>>,
 }
 
 impl CustomFormatter {
     pub fn new() -> Self {
         let dim_style = Style::new().dim();
+        let light_gray = Style::new().color256(248);
         Self {
-            open_bracket: dim_style.apply_to("["),
-            closed_bracket: dim_style.apply_to("]"),
+            open_bracket: light_gray.apply_to("["),
+            closed_bracket: light_gray.apply_to("]"),
+            open_bracket_dim: dim_style.apply_to("["),
+            closed_bracket_dim: dim_style.apply_to("]"),
             local_offset: UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
             dim_style,
             ts_format: format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]:[subsecond digits:3]")
@@ -127,7 +132,7 @@ impl CustomFormatter {
             // This allocates a String also :/
             match local_datetime.format(&self.ts_format) {
                 Ok(ts) => {
-                    write!(f, "{}{}{}", self.open_bracket, self.dim_style.apply_to(ts), self.closed_bracket,)
+                    write!(f, "{}{}{}", self.open_bracket_dim, self.dim_style.apply_to(ts), self.closed_bracket_dim)
                 }
                 Err(_) => {
                     write!(f, "<error>")
@@ -147,11 +152,9 @@ impl CustomFormatter {
         visit_message(event, |message| {
             writeln!(
                 writer,
-                "{} {}{}{} {:?}",
+                "{} {} {:?}",
                 self.timestamp_fmt(ts),
-                self.open_bracket,
                 level_style.apply_to(level),
-                self.closed_bracket,
                 message,
             )
         })
@@ -169,11 +172,9 @@ impl CustomFormatter {
         visit_message(event, |message| {
             writeln!(
                 writer,
-                "{} {}{}{} {} {:?}",
+                "{} {} {} {:?}",
                 self.timestamp_fmt(ts),
-                self.open_bracket,
                 level_style.apply_to(level),
-                self.closed_bracket,
                 self.dim_style.apply_to(target),
                 message,
             )
