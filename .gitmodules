@@ -6,3 +6,19 @@
 	path = orchestrator/madara-bootstrapper
 	url = https://github.com/madara-alliance/madara-bootstrapper.git
 	ignore = all
+[submodule "lib/argent-contracts-starknet"]
+	path = lib/argent-contracts-starknet
+	url = https://github.com/argentlabs/argent-contracts-starknet
+[submodule "lib/braavos-account-cairo"]
+	path = lib/braavos-account-cairo
+	url = https://github.com/myBraavos/braavos-account-cairo
+[submodule "lib/starkgate-contracts-old"]
+	path = lib/starkgate-contracts-old
+	url = https://github.com/starknet-io/starkgate-contracts
+	branch = update-cairo-0.9.0
+[submodule "lib/starkgate-contracts-latest"]
+	path = lib/starkgate-contracts-latest
+	url = https://github.com/starknet-io/starkgate-contracts
+[submodule "lib/starkgate-contracts-82e651f"]
+	path = lib/starkgate-contracts-82e651f
+	url = https://github.com/starknet-io/starkgate-contracts.git
