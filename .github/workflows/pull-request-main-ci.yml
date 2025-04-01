@@ -1,0 +1,88 @@
+name: Workflow - Pull Request Main
+
+# This workflow orchestrates all checks and tests for pull requests
+# It uses reusable workflows to keep the configuration DRY
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Use concurrency to prevent multiple workflows running on the same PR
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Update database version for schema changes
+  update-db-version:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-ci-db-version.yml
+    secrets: inherit
+
+  # Build Madara binary and Cairo artifacts
+  build-madara-cairo:
+    needs: update-db-version
+    uses: ./.github/workflows/task-build-madara.yml
+
+  # Run linters for code style and quality
+  lint-code-style:
+    needs: update-db-version
+    uses: ./.github/workflows/task-lint-code-style.yml
+
+  # Run Rust-specific linters
+  lint-cargo:
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-lint-cargo.yml
+
+  # Run Madara tests
+  test-madara:
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-test-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # Run JavaScript tests against the built binary
+  test-js:
+    needs: build-madara-cairo
+    uses: ./.github/workflows/task-test-js.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara-cairo.outputs.cairo-artifacts-hash }}
+
+  # Run orchestrator tests
+  test-e2e:
+    needs: build-madara-cairo
+    uses: ./.github/workflows/task-test-orchestrator-e2e.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # Run CLI tests against the built binary
+  test-cli:
+    needs: update-db-version
+    uses: ./.github/workflows/task-test-cli.yml
+    secrets: inherit
+
+  # Generate coverage reports
+  coverage-madara:
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-coverage-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  coverage-orchestrator:
+    needs: build-madara-cairo
+    uses: ./.github/workflows/task-coverage-orchestrator.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
