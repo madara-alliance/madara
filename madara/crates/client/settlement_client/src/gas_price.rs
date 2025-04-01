@@ -204,19 +204,18 @@ async fn update_l1_block_metrics(
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
-    use crate::eth::eth_client_getter_test::{create_ethereum_client, eth_client};
+    use crate::eth::eth_client_getter_test::{create_ethereum_client, get_anvil_url};
     use crate::eth::event::EthereumEventStream;
-    use crate::eth::{EthereumClient, EthereumClientConfig};
+    use crate::eth::EthereumClientConfig;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
-    use rstest::*;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_true_works(eth_client: EthereumClient) {
+    async fn gas_price_worker_when_infinite_loop_true_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -259,9 +258,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_false_works(eth_client: EthereumClient) {
+    async fn gas_price_worker_when_infinite_loop_false_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
@@ -283,9 +282,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_gas_price_fix_works(eth_client: EthereumClient) {
+    async fn gas_price_worker_when_gas_price_fix_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_gas_price(20);
         l1_gas_provider.set_gas_price_sync_enabled(false);
@@ -309,9 +308,9 @@ mod eth_client_gas_price_worker_test {
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn gas_price_worker_when_data_gas_price_fix_works(eth_client: EthereumClient) {
+    async fn gas_price_worker_when_data_gas_price_fix_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let l1_gas_provider = GasPriceProvider::new();
         l1_gas_provider.update_eth_l1_data_gas_price(20);
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
@@ -339,7 +338,7 @@ mod eth_client_gas_price_worker_test {
     async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
         let mock_server = MockServer::start();
         let addr = format!("http://{}", mock_server.address());
-        let eth_client = create_ethereum_client(Some(&addr));
+        let eth_client = create_ethereum_client(addr);
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         let mock = mock_server.mock(|when, then| {
@@ -402,9 +401,9 @@ mod eth_client_gas_price_worker_test {
         mock.assert();
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn update_gas_price_works(eth_client: EthereumClient) {
+    async fn update_gas_price_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let l1_gas_provider = GasPriceProvider::new();
 
         l1_gas_provider.update_last_update_timestamp();

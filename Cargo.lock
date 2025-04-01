@@ -8969,7 +8969,6 @@ dependencies = [
  "mp-convert",
  "mp-transactions",
  "mp-utils",
- "once_cell",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

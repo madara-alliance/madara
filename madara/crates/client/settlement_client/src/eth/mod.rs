@@ -332,12 +332,7 @@ impl SettlementClientTrait for EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
-    use alloy::{
-        node_bindings::{Anvil, AnvilInstance},
-        primitives::U256,
-    };
-    use once_cell::sync::OnceCell;
-    use rstest::*;
+    use alloy::primitives::U256;
     use std::sync::Arc;
     use tokio;
 
@@ -351,51 +346,29 @@ pub mod eth_client_getter_test {
     const L2_BLOCK_HASH: &str = "563216050958639290223177746678863910249919294431961492885921903486585884664";
     const L2_STATE_ROOT: &str = "1456190284387746219409791261254265303744585499659352223397867295223408682130";
 
-    static ANVIL_INSTANCE: OnceCell<Arc<AnvilInstance>> = OnceCell::new();
-
-    fn get_anvil() -> Arc<AnvilInstance> {
-        ANVIL_INSTANCE
-            .get_or_init(|| {
-                let fork_url = std::env::var("ETH_FORK_URL")
-                    .expect("ETH_FORK_URL must be set for running tests. Please set this environment variable with a valid Ethereum RPC URL");
-                let anvil = Anvil::new()
-                    .fork(fork_url)
-                    .fork_block_number(L1_BLOCK_NUMBER)
-                    .timeout(60_000)
-                    .try_spawn()
-                    .expect("failed to spawn anvil instance");
-
-                Arc::new(anvil)
-            })
-            .clone()
+    pub fn get_anvil_url() -> String {
+        std::env::var("ANVIL_URL").unwrap_or_else(|_| {
+            panic!(
+                "ANVIL_URL environment variable not set. Make sure anvil is running in fork mode from block number {}",
+                L1_BLOCK_NUMBER
+            )
+        })
     }
 
-    pub fn create_ethereum_client(url: Option<&str>) -> EthereumClient {
-        let rpc_url: Url = match url {
-            Some(url_str) => url_str.parse().expect("Failed to parse provided URL"),
-            None => {
-                let anvil = get_anvil();
-                anvil.endpoint_url()
-            }
-        };
-
-        let provider = ProviderBuilder::new().on_http(rpc_url);
+    pub fn create_ethereum_client(url: String) -> EthereumClient {
+        let rpc_url: Url = url.parse().expect("issue while parsing URL");
+        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
         let contract = StarknetCoreContract::new(address, provider.clone());
-
         EthereumClient { provider: Arc::new(provider), l1_core_contract: contract }
-    }
-
-    #[fixture]
-    pub fn eth_client() -> EthereumClient {
-        create_ethereum_client(None)
     }
 
     #[tokio::test]
     async fn fail_create_new_client_invalid_core_contract() {
-        let anvil = get_anvil();
+        // Sepolia core contract instead of mainnet
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
-        let rpc_url: Url = anvil.endpoint_url();
+
+        let rpc_url: Url = get_anvil_url().parse().unwrap();
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None)
             .expect("Should parse valid Ethereum address in test");
         let ethereum_client_config = EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address };
@@ -403,59 +376,47 @@ pub mod eth_client_getter_test {
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_latest_block_number_works(eth_client: EthereumClient) {
-        let block_number = eth_client
-            .provider
-            .get_block_number()
-            .await
-            .expect("Should successfully fetch the forked block number")
-            .as_u64();
+    async fn get_latest_block_number_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
+        let block_number =
+            eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_event_block_number_works(eth_client: EthereumClient) {
+    async fn get_last_event_block_number_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
         let block_number = eth_client
             .get_last_event_block_number()
             .await
-            .expect("Should successfully fetch the last block number with LogStateUpdate event");
+            .expect("issue while getting the last block number with given event");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "block number with given event not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_hash_works(eth_client: EthereumClient) {
-        let block_hash = eth_client
-            .get_last_verified_block_hash()
-            .await
-            .expect("Should successfully retrieve the last verified block hash from L1 contract");
+    async fn get_last_verified_block_hash_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
+        let block_hash =
+            eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
         let expected =
             U256::from_str_radix(L2_BLOCK_HASH, 10).expect("Should parse the predefined L2 block hash").to_felt();
         assert_eq!(block_hash, expected, "latest block hash not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_state_root_works(eth_client: EthereumClient) {
-        let state_root = eth_client
-            .get_last_verified_state_root()
-            .await
-            .expect("Should successfully retrieve the verified state root from L1 contract");
+    async fn get_last_state_root_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
+        let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
         let expected =
             U256::from_str_radix(L2_STATE_ROOT, 10).expect("Should parse the predefined L2 state root").to_felt();
         assert_eq!(state_root, expected, "latest block state root not matching");
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_number_works(eth_client: EthereumClient) {
-        let block_number = eth_client
-            .get_last_verified_block_number()
-            .await
-            .expect("Should successfully retrieve the last verified block number from L1 contract");
+    async fn get_last_verified_block_number_works() {
+        let eth_client = create_ethereum_client(get_anvil_url());
+        let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
         assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
     }
 }
