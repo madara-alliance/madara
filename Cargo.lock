@@ -8790,6 +8790,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "lazy_static",
+ "once_cell",
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde_json",
