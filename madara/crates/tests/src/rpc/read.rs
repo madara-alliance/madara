@@ -27,6 +27,7 @@ mod test_rpc_read_calls {
     use std::fmt::Write;
     use std::io::Read;
     use tokio::sync::OnceCell;
+
     static MADARA_INSTANCE: OnceCell<MadaraCmd> = OnceCell::const_new();
 
     pub async fn get_madara() -> &'static MadaraCmd {

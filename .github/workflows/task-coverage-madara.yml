@@ -51,32 +51,34 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-      - name: Start Anvil
-        run: |
-          ldd --version
-          if command -v anvil &> /dev/null
-          then
-              echo "Anvil is installed. Version information:"
-              anvil --version
-              nohup anvil --block-time 1 --host 0.0.0.0 > nohup.log 2>&1 &
-              ANVIL_PID=$!
-              echo "Started Anvil with PID: $ANVIL_PID"
-              sleep 2
-          else
-              echo "Anvil is not installed or not in PATH"
-              exit 1
-          fi
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
       - run: chmod +x target/release/madara
-
-      - name: Check anvil running
+      - name: Start Anvil with fork
         run: |
-          curl -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-               -H "Content-Type: application/json" http://localhost:8545
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number ${{ env.ANVIL_FORK_BLOCK_NUMBER }} \
+            --timeout 300000 \
+            --port ${{ env.ANVIL_DEFAULT_PORT }} \
+            --fork-retry-backoff 30000 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          echo "Waiting for Anvil to start..."
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
 
       - name: Run tests with coverage
         continue-on-error: true
@@ -85,6 +87,7 @@ jobs:
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
+          ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info
@@ -99,6 +102,17 @@ jobs:
               --package "mp-*" \
               --package "m-proc-*" \
               --no-fail-fast
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
