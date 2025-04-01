@@ -30,7 +30,7 @@ inputs:
     required: false
   build-snos:
     description: "Whether to build SNOS files"
-    required: false
+    required: true
     default: "false"
 
 runs:
@@ -43,13 +43,13 @@ runs:
     # Install ubuntu packages (using cache if available)
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
+        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
         version: 1.0
         execute_install_scripts: true
     - shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev
+        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
 
     # SCCACHE is disabled due to https://github.com/mozilla/sccache/issues/2359
     # TODO: re-enable when fixed
@@ -77,9 +77,21 @@ runs:
           ~/.cargo/bin
           ~/.cargo/registry
           ~/.cargo/git
-          target/
-          cairo/target/
-        key: ${{ runner.os }}-${{ inputs.rust-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}
+          ${{ runner.os }}-cargo-registry-
+
+    - uses: actions/cache@v4
+      id: cache-build-deps
+      with:
+        path: |
+          target/release/deps
+          target/release/build
+          target/release/.fingerprint
+        key: ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -108,7 +120,7 @@ runs:
 
     - name: Setup Python for Cairo 0
       if: ${{ inputs.build-snos == 'true' }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -117,8 +129,8 @@ runs:
       if: ${{ inputs.build-snos == 'true' }}
       shell: bash
       run: |
-        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | cut -d' ' -f1 | grep -o '[A-z0-9]*')
-        echo "SNOS Cache hash: CAIRO_LANG_COMMIT"
+        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | tr -s ' ' | cut -d' ' -f2)
+        echo "SNOS Cache hash: $CAIRO_LANG_COMMIT"
         echo "CAIRO_LANG_COMMIT=$CAIRO_LANG_COMMIT" >> $GITHUB_ENV
 
     - name: Cache SNOS packages
