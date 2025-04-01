@@ -2622,15 +2622,15 @@ mod tests {
             block_production_task.block_production_task(mp_utils::service::ServiceContext::new_for_testing()).await
         });
 
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         task_handle.abort();
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
         let block_inner = backend
             .get_block(&mp_block::BlockId::Number(1))
-            .expect("Failed to retrieve latest block from db")
-            .expect("Missing latest block")
+            .expect("Failed to retrieve block number one from db")
+            .expect("Missing first block")
             .inner;
 
         assert_eq!(block_inner.transactions.len(), 2);
