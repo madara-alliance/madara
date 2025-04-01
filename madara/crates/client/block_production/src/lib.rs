@@ -447,7 +447,10 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     return anyhow::Ok(());
                 };
                 let mut batch = Vec::with_capacity(batch_size);
-                mempool.take_chunk_or_wait(&mut batch, batch_size).await;
+                if ctx.run_until_cancelled(mempool.take_chunk_or_wait(&mut batch, batch_size)).await.is_none() {
+                    // Stop condition: service stopped (ctx).
+                    return anyhow::Ok(());
+                };
 
                 tracing::debug!("Sending batch of {} transactions to the worker thread", batch.len());
 
