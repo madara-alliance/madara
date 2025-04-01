@@ -187,7 +187,6 @@ pub enum BlockProductionStateNotification {
 }
 
 /// Little state machine that helps us following the state transitions the executor thread sends us.
-#[allow(clippy::large_enum_variant)] // large size difference between variants
 pub(crate) enum ExecutorState {
     NotExecuting {
         latest_block_n: Option<u64>,
@@ -197,7 +196,7 @@ pub(crate) enum ExecutorState {
         /// another new batch for the next block.
         latest_block_hash: Felt,
     },
-    Executing(CurrentPendingState),
+    Executing(Box<CurrentPendingState>),
 }
 
 /// The block production task consumes transactions from the mempool in batches.
@@ -329,10 +328,13 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     )
                 }
 
-                self.current_state = Some(ExecutorState::Executing(CurrentPendingState::new(
-                    PendingBlockState::new_from_execution_context(exec_ctx, latest_block_hash, initial_state_diffs),
-                    new_block_n,
-                )));
+                self.current_state = Some(ExecutorState::Executing(
+                    CurrentPendingState::new(
+                        PendingBlockState::new_from_execution_context(exec_ctx, latest_block_hash, initial_state_diffs),
+                        new_block_n,
+                    )
+                    .into(),
+                ));
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(

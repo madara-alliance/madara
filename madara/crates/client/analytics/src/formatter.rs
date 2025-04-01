@@ -102,8 +102,6 @@ pub fn visit_message(event: &tracing::Event<'_>, f: impl FnOnce(&dyn fmt::Debug)
 pub struct CustomFormatter {
     local_offset: UtcOffset,
     dim_style: Style,
-    open_bracket: StyledObject<&'static str>,
-    closed_bracket: StyledObject<&'static str>,
     open_bracket_dim: StyledObject<&'static str>,
     closed_bracket_dim: StyledObject<&'static str>,
     ts_format: Vec<format_description::BorrowedFormatItem<'static>>,
@@ -112,10 +110,7 @@ pub struct CustomFormatter {
 impl CustomFormatter {
     pub fn new() -> Self {
         let dim_style = Style::new().dim();
-        let light_gray = Style::new().color256(248);
         Self {
-            open_bracket: light_gray.apply_to("["),
-            closed_bracket: light_gray.apply_to("]"),
             open_bracket_dim: dim_style.apply_to("["),
             closed_bracket_dim: dim_style.apply_to("]"),
             local_offset: UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
@@ -220,11 +215,9 @@ where
 
                 writeln!(
                     writer,
-                    "{} {}{}{} {} {} {} bytes - {:.3?}",
+                    "{} {} {} {} {} bytes - {:.3?}",
                     self.timestamp_fmt(&ts),
-                    self.open_bracket,
                     rpc_style.apply_to("HTTP"),
-                    self.closed_bracket,
                     rpc_call_event.method,
                     status_style.apply_to(&rpc_call_event.status),
                     rpc_call_event.res_len,
