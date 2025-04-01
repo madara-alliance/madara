@@ -38,72 +38,52 @@ impl MongoDbClient {
 
 #[async_trait]
 impl DatabaseClient for MongoDbClient {
-    async fn connect(&self) -> OrchestratorResult<()> {
-        let mut this = self.to_owned();
-
-        let client_options = ClientOptions::parse(&this.connection_string)
-            .await
-            .map_err(|e| OrchestratorError::DatabaseInvalidURIError(format!("URI : {}, Error: {}", &this.connection_string , e)))?;
-
-        let client = MongoClient::with_options(client_options)
-            .map_err(|e| OrchestratorError::DatabaseError(format!("Failed to create MongoDB client: {}", e)))?;
-
-        // Ping the database to test the connection
+    async fn connect(&mut self) -> OrchestratorResult<()> {
+        let client_options = ClientOptions::parse(&self.connection_string).await?;
+        let client = MongoClient::with_options(client_options)?;
         client
             .database("admin")
             .run_command(doc! { "ping": 1 }, None)
-            .await
-            .map_err(|e| Error::DatabaseError(format!("Failed to connect to MongoDB: {}", e)))?;
-
-        this.client = Some(client);
-
+            .await?;
+        self.client = Some(client);
         Ok(())
     }
 
-    async fn disconnect(&self) -> Result<()> {
-        // MongoDB client automatically disconnects when dropped
+    /// disconnect - will disconnect the mongodb client
+    async fn disconnect(&mut self) -> OrchestratorResult<()> {
+        self.client = None;
         Ok(())
     }
 
-    async fn insert<T>(&self, table: &str, document: &T) -> Result<String>
+    async fn insert<T>(&self, table: &str, document: &T) -> OrchestratorResult<Option<String>>
     where
         T: Serialize + Send + Sync,
     {
         let db = self.get_database()?;
         let coll = db.collection::<Document>(table);
-
-        let doc = mongodb::bson::to_document(document)
-            .map_err(|e| Error::DatabaseError(format!("Failed to serialize document: {}", e)))?;
+        let doc = mongodb::bson::to_document(document)?;
 
         let result = coll
             .insert_one(doc, None)
-            .await
-            .map_err(|e| Error::DatabaseError(format!("Failed to insert document: {}", e)))?;
+            .await?;
 
         let id = result
             .inserted_id
-            .as_object_id()
-            .ok_or_else(|| Error::DatabaseError("Failed to get inserted document ID".to_string()))?;
-
-        Ok(id.to_hex())
+            .as_object_id().map(|id| id.to_hex());
+        Ok(id)
     }
 
-    async fn find_document<T, F>(&self, collection: &str, filter: F) -> Result<Option<T>>
+    async fn find_document<T, F>(&self, collection: &str, filter: F) -> OrchestratorResult<Option<T>>
     where
         T: DeserializeOwned + Send + Sync,
         F: Serialize + Send + Sync,
     {
         let db = self.get_database()?;
         let coll = db.collection::<T>(collection);
-
-        let filter_doc = mongodb::bson::to_document(&filter)
-            .map_err(|e| Error::DatabaseError(format!("Failed to serialize filter: {}", e)))?;
-
+        let filter_doc = mongodb::bson::to_document(&filter)?;
         let result = coll
             .find_one(filter_doc, None)
-            .await
-            .map_err(|e| Error::DatabaseError(format!("Failed to find document: {}", e)))?;
-
+            .await?;
         Ok(result)
     }
 

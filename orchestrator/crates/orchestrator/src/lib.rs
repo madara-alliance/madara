@@ -31,7 +31,7 @@ pub mod cli;
 /// Contains the core logic for the service
 pub mod core;
 /// Contains the clients Abstractions for the service
-pub mod client;
+// pub mod client;
 /// Contains the error handling / errors that can be returned by the service
 pub mod error;
 /// Contains the resources setup code and teardown code for the service
@@ -40,3 +40,12 @@ pub mod resource;
 pub mod utils;
 /// Service that contains the business logic for the service
 pub mod service;
+
+// Re-export commonly used ite
+pub use error::{OrchestratorError, OrchestratorResult};
+
+// Re-export client abstractions for convenience
+pub use core::client::{
+    database::DatabaseClient, event_bus::EventBusClient, notification::NotificationClient, queue::QueueClient,
+    scheduler::SchedulerClient, storage::StorageClient,
+};

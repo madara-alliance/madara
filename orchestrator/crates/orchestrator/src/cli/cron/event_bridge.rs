@@ -1,6 +1,6 @@
 use clap::Args;
 
-use crate::cron::event_bridge::EventBridgeType;
+pub(crate) use crate::cron::event_bridge::EventBridgeType;
 
 /// CLI arguments for the aws event bridge.
 #[derive(Debug, Clone, Args)]

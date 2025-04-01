@@ -1,6 +1,7 @@
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::list_buckets::ListBucketsError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
+use mongodb::bson;
 use thiserror::Error;
 
 /// Result type for orchestrator operations
@@ -51,6 +52,14 @@ pub enum OrchestratorError {
     /// Database error
     #[error("Database error: {0}")]
     DatabaseError(String),
+
+    /// Mongo error
+    #[error("Mongo error: {0}")]
+    MongoError(#[from] mongodb::error::Error),
+
+    /// Mongo error
+    #[error("BSON error: {0}")]
+    BsonError(#[from] bson::ser::Error),
 
     /// Network error
     #[error("Network error: {0}")]

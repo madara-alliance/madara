@@ -16,19 +16,13 @@ use opentelemetry::KeyValue;
 use url::Url;
 use utils::ToDocument;
 use uuid::Uuid;
-
+use crate::cli::database::mongodb::MongoDBValidatedArgs;
 use crate::database::Database;
 use crate::jobs::types::{JobItem, JobItemUpdates, JobStatus, JobType};
 use crate::jobs::JobError;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
 mod utils;
-
-#[derive(Debug, Clone)]
-pub struct MongoDBValidatedArgs {
-    pub connection_url: Url,
-    pub database_name: String,
-}
 
 pub struct MongoDb {
     client: Client,

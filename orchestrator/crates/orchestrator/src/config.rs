@@ -30,7 +30,7 @@ use crate::cli::queue::QueueValidatedArgs;
 use crate::cli::settlement::SettlementValidatedArgs;
 use crate::cli::snos::SNOSParams;
 use crate::cli::storage::StorageValidatedArgs;
-use crate::cli::RunCmd;
+use crate::cli::{RunCmd, ServerParams, ServiceParams};
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::DataStorage;
 use crate::database::mongodb::MongoDb;
@@ -38,7 +38,7 @@ use crate::database::Database;
 use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
-use crate::routes::ServerParams;
+use crate::resource::args::StorageArgs;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
@@ -65,12 +65,12 @@ pub struct Config {
     processing_locks: ProcessingLocks,
 }
 
-#[derive(Debug, Clone)]
-pub struct ServiceParams {
-    pub max_block_to_process: Option<u64>,
-    pub min_block_to_process: Option<u64>,
-    pub max_concurrent_snos_jobs: Option<usize>,
-}
+// #[derive(Debug, Clone)]
+// pub struct ServiceParams {
+//     pub max_block_to_process: Option<u64>,
+//     pub min_block_to_process: Option<u64>,
+//     pub max_concurrent_snos_jobs: Option<usize>,
+// }
 
 pub struct OrchestratorParams {
     pub madara_rpc_url: Url,

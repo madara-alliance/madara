@@ -1,4 +1,4 @@
-use crate::database::mongodb::MongoDBValidatedArgs;
+use mongodb::MongoDBValidatedArgs;
 
 pub mod mongodb;
 

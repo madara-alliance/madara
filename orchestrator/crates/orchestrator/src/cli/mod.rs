@@ -1,21 +1,18 @@
-use alert::AlertValidatedArgs;
 use cairo_vm::types::layout_name::LayoutName;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
-use cron::CronValidatedArgs;
 use da::DaValidatedArgs;
 use database::DatabaseValidatedArgs;
 use prover::ProverValidatedArgs;
 use provider::aws::AWSConfigCliArgs;
 use provider::ProviderValidatedArgs;
-use queue::QueueValidatedArgs;
 use snos::SNOSParams;
-use storage::StorageValidatedArgs;
 use url::Url;
 
-use crate::config::ServiceParams;
-use crate::routes::ServerParams;
-use crate::utils::telemetry::InstrumentationParams;
+use crate::resource::args::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
+pub use instrumentation::InstrumentationCliArgs as InstrumentationParams;
+pub use server::ServerCliArgs as ServerParams;
+pub use service::ServiceCliArgs as ServiceParams;
 
 pub mod alert;
 pub mod cron;
@@ -165,15 +162,15 @@ impl RunCmd {
         validate_params::validate_provider_params(&self.aws_config_args)
     }
 
-    pub fn validate_alert_params(&self) -> Result<AlertValidatedArgs, String> {
+    pub fn validate_alert_params(&self) -> Result<AlertArgs, String> {
         validate_params::validate_alert_params(&self.aws_sns_args, &self.aws_config_args)
     }
 
-    pub fn validate_queue_params(&self) -> Result<QueueValidatedArgs, String> {
+    pub fn validate_queue_params(&self) -> Result<QueueArgs, String> {
         validate_params::validate_queue_params(&self.aws_sqs_args, &self.aws_config_args)
     }
 
-    pub fn validate_storage_params(&self) -> Result<StorageValidatedArgs, String> {
+    pub fn validate_storage_params(&self) -> Result<StorageArgs, String> {
         validate_params::validate_storage_params(&self.aws_s3_args, &self.aws_config_args)
     }
 
@@ -279,43 +276,33 @@ impl SetupCmd {
         validate_params::validate_provider_params(&self.aws_config_args)
     }
 
-    pub fn validate_storage_params(&self) -> Result<StorageValidatedArgs, String> {
+    pub fn validate_storage_params(&self) -> Result<StorageArgs, String> {
         validate_params::validate_storage_params(&self.aws_s3_args, &self.aws_config_args)
     }
 
-    pub fn validate_queue_params(&self) -> Result<QueueValidatedArgs, String> {
+    pub fn validate_queue_params(&self) -> Result<QueueArgs, String> {
         validate_params::validate_queue_params(&self.aws_sqs_args, &self.aws_config_args)
     }
 
-    pub fn validate_alert_params(&self) -> Result<AlertValidatedArgs, String> {
+    pub fn validate_alert_params(&self) -> Result<AlertArgs, String> {
         validate_params::validate_alert_params(&self.aws_sns_args, &self.aws_config_args)
     }
 
-    pub fn validate_cron_params(&self) -> Result<CronValidatedArgs, String> {
+    pub fn validate_cron_params(&self) -> Result<CronArgs, String> {
         validate_params::validate_cron_params(&self.aws_event_bridge_args, &self.aws_config_args)
     }
 }
 
 pub mod validate_params {
     use std::str::FromStr as _;
-    use std::time::Duration;
 
-    use alloy::primitives::Address;
-    use cairo_vm::types::layout_name::LayoutName;
-    use orchestrator_atlantic_service::AtlanticValidatedArgs;
-    use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
-    use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
-    use orchestrator_sharp_service::SharpValidatedArgs;
-    use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
-    use url::Url;
-
+    // Comment out external crates that don't exist yet
+    // use atlantic_service::AtlanticValidatedArgs;
     use super::alert::aws_sns::AWSSNSCliArgs;
-    use super::alert::AlertValidatedArgs;
     use super::cron::event_bridge::AWSEventBridgeCliArgs;
-    use super::cron::CronValidatedArgs;
     use super::da::ethereum::EthereumDaCliArgs;
     use super::da::DaValidatedArgs;
-    use super::database::mongodb::MongoDBCliArgs;
+    use super::database::mongodb::{MongoDBCliArgs, MongoDBValidatedArgs};
     use super::database::DatabaseValidatedArgs;
     use super::instrumentation::InstrumentationCliArgs;
     use super::prover::atlantic::AtlanticCliArgs;
@@ -324,7 +311,6 @@ pub mod validate_params {
     use super::provider::aws::AWSConfigCliArgs;
     use super::provider::{AWSConfigValidatedArgs, ProviderValidatedArgs};
     use super::queue::aws_sqs::AWSSQSCliArgs;
-    use super::queue::QueueValidatedArgs;
     use super::server::ServerCliArgs;
     use super::service::ServiceCliArgs;
     use super::settlement::ethereum::EthereumSettlementCliArgs;
@@ -332,16 +318,18 @@ pub mod validate_params {
     use super::settlement::SettlementValidatedArgs;
     use super::snos::{SNOSCliArgs, SNOSParams};
     use super::storage::aws_s3::AWSS3CliArgs;
-    use super::storage::StorageValidatedArgs;
-    use crate::alerts::aws_sns::AWSSNSValidatedArgs;
-    use crate::cli::prover_layout::ProverLayoutCliArgs;
-    use crate::config::ServiceParams;
-    use crate::cron::event_bridge::AWSEventBridgeValidatedArgs;
-    use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
-    use crate::database::mongodb::MongoDBValidatedArgs;
-    use crate::queue::sqs::AWSSQSValidatedArgs;
-    use crate::routes::ServerParams;
-    use crate::utils::telemetry::InstrumentationParams;
+    use crate::resource::args::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
+    use alloy::primitives::Address;
+    use cairo_vm::types::layout_name::LayoutName;
+    use orchestrator_atlantic_service::AtlanticValidatedArgs;
+    use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
+    use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
+    use orchestrator_sharp_service::SharpValidatedArgs;
+    use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
+    use super::instrumentation::InstrumentationCliArgs as InstrumentationParams;
+    use super::prover_layout::ProverLayoutCliArgs;
+    use super::server::ServerCliArgs as ServerParams;
+    use super::service::ServiceCliArgs as ServiceParams;
 
     pub(crate) fn validate_provider_params(
         aws_config_args: &AWSConfigCliArgs,
@@ -360,11 +348,9 @@ pub mod validate_params {
     pub(crate) fn validate_alert_params(
         aws_sns_args: &AWSSNSCliArgs,
         aws_config_args: &AWSConfigCliArgs,
-    ) -> Result<AlertValidatedArgs, String> {
+    ) -> Result<AlertArgs, String> {
         if aws_sns_args.aws_sns && aws_config_args.aws {
-            Ok(AlertValidatedArgs::AWSSNS(AWSSNSValidatedArgs {
-                topic_arn: aws_sns_args.sns_arn.clone().expect("SNS ARN is required"),
-            }))
+            Ok(AlertArgs { endpoint: aws_sns_args.sns_arn.clone().expect("SNS ARN is required") })
         } else {
             Err("Only AWS SNS is supported as of now".to_string())
         }
@@ -373,14 +359,17 @@ pub mod validate_params {
     pub(crate) fn validate_queue_params(
         aws_sqs_args: &AWSSQSCliArgs,
         aws_config_args: &AWSConfigCliArgs,
-    ) -> Result<QueueValidatedArgs, String> {
+    ) -> Result<QueueArgs, String> {
         if aws_sqs_args.aws_sqs && aws_config_args.aws {
-            Ok(QueueValidatedArgs::AWSSQS(AWSSQSValidatedArgs {
-                queue_base_url: Url::parse(&aws_sqs_args.queue_base_url.clone().expect("Queue base URL is required"))
-                    .expect("Invalid queue base URL"),
-                sqs_prefix: aws_sqs_args.sqs_prefix.clone().expect("SQS prefix is required"),
-                sqs_suffix: aws_sqs_args.sqs_suffix.clone().expect("SQS suffix is required"),
-            }))
+            Ok(QueueArgs {
+                queue_base_url: aws_sqs_args.queue_base_url.clone().expect("Queue base URL is required"),
+                prefix: format!(
+                    "{}-{}",
+                    aws_config_args.aws_prefix,
+                    aws_sqs_args.sqs_prefix.clone().expect("SQS prefix is required")
+                ),
+                suffix: aws_sqs_args.sqs_suffix.clone().expect("SQS suffix is required"),
+            })
         } else {
             Err("Only AWS SQS is supported as of now".to_string())
         }
@@ -389,11 +378,13 @@ pub mod validate_params {
     pub(crate) fn validate_storage_params(
         aws_s3_args: &AWSS3CliArgs,
         aws_config_args: &AWSConfigCliArgs,
-    ) -> Result<StorageValidatedArgs, String> {
+    ) -> Result<StorageArgs, String> {
         if aws_s3_args.aws_s3 && aws_config_args.aws {
-            Ok(StorageValidatedArgs::AWSS3(AWSS3ValidatedArgs {
-                bucket_name: aws_s3_args.bucket_name.clone().expect("Bucket name is required"),
-            }))
+            let bucket_name = aws_s3_args.bucket_name.clone().expect("Bucket name is required");
+            Ok(StorageArgs {
+                bucket_name: format!("{}-{}", aws_config_args.aws_prefix, bucket_name),
+                bucket_location_constraint: aws_s3_args.bucket_location_constraint.clone(),
+            })
         } else {
             Err("Only AWS S3 is supported as of now".to_string())
         }
@@ -402,37 +393,40 @@ pub mod validate_params {
     pub(crate) fn validate_cron_params(
         aws_event_bridge_args: &AWSEventBridgeCliArgs,
         aws_config_args: &AWSConfigCliArgs,
-    ) -> Result<CronValidatedArgs, String> {
+    ) -> Result<CronArgs, String> {
         if aws_event_bridge_args.aws_event_bridge && aws_config_args.aws {
-            let cron_type = aws_event_bridge_args.event_bridge_type.clone().expect("Event Bridge type is required");
+            let event_bridge_type =
+                aws_event_bridge_args.event_bridge_type.clone().expect("Event Bridge type is required");
+            let prefix = &aws_config_args.aws_prefix;
+            let target_queue_name = format!(
+                "{}-{}",
+                prefix,
+                aws_event_bridge_args.target_queue_name.clone().expect("Target queue name is required")
+            );
+            let trigger_rule_name = format!(
+                "{}-{}",
+                prefix,
+                aws_event_bridge_args.trigger_rule_name.clone().expect("Trigger rule name is required")
+            );
+            let trigger_role_name = format!(
+                "{}-{}",
+                prefix,
+                aws_event_bridge_args.trigger_role_name.clone().expect("Trigger role name is required")
+            );
+            let trigger_policy_name = format!(
+                "{}-{}",
+                prefix,
+                aws_event_bridge_args.trigger_policy_name.clone().expect("Trigger policy name is required")
+            );
 
-            Ok(CronValidatedArgs::AWSEventBridge(AWSEventBridgeValidatedArgs {
-                cron_type,
-                target_queue_name: aws_event_bridge_args
-                    .target_queue_name
-                    .clone()
-                    .expect("Target queue name is required"),
-                cron_time: Duration::from_secs(
-                    aws_event_bridge_args
-                        .cron_time
-                        .clone()
-                        .expect("Cron time is required")
-                        .parse::<u64>()
-                        .expect("Failed to parse cron time"),
-                ),
-                trigger_rule_name: aws_event_bridge_args
-                    .trigger_rule_name
-                    .clone()
-                    .expect("Trigger rule name is required"),
-                trigger_role_name: aws_event_bridge_args
-                    .trigger_role_name
-                    .clone()
-                    .expect("Trigger role name is required"),
-                trigger_policy_name: aws_event_bridge_args
-                    .trigger_policy_name
-                    .clone()
-                    .expect("Trigger policy name is required"),
-            }))
+            Ok(CronArgs {
+                event_bridge_type,
+                target_queue_name,
+                cron_time: aws_event_bridge_args.cron_time.clone().expect("Cron time is required"),
+                trigger_rule_name,
+                trigger_role_name,
+                trigger_policy_name,
+            })
         } else {
             Err("Only AWS Event Bridge is supported as of now".to_string())
         }
@@ -441,10 +435,10 @@ pub mod validate_params {
     pub(crate) fn validate_database_params(mongodb_args: &MongoDBCliArgs) -> Result<DatabaseValidatedArgs, String> {
         if mongodb_args.mongodb {
             Ok(DatabaseValidatedArgs::MongoDB(MongoDBValidatedArgs {
-                connection_url: Url::parse(
-                    &mongodb_args.mongodb_connection_url.clone().expect("MongoDB connection URL is required"),
-                )
-                .expect("Invalid MongoDB connection URL"),
+                connection_url: mongodb_args
+                    .mongodb_connection_url
+                    .clone()
+                    .expect("MongoDB connection URL is required"),
                 database_name: mongodb_args.mongodb_database_name.clone().expect("MongoDB database name is required"),
             }))
         } else {
@@ -475,11 +469,18 @@ pub mod validate_params {
                 let l1_core_contract_address = Address::from_str(
                     &ethereum_args.l1_core_contract_address.clone().expect("L1 core contract address is required"),
                 )
-                .expect("Invalid L1 core contract address");
-                let starknet_operator_address = Address::from_str(
-                    &ethereum_args.starknet_operator_address.clone().expect("Starknet operator address is required"),
-                )
-                .expect("Invalid Starknet operator address");
+                    .expect("Invalid L1 core contract address");
+                let ethereum_operator_address = Address::from_slice(
+                    &hex::decode(
+                        ethereum_args
+                            .starknet_operator_address
+                            .clone()
+                            .expect("Starknet operator address is required")
+                            .strip_prefix("0x")
+                            .expect("Invalid Starknet operator address"),
+                    )
+                        .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
+                );
 
                 let ethereum_params = EthereumSettlementValidatedArgs {
                     ethereum_rpc_url: ethereum_args.ethereum_rpc_url.clone().expect("Ethereum RPC URL is required"),
@@ -488,7 +489,7 @@ pub mod validate_params {
                         .clone()
                         .expect("Ethereum private key is required"),
                     l1_core_contract_address,
-                    starknet_operator_address,
+                    starknet_operator_address: ethereum_operator_address,
                 };
                 Ok(SettlementValidatedArgs::Ethereum(ethereum_params))
             }
@@ -509,7 +510,7 @@ pub mod validate_params {
                         .expect("Starknet Cairo core contract address is required"),
                     starknet_finality_retry_wait_in_secs: starknet_args
                         .starknet_finality_retry_wait_in_secs
-                        .expect("Starknet finality retry wait in seconds is required"),
+                        .unwrap_or(6),
                 };
                 Ok(SettlementValidatedArgs::Starknet(starknet_params))
             }
@@ -568,7 +569,7 @@ pub mod validate_params {
         instrumentation_args: &InstrumentationCliArgs,
     ) -> Result<InstrumentationParams, String> {
         Ok(InstrumentationParams {
-            otel_service_name: instrumentation_args.otel_service_name.clone().expect("Otel service name is required"),
+            otel_service_name: instrumentation_args.otel_service_name.clone(),
             otel_collector_endpoint: instrumentation_args.otel_collector_endpoint.clone(),
         })
     }
@@ -618,32 +619,32 @@ pub mod validate_params {
 
     #[cfg(test)]
     pub mod test {
-
         use rstest::rstest;
         use url::Url;
 
-        use crate::cli::alert::aws_sns::AWSSNSCliArgs;
-        use crate::cli::cron::event_bridge::AWSEventBridgeCliArgs;
-        use crate::cli::da::ethereum::EthereumDaCliArgs;
-        use crate::cli::database::mongodb::MongoDBCliArgs;
-        use crate::cli::instrumentation::InstrumentationCliArgs;
-        use crate::cli::prover::atlantic::AtlanticCliArgs;
-        use crate::cli::prover::sharp::SharpCliArgs;
-        use crate::cli::provider::aws::AWSConfigCliArgs;
-        use crate::cli::queue::aws_sqs::AWSSQSCliArgs;
-        use crate::cli::server::ServerCliArgs;
-        use crate::cli::service::ServiceCliArgs;
-        use crate::cli::settlement::ethereum::EthereumSettlementCliArgs;
-        use crate::cli::settlement::starknet::StarknetSettlementCliArgs;
-        use crate::cli::snos::SNOSCliArgs;
-        use crate::cli::storage::aws_s3::AWSS3CliArgs;
-        use crate::cli::validate_params::{
+        // Use super imports instead of crate-level imports
+        use super::super::alert::aws_sns::AWSSNSCliArgs;
+        use super::super::cron::event_bridge::AWSEventBridgeCliArgs;
+        use super::super::cron::event_bridge::EventBridgeType;
+        use super::super::da::ethereum::EthereumDaCliArgs;
+        use super::super::database::mongodb::MongoDBCliArgs;
+        use super::super::instrumentation::InstrumentationCliArgs;
+        use super::super::prover::atlantic::AtlanticCliArgs;
+        use super::super::prover::sharp::SharpCliArgs;
+        use super::super::provider::aws::AWSConfigCliArgs;
+        use super::super::queue::aws_sqs::AWSSQSCliArgs;
+        use super::super::server::ServerCliArgs;
+        use super::super::service::ServiceCliArgs;
+        use super::super::settlement::ethereum::EthereumSettlementCliArgs;
+        use super::super::settlement::starknet::StarknetSettlementCliArgs;
+        use super::super::snos::SNOSCliArgs;
+        use super::super::storage::aws_s3::AWSS3CliArgs;
+        use super::{
             validate_alert_params, validate_cron_params, validate_da_params, validate_database_params,
             validate_instrumentation_params, validate_prover_params, validate_provider_params, validate_queue_params,
             validate_server_params, validate_service_params, validate_settlement_params, validate_snos_params,
             validate_storage_params,
         };
-        use crate::cron::event_bridge::EventBridgeType;
 
         #[rstest]
         #[case(true)]
@@ -654,6 +655,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "madara-orchestrator".to_string(),
             };
 
             let provider_params = validate_provider_params(&aws_config_args);
@@ -675,6 +677,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "madara-orchestrator".to_string(),
             };
             let aws_sns_args: AWSSNSCliArgs = AWSSNSCliArgs { aws_sns: is_sns, sns_arn: Some("".to_string()) };
 
@@ -697,6 +700,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "madara-orchestrator".to_string(),
             };
             let aws_sqs_args: AWSSQSCliArgs = AWSSQSCliArgs {
                 aws_sqs: is_sqs,
@@ -728,6 +732,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "madara-orchestrator".to_string(),
             };
             let storage_params = validate_storage_params(&aws_s3_args, &aws_config_args);
             if is_aws && is_s3 {
@@ -853,6 +858,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "madara-orchestrator".to_string(),
             };
             let cron_params = validate_cron_params(&aws_event_bridge_args, &aws_config_args);
             if is_aws {
