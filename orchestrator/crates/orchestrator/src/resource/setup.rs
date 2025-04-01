@@ -2,7 +2,7 @@ use crate::cli::provider::ProviderValidatedArgs;
 use crate::cli::SetupCmd;
 use crate::core::cloud::CloudProvider;
 use crate::error::{OrchestratorError, OrchestratorResult};
-use crate::resource::args::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
+use crate::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
 use crate::resource::aws::s3::SSS;
 use crate::resource::aws::sqs::SQS;
 use crate::resource::Resource;
@@ -111,7 +111,7 @@ impl ResourceFactory {
         storage_params: StorageArgs,
         alert_params: AlertArgs,
     ) -> Self {
-        let mut creators = HashMap::new();
+        let creators = HashMap::new();
         ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
     }
 

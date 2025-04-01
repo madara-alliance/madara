@@ -8,7 +8,7 @@ use crate::OrchestratorResult;
 
 /// Trait defining database operations
 #[async_trait]
-pub trait DatabaseClient: Send + Sync + Sized {
+pub trait DatabaseClient: Send + Sync {
     // type ConnectArgs: Clone;
     // /// Setup the database client
     // async fn setup(args: Self::ConnectArgs) -> OrchestratorResult<Self>;

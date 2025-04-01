@@ -26,7 +26,7 @@ pub struct Message<T> {
 /// Trait defining queue operations
 #[async_trait]
 pub trait QueueClient: Send + Sync {
-    /// Connect to the queue service
+    // /// Connect to the queue service
     // async fn connect(&self) -> Result<()>;
     //
     // /// Send a message to the queue

@@ -54,7 +54,7 @@ mongodb = { workspace = true, features = ["bson-chrono-0_4", "bson-uuid-1"] }
 num = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
-omniqueue = { workspace = true, optional = true }
+omniqueue = { workspace = true }
 once_cell = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
@@ -108,7 +108,7 @@ tokio-util = "0.7.12"
 [features]
 default = ["ethereum"]
 ethereum = ["orchestrator-ethereum-da-client"]
-with_sqs = ["omniqueue"]
+with_sqs = []
 testing = []
 
 [dev-dependencies]

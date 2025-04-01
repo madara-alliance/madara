@@ -9,9 +9,9 @@ pub mod config;
 pub use client::database::DatabaseClient;
 pub use client::event_bus::{Event, EventBusClient, RuleTarget};
 pub use client::notification::{Notification, NotificationClient};
-pub use client::r#mod::{Message, QueueClient};
+pub use client::queue::{Message, QueueClient};
 pub use client::scheduler::{ScheduleTarget, ScheduleType, SchedulerClient};
-pub use client::r#mod::{ObjectMetadata, StorageClient};
+pub use client::storage::{ObjectMetadata, StorageClient};
 
 // Re-export Madara-specific types
 pub use madara::cron::{CronClient, TargetConfig, TriggerType};

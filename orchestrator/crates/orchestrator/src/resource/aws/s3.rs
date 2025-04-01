@@ -1,6 +1,6 @@
 use crate::core::cloud::CloudProvider;
 use crate::error::{OrchestratorError, OrchestratorResult};
-use crate::resource::args::StorageArgs;
+use crate::params::StorageArgs;
 use crate::resource::Resource;
 use async_trait::async_trait;
 use aws_sdk_s3::{Client as S3Client, Client, Error as S3Error};

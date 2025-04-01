@@ -150,8 +150,8 @@ impl Config {
 
     fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient> {
         match prover_params {
-            ProverValidatedArgs::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
-            ProverValidatedArgs::Atlantic(atlantic_params) => {
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+            ProverConfig::Atlantic(atlantic_params) => {
                 Box::new(AtlanticProverService::new_with_args(atlantic_params))
             }
         }

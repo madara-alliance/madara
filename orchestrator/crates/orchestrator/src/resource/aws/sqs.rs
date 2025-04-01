@@ -1,7 +1,7 @@
 use crate::core::cloud::CloudProvider;
 use crate::core::QueueType;
 use crate::error::{OrchestratorError, OrchestratorResult};
-use crate::resource::args::QueueArgs;
+use crate::params::QueueArgs;
 use crate::resource::config::QUEUES;
 use crate::resource::Resource;
 use async_trait::async_trait;
