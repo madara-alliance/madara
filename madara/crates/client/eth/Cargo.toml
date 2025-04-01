@@ -49,6 +49,8 @@ tokio = { workspace = true, features = [
   "parking_lot",
   "test-util",
   "signal",
+  "rt-multi-thread",
+  "sync",
 ] }
 url.workspace = true
 

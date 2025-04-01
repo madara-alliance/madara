@@ -1,0 +1,91 @@
+name: Task - Test E2E
+
+# This workflow runs end-to-end tests for the Orchestrator
+# against the Madara binary to ensure full integration testing
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETHEREUM_SEPOLIA_BLAST_RPC:
+        required: true
+      RPC_FOR_SNOS:
+        required: true
+
+jobs:
+  test-e2e:
+    runs-on: karnot-arc-runner-set
+
+    services:
+      localstack:
+        image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+        env:
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          rust-version: ${{ env.TESTING_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-scarb: true
+          install-foundry: true
+          install-mold: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      - name: Check Anvil Installation & run Anvil
+        run: |
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+              anvil --block-time 1 &
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+
+      - name: Check Rust version
+        run: rustup show
+
+      - name: Run Orchestrator e2e test
+        env:
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC || '' }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: |
+          # Uses the --release to benefit from "build" cache
+          RUST_LOG=info cargo +nightly-2024-09-05 nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast

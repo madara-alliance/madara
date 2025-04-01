@@ -49,6 +49,9 @@ Madara is a powerful Starknet client written in Rust.
 
 [⬅️ back to top](#-madara-starknet-client)
 
+> [!TIP]  
+> For an easier time setting up machine for local development, consult [Using Dev Containers](.devcontainer/README.md).
+
 ### Run from Source
 
 #### 1. Install dependencies
@@ -69,6 +72,9 @@ git clone https://github.com/madara-alliance/madara .
 ```
 
 #### 2. Build Madara
+
+> [!TIP]  
+> Ensure `make snos` has been run prior to building Madara.
 
 You can choose between different build modes:
 
