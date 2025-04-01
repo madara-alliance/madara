@@ -45,7 +45,7 @@ jobs:
       - uses: ./.github/actions/rust-setup
         with:
           # Uses the testing cache key as we are using the --profile dev later
-          cache-key: COVERAGE
+          cache-key: coverage-orchestrator
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
