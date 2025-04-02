@@ -5,9 +5,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
 pub enum StatsLevel {
     /// Disable all metrics
-    DisableAll = 0,
+    DisableAll,
     /// Disable timer stats, and skip histogram stats
-    ExceptHistogramOrTimers = 2,
+    ExceptHistogramOrTimers,
     /// Skip timer stats
     ExceptTimers,
     /// Collect all stats except time inside mutex lock AND time spent on
