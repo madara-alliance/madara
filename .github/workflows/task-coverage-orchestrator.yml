@@ -23,6 +23,9 @@ jobs:
     services:
       localstack:
         image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+        credentials:
+           username: ${{ secrets.DOCKERHUB_USERNAME }}
+           password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           SERVICES: s3, sqs, sns
           DEFAULT_REGION: us-east-1
@@ -32,6 +35,9 @@ jobs:
           - 4566:4566
       mongodb:
         image: mongo:latest
+        credentials:
+           username: ${{ secrets.DOCKERHUB_USERNAME }}
+           password: ${{ secrets.DOCKERHUB_TOKEN }}
         ports:
           - 27017:27017
 
