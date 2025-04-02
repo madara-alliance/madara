@@ -18,7 +18,7 @@ impl Clients {
         &self.eth_client
     }
 
-    /// To deploy the instance of ethereum and starknet and returning the struct.
+    // To deploy the instance of ethereum and starknet and returning the struct.
     // pub async fn init(config: &CliArgs) -> Self {
     //     let client_instance = EthereumClient::attach(
     //         Option::from(config.eth_rpc.clone()),

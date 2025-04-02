@@ -18,11 +18,11 @@ use crate::helpers::account_actions::{get_transaction_receipt, AccountActions};
 pub mod banner;
 pub mod constants;
 
-pub async fn invoke_contract<'a>(
+pub async fn invoke_contract(
     contract: Felt,
     method: &str,
     calldata: Vec<Felt>,
-    account: &RpcAccount<'a>,
+    account: &RpcAccount<'_>,
 ) -> InvokeTransactionResult {
     let txn_res =
         account.invoke_contract(contract, method, calldata, None).send().await.expect("Error in invoking the contract");

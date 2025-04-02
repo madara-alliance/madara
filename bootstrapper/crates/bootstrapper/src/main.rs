@@ -301,8 +301,8 @@ async fn setup_core_contract(config_file: &ConfigFile, clients: &Clients) -> Cor
     core_contract_client
 }
 
-async fn setup_eth_bridge<'a>(
-    account: Option<RpcAccount<'a>>,
+async fn setup_eth_bridge(
+    account: Option<RpcAccount<'_>>,
     core_contract_client: &CoreContractStarknetL1Output,
     config_file: &ConfigFile,
     clients: &Clients,
@@ -324,8 +324,8 @@ async fn setup_eth_bridge<'a>(
     eth_bridge_setup_outputs
 }
 
-async fn upgrade_eth_bridge<'a>(
-    account: Option<RpcAccount<'a>>,
+async fn upgrade_eth_bridge(
+    account: Option<RpcAccount<'_>>,
     config_file: &ConfigFile,
     clients: &Clients,
 ) -> color_eyre::Result<()> {
@@ -360,8 +360,8 @@ async fn upgrade_eth_bridge<'a>(
     Ok(())
 }
 
-async fn setup_erc20_bridge<'a>(
-    account: Option<RpcAccount<'a>>,
+async fn setup_erc20_bridge(
+    account: Option<RpcAccount<'_>>,
     core_contract_client: &CoreContractStarknetL1Output,
     config_file: &ConfigFile,
     clients: &Clients,
@@ -383,7 +383,7 @@ async fn setup_erc20_bridge<'a>(
     erc20_bridge_setup_outputs
 }
 
-async fn setup_udc<'a>(account: Option<RpcAccount<'a>>, config_file: &ConfigFile, clients: &Clients) -> UdcSetupOutput {
+async fn setup_udc(account: Option<RpcAccount<'_>>, config_file: &ConfigFile, clients: &Clients) -> UdcSetupOutput {
     let account = match account {
         Some(account) => account,
         None => get_account(clients, config_file).await,
@@ -400,8 +400,8 @@ async fn setup_udc<'a>(account: Option<RpcAccount<'a>>, config_file: &ConfigFile
     udc_setup_outputs
 }
 
-async fn setup_argent<'a>(
-    account: Option<RpcAccount<'a>>,
+async fn setup_argent(
+    account: Option<RpcAccount<'_>>,
     config_file: &ConfigFile,
     clients: &Clients,
 ) -> ArgentSetupOutput {
@@ -417,8 +417,8 @@ async fn setup_argent<'a>(
     argent_setup_outputs
 }
 
-async fn setup_braavos<'a>(
-    account: Option<RpcAccount<'a>>,
+async fn setup_braavos(
+    account: Option<RpcAccount<'_>>,
     config_file: &ConfigFile,
     clients: &Clients,
     udc_address: Felt,
