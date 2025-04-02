@@ -3,6 +3,11 @@ name: Task - Lint Cargo
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      bootstrapper-artifacts-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
 
 jobs:
   cargo-lint:
@@ -24,6 +29,12 @@ jobs:
           install-scarb: true
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+
+      - name: Download Bootstrapper artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
+          path: artifacts
 
       - name: Madara Format and clippy
         run: |

@@ -42,6 +42,9 @@ jobs:
   lint-cargo:
     needs: [update-db-version, build-madara-cairo]
     uses: ./.github/workflows/task-lint-cargo.yml
+    with:
+      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
+    secrets: inherit
 
   # Run Madara tests
   test-madara:
@@ -85,5 +88,13 @@ jobs:
     needs: build-madara-cairo
     uses: ./.github/workflows/task-coverage-orchestrator.yml
     with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  coverage-bootstrapper:
+    needs: build-madara-cairo
+    uses: ./.github/workflows/task-coverage-bootstrapper.yml
+    with:
+      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
       madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
     secrets: inherit

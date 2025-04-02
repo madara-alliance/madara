@@ -1,0 +1,91 @@
+name: Task - Bootstrapper Coverage
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+      bootstrapper-artifacts-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETH_FORK_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  test-with-coverage-bootstrapper:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          # Uses the dev cache key as we are using the --profile dev later
+          cache-key: COVERAGE
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: stable
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
+      - name: Prepare Madara Environment (Bootstrapper)
+        run: |
+          mv target/release/madara ../madara-binary          
+          echo "MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
+      - name: Download Bootstrapper artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
+          path: artifacts
+
+      - name: Run tests with coverage
+        continue-on-error: true
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/madara-bootstrapper)
+          rm -f target/madara-bootstrapper-* lcov.info
+
+          # run tests for madara client / primitive crates
+          cargo llvm-cov nextest \
+                  --release \
+                  --features testing \
+                  --lcov \
+                  --output-path lcov.info \
+                  --package "madara-bootstrapper" \
+                  --no-fail-fast
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info
+          debug: true

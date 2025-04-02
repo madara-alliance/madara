@@ -153,15 +153,14 @@ fn get_test_config_file() -> ConfigFile {
 }
 
 async fn wait_for_madara() -> color_eyre::Result<()> {
-    env::set_current_dir("madara").expect("madara folder doesn't exist.");
-    fs::create_dir_all("../madara-dbs").expect("unable to create folders");
-    env::set_var("RUST_LOG", "info");
+    let target_bin = env::var("MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH").expect("failed to get binary path");
+    let target_bin = PathBuf::from(target_bin);
 
-    Command::new("cargo")
-        .arg("+1.81")
-        .arg("run")
-        .arg("--release")
-        .arg("--")
+    if !target_bin.exists() {
+        panic!("No binary to run: {:?}", target_bin)
+    }
+
+    Command::new(target_bin)
         .arg("--name")
         .arg("madara")
         .arg("--base-path")
@@ -188,8 +187,6 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("http://localhost:8545")
         .spawn()?;
 
-    env::set_current_dir("../").expect("Navigate back failed.");
-
     wait_for_madara_to_be_ready(Url::parse("http://localhost:19944")?).await?;
 
     Ok(())
@@ -199,7 +196,7 @@ fn ensure_toolchain() -> color_eyre::Result<()> {
     let output = Command::new("rustup").arg("toolchain").arg("list").output()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    if !output_str.contains("1.81") {
+    if !output_str.contains("1.85") {
         Command::new("rustup").arg("install").arg("1.81").status()?;
     }
     Ok(())
