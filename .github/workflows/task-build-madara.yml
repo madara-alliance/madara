@@ -44,29 +44,29 @@ jobs:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "18"
-  
+
       - name: Install Ganache
         run: |
           npm install -g ganache@7.9.0
           ganache --version
-  
+
       - name: Install Solc
         run: |
           pip install solc-select
           solc-select install 0.8.19
           solc-select use 0.8.19
           solc --version
-      
+
       - name: Build the artifacts
         run: |
           git submodule update --init --recursive
           make artifacts-linux
-    
+
       # Build Madara, Orchestrator and test contracts
       - name: Cargo build binaries
         run: |
@@ -123,7 +123,7 @@ jobs:
           name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
           path: target/release/madara-bootstrapper
           retention-days: 1
-      
+
       # Generate hash for Cairo artifacts
       - name: Generate Cairo artifacts hash
         id: generate_cairo_hash
@@ -139,7 +139,7 @@ jobs:
           # Save hash to file for artifact sharing
           echo "$HASH" > cairo_artifacts_hash.txt
           echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
-      
+
       - name: Generate Bootstrapper artifacts hash
         id: generate_bootstrapper_artifacts_hash
         run: |
