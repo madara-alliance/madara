@@ -2,7 +2,6 @@ use alloy::hex::FromHexError;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::list_buckets::ListBucketsError;
-use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use thiserror::Error;

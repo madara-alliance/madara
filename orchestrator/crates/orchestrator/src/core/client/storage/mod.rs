@@ -32,14 +32,16 @@ pub struct ObjectMetadata {
 #[async_trait]
 pub trait StorageClient: Send + Sync {
     /// Initialize the storage client
-    async fn get_data(&self, key: &str) -> OrchestratorResult<Bytes>;
+    async fn get_data(&self, key: String) -> OrchestratorResult<Bytes>;
 
     /// Check if a bucket exists
-    async fn put_data(&self, data: Bytes, key: &str) -> OrchestratorResult<()>;
+    async fn put_data(&self, data: Bytes, key: String) -> OrchestratorResult<()>;
 
     /// Create a bucket
-    async fn create_bucket(&self, bucket: &str) -> OrchestratorResult<()>;
+    async fn create_bucket(&self, bucket: String) -> OrchestratorResult<()>;
 
     /// Delete a bucket
-    async fn delete_bucket(&self, bucket: &str) -> OrchestratorResult<()>;
+    async fn delete_bucket(&self, bucket: String) -> OrchestratorResult<()>;
+    /// Delete a bucket
+    async fn delete_data(&self, key: String) -> OrchestratorResult<()>;
 }

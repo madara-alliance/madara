@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_sqs::Client;
 use url::Url;
@@ -5,7 +6,6 @@ use crate::core::client::queue::QueueClient;
 use crate::OrchestratorResult;
 use crate::params::QueueArgs;
 use crate::queue::QueueType;
-use crate::queue::sqs::AWSSQSValidatedArgs;
 
 pub struct SQS {
     client: Client,
@@ -37,7 +37,6 @@ impl SQS {
     }
 }
 
+#[async_trait]
 impl QueueClient for SQS {
-
-
 }

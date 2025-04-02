@@ -1,11 +1,7 @@
 pub mod sqs;
 
 use async_trait::async_trait;
-use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
-
-use crate::error::Result;
 
 /// Message with metadata
 #[derive(Debug, Clone)]
