@@ -68,6 +68,7 @@ jobs:
     uses: ./.github/workflows/task-test-orchestrator-e2e.yml
     with:
       madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
     secrets: inherit
 
   # Run CLI tests against the built binary

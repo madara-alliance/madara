@@ -214,8 +214,8 @@ pub async fn wait_for_madara_to_be_ready(rpc_url: Url) -> color_eyre::Result<()>
             res.error_for_status()?;
             Ok(true)
         },
-        Duration::from_secs(5),
-        250,
+        Duration::from_secs(30),
+        10,
     )
     .await
     .expect("Could not get health of Madara");

@@ -10,6 +10,10 @@ on:
         description: "Hash used to retrieve the artifact"
         required: true
         type: string
+      bootstrapper-artifacts-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
     secrets:
       ETHEREUM_SEPOLIA_BLAST_RPC:
         required: true
@@ -85,6 +89,11 @@ jobs:
           solc-select install 0.8.19
           solc-select use 0.8.19
           solc --version
+      - name: Download Bootstrapper artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
+          path: artifacts
 
       - name: Check Anvil Installation & run Anvil
         run: |
