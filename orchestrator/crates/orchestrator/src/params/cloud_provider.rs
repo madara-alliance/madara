@@ -1,7 +1,7 @@
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::{Region, SdkConfig};
 use aws_credential_types::Credentials;
-use crate::cli::provider::AWSConfigValidatedArgs;
+use crate::cli::provider::aws::AWSConfigCliArgs;
 
 #[derive(Debug, Clone)]
 pub struct AWSCredentials {
@@ -20,8 +20,8 @@ impl AWSCredentials {
     }
 }
 
-impl From<AWSConfigValidatedArgs> for AWSCredentials {
-    fn from(args: AWSConfigValidatedArgs) -> Self {
+impl From<AWSConfigCliArgs> for AWSCredentials {
+    fn from(args: AWSConfigCliArgs) -> Self {
         Self {
             access_key_id: args.aws_access_key_id,
             secret_access_key: args.aws_secret_access_key,

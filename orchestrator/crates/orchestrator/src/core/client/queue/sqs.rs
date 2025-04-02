@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_sqs::Client;
 use url::Url;
@@ -36,7 +37,6 @@ impl SQS {
     }
 }
 
+#[async_trait]
 impl QueueClient for SQS {
-
-
 }

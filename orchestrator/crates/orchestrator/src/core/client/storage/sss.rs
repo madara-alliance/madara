@@ -1,18 +1,24 @@
-use crate::core::client::StorageClient;
-use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
+use crate::core::client::storage::StorageClient;
 use crate::params::StorageArgs;
 use crate::{OrchestratorError, OrchestratorResult};
+use async_trait::async_trait;
 use aws_config::SdkConfig;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
-use aws_sdk_s3::Client;
+use aws_sdk_s3::{
+    config::Region,
+    error::SdkError,
+    operation::{
+        create_bucket::CreateBucketError, delete_bucket::DeleteBucketError, delete_object::DeleteObjectError,
+        put_object::PutObjectError,
+    },
+    types::BucketLocationConstraint,
+    Client,
+};
 use bytes::Bytes;
-use color_eyre::eyre::Context;
 use std::str::FromStr;
-
+use std::sync::Arc;
 
 pub struct SSS {
-    client: Client,
+    client: Arc<Client>,
     bucket: String,
     bucket_location_constraint: BucketLocationConstraint,
 }
@@ -23,89 +29,82 @@ impl SSS {
         s3_config_builder.set_force_path_style(Some(true));
         let client = Client::from_conf(s3_config_builder.build());
 
-        let region_str = aws_config.region().unwrap_or_else(|| "us-east-1".into());
-        let bucket_location_constraint = BucketLocationConstraint::from_str(region_str.as_str())?;
-        Ok(Self { client, bucket: s3_config.bucket_name.clone(), bucket_location_constraint })
+        let region_str = aws_config
+            .region()
+            .ok_or(OrchestratorError::InvalidCloudProviderError("AWS region is not set".to_string()))?;
+        let bucket_location_constraint = BucketLocationConstraint::from_str(region_str.as_ref())
+            .map_err(|_| OrchestratorError::InvalidRegionError)?;
+
+        Ok(Self { client: Arc::new(client), bucket: s3_config.bucket_name.clone(), bucket_location_constraint })
     }
 }
 
+#[async_trait]
 impl StorageClient for SSS {
-    async fn get_data(&self, key: &str) -> OrchestratorResult<Bytes> {
-        let response = self
+    async fn get_data(&self, key: String) -> OrchestratorResult<Bytes> {
+        let output = self
             .client
             .get_object()
             .bucket(&self.bucket)
-            .key(key)
+            .key(&key)
             .send()
-            .await?;
+            .await
+            .map_err(|e| OrchestratorError::AWSS3Error(e))?;
 
-        let data_stream = response.body.collect().await.map_err(|e| OrchestratorError::AWSS3StreamError(e.to_string()))?;
+        let data = output.body.collect().await.map_err(|e| OrchestratorError::AWSS3StreamError(e.to_string()))?;
 
-        tracing::debug!("DataStorage: Collected response body into data stream from {}, key={}", self.bucket, key);
-        let data_bytes = data_stream.into_bytes();
-        tracing::debug!(
-            log_type = "DataStorage",
-            category = "data_storage_call",
-            data_bytes = data_bytes.len(),
-            "Successfully retrieved and converted data from {}, key={}",
-            self.bucket,
-            key
-        );
-        Ok(data_bytes)
+        Ok(data.into_bytes())
     }
 
-    /// Function to put the data to S3 bucket by Key.
-    async fn put_data(&self, data: Bytes, key: &str) -> color_eyre::Result<()> {
+    async fn put_data(&self, data: Bytes, key: String) -> OrchestratorResult<()> {
         self.client
             .put_object()
             .bucket(&self.bucket)
-            .key(key)
-            .body(ByteStream::from(data))
-            .content_type("application/json")
+            .key(&key)
+            .body(data.into())
             .send()
             .await
-            .context(format!("Failed to put object in bucket: {}, key: {}", self.bucket, key))?;
+            .map_err(|e: SdkError<PutObjectError>| OrchestratorError::AwsError(e.to_string()))?;
 
-        tracing::debug!(
-            log_type = "DataStorage",
-            category = "data_storage_call",
-            "Successfully put data into {}. key={}",
-            self.bucket,
-            key
-        );
         Ok(())
     }
 
-    async fn create_bucket(&self, bucket_name: &str) -> color_eyre::Result<()> {
-        if self.bucket_location_constraint.as_str() == "us-east-1" {
-            self.client
-                .create_bucket()
-                .bucket(bucket_name)
-                .send()
-                .await
-                .context(format!("Failed to create bucket: {} in us-east-1", bucket_name))?;
-            return Ok(());
-        }
-
-        let bucket_configuration = Some(
-            CreateBucketConfiguration::builder().location_constraint(self.bucket_location_constraint.clone()).build(),
-        );
+    async fn create_bucket(&self, bucket: String) -> OrchestratorResult<()> {
+        let config = aws_sdk_s3::types::CreateBucketConfiguration::builder()
+            .location_constraint(self.bucket_location_constraint.clone())
+            .build();
 
         self.client
             .create_bucket()
-            .bucket(bucket_name)
-            .set_create_bucket_configuration(bucket_configuration)
+            .bucket(&bucket)
+            .create_bucket_configuration(config)
             .send()
             .await
-            .context(format!(
-                "Failed to create bucket: {} in region: {}",
-                bucket_name,
-                self.bucket_location_constraint.as_str()
-            ))?;
+            .map_err(|e: SdkError<CreateBucketError>| OrchestratorError::AwsError(e.to_string()))?;
 
         Ok(())
     }
-    async fn delete_bucket(&self, bucket: &str) -> OrchestratorResult<()> {
+
+    async fn delete_bucket(&self, bucket: String) -> OrchestratorResult<()> {
+        self.client
+            .delete_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .map_err(|e: SdkError<DeleteBucketError>| OrchestratorError::AwsError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_data(&self, key: String) -> OrchestratorResult<()> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .map_err(|e: SdkError<DeleteObjectError>| OrchestratorError::AwsError(e.to_string()))?;
+
         Ok(())
     }
 }
