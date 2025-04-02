@@ -77,7 +77,6 @@ jobs:
           # run tests for madara client / primitive crates
           cargo llvm-cov nextest \
                   --release \
-                  --features testing \
                   --lcov \
                   --output-path lcov.info \
                   --package "madara-bootstrapper" \

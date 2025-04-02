@@ -173,13 +173,14 @@ To run the Madara Bootstrapper on an Ubuntu machine with AMD architecture, pleas
     cargo build --release
     ```
 
-11. **Run the Setup Command for L1**: Execute the following command to set up the L1 environment. Make sure to update the `devnet.json` file as per your needs.
+11. **Run the Setup Command for L1**: Execute the following command to set up the L1 environment.
 
     ```shell
     RUST_LOG=debug cargo run --release -- --mode setup-l1 --config src/configs/devnet.json
     ```
 
     > **Note**: The default configuration file is located at `src/configs/devnet.json`. Please update it according to your requirements.
+    > **Note**: Make sure to update the `devnet.json` file as per your needs.
 
 12. **Update Configuration**: After running the `setup-l1` command, you will receive a response similar to the following:
 
@@ -202,21 +203,25 @@ To run the Madara Bootstrapper on an Ubuntu machine with AMD architecture, pleas
 
 ### Contract Descriptions
 
-| Contract                                      | Source Link                                                                                             | Local Path                                                                                                       |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| OpenZeppelinAccount (legacy : starknet)       | <https://sepolia.starkscan.co/class/0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6> | [src/contracts/OpenZeppelinAccount.json](./src/contracts/OpenZeppelinAccount.json)                               |
-| OpenZeppelinAccount (modified : openzeppelin) | [src/contracts/account.cairo](src/contracts/account.cairo)                                              | [src/contracts/OpenZeppelinAccountCairoOne.sierra.json](./src/contracts/OpenZeppelinAccountCairoOne.sierra.json) |
-| UDC (Universal Deployer Contract)             | <https://sepolia.starkscan.co/class/0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69> | [src/contracts/udc.json](./src/contracts/udc.json)                                                               |
+| Contract | Source Link | Local Path |
+| --- | --- | --- |
+| OpenZeppelinAccount (legacy: starknet) | [View on Starkscan][oz-account] | [src/contracts/OpenZeppelinAccount.json](./src/contracts/OpenZeppelinAccount.json) |
+| OpenZeppelinAccount (modified: openzeppelin) | [src/contracts/account.cairo](src/contracts/account.cairo) | [sierra file][oz-cairo-one] |
+| UDC (Universal Deployer Contract) | [View on Starkscan][udc-link] | [src/contracts/udc.json](./src/contracts/udc.json) |
 
-Here are some contract descriptions on why they are used
-in our context.
+[oz-account]: https://sepolia.starkscan.co/class/0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6
+[oz-cairo-one]: ./src/contracts/OpenZeppelinAccountCairoOne.sierra.json
+[udc-link]: https://sepolia.starkscan.co/class/0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69
 
-- `OpenZeppelinAccount (legacy : starknet)` : Contract used for declaring a temp account for declaring V1
+Here are some contract descriptions on why they are used in our context.
+
+- `OpenZeppelinAccount (legacy: starknet)`: Contract used for declaring a temp account for declaring V1
   contract that will be used to deploy the user account with provided private key in env.
-- `OpenZeppelinAccount (modified : openzeppelin)` : OZ account contract modified to include `deploy_contract`
+- `OpenZeppelinAccount (modified: openzeppelin)`: OZ account contract modified to include `deploy_contract`
   function as we deploy the UDC towards the end of the bootstrapper setup.
 
 > [!IMPORTANT]
-> For testing in Github CI we are using the madara binary build with
-> `--disable-fee-flag`. The source for madara code :
-> <https://github.com/karnotxyz/madara/tree/madara-ci-build>
+> For testing in Github CI we are using the madara binary build with `--disable-fee-flag`.
+> The source for madara code: [madara-ci-build][madara-source]
+
+[madara-source]: https://github.com/karnotxyz/madara/tree/madara-ci-build
