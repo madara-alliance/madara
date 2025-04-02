@@ -79,6 +79,18 @@ jobs:
           mv target/release/madara ./madara-binary          
           echo "MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
           echo "Binary path: $(pwd)/madara-binary"
+
+          # Add environment variable for devnet.yaml file path
+          echo "MADARA_BOOTSTRAPPER_CONFIG_PATH=$(pwd)/configs/presets/devnet.yaml" >> $GITHUB_ENV
+          echo "Config path: $(pwd)/configs/presets/devnet.yaml"
+
+          # Verify the config file exists
+          if [ -f "$(pwd)/configs/presets/devnet.yaml" ]; then
+            echo "Config file exists at specified path"
+          else
+            echo "Config file NOT found at specified path!"
+            ls -la $(pwd)/configs/presets/ || echo "Directory not found!"
+          fi
       - name: Download Bootstrapper artifacts
         uses: actions/download-artifact@v4
         with:
