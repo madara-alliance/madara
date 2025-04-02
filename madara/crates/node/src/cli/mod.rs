@@ -229,13 +229,13 @@ impl RunCmd {
     // better UX.
     pub fn apply_arg_preset(mut self) -> Self {
         if self.args_preset.warp_update_sender {
-            self.gateway_params.feeder_gateway_enable = true;
+            self.gateway_params.feeder_gateway = true;
             self.gateway_params.gateway_port = self.l2_sync_params.warp_update_port_fgw;
             self.rpc_params.rpc_admin = true;
             self.rpc_params.rpc_admin_port = self.l2_sync_params.warp_update_port_rpc;
         } else if self.args_preset.gateway {
-            self.gateway_params.feeder_gateway_enable = true;
-            self.gateway_params.gateway_enable = true;
+            self.gateway_params.feeder_gateway = true;
+            self.gateway_params.gateway = true;
             self.gateway_params.gateway_external = true;
         } else if self.args_preset.rpc {
             self.rpc_params.rpc_admin = true;

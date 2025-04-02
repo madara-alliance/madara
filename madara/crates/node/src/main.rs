@@ -189,7 +189,7 @@ async fn setup_app() -> anyhow::Result<ServiceMonitor> {
             deferred_service_start.push(MadaraServiceId::RpcAdmin);
         }
 
-        if run_cmd.gateway_params.feeder_gateway_enable {
+        if run_cmd.gateway_params.any_enabled() {
             deferred_service_start.push(MadaraServiceId::Gateway);
         }
 
@@ -346,7 +346,7 @@ async fn setup_app() -> anyhow::Result<ServiceMonitor> {
         app.activate(MadaraServiceId::RpcAdmin);
     }
 
-    if run_cmd.gateway_params.feeder_gateway_enable && !warp_update_receiver {
+    if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {
         app.activate(MadaraServiceId::Gateway);
     }
 

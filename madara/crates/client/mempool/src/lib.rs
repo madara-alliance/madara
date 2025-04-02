@@ -42,6 +42,8 @@ pub enum MempoolError {
     InnerMempool(#[from] TxInsertionError),
     #[error("Converting validated transaction: {0:#}")]
     ValidatedToBlockifier(#[from] ValidatedToBlockifierTxError),
+    #[error("Invalid nonce")]
+    InvalidNonce,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -119,6 +121,7 @@ impl From<MempoolError> for SubmitTransactionError {
             E::InnerMempool(TxInsertionError::NonceConflict) => {
                 rejected(DuplicatedTransaction, "A transaction with this nonce already exists in the transaction pool")
             }
+            E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
         }
     }
 }
@@ -279,7 +282,7 @@ impl Mempool {
 
         if let Some(nonce_cached) = nonce_cached {
             match nonce.cmp(&nonce_cached) {
-                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Less => Err(MempoolError::InvalidNonce),
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
                 std::cmp::Ordering::Greater => nonce_prev_check,
             }
@@ -293,7 +296,7 @@ impl Mempool {
                 .unwrap_or_default(); // Defaults to Felt::ZERO if no nonce in db
 
             match nonce.cmp(&nonce_target) {
-                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Less => Err(MempoolError::InvalidNonce),
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
                 std::cmp::Ordering::Greater => nonce_prev_check,
             }
@@ -1560,7 +1563,7 @@ mod test {
 
         assert_matches::assert_matches!(
             mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO),
-            Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
+            Err(MempoolError::InvalidNonce)
         );
 
         // We need to compute the next nonce inside retrieve nonce_info, so

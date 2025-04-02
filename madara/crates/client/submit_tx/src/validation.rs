@@ -54,7 +54,7 @@ impl From<StatefulValidatorError> for SubmitTransactionError {
             err @ E::StateError(_) => rejected(ValidateFailure, format!("{err:#}")),
             E::TransactionExecutionError(err) => err.into(),
             err @ E::TransactionExecutorError(_) => rejected(ValidateFailure, format!("{err:#}")),
-            err @ E::TransactionPreValidationError(_) => err.into(),
+            E::TransactionPreValidationError(err) => err.into(),
         }
     }
 }
