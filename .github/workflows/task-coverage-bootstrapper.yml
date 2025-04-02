@@ -84,25 +84,6 @@ jobs:
         with:
           name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
           path: artifacts
-      - name: Locate and move config file
-        run: |
-          echo "Current directory: $(pwd)"
-
-          # Find all devnet.yaml files in the repository
-          echo "Searching for devnet.yaml files..."
-          FOUND_FILES=$(find /home/runner/_work/madara -name "devnet.yaml" -type f)
-          echo "Found files:"
-          echo "$FOUND_FILES"
-
-          # Create target directory if it doesn't exist
-          mkdir -p configs/presets/
-
-
-            FIRST_FILE=$(echo "$FOUND_FILES" | head -n 1)
-            echo "Copying $FIRST_FILE to configs/presets/devnet.yaml"
-            cp "$FIRST_FILE" configs/presets/devnet.yaml
-            echo "Verifying copy:"
-            ls -la configs/presets/devnet.yaml
 
       - name: Start Anvil with fork
         run: |
