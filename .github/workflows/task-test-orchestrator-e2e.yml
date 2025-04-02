@@ -70,6 +70,10 @@ jobs:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
       - name: Install Ganache
         run: |
           npm install -g ganache@7.9.0

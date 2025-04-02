@@ -76,8 +76,9 @@ jobs:
 
       - name: Prepare Madara Environment (Bootstrapper)
         run: |
-          mv target/release/madara ../madara-binary          
+          mv target/release/madara ./madara-binary          
           echo "MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
+          echo "Binary path: $(pwd)/madara-binary"
       - name: Download Bootstrapper artifacts
         uses: actions/download-artifact@v4
         with:
@@ -104,12 +105,12 @@ jobs:
           fi
 
       - name: Run tests with coverage
-        continue-on-error: true
+        continue-on-error: false
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara-bootstrapper)
           rm -f target/madara-bootstrapper-* lcov.info
 
-          # run tests for madara client / primitive crates
+          # run tests for bootstrapper crate
           cargo llvm-cov nextest \
                   --release \
                   --lcov \
