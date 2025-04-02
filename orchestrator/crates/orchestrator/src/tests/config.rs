@@ -23,23 +23,23 @@ use crate::alerts::Alerts;
 use crate::cli::alert::AlertValidatedArgs;
 use crate::cli::da::DaValidatedArgs;
 use crate::cli::database::DatabaseValidatedArgs;
+use crate::cli::database::mongodb::MongoDBValidatedArgs;
 use crate::cli::prover::ProverValidatedArgs;
 use crate::cli::provider::AWSConfigValidatedArgs;
 use crate::cli::queue::QueueValidatedArgs;
 use crate::cli::settlement::SettlementValidatedArgs;
 use crate::cli::snos::SNOSParams;
 use crate::cli::storage::StorageValidatedArgs;
-use crate::config::{get_aws_config, Config, OrchestratorParams, ProviderConfig, ServiceParams};
+use crate::config::{get_aws_config, Config, OrchestratorParams, ProviderConfig, ServiceParams, ServerParams};
 use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
 use crate::data_storage::{DataStorage, MockDataStorage};
-use crate::database::mongodb::MongoDBValidatedArgs;
 use crate::database::{Database, MockDatabase};
-use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
+use crate::params::OTELConfig;
 use crate::queue::sqs::AWSSQSValidatedArgs;
 use crate::queue::{MockQueueProvider, QueueProvider};
-use crate::routes::{get_server_url, setup_server, ServerParams};
-use crate::utils::telemetry::InstrumentationParams;
+use crate::routes::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
@@ -484,13 +484,12 @@ struct EnvParams {
     prover_params: ProverValidatedArgs,
     orchestrator_params: OrchestratorParams,
     #[allow(dead_code)]
-    instrumentation_params: InstrumentationParams,
+    instrumentation_params: OTELConfig,
 }
 
 fn get_env_params() -> EnvParams {
     let db_params = DatabaseValidatedArgs::MongoDB(MongoDBValidatedArgs {
-        connection_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"))
-            .expect("Invalid MongoDB connection URL"),
+        connection_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
         database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
     });
 
@@ -570,11 +569,11 @@ fn get_env_params() -> EnvParams {
         prover_layout_name: LayoutName::dynamic,
     };
 
-    let instrumentation_params = InstrumentationParams {
-        otel_service_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_OTEL_SERVICE_NAME"),
-        otel_collector_endpoint: get_env_var_optional("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")
+    let instrumentation_params = OTELConfig {
+        service_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_OTEL_SERVICE_NAME"),
+        endpoint: get_env_var_optional("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")
             .expect("Couldn't get otel collector endpoint")
-            .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")),
+            .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT")).unwrap(),
     };
 
     let prover_params = ProverValidatedArgs::Sharp(SharpValidatedArgs {

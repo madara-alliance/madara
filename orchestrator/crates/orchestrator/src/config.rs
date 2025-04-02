@@ -30,7 +30,7 @@ use crate::cli::queue::QueueValidatedArgs;
 use crate::cli::settlement::SettlementValidatedArgs;
 use crate::cli::snos::SNOSParams;
 use crate::cli::storage::StorageValidatedArgs;
-use crate::cli::{RunCmd, ServerParams, ServiceParams};
+pub use crate::cli::{RunCmd, ServiceParams, ServerParams};
 use crate::data_storage::aws_s3::AWSS3;
 use crate::data_storage::DataStorage;
 use crate::database::mongodb::MongoDb;
@@ -38,6 +38,7 @@ use crate::database::Database;
 use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::SqsQueue;
 use crate::queue::QueueProvider;
+// use crate::routes::ServerParams;
 
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function.
@@ -150,11 +151,11 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
 
     // init storage
     let data_storage_params =
-        run_cmd.validate_storage_params().map_err(|e| eyre!("Failed to validate storage params: {e}"))?;
+        run_cmd.validate_old_storage_params().map_err(|e| eyre!("Failed to validate storage params: {e}"))?;
     let storage_client = build_storage_client(&data_storage_params, provider_config.clone()).await;
 
     // init alerts
-    let alert_params = run_cmd.validate_alert_params().map_err(|e| eyre!("Failed to validate alert params: {e}"))?;
+    let alert_params = run_cmd.validate_old_alert_params().map_err(|e| eyre!("Failed to validate alert params: {e}"))?;
     let alerts_client = build_alert_client(&alert_params, provider_config.clone()).await;
 
     // init the queue
@@ -162,7 +163,7 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
     // from `SdkConfig`. We can later move to using `aws_sdk_sqs`. This would require
     // us stop using the generic omniqueue abstractions for message ack/nack
     // init queue
-    let queue_params = run_cmd.validate_queue_params().map_err(|e| eyre!("Failed to validate queue params: {e}"))?;
+    let queue_params = run_cmd.validate_old_queue_params().map_err(|e| eyre!("Failed to validate queue params: {e}"))?;
     let queue = build_queue_client(&queue_params, provider_config.clone()).await;
 
     let snos_processing_lock =

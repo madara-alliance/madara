@@ -17,132 +17,132 @@
 // use crate::cli::instrumentation::InstrumentationCliArgs;
 // use crate::{OrchestratorError, OrchestratorResult};
 //
-// // #[derive(Debug, Clone)]
-// // pub struct InstrumentationParams {
-// //     pub otel_service_name: String,
-// //     pub otel_collector_endpoint: Option<Url>,
-// // }
+// #[derive(Debug, Clone)]
+// pub struct InstrumentationParams {
+//     pub otel_service_name: String,
+//     pub otel_collector_endpoint: Option<Url>,
+// }
 //
-// // #[derive(Debug, Clone)]
-// // pub struct OTELConfig {
-// //     pub endpoint: Url,
-// //     pub service_name: String,
-// // }
-// //
-// // impl From<&InstrumentationCliArgs> for OTELConfig {
-// //     fn from(args: &InstrumentationCliArgs) -> OrchestratorResult<Self> {
-// //         let endpoint = args.otel_collector_endpoint.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
-// //         let service_name = args.otel_service_name.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
-// //         Ok(Self {
-// //             endpoint,
-// //             service_name,
-// //         })
-// //     }
-// //
-// // }
+// #[derive(Debug, Clone)]
+// pub struct OTELConfig {
+//     pub endpoint: Url,
+//     pub service_name: String,
+// }
 //
-// /// from the instrumentation params, we can get the otel config
-// // impl From<InstrumentationParams> for OTELConfig {
-// //     fn from(instrumentation_params: InstrumentationParams) -> Self {
-// //         Self {
-// //             endpoint: instrumentation_params.otel_collector_endpoint.ok_or_else(|| "MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT is not set".to_string()).unwrap(),
-// //             service_name: instrumentation_params.otel_service_name,
-// //         }
-// //     }
-// // }
+// impl From<&InstrumentationCliArgs> for OTELConfig {
+//     fn from(args: &InstrumentationCliArgs) -> OrchestratorResult<Self> {
+//         let endpoint = args.otel_collector_endpoint.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
+//         let service_name = args.otel_service_name.clone().ok_or_else(|e| OrchestratorError::FromDownstreamError(e))?;
+//         Ok(Self {
+//             endpoint,
+//             service_name,
+//         })
+//     }
 //
-// // /// setup_analytics - Initializes all the analytical instrumentation for the orchestrator
-// // pub fn setup_analytics(otel_config: &OTELConfig) -> SdkMeterProvider {
-// //     let tracing_subscriber =
-// //         tracing_subscriber::registry().with(tracing_subscriber::fmt::layer()).with(EnvFilter::from_default_env());
-// //
-// //     let meter_provider = init_metric_provider(otel_config);
-// //     let tracer = init_tracer_provider(otel_config);
-// //     let logger_provider = init_logs(otel_config).unwrap();
-// //
-// //     // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
-// //     let layer = OpenTelemetryTracingBridge::new(&logger_provider);
-// //
-// //     tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
-// //     meter_provider
-// // }
+// }
 //
-// // TODO : we need to remove this since we have replace this with from trait
-// // fn get_otel_config(instrumentation: &InstrumentationParams) -> Option<OTELConfig> {
-// //     let otel_endpoint = instrumentation.otel_collector_endpoint.clone();
-// //     let otel_service_name = instrumentation.otel_service_name.clone();
-// //
-// //     match otel_endpoint {
-// //         Some(endpoint) => Some(OTELConfig { endpoint, service_name: otel_service_name }),
-// //         _ => {
-// //             tracing::warn!("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT is not set");
-// //             None
-// //         }
-// //     }
-// // }
+// from the instrumentation params, we can get the otel config
+// impl From<InstrumentationParams> for OTELConfig {
+//     fn from(instrumentation_params: InstrumentationParams) -> Self {
+//         Self {
+//             endpoint: instrumentation_params.otel_collector_endpoint.ok_or_else(|| "MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT is not set".to_string()).unwrap(),
+//             service_name: instrumentation_params.otel_service_name,
+//         }
+//     }
+// }
 //
-// // pub fn shutdown_analytics(meter_provider: SdkMeterProvider) {
-// //     global::shutdown_tracer_provider();
-// //     let _ = meter_provider.shutdown();
-// // }
+// /// setup_analytics - Initializes all the analytical instrumentation for the orchestrator
+// pub fn setup_analytics(otel_config: &OTELConfig) -> SdkMeterProvider {
+//     let tracing_subscriber =
+//         tracing_subscriber::registry().with(tracing_subscriber::fmt::layer()).with(EnvFilter::from_default_env());
 //
-// // pub fn init_tracer_provider(otel_config: &OTELConfig) -> Tracer {
-// //     let batch_config = BatchConfigBuilder::default()
-// //         // Increasing the queue size and batch size, only increase in queue size delays full channel error.
-// //         .build();
-// //
-// //     let provider = opentelemetry_otlp::new_pipeline()
-// //         .tracing()
-// //         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_config.endpoint.to_string()))
-// //         .with_trace_config(Config::default().with_resource(Resource::new(vec![KeyValue::new(
-// //             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-// //             format!("{}{}", otel_config.service_name, "_trace_service"),
-// //         )])))
-// //         .with_batch_config(batch_config)
-// //         .install_batch(runtime::Tokio)
-// //         .expect("Failed to install tracer provider");
-// //
-// //     global::set_tracer_provider(provider.clone());
-// //
-// //     provider.tracer(format!("{}{}", otel_config.service_name, "_subscriber"))
-// // }
+//     let meter_provider = init_metric_provider(otel_config);
+//     let tracer = init_tracer_provider(otel_config);
+//     let logger_provider = init_logs(otel_config).unwrap();
 //
-// // pub fn init_metric_provider(otel_config: &OTELConfig) -> SdkMeterProvider {
-// //     let export_config = ExportConfig { endpoint: otel_config.endpoint.to_string(), ..ExportConfig::default() };
-// //
-// //     // Creates and builds the OTLP exporter
-// //     let exporter = opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
-// //         Box::new(DefaultAggregationSelector::new()),
-// //         Box::new(DefaultTemporalitySelector::new()),
-// //     );
-// //
-// //     // Creates a periodic reader that exports every 5 seconds
-// //     let reader = PeriodicReader::builder(exporter.expect("Failed to build metrics exporter"), runtime::Tokio)
-// //         .with_interval(Duration::from_secs(5))
-// //         .build();
-// //
-// //     // Builds a meter provider with the periodic reader
-// //     let provider = SdkMeterProvider::builder()
-// //         .with_reader(reader)
-// //         .with_resource(Resource::new(vec![KeyValue::new(
-// //             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-// //             format!("{}{}", otel_config.service_name, "_meter_service"),
-// //         )]))
-// //         .build();
-// //     global::set_meter_provider(provider.clone());
-// //     provider
-// // }
+//     // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
+//     let layer = OpenTelemetryTracingBridge::new(&logger_provider);
 //
-// // fn init_logs(otel_config: &OTELConfig) -> Result<LoggerProvider, opentelemetry::logs::LogError> {
-// //     opentelemetry_otlp::new_pipeline()
-// //         .logging()
-// //         .with_resource(Resource::new(vec![KeyValue::new(
-// //             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-// //             format!("{}{}", otel_config.service_name, "_logs_service"),
-// //         )]))
-// //         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_config.endpoint.to_string()))
-// //         .install_batch(runtime::Tokio)
-// // }
+//     tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
+//     meter_provider
+// }
+//
+// TODO : we need to remove this since we have replace this with from trait
+// fn get_otel_config(instrumentation: &InstrumentationParams) -> Option<OTELConfig> {
+//     let otel_endpoint = instrumentation.otel_collector_endpoint.clone();
+//     let otel_service_name = instrumentation.otel_service_name.clone();
+//
+//     match otel_endpoint {
+//         Some(endpoint) => Some(OTELConfig { endpoint, service_name: otel_service_name }),
+//         _ => {
+//             tracing::warn!("MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT is not set");
+//             None
+//         }
+//     }
+// }
+//
+// pub fn shutdown_analytics(meter_provider: SdkMeterProvider) {
+//     global::shutdown_tracer_provider();
+//     let _ = meter_provider.shutdown();
+// }
+//
+// pub fn init_tracer_provider(otel_config: &OTELConfig) -> Tracer {
+//     let batch_config = BatchConfigBuilder::default()
+//         // Increasing the queue size and batch size, only increase in queue size delays full channel error.
+//         .build();
+//
+//     let provider = opentelemetry_otlp::new_pipeline()
+//         .tracing()
+//         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_config.endpoint.to_string()))
+//         .with_trace_config(Config::default().with_resource(Resource::new(vec![KeyValue::new(
+//             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+//             format!("{}{}", otel_config.service_name, "_trace_service"),
+//         )])))
+//         .with_batch_config(batch_config)
+//         .install_batch(runtime::Tokio)
+//         .expect("Failed to install tracer provider");
+//
+//     global::set_tracer_provider(provider.clone());
+//
+//     provider.tracer(format!("{}{}", otel_config.service_name, "_subscriber"))
+// }
+//
+// pub fn init_metric_provider(otel_config: &OTELConfig) -> SdkMeterProvider {
+//     let export_config = ExportConfig { endpoint: otel_config.endpoint.to_string(), ..ExportConfig::default() };
+//
+//     // Creates and builds the OTLP exporter
+//     let exporter = opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
+//         Box::new(DefaultAggregationSelector::new()),
+//         Box::new(DefaultTemporalitySelector::new()),
+//     );
+//
+//     // Creates a periodic reader that exports every 5 seconds
+//     let reader = PeriodicReader::builder(exporter.expect("Failed to build metrics exporter"), runtime::Tokio)
+//         .with_interval(Duration::from_secs(5))
+//         .build();
+//
+//     // Builds a meter provider with the periodic reader
+//     let provider = SdkMeterProvider::builder()
+//         .with_reader(reader)
+//         .with_resource(Resource::new(vec![KeyValue::new(
+//             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+//             format!("{}{}", otel_config.service_name, "_meter_service"),
+//         )]))
+//         .build();
+//     global::set_meter_provider(provider.clone());
+//     provider
+// }
+//
+// fn init_logs(otel_config: &OTELConfig) -> Result<LoggerProvider, opentelemetry::logs::LogError> {
+//     opentelemetry_otlp::new_pipeline()
+//         .logging()
+//         .with_resource(Resource::new(vec![KeyValue::new(
+//             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+//             format!("{}{}", otel_config.service_name, "_logs_service"),
+//         )]))
+//         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_config.endpoint.to_string()))
+//         .install_batch(runtime::Tokio)
+// }
 //
 // #[cfg(test)]
 // mod tests {

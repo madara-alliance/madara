@@ -40,7 +40,7 @@ pub mod utils;
 pub mod service;
 pub mod params;
 /// api server code for the service
-pub mod server;
+// pub mod server;
 
 // Re-export commonly used ite
 pub use error::{OrchestratorError, OrchestratorResult};

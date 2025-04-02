@@ -21,6 +21,7 @@ pub mod job_routes;
 pub mod types;
 
 pub use error::JobRouteError;
+use crate::cli::ServerParams;
 
 /// Configuration parameters for the HTTP server.
 ///
@@ -30,13 +31,13 @@ pub use error::JobRouteError;
 /// ```
 /// let params = ServerParams { host: "127.0.0.1".to_string(), port: 8080 };
 /// ```
-#[derive(Debug, Clone)]
-pub struct ServerParams {
-    /// The host address to bind to (e.g., "127.0.0.1", "0.0.0.0")
-    pub host: String,
-    /// The port number to listen on
-    pub port: u16,
-}
+// #[derive(Debug, Clone)]
+// pub struct ServerParams {
+//     /// The host address to bind to (e.g., "127.0.0.1", "0.0.0.0")
+//     pub host: String,
+//     /// The port number to listen on
+//     pub port: u16,
+// }
 
 /// Sets up and starts the HTTP server with configured routes.
 ///

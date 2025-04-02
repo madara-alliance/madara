@@ -6,8 +6,8 @@ use jobs::job_router;
 use public::local_route;
 use std::sync::Arc;
 
-pub(super) mod public;
 pub(super) mod jobs;
+pub(super) mod public;
 
 /// Handles 404 Not Found responses for the application.
 ///
@@ -32,8 +32,7 @@ pub async fn handler_404() -> impl IntoResponse {
 }
 
 fn v1_route(config: Arc<Config>) -> Router {
-    Router::new()
-        .nest("/jobs", job_router(config))
+    Router::new().nest("/jobs", job_router(config))
 }
 
 pub(crate) fn server_router(config: Arc<Config>) -> Router {

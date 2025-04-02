@@ -9,9 +9,12 @@ use provider::ProviderValidatedArgs;
 use snos::SNOSParams;
 use url::Url;
 
-use crate::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs, OTELConfig};
+use crate::params::{AlertArgs, CronArgs, OTELConfig, QueueArgs, StorageArgs};
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
+use crate::cli::alert::AlertValidatedArgs;
+use crate::cli::queue::QueueValidatedArgs;
+use crate::cli::storage::StorageValidatedArgs;
 
 pub mod alert;
 pub mod cron;
@@ -161,6 +164,19 @@ impl RunCmd {
         validate_params::validate_provider_params(&self.aws_config_args)
     }
 
+
+    pub fn validate_old_alert_params(&self) -> Result<AlertValidatedArgs, String> {
+        validate_params::validate_old_alert_params(&self.aws_sns_args, &self.aws_config_args)
+    }
+
+    pub fn validate_old_queue_params(&self) -> Result<QueueValidatedArgs, String> {
+        validate_params::validate_old_queue_params(&self.aws_sqs_args, &self.aws_config_args)
+    }
+
+    pub fn validate_old_storage_params(&self) -> Result<StorageValidatedArgs, String> {
+        validate_params::validate_old_storage_params(&self.aws_s3_args, &self.aws_config_args)
+    }
+
     pub fn validate_alert_params(&self) -> Result<AlertArgs, String> {
         validate_params::validate_alert_params(&self.aws_sns_args, &self.aws_config_args)
     }
@@ -307,27 +323,34 @@ pub mod validate_params {
     use super::prover::atlantic::AtlanticCliArgs;
     use super::prover::sharp::SharpCliArgs;
     use super::prover::ProverValidatedArgs;
+    use super::prover_layout::ProverLayoutCliArgs;
     use super::provider::aws::AWSConfigCliArgs;
     use super::provider::{AWSConfigValidatedArgs, ProviderValidatedArgs};
     use super::queue::aws_sqs::AWSSQSCliArgs;
     use super::server::ServerCliArgs;
+    use super::server::ServerCliArgs as ServerParams;
     use super::service::ServiceCliArgs;
+    use super::service::ServiceCliArgs as ServiceParams;
     use super::settlement::ethereum::EthereumSettlementCliArgs;
     use super::settlement::starknet::StarknetSettlementCliArgs;
     use super::settlement::SettlementValidatedArgs;
     use super::snos::{SNOSCliArgs, SNOSParams};
     use super::storage::aws_s3::AWSS3CliArgs;
+    use crate::params::{AlertArgs, CronArgs, OTELConfig, QueueArgs, StorageArgs};
     use alloy::primitives::Address;
     use cairo_vm::types::layout_name::LayoutName;
+    use url::Url;
     use orchestrator_atlantic_service::AtlanticValidatedArgs;
     use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
     use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
     use orchestrator_sharp_service::SharpValidatedArgs;
     use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
-    use crate::params::{AlertArgs, OTELConfig, CronArgs, QueueArgs, StorageArgs};
-    use super::prover_layout::ProverLayoutCliArgs;
-    use super::server::ServerCliArgs as ServerParams;
-    use super::service::ServiceCliArgs as ServiceParams;
+    use crate::alerts::aws_sns::AWSSNSValidatedArgs;
+    use crate::cli::alert::AlertValidatedArgs;
+    use crate::cli::queue::QueueValidatedArgs;
+    use crate::cli::storage::StorageValidatedArgs;
+    use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
+    use crate::queue::sqs::AWSSQSValidatedArgs;
 
     pub(crate) fn validate_provider_params(
         aws_config_args: &AWSConfigCliArgs,
@@ -340,6 +363,48 @@ pub mod validate_params {
             }))
         } else {
             Err("Only AWS is supported as of now".to_string())
+        }
+    }
+
+    pub(crate) fn validate_old_alert_params(
+        aws_sns_args: &AWSSNSCliArgs,
+        aws_config_args: &AWSConfigCliArgs,
+    ) -> Result<AlertValidatedArgs, String> {
+        if aws_sns_args.aws_sns && aws_config_args.aws {
+            Ok(AlertValidatedArgs::AWSSNS(AWSSNSValidatedArgs {
+                topic_arn: aws_sns_args.sns_arn.clone().expect("SNS ARN is required"),
+            }))
+        } else {
+            Err("Only AWS SNS is supported as of now".to_string())
+        }
+    }
+
+    pub(crate) fn validate_old_queue_params(
+        aws_sqs_args: &AWSSQSCliArgs,
+        aws_config_args: &AWSConfigCliArgs,
+    ) -> Result<QueueValidatedArgs, String> {
+        if aws_sqs_args.aws_sqs && aws_config_args.aws {
+            Ok(QueueValidatedArgs::AWSSQS(AWSSQSValidatedArgs {
+                queue_base_url: Url::parse(&aws_sqs_args.queue_base_url.clone().expect("Queue base URL is required"))
+                    .expect("Invalid queue base URL"),
+                sqs_prefix: aws_sqs_args.sqs_prefix.clone().expect("SQS prefix is required"),
+                sqs_suffix: aws_sqs_args.sqs_suffix.clone().expect("SQS suffix is required"),
+            }))
+        } else {
+            Err("Only AWS SQS is supported as of now".to_string())
+        }
+    }
+
+    pub(crate) fn validate_old_storage_params(
+        aws_s3_args: &AWSS3CliArgs,
+        aws_config_args: &AWSConfigCliArgs,
+    ) -> Result<StorageValidatedArgs, String> {
+        if aws_s3_args.aws_s3 && aws_config_args.aws {
+            Ok(StorageValidatedArgs::AWSS3(AWSS3ValidatedArgs {
+                bucket_name: aws_s3_args.bucket_name.clone().expect("Bucket name is required"),
+            }))
+        } else {
+            Err("Only AWS S3 is supported as of now".to_string())
         }
     }
 
@@ -467,7 +532,7 @@ pub mod validate_params {
                 let l1_core_contract_address = Address::from_str(
                     &ethereum_args.l1_core_contract_address.clone().expect("L1 core contract address is required"),
                 )
-                    .expect("Invalid L1 core contract address");
+                .expect("Invalid L1 core contract address");
                 let ethereum_operator_address = Address::from_slice(
                     &hex::decode(
                         ethereum_args
@@ -477,7 +542,7 @@ pub mod validate_params {
                             .strip_prefix("0x")
                             .expect("Invalid Starknet operator address"),
                     )
-                        .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
+                    .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
                 );
 
                 let ethereum_params = EthereumSettlementValidatedArgs {
@@ -566,7 +631,7 @@ pub mod validate_params {
     pub(crate) fn validate_instrumentation_params(
         instrumentation_args: &InstrumentationCliArgs,
     ) -> Result<OTELConfig, String> {
-        Ok(OTELConfig::from(instrumentation_args))
+        Ok(OTELConfig::try_from(instrumentation_args.clone()).expect("Invalid OTEL config"))
     }
 
     pub(crate) fn validate_server_params(server_args: &ServerCliArgs) -> Result<ServerParams, String> {

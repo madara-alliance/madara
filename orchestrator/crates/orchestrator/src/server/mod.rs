@@ -2,12 +2,12 @@ pub mod route;
 pub mod types;
 pub mod error;
 
-use std::net::SocketAddr;
-use std::sync::Arc;
 use crate::core::config::Config;
-use crate::OrchestratorResult;
 use crate::params::service::ServerParams;
 use crate::server::route::server_router;
+use crate::OrchestratorResult;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 /// Sets up and starts the HTTP server with configured routes.
 ///
