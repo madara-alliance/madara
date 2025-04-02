@@ -100,10 +100,6 @@ pub struct ChainConfigOverridesInner {
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,
     pub eth_gps_statement_verifier: String,
-    #[serde(default)]
-    #[serde(skip_serializing)]
-    #[serde(deserialize_with = "deserialize_private_key")]
-    pub private_key: ZeroingPrivateKey,
     pub mempool_tx_limit: usize,
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
