@@ -239,7 +239,7 @@ mod tests {
     struct DevnetForTesting {
         backend: Arc<MadaraBackend>,
         contracts: DevnetKeys,
-        block_production: Option<BlockProductionTask<Mempool>>,
+        block_production: Option<BlockProductionTask>,
         mempool: Arc<Mempool>,
         tx_validator: Arc<TransactionValidator>,
     }

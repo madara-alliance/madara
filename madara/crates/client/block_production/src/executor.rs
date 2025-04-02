@@ -1,23 +1,18 @@
-use crate::{
-    util::{
-        create_blockifier_executor, create_blockifier_state_adaptor, create_execution_context, BlockExecutionContext,
-    },
-    ContinueBlockStats,
+use crate::util::{
+    create_blockifier_executor, create_blockifier_state_adaptor, create_execution_context, BlockExecutionContext,
 };
 use anyhow::Context;
 use blockifier::{
-    blockifier::transaction_executor::TransactionExecutor,
+    blockifier::transaction_executor::{TransactionExecutionOutput, TransactionExecutor, TransactionExecutorResult},
     execution::contract_class::RunnableCompiledClass,
-    state::{cached_state::StateMaps, state_api::State},
+    state::{cached_state::StorageEntry, state_api::State},
+    transaction::transaction_execution::Transaction,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_exec::CachedStateAdaptor;
-use mc_mempool::{L1DataProvider, MempoolTransaction};
-use mp_block::TransactionWithReceipt;
+use mc_mempool::L1DataProvider;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
-use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
-use mp_transactions::TransactionWithHash;
 use starknet_api::{
     core::{ClassHash, ContractAddress, PatriciaKey},
     state::StorageKey,
@@ -28,17 +23,59 @@ use std::{
     mem,
     panic::AssertUnwindSafe,
     sync::Arc,
+    time::Duration,
 };
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     time::Instant,
 };
 
+#[derive(Default, Debug)]
+pub(crate) struct BatchToExecute {
+    pub txs: Vec<Transaction>,
+    pub additional_info: VecDeque<AdditionalTxInfo>,
+}
+
+impl BatchToExecute {
+    pub fn with_capacity(cap: usize) -> Self {
+        Self { txs: Vec::with_capacity(cap), additional_info: VecDeque::with_capacity(cap) }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.txs.extend(other.txs);
+        self.additional_info.extend(other.additional_info);
+    }
+
+    pub fn len(&self) -> usize {
+        self.txs.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.txs.is_empty()
+    }
+
+    pub fn push(&mut self, tx: Transaction, additional_info: AdditionalTxInfo) {
+        self.txs.push(tx);
+        self.additional_info.push_back(additional_info);
+    }
+
+    pub fn remove_n_front(&mut self, n_to_remove: usize) -> BatchToExecute {
+        let txs = self.txs.drain(..n_to_remove).collect();
+        let additional_info = self.additional_info.drain(..n_to_remove).collect();
+        BatchToExecute { txs, additional_info }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AdditionalTxInfo {
+    pub tx_hash: Felt,
+    pub declared_class: Option<Box<ConvertedClass>>,
+}
+
 #[derive(Debug)]
 pub(crate) enum ExecutorMessage {
     StartNewBlock {
         /// Used to add the block_n-10 entry to the state diff.
-        initial_state_diffs: StateMaps,
+        initial_state_diffs_storage: HashMap<StorageEntry, Felt>,
         /// The proto-header. It's exactly like PendingHeader, but it does not have the parent_block_hash field because it's not known yet.
         exec_ctx: BlockExecutionContext,
     },
@@ -48,15 +85,18 @@ pub(crate) enum ExecutorMessage {
 
 #[derive(Default, Debug)]
 pub(crate) struct BatchExecutionResult {
-    // All executed transactions, including the rejected ones.
-    pub executed: Vec<Felt>,
+    // // All executed transactions, including the rejected ones.
+    // pub executed: Vec<Felt>,
 
-    pub new_events: Vec<EventWithTransactionHash>,
-    pub new_transactions: Vec<TransactionWithReceipt>,
-    pub new_state_diffs: StateMaps,
-    pub new_declared_classes: Vec<ConvertedClass>,
+    // pub new_events: Vec<EventWithTransactionHash>,
+    // pub new_transactions: Vec<TransactionWithReceipt>,
+    // pub new_state_diffs: StateMaps,
+    // pub new_declared_classes: Vec<ConvertedClass>,
 
-    pub stats: ContinueBlockStats,
+    // pub stats: ContinueBlockStats,
+    pub exec_duration: Duration,
+    pub executed_txs: BatchToExecute,
+    pub blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
 }
 
 pub struct StopErrorReceiver(oneshot::Receiver<Result<anyhow::Result<()>, Box<dyn Any + Send + 'static>>>);
@@ -71,7 +111,7 @@ impl StopErrorReceiver {
 }
 
 pub struct ExecutorHandle {
-    pub send_batch: Option<mpsc::Sender<Vec<MempoolTransaction>>>,
+    pub send_batch: Option<mpsc::Sender<BatchToExecute>>,
     pub stop: StopErrorReceiver,
     pub replies: mpsc::Receiver<ExecutorMessage>,
 }
@@ -118,7 +158,7 @@ pub struct Executor {
     backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
 
-    incoming_batches: mpsc::Receiver<Vec<MempoolTransaction>>,
+    incoming_batches: mpsc::Receiver<BatchToExecute>,
     replies_sender: mpsc::Sender<ExecutorMessage>,
 
     /// See `take_tx_batch`. When the mempool is empty, we will not be getting transactions.
@@ -157,13 +197,13 @@ impl Executor {
 
     /// Returns None when the channel is closed.
     /// We want to close down the thread in that case.
-    fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> Option<Vec<MempoolTransaction>> {
+    fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> Option<BatchToExecute> {
         if let Ok(batch) = self.incoming_batches.try_recv() {
             return Some(batch);
         }
 
         if !should_wait {
-            return Some(vec![]);
+            return Some(Default::default());
         }
 
         tracing::debug!("Waiting for batch. Deadline={:?}", deadline);
@@ -190,7 +230,7 @@ impl Executor {
             }
             Err(_timed_out) => {
                 tracing::debug!("Waiting for batch timed out.");
-                Some(vec![])
+                Some(Default::default())
             }
         }
     }
@@ -210,14 +250,14 @@ impl Executor {
         };
 
         if let Some(block_hash) = get_hash_from_db()? {
-            Ok(Some((block_n, block_hash)))
+            Ok(Some((block_n_min_10, block_hash)))
         } else {
             // only subscribe when block is not found
             tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
             loop {
                 let mut receiver = self.backend.subscribe_closed_blocks();
                 if let Some(block_hash) = get_hash_from_db()? {
-                    break Ok(Some((block_n, block_hash)));
+                    break Ok(Some((block_n_min_10, block_hash)));
                 }
                 tracing::debug!("Waiting for hash of block_n-10.");
                 match receiver.blocking_recv() {
@@ -266,15 +306,15 @@ impl Executor {
         }))
     }
 
-    /// Returns the initial state diff too. It is used to create the new block message.
+    /// Returns the initial state diff storage too. It is used to create the new block message.
     fn create_execution_state(
         &mut self,
         state: ExecutorStateNewBlock,
-    ) -> anyhow::Result<(ExecutorStateExecuting, StateMaps)> {
+    ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
         let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, state.latest_block_n);
         let mut executor = create_blockifier_executor(state.cached_adaptor, &self.backend, &exec_ctx)?;
 
-        let mut state_maps = StateMaps::default();
+        let mut state_maps_storages = HashMap::default();
 
         if let Some((block_n_min_10, block_hash_n_min_10)) = state.block_n_min_10_entry {
             let contract_address = ContractAddress(PatriciaKey::ONE);
@@ -285,7 +325,7 @@ impl Executor {
                 .expect("Blockifier block context has been taken")
                 .set_storage_at(contract_address, key, block_hash_n_min_10)
                 .context("Cannot set storage value in cache")?;
-            state_maps.storage.insert((contract_address, key), block_hash_n_min_10);
+            state_maps_storages.insert((contract_address, key), block_hash_n_min_10);
 
             tracing::debug!(
                 "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
@@ -293,7 +333,7 @@ impl Executor {
                 key.to_felt()
             );
         }
-        Ok((ExecutorStateExecuting { exec_ctx, executor, declared_classes: vec![] }, state_maps))
+        Ok((ExecutorStateExecuting { exec_ctx, executor, declared_classes: vec![] }, state_maps_storages))
     }
 
     fn initial_state(&self) -> anyhow::Result<ExecutorState> {
@@ -313,36 +353,26 @@ impl Executor {
         let mut state = self.initial_state().context("Creating executor initial state")?;
 
         let mut block_empty = true;
-        // let mut block_now_full = false;
 
         let batch_size = self.backend.chain_config().execution_batch_size;
         let block_time = self.backend.chain_config().block_time;
         let no_empty_blocks = self.backend.chain_config().no_empty_blocks;
 
-        let mut txs_to_process = VecDeque::with_capacity(batch_size);
-        let mut txs_to_process_blockifier = Vec::with_capacity(batch_size);
+        let mut to_exec = BatchToExecute::with_capacity(batch_size);
 
         let mut next_block_deadline = Instant::now() + block_time;
 
-        // Cloning transactions: That's a lot of cloning, but we're kind of forced to do that because blockifier takes
-        // a `&[Transaction]` slice. In addition, declare transactions have their class behind an Arc.
         loop {
-            let mut exec_result = BatchExecutionResult::default();
-
             // Take transactions to execute.
-            if txs_to_process.len() < batch_size {
+            if to_exec.len() < batch_size {
                 // We don't want to wait if we still have transactions to process - but we would still like to fill up out batch if possible.
 
                 let wait_deadline = if block_empty && no_empty_blocks { None } else { Some(next_block_deadline) };
-                let Some(taken) =
-                    self.wait_take_tx_batch(wait_deadline, /* should_wait */ txs_to_process.is_empty())
-                else {
+                let Some(taken) = self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) else {
                     return Ok(()); // Channel closed. Exit gracefully.
                 };
 
-                exec_result.stats.n_taken += taken.len();
-                txs_to_process_blockifier.extend(taken.iter().map(|tx: &MempoolTransaction| tx.tx.clone()));
-                txs_to_process.extend(taken);
+                to_exec.extend(taken);
             }
 
             // Create execution state if it does not already exist.
@@ -350,14 +380,14 @@ impl Executor {
                 ExecutorState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorState::NewBlock(state_new_block) => {
                     // Create new execution state.
-                    let (execution_state, initial_state_diffs) =
+                    let (execution_state, initial_state_diffs_storage) =
                         self.create_execution_state(state_new_block).context("Creating execution state")?;
 
                     tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_n);
                     if self
                         .replies_sender
                         .blocking_send(ExecutorMessage::StartNewBlock {
-                            initial_state_diffs,
+                            initial_state_diffs_storage,
                             exec_ctx: execution_state.exec_ctx.clone(),
                         })
                         .is_err()
@@ -373,75 +403,25 @@ impl Executor {
                 }
             };
 
-            exec_result.stats.n_batches += 1;
-
             let exec_start_time = Instant::now();
 
             // Execute the transactions.
-            let all_results = execution_state.executor.execute_txs(&txs_to_process_blockifier);
+            let blockifier_results = execution_state.executor.execute_txs(&to_exec.txs);
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
-            let block_full = all_results.len() < txs_to_process_blockifier.len();
+            let block_full = blockifier_results.len() < to_exec.len();
 
-            txs_to_process_blockifier.drain(..all_results.len()); // remove the used txs
-
-            for blockifier_exec_result in all_results {
-                let mut mempool_tx = txs_to_process.pop_front().context("Vector length mismatch")?;
-
-                exec_result.executed.push(mempool_tx.tx_hash().to_felt());
-
-                match blockifier_exec_result {
-                    Ok((execution_info, state_diff)) => {
-                        // Reverted transactions appear here as Ok too.
-                        tracing::trace!("Successful execution of transaction {:#x}", mempool_tx.tx_hash().to_felt());
-
-                        block_empty = false;
-
-                        exec_result.stats.n_added_to_block += 1;
-                        if execution_info.is_reverted() {
-                            exec_result.stats.n_reverted += 1;
-                        }
-
-                        let receipt = from_blockifier_execution_info(&execution_info, &mempool_tx.tx);
-                        let converted_tx = TransactionWithHash::from(mempool_tx.tx.clone());
-
-                        if let Some(class) = mempool_tx.converted_class.take() {
-                            exec_result.new_declared_classes.push(class.clone());
-                            execution_state.declared_classes.push(class);
-                        }
-                        exec_result.new_events.extend(
-                            receipt
-                                .events()
-                                .iter()
-                                .cloned()
-                                .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
-                        );
-                        exec_result.new_state_diffs.extend(&state_diff);
-                        exec_result
-                            .new_transactions
-                            .push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
-                    }
-                    Err(err) => {
-                        // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
-                        // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
-                        // We reject them.
-                        // Note that this is a big DoS vector.
-                        tracing::error!(
-                            "Rejected transaction {:#x} for unexpected error: {err:#}",
-                            mempool_tx.tx_hash().to_felt()
-                        );
-                        exec_result.stats.n_rejected += 1;
-                    }
-                }
+            if blockifier_results.iter().any(|r| r.is_ok()) {
+                block_empty = false;
             }
 
-            exec_result.stats.n_excess = txs_to_process.len();
+            let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // remove the used txs
 
-            exec_result.stats.exec_duration += exec_start_time.elapsed();
+            let exec_duration = exec_start_time.elapsed();
 
             tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
-            tracing::debug!("Stats: {:?}", exec_result.stats);
             tracing::debug!("Block now full: {:?}", block_full);
 
+            let exec_result = BatchExecutionResult { exec_duration, executed_txs, blockifier_results };
             if self.replies_sender.blocking_send(ExecutorMessage::BatchExecuted(exec_result)).is_err() {
                 // Receiver closed
                 break Ok(());

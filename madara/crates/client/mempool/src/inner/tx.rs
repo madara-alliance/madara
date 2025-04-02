@@ -19,8 +19,8 @@ pub struct MempoolTransaction {
     pub tx: Transaction,
     /// Time at which the transaction was inserted into the mempool (+ or -)
     pub arrived_at: TxTimestamp,
-    /// TODO: What is this?
-    pub converted_class: Option<ConvertedClass>,
+    /// Compiled class for declare transactions.
+    pub converted_class: Option<Box<ConvertedClass>>,
     /// We need this to be able to retrieve the transaction once from the
     /// [NonceTxMapping] once it has been inserted into the [Mempool]
     ///
@@ -57,7 +57,7 @@ impl MempoolTransaction {
         let nonce = tx.nonce();
         let nonce_next = nonce.try_increment()?;
 
-        Ok(Self { tx, arrived_at, converted_class, nonce, nonce_next })
+        Ok(Self { tx, arrived_at, converted_class: converted_class.map(Box::new), nonce, nonce_next })
     }
     pub fn nonce(&self) -> Nonce {
         self.tx.nonce()

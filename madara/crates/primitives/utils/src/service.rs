@@ -823,7 +823,7 @@ impl ServiceContext {
     /// service was cancelled.
     pub async fn run_until_cancelled<T, F>(&mut self, f: F) -> Option<T>
     where
-        T: Sized + Send + Sync,
+        T: Sized,
         F: Future<Output = T>,
     {
         tokio::select! {

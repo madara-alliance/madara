@@ -2,20 +2,22 @@
 
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
-use blockifier::state::cached_state::StateMaps;
-use executor::{BatchExecutionResult, Executor, ExecutorMessage};
+use blockifier::state::cached_state::{StateMaps, StorageEntry};
+use executor::{AdditionalTxInfo, BatchExecutionResult, BatchToExecute, Executor, ExecutorMessage};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
-use mc_mempool::{L1DataProvider, MempoolProvider};
+use mc_mempool::{L1DataProvider, Mempool, MempoolProvider};
 use mp_block::header::PendingHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
-use mp_receipt::EventWithTransactionHash;
+use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
 use mp_state_update::DeclaredClassItem;
+use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
 use opentelemetry::KeyValue;
 use starknet_types_core::felt::Felt;
+use std::collections::HashMap;
 use std::mem;
 use std::ops::{Add, AddAssign};
 use std::sync::Arc;
@@ -35,13 +37,10 @@ pub struct ContinueBlockStats {
     pub n_added_to_block: usize,
     /// Number of transactions taken from the mempool.
     pub n_taken: usize,
-    /// Transactions that were popped from the mempool but not executed, and so they are re-added back into the mempool.
-    pub n_excess: usize,
     /// Rejected transactions are failing transactions that are included in the block.
     pub n_reverted: usize,
     /// Rejected are txs are failing transactions that are not revertible. They are thus not included in the block
     pub n_rejected: usize,
-
     /// Execution time
     pub exec_duration: Duration,
 }
@@ -53,7 +52,6 @@ impl Add for ContinueBlockStats {
             n_batches: self.n_batches + other.n_batches,
             n_added_to_block: self.n_added_to_block + other.n_added_to_block,
             n_taken: self.n_taken + other.n_taken,
-            n_excess: self.n_excess + other.n_excess,
             n_reverted: self.n_reverted + other.n_reverted,
             n_rejected: self.n_rejected + other.n_rejected,
             exec_duration: self.exec_duration + other.exec_duration,
@@ -79,18 +77,24 @@ impl PendingBlockState {
     pub fn new_from_execution_context(
         exec_ctx: BlockExecutionContext,
         parent_block_hash: Felt,
-        initial_state_diffs: StateMaps,
+        initial_state_diffs_storage: HashMap<StorageEntry, Felt>,
     ) -> Self {
-        Self::new(exec_ctx.into_header(parent_block_hash), initial_state_diffs)
+        Self::new(exec_ctx.into_header(parent_block_hash), initial_state_diffs_storage)
     }
 
-    pub fn new(header: PendingHeader, initial_state_diffs: StateMaps) -> Self {
+    pub fn new(header: PendingHeader, initial_state_diffs_storage: HashMap<StorageEntry, Felt>) -> Self {
         Self {
             header,
             transactions: Default::default(),
             events: Default::default(),
             declared_classes: Default::default(),
-            state_diff: initial_state_diffs,
+            state_diff: StateMaps {
+                nonces: Default::default(),
+                class_hashes: Default::default(),
+                storage: initial_state_diffs_storage,
+                compiled_class_hashes: Default::default(),
+                declared_contracts: Default::default(),
+            },
         }
     }
 
@@ -110,13 +114,6 @@ impl PendingBlockState {
             },
             self.declared_classes,
         ))
-    }
-
-    pub fn extend_with_batch(&mut self, batch: &mut BatchExecutionResult) {
-        self.events.extend(mem::take(&mut batch.new_events));
-        self.transactions.extend(mem::take(&mut batch.new_transactions));
-        self.declared_classes.extend(mem::take(&mut batch.new_declared_classes));
-        self.state_diff.extend(&batch.new_state_diffs);
     }
 }
 
@@ -172,10 +169,60 @@ impl CurrentPendingState {
     pub fn new(block: PendingBlockState, block_n: u64) -> Self {
         Self { block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
     }
-    pub fn append_batch(&mut self, mut batch: BatchExecutionResult) {
-        self.block.extend_with_batch(&mut batch);
-        self.tx_executed_for_tick.extend(batch.executed);
-        self.stats_for_tick += batch.stats;
+    pub fn append_batch(&mut self, batch: BatchExecutionResult) {
+        let mut stats = ContinueBlockStats { exec_duration: batch.exec_duration, ..Default::default() };
+        stats.exec_duration += batch.exec_duration;
+        stats.n_batches += 1;
+        stats.n_taken += batch.executed_txs.len();
+
+        for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
+            batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
+        {
+            self.tx_executed_for_tick.push(additional_info.tx_hash);
+
+            match blockifier_exec_result {
+                Ok((execution_info, state_diff)) => {
+                    // Reverted transactions appear here as Ok too.
+                    tracing::trace!("Successful execution of transaction {:#x}", additional_info.tx_hash);
+
+                    stats.n_added_to_block += 1;
+                    if execution_info.is_reverted() {
+                        stats.n_reverted += 1;
+                    }
+
+                    let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
+                    let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
+
+                    if let Some(class) = additional_info.declared_class.take() {
+                        self.block.declared_classes.push(*class);
+                    }
+                    self.block.events.extend(
+                        receipt
+                            .events()
+                            .iter()
+                            .cloned()
+                            .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
+                    );
+                    self.block.state_diff.extend(&state_diff);
+                    self.block
+                        .transactions
+                        .push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
+                }
+                Err(err) => {
+                    // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
+                    // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                    // We reject them.
+                    // Note that this is a big DoS vector.
+                    tracing::error!(
+                        "Rejected transaction {:#x} for unexpected error: {err:#}",
+                        additional_info.tx_hash
+                    );
+                    stats.n_rejected += 1;
+                }
+            }
+            tracing::debug!("Processed executed batch: {stats:?}");
+        }
+        self.stats_for_tick += stats;
     }
 }
 
@@ -206,7 +253,7 @@ pub(crate) enum ExecutorState {
 ///
 /// To understand block production in madara, you should probably start with the [`mp_chain_config::ChainConfig`]
 /// documentation.
-pub struct BlockProductionTask<Mempool: MempoolProvider> {
+pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     mempool: Arc<Mempool>,
@@ -215,7 +262,7 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
     state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
 }
 
-impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
+impl BlockProductionTask {
     pub fn subscribe_state_notifications(&mut self) -> mpsc::UnboundedReceiver<BlockProductionStateNotification> {
         let (sender, recv) = mpsc::unbounded_channel();
         self.state_notifications = Some(sender);
@@ -310,7 +357,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
     /// Handles the state machine and its transitions.
     async fn process_reply(&mut self, reply: ExecutorMessage) -> anyhow::Result<()> {
         match reply {
-            ExecutorMessage::StartNewBlock { initial_state_diffs, exec_ctx } => {
+            ExecutorMessage::StartNewBlock { initial_state_diffs_storage, exec_ctx } => {
                 tracing::debug!("Got ExecutorMessage::StartNewBlock block_n={}", exec_ctx.block_n);
                 let current_state = self.current_state.take().context("No current state")?;
                 let ExecutorState::NotExecuting { latest_block_n, latest_block_hash } = current_state else {
@@ -328,7 +375,11 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
                 self.current_state = Some(ExecutorState::Executing(
                     CurrentPendingState::new(
-                        PendingBlockState::new_from_execution_context(exec_ctx, latest_block_hash, initial_state_diffs),
+                        PendingBlockState::new_from_execution_context(
+                            exec_ctx,
+                            latest_block_hash,
+                            initial_state_diffs_storage,
+                        ),
                         new_block_n,
                     )
                     .into(),
@@ -336,8 +387,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(
-                    "Got ExecutorMessage::BatchExecuted n_txs={}",
-                    batch_execution_result.new_transactions.len()
+                    "Got ExecutorMessage::BatchExecuted executed_txs={}",
+                    batch_execution_result.executed_txs.len()
                 );
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let ExecutorState::Executing(state) = current_state else {
@@ -371,7 +422,9 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let ExecutorState::Executing(state) = self.current_state.as_mut().context("No current state")? {
-            self.mempool.remove_txs(mem::take(&mut state.tx_executed_for_tick)).context("Removing mempool transactions")?;
+            self.mempool
+                .remove_txs(mem::take(&mut state.tx_executed_for_tick))
+                .context("Removing mempool transactions")?;
 
             let (block, classes) = state
                 .block
@@ -443,11 +496,18 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                     // Stop condition: service stopped (ctx), or batch receiver closed.
                     return anyhow::Ok(());
                 };
-                let mut batch = Vec::with_capacity(batch_size);
-                if ctx.run_until_cancelled(mempool.take_chunk_or_wait(&mut batch, batch_size)).await.is_none() {
+                let mut batch = BatchToExecute::with_capacity(batch_size);
+                let Some(iterator) = ctx.run_until_cancelled(mempool.get_popping_iterator_or_wait()).await else {
                     // Stop condition: service stopped (ctx).
                     return anyhow::Ok(());
                 };
+
+                let iterator = iterator.take(batch_size); // only take a batch
+
+                for tx in iterator {
+                    let additional = AdditionalTxInfo { tx_hash: *tx.tx_hash(), declared_class: tx.converted_class };
+                    batch.push(tx.tx, additional);
+                }
 
                 tracing::debug!("Sending batch of {} transactions to the worker thread", batch.len());
 

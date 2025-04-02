@@ -758,12 +758,6 @@ impl MempoolInner {
         mempool_tx
     }
 
-    pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) -> usize {
-        let mut taken = 0;
-        dest.extend((0..n).map_while(|_| self.pop_next()).inspect(|_| taken += 1));
-        taken
-    }
-
     /// This is called by the block production after a batch of transaction is executed.
     /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
     pub fn re_add_txs(

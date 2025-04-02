@@ -18,7 +18,7 @@ use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use tokio::sync::Notify;
 
 mod inner;
@@ -58,10 +58,8 @@ pub(crate) trait CheckInvariants {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait MempoolProvider: Send + Sync + 'static {
-    fn txs_take_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize;
+    // fn txs_take_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> impl Iterator<Item=MempoolTransaction> + '_;
     fn tx_take(&mut self) -> Option<MempoolTransaction>;
-
-    async fn take_chunk_or_wait(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize;
 
     fn tx_mark_included(&self, contract_address: &Felt);
     fn txs_re_add(
@@ -72,10 +70,7 @@ pub trait MempoolProvider: Send + Sync + 'static {
     fn chain_id(&self) -> Felt;
     fn is_empty(&self) -> bool;
 
-    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(
-        &self,
-        txs_executed: I,
-    ) -> Result<(), MempoolError>;
+    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(&self, txs_executed: I) -> Result<(), MempoolError>;
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +104,22 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     config: MempoolConfig,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
+}
+
+/// Iterator that keeps the locks around.
+struct PoppingIterator<'a> {
+    inner: RwLockWriteGuard<'a, MempoolInner>,
+    nonce_cache: RwLockWriteGuard<'a, BTreeMap<Felt, Nonce>>,
+}
+impl Iterator for PoppingIterator<'_> {
+    type Item = MempoolTransaction;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.pop_next().inspect(|tx| {
+            let contract_address = tx.contract_address().to_felt();
+            let nonce_next = tx.nonce_next;
+            self.nonce_cache.insert(contract_address, nonce_next);
+        })
+    }
 }
 
 impl From<MempoolError> for SubmitTransactionError {
@@ -240,7 +251,7 @@ impl Mempool {
         let nonce = nonce_info.nonce;
         let nonce_next = nonce_info.nonce_next;
         self.inner.write().expect("Poisoned lock").insert_tx(
-            MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
+            MempoolTransaction { tx, arrived_at, converted_class: converted_class.map(Box::new), nonce, nonce_next },
             force,
             true,
             nonce_info,
@@ -317,6 +328,38 @@ impl Mempool {
             }
         }
     }
+
+    // The inner lock remains taken the entire time the resulting iterator exists.
+    pub async fn get_popping_iterator_or_wait(&self) -> impl Iterator<Item = MempoolTransaction> + '_ {
+        let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
+        tokio::pin!(permit);
+        loop {
+            {
+                let inner = self.inner.write().expect("Poisoned lock");
+                let nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
+                if !inner.is_empty() {
+                    return PoppingIterator { inner, nonce_cache };
+                }
+                // Note: we put ourselves in the notify list BEFORE giving back the lock.
+                // Otherwise, some transactions could be missed.
+                permit.as_mut().enable(); // Register us to be notified.
+
+                // drop the locks here
+            }
+            permit.as_mut().await; // Wait until we're notified.
+            permit.set(self.notify.notified());
+        }
+    }
+
+    // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
+    // The inner lock remains taken the entire time the resulting iterator exists.
+    pub fn popping_iterator(&self) -> impl Iterator<Item = MempoolTransaction> + '_ {
+        let inner = self.inner.write().expect("Poisoned lock");
+        let nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+
+        PoppingIterator { inner, nonce_cache }
+    }
 }
 
 #[async_trait]
@@ -332,52 +375,6 @@ impl MempoolProvider for Mempool {
         } else {
             None
         }
-    }
-
-    async fn take_chunk_or_wait(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize {
-        let from = dest.len();
-        let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
-        tokio::pin!(permit);
-        loop {
-            {
-                let mut inner = self.inner.write().expect("Poisoned lock");
-                let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
-
-                let taken = inner.pop_next_chunk(dest, n);
-
-                if taken > 0 {
-                    for mempool_tx in dest.iter().skip(from) {
-                        let contract_address = mempool_tx.contract_address().to_felt();
-                        let nonce_next = mempool_tx.nonce_next;
-                        nonce_cache.insert(contract_address, nonce_next);
-                    }
-                    return taken;
-                }
-                // Note: we put ourselves in the notify list BEFORE giving back the lock.
-                // Otherwise, some transactions could be missed.
-                permit.as_mut().enable(); // Register us to be notified.
-
-                // drop the locks here
-            }
-            permit.as_mut().await; // Wait until we're notified.
-            permit.set(self.notify.notified());
-        }
-    }
-
-    // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
-    fn txs_take_chunk(&self, dest: &mut Vec<MempoolTransaction>, n: usize) -> usize {
-        let mut inner = self.inner.write().expect("Poisoned lock");
-        let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
-
-        let from = dest.len();
-        let taken = inner.pop_next_chunk(dest, n);
-
-        for mempool_tx in dest.iter().skip(from) {
-            let contract_address = mempool_tx.contract_address().to_felt();
-            let nonce_next = mempool_tx.nonce_next;
-            nonce_cache.insert(contract_address, nonce_next);
-        }
-        taken
     }
 
     // #[tracing::instrument(skip(self, contract_address), fields(module = "Mempool"))]
@@ -427,10 +424,7 @@ impl MempoolProvider for Mempool {
         self.inner.read().expect("Poisoned lock").is_empty()
     }
 
-    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(
-        &self,
-        txs_executed: I,
-    ) -> Result<(), MempoolError> {
+    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(&self, txs_executed: I) -> Result<(), MempoolError> {
         if !self.config.no_saving {
             self.backend.remove_mempool_transactions(txs_executed)?;
         }
