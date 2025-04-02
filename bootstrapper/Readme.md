@@ -203,15 +203,18 @@ To run the Madara Bootstrapper on an Ubuntu machine with AMD architecture, pleas
 
 ### Contract Descriptions
 
-| Contract | Source Link | Local Path |
-| --- | --- | --- |
-| OpenZeppelinAccount (legacy: starknet) | [View on Starkscan][oz-account] | [src/contracts/OpenZeppelinAccount.json](./src/contracts/OpenZeppelinAccount.json) |
-| OpenZeppelinAccount (modified: openzeppelin) | [src/contracts/account.cairo](src/contracts/account.cairo) | [sierra file][oz-cairo-one] |
-| UDC (Universal Deployer Contract) | [View on Starkscan][udc-link] | [src/contracts/udc.json](./src/contracts/udc.json) |
+| Contract                                     | Source Link                  | Local Path               |
+| -------------------------------------------- | ---------------------------- | ------------------------ |
+| OpenZeppelinAccount (legacy: starknet)       | [Starkscan][oz-account]      | [JSON file][oz-json]     |
+| OpenZeppelinAccount (modified: openzeppelin) | [account.cairo][account-src] | [Sierra file][oz-sierra] |
+| UDC (Universal Deployer Contract)            | [Starkscan][udc-link]        | [JSON file][udc-json]    |
 
 [oz-account]: https://sepolia.starkscan.co/class/0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6
-[oz-cairo-one]: ./src/contracts/OpenZeppelinAccountCairoOne.sierra.json
+[oz-json]: ./src/contracts/OpenZeppelinAccount.json
+[account-src]: src/contracts/account.cairo
+[oz-sierra]: ./src/contracts/OpenZeppelinAccountCairoOne.sierra.json
 [udc-link]: https://sepolia.starkscan.co/class/0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69
+[udc-json]: ./src/contracts/udc.json
 
 Here are some contract descriptions on why they are used in our context.
 
