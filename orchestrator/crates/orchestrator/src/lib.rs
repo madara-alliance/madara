@@ -33,3 +33,11 @@ pub mod workers;
 
 /// Contains the CLI arguments for the service
 pub mod cli;
+/// Contains the error handling / errors that can be returned by the service
+pub mod error;
+/// Contains the utils that are used by the service
+pub mod utils;
+pub mod params;
+// Re-export commonly used ite
+pub use error::{OrchestratorError, OrchestratorResult};
+
