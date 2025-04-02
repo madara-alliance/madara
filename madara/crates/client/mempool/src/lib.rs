@@ -71,22 +71,33 @@ pub trait MempoolProvider: Send + Sync + 'static {
     ) -> Result<(), MempoolError>;
     fn chain_id(&self) -> Felt;
     fn is_empty(&self) -> bool;
+
+    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(
+        &self,
+        txs_executed: I,
+    ) -> Result<(), MempoolError>;
 }
 
 #[derive(Debug, Clone)]
 pub struct MempoolConfig {
     /// Mempool limits
     pub limits: MempoolLimits,
+    pub no_saving: bool,
 }
 
 impl MempoolConfig {
     pub fn new(limits: MempoolLimits) -> Self {
-        Self { limits }
+        Self { limits, no_saving: false }
     }
 
     #[cfg(any(test, feature = "testing"))]
     pub fn for_testing() -> Self {
-        Self { limits: MempoolLimits::for_testing() }
+        Self::new(MempoolLimits::for_testing())
+    }
+
+    pub fn with_no_saving(mut self, no_saving: bool) -> Self {
+        self.no_saving = no_saving;
+        self
     }
 }
 
@@ -96,6 +107,7 @@ pub struct Mempool {
     // Notify listener when the mempool goes from empty to non-empty.
     notify: Notify,
     metrics: MempoolMetrics,
+    config: MempoolConfig,
     nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
 }
 
@@ -159,10 +171,11 @@ impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, config: MempoolConfig) -> Self {
         Mempool {
             backend,
-            inner: RwLock::new(MempoolInner::new(config.limits)),
+            inner: RwLock::new(MempoolInner::new(config.limits.clone())),
             metrics: MempoolMetrics::register(),
             nonce_cache: RwLock::new(BTreeMap::new()),
             notify: Notify::new(),
+            config,
         }
     }
 
@@ -193,7 +206,9 @@ impl Mempool {
     ) -> Result<(), MempoolError> {
         // TODO: should we update this to store only if the mempool accepts
         // this transaction?
-        self.backend.save_mempool_transaction(&tx, &nonce_info).map_err(MempoolError::from)?;
+        if !self.config.no_saving {
+            self.backend.save_mempool_transaction(&tx, &nonce_info).map_err(MempoolError::from)?;
+        }
 
         let tx_hash = tx.tx_hash;
         let (tx, arrived_at, converted_class) = tx.into_blockifier()?;
@@ -410,6 +425,16 @@ impl MempoolProvider for Mempool {
 
     fn is_empty(&self) -> bool {
         self.inner.read().expect("Poisoned lock").is_empty()
+    }
+
+    fn remove_txs<I: IntoIterator<Item = Felt> + 'static>(
+        &self,
+        txs_executed: I,
+    ) -> Result<(), MempoolError> {
+        if !self.config.no_saving {
+            self.backend.remove_mempool_transactions(txs_executed)?;
+        }
+        Ok(())
     }
 }
 

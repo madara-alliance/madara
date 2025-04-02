@@ -13,6 +13,11 @@ pub struct ValidatorParams {
     /// See: Trasaction validation in [Starknet docs Transaction Validation](https://docs.starknet.io/architecture-and-concepts/network-architecture/transaction-life-cycle/)
     #[arg(env = "MADARA_NO_TRANSACTION_VALIDATION", long)]
     pub no_transaction_validation: bool,
+
+    // TODO: move this, idk where this arg would make sense.
+    /// Disable mempool saving. Mempool transactions will not be saved. This can increase performance quite a lot.
+    #[arg(env = "MADARA_NO_MEMPOOL_SAVING", long)]
+    pub no_mempool_saving: bool,
 }
 
 impl ValidatorParams {

@@ -284,9 +284,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .await
             .context("Error closing block")?;
 
-        self.backend
-            .remove_mempool_transactions(tx_executed)
-            .context("Removing mempool transactions from the database")?;
+        self.mempool.remove_txs(tx_executed).context("Removing mempool transactions")?;
 
         // // Flush changes to disk
         // self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
@@ -373,9 +371,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
     fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let ExecutorState::Executing(state) = self.current_state.as_mut().context("No current state")? {
-            self.backend
-                .remove_mempool_transactions(state.tx_executed_for_tick.drain(..))
-                .context("Removing mempool transactions from the database")?;
+            self.mempool.remove_txs(mem::take(&mut state.tx_executed_for_tick)).context("Removing mempool transactions")?;
 
             let (block, classes) = state
                 .block
