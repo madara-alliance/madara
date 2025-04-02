@@ -10,14 +10,14 @@ use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
 use mp_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
+    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use mp_transactions::{BroadcastedDeclareTransactionV0, InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
 use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
@@ -33,7 +33,7 @@ pub struct TestTransactionProvider;
 impl AddTransactionProvider for TestTransactionProvider {
     async fn add_declare_v0_transaction(
         &self,
-        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        _declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash> {
         unimplemented!()
     }

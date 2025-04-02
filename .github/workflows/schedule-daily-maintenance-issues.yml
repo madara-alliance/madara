@@ -8,6 +8,7 @@ on:
 jobs:
   stale_issues:
     name: 🧹 Clean up stale issues and PRs
+    if: ${{ github.repository_owner == 'madara-alliance' || github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     steps:
       - name: 🚀 Run stale

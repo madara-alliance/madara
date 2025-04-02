@@ -272,6 +272,7 @@ rand = "0.8"
 crypto-bigint = "0.5.5"
 ahash = "0.8"
 twox-hash = "2.1"
+zeroize = "1.8"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }

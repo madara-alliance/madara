@@ -71,3 +71,15 @@ impl core::fmt::Debug for ZeroingPrivateKey {
             .finish()
     }
 }
+
+impl TryFrom<String> for ZeroingPrivateKey {
+    type Error = starknet_core::types::FromStrError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        let s = zeroize::Zeroizing::new(s);
+        let private = Felt::from_hex(&s)?;
+        let public = starknet_crypto::get_public_key(&private);
+
+        Ok(Self { private, public })
+    }
+}
