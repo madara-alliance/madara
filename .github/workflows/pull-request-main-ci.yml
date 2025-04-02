@@ -31,6 +31,7 @@ jobs:
   build-madara-cairo:
     needs: update-db-version
     uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
 
   # Run linters for code style and quality
   lint-code-style:
