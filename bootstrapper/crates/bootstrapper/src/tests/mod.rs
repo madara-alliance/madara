@@ -161,6 +161,14 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         panic!("No binary to run: {:?}", target_bin)
     }
 
+    // Get absolute path to the config file
+    let current_dir = std::env::current_dir()?;
+    let config_path = current_dir.join("configs").join("presets").join("devnet.yaml");
+
+    if !config_path.exists() {
+        panic!("Config file not found at: {:?}", config_path);
+    }
+
     Command::new(target_bin)
         .arg("--name")
         .arg("madara")
@@ -173,7 +181,7 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("--rpc-external")
         .arg("--sequencer")
         .arg("--chain-config-path")
-        .arg("configs/presets/devnet.yaml")
+        .arg(config_path)  // Use the absolute path here
         .arg("--feeder-gateway-enable")
         .arg("--gateway-enable")
         .arg("--gateway-external")
