@@ -83,6 +83,25 @@ jobs:
         with:
           name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
           path: artifacts
+      - name: Start Anvil with fork
+        run: |
+          nohup anvil \
+            --code-size-limit 300000 \
+            --port ${{ env.ANVIL_DEFAULT_PORT }} &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          echo "Waiting for Anvil to start..."
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
 
       - name: Run tests with coverage
         continue-on-error: true

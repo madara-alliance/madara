@@ -27,9 +27,21 @@ jobs:
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-mold: false
           install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+      - name: Install Ganache
+        run: |
+          npm install -g ganache@7.9.0
+          ganache --version
 
+      - name: Install Solc
+        run: |
+          pip install solc-select
+          solc-select install 0.8.19
+          solc-select use 0.8.19
+          solc --version
       - name: Download Bootstrapper artifacts
         uses: actions/download-artifact@v4
         with:

@@ -2,10 +2,11 @@ pub mod constants;
 mod erc20_bridge;
 mod eth_bridge;
 
+use std::env;
 use std::future::Future;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
-use std::{env, fs};
 
 use rstest::rstest;
 use url::Url;
