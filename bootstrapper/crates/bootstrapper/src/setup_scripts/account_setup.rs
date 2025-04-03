@@ -40,8 +40,8 @@ pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) 
     )
     .await;
     let oz_account_caio_1_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-        env!("CARGO_MANIFEST_DIR").to_owned() + "/" + OZ_ACCOUNT_SIERRA_PATH,
-        env!("CARGO_MANIFEST_DIR").to_owned() + "/" + OZ_ACCOUNT_CASM_PATH,
+        OZ_ACCOUNT_SIERRA_PATH.to_string(),
+        OZ_ACCOUNT_CASM_PATH.to_string(),
         user_account_temp.clone(),
     ))
     .await;

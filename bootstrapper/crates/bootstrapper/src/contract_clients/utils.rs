@@ -136,11 +136,18 @@ pub(crate) enum DeclarationInput<'a> {
 pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
     match input {
         DeclarationInputs(sierra_path, casm_path, account) => {
-            let contract_artifact: SierraClass =
-                serde_json::from_reader(std::fs::File::open(sierra_path).unwrap()).unwrap();
+            log::info!("sierra_path: {:?}", sierra_path);
+            log::info!("casm_path: {:?}", casm_path);
+            log::info!("CARGO_MANIFEST_DIR: {:?}", env!("CARGO_MANIFEST_DIR"));
+            let contract_artifact: SierraClass = serde_json::from_reader(
+                std::fs::File::open(env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &sierra_path).unwrap(),
+            )
+            .unwrap();
 
-            let contract_artifact_casm: CompiledClass =
-                serde_json::from_reader(std::fs::File::open(casm_path).unwrap()).unwrap();
+            let contract_artifact_casm: CompiledClass = serde_json::from_reader(
+                std::fs::File::open(env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &casm_path).unwrap(),
+            )
+            .unwrap();
             let class_hash = contract_artifact_casm.class_hash().unwrap();
             let sierra_class_hash = contract_artifact.class_hash().unwrap();
 
