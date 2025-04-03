@@ -6,7 +6,7 @@ use reqwest::Method;
 use url::Url;
 
 use crate::error::AtlanticError;
-use crate::types::{AtlanticAddJobResponse, AtlanticGetStatusResponse};
+use crate::types::{AtlanticAddJobResponse, AtlanticGetStatusResponse, AtlanticQueryStep, AtlanticCairoVersion, AtlanticCairoVm };
 use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
@@ -24,14 +24,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", "PROOF_VERIFICATION_ON_L1")
+        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.as_str())
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", "PROOF_VERIFICATION_ON_L2")
+        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.as_str())
     }
 }
 
@@ -45,8 +45,6 @@ impl AtlanticClient {
     /// We need to set up the client with the API_KEY.
     pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
-        let prover_type = atlantic_params.atlantic_prover_type.clone();
-
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
             .default_form_data("mockFactHash", &mock_fact_hash)
@@ -81,13 +79,13 @@ impl AtlanticClient {
                 self.client
                     .request()
                     .method(Method::POST)
-                    .path("/atlantic-query")
+                    .path("atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
                     .form_text("network", atlantic_network.as_ref())
-                    .form_text("cairoVersion", "cairo0")
-                    .form_text("cairoVm", "rust")
+                    .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                    .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
                     .form_file("pieFile", pie_file, "pie.zip")?,
             )
             .send()
@@ -105,7 +103,7 @@ impl AtlanticClient {
             .client
             .request()
             .method(Method::GET)
-            .path("/atlantic-query")
+            .path("atlantic-query")
             .path(job_key)
             .send()
             .await

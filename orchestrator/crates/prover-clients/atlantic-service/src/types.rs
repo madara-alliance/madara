@@ -24,7 +24,7 @@ pub struct AtlanticQuery {
     pub external_id: Option<String>,
     pub transaction_id: Option<String>,
     pub status: AtlanticQueryStatus,
-    pub step: Option<AtlanticQueryStep>, // unsure
+    pub step: Option<AtlanticQueryStep>,
     pub program_hash: Option<String>,
     pub integrity_fact_hash: Option<String>,
     pub sharp_fact_hash: Option<String>,
@@ -81,21 +81,34 @@ pub enum AtlanticJobSize {
     L,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AtlanticCairoVm {
     Rust,
     Python,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl AtlanticCairoVm {
+    pub fn as_str(&self) -> String {
+        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AtlanticCairoVersion {
     Cairo0,
     Cairo1,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl AtlanticCairoVersion {
+    pub fn as_str(&self) -> String {
+        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+    }
+}
+
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticQueryStep {
     TraceGeneration,
@@ -104,4 +117,10 @@ pub enum AtlanticQueryStep {
     ProofVerificationOnL1,
     ProofVerificationOnL2,
     ProofGenerationAndVerification,
+}
+
+impl AtlanticQueryStep {
+    pub fn as_str(&self) -> String {
+        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+    }
 }
