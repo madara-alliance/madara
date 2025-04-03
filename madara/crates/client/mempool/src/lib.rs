@@ -14,11 +14,11 @@ use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag, MadaraPendingBlockInfo};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::BroadcastedDeclareTransactionV0;
 use mp_transactions::BroadcastedTransactionExt;
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
@@ -78,7 +78,7 @@ pub(crate) trait CheckInvariants {
 #[cfg_attr(test, mockall::automock)]
 pub trait MempoolProvider: Send + Sync {
     fn tx_accept_invoke(&self, tx: BroadcastedInvokeTxn) -> Result<AddInvokeTransactionResult, MempoolError>;
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError>;
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTxnV0) -> Result<ClassAndTxnHash, MempoolError>;
     fn tx_accept_declare(&self, tx: BroadcastedDeclareTxn) -> Result<ClassAndTxnHash, MempoolError>;
     fn tx_accept_deploy_account(&self, tx: BroadcastedDeployAccountTxn) -> Result<ContractAndTxnHash, MempoolError>;
     fn tx_accept_l1_handler(
@@ -350,7 +350,7 @@ impl MempoolProvider for Mempool {
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
-    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTransactionV0) -> Result<ClassAndTxnHash, MempoolError> {
+    fn tx_accept_declare_v0(&self, tx: BroadcastedDeclareTxnV0) -> Result<ClassAndTxnHash, MempoolError> {
         let (btx, class) = tx.into_blockifier(self.chain_id(), self.backend.chain_config().latest_protocol_version)?;
 
         let res = ClassAndTxnHash {

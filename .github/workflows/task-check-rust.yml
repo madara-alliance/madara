@@ -1,0 +1,34 @@
+---
+name: Task - Check Rust
+
+# This workflow runs cargo check on the Rust codebase
+# to verify that the code compiles without building it completely
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  rust_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      # Setup the rust environment
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+
+      - name: Check the project
+        run: |
+          cargo check --release --all --workspace

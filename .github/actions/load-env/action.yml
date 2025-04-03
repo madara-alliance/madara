@@ -1,0 +1,27 @@
+name: "Load environment variables"
+description: "Loads the environment variables to be used in the workflows"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: dcarbone/install-yq-action@v1
+    - run: yq --version
+      shell: bash
+    - name: Load config
+      id: config
+      shell: bash
+      run: |
+
+        echo "Loading environment variables from config file..."
+        # Get all environment variables from env.yml and set them in GITHUB_ENV
+        env_vars=$(yq '.env | keys | .[]' .github/config/env.yml)
+        for var in $env_vars; do
+          value=$(yq ".env.$var" .github/config/env.yml)
+          if [ -n "${!var}" ]; then
+            echo "Using existing $var=${!var}"
+          else
+            echo "Setting $var=$value from config file"
+            export $var="$value"
+            echo "$var=$value" >> $GITHUB_ENV
+          fi
+        done
