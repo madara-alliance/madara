@@ -225,7 +225,7 @@ impl Job for ProvingJob {
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        30
+        300
     }
 
     fn job_processing_lock(

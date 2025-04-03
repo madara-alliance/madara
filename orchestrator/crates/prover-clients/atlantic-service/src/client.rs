@@ -81,12 +81,11 @@ impl AtlanticClient {
                 self.client
                     .request()
                     .method(Method::POST)
-                    .path("atlantic-query")
+                    .path("/atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
                     .form_text("network", atlantic_network.as_ref())
-                    .form_text("result", "PROOF_GENERATION")
                     .form_text("cairoVersion", "cairo0")
                     .form_text("cairoVm", "rust")
                     .form_file("pieFile", pie_file, "pie.zip")?,
@@ -106,7 +105,7 @@ impl AtlanticClient {
             .client
             .request()
             .method(Method::GET)
-            .path("atlantic-query")
+            .path("/atlantic-query")
             .path(job_key)
             .send()
             .await
