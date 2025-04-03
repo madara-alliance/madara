@@ -55,7 +55,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
-- refactor: new endpoints for atlantic proving service
 - refactor: job isolation added, each job will have needed information from it's worker
 - Increased interval time for spawn_consumer
 - verify_job now handles VerificationTimeout status
