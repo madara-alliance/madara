@@ -398,7 +398,7 @@ impl MempoolProvider for Mempool {
         Ok(res)
     }
 
-    // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
+    #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         let mut nonce_cache = self.nonce_cache.write().expect("Poisoned lock");

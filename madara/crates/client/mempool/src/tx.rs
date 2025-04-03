@@ -89,7 +89,9 @@ pub fn saved_to_blockifier_tx(
             let converted_class =
                 converted_class.as_ref().ok_or(SavedToBlockifierTxError::MissingField("class_info"))?;
 
-            let class_info = converted_class.into();
+            let class_info = converted_class.try_into().map_err(|e| {
+                SavedToBlockifierTxError::ClassCompilationError(ClassCompilationError::ParsingProgramJsonFailed(e))
+            })?;
             let tx = tx.try_into().map_err(|_| SavedToBlockifierTxError::InvalidContractAddress)?;
             let declare_tx = DeclareTransaction { tx, tx_hash, class_info };
             BTransaction::Account(AccountTransaction {

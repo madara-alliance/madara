@@ -38,7 +38,7 @@ impl TransactionWithHash {
         let class_info = match &self.transaction {
             Transaction::Declare(_txn) => {
                 let class = class.ok_or(ToBlockifierError::MissingClass)?;
-                Some(class.into())
+                Some(class.try_into()?)
             }
             _ => None,
         };
@@ -197,6 +197,8 @@ pub enum ToBlockifierError {
     Base64ToCairoError(#[from] std::io::Error),
     #[error("Missing class")]
     MissingClass,
+    #[error("Failed to convert class to api: {0}")]
+    ConvertClassToApiError(#[from] serde_json::Error),
 }
 
 #[allow(clippy::type_complexity)]
@@ -207,7 +209,7 @@ fn handle_class_legacy(
     tracing::debug!("Computed legacy class hash: {:?}", class_hash);
     let converted_class =
         ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: LegacyClassInfo { contract_class } });
-    let api_class_info = (&converted_class).into();
+    let api_class_info = (&converted_class).try_into()?;
     Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))
 }
 
@@ -227,8 +229,8 @@ fn handle_class_sierra(
     let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
         class_hash,
         info: SierraClassInfo { contract_class, compiled_class_hash },
-        compiled: Arc::new((&compiled).try_into().unwrap()),
+        compiled: Arc::new((&compiled).try_into()?),
     });
-    let api_class_info = (&converted_class).into();
+    let api_class_info = (&converted_class).try_into()?;
     Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))
 }

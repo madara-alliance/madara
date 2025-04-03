@@ -2,7 +2,6 @@ use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass,
 use casm_classes_v2::casm_contract_class::CasmContractClass;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
-use std::borrow::Cow;
 
 #[cfg(feature = "cairo_native")]
 use cairo_native::executor::AotContractExecutor;
@@ -18,11 +17,17 @@ pub enum ClassCompilationError {
     #[error("Failed to compile siera class: {0}")]
     CompilationFailed(String), // use String due to different crates versions for compilation
     #[error("Failed to parse sierra version: {0}")]
-    ParsingSierraVersion(Cow<'static, str>),
+    ParsingSierraVersion(#[from] SierraVersionError),
     #[error("Failed to construct a blockifier class: {0}")]
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
     CompiledClassHashMismatch { expected: Felt, got: Felt },
+    #[cfg(feature = "cairo_native")]
+    #[error("Failed to compile sierra to cairo native: {0}")]
+    NativeCompilationFailed(cairo_native::error::Error),
+    #[cfg(feature = "cairo_native")]
+    #[error("Failed to extract sierra program")]
+    ExtractSierraProgramFailed(String), // use String due to original error type Felt252SerdeError not being available publicly
 }
 
 impl CompressedLegacyContractClass {
@@ -81,7 +86,7 @@ impl CompressedLegacyContractClass {
 
     pub fn to_starknet_api_no_abi(
         &self,
-    ) -> Result<starknet_api::deprecated_contract_class::ContractClass, ClassCompilationError> {
+    ) -> Result<starknet_api::deprecated_contract_class::ContractClass, serde_json::Error> {
         let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&self.program));
         let program: starknet_api::deprecated_contract_class::Program = serde_json::from_reader(decoder)?;
 
@@ -130,7 +135,7 @@ impl FlattenedSierraClass {
     }
 
     #[cfg(feature = "cairo_native")]
-    pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
+    pub fn compile_to_native(&self) -> Result<AotContractExecutor, ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
         let sierra_version = casm_classes_v2::compiler_version::VersionId {
             major: sierra_version.0 as _,
@@ -138,35 +143,37 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra.extract_sierra_program().unwrap();
+        let program = sierra
+            .extract_sierra_program()
+            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
 
-        let executor = AotContractExecutor::new_into(
+        let executor = AotContractExecutor::new(
             &program,
             &sierra.entry_points_by_type,
             sierra_version,
-            path,
             cairo_native::OptLevel::Default,
         )
-        .unwrap()
-        .unwrap();
+        .map_err(ClassCompilationError::NativeCompilationFailed)?;
 
         Ok(executor)
     }
 
-    pub fn sierra_version(&self) -> Result<starknet_api::contract_class::SierraVersion, ClassCompilationError> {
+    pub fn sierra_version(&self) -> Result<starknet_api::contract_class::SierraVersion, SierraVersionError> {
         let version = parse_sierra_version(&self.sierra_program)?;
         Ok(starknet_api::contract_class::SierraVersion::new(version.0, version.1, version.2))
     }
 }
 
-impl CompiledSierra {
-    pub fn to_casm(&self) -> Result<CasmContractClass, ClassCompilationError> {
-        Ok(serde_json::from_str(&self.0)?)
+impl TryFrom<&CompiledSierra> for CasmContractClass {
+    type Error = serde_json::Error;
+
+    fn try_from(value: &CompiledSierra) -> Result<Self, Self::Error> {
+        serde_json::from_str(&value.0)
     }
 }
 
 impl TryFrom<&CasmContractClass> for CompiledSierra {
-    type Error = ClassCompilationError;
+    type Error = serde_json::Error;
 
     fn try_from(value: &CasmContractClass) -> Result<Self, Self::Error> {
         Ok(CompiledSierra(serde_json::to_string::<CasmContractClass>(value)?))
@@ -176,20 +183,28 @@ impl TryFrom<&CasmContractClass> for CompiledSierra {
 #[derive(Debug, PartialEq)]
 struct SierraVersion(u64, u64, u64);
 
-fn parse_sierra_version(program: &[Felt]) -> Result<SierraVersion, ClassCompilationError> {
+#[derive(Debug, thiserror::Error)]
+pub enum SierraVersionError {
+    #[error("Malformed version")]
+    MalformedVersion,
+    #[error("Program is too short, expected at least 3 elements")]
+    TooShortProgram,
+}
+
+fn parse_sierra_version(program: &[Felt]) -> Result<SierraVersion, SierraVersionError> {
     const VERSION_0_1_0_AS_SHORTSTRING: Felt = Felt::from_hex_unchecked("0x302e312e30"); // "0.1.0"
 
     match program {
         [first, ..] if first == &VERSION_0_1_0_AS_SHORTSTRING => Ok(SierraVersion(0, 1, 0)),
         [a, b, c, ..] => {
             let (a, b, c) = (
-                (*a).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                (*b).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                (*c).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
+                (*a).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
+                (*b).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
+                (*c).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
             );
             Ok(SierraVersion(a, b, c))
         }
-        _ => Err(ClassCompilationError::ParsingSierraVersion("Program is too short".into())),
+        _ => Err(SierraVersionError::TooShortProgram),
     }
 }
 

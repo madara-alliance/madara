@@ -36,8 +36,6 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-
-dashmap = "6.1"
 thiserror = { workspace = true }
 
 #Instrumentation

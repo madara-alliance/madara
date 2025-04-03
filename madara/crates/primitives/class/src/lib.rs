@@ -151,7 +151,7 @@ impl SierraClassInfo {
                 got: compiled_class_hash,
             });
         }
-        (&compiled).try_into()
+        Ok((&compiled).try_into()?)
     }
 }
 

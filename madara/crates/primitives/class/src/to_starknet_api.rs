@@ -1,46 +1,59 @@
 use std::collections::HashMap;
 
+use serde::de::Error as _;
 use starknet_api::contract_class::{ClassInfo as ApiClassInfo, SierraVersion};
 
 use crate::{
     ConvertedClass, LegacyContractEntryPoint, LegacyConvertedClass, LegacyEntryPointsByType, SierraConvertedClass,
 };
 
-impl From<&ConvertedClass> for ApiClassInfo {
-    fn from(converted_class: &ConvertedClass) -> Self {
+impl TryFrom<&ConvertedClass> for ApiClassInfo {
+    type Error = serde_json::Error;
+
+    fn try_from(converted_class: &ConvertedClass) -> Result<Self, Self::Error> {
         match converted_class {
-            ConvertedClass::Legacy(legacy) => legacy.into(),
-            ConvertedClass::Sierra(sierra) => sierra.into(),
+            ConvertedClass::Legacy(legacy) => legacy.try_into(),
+            ConvertedClass::Sierra(sierra) => sierra.try_into(),
         }
     }
 }
 
-impl From<&LegacyConvertedClass> for ApiClassInfo {
-    // TODO: remove unwrap
-    fn from(converted_class: &LegacyConvertedClass) -> Self {
-        ApiClassInfo {
+impl TryFrom<&LegacyConvertedClass> for ApiClassInfo {
+    type Error = serde_json::Error;
+
+    fn try_from(converted_class: &LegacyConvertedClass) -> Result<Self, Self::Error> {
+        Ok(ApiClassInfo {
             contract_class: starknet_api::contract_class::ContractClass::V0(
-                converted_class.info.contract_class.to_starknet_api_no_abi().unwrap(),
+                converted_class.info.contract_class.to_starknet_api_no_abi()?,
             ),
             sierra_program_length: 0,
             abi_length: 0,
             sierra_version: SierraVersion::DEPRECATED,
-        }
+        })
     }
 }
 
-impl From<&SierraConvertedClass> for ApiClassInfo {
-    // TODO: remove unwrap
-    fn from(converted_class: &SierraConvertedClass) -> Self {
-        ApiClassInfo {
+impl TryFrom<&SierraConvertedClass> for ApiClassInfo {
+    type Error = serde_json::Error;
+
+    fn try_from(converted_class: &SierraConvertedClass) -> Result<Self, Self::Error> {
+        Ok(ApiClassInfo {
             contract_class: starknet_api::contract_class::ContractClass::V1((
-                converted_class.compiled.to_casm().unwrap(),
-                converted_class.info.contract_class.sierra_version().unwrap(),
+                converted_class.compiled.as_ref().try_into()?,
+                converted_class
+                    .info
+                    .contract_class
+                    .sierra_version()
+                    .map_err(|_| serde_json::Error::custom("Failed to get sierra version from program"))?,
             )),
             sierra_program_length: converted_class.info.contract_class.program_length(),
             abi_length: converted_class.info.contract_class.abi_length(),
-            sierra_version: converted_class.info.contract_class.sierra_version().unwrap(),
-        }
+            sierra_version: converted_class
+                .info
+                .contract_class
+                .sierra_version()
+                .map_err(|_| serde_json::Error::custom("Failed to get sierra version from program"))?,
+        })
     }
 }
 
