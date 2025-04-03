@@ -1,6 +1,7 @@
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
+use std::thread::sleep;
 use std::time::Duration;
 
 use color_eyre::eyre::eyre;
