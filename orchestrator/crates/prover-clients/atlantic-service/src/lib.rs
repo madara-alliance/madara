@@ -1,8 +1,9 @@
 pub mod client;
 pub mod error;
-mod types;
+pub mod types;
 use std::str::FromStr;
 
+pub use crate::types::AtlanticQueryStatus;
 use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
@@ -12,7 +13,6 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
-use crate::types::AtlanticQueryStatus;
 
 pub const ATLANTIC_SETTINGS_NAME: &str = "atlantic";
 

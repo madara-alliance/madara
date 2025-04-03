@@ -9936,6 +9936,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
+ "tokio-test",
  "tokio-util",
  "tracing",
  "tracing-core",

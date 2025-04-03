@@ -66,7 +66,7 @@ pub enum AtlanticQueryStatus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum AtlanticChain {
     L1,
     L2,
@@ -107,7 +107,6 @@ impl AtlanticCairoVersion {
     }
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticQueryStep {
@@ -117,6 +116,8 @@ pub enum AtlanticQueryStep {
     ProofVerificationOnL1,
     ProofVerificationOnL2,
     ProofGenerationAndVerification,
+    #[cfg(feature = "testing")]
+    FactHashRegistration,
 }
 
 impl AtlanticQueryStep {
