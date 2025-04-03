@@ -9,7 +9,10 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
+      - uses: actions/checkout@v4
       - name: Cleanup PR caches
         run: |
           echo "Fetching list of cache keys for this PR"
