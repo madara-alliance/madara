@@ -14,6 +14,8 @@ serde_json = { version = "1.0.108", default-features = false, features = [
 ] }
 serde_with = { version = "2.3.3", default-features = false }
 url = "2.4.1"
+base64 = "0.22"
+
 
 # Zaun Deps
 ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", rev = "34bda2ccb69fb26be9cdfe091c11f27480850c96" }

@@ -9361,6 +9361,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "clap",
  "color-eyre",

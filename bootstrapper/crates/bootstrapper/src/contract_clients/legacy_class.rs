@@ -1,6 +1,10 @@
 // Note: This code has been taken from the madara code-base.
 
+use base64;
 use starknet_types_core::felt::Felt;
+
+pub type Address = Felt;
+pub type Signature = Vec<Felt>;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntryPointsByType {
@@ -22,7 +26,16 @@ pub struct CompressedLegacyContractClass {
     pub abi: Option<Vec<LegacyContractAbiEntry>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeprecatedContractClass {
+    #[serde(default)]
+    pub abi: Option<Vec<LegacyContractAbiEntry>>,
+    pub entry_points_by_type: LegacyEntryPointsByType,
+    /// A base64 representation of the compressed program code
+    pub program: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEntryPointsByType {
     #[serde(rename = "CONSTRUCTOR")]
     pub constructor: Vec<LegacyContractEntryPoint>,
@@ -32,20 +45,59 @@ pub struct LegacyEntryPointsByType {
     pub l1_handler: Vec<LegacyContractEntryPoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+// First, we need to define the NumAsHex serialization helper
+mod num_as_hex {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::fmt::Write;
+
+    pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Copy + Into<u64>,
+    {
+        let mut hex = String::with_capacity(18);
+        write!(&mut hex, "0x{:x}", (*value).into()).unwrap();
+        serializer.serialize_str(&hex)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: TryFrom<u64>,
+        <T as TryFrom<u64>>::Error: std::fmt::Display,
+    {
+        let s = String::deserialize(deserializer)?;
+        let without_prefix = s.strip_prefix("0x").unwrap_or(&s);
+
+        let parsed = u64::from_str_radix(without_prefix, 16)
+            .map_err(|e| serde::de::Error::custom(format!("Failed to parse hex: {}", e)))?;
+
+        T::try_from(parsed).map_err(|e| serde::de::Error::custom(e.to_string()))
+    }
+}
+
+// Add this attribute to allow the non-snake_case warning for NumAsHex
+#[allow(non_snake_case)]
+pub mod NumAsHex {
+    pub use super::num_as_hex::{deserialize, serialize};
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyContractEntryPoint {
+    #[serde(with = "NumAsHex")]
     pub offset: u64,
     pub selector: Felt,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
 pub enum LegacyContractAbiEntry {
     Function(LegacyFunctionAbiEntry),
     Event(LegacyEventAbiEntry),
     Struct(LegacyStructAbiEntry),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyFunctionAbiEntry {
     pub r#type: LegacyFunctionAbiType,
     pub name: String,
@@ -55,7 +107,7 @@ pub struct LegacyFunctionAbiEntry {
     pub state_mutability: Option<FunctionStateMutability>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEventAbiEntry {
     pub r#type: LegacyEventAbiType,
     pub name: String,
@@ -63,7 +115,7 @@ pub struct LegacyEventAbiEntry {
     pub data: Vec<LegacyTypedParameter>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyStructAbiEntry {
     pub r#type: LegacyStructAbiType,
     pub name: String,
@@ -71,20 +123,20 @@ pub struct LegacyStructAbiEntry {
     pub members: Vec<LegacyStructMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyStructMember {
     pub name: String,
     pub r#type: String,
     pub offset: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LegacyTypedParameter {
     pub name: String,
     pub r#type: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LegacyFunctionAbiType {
     #[serde(rename = "function")]
     Function,
@@ -94,19 +146,19 @@ pub enum LegacyFunctionAbiType {
     Constructor,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LegacyEventAbiType {
     #[serde(rename = "event")]
     Event,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LegacyStructAbiType {
     #[serde(rename = "struct")]
     Struct,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum FunctionStateMutability {
     #[serde(rename = "view")]
     View,
@@ -460,6 +512,39 @@ impl From<FunctionStateMutability> for starknet_core::types::FunctionStateMutabi
     fn from(function_state_mutability: FunctionStateMutability) -> Self {
         match function_state_mutability {
             FunctionStateMutability::View => starknet_core::types::FunctionStateMutability::View,
+        }
+    }
+}
+
+impl From<starknet_core::types::CompressedLegacyContractClass> for DeprecatedContractClass {
+    fn from(compressed_legacy_contract_class: starknet_core::types::CompressedLegacyContractClass) -> Self {
+        // Add this attribute to allow the deprecated function warning for base64::encode
+        #[allow(deprecated)]
+        let program_base64 = base64::encode(&compressed_legacy_contract_class.program);
+
+        DeprecatedContractClass {
+            program: program_base64,
+            entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
+            abi: compressed_legacy_contract_class
+                .abi
+                .map(|abi| abi.into_iter().map(|legacy_contract_abi_entry| legacy_contract_abi_entry.into()).collect()),
+        }
+    }
+}
+
+impl From<DeprecatedContractClass> for starknet_core::types::CompressedLegacyContractClass {
+    fn from(deprecated_contract_class: DeprecatedContractClass) -> Self {
+        // Add this attribute to allow the deprecated function warning for base64::decode
+        #[allow(deprecated)]
+        let program_bytes =
+            base64::decode(&deprecated_contract_class.program).expect("Failed to decode base64 program");
+
+        starknet_core::types::CompressedLegacyContractClass {
+            program: program_bytes,
+            entry_points_by_type: deprecated_contract_class.entry_points_by_type.into(),
+            abi: deprecated_contract_class
+                .abi
+                .map(|abi| abi.into_iter().map(|legacy_contract_abi_entry| legacy_contract_abi_entry.into()).collect()),
         }
     }
 }
