@@ -167,6 +167,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
 
     let is_success = wait_for_tx(&account, deploy_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Deploy trasaction failed");
+    sleep(Duration::from_secs(10));
 
     let settlement_client = StarknetSettlementClient::new_with_args(&starknet_settlement_params).await;
     let onchain_data_hash = [1; 32];
