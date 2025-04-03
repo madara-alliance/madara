@@ -402,7 +402,7 @@ mod l1_messaging_tests {
     /// 7. Assert that the tx is succesfully submited to the mempool
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
-    /// 
+    ///
     /// TODO: Test more cases:
     /// - Nonce 1 arrives first and is labeled as Pending
     /// - Nonce 1 arrives first, then Zero and are correctly executed
