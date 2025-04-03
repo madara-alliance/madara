@@ -10,19 +10,8 @@ pending_block_update_time: ""
 execution_batch_size:
 bouncer_config:
   block_max_capacity:
-    builtin_count:
-      add_mod:
-      bitwise:
-      ecdsa:
-      ec_op:
-      keccak:
-      mul_mod:
-      pedersen:
-      poseidon:
-      range_check:
-      range_check96:
-    gas:
-    n_steps:
+  block_max_capacity:
+    sierra_gas:
     message_segment_length:
     n_events:
     state_diff_size:

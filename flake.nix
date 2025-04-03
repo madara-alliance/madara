@@ -5,7 +5,6 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
   outputs = {
-    self,
     nixpkgs,
     rust-overlay,
     flake-utils,

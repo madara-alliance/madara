@@ -65,7 +65,7 @@ impl ThroughputCounter {
             + self.current_count;
 
         let window_duration =
-            if self.buckets.front().map_or(false, |(time, _)| now.duration_since(*time) >= self.window_size) {
+            if self.buckets.front().is_some_and(|(time, _)| now.duration_since(*time) >= self.window_size) {
                 self.window_size.as_secs_f64()
             } else if let Some((oldest_time, _)) = self.buckets.front() {
                 now.duration_since(*oldest_time).as_secs_f64()

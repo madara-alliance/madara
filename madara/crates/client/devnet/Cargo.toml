@@ -23,7 +23,6 @@ mc-block-production = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 proptest.workspace = true
 proptest-derive.workspace = true
-blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 

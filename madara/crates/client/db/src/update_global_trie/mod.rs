@@ -38,7 +38,7 @@ impl MadaraBackend {
 
             state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
         }
-        state_root.ok_or_else(|| MadaraStorageError::EmptyBatch)
+        state_root.ok_or(MadaraStorageError::EmptyBatch)
     }
 }
 
@@ -59,8 +59,8 @@ mod tests {
     use super::*;
     use crate::MadaraBackend;
     use mp_chain_config::ChainConfig;
+    use mp_convert::felt;
     use rstest::*;
-    use starknet_api::felt;
     use std::sync::Arc;
 
     #[fixture]

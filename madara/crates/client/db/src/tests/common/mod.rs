@@ -10,7 +10,6 @@ use mp_transactions::{
     DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
     L1HandlerTransaction,
 };
-use starknet_api::felt;
 use starknet_types_core::felt::Felt;
 
 #[cfg(any(test, feature = "testing"))]
@@ -43,7 +42,7 @@ pub fn finalized_block_zero(header: Header) -> MadaraMaybePendingBlock {
     let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(0), Felt::from(1), Felt::from(2), Felt::from(3), Felt::from(4)];
-    let block_info = MadaraBlockInfo::new(header, tx_hashes, felt!("0x12345"));
+    let block_info = MadaraBlockInfo::new(header, tx_hashes, Felt::from_hex_unchecked("0x12345"));
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }

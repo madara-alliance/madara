@@ -1,22 +1,18 @@
-name: madara_runner
-
 services:
-  madara:
-    image: madara:latest
-    container_name: "madara_runner"
-    cpus: "4.0"
-    mem_limit: "16gb"
-    ports:
-      - 9944:9944
-    labels:
-      - "autoheal=true"
+  madara_sequencer:
+    container_name: madara_sequencer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
-      - RPC_API_KEY_FILE=/run/secrets/rpc_api_key
-    secrets:
-      - rpc_api_key
+      - RUST_LOG=info
+    ports:
+      - "127.0.0.1:9944:9944"
+      - "127.0.0.1:8080:8080"
     volumes:
-      - /var/lib/madara:/tmp/madara
-      - ./madara-runner.sh:/usr/local/bin/runner.sh:ro
+      - madara-data:/usr/share/madara/data:rw
+      - ./scripts/runner.sh:/usr/local/bin/runner.sh:ro
     entrypoint:
       - /usr/local/bin/runner.sh
     healthcheck:
@@ -25,16 +21,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    restart: on-failure:3
 
-  autoheal:
-    image: willfarrell/autoheal:latest
-    tty: true
-    restart: always
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-
-secrets:
-  rpc_api_key:
-    file: .secrets/rpc_api.secret
+volumes:
+  # madara_sequencer_data:
+  #   name: madara_sequencer_data_${ENV}
+  #   driver: local
+  madara-data:
+    name: madara_data
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=2G"

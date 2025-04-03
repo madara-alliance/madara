@@ -6,7 +6,6 @@ use blockifier::{
     transaction::errors::TransactionExecutionError,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_block::{VisitedSegmentEntry, VisitedSegments};
 use mp_convert::ToFelt;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -101,156 +100,120 @@ pub(crate) fn state_map_to_state_diff(
     })
 }
 
-fn get_visited_segments<S: StateReader>(tx_executor: &mut TransactionExecutor<S>) -> Result<VisitedSegments, Error> {
-    let visited_segments = tx_executor
-        .block_state
-        .as_ref()
-        .expect(BLOCK_STATE_ACCESS_ERR)
-        .visited_pcs
-        .iter()
-        .map(|(class_hash, class_visited_pcs)| -> Result<_, Error> {
-            let contract_class = tx_executor
-                .block_state
-                .as_ref()
-                .expect(BLOCK_STATE_ACCESS_ERR)
-                .get_compiled_contract_class(*class_hash)
-                .map_err(TransactionExecutionError::StateError)?;
-            Ok(VisitedSegmentEntry {
-                class_hash: class_hash.to_felt(),
-                segments: contract_class.get_visited_segments(class_visited_pcs)?,
-            })
-        })
-        .collect::<Result<_, Error>>()?;
-
-    Ok(VisitedSegments(visited_segments))
-}
-
 pub(crate) fn finalize_execution_state<S: StateReader>(
     tx_executor: &mut TransactionExecutor<S>,
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
-) -> Result<(StateDiff, VisitedSegments, BouncerWeights), Error> {
+) -> Result<(StateDiff, BouncerWeights), Error> {
     let state_map = tx_executor
         .block_state
         .as_mut()
         .expect(BLOCK_STATE_ACCESS_ERR)
         .to_state_diff()
-        .map_err(TransactionExecutionError::StateError)?;
+        .map_err(TransactionExecutionError::StateError)?
+        .state_maps;
     let state_update = state_map_to_state_diff(backend, on_top_of, state_map)?;
 
-    let visited_segments = get_visited_segments(tx_executor)?;
-
-    Ok((state_update, visited_segments, *tx_executor.bouncer.get_accumulated_weights()))
+    Ok((state_update, *tx_executor.bouncer.get_accumulated_weights()))
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, sync::Arc};
-
-    use blockifier::{compiled_class_hash, nonce, state::cached_state::StateMaps, storage_key};
+    use blockifier::state::cached_state::StateMaps;
     use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
-    use mp_convert::ToFelt;
+    use mp_convert::felt;
     use mp_state_update::{
         ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry,
     };
-    use starknet_api::{
-        class_hash, contract_address,
-        core::{ClassHash, ContractAddress, PatriciaKey},
-        felt, patricia_key,
-    };
+    use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
     use starknet_core::types::Felt;
+    use std::{collections::HashMap, sync::Arc};
 
     #[test]
     fn state_map_to_state_diff() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
         let mut nonces = HashMap::new();
-        nonces.insert(contract_address!(1u32), nonce!(1));
-        nonces.insert(contract_address!(2u32), nonce!(2));
-        nonces.insert(contract_address!(3u32), nonce!(3));
+        nonces.insert(felt!("1").try_into().unwrap(), Nonce(felt!("1")));
+        nonces.insert(felt!("2").try_into().unwrap(), Nonce(felt!("2")));
+        nonces.insert(felt!("3").try_into().unwrap(), Nonce(felt!("3")));
 
         let mut class_hashes = HashMap::new();
-        class_hashes.insert(contract_address!(1u32), class_hash!("0xc1a551"));
-        class_hashes.insert(contract_address!(2u32), class_hash!("0xc1a552"));
-        class_hashes.insert(contract_address!(3u32), class_hash!("0xc1a553"));
+        class_hashes.insert(felt!("1").try_into().unwrap(), ClassHash(felt!("0xc1a551")));
+        class_hashes.insert(felt!("2").try_into().unwrap(), ClassHash(felt!("0xc1a552")));
+        class_hashes.insert(felt!("3").try_into().unwrap(), ClassHash(felt!("0xc1a553")));
 
         let mut storage = HashMap::new();
-        storage.insert((contract_address!(1u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(1u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(1u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("1").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
-        storage.insert((contract_address!(2u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(2u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(2u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("2").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
-        storage.insert((contract_address!(3u32), storage_key!(1u32)), felt!(1u32));
-        storage.insert((contract_address!(3u32), storage_key!(2u32)), felt!(2u32));
-        storage.insert((contract_address!(3u32), storage_key!(3u32)), felt!(3u32));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("1").try_into().unwrap()), felt!("1"));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("2").try_into().unwrap()), felt!("2"));
+        storage.insert((felt!("3").try_into().unwrap(), felt!("3").try_into().unwrap()), felt!("3"));
 
         let mut compiled_class_hashes = HashMap::new();
         // "0xc1a553" is marked as deprecated by not having a compiled
         // class hashe
-        compiled_class_hashes.insert(class_hash!("0xc1a551"), compiled_class_hash!(0x1));
-        compiled_class_hashes.insert(class_hash!("0xc1a552"), compiled_class_hash!(0x2));
+        compiled_class_hashes.insert(ClassHash(felt!("0xc1a551")), CompiledClassHash(felt!("0x1")));
+        compiled_class_hashes.insert(ClassHash(felt!("0xc1a552")), CompiledClassHash(felt!("0x2")));
 
         let mut declared_contracts = HashMap::new();
-        declared_contracts.insert(class_hash!("0xc1a551"), true);
-        declared_contracts.insert(class_hash!("0xc1a552"), true);
-        declared_contracts.insert(class_hash!("0xc1a553"), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a551")), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a552")), true);
+        declared_contracts.insert(ClassHash(felt!("0xc1a553")), true);
 
         let state_map = StateMaps { nonces, class_hashes, storage, compiled_class_hashes, declared_contracts };
 
         let storage_diffs = vec![
             ContractStorageDiffItem {
-                address: felt!(1u32),
+                address: felt!("1"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
             ContractStorageDiffItem {
-                address: felt!(2u32),
+                address: felt!("2"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
             ContractStorageDiffItem {
-                address: felt!(3u32),
+                address: felt!("3"),
                 storage_entries: vec![
-                    StorageEntry { key: felt!(1u32), value: Felt::ONE },
-                    StorageEntry { key: felt!(2u32), value: Felt::TWO },
-                    StorageEntry { key: felt!(3u32), value: Felt::THREE },
+                    StorageEntry { key: felt!("1"), value: Felt::ONE },
+                    StorageEntry { key: felt!("2"), value: Felt::TWO },
+                    StorageEntry { key: felt!("3"), value: Felt::THREE },
                 ],
             },
         ];
 
-        let deprecated_declared_classes = vec![class_hash!("0xc1a553").to_felt()];
+        let deprecated_declared_classes = vec![felt!("0xc1a553")];
 
         let declared_classes = vec![
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a551").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x1).to_felt(),
-            },
-            DeclaredClassItem {
-                class_hash: class_hash!("0xc1a552").to_felt(),
-                compiled_class_hash: compiled_class_hash!(0x2).to_felt(),
-            },
+            DeclaredClassItem { class_hash: felt!("0xc1a551"), compiled_class_hash: felt!("0x1") },
+            DeclaredClassItem { class_hash: felt!("0xc1a552"), compiled_class_hash: felt!("0x2") },
         ];
 
         let nonces = vec![
-            NonceUpdate { contract_address: felt!(1u32), nonce: felt!(1u32) },
-            NonceUpdate { contract_address: felt!(2u32), nonce: felt!(2u32) },
-            NonceUpdate { contract_address: felt!(3u32), nonce: felt!(3u32) },
+            NonceUpdate { contract_address: felt!("1"), nonce: felt!("1") },
+            NonceUpdate { contract_address: felt!("2"), nonce: felt!("2") },
+            NonceUpdate { contract_address: felt!("3"), nonce: felt!("3") },
         ];
 
         let deployed_contracts = vec![
-            DeployedContractItem { address: felt!(1u32), class_hash: class_hash!("0xc1a551").to_felt() },
-            DeployedContractItem { address: felt!(2u32), class_hash: class_hash!("0xc1a552").to_felt() },
-            DeployedContractItem { address: felt!(3u32), class_hash: class_hash!("0xc1a553").to_felt() },
+            DeployedContractItem { address: felt!("1"), class_hash: felt!("0xc1a551") },
+            DeployedContractItem { address: felt!("2"), class_hash: felt!("0xc1a552") },
+            DeployedContractItem { address: felt!("3"), class_hash: felt!("0xc1a553") },
         ];
 
         let replaced_classes = vec![];
