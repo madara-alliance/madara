@@ -124,7 +124,7 @@ jobs:
           rm -f target/madara-bootstrapper-* lcov.info
 
           # run tests for bootstrapper crate
-          cargo llvm-cov nextest \
+          RUST_LOG=info cargo llvm-cov nextest \
                   --release \
                   --lcov \
                   --output-path lcov.info \
