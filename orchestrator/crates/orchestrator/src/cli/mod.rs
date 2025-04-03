@@ -609,6 +609,8 @@ pub mod validate_params {
             max_block_to_process: service_args.max_block_to_process,
             min_block_to_process: service_args.min_block_to_process,
             max_concurrent_snos_jobs: service_args.max_concurrent_snos_jobs,
+            max_concurrent_proving_jobs: service_args.max_concurrent_proving_jobs,
+
         })
     }
 
@@ -890,6 +892,7 @@ pub mod validate_params {
                 max_block_to_process: Some(66645),
                 min_block_to_process: Some(100),
                 max_concurrent_snos_jobs: Some(10),
+                max_concurrent_proving_jobs: Some(5),
             };
             let service_params = validate_service_params(&service_args);
             assert!(service_params.is_ok());

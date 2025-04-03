@@ -12,6 +12,7 @@ use crate::queue::job_queue::add_job_to_process_queue;
 
 pub struct ProcessingLocks {
     pub snos_job_processing_lock: Arc<JobProcessingState>,
+    pub proving_job_processing_lock: Arc<JobProcessingState>,
 }
 
 pub struct JobProcessingState {

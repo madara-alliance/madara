@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alloy::signers::k256::pkcs8::der::oid::db::rfc4519::SN;
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
@@ -230,8 +231,8 @@ impl Job for ProvingJob {
 
     fn job_processing_lock(
         &self,
-        _config: Arc<Config>,
+        config: Arc<Config>,
     ) -> std::option::Option<std::sync::Arc<helpers::JobProcessingState>> {
-        None
+        Some(config.processing_locks().proving_job_processing_lock.clone())
     }
 }

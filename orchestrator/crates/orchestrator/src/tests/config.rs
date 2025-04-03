@@ -250,7 +250,12 @@ impl TestConfigBuilder {
 
         let snos_processing_lock =
             JobProcessingState::new(params.orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-        let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
+        let proving_processing_lock =
+            JobProcessingState::new(params.orchestrator_params.service_config.max_concurrent_proving_jobs.unwrap_or(1));
+        let processing_locks = ProcessingLocks {
+            snos_job_processing_lock: Arc::new(snos_processing_lock),
+            proving_job_processing_lock: Arc::new(proving_processing_lock),
+        };
 
         let config = Arc::new(Config::new(
             params.orchestrator_params,
@@ -550,8 +555,18 @@ fn get_env_params() -> EnvParams {
     let max_concurrent_snos_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
+        .expect("Couldn't get max concurrent proving jobs");
+    let max_concurrent_proving_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
     let service_config =
-        ServiceParams { max_block_to_process: max_block, min_block_to_process: min_block, max_concurrent_snos_jobs };
+        ServiceParams {
+            max_block_to_process: max_block,
+            min_block_to_process: min_block,
+            max_concurrent_snos_jobs,
+            max_concurrent_proving_jobs,
+        };
 
     let server_config = ServerParams {
         host: get_env_var_or_panic("MADARA_ORCHESTRATOR_HOST"),
