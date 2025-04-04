@@ -355,6 +355,63 @@ impl MadaraBackend {
         Ok(())
     }
 
+    /// Reverts the tip of the chain back to the given block.
+    ///
+    /// In addition, this removes all historical data (chain state, transactions, state diffs,
+    /// etc.) from the database. ROW_SYNC_TIP is set to the new tip.
+    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<StateDiff>> {
+        let mut tx = WriteBatchWithTransaction::default();
+
+        let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
+        let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
+        let meta = self.db.get_column(Column::BlockStorageMeta);
+
+        // clear pending
+        tx.delete_cf(&meta, ROW_PENDING_INFO);
+        tx.delete_cf(&meta, ROW_PENDING_INNER);
+        tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
+
+        let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
+        let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
+        for block_n in (revert_to + 1..latest_block_n + 1).rev() {
+            let block_n_encoded = bincode::serialize(&block_n)?;
+
+            let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;
+            let block_info: MadaraBlockInfo = bincode::deserialize(&res.unwrap())?; // TODO: unwrap
+
+            // clear all txns from this block
+            for txn_hash in block_info.tx_hashes {
+                let txn_hash_encoded = bincode::serialize(&txn_hash)?;
+                tx.delete_cf(&tx_hash_to_block_n, &txn_hash_encoded);
+            }
+
+            let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
+
+            // get state diff for this block before removing it
+            let state_diff_serialized = self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?
+                .unwrap(); // TODO: unwrap, should we expect an entry for every single block here, or will some be None?
+            let state_diff: StateDiff = bincode::deserialize(&state_diff_serialized)?;
+            state_diffs.push(state_diff);
+
+            tx.delete_cf(&block_n_to_block, &block_n_encoded);
+            tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
+            tx.delete_cf(&block_n_to_block_inner, &block_n_encoded);
+            tx.delete_cf(&block_n_to_state_diff, &block_n_encoded);
+        }
+
+        let latest_block_n_encoded = bincode::serialize(&revert_to)?;
+        tx.put_cf(&meta, ROW_SYNC_TIP, latest_block_n_encoded);
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
+
+        Ok(state_diffs)
+    }
+
     // Convenience functions
 
     pub(crate) fn id_to_storage_type(&self, id: &BlockId) -> Result<Option<DbBlockId>> {
