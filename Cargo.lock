@@ -9412,6 +9412,7 @@ dependencies = [
  "anyhow",
  "mp-rpc",
  "serde",
+ "starknet-types-core",
  "tokio",
  "tracing",
 ]

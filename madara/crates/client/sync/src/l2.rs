@@ -28,6 +28,12 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
 
+// Module-level constants
+// Maximum number of consecutive failures allowed in the highest block fetch task before terminating
+const MAX_HIGHEST_BLOCK_FETCH_FAILURES: usize = 5;
+// Delay after encountering an error when fetching the highest block
+const HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS: u64 = 1;
+
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]
 pub enum L2SyncError {
@@ -238,7 +244,6 @@ async fn l2_highest_block_fetch(
 
     // Track consecutive failures to prevent endless loops
     let mut consecutive_failures = 0;
-    const MAX_CONSECUTIVE_FAILURES: usize = 5;
 
     // Keep running until cancelled
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
@@ -265,27 +270,24 @@ async fn l2_highest_block_fetch(
                     _ => {
                         tracing::error!("Got unexpected block type from provider that wasn't handled");
                         consecutive_failures += 1;
+                        tokio::time::sleep(Duration::from_secs(HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS)).await;
                     }
                 }
             }
             Err(e) => {
                 tracing::error!("Error getting latest block: {:?}", e);
                 consecutive_failures += 1;
+                tokio::time::sleep(Duration::from_secs(HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS)).await;
             }
         }
 
         // If we've had too many consecutive failures, break out of the loop
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+        if consecutive_failures >= MAX_HIGHEST_BLOCK_FETCH_FAILURES {
             let error_msg = format!(
-                "Received unexpected block types or errors for {MAX_CONSECUTIVE_FAILURES} consecutive attempts"
+                "Received unexpected block types or errors for {MAX_HIGHEST_BLOCK_FETCH_FAILURES} consecutive attempts"
             );
             tracing::error!("{}", error_msg);
             return Err(anyhow::anyhow!(error_msg));
-        }
-
-        // If we had failures but not enough to terminate, add a small delay
-        if consecutive_failures > 0 {
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 

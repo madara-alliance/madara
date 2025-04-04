@@ -25,3 +25,8 @@ mp-rpc.workspace = true
 # Other dependencies
 anyhow.workspace = true
 serde = { workspace = true, features = ["derive"] }
+
+
+[dev-dependencies]
+# Starknet
+starknet-types-core = { workspace = true }
