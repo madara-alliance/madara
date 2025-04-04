@@ -188,7 +188,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     )
     .await;
     assert!(is_success, "Update state transaction failed/reverted");
-
+    sleep(Duration::from_secs(10));
     let call_result = account
         .provider()
         .call(
