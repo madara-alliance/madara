@@ -1,5 +1,4 @@
 use std::cmp::{max, min};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,7 +7,9 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 
 use crate::config::Config;
+use crate::constants::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::jobs::create_job;
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::jobs::types::JobType;
 use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
@@ -52,7 +53,21 @@ impl Worker for SnosWorker {
         };
 
         for block_num in block_start..latest_block_number + 1 {
-            match create_job(JobType::SnosRun, block_num.to_string(), HashMap::new(), config.clone()).await {
+            // Create typed metadata structure with predefined paths
+            let metadata = JobMetadata {
+                common: CommonMetadata::default(),
+                specific: JobSpecificMetadata::Snos(SnosMetadata {
+                    block_number: block_num,
+                    full_output: false,
+                    // Set the storage paths using block number
+                    cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
+                    snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
+                    program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
+                    snos_fact: None,
+                }),
+            };
+
+            match create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
                 Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
                 Err(e) => {
                     tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");

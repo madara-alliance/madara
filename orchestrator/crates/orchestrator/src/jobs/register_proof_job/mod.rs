@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,6 +7,8 @@ use uuid::Uuid;
 
 use super::JobError;
 use crate::config::Config;
+use crate::helpers;
+use crate::jobs::metadata::JobMetadata;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::Job;
 
@@ -20,7 +21,7 @@ impl Job for RegisterProofJob {
         &self,
         _config: Arc<Config>,
         internal_id: String,
-        metadata: HashMap<String, String>,
+        metadata: JobMetadata,
     ) -> Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "proof_registry", function_type = "create_job",  block_no = %internal_id, "Proof registration job creation started.");
         let job_item = JobItem {
@@ -67,5 +68,12 @@ impl Job for RegisterProofJob {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         todo!()
+    }
+
+    fn job_processing_lock(
+        &self,
+        _config: Arc<Config>,
+    ) -> std::option::Option<std::sync::Arc<helpers::JobProcessingState>> {
+        None
     }
 }

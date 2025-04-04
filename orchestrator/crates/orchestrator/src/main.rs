@@ -7,6 +7,9 @@ use orchestrator::routes::setup_server;
 use orchestrator::setup::setup_cloud;
 use orchestrator::telemetry::{setup_analytics, shutdown_analytics};
 
+#[global_allocator]
+static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 /// Start the server
 #[tokio::main]
 // not sure why clippy gives this error on the latest rust

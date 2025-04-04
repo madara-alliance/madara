@@ -34,6 +34,7 @@ use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
 use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::mongodb::MongoDBValidatedArgs;
 use crate::database::{Database, MockDatabase};
+use crate::helpers::{JobProcessingState, ProcessingLocks};
 use crate::queue::sqs::AWSSQSValidatedArgs;
 use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::routes::{get_server_url, setup_server, ServerParams};
@@ -230,20 +231,15 @@ impl TestConfigBuilder {
             implement_client::init_settlement_client(settlement_client_type, &params.settlement_params).await;
 
         let prover_client = implement_client::init_prover_client(prover_client_type, &params.prover_params).await;
-
         // Delete the Storage before use
         delete_storage(provider_config.clone(), &params.storage_params).await.expect("Could not delete storage");
-
         // External Dependencies
         let storage =
             implement_client::init_storage_client(storage_type, &params.storage_params, provider_config.clone()).await;
-
         let database = implement_client::init_database(database_type, &params.db_params).await;
-
         let queue =
             implement_client::init_queue_client(queue_type, params.queue_params.clone(), provider_config.clone()).await;
         // Deleting and Creating the queues in sqs.
-
         create_queues(provider_config.clone(), &params.queue_params)
             .await
             .expect("Not able to delete and create the queues.");
@@ -251,6 +247,10 @@ impl TestConfigBuilder {
         drop_database(&params.db_params).await.expect("Unable to drop the database.");
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
+
+        let snos_processing_lock =
+            JobProcessingState::new(params.orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
+        let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
 
         let config = Arc::new(Config::new(
             params.orchestrator_params,
@@ -262,6 +262,7 @@ impl TestConfigBuilder {
             queue,
             storage,
             alerts,
+            processing_locks,
         ));
 
         let api_server_address = implement_api_server(api_server_type, config.clone()).await;
@@ -544,7 +545,13 @@ fn get_env_params() -> EnvParams {
     let env = get_env_var_optional("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").expect("Couldn't get min block");
     let min_block: Option<u64> = env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<u64>().unwrap()) });
 
-    let service_config = ServiceParams { max_block_to_process: max_block, min_block_to_process: min_block };
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS")
+        .expect("Couldn't get max concurrent snos jobs");
+    let max_concurrent_snos_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
+    let service_config =
+        ServiceParams { max_block_to_process: max_block, min_block_to_process: min_block, max_concurrent_snos_jobs };
 
     let server_config = ServerParams {
         host: get_env_var_or_panic("MADARA_ORCHESTRATOR_HOST"),
