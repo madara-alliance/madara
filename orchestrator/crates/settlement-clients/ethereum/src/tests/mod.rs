@@ -125,11 +125,12 @@ mod settlement_client_tests {
     use std::str::FromStr;
     use std::time::Duration;
 
+    use alloy::consensus::Transaction;
     use alloy::eips::eip4844::BYTES_PER_BLOB;
     use alloy::primitives::Address;
     use alloy::providers::Provider;
     use alloy::sol_types::private::U256;
-    use alloy_primitives::FixedBytes;
+    use alloy_primitives::B256;
     use color_eyre::eyre::eyre;
     use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
     use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -199,14 +200,14 @@ mod settlement_client_tests {
 
         let txn = setup
             .provider
-            .get_transaction_by_hash(FixedBytes::from_str(update_state_result.as_str()).expect("Unable to convert txn"))
+            .get_transaction_by_hash(B256::from_str(update_state_result.as_str()).expect("Unable to convert txn"))
             .await
             .expect("did not get txn from hash")
             .unwrap();
 
-        assert_eq!(txn.hash.to_string(), update_state_result.to_string());
-        assert!(txn.signature.is_some());
-        assert_eq!(txn.to.unwrap(), *contract.address());
+        assert_eq!(txn.inner.tx_hash().to_string(), update_state_result.to_string());
+        assert!(!txn.inner.signature().as_bytes().is_empty());
+        assert_eq!(txn.inner.to().unwrap(), *contract.address());
 
         // Testing verify_tx_inclusion
         sleep(Duration::from_secs(BLOCK_TIME + 2)).await;

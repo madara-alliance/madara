@@ -192,7 +192,6 @@ alloy = { version = "0.8.3", features = [
   "rpc-types",
   "provider-http",
   "contract",
-  "node-bindings",
 ] }
 
 # Instrumentation
