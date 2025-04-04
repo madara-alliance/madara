@@ -610,7 +610,6 @@ pub mod validate_params {
             min_block_to_process: service_args.min_block_to_process,
             max_concurrent_snos_jobs: service_args.max_concurrent_snos_jobs,
             max_concurrent_proving_jobs: service_args.max_concurrent_proving_jobs,
-
         })
     }
 

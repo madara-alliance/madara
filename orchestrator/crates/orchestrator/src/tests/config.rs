@@ -560,13 +560,12 @@ fn get_env_params() -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
-    let service_config =
-        ServiceParams {
-            max_block_to_process: max_block,
-            min_block_to_process: min_block,
-            max_concurrent_snos_jobs,
-            max_concurrent_proving_jobs,
-        };
+    let service_config = ServiceParams {
+        max_block_to_process: max_block,
+        min_block_to_process: min_block,
+        max_concurrent_snos_jobs,
+        max_concurrent_proving_jobs,
+    };
 
     let server_config = ServerParams {
         host: get_env_var_or_panic("MADARA_ORCHESTRATOR_HOST"),

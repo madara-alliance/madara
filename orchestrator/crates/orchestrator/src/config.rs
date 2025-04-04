@@ -167,14 +167,16 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
     let queue_params = run_cmd.validate_queue_params().map_err(|e| eyre!("Failed to validate queue params: {e}"))?;
     let queue = build_queue_client(&queue_params, provider_config.clone()).await;
 
-    let snos_processing_lock =
-        JobProcessingState::new(orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-    let proving_processing_lock =
-        JobProcessingState::new(orchestrator_params.service_config.max_concurrent_proving_jobs.unwrap_or(1));
-    let processing_locks = ProcessingLocks {
-        snos_job_processing_lock: Arc::new(snos_processing_lock),
-        proving_job_processing_lock: Arc::new(proving_processing_lock),
-    };
+    let mut processing_locks = ProcessingLocks::default();
+
+    if let Some(max_concurrent_snos_jobs) = orchestrator_params.service_config.max_concurrent_snos_jobs {
+        processing_locks.snos_job_processing_lock = Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
+    }
+
+    if let Some(max_concurrent_proving_jobs) = orchestrator_params.service_config.max_concurrent_proving_jobs {
+        processing_locks.proving_job_processing_lock =
+            Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
+    }
 
     Ok(Arc::new(Config::new(
         orchestrator_params,
