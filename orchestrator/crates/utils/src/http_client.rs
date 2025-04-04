@@ -294,6 +294,7 @@ impl<'a> RequestBuilder<'a> {
     pub fn form_file(mut self, key: &str, file_path: &Path, file_name: &str) -> io::Result<Self> {
         let file_bytes = std::fs::read(file_path)?;
         let file_name = file_name.to_string();
+        // TODO: Ideally the file type should be determined automatically
         let part = Part::bytes(file_bytes)
             .file_name(file_name)
             .mime_str("application/zip")

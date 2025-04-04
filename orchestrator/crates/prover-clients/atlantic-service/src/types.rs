@@ -116,7 +116,6 @@ pub enum AtlanticQueryStep {
     ProofVerificationOnL1,
     ProofVerificationOnL2,
     ProofGenerationAndVerification,
-    #[cfg(feature = "testing")]
     FactHashRegistration,
     TraceAndMetadataGeneration,
 }

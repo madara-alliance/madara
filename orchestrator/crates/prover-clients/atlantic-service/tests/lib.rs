@@ -6,8 +6,7 @@ use orchestrator_prover_client_interface::{ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
 
-use crate::constants::CAIRO_PIE_PATH;
-
+use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 mod constants;
 
 #[tokio::test]
@@ -44,6 +43,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
+    // We don't need to send the steps because it's a mock fact hash.
     let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), None).await;
 
     assert!(task_result.is_ok());
@@ -102,22 +102,21 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
 
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
-        .submit_task(Task::CairoPie(Box::new(cairo_pie)), Some(14000000))
+        // We don't need to send the steps because it's a mock fact hash.
+        .submit_task(Task::CairoPie(Box::new(cairo_pie)), None)
         .await
         .expect("Failed to submit task to Atlantic service");
 
-    // Poll for job status until it's done or timeout is reached
-    let max_retries = 30; // Set a reasonable number of retries
-    let retry_delay = std::time::Duration::from_secs(10);
+
     let mut current_retry = 0;
 
     loop {
-        if current_retry >= max_retries {
+        if current_retry >= MAX_RETRIES {
             panic!("Maximum retries reached. Test timed out.");
         }
 
         // Wait before checking status again
-        tokio::time::sleep(retry_delay).await;
+        tokio::time::sleep(RETRY_DELAY).await;
         current_retry += 1;
 
         // Get the current status of the job
@@ -128,7 +127,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             AtlanticQueryStatus::Done => {
 
                 if let Some(is_mocked) = status_result.atlantic_query.is_fact_mocked {
-                    log::info!("Is fact mocked: {}", is_mocked);
                     assert!(is_mocked, "Expected fact to be mocked but it wasn't");
                 }
 
