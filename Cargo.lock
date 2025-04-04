@@ -8784,6 +8784,7 @@ dependencies = [
  "anyhow",
  "bigdecimal 0.4.5",
  "bitvec",
+ "blockifier",
  "dotenv",
  "futures",
  "httpmock 0.7.0",
