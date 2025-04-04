@@ -7,6 +7,7 @@ use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
 use mp_block::{BlockId, BlockTag};
+use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
 use std::{sync::Arc, time::Duration};
 
@@ -24,12 +25,13 @@ pub struct SyncConfig {
     pub pending_block_poll_interval: Duration,
 }
 
-#[tracing::instrument(skip(backend, ctx, fetch_config, sync_config))]
+#[tracing::instrument(skip(backend, ctx, fetch_config, sync_config, sync_status_provider))]
 pub async fn l2_sync_worker(
     backend: Arc<MadaraBackend>,
     ctx: ServiceContext,
     fetch_config: FetchConfig,
     sync_config: SyncConfig,
+    sync_status_provider: Arc<SyncStatusProvider>,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = sync_config.starting_block {
         tracing::warn!("Forcing unordered state. This will most probably break your database.");
@@ -44,7 +46,8 @@ pub async fn l2_sync_worker(
             false,
         )
     };
-
+    // update the sync status with the starting block info
+    sync_status_provider.set_starting_block_num(starting_block).await;
     tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
 
     let mut provider = GatewayProvider::new(fetch_config.gateway, fetch_config.feeder_gateway);
@@ -73,7 +76,7 @@ pub async fn l2_sync_worker(
         warp_update: fetch_config.warp_update,
     };
 
-    l2::sync(backend, provider, ctx, l2_config).await?;
+    l2::sync(backend, provider, ctx, l2_config, sync_status_provider).await?;
 
     Ok(())
 }
