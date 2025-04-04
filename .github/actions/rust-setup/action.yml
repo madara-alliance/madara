@@ -22,12 +22,36 @@ inputs:
     description: "Whether to install Foundry"
     required: false
     default: "false"
+  install-node:
+    description: "Whether to install Node.js"
+    required: false
+    default: "false"
+  install-ganache:
+    description: "Whether to install Ganache"
+    required: false
+    default: "false"
+  install-solc:
+    description: "Whether to install Solc"
+    required: false
+    default: "false"
   foundry-version:
     description: "Foundry version to install"
     required: false
   python-version:
     description: "Python version to use for Cairo 0/SNOS"
     default: "3.9"
+    required: false
+  node-version:
+    description: "Node.js version to install"
+    required: false
+    default: "18"
+  ganache-version:
+    description: "Ganache version to install"
+    required: false
+    default: "7.9.0"
+  solc-version:
+    description: "Solc version to install"
+    default: "0.8.19"
     required: false
   build-snos:
     description: "Whether to build SNOS files"
@@ -119,6 +143,26 @@ runs:
       uses: foundry-rs/foundry-toolchain@v1
       with:
         version: ${{ inputs.foundry-version }}
+
+    - name: Setup Node.js
+      if: ${{ inputs.install-node == 'true' }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Ganache
+      if: ${{ inputs.install-ganache == 'true' }}
+      run: |
+        npm install -g ganache@${{ inputs.ganache-version }}
+        ganache --version
+
+    - name: Install Solc
+      if: ${{ inputs.install-solc == 'true' }}
+      run: |
+        pip install solc-select
+        solc-select install ${{ inputs.solc-version }}
+        solc-select use ${{ inputs.solc-version }}
+        solc --version
 
     - name: Setup Python for Cairo 0
       uses: actions/setup-python@v5
