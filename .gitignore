@@ -71,3 +71,5 @@ tmp/
 .secrets
 image.tar.gz
 
+# madara test artifacts for testing l2 clients for appchains
+test-artifacts/madara
