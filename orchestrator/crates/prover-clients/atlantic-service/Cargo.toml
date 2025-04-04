@@ -51,7 +51,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 tokio.workspace = true
-tokio-test = "*"
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 
 

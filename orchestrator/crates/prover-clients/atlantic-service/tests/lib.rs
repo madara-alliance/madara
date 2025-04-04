@@ -78,8 +78,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     let _ = env_logger::try_init();
     dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
 
-    println!("Submitting task to Atlantic");
-
     // Initialize Atlantic parameters from environment variables
     let atlantic_params = AtlanticValidatedArgs {
         atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
@@ -108,8 +106,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         .await
         .expect("Failed to submit task to Atlantic service");
 
-    println!("Task submitted successfully. Query ID: {}", task_result);
-
     // Poll for job status until it's done or timeout is reached
     let max_retries = 30; // Set a reasonable number of retries
     let retry_delay = std::time::Duration::from_secs(10);
@@ -124,26 +120,15 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         tokio::time::sleep(retry_delay).await;
         current_retry += 1;
 
-        println!("Checking job status (attempt {}/{})", current_retry, max_retries);
-
         // Get the current status of the job
         let status_result =
             atlantic_service.atlantic_client.get_job_status(&task_result).await.expect("Failed to get job status");
 
-        println!("Current job status: {:?}", status_result.atlantic_query.status);
-
         match status_result.atlantic_query.status {
             AtlanticQueryStatus::Done => {
-                // Job completed successfully
-                println!("Job completed successfully!");
-
-                // Check the fact hash if available
-                if let Some(fact_hash) = status_result.atlantic_query.integrity_fact_hash {
-                    println!("Integrity fact hash: {}", fact_hash);
-                }
 
                 if let Some(is_mocked) = status_result.atlantic_query.is_fact_mocked {
-                    println!("Is fact mocked: {}", is_mocked);
+                    log::info!("Is fact mocked: {}", is_mocked);
                     assert!(is_mocked, "Expected fact to be mocked but it wasn't");
                 }
 
@@ -156,8 +141,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
                 panic!("Job failed with reason: {}", error_reason);
             }
             _ => {
-                // Job is still processing, continue waiting
-                log::info!("Job is still processing, waiting for next check...");
                 continue;
             }
         }

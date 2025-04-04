@@ -118,6 +118,7 @@ pub enum AtlanticQueryStep {
     ProofGenerationAndVerification,
     #[cfg(feature = "testing")]
     FactHashRegistration,
+    TraceAndMetadataGeneration,
 }
 
 impl AtlanticQueryStep {
