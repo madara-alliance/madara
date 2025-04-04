@@ -100,7 +100,7 @@ impl Job for ProvingJob {
         tracing::debug!(job_id = %job.internal_id, "Submitting task to prover client");
         let external_id = config
             .prover_client()
-            .submit_task(Task::CairoPie(cairo_pie), *config.prover_layout_name())
+            .submit_task(Task::CairoPie(cairo_pie), proving_metadata.n_steps)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -225,7 +225,7 @@ impl Job for ProvingJob {
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        30
+        300
     }
 
     fn job_processing_lock(
