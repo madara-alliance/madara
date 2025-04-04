@@ -86,7 +86,7 @@ jobs:
       - name: Prepare Madara Environment (Orchestrator)
         run: |
           mv target/release/madara ./madara-binary          
-          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/orchestrator/madara-binary" >> $GITHUB_ENV
+          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
 
       - name: Getting necessary files for testing
         working-directory: orchestrator
@@ -99,7 +99,7 @@ jobs:
         run: rustup show
 
       - name: Run llvm-cov tests
-        continue-on-error: true
+        continue-on-error: false
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
