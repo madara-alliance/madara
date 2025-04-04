@@ -1,0 +1,58 @@
+name: Task - Test JavaScript
+
+# This workflow runs JavaScript compatibility tests for Starknet.js
+# against the Madara binary to ensure API compatibility
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara binary artifact"
+        required: true
+        type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: true
+        type: string
+
+jobs:
+  test-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Download Cairo artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: cairo/target/
+
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
+      - name: Install dependencies
+        run: |
+          if ! command -v nc 2>&1 >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y netcat
+          fi
+          cd tests/js_tests
+          npm install
+
+      - name: Setup dev chain and run tests
+        run: |
+          ./target/release/madara --name madara --base-path ../madara_db --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset devnet --gas-price 0 --blob-gas-price 0 --strk-gas-price 0 --strk-blob-gas-price 0 --no-l1-sync &
+          MADARA_PID=$!
+          while ! echo exit | nc localhost 9944; do sleep 1; done
+          cd tests/js_tests
+          npm test
+          kill $MADARA_PID

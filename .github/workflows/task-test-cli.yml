@@ -1,0 +1,39 @@
+---
+name: Task - Run CLI tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  cli_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          # This used to be 1.81, but we are using 1.85 now. Keep an eye on this.
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
+      - name: Run cli without arguments
+        run: |
+          cargo run --bin madara --release &
+          MADARA_PID=$!
+          while ! echo exit | nc localhost 9944; do sleep 1; done
+          kill $MADARA_PID
+
+      - name: Run cli pointing to a file
+        run: |
+          cargo run --bin madara --release -- --config-file ./configs/args/config.json &
+          MADARA_PID=$!
+          while ! echo exit | nc localhost 9944; do sleep 1; done
+          kill $MADARA_PID
