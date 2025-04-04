@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
+use mp_state_update::StateDiff;
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::WriteOptions;
 use starknet_types_core::felt::Felt;
@@ -209,6 +210,49 @@ impl MadaraBackend {
                     Ok::<_, MadaraStorageError>(())
                 },
             )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn classes_db_revert(
+        &self,
+        _revert_to: u64,
+        state_diffs: &Vec<StateDiff>,
+    ) -> Result<(), MadaraStorageError> {
+        let classes_info_col = self.db.get_column(Column::ClassInfo);
+        let classes_compiled_col = self.db.get_column(Column::ClassCompiled);
+
+        let mut deprecated_declared_class_hashes = HashSet::new();
+        let mut declared_class_hashes = HashSet::new();
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        let mut batch = WriteBatchWithTransaction::default();
+
+        // find all class_hashes that we want to remove
+        for diff in state_diffs {
+            diff.deprecated_declared_classes.iter().for_each(|class_hash| {
+                deprecated_declared_class_hashes.insert(class_hash);
+            });
+            diff.declared_classes.iter().for_each(|declared_class| {
+                declared_class_hashes.insert((declared_class.class_hash, declared_class.compiled_class_hash));
+            });
+        }
+
+        for class_hash in &deprecated_declared_class_hashes {
+            let key = bincode::serialize(&class_hash)?;
+            batch.delete_cf(&classes_info_col, key);
+        }
+
+        for (class_hash, compiled_class_hash) in &declared_class_hashes {
+            let ch_key = bincode::serialize(&class_hash)?;
+            batch.delete_cf(&classes_info_col, ch_key);
+
+            let cch_key = bincode::serialize(&compiled_class_hash)?;
+            batch.delete_cf(&classes_compiled_col, cch_key);
+        }
+
+        self.db.write_opt(batch, &writeopts)?;
 
         Ok(())
     }

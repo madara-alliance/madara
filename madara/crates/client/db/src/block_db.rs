@@ -359,7 +359,7 @@ impl MadaraBackend {
     ///
     /// In addition, this removes all historical data (chain state, transactions, state diffs,
     /// etc.) from the database. ROW_SYNC_TIP is set to the new tip.
-    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<()> {
+    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<StateDiff>> {
         let mut tx = WriteBatchWithTransaction::default();
 
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
@@ -375,6 +375,7 @@ impl MadaraBackend {
         tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
 
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
+        let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
         for block_n in (revert_to + 1..latest_block_n + 1).rev() {
             let block_n_encoded = bincode::serialize(&block_n)?;
 
@@ -389,6 +390,12 @@ impl MadaraBackend {
 
             let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
 
+            // get state diff for this block before removing it
+            let state_diff_serialized = self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?
+                .unwrap(); // TODO: unwrap, should we expect an entry for every single block here, or will some be None?
+            let state_diff: StateDiff = bincode::deserialize(&state_diff_serialized)?;
+            state_diffs.push(state_diff);
+
             tx.delete_cf(&block_n_to_block, &block_n_encoded);
             tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
             tx.delete_cf(&block_n_to_block_inner, &block_n_encoded);
@@ -402,7 +409,7 @@ impl MadaraBackend {
         writeopts.disable_wal(true);
         self.db.write_opt(tx, &writeopts)?;
 
-        Ok(())
+        Ok(state_diffs)
     }
 
     // Convenience functions
