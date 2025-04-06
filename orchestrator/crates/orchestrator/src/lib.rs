@@ -1,7 +1,6 @@
 pub mod cli;
 pub mod core;
 pub mod error;
-pub mod r#macro;
 pub mod server;
 pub mod setup;
 pub mod types;

@@ -12,9 +12,7 @@ struct PrettyFormatter {
 }
 impl PrettyFormatter {
     fn new(service_name: &str) -> Self {
-        Self {
-            service_name: service_name.into(),
-        }
+        Self { service_name: service_name.into() }
     }
 }
 
@@ -23,7 +21,7 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
 {
-    fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
+    fn format_event(&self, _ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
         let meta = event.metadata();
         let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
 
@@ -57,11 +55,7 @@ where
             write!(writer, "{}{}:{}:{} ", file_color, file, line, reset)?;
         }
 
-        write!(
-            writer,
-            "{}[service={}]{} ",
-            fixed_field_color, self.service_name, reset
-        )?;
+        write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
 
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);

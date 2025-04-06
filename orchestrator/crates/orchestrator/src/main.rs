@@ -9,7 +9,7 @@ use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;

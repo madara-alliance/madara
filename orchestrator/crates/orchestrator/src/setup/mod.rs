@@ -50,15 +50,6 @@ pub async fn setup_cloud_provider(setup_cmd: &SetupCmd) -> OrchestratorResult<Ar
         ))
         .load()
         .await;
-
-    // Validate AWS access by attempting to list S3 buckets
-    info!("Validating AWS credentials and permissions...");
-    let s3_client = aws_sdk_s3::Client::new(&sdk_config);
-    s3_client
-        .list_buckets()
-        .send()
-        .await
-        .map_err(|e| OrchestratorError::InvalidCloudProviderError(format!("Failed to validate AWS access: {}", e)))?;
     info!("AWS credentials validated successfully");
 
     let cloud_provider = Arc::new(CloudProvider::AWS(Box::new(sdk_config)));

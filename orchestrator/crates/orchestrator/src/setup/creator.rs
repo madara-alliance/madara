@@ -1,3 +1,5 @@
+use crate::core::client::cron::event_bridge::EventBridgeClient;
+use crate::core::client::SNS;
 use crate::{
     core::client::{queue::sqs::SQS, storage::sss::AWSS3},
     core::cloud::CloudProvider,
@@ -53,5 +55,27 @@ impl ResourceCreator for SQSResourceCreator {
     async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
         let sqs = SQS::new(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, sqs, ResourceType::Queue))
+    }
+}
+
+// SNS resource creator
+pub struct SNSResourceCreator;
+
+#[async_trait]
+impl ResourceCreator for SNSResourceCreator {
+    async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
+        let sns = SNS::new(cloud_provider.clone()).await?;
+        Ok(ResourceWrapper::new(cloud_provider, sns, ResourceType::Notification))
+    }
+}
+
+// SNS resource creator
+pub struct EventBridgeResourceCreator;
+
+#[async_trait]
+impl ResourceCreator for EventBridgeResourceCreator {
+    async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
+        let eb_client = EventBridgeClient::new(cloud_provider.clone()).await?;
+        Ok(ResourceWrapper::new(cloud_provider, eb_client, ResourceType::Cron))
     }
 }

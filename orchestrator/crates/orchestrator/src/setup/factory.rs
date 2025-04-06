@@ -1,5 +1,10 @@
+use crate::core::client::cron::event_bridge::EventBridgeClient;
+use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
-use crate::setup::creator::{ResourceCreator, ResourceType, S3ResourceCreator, SQSResourceCreator};
+use crate::setup::creator::{
+    EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator,
+    SQSResourceCreator,
+};
 use crate::setup::wrapper::ResourceWrapper;
 use crate::{
     core::client::storage::sss::AWSS3,
@@ -48,6 +53,8 @@ impl ResourceFactory {
         let mut creators = HashMap::new();
         creators.insert(ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>);
         creators.insert(ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>);
+        // creators.insert(ResourceType::Cron, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
+        // creators.insert(ResourceType::Notification, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
 
         ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
     }
@@ -64,6 +71,14 @@ impl ResourceFactory {
                 ResourceType::Queue => {
                     let rs = resource.downcast_mut::<SQS>().unwrap();
                     rs.setup(self.queue_params.clone()).await?;
+                }
+                ResourceType::Notification => {
+                    let rs = resource.downcast_mut::<SNS>().unwrap();
+                    rs.setup(self.alert_params.clone()).await?;
+                }
+                ResourceType::Cron => {
+                    let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
+                    rs.setup(self.cron_params.clone()).await?;
                 }
                 _ => {}
             }

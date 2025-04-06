@@ -1,4 +1,4 @@
-use crate::{core::client::storage::StorageClient, core::traits::resource::Resource, types::params::StorageArgs};
+use crate::{core::client::storage::StorageClient, types::params::StorageArgs};
 
 use crate::core::client::storage::StorageError;
 use async_trait::async_trait;

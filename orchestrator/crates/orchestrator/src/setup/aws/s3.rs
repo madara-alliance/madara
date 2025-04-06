@@ -65,6 +65,7 @@ impl Resource for AWSS3 {
         Ok(S3BucketSetupResult { name: args.bucket_name, location: result.location })
     }
 
+    #[clippy::unused_async]
     async fn check(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
         let objects = self
             .client
