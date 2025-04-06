@@ -5,6 +5,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{QueueNameForJobType, QueueType};
+use crate::worker::event_handler::factory::JobFactory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 use std::sync::Arc;
 use std::time::Duration;
@@ -178,7 +179,7 @@ impl JobService {
     #[tracing::instrument(skip(config), fields(category = "general"), ret, err)]
     pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
-        let job_handler = factory::get_job_handler(&job.job_type).await;
+        let job_handler = JobFactory::get_job_handler(&job.job_type).await;
 
         // Reset verification attempts and increment retry counter in common metadata
         job.metadata.common.verification_attempt_no = 0;
@@ -207,7 +208,7 @@ impl JobService {
             config,
             id,
             &job.job_type,
-            Duration::from_secs(job_handler.verification_polling_delay_seconds()),
+            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
         )
         .await?;
 

@@ -24,10 +24,6 @@ use uuid::Uuid;
 pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
-    async fn new(_config: Arc<Config>) -> Self {
-        Self
-    }
-
     #[tracing::instrument(fields(category = "state_update"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(
@@ -39,10 +35,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         );
 
         // Extract state transition metadata
-        let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(job_id = %internal_id, error = %e, "Invalid metadata type for state update job");
-            JobError::Other(OtherError(e))
-        })?;
+        let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
         // Validate required paths
         if state_metadata.snos_output_paths.is_empty()
@@ -90,10 +83,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             "State update job processing started."
         );
 
-        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(job_id = %internal_id, error = %e, "Invalid metadata type for state update job");
-            JobError::Other(OtherError(e))
-        })?;
+        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
         self.validate_block_numbers(config.clone(), &state_metadata.blocks_to_settle).await?;
 
@@ -177,10 +167,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         );
 
         // Get state update metadata
-        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(job_id = ?job.id, error = ?e, "Invalid metadata type for state update job");
-            JobError::Other(OtherError(e))
-        })?;
+        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
         // Get transaction hashes
         let tx_hashes = state_metadata.tx_hashes;
 

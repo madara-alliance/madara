@@ -24,8 +24,6 @@ use std::sync::Arc;
 #[automock]
 #[async_trait]
 pub trait JobHandlerTrait: Send + Sync {
-    async fn new(config: Arc<Config>) -> Self;
-
     /// Should build a new job item and return it
     ///
     /// # Arguments

@@ -28,10 +28,6 @@ pub struct SnosJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
-    async fn new(_config: Arc<Config>) -> Self {
-        Self
-    }
-
     #[tracing::instrument(fields(category = "snos"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(

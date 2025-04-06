@@ -23,9 +23,6 @@ pub struct ProvingJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
-    async fn new(config: Arc<Config>) -> Self {
-        Self
-    }
     #[tracing::instrument(fields(category = "proving"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job creation started.");
@@ -57,10 +54,7 @@ impl JobHandlerTrait for ProvingJobHandler {
         );
 
         // Get proving metadata
-        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for proving job");
-            JobError::Other(OtherError(e))
-        })?;
+        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
 
         // Get input path from metadata
         let input_path = match proving_metadata.input_path {
@@ -112,10 +106,7 @@ impl JobHandlerTrait for ProvingJobHandler {
         );
 
         // Get proving metadata
-        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for proving job");
-            JobError::Other(OtherError(e))
-        })?;
+        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
 
         // Get task ID from external_id
         let task_id: String = job

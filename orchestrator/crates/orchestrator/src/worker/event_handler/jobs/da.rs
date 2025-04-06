@@ -264,10 +264,6 @@ impl DAJobHandler {
 
 #[async_trait]
 impl JobHandlerTrait for DAJobHandler {
-    async fn new(config: Arc<Config>) -> Self {
-        Self
-    }
-
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
 
