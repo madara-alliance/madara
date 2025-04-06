@@ -17,9 +17,9 @@ pub struct MongoDBCliArgs {
     pub mongodb_database_name: Option<String>,
 }
 
-/// Validated MongoDB parameters
-#[derive(Debug, Clone)]
-pub struct MongoDBValidatedArgs {
-    pub connection_url: String,
-    pub database_name: String,
-}
+// /// Validated MongoDB parameters
+// #[derive(Debug, Clone)]
+// pub struct MongoDBValidatedArgs {
+//     pub connection_url: String,
+//     pub database_name: String,
+// }

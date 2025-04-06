@@ -5,10 +5,10 @@ use std::time::Duration;
 use tokio::sync::{Mutex, Semaphore, SemaphorePermit};
 use uuid::Uuid;
 
-use crate::config::Config;
-use crate::jobs::types::JobItem;
-use crate::jobs::JobError;
-use crate::queue::job_queue::add_job_to_process_queue;
+use crate::core::config::Config;
+use crate::error::job::JobError;
+use crate::types::jobs::job_item::JobItem;
+use crate::worker::service::JobService;
 
 pub struct ProcessingLocks {
     pub snos_job_processing_lock: Arc<JobProcessingState>,
@@ -49,7 +49,7 @@ impl JobProcessingState {
             }
             Err(_) => {
                 tracing::error!(job_id = %job.id, "Job {} waiting - at max capacity ({} available permits)", job.id, self.get_available_permits());
-                add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+                JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
                 Err(JobError::MaxCapacityReached)
             }
             Ok(Err(e)) => Err(JobError::LockError(e.to_string())),

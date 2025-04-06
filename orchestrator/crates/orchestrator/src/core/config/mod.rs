@@ -13,26 +13,26 @@ use starknet::providers::JsonRpcClient;
 use std::sync::Arc;
 use url::Url;
 
-use crate::cli::RunCmd;
-use crate::core::client::alert::sns::SNS;
-use crate::core::client::alert::AlertClient;
-use crate::core::client::database::mongodb::MongoDbClient;
-use crate::core::client::database::DatabaseClient;
-use crate::core::client::queue::sqs::SQS;
-use crate::core::client::queue::QueueClient;
-use crate::core::client::storage::sss::SSS;
-use crate::core::client::storage::StorageClient;
-use crate::core::cloud::CloudProvider;
-use crate::params::cloud_provider::AWSCredentials;
-use crate::params::da::DAConfig;
-use crate::params::database::MongoConfig;
-use crate::params::prover::ProverConfig;
-use crate::params::service::{ServerParams, ServiceParams};
-use crate::params::settlement::SettlementConfig;
-use crate::params::snos::SNOSParams;
-use crate::params::{AlertArgs, QueueArgs, StorageArgs};
-use crate::utils::helpers::{JobProcessingState, ProcessingLocks};
-use crate::{OrchestratorError, OrchestratorResult};
+use crate::core::error::OrchestratorCoreResult;
+use crate::{
+    cli::RunCmd,
+    cli::ServiceParams,
+    core::client::{
+        queue::QueueClient, storage::sss::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
+        SNS, SQS,
+    },
+    core::cloud::CloudProvider,
+    types::params::cloud_provider::AWSCredentials,
+    types::params::da::DAConfig,
+    types::params::database::MongoConfig,
+    types::params::prover::ProverConfig,
+    types::params::service::ServerParams,
+    types::params::settlement::SettlementConfig,
+    types::params::snos::SNOSParams,
+    types::params::{AlertArgs, QueueArgs, StorageArgs},
+    utils::helpers::{JobProcessingState, ProcessingLocks},
+    OrchestratorError, OrchestratorResult,
+};
 
 pub struct OrchestratorParams {
     pub madara_rpc_url: Url,
@@ -46,7 +46,7 @@ pub struct OrchestratorParams {
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function.
+/// by calling `config` function. 33
 pub struct Config {
     /// The orchestrator config
     orchestrator_params: OrchestratorParams,
@@ -132,25 +132,25 @@ impl Config {
     async fn build_storage_client(
         storage_config: &StorageArgs,
         provider_config: Arc<CloudProvider>,
-    ) -> OrchestratorResult<Box<dyn StorageClient + Send + Sync>> {
+    ) -> OrchestratorCoreResult<Box<dyn StorageClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SSS::setup(storage_config, aws_config).await?))
+        Ok(Box::new(AWSS3::create(storage_config, aws_config).await?))
     }
 
     async fn build_alert_client(
         alert_config: &AlertArgs,
         provider_config: Arc<CloudProvider>,
-    ) -> OrchestratorResult<Box<dyn AlertClient + Send + Sync>> {
+    ) -> OrchestratorCoreResult<Box<dyn AlertClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SNS::setup(alert_config, aws_config)))
+        Ok(Box::new(SNS::create(alert_config, aws_config)))
     }
 
     async fn build_queue_client(
         queue_config: &QueueArgs,
         provider_config: Arc<CloudProvider>,
-    ) -> OrchestratorResult<Box<dyn QueueClient + Send + Sync>> {
+    ) -> OrchestratorCoreResult<Box<dyn QueueClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SQS::setup(queue_config, aws_config)?))
+        Ok(Box::new(SQS::create(queue_config, aws_config)?))
     }
 
     fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient> {

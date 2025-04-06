@@ -10,9 +10,8 @@ use uuid::Uuid;
 
 use super::super::error::JobRouteError;
 use super::super::types::{ApiResponse, JobId, JobRouteResult};
-use crate::core::config::Config;
-use crate::jobs::{queue_job_for_processing, queue_job_for_verification, retry_job};
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::worker::service::JobService;
+use crate::{core::config::Config, utils::metrics::ORCHESTRATOR_METRICS};
 
 /// Handles HTTP requests to process a job.
 ///
@@ -40,7 +39,7 @@ async fn handle_process_job_request(
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
-    match queue_job_for_processing(job_id, config).await {
+    match JobService::queue_job_for_processing(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for processing successfully");
             ORCHESTRATOR_METRICS
@@ -82,7 +81,7 @@ async fn handle_verify_job_request(
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
-    match queue_job_for_verification(job_id, config).await {
+    match JobService::queue_job_for_verification(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for verification successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
@@ -121,7 +120,7 @@ async fn handle_retry_job_request(
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
-    match retry_job(job_id, config).await {
+    match JobService::retry_job(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job retry initiated successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(

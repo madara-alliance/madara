@@ -1,13 +1,15 @@
-pub mod sns;
+pub mod error;
+pub(crate) mod sns;
 
 use async_trait::async_trait;
 use mockall::automock;
-use crate::OrchestratorResult;
 
+pub use error::AlertError;
+
+/// AlertClient trait
 #[automock]
 #[async_trait]
 pub trait AlertClient: Send + Sync {
-    async fn send_alert_message(&self, message_body: String) -> OrchestratorResult<()>;
-    async fn get_topic_name(&self) -> String;
-    async fn create_alert(&self, topic_name: &str) -> OrchestratorResult<()>;
+    async fn send_message(&self, message_body: String) -> Result<(), AlertError>;
+    async fn get_topic_name(&self) -> Result<String, AlertError>;
 }

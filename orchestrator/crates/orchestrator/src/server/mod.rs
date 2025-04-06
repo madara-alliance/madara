@@ -1,13 +1,15 @@
+pub mod error;
 pub mod route;
 pub mod types;
-pub mod error;
 
 use crate::core::config::Config;
-use crate::params::service::ServerParams;
-use crate::server::route::server_router;
-use crate::OrchestratorResult;
+use crate::types::params::service::ServerParams;
+use crate::{server::route::server_router, OrchestratorResult};
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+// re-export axum macros
+pub use error::{ApiServiceError, ApiServiceResult};
 
 /// Sets up and starts the HTTP server with configured routes.
 ///

@@ -1,6 +1,10 @@
 use clap::Args;
 
-pub(crate) use crate::cron::event_bridge::EventBridgeType;
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum EventBridgeType {
+    Rule,
+    Schedule,
+}
 
 /// CLI arguments for the aws event bridge.
 #[derive(Debug, Clone, Args)]

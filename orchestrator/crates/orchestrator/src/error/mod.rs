@@ -1,3 +1,8 @@
+pub mod consumer;
+pub mod event;
+pub mod job;
+pub mod other;
+
 use alloy::hex::FromHexError;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
@@ -5,6 +10,13 @@ use aws_sdk_s3::operation::list_buckets::ListBucketsError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use thiserror::Error;
+
+use crate::core::client::alert::AlertError;
+use crate::core::client::database::DatabaseError;
+use crate::core::client::queue::QueueError;
+use crate::core::client::storage::StorageError;
+use crate::core::error::OrchestratorCoreError;
+pub use consumer::ConsumptionError;
 
 /// Result type for orchestrator operations
 pub type OrchestratorResult<T> = std::result::Result<T, OrchestratorError>;
@@ -15,6 +27,21 @@ pub type Result<T> = OrchestratorResult<T>;
 /// Error types for the orchestrator
 #[derive(Error, Debug)]
 pub enum OrchestratorError {
+    #[error("Storage error: {0}")]
+    StorageError(#[from] StorageError),
+
+    #[error("Alert error: {0}")]
+    AlertError(#[from] AlertError),
+
+    #[error("Queue error: {0}")]
+    QueueCoreError(#[from] QueueError),
+
+    #[error("Database error: {0}")]
+    DatabaseCoreError(#[from] DatabaseError),
+
+    #[error("Orchestrator Core Error: {0}")]
+    OrchestratorCoreError(#[from] OrchestratorCoreError),
+
     /// Setup Command error
     #[error("Setup Command Error: {0}")]
     SetupCommandError(String),
@@ -62,6 +89,10 @@ pub enum OrchestratorError {
     /// Unknown Resource error
     #[error("Resource provided is not defined: {0}")]
     UnidentifiedResourceError(String),
+    #[error("Queue error: {0}")]
+    QueueError(#[from] omniqueue::QueueError),
+    #[error("ConsumptionError: {0}")]
+    ConsumptionError(#[from] ConsumptionError),
 
     /// Database error
     #[error("Database Invalid URI error: {0}")]
@@ -115,6 +146,5 @@ pub enum OrchestratorError {
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("Invalid address: {0}")]
-    InvalidAddress(#[from] FromHexError)
-
+    InvalidAddress(#[from] FromHexError),
 }

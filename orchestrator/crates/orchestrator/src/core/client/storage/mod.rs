@@ -1,10 +1,11 @@
+pub mod error;
 pub mod sss;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::collections::HashMap;
 
-use crate::OrchestratorResult;
+pub use error::StorageError;
 
 /// Object metadata
 #[derive(Debug, Clone)]
@@ -32,16 +33,10 @@ pub struct ObjectMetadata {
 #[async_trait]
 pub trait StorageClient: Send + Sync {
     /// Initialize the storage client
-    async fn get_data(&self, key: String) -> OrchestratorResult<Bytes>;
+    async fn get_data(&self, key: &str) -> Result<Bytes, StorageError>;
 
     /// Check if a bucket exists
-    async fn put_data(&self, data: Bytes, key: String) -> OrchestratorResult<()>;
-
-    /// Create a bucket
-    async fn create_bucket(&self, bucket: String) -> OrchestratorResult<()>;
-
+    async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError>;
     /// Delete a bucket
-    async fn delete_bucket(&self, bucket: String) -> OrchestratorResult<()>;
-    /// Delete a bucket
-    async fn delete_data(&self, key: String) -> OrchestratorResult<()>;
+    async fn delete_data(&self, key: &str) -> Result<(), StorageError>;
 }
