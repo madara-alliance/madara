@@ -3346,7 +3346,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/notlesh/bonsai-trie?branch=notlesh%2Ffix-revert#cb6fd4b0822b04c4e34c0ac089b4b8fa6aebc6a4"
+source = "git+https://github.com/madara-alliance/bonsai-trie?branch=oss#9fb2c197ee3a73c8f4c5197d89313a3e7f8eeb48"
 dependencies = [
  "bitvec",
  "derive_more 0.99.18",
