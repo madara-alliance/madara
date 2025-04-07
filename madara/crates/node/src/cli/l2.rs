@@ -66,9 +66,6 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_STOP_NO_PENDING_SYNC", long)]
     pub no_pending_sync: bool,
 
-    #[clap(env = "MADARA_P2P_SYNC", long)]
-    pub p2p_sync: bool,
-
     /// Compute pre-v0.13.2 hashes. This mode will allow the feeder gateway to display the legacy
     /// commitment hashes. Serving blocks over peer-to-peer requires >v0.13.2 hashes, which is why this
     /// is disabled by default. By enabling it, the blocks served by this block over peer-to-peer will be

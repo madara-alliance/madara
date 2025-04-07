@@ -29,7 +29,6 @@ mc-eth = { workspace = true }
 mc-gateway-client = { workspace = true }
 mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
-mc-p2p = { workspace = true }
 mc-rpc = { workspace = true }
 mc-submit-tx = { workspace = true }
 mc-sync = { workspace = true }

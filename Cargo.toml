@@ -13,8 +13,6 @@ members = [
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
   "madara/crates/client/block_production",
-  "madara/crates/client/p2p",
-  "madara/crates/client/p2p_stream",
   "madara/crates/client/submit_tx",
   "madara/crates/node",
   "madara/crates/primitives/block",
@@ -61,8 +59,6 @@ default-members = [
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
   "madara/crates/client/block_production",
-  "madara/crates/client/p2p",
-  "madara/crates/client/p2p_stream",
   "madara/crates/client/rpc",
   "madara/crates/client/telemetry",
   "madara/crates/client/devnet",
@@ -168,7 +164,6 @@ mc-rpc = { path = "madara/crates/client/rpc" }
 mc-gateway-client = { path = "madara/crates/client/gateway/client" }
 mc-gateway-server = { path = "madara/crates/client/gateway/server" }
 mc-sync = { path = "madara/crates/client/sync" }
-mc-p2p = { path = "madara/crates/client/p2p" }
 mc-eth = { path = "madara/crates/client/eth" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
@@ -177,7 +172,6 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
-p2p_stream = { path = "madara/crates/client/p2p_stream" }
 
 # Starknet dependencies
 # cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
@@ -251,25 +245,6 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
-libp2p-plaintext = "0.42.0"
-libp2p-swarm-test = "0.4.0"
-libp2p = { version = "0.54.1", features = [
-  "tokio",
-  # "quic",
-  "tcp",
-  "tls",
-  "noise",
-  "yamux",
-  "ping",
-  "kad",
-  "gossipsub",
-  "autonat",
-  "dcutr",
-  "relay",
-  "kad",
-  "identify",
-  "macros",
-] }
 multiaddr = "0.18"
 futures-bounded = "0.2.1"
 

@@ -2,7 +2,6 @@ use crate::cli::l2::L2SyncParams;
 use mc_db::MadaraBackend;
 use mc_eth::state_update::L1HeadReceiver;
 use mc_gateway_client::GatewayProvider;
-use mc_p2p::P2pCommands;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
 use mc_sync::{
     import::{BlockImporter, BlockValidationConfig},
@@ -30,7 +29,6 @@ pub struct WarpUpdateConfig {
 
 #[derive(Clone)]
 struct StartArgs {
-    p2p_commands: Option<P2pCommands>,
     l1_head_recv: L1HeadReceiver,
     db_backend: Arc<MadaraBackend>,
     params: L2SyncParams,
@@ -47,16 +45,11 @@ impl SyncService {
     pub async fn new(
         config: &L2SyncParams,
         db: &Arc<MadaraBackend>,
-        mut p2p_commands: Option<P2pCommands>,
         l1_head_recv: L1HeadReceiver,
         warp_update: Option<WarpUpdateConfig>,
     ) -> anyhow::Result<Self> {
-        if !config.p2p_sync {
-            p2p_commands = None;
-        }
         Ok(Self {
             start_args: (!config.l2_sync_disabled).then_some(StartArgs {
-                p2p_commands,
                 l1_head_recv,
                 db_backend: db.clone(),
                 params: config.clone(),
@@ -154,32 +147,18 @@ impl Service for SyncService {
                 }
             }
 
-            if this.params.p2p_sync {
-                let Some(p2p_commands) = this.p2p_commands else {
-                    anyhow::bail!("Cannot enable --p2p-sync without starting the peer-to-peer service using --p2p.")
-                };
-                let args = mc_sync::p2p::P2pPipelineArguments::new(this.db_backend, p2p_commands, importer);
-                mc_sync::p2p::forward_sync(
-                    args,
-                    config,
-                    mc_sync::p2p::ForwardSyncConfig::default().disable_tries(this.params.disable_tries),
-                )
-                .run(ctx)
-                .await
-            } else {
-                let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
-                mc_sync::gateway::forward_sync(
-                    this.db_backend,
-                    importer,
-                    gateway,
-                    config,
-                    mc_sync::gateway::ForwardSyncConfig::default()
-                        .disable_tries(this.params.disable_tries)
-                        .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes),
-                )
-                .run(ctx)
-                .await
-            }
+            let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
+            mc_sync::gateway::forward_sync(
+                this.db_backend,
+                importer,
+                gateway,
+                config,
+                mc_sync::gateway::ForwardSyncConfig::default()
+                    .disable_tries(this.params.disable_tries)
+                    .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes),
+            )
+            .run(ctx)
+            .await
         });
 
         Ok(())
