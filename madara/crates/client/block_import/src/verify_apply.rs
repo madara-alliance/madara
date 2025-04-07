@@ -871,8 +871,66 @@ mod verify_apply_tests {
         }
     }
 
+    #[cfg(test)]
     mod reorg_tests {
+        use mp_class::{ConvertedClass, SierraClassInfo, SierraConvertedClass};
+        use mp_state_update::DeclaredClassItem;
+        use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
+
         use super::*;
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_revert_declared_class(
+            setup_test_backend: Arc<MadaraBackend>,
+            #[from(converted_class_sierra)]
+            #[with(Felt::TWO, Felt::THREE)]
+            converted_class_sierra: ConvertedClass,
+            #[from(converted_class_legacy)]
+            #[with(Felt::THREE)]
+            converted_class_legacy: ConvertedClass,
+        ) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            let mut genesis = create_dummy_block();
+            genesis.unverified_block_number = Some(0);
+            genesis.unverified_global_state_root = Some(felt!("0x0"));
+            genesis.header.parent_block_hash = None;
+            let block_import =
+                verify_apply_inner(&backend, genesis, validation.clone()).expect("verify_apply_inner failed on genesis");
+            let parent_hash = block_import.block_hash;
+
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(1);
+            block.unverified_global_state_root = None;
+            // TODO: this StateDiff reflects the `converted_class` that we get from our fixture
+            //       is there a way to generate this? what ensures that these are consistent in production? the prover?
+            block.state_diff = StateDiff {
+                declared_classes: vec![
+                    DeclaredClassItem {
+                        class_hash: Felt::TWO,
+                        compiled_class_hash: Felt::THREE,
+                    },
+                ],
+                deprecated_declared_classes: vec![
+                    Felt::THREE,
+                ],
+                ..Default::default()
+            };
+            block.converted_classes = vec![
+                converted_class_sierra,
+                converted_class_legacy,
+            ];
+            block.header.parent_block_hash = Some(parent_hash);
+            let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            assert!(backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+            let _ = revert_to(&backend, &parent_hash).expect("reorg failed");
+
+            assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+
+        }
 
         /// This struct provides the inputs to the reorg tests. It does so based on integers
         /// representing a few different lengths of different parts of a forked chain, where one
