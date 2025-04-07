@@ -330,8 +330,7 @@ fn block_hash(
 /// played on top.
 ///
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
-#[allow(dead_code)] // not used yet outside of tests
-fn reorg(
+pub fn revert_to(
     backend: &MadaraBackend,
     new_tip_block_hash: &Felt,
 ) -> Result<ReorgData, BlockImportError> {
@@ -1007,7 +1006,7 @@ mod verify_apply_tests {
                     parent_height += 1;
                 }
 
-                let _ = reorg(&backend, &reorg_parent_hash).expect("reorg failed");
+                let _ = revert_to(&backend, &reorg_parent_hash).expect("reorg failed");
                 parent_height -= args.orphaned_chain_length;
 
                 // reorg after given parent (start with 1 since we already added our reorg block)
