@@ -336,31 +336,38 @@ fn reorg(
     new_tip_block_hash: &Felt,
 ) -> Result<ReorgData, BlockImportError> {
 
-    // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
-    let block_info = backend
+    let target_block_info = backend
         .get_block_info(&BlockId::Hash(*new_tip_block_hash))
         .map_err(make_db_error("getting block info for new tip"))?
         .ok_or(BlockImportError::Internal(Cow::Owned(format!("no block found for requested tip {}", new_tip_block_hash).to_string())))?;
 
-    let block_number = block_info.block_n().expect("Block must have a block number");
-    let block_id = BasicId::new(block_number);
+    let previous_tip_block_info = backend
+        .get_block_info(&BlockId::Tag(BlockTag::Latest))
+        .map_err(make_db_error("getting current tip block info"))?
+        .ok_or(BlockImportError::Internal(Cow::Owned("on blockchain tip in storage".to_string())))?;
+
+    let target_block_number = target_block_info.block_n().expect("Target block must have a block number");
+    let target_block_id = BasicId::new(target_block_number);
+
+    let previous_tip_block_number = previous_tip_block_info.block_n().expect("Previous tip block must have a block number");
+    let previous_tip_block_id = BasicId::new(previous_tip_block_number);
 
     backend
         .contract_trie()
-        .revert_to(block_id)
+        .revert_to(target_block_id, previous_tip_block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract trie: {}", error))))?;
 
-    backend.contract_storage_trie().revert_to(block_id).map_err(|error| {
+    backend.contract_storage_trie().revert_to(target_block_id, previous_tip_block_id).map_err(|error| {
         BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error)))
     })?;
 
     backend
         .class_trie()
-        .revert_to(block_id)
+        .revert_to(target_block_id, previous_tip_block_id)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
 
     backend
-        .revert_to(block_number)
+        .revert_to(target_block_number)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
 
     // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
@@ -371,7 +378,7 @@ fn reorg(
 
     Ok(ReorgData {
         starting_block_hash: *new_tip_block_hash,
-        starting_block_number: block_number,
+        starting_block_number: target_block_number,
         ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
         ending_block_number: latest_block_info.block_n().expect("how would a block not have a block number?"), // TODO
     })
