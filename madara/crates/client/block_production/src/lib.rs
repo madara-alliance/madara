@@ -35,12 +35,14 @@ pub struct ContinueBlockStats {
     pub n_batches: usize,
     /// Number of transactions included into the block.
     pub n_added_to_block: usize,
-    /// Number of transactions taken from the mempool.
-    pub n_taken: usize,
-    /// Rejected transactions are failing transactions that are included in the block.
+    /// Number of transactions executed.
+    pub n_executed: usize,
+    /// Reverted transactions are failing transactions that are included in the block.
     pub n_reverted: usize,
     /// Rejected are txs are failing transactions that are not revertible. They are thus not included in the block
     pub n_rejected: usize,
+    /// Number of declared classes.
+    pub declared_classes: usize,
     /// Execution time
     pub exec_duration: Duration,
 }
@@ -51,9 +53,10 @@ impl Add for ContinueBlockStats {
         Self {
             n_batches: self.n_batches + other.n_batches,
             n_added_to_block: self.n_added_to_block + other.n_added_to_block,
-            n_taken: self.n_taken + other.n_taken,
+            n_executed: self.n_executed + other.n_executed,
             n_reverted: self.n_reverted + other.n_reverted,
             n_rejected: self.n_rejected + other.n_rejected,
+            declared_classes: self.declared_classes + other.declared_classes,
             exec_duration: self.exec_duration + other.exec_duration,
         }
     }
@@ -170,59 +173,33 @@ impl CurrentPendingState {
         Self { block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
     }
     pub fn append_batch(&mut self, batch: BatchExecutionResult) {
-        let mut stats = ContinueBlockStats { exec_duration: batch.exec_duration, ..Default::default() };
-        stats.exec_duration += batch.exec_duration;
-        stats.n_batches += 1;
-        stats.n_taken += batch.executed_txs.len();
-
         for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
             batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
         {
             self.tx_executed_for_tick.push(additional_info.tx_hash);
 
-            match blockifier_exec_result {
-                Ok((execution_info, state_diff)) => {
-                    // Reverted transactions appear here as Ok too.
-                    tracing::trace!("Successful execution of transaction {:#x}", additional_info.tx_hash);
-
-                    stats.n_added_to_block += 1;
-                    if execution_info.is_reverted() {
-                        stats.n_reverted += 1;
-                    }
-
-                    let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                    let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
-
-                    if let Some(class) = additional_info.declared_class.take() {
+            if let Ok((execution_info, state_diff)) = blockifier_exec_result {
+                if let Some(class) = additional_info.declared_class.take() {
+                    if !execution_info.is_reverted() {
                         self.block.declared_classes.push(*class);
                     }
-                    self.block.events.extend(
-                        receipt
-                            .events()
-                            .iter()
-                            .cloned()
-                            .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
-                    );
-                    self.block.state_diff.extend(&state_diff);
-                    self.block
-                        .transactions
-                        .push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
                 }
-                Err(err) => {
-                    // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
-                    // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
-                    // We reject them.
-                    // Note that this is a big DoS vector.
-                    tracing::error!(
-                        "Rejected transaction {:#x} for unexpected error: {err:#}",
-                        additional_info.tx_hash
-                    );
-                    stats.n_rejected += 1;
-                }
+
+                let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
+                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
+
+                self.block.events.extend(
+                    receipt
+                        .events()
+                        .iter()
+                        .cloned()
+                        .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
+                );
+                self.block.state_diff.extend(&state_diff);
+                self.block.transactions.push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
             }
-            tracing::debug!("Processed executed batch: {stats:?}");
         }
-        self.stats_for_tick += stats;
+        self.stats_for_tick += batch.stats;
     }
 }
 
@@ -493,7 +470,7 @@ impl BlockProductionTask {
                 // The buffer inside of the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
                 // the worker has finished executing its current one.
                 let Some(Ok(permit)) = ctx.run_until_cancelled(batch_sender.reserve()).await else {
-                    // Stop condition: service stopped (ctx), or batch receiver closed.
+                    // Stop condition: service stopped (ctx), or batch sender closed.
                     return anyhow::Ok(());
                 };
                 let mut batch = BatchToExecute::with_capacity(batch_size);
@@ -502,6 +479,9 @@ impl BlockProductionTask {
                     return anyhow::Ok(());
                 };
 
+                // FIXME: add this to the debug logging just below. (the number is wrong right now (?))
+                // let n_txs_in_mempool = iterator.n_txs_total();
+
                 let iterator = iterator.take(batch_size); // only take a batch
 
                 for tx in iterator {
@@ -509,24 +489,26 @@ impl BlockProductionTask {
                     batch.push(tx.tx, additional);
                 }
 
-                tracing::debug!("Sending batch of {} transactions to the worker thread", batch.len());
+                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
 
                 permit.send(batch);
             }
         });
 
-        // Graceful shutdown: when the service is asked to stop, the batch_maker will stop,
-        // which will close the send_batch channel; which will tell the executor thread to stop.
-        // We will then see the anyhow::Ok(()) result in the stop channel.
-        // Note that for this to work, we need to make sure the send_batch channel is never aliased -
-        // otherwise it will never be closed.
+        // Graceful shutdown: when the service is asked to stop, the `batch_maker_task` will stop,
+        //  which will close the `send_batch` channel (by dropping it). The executor thread then will see that the channel
+        //  is closed next time it tries to receive from it. The executor thread shuts down, dropping the `executor.stop` channel,
+        //  therefore closing it as well.
+        // We will then see the anyhow::Ok(()) result in the stop channel, as per the implementation of [`StopErrorReceiver::recv`].
+        // Note that for this to work, we need to make sure the `send_batch` channel is never aliased -
+        //  otherwise it will never not be closed automatically.
 
         loop {
             tokio::select! {
                 // Bubble up errors from the executor thread, or graceful shutdown.
                 res = executor.stop.recv() => return res.context("In executor thread"),
 
-                // Bubble up errors from the batch maker task
+                // Bubble up errors from the batch maker task. (tokio JoinHandle)
                 res = &mut batch_maker_task => return res.context("In batch maker task"),
 
                 // Process results from the execution
@@ -534,7 +516,7 @@ impl BlockProductionTask {
                     self.process_reply(reply).await.context("Processing reply from executor thread")?;
                 }
 
-                // Update the pending block in db regularily.
+                // Update the pending block in db periodically.
                 _ = interval_pending_block_update.tick() => {
                     self.store_pending_block().context("Storing pending block")?;
                 }

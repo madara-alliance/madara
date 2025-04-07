@@ -859,4 +859,8 @@ impl MempoolInner {
     pub fn is_empty(&self) -> bool {
         self.tx_intent_queue_ready.is_empty()
     }
+
+    pub fn n_total(&self) -> usize {
+        self.limiter.current_transactions
+    }
 }

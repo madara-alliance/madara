@@ -196,8 +196,8 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 #   "testing",
 # ] }
 
-blockifier = "=0.14.0-rc.1"
-starknet_api = "=0.14.0-rc.1"
+blockifier = { version = "=0.14.0-rc.1", path = "../sequencer/crates/blockifier" }
+starknet_api = { version = "=0.14.0-rc.1", path = "../sequencer/crates/starknet_api" }
 cairo-lang-starknet-classes = "=2.10.0"
 cairo-lang-utils = "=2.10.0"
 cairo-native = "0.3.1"

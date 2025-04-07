@@ -107,7 +107,7 @@ pub struct Mempool {
 }
 
 /// Iterator that keeps the locks around.
-struct PoppingIterator<'a> {
+pub struct PoppingIterator<'a> {
     inner: RwLockWriteGuard<'a, MempoolInner>,
     nonce_cache: RwLockWriteGuard<'a, BTreeMap<Felt, Nonce>>,
 }
@@ -119,6 +119,11 @@ impl Iterator for PoppingIterator<'_> {
             let nonce_next = tx.nonce_next;
             self.nonce_cache.insert(contract_address, nonce_next);
         })
+    }
+}
+impl PoppingIterator<'_> {
+    pub fn n_txs_total(&self) -> usize {
+        self.inner.n_total()
     }
 }
 
@@ -330,7 +335,7 @@ impl Mempool {
     }
 
     // The inner lock remains taken the entire time the resulting iterator exists.
-    pub async fn get_popping_iterator_or_wait(&self) -> impl Iterator<Item = MempoolTransaction> + '_ {
+    pub async fn get_popping_iterator_or_wait(&self) -> PoppingIterator<'_> {
         let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
         tokio::pin!(permit);
         loop {
@@ -354,7 +359,7 @@ impl Mempool {
 
     // #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     // The inner lock remains taken the entire time the resulting iterator exists.
-    pub fn popping_iterator(&self) -> impl Iterator<Item = MempoolTransaction> + '_ {
+    pub fn popping_iterator(&self) -> PoppingIterator<'_> {
         let inner = self.inner.write().expect("Poisoned lock");
         let nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
 

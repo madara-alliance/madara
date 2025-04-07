@@ -1,5 +1,8 @@
-use crate::util::{
-    create_blockifier_executor, create_blockifier_state_adaptor, create_execution_context, BlockExecutionContext,
+use crate::{
+    util::{
+        create_blockifier_executor, create_blockifier_state_adaptor, create_execution_context, BlockExecutionContext,
+    },
+    ContinueBlockStats,
 };
 use anyhow::Context;
 use blockifier::{
@@ -23,7 +26,6 @@ use std::{
     mem,
     panic::AssertUnwindSafe,
     sync::Arc,
-    time::Duration,
 };
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
@@ -49,6 +51,9 @@ impl BatchToExecute {
     pub fn len(&self) -> usize {
         self.txs.len()
     }
+    pub fn capacity(&self) -> usize {
+        self.txs.capacity()
+    }
     pub fn is_empty(&self) -> bool {
         self.txs.is_empty()
     }
@@ -59,6 +64,19 @@ impl BatchToExecute {
     }
 
     pub fn remove_n_front(&mut self, n_to_remove: usize) -> BatchToExecute {
+        // we can't acutally use split_off because it doesnt leave the cap :/
+
+        if n_to_remove >= self.len() {
+            // if we take everything, just replace self with an empty batch and return self.
+            // unsure if this can actually help with perf, but hey this theorically saves a memcopy
+            // let's be frank, ideally blockifier just isn't dumb and takes an iterator and not a &[Transaction]..
+            let cap = self.capacity();
+            return BatchToExecute {
+                additional_info: mem::replace(&mut self.additional_info, VecDeque::with_capacity(cap)),
+                txs: mem::replace(&mut self.txs, Vec::with_capacity(cap)),
+            };
+        }
+
         let txs = self.txs.drain(..n_to_remove).collect();
         let additional_info = self.additional_info.drain(..n_to_remove).collect();
         BatchToExecute { txs, additional_info }
@@ -85,18 +103,9 @@ pub(crate) enum ExecutorMessage {
 
 #[derive(Default, Debug)]
 pub(crate) struct BatchExecutionResult {
-    // // All executed transactions, including the rejected ones.
-    // pub executed: Vec<Felt>,
-
-    // pub new_events: Vec<EventWithTransactionHash>,
-    // pub new_transactions: Vec<TransactionWithReceipt>,
-    // pub new_state_diffs: StateMaps,
-    // pub new_declared_classes: Vec<ConvertedClass>,
-
-    // pub stats: ContinueBlockStats,
-    pub exec_duration: Duration,
     pub executed_txs: BatchToExecute,
     pub blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
+    pub stats: ContinueBlockStats,
 }
 
 pub struct StopErrorReceiver(oneshot::Receiver<Result<anyhow::Result<()>, Box<dyn Any + Send + 'static>>>);
@@ -362,6 +371,10 @@ impl Executor {
 
         let mut next_block_deadline = Instant::now() + block_time;
 
+        // The goal here is to do the least possible between batches, as to maximize CPU usage. Any millisecond spent
+        //  outside of `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU cores, but are using only one.
+        // `blockifier` isn't really well optimized with this regard, but since we can't easily change its code (maybe we should?) we're
+        //  still optimizing everything we have a hand on here.
         loop {
             // Take transactions to execute.
             if to_exec.len() < batch_size {
@@ -410,18 +423,49 @@ impl Executor {
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
             let block_full = blockifier_results.len() < to_exec.len();
 
-            if blockifier_results.iter().any(|r| r.is_ok()) {
-                block_empty = false;
-            }
-
             let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // remove the used txs
 
+            let mut stats = ContinueBlockStats::default();
             let exec_duration = exec_start_time.elapsed();
 
+            stats.n_batches += 1;
+            stats.n_executed += executed_txs.len();
+            stats.exec_duration += exec_duration;
+
+            for (additional_info, res) in executed_txs.additional_info.iter().zip(blockifier_results.iter()) {
+                match res {
+                    Ok((execution_info, _state_diff)) => {
+                        tracing::trace!("Successful execution of transaction {:#x}", additional_info.tx_hash);
+
+                        stats.n_added_to_block += 1;
+                        block_empty = false;
+                        if execution_info.is_reverted() {
+                            stats.n_reverted += 1;
+                        } else if let Some(class) = additional_info.declared_class.as_deref() {
+                            tracing::debug!("Declared class_hash={:#x}", class.class_hash());
+                            stats.declared_classes += 1;
+                            execution_state.declared_classes.push(class.clone());
+                        }
+                    }
+                    Err(err) => {
+                        // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
+                        // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
+                        // We reject them.
+                        // Note that this is a big DoS vector.
+                        tracing::error!(
+                            "Rejected transaction {:#x} for unexpected error: {err:#}",
+                            additional_info.tx_hash
+                        );
+                        stats.n_rejected += 1;
+                    }
+                }
+            }
+
             tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
+            tracing::debug!("Stats: {:?}", stats);
             tracing::debug!("Block now full: {:?}", block_full);
 
-            let exec_result = BatchExecutionResult { exec_duration, executed_txs, blockifier_results };
+            let exec_result = BatchExecutionResult { executed_txs, blockifier_results, stats };
             if self.replies_sender.blocking_send(ExecutorMessage::BatchExecuted(exec_result)).is_err() {
                 // Receiver closed
                 break Ok(());

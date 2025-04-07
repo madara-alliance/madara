@@ -33,8 +33,8 @@ impl Drop for StopHandle {
     }
 }
 
-/// This ensures structural-concurrency. All of the tasks in this service are cancellation-safe, it is fine to just
-/// drop the futures.
+/// This ensures structural concurrency. This assumes that the task is cancellation-safe, meaning it is fine to just
+/// drop the future.
 pub struct AbortOnDrop<T>(JoinHandle<T>);
 impl<T: Send + 'static> AbortOnDrop<T> {
     #[track_caller] // forward the tokio track_caller
