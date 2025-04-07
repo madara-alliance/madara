@@ -64,3 +64,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tempfile.workspace = true
 rstest.workspace = true
 mc-db = { workspace = true, features = ["testing"] }
+mc-block-production = { workspace = true, features = ["testing"] }

@@ -36,7 +36,7 @@ serde_json.workspace = true
 m-cairo-test-contracts.workspace = true
 
 [features]
-testing = ["blockifier/testing", "mc-db/testing", "mockall"]
+testing = ["blockifier/testing", "mc-db/testing", "mockall", "rstest"]
 
 [dependencies]
 
@@ -83,3 +83,6 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# testing
+rstest = { workspace = true, optional = true }

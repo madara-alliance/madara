@@ -8566,6 +8566,7 @@ dependencies = [
  "bonsai-trie",
  "itertools 0.13.0",
  "mc-analytics",
+ "mc-block-production",
  "mc-db",
  "mp-block",
  "mp-chain-config",
