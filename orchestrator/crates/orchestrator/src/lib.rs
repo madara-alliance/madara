@@ -33,3 +33,9 @@ pub mod workers;
 
 /// Contains the CLI arguments for the service
 pub mod cli;
+
+pub mod types;
+
+pub mod error;
+
+pub use error::{OrchestratorError, OrchestratorResult};

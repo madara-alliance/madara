@@ -107,10 +107,10 @@ pub struct RunCmd {
 
     // Settlement Layer
     #[clap(flatten)]
-    ethereum_args: settlement::ethereum::EthereumSettlementCliArgs,
+    pub ethereum_args: settlement::ethereum::EthereumSettlementCliArgs,
 
     #[clap(flatten)]
-    starknet_args: settlement::starknet::StarknetSettlementCliArgs,
+    pub starknet_args: settlement::starknet::StarknetSettlementCliArgs,
 
     // Storage
     #[clap(flatten)]
@@ -618,7 +618,6 @@ pub mod validate_params {
 
     #[cfg(test)]
     pub mod test {
-
         use rstest::rstest;
         use url::Url;
 
@@ -654,6 +653,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "".to_string(),
             };
 
             let provider_params = validate_provider_params(&aws_config_args);
@@ -675,6 +675,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "".to_string(),
             };
             let aws_sns_args: AWSSNSCliArgs = AWSSNSCliArgs { aws_sns: is_sns, sns_arn: Some("".to_string()) };
 
@@ -697,6 +698,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "".to_string(),
             };
             let aws_sqs_args: AWSSQSCliArgs = AWSSQSCliArgs {
                 aws_sqs: is_sqs,
@@ -728,6 +730,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "".to_string(),
             };
             let storage_params = validate_storage_params(&aws_s3_args, &aws_config_args);
             if is_aws && is_s3 {
@@ -853,6 +856,7 @@ pub mod validate_params {
                 aws_access_key_id: "".to_string(),
                 aws_secret_access_key: "".to_string(),
                 aws_region: "".to_string(),
+                aws_prefix: "".to_string(),
             };
             let cron_params = validate_cron_params(&aws_event_bridge_args, &aws_config_args);
             if is_aws {

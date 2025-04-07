@@ -9,7 +9,7 @@ pub struct AtlanticCliArgs {
     #[arg(long)]
     pub atlantic: bool,
 
-    /// The API key for Atlantic.
+    /// The API key for the Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY", long)]
     pub atlantic_api_key: Option<String>,
 
@@ -29,11 +29,22 @@ pub struct AtlanticCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE", long)]
     pub atlantic_prover_type: Option<String>,
 
-    /// The settlement layer for Atlantic.
+    /// The settlement layer for the Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER", long)]
     pub atlantic_settlement_layer: Option<String>,
 
-    /// The verifier contract address for Atlantic.
+    /// The verifier contract address for the Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS", long)]
     pub atlantic_verifier_contract_address: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AtlanticValidatedArgs {
+    pub atlantic_api_key: String,
+    pub atlantic_service_url: Url,
+    pub atlantic_rpc_node_url: Url,
+    pub atlantic_verifier_contract_address: String,
+    pub atlantic_settlement_layer: String,
+    pub atlantic_mock_fact_hash: String,
+    pub atlantic_prover_type: String,
 }
