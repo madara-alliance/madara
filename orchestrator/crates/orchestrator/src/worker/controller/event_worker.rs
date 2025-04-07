@@ -4,8 +4,8 @@ use crate::error::{
     ConsumptionError,
 };
 use crate::types::queue::QueueType;
-use crate::worker::parser::job_queue_message::JobQueueMessage;
-use crate::worker::traits::message::MessageParser;
+use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
+use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use omniqueue::backends::{SqsConsumer, SqsProducer};
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
@@ -72,11 +72,14 @@ impl EventWorker {
         }
     }
 
-    fn parse_message(message: &Delivery) -> EventSystemResult<Box<JobQueueMessage>> {
-        JobQueueMessage::parse_message(message)
+    fn parse_message(&self, message: &Delivery) -> EventSystemResult<ParsedMessage> {
+        match self.queue_type {
+            QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger),
+            _ => JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue),
+        }
     }
 
-    async fn handle_message(&self, _message: Delivery) -> EventSystemResult<()> {
+    async fn handle_message(&self, message: ParsedMessage) -> EventSystemResult<()> {
         // For now, just log the message
         info!(queue = %self.queue_type, "Handling message");
         Ok(())
@@ -85,10 +88,9 @@ impl EventWorker {
     pub async fn run(&self) -> EventSystemResult<()> {
         loop {
             match self.get_message().await {
-                Ok(Some(message)) => match Self::parse_message(&message) {
+                Ok(Some(message)) => match self.parse_message(&message) {
                     Ok(parsed_message) => {
-                        info!("Received message: {:?}", parsed_message);
-                        if let Err(e) = self.handle_message(message).await {
+                        if let Err(e) = self.handle_message(parsed_message).await {
                             error!("Failed to handle message: {:?}", e);
                         }
                     }
