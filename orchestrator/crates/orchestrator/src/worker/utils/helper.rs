@@ -41,6 +41,9 @@ impl JobProcessingState {
             Ok(Ok(permit)) => {
                 {
                     let mut active_jobs = self.active_jobs.lock().await;
+                    // CLARIFICATION: we have added the job id to the set of active jobs. but we have dropped the lock.
+                    // do we really need  to add the job id to the set of active jobs?
+                    // we can just use the job id to check if the job is still active or not.
                     active_jobs.insert(job.id);
                     drop(active_jobs);
                 }
