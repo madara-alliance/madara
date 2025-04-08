@@ -23,6 +23,9 @@ jobs:
     services:
       localstack:
         image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           SERVICES: s3, sqs, sns
           DEFAULT_REGION: us-east-1
@@ -32,6 +35,9 @@ jobs:
           - 4566:4566
       mongodb:
         image: mongo:latest
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         ports:
           - 27017:27017
 
@@ -45,7 +51,7 @@ jobs:
       - uses: ./.github/actions/rust-setup
         with:
           # Uses the testing cache key as we are using the --profile dev later
-          cache-key: ${{ env.TESTING_RUST_CACHE_KEY }}
+          cache-key: coverage-orchestrator
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
@@ -53,6 +59,7 @@ jobs:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+          install-mold: true
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov

@@ -8782,6 +8782,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "lazy_static",
+ "once_cell",
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde_json",
@@ -8803,6 +8804,7 @@ dependencies = [
  "anyhow",
  "bigdecimal 0.4.5",
  "bitvec",
+ "blockifier",
  "dotenv",
  "futures",
  "httpmock 0.7.0",
@@ -8979,10 +8981,12 @@ name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "async-std",
  "bitvec",
  "blockifier",
  "jsonrpsee",
  "m-proc-macros",
+ "mc-block-import",
  "mc-db",
  "mc-exec",
  "mc-gateway-client",
@@ -9475,6 +9479,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
+ "zeroize",
 ]
 
 [[package]]
