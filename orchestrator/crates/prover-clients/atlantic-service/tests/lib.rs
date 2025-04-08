@@ -106,7 +106,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         .await
         .expect("Failed to submit task to Atlantic service");
 
-
     let mut current_retry = 0;
 
     loop {
@@ -124,7 +123,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
 
         match status_result.atlantic_query.status {
             AtlanticQueryStatus::Done => {
-
                 if let Some(is_mocked) = status_result.atlantic_query.is_fact_mocked {
                     assert!(is_mocked, "Expected fact to be mocked but it wasn't");
                 }

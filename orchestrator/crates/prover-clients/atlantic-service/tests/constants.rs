@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-
 pub const CAIRO_PIE_PATH: &str = "/tests/artifacts/fibonacci.zip";
 
 // Poll for job status until it's done or timeout is reached
