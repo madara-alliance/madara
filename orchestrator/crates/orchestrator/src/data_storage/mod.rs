@@ -23,9 +23,17 @@ pub trait DataStorage: Send + Sync {
     async fn get_data(&self, key: &str) -> Result<Bytes>;
     async fn put_data(&self, data: Bytes, key: &str) -> Result<()>;
     async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
+    async fn exists(&self, bucket_name: &str) -> Result<bool>;
     async fn setup(&self, storage_params: &StorageValidatedArgs) -> Result<()> {
         match storage_params {
-            StorageValidatedArgs::AWSS3(aws_s3_params) => self.create_bucket(&aws_s3_params.bucket_name).await,
+            StorageValidatedArgs::AWSS3(aws_s3_params) => {
+                if !self.exists(aws_s3_params.bucket_name.as_str()).await? {
+                    self.create_bucket(&aws_s3_params.bucket_name).await?;
+                } else {
+                    println!("Bucket {} already exists, skipping", aws_s3_params.bucket_name);
+                }
+            },
         }
+        Ok(())
     }
 }
