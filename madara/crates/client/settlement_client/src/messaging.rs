@@ -289,11 +289,6 @@ async fn process_message(
 
     // Ensure that L1 message has not been executed
     match backend.has_l1_messaging_nonce(tx_nonce) {
-        Ok(false) => {
-            backend.set_l1_messaging_nonce(tx_nonce).map_err(|e| {
-                SettlementClientError::DatabaseError(format!("Failed to set nonce in process_message: {}", e))
-            })?;
-        }
         Ok(true) => {
             tracing::debug!("⟠ Event already processed: {:?}", transaction);
             return Ok(None);
@@ -305,10 +300,15 @@ async fn process_message(
                 e
             )));
         }
+        _ => {}
     };
     let res = mempool
         .tx_accept_l1_handler(transaction.into(), fees.unwrap_or(0))
         .map_err(|e| SettlementClientError::Mempool(format!("Failed to accept transaction in mempool: {}", e)))?;
+    // HERMAN TODO: Actually this should be updated after the tx l1 handler is executed
+    backend
+        .set_l1_messaging_nonce(tx_nonce)
+        .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to set nonce in process_message: {}", e)))?;
     Ok(Some(res.transaction_hash))
 }
 
