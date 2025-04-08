@@ -874,7 +874,7 @@ mod verify_apply_tests {
     #[cfg(test)]
     mod reorg_tests {
         use mp_class::{ConvertedClass, SierraClassInfo, SierraConvertedClass};
-        use mp_state_update::DeclaredClassItem;
+        use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
         use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
 
         use super::*;
@@ -935,6 +935,146 @@ mod verify_apply_tests {
             assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
             assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
 
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_revert_contract_state(
+            setup_test_backend: Arc<MadaraBackend>,
+        ) {
+            let backend = setup_test_backend;
+
+            // some helper functions to keep this test code concise.
+            // related: https://github.com/madara-alliance/madara/issues/570
+            let get_latest_contract_class_hash = |contract_address: &Felt| -> Option<Felt> {
+                backend.get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                    .expect("failed to query contract class hash")
+            };
+            let get_latest_nonce = |contract_address: &Felt| -> Option<Felt> {
+                backend.get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                    .expect("failed to query nonce")
+            };
+            let get_latest_contract_storage = |contract_address: &Felt, key: &Felt| -> Option<Felt> {
+                backend.get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, &key)
+                    .expect("failed to query contract storage")
+            };
+
+            let validation = create_validation_context(false);
+
+            let mut genesis = create_dummy_block();
+            genesis.unverified_block_number = Some(0);
+            genesis.unverified_global_state_root = Some(felt!("0x0"));
+            genesis.header.parent_block_hash = None;
+            let genesis_block_import =
+                verify_apply_inner(&backend, genesis, validation.clone()).expect("verify_apply_inner failed on genesis");
+
+            // push block one which contains a first round of storage changes
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(1);
+            block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(genesis_block_import.block_hash);
+            block.state_diff = StateDiff {
+                nonces: vec![
+                    NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                    NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                ],
+                replaced_classes: Default::default(),
+                deployed_contracts: vec![
+                    DeployedContractItem { address: Felt::ONE, class_hash: Felt::ONE },
+                    DeployedContractItem { address: Felt::TWO, class_hash: Felt::ONE },
+                ],
+                storage_diffs: vec![
+                    ContractStorageDiffItem {
+                        address: Felt::ONE,
+                        storage_entries: vec![
+                            StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                            StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                        ],
+                    },
+                ],
+                ..Default::default()
+            };
+            let block_import_1 = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            // push block one which contains a first round of storage changes
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(2);
+            block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(block_import_1.block_hash);
+            block.state_diff = StateDiff {
+                nonces: vec![
+                    NonceUpdate { contract_address: Felt::ONE, nonce: Felt::TWO },
+                    NonceUpdate { contract_address: Felt::THREE, nonce: Felt::ONE },
+                ],
+                replaced_classes: vec![
+                    ReplacedClassItem { contract_address: Felt::ONE, class_hash: Felt::TWO },
+                ],
+                deployed_contracts: vec![
+                    DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE },
+                ],
+                storage_diffs: vec![
+                    ContractStorageDiffItem {
+                        address: Felt::ONE,
+                        storage_entries: vec![
+                            StorageEntry { key: Felt::ONE, value: Felt::ZERO },
+                        ],
+                    },
+                    ContractStorageDiffItem {
+                        address: Felt::TWO,
+                        storage_entries: vec![
+                            StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        ],
+                    },
+                ],
+                ..Default::default()
+            };
+            let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            // block 2 assertions
+            assert_eq!(get_latest_nonce(&Felt::ONE), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::THREE), Some(Felt::ONE));
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), Some(Felt::THREE));
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), Some(Felt::ZERO));
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), Some(Felt::ONE));
+            
+            // revert back to block 1
+            // TODO: reorg back one block, assert we go back to block 1 state
+            let _ = revert_to(&backend, &block_import_1.block_hash).expect("reorg to block 1 failed");
+
+            // block 1 assertions
+            assert_eq!(get_latest_nonce(&Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_nonce(&Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
+
+            // revert back to block 0
+            let _ = revert_to(&backend, &genesis_block_import.block_hash).expect("reorg to block 0 failed");
+
+            // block 0 assertions -- nothing should have any state
+            assert_eq!(get_latest_nonce(&Felt::ONE), None);
+            assert_eq!(get_latest_nonce(&Felt::TWO), None);
+            assert_eq!(get_latest_nonce(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), None);
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), None);
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), None);
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), None);
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
         }
 
         /// This struct provides the inputs to the reorg tests. It does so based on integers
