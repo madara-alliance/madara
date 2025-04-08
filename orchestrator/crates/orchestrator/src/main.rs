@@ -4,7 +4,7 @@ use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
 use orchestrator::config::init_config;
 use orchestrator::queue::init_consumers;
 use orchestrator::routes::setup_server;
-use orchestrator::setup::setup_cloud;
+use orchestrator::setup::old::setup_cloud;
 use orchestrator::telemetry::{setup_analytics, shutdown_analytics};
 
 #[global_allocator]
