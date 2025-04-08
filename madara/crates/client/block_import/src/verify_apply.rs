@@ -904,6 +904,7 @@ mod verify_apply_tests {
             let mut block = create_dummy_block();
             block.unverified_block_number = Some(1);
             block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(parent_hash);
             // TODO: this StateDiff reflects the `converted_class` that we get from our fixture
             //       is there a way to generate this? what ensures that these are consistent in production? the prover?
             block.state_diff = StateDiff {
@@ -922,13 +923,17 @@ mod verify_apply_tests {
                 converted_class_sierra,
                 converted_class_legacy,
             ];
-            block.header.parent_block_hash = Some(parent_hash);
             let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
 
+            // declared classes should exist now
             assert!(backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+            assert!(backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
+
             let _ = revert_to(&backend, &parent_hash).expect("reorg failed");
 
+            // declared classes should have been pruned during revert_to()
             assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+            assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
 
         }
 
