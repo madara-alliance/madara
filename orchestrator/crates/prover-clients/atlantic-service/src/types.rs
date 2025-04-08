@@ -41,7 +41,7 @@ pub struct AtlanticQuery {
     pub project_id: String,
     pub created_at: String,
     pub completed_at: Option<String>,
-    pub result: Option<String>,
+    pub result: Option<AtlanticQueryStep>,
     pub network: Option<String>,
     pub client: AtlanticClient,
 }

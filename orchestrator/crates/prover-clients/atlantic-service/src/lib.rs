@@ -14,8 +14,6 @@ use url::Url;
 
 use crate::client::AtlanticClient;
 
-pub const ATLANTIC_SETTINGS_NAME: &str = "atlantic";
-
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
     pub atlantic_api_key: String,
@@ -68,9 +66,9 @@ impl ProverClient for AtlanticProverService {
                         self.atlantic_network.clone(),
                     )
                     .await?;
-                // sleep for 2 seconds to make sure the job is submitted
+                // sleep for 10 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-                log::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
+                tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
                 // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
             }

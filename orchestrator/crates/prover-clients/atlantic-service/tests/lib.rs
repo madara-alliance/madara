@@ -97,7 +97,6 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
 
     // Load the Cairo PIE from the test data
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
-    print!("Loading Cairo PIE from {}", cairo_pie_path);
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("Failed to read Cairo PIE zip file");
 
     // Submit the task to the actual Atlantic service
