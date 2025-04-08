@@ -43,6 +43,7 @@ pub struct SharpCliArgs {
     pub gps_verifier_contract_address: Option<String>,
 }
 
+
 // Define local structs for now
 #[derive(Debug, Clone)]
 pub struct SharpValidatedArgs {

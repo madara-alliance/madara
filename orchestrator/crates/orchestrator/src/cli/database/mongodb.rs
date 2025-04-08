@@ -16,3 +16,10 @@ pub struct MongoDBCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_DATABASE_NAME", long, default_value = Some("orchestrator"))]
     pub mongodb_database_name: Option<String>,
 }
+
+// /// Validated MongoDB parameters
+// #[derive(Debug, Clone)]
+// pub struct MongoDBValidatedArgs {
+//     pub connection_url: String,
+//     pub database_name: String,
+// }

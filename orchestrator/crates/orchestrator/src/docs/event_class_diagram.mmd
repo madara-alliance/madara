@@ -1,0 +1,56 @@
+classDiagram
+direction TB
+    class EventController {
+	    -handlers: Map
+	    +registerHandler(EventHandler)
+	    +startAll()
+	    +stopAll()
+	    +loadConfig(config: Config)
+    }
+
+    class EventHandler {
+	    -queueName: String
+	    -queue: Queue
+	    -jobHandler: JobHandler
+	    -timeout: Duration
+	    +enqueueJob(Job)
+	    +start()
+	    +stop()
+	    +setGracefulShutdown(timeout: Duration)
+    }
+
+    class JobHandler {
+	    -jobTypeRegistry: Map
+	    +handle(job: Job)
+	    -dispatchTo(job: Job)
+	    +registerJobType(type: String, handler: Function)
+    }
+
+    class Job {
+	    +type: String
+	    +data: Any
+	    +id: String
+	    +createdAt: DateTime
+    }
+
+    class Config {
+	    +eventHandlers: List
+    }
+
+    class EventConfig {
+	    +queueName: String
+	    +jobTypes: List
+	    +timeout: Duration
+    }
+
+    class Function {
+    }
+
+    EventController --> EventHandler
+    EventController --> Config
+    Config --> EventConfig
+    EventHandler --> JobHandler
+    EventHandler --> Job
+    JobHandler --> Job
+    JobHandler --> Function
+
