@@ -26,14 +26,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.as_str())
+        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.to_string())
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.as_str())
+        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
     }
 }
 

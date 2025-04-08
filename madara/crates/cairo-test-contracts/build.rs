@@ -4,7 +4,7 @@ fn main() {
     println!("cargo::rerun-if-changed={cairo_project_dir}/Scarb.toml");
     // Note: scarb build updates the Scarb.lock file, and there is no `--locked` arg to avoid
     //  that, so we can't use rerun-if-change on it :/
-    println!("cargo::rerun-if-changed={cairo_project_dir}/Scarb.lock");
+    // println!("cargo::rerun-if-changed={cairo_project_dir}/Scarb.lock");
     let exit_status = std::process::Command::new("scarb")
         .current_dir(cairo_project_dir)
         .args(["build"])

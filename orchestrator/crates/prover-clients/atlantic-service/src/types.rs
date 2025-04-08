@@ -120,8 +120,8 @@ pub enum AtlanticQueryStep {
     TraceAndMetadataGeneration,
 }
 
-impl AtlanticQueryStep {
-    pub fn as_str(&self) -> String {
-        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+impl std::fmt::Display for AtlanticQueryStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(self).unwrap().trim_matches('"'))
     }
 }

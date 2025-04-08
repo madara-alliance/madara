@@ -140,7 +140,4 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             }
         }
     }
-
-    // If we got here, the test passed
-    assert!(true, "The test completed successfully");
 }
