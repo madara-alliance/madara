@@ -184,7 +184,30 @@ pub fn gateway_pending_block_sync(
                     return Ok(None);
                 }
 
-                tracing::info!("BLOCK = {block:?}, {parent_hash:#x}");
+                if backend.has_pending_block().context("Checking if db has a pending block")? {
+                    let db_block = backend
+                        .get_block_info(&BlockId::Tag(BlockTag::Pending))
+                        .context("Getting latest block hash")?
+                        .context("Backend should have a pending block")?;
+                    let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
+
+                    // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
+                    let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
+                        == db_block.header
+                        && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
+                        && block
+                            .block
+                            .transaction_receipts
+                            .iter()
+                            .map(|tx| &tx.transaction_hash)
+                            .eq(db_block.tx_hashes.iter());
+
+                    if block_has_not_changed {
+                        return Ok(None);
+                    }
+                }
+
+                tracing::debug!("Block parent_hash {parent_hash:#x}");
 
                 let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
 

@@ -155,17 +155,6 @@ impl<P: ForwardPipeline> SyncController<P> {
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
         loop {
-            if self.forward_pipeline.is_empty()
-                && self
-                    .config
-                    .stop_at_block_n
-                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
-                && !self.pending_block_task_is_running()
-            {
-                // End condition for stop_at_block_n.
-                tracing::debug!("End condition for stop_at");
-                break Ok(());
-            }
             let target_height = self.target_height();
 
             let can_run_pipeline = !self.forward_pipeline.is_empty()
@@ -185,6 +174,18 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.set_status(ServiceEvent::SyncingTo { target });
             } else {
                 self.set_status(ServiceEvent::Idle);
+            }
+
+            if self.forward_pipeline.is_empty()
+                && self
+                    .config
+                    .stop_at_block_n
+                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
+                && !self.pending_block_task_is_running()
+            {
+                // End condition for stop_at_block_n.
+                tracing::debug!("End condition for stop_at");
+                break Ok(());
             }
 
             tokio::select! {

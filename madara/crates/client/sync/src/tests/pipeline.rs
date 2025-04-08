@@ -340,6 +340,7 @@ async fn test_stop_at_block_n(mut ctx: TestContext) {
     ctx.gateway_mock.mock_header_latest(3, felt!("0x13"));
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 2 });
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
     assert_eq!(ctx.service_state_recv.recv().await, None); // task ended
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
