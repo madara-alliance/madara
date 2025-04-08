@@ -2,12 +2,7 @@ use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
 use mp_rpc::{
-    AddInvokeTransactionResult, BlockHashAndNumber, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, EventFilterWithPageRequest, EventsChunk,
-    FeeEstimate, FunctionCall, MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-    MaybePendingStateUpdate, MsgFromL1, SimulateTransactionsResult, SimulationFlag, SimulationFlagForEstimateFee,
-    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResult,
-    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    AddInvokeTransactionResult, BlockHashAndNumber, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate, MsgFromL1, SimulateTransactionsResult, SimulationFlag, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResult, TraceTransactionResult, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash
 };
 use starknet_types_core::felt::Felt;
 
@@ -156,5 +151,5 @@ pub trait StarknetTraceRpcApi {
 
     #[method(name = "traceTransaction", and_versions = ["V0_8_0"])]
     /// Returns the execution trace of a transaction
-    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceBlockTransactionsResult>;
+    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult>;
 }
