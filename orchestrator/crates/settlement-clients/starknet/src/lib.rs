@@ -68,14 +68,15 @@ impl StarknetSettlementClient {
         let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address.to_string())
             .expect("Invalid core contract address");
 
-        let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> =
-            Arc::new(SingleOwnerAccount::new(
-                provider.clone(),
-                signer.clone(),
-                signer_address,
-                provider.chain_id().await.expect("Failed to get chain id"),
-                ExecutionEncoding::New,
-            ));
+        let mut account = SingleOwnerAccount::new(
+            provider.clone(),
+            signer.clone(),
+            signer_address,
+            provider.chain_id().await.expect("Failed to get chain id"),
+            ExecutionEncoding::New,
+        );
+        account.set_block_id(BlockId::Tag(BlockTag::Pending));
+        let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> = Arc::new(account);
 
         let starknet_core_contract_client: StarknetCoreContractClient =
             StarknetCoreContractClient::new(core_contract_address, account.clone());
