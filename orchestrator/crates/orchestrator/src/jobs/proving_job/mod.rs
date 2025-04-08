@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use alloy::signers::k256::pkcs8::der::oid::db::rfc4519::SN;
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
