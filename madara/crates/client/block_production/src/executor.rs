@@ -85,7 +85,6 @@ impl BatchToExecute {
 
 #[derive(Debug)]
 pub(crate) struct AdditionalTxInfo {
-    pub tx_hash: Felt,
     pub declared_class: Option<Box<ConvertedClass>>,
 }
 
@@ -183,7 +182,7 @@ impl Executor {
     ) -> anyhow::Result<ExecutorHandle> {
         // buffer is 1.
         let (sender, recv) = mpsc::channel(1);
-        let (replies_sender, replies_recv) = mpsc::channel(10);
+        let (replies_sender, replies_recv) = mpsc::channel(100);
         let (stop_sender, stop_recv) = oneshot::channel();
 
         let executor = Self {
@@ -359,6 +358,7 @@ impl Executor {
     }
 
     fn run(mut self) -> anyhow::Result<()> {
+        // Initial state is ExecutorState::NewBlock, we don't yet have an execution state.
         let mut state = self.initial_state().context("Creating executor initial state")?;
 
         let mut block_empty = true;
@@ -388,7 +388,9 @@ impl Executor {
                 to_exec.extend(taken);
             }
 
-            // Create execution state if it does not already exist.
+            // Create a new execution state (new block) if it does not already exist.
+            // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
+            // creates the blockifier TransactionExecutor.
             let execution_state = match state {
                 ExecutorState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorState::NewBlock(state_new_block) => {
@@ -432,10 +434,13 @@ impl Executor {
             stats.n_executed += executed_txs.len();
             stats.exec_duration += exec_duration;
 
-            for (additional_info, res) in executed_txs.additional_info.iter().zip(blockifier_results.iter()) {
+            for ((btx, additional_info), res) in
+                executed_txs.txs.iter().zip(executed_txs.additional_info.iter()).zip(blockifier_results.iter())
+            {
+                let tx_hash = Transaction::tx_hash(btx).to_felt();
                 match res {
                     Ok((execution_info, _state_diff)) => {
-                        tracing::trace!("Successful execution of transaction {:#x}", additional_info.tx_hash);
+                        tracing::trace!("Successful execution of transaction {:#x}", tx_hash);
 
                         stats.n_added_to_block += 1;
                         block_empty = false;
@@ -452,10 +457,7 @@ impl Executor {
                         // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
                         // We reject them.
                         // Note that this is a big DoS vector.
-                        tracing::error!(
-                            "Rejected transaction {:#x} for unexpected error: {err:#}",
-                            additional_info.tx_hash
-                        );
+                        tracing::error!("Rejected transaction {:#x} for unexpected error: {err:#}", tx_hash);
                         stats.n_rejected += 1;
                     }
                 }
@@ -471,6 +473,9 @@ impl Executor {
                 break Ok(());
             }
 
+            // End a block once we reached the block closing condition.
+            // This transitions the state machine from ExecutorState::Executing to ExecutorState::NewBlock.
+
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
             if block_full || block_time_deadline_reached {
@@ -481,8 +486,8 @@ impl Executor {
                     break Ok(());
                 }
                 next_block_deadline = Instant::now() + block_time;
-                block_empty = true;
                 state = self.end_block(execution_state).context("Ending block")?;
+                block_empty = true;
             }
         }
     }

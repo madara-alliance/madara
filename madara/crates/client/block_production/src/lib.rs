@@ -3,6 +3,7 @@
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
 use blockifier::state::cached_state::{StateMaps, StorageEntry};
+use blockifier::transaction::transaction_execution::Transaction;
 use executor::{AdditionalTxInfo, BatchExecutionResult, BatchToExecute, Executor, ExecutorMessage};
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
@@ -10,6 +11,7 @@ use mc_mempool::{L1DataProvider, Mempool, MempoolProvider};
 use mp_block::header::PendingHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
+use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
 use mp_state_update::DeclaredClassItem;
 use mp_transactions::TransactionWithHash;
@@ -176,7 +178,7 @@ impl CurrentPendingState {
         for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
             batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
         {
-            self.tx_executed_for_tick.push(additional_info.tx_hash);
+            self.tx_executed_for_tick.push(Transaction::tx_hash(&blockifier_tx).to_felt());
 
             if let Ok((execution_info, state_diff)) = blockifier_exec_result {
                 if let Some(class) = additional_info.declared_class.take() {
@@ -485,7 +487,7 @@ impl BlockProductionTask {
                 let iterator = iterator.take(batch_size); // only take a batch
 
                 for tx in iterator {
-                    let additional = AdditionalTxInfo { tx_hash: *tx.tx_hash(), declared_class: tx.converted_class };
+                    let additional = AdditionalTxInfo { declared_class: tx.converted_class };
                     batch.push(tx.tx, additional);
                 }
 
