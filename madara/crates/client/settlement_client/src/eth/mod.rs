@@ -771,7 +771,7 @@ mod l1_messaging_tests {
             .expect("Should successfully retrieve the last synced block after canceled event")
             .unwrap();
         assert_eq!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
+        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
         assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
