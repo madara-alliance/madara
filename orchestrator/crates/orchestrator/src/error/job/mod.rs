@@ -1,8 +1,13 @@
 pub mod da_error;
+pub mod fact;
 pub mod proving;
 pub mod snos;
 pub mod state_update;
 
+use crate::core::client::database::DatabaseError;
+use crate::core::client::queue::QueueError;
+use crate::core::client::storage::StorageError;
+use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::other::OtherError;
 use crate::error::ConsumptionError;
@@ -27,6 +32,19 @@ pub enum JobError {
 
     #[error("Failed to serialize data: {0}")]
     FailedToSerializeData(#[from] serde_json::Error),
+
+    #[error("Queue error: {0}")]
+    QueueError(#[from] QueueError),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] DatabaseError),
+
+    #[error("Storage error: {0}")]
+    StorageError(#[from] StorageError),
+
+    /// Wraps errors from fact operations
+    #[error("Fact Error: {0}")]
+    FactError(#[from] FactError),
 
     /// Wraps errors from SNOS operations
     #[error("Snos Error: {0}")]

@@ -11,6 +11,11 @@ use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use thiserror::Error;
 
+use crate::core::client::alert::AlertError;
+use crate::core::client::database::DatabaseError;
+use crate::core::client::queue::QueueError;
+use crate::core::client::storage::StorageError;
+use crate::core::error::OrchestratorCoreError;
 pub use consumer::ConsumptionError;
 
 /// Result type for orchestrator operations
@@ -22,6 +27,21 @@ pub type Result<T> = OrchestratorResult<T>;
 /// Error types for the orchestrator
 #[derive(Error, Debug)]
 pub enum OrchestratorError {
+    #[error("Storage error: {0}")]
+    StorageError(#[from] StorageError),
+
+    #[error("Alert error: {0}")]
+    AlertError(#[from] AlertError),
+
+    #[error("Queue error: {0}")]
+    QueueCoreError(#[from] QueueError),
+
+    #[error("Database error: {0}")]
+    DatabaseCoreError(#[from] DatabaseError),
+
+    #[error("Orchestrator Core Error: {0}")]
+    OrchestratorCoreError(#[from] OrchestratorCoreError),
+
     /// Setup Command error
     #[error("Setup Command Error: {0}")]
     SetupCommandError(String),

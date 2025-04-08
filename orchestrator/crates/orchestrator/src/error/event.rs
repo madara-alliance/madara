@@ -1,3 +1,8 @@
+use crate::core::client::alert::AlertError;
+use crate::core::client::database::DatabaseError;
+use crate::core::client::queue::QueueError;
+use crate::core::client::storage::StorageError;
+use crate::core::error::OrchestratorCoreError;
 use crate::error::other::OtherError;
 use crate::error::ConsumptionError;
 use crate::types::jobs::WorkerTriggerType;
@@ -15,6 +20,21 @@ pub type EventSystemResult<T> = Result<T, EventSystemError>;
 ///
 #[derive(Error, Debug)]
 pub enum EventSystemError {
+    #[error("Storage error: {0}")]
+    StorageError(#[from] StorageError),
+
+    #[error("Alert error: {0}")]
+    AlertError(#[from] AlertError),
+
+    #[error("Queue error: {0}")]
+    QueueCoreError(#[from] QueueError),
+
+    #[error("Database error: {0}")]
+    DatabaseCoreError(#[from] DatabaseError),
+
+    #[error("Orchestrator Core Error: {0}")]
+    OrchestratorCoreError(#[from] OrchestratorCoreError),
+
     #[error("Event Handler Already existing for Queue Type : {0:?}")]
     EventHandlerAlreadyExisting(QueueType),
 
