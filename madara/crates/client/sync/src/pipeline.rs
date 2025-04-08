@@ -41,8 +41,6 @@ pub trait PipelineSteps: Sync + Send + 'static {
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
     ) -> impl Future<Output = anyhow::Result<ApplyOutcome<Self::Output>>> + Send;
-
-    fn starting_block_n(&self) -> Option<u64>;
 }
 
 /// The pipeline controller is used to drive and execute the [`PipelineSteps`].
@@ -72,9 +70,8 @@ type SequentialStepFuture<S> = BoxFuture<
 impl<S: PipelineSteps> PipelineController<S> {
     /// Batch size is the maximum number of blocks per single parallel/sequential step.
     /// Note that the pipeline may schedule batches smaller than that if it cannot schedule a batch of that size.
-    pub fn new(steps: S, parallelization: usize, batch_size: usize) -> Self {
-        let starting_block_n = steps.starting_block_n();
-        let next_input_block_n = starting_block_n.map(|block_n| block_n + 1).unwrap_or(/* next is genesis */ 0);
+    /// `starting_block_n` is the first block that will be imported once the pipeline is running.
+    pub fn new(steps: S, parallelization: usize, batch_size: usize, starting_block_n: u64) -> Self {
         Self {
             steps: Arc::new(steps),
             queue: Default::default(),
@@ -82,8 +79,8 @@ impl<S: PipelineSteps> PipelineController<S> {
             batch_size,
             applying: None,
             next_inputs: VecDeque::with_capacity(2 * batch_size),
-            next_block_n_to_batch: next_input_block_n,
-            last_applied_block_n: starting_block_n,
+            next_block_n_to_batch: starting_block_n,
+            last_applied_block_n: starting_block_n.checked_sub(1),
         }
     }
 

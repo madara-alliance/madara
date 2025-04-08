@@ -21,6 +21,7 @@ pub fn block_with_state_update_pipeline(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
+    starting_block_n: u64,
     parallelization: usize,
     batch_size: usize,
     keep_pre_v0_13_2_hashes: bool,
@@ -29,6 +30,7 @@ pub fn block_with_state_update_pipeline(
         GatewaySyncSteps { backend, importer, client, keep_pre_v0_13_2_hashes },
         parallelization,
         batch_size,
+        starting_block_n,
     )
 }
 
@@ -138,10 +140,6 @@ impl PipelineSteps for GatewaySyncSteps {
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(input))
-    }
-
-    fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().latest_full_block_n()
     }
 }
 

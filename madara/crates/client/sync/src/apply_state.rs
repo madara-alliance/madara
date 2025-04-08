@@ -10,11 +10,17 @@ pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
+    starting_block_n: u64,
     parallelization: usize,
     batch_size: usize,
     disable_tries: bool,
 ) -> ApplyStateSync {
-    PipelineController::new(ApplyStateSteps { backend, importer, disable_tries }, parallelization, batch_size)
+    PipelineController::new(
+        ApplyStateSteps { backend, importer, disable_tries },
+        parallelization,
+        batch_size,
+        starting_block_n,
+    )
 }
 pub struct ApplyStateSteps {
     backend: Arc<MadaraBackend>,
@@ -53,9 +59,5 @@ impl PipelineSteps for ApplyStateSteps {
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
-    }
-
-    fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().global_trie.get()
     }
 }

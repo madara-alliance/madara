@@ -69,10 +69,11 @@ pub fn classes_pipeline(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
+    starting_block: u64,
     parallelization: usize,
     batch_size: usize,
 ) -> ClassesSync {
-    PipelineController::new(ClassesSyncSteps { backend, importer, client }, parallelization, batch_size)
+    PipelineController::new(ClassesSyncSteps { backend, importer, client }, parallelization, batch_size, starting_block)
 }
 
 pub struct ClassesSyncSteps {
@@ -145,9 +146,5 @@ impl PipelineSteps for ClassesSyncSteps {
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))
-    }
-
-    fn starting_block_n(&self) -> Option<u64> {
-        self.backend.head_status().classes.get()
     }
 }

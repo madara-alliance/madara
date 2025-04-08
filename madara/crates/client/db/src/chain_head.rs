@@ -10,6 +10,9 @@ impl BlockNStatus {
     pub fn get(&self) -> Option<u64> {
         self.0.load(SeqCst).checked_sub(1)
     }
+    pub fn next_to_import(&self) -> u64 {
+        self.0.load(SeqCst)
+    }
     pub fn set(&self, block_n: Option<u64>) {
         self.0.store(block_n.map(|block_n| block_n + 1).unwrap_or(0), SeqCst)
     }

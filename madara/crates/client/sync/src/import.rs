@@ -16,7 +16,7 @@ use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
-use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
+use std::{borrow::Cow, cmp, collections::HashMap, ops::Range, sync::Arc};
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
@@ -491,12 +491,15 @@ impl BlockImporterCtx {
 
     pub fn apply_to_global_trie(
         &self,
-        block_range: Range<u64>,
+        mut block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
+        let next_to_import = self.db.head_status().global_trie.next_to_import();
+        block_range.start = cmp::max(block_range.start, next_to_import); // don't re-import if we've already imported some blocks.
         if block_range.is_empty() {
             return Ok(());
         }
+
         let got = self.db.apply_to_global_trie(block_range.start, state_diffs.iter()).map_err(|error| {
             BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
         })?;

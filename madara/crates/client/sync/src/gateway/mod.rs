@@ -84,10 +84,12 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
+        let starting_block_n = backend.head_status().next_full_block();
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
             client.clone(),
+            starting_block_n,
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
@@ -96,12 +98,14 @@ impl GatewayForwardSync {
             backend.clone(),
             importer.clone(),
             client.clone(),
+            starting_block_n,
             config.classes_parallelization,
             config.classes_batch_size,
         );
         let apply_state_pipeline = super::apply_state::apply_state_pipeline(
             backend.clone(),
             importer.clone(),
+            starting_block_n,
             config.apply_state_parallelization,
             config.apply_state_batch_size,
             config.disable_tries,
