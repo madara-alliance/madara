@@ -31,6 +31,7 @@ mod executor;
 pub mod metrics;
 mod util;
 
+// TODO: add this to metrics
 #[derive(Default, Clone, Debug)]
 pub struct ContinueBlockStats {
     /// Number of batches executed before reaching the bouncer capacity.

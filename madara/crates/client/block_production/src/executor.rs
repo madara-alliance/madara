@@ -91,7 +91,7 @@ pub(crate) struct AdditionalTxInfo {
 #[derive(Debug)]
 pub(crate) enum ExecutorMessage {
     StartNewBlock {
-        /// Used to add the block_n-10 entry to the state diff.
+        /// Used to add the block_n-10 block hash table entry to the state diff.
         initial_state_diffs_storage: HashMap<StorageEntry, Felt>,
         /// The proto-header. It's exactly like PendingHeader, but it does not have the parent_block_hash field because it's not known yet.
         exec_ctx: BlockExecutionContext,
@@ -141,6 +141,7 @@ struct ExecutorStateNewBlock {
     /// if block closing is late by a whole 10 blocks, we'll end up waiting - and we want to wait during the NewBlock state,
     /// as to delay the gas price fetching accordingly.
     block_n_min_10_entry: Option<(u64, Felt)>,
+    /// The next block to produce will have the block_n following this one. When None, the next block to execute is genesis (no latest block).
     latest_block_n: Option<u64>,
 }
 
@@ -358,29 +359,29 @@ impl Executor {
     }
 
     fn run(mut self) -> anyhow::Result<()> {
-        // Initial state is ExecutorState::NewBlock, we don't yet have an execution state.
-        let mut state = self.initial_state().context("Creating executor initial state")?;
-
-        let mut block_empty = true;
-
         let batch_size = self.backend.chain_config().execution_batch_size;
         let block_time = self.backend.chain_config().block_time;
         let no_empty_blocks = self.backend.chain_config().no_empty_blocks;
 
+        // Initial state is ExecutorState::NewBlock, we don't yet have an execution state.
+        let mut state = self.initial_state().context("Creating executor initial state")?;
+
+        // The batch of transactions to execute.
         let mut to_exec = BatchToExecute::with_capacity(batch_size);
 
         let mut next_block_deadline = Instant::now() + block_time;
+        let mut block_empty = true;
 
         // The goal here is to do the least possible between batches, as to maximize CPU usage. Any millisecond spent
         //  outside of `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU cores, but are using only one.
-        // `blockifier` isn't really well optimized with this regard, but since we can't easily change its code (maybe we should?) we're
-        //  still optimizing everything we have a hand on here.
+        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?) we're
+        //  still optimizing everything we have a hand on here in madara.
         loop {
             // Take transactions to execute.
             if to_exec.len() < batch_size {
-                // We don't want to wait if we still have transactions to process - but we would still like to fill up out batch if possible.
-
+                
                 let wait_deadline = if block_empty && no_empty_blocks { None } else { Some(next_block_deadline) };
+                // should_wait: We don't want to wait if we already have transactions to process - but we would still like to fill up our batch if possible.
                 let Some(taken) = self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) else {
                     return Ok(()); // Channel closed. Exit gracefully.
                 };
@@ -411,7 +412,8 @@ impl Executor {
                         break Ok(());
                     }
 
-                    // I wish rust had a better way to do that :/
+                    // Replace the state with ExecutorState::Executing, returning a mutable reference to it.
+                    // I wish rust had a better way to do that in rust :/
                     state = ExecutorState::Executing(execution_state);
                     let ExecutorState::Executing(execution_state) = &mut state else { unreachable!() };
                     execution_state
@@ -422,13 +424,15 @@ impl Executor {
 
             // Execute the transactions.
             let blockifier_results = execution_state.executor.execute_txs(&to_exec.txs);
+
+            let exec_duration = exec_start_time.elapsed();
+
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
             let block_full = blockifier_results.len() < to_exec.len();
 
             let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // remove the used txs
 
             let mut stats = ContinueBlockStats::default();
-            let exec_duration = exec_start_time.elapsed();
 
             stats.n_batches += 1;
             stats.n_executed += executed_txs.len();
