@@ -201,6 +201,7 @@ pub trait Job: Send + Sync {
     /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
 
+    /// This lock is used to ensure that only specified amount of jobs are processed at a time.
     fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>>;
 }
 
