@@ -1,5 +1,6 @@
 target
 madara/crates/resources/*
+madara/crates/primitives/class/resources/*
 infra/Signoz
 cairo-artifacts
 dashboards
