@@ -1,5 +1,4 @@
 use starknet::ContractAddress;
-use core::integer::u256;
 
 #[derive(Drop, Serde)]
 struct MessageData {
@@ -38,7 +37,6 @@ mod MessagingContract {
     use starknet::ContractAddress;
     use core::array::ArrayTrait;
     use core::poseidon::poseidon_hash_span;
-    use core::integer::u256;
 
     #[event]
     #[derive(Drop, starknet::Event)]
