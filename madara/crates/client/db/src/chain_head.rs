@@ -7,13 +7,13 @@ use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
 pub struct BlockNStatus(AtomicU64);
 
 impl BlockNStatus {
-    pub fn get(&self) -> Option<u64> {
+    pub fn current(&self) -> Option<u64> {
         self.0.load(SeqCst).checked_sub(1)
     }
-    pub fn next_to_import(&self) -> u64 {
+    pub fn next(&self) -> u64 {
         self.0.load(SeqCst)
     }
-    pub fn set(&self, block_n: Option<u64>) {
+    pub fn set_current(&self, block_n: Option<u64>) {
         self.0.store(block_n.map(|block_n| block_n + 1).unwrap_or(0), SeqCst)
     }
 }
@@ -26,6 +26,7 @@ impl Clone for BlockNStatus {
 
 /// Counter of the latest block currently in the database.
 /// We have multiple counters because the sync pipeline is split in sub-pipelines.
+// TODO: move the L1 head block_n counter here too.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub struct ChainHead {
     // Individual pipeline progress.
@@ -36,23 +37,23 @@ pub struct ChainHead {
     pub events: BlockNStatus,
     pub global_trie: BlockNStatus,
 
-    pub l1_head: BlockNStatus,
-
     /// Incremented by [`MadaraBackend::on_block`].
     pub full_block: BlockNStatus,
 }
 
 impl ChainHead {
+    /// When None, the genesis block is not yet in the database.
     pub fn latest_full_block_n(&self) -> Option<u64> {
-        self.full_block.get()
+        self.full_block.current()
     }
 
+    /// The next block to import.
     pub fn next_full_block(&self) -> u64 {
         self.latest_full_block_n().map(|n| n + 1).unwrap_or(0)
     }
 
-    pub fn set_to_height(&self, block_n: Option<u64>) {
-        self.full_block.set(block_n);
+    pub fn set_latest_full_block_n(&self, block_n: Option<u64>) {
+        self.full_block.set_current(block_n);
     }
 
     pub(crate) fn load_from_db(db: &DB) -> Result<Self, MadaraStorageError> {
@@ -67,6 +68,8 @@ impl ChainHead {
 const ROW_HEAD_STATUS: &[u8] = b"head_status";
 
 impl MadaraBackend {
+    /// Chain tip status. In this context, the "head" or "tip" of the blockchain is the latest
+    /// block in database.
     pub fn head_status(&self) -> &ChainHead {
         &self.head_status
     }

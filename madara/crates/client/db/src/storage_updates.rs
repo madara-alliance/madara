@@ -60,6 +60,8 @@ impl MadaraBackend {
     /// tries. This function will close the block and compute the commitments.
     ///
     /// The function returnes the new computed block_hash.
+    /// 
+    /// `pre_v0_13_2_hash_override`: when true, we will compute the post-v0.13.2 commitments when given a pre-v0.13.2 block.
     pub async fn add_full_block_with_classes(
         &self,
         block: PendingFullBlock,
@@ -83,15 +85,15 @@ impl MadaraBackend {
         let block_hash = block.block_hash;
 
         self.store_full_block(block)?;
-        self.head_status.headers.set(Some(block_n));
-        self.head_status.transactions.set(Some(block_n));
-        self.head_status.state_diffs.set(Some(block_n));
-        self.head_status.events.set(Some(block_n));
+        self.head_status.headers.set_current(Some(block_n));
+        self.head_status.transactions.set_current(Some(block_n));
+        self.head_status.state_diffs.set_current(Some(block_n));
+        self.head_status.events.set_current(Some(block_n));
 
-        self.class_db_store_block(block_n, converted_classes)?;
-        self.head_status.classes.set(Some(block_n));
+        self.store_block_classes(block_n, converted_classes)?;
+        self.head_status.classes.set_current(Some(block_n));
 
-        self.head_status.global_trie.set(Some(block_n));
+        self.head_status.global_trie.set_current(Some(block_n));
 
         self.on_block(block_n).await?;
         self.flush()?;
@@ -251,7 +253,7 @@ impl MadaraBackend {
 
         let task_class_db = || match block_n {
             None => self.class_db_store_pending(&converted_classes),
-            Some(block_n) => self.class_db_store_block(block_n, &converted_classes),
+            Some(block_n) => self.store_block_classes(block_n, &converted_classes),
         };
 
         let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
@@ -261,13 +263,13 @@ impl MadaraBackend {
         self.snapshots.set_new_head(crate::db_block_id::DbBlockId::from_block_n(block_n));
 
         if let Some(block_n) = block_n {
-            self.head_status.full_block.set(Some(block_n));
-            self.head_status.headers.set(Some(block_n));
-            self.head_status.state_diffs.set(Some(block_n));
-            self.head_status.transactions.set(Some(block_n));
-            self.head_status.classes.set(Some(block_n));
-            self.head_status.events.set(Some(block_n));
-            self.head_status.global_trie.set(Some(block_n));
+            self.head_status.full_block.set_current(Some(block_n));
+            self.head_status.headers.set_current(Some(block_n));
+            self.head_status.state_diffs.set_current(Some(block_n));
+            self.head_status.transactions.set_current(Some(block_n));
+            self.head_status.classes.set_current(Some(block_n));
+            self.head_status.events.set_current(Some(block_n));
+            self.head_status.global_trie.set_current(Some(block_n));
             self.save_head_status_to_db()?;
         }
 

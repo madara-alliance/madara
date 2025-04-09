@@ -79,8 +79,10 @@ pub enum BlockImportError {
     #[error("Failed to compute class hash {class_hash:#x}: {error}")]
     ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
-    #[error("Block number mismatch: expected {expected:#x}, got {got:#x}")]
+    #[error("Block number mismatch: expected {expected}, got {got}")]
     BlockNumber { got: u64, expected: u64 },
+    #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
+    BlockHash { got: Felt, expected: Felt },
 
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
@@ -164,8 +166,6 @@ impl BlockImporterCtx {
         block_n: u64,
         signed_header: &BlockHeaderWithSignatures,
     ) -> Result<(), BlockImportError> {
-        // TODO
-
         // TODO: verify signatures
 
         // verify block_number
@@ -173,17 +173,46 @@ impl BlockImporterCtx {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
         }
 
+        // TODO(cchudant): for pre-v0.13.2 blocks, we currently do not check their integrity. Checking them is cumbersome, as it requires us
+        // to implement a very big lookup table of all the existing block hashes for pre-v0.13.2 mainnet and sepolia blocks.
+        // This is because we cannot check the integrity of receipts and state diffs and a ton of other fields for these older blocks, since
+        // back in the day, these fields were not hashed as part of the block hashes.
+        // This lookup table will be mandatory for peer-to-peer block sync, as we can't trust the origin of the blocks and thus cannot
+        // check the integrity of any pre-v0.13.2 blocks.
+        //
+        // For gateway sync, this should be fine unless we're syncing from a malicious gateway, (we're not syncing from the official SW-run
+        // gateways), or we suffer from a MITM attack, which would be difficult to perform as we're connecting to the gateway over HTTPS anyway.
+        // This is only a problem if you are running Madara in a setup where it is syncing from a gateway run by juno or pathfinder (although I
+        // don't recall they have a gateway implementation), or syncing from another Madara, relaying blocks from sepolia and mainnet.
+        // Gateway signatures also don't help here since they also have the same problems with the missing fields.
+        // Although, that work has started and it is nearly done (ask cchudant), as of now, it is not on any track to be merged anytime soon.
+        // We just trust the pre-v0.13.2 blocks that the gateway gives us for now - while we could still compute and check the old block hashes,
+        // because they don't guarantee the integrity of all of the block and in particular, because state diffs and receipts can't be checked,
+        // (they arguably contain the most important data of a block), we skip integrity checking all-together.
+        //
+        // This does not affect app-chains, as we require the chain_id to be either Sepolia and Mainnet to import pre-v0.13.2 blocks. We further
+        // restrict the heights of pre-v0.13.2 blocks to be less than the known first v0.13.2 blocks on those chains just in case.
+
+        // First v0.13.2 sepolia block: https://sepolia.voyager.online/block/86311.
+        const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
+        // First v0.13.2 mainnet block: https://voyager.online/block/671813.
+        const MAINNET_FIRST_V0_13_2: u64 = 671813;
+
+        if signed_header.header.protocol_version < StarknetVersion::V0_13_2
+            && ((self.db.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
+                || (self.db.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+        {
+            // Skip integrity check.
+            return Ok(());
+        }
+
         // verify block_hash
-        // TODO: pre_v0_13_2_override
-        let _block_hash = signed_header
+        let block_hash = signed_header
             .header
             .compute_hash(self.db.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
-        // if signed_header.block_hash != block_hash {
-        //     return Err(P2pError::peer_error(format!(
-        //         "Mismatched block_hash: {:#x}, expected {:#x}",
-        //         signed_header.block_hash, block_hash
-        //     )));
-        // }
+        if !self.config.no_check && signed_header.block_hash != block_hash {
+            return Err(BlockImportError::BlockHash { got: signed_header.block_hash, expected: block_hash });
+        }
 
         Ok(())
     }
@@ -396,7 +425,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_classes(&self, block_n: u64, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db.class_db_store_block(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
+        self.db.store_block_classes(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing classes for {block_n}").into(),
         })?;
@@ -494,8 +523,8 @@ impl BlockImporterCtx {
         mut block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
-        let next_to_import = self.db.head_status().global_trie.next_to_import();
-        block_range.start = cmp::max(block_range.start, next_to_import); // don't re-import if we've already imported some blocks.
+        let next_to_import = self.db.head_status().global_trie.next();
+        block_range.start = cmp::max(block_range.start, next_to_import); // don't re-import the blocks we've already imported.
         if block_range.is_empty() {
             return Ok(());
         }

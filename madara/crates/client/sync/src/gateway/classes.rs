@@ -142,7 +142,7 @@ impl PipelineSteps for ClassesSyncSteps {
             })
             .await?;
         if let Some(block_n) = block_range.last() {
-            self.backend.head_status().classes.set(Some(block_n));
+            self.backend.head_status().classes.set_current(Some(block_n));
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))

@@ -12,7 +12,7 @@ use crate::transaction::{
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ConfirmedReceipt {
     pub transaction_hash: Felt,
     pub transaction_index: u64,
@@ -146,7 +146,7 @@ fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_recei
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,
@@ -256,7 +256,7 @@ fn is_zero(value: &u64) -> bool {
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct MsgToL2 {
     pub from_address: H160,
     pub to_address: Felt,

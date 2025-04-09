@@ -133,10 +133,10 @@ impl PipelineSteps for GatewaySyncSteps {
         tracing::debug!("Gateway sync sequential step: {block_range:?}");
         if let Some(block_n) = block_range.last() {
             self.backend.clear_pending_block().context("Clearing pending block")?;
-            self.backend.head_status().headers.set(Some(block_n));
-            self.backend.head_status().state_diffs.set(Some(block_n));
-            self.backend.head_status().transactions.set(Some(block_n));
-            self.backend.head_status().events.set(Some(block_n));
+            self.backend.head_status().headers.set_current(Some(block_n));
+            self.backend.head_status().state_diffs.set_current(Some(block_n));
+            self.backend.head_status().transactions.set_current(Some(block_n));
+            self.backend.head_status().events.set_current(Some(block_n));
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(input))

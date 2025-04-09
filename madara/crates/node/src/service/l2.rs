@@ -81,7 +81,7 @@ impl Service for SyncService {
 
         if let Some(starting_block) = this.params.unsafe_starting_block {
             // We state that starting_block - 1 is the chain head.
-            this.db_backend.head_status().set_to_height(starting_block.checked_sub(1));
+            this.db_backend.head_status().set_latest_full_block_n(starting_block.checked_sub(1));
         }
 
         runner.service_loop(move |ctx| async move {

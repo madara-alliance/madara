@@ -55,7 +55,7 @@ impl PipelineSteps for ApplyStateSteps {
             self.importer
                 .run_in_rayon_pool_global(|importer| importer.apply_to_global_trie(block_range, input))
                 .await?;
-            self.backend.head_status().global_trie.set(Some(last_block_n));
+            self.backend.head_status().global_trie.set_current(Some(last_block_n));
             self.backend.save_head_status_to_db()?;
         }
         Ok(ApplyOutcome::Success(()))

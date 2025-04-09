@@ -595,7 +595,7 @@ impl MadaraBackend {
     ) -> anyhow::Result<Self> {
         let snapshots = Arc::new(Snapshots::new(
             Arc::clone(&db),
-            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.get(),
+            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.current(),
             Some(config.trie_log.max_kept_snapshots),
             config.trie_log.snapshot_interval,
         ));
@@ -674,7 +674,7 @@ impl MadaraBackend {
     /// This function needs to be called by the downstream block importer consumer service to mark a
     /// new block as fully imported. See the [module documentation](self) to get details on what this exactly means.
     pub async fn on_block(&self, block_n: u64) -> anyhow::Result<()> {
-        self.head_status.set_to_height(Some(block_n));
+        self.head_status.set_latest_full_block_n(Some(block_n));
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
         if self
             .config

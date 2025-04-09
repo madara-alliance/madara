@@ -345,7 +345,7 @@ pub struct ExecutionResources {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // // TODO(v0.13.4): re-add this flag.
 pub struct L1Gas {
     pub l1_gas: u128,
     pub l1_data_gas: u128,
