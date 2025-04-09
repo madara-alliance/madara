@@ -707,7 +707,10 @@ mod tests {
     use starknet_types_core::felt::Felt;
 
     use crate::{
-        finalize_execution_state::state_map_to_state_diff, metrics::BlockProductionMetrics, test_utils::{converted_class_legacy, converted_class_sierra}, BlockProductionTask
+        finalize_execution_state::state_map_to_state_diff,
+        metrics::BlockProductionMetrics,
+        test_utils::{converted_class_legacy, converted_class_sierra},
+        BlockProductionTask,
     };
 
     type TxFixtureInfo = (Transaction, mp_receipt::TransactionReceipt);

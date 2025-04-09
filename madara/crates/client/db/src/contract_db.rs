@@ -222,7 +222,7 @@ impl MadaraBackend {
         let mut batch = WriteBatchWithTransaction::default();
 
         // For each block, we want to delete all contract storage for the given block.
-        // 
+        //
         // The database stores them with a compound key that includes the block number,
         // so the previous state is implicitly present (and becomes the latest) after
         // deleting for reverted blocks.
@@ -230,14 +230,22 @@ impl MadaraBackend {
         // This also allows us to not care about the actual changes in the state diff,
         // we only need to care about which keys to prune.
         for diff in state_diffs {
-            diff.deployed_contracts.iter().for_each(|item| { contract_to_class_hashes_keys.insert(item.address); });
-            diff.replaced_classes.iter().for_each(|item| { contract_to_class_hashes_keys.insert(item.contract_address); });
+            diff.deployed_contracts.iter().for_each(|item| {
+                contract_to_class_hashes_keys.insert(item.address);
+            });
+            diff.replaced_classes.iter().for_each(|item| {
+                contract_to_class_hashes_keys.insert(item.contract_address);
+            });
 
-            diff.nonces.iter().for_each(|update| { contract_to_nonce_keys.insert(update.contract_address); });
+            diff.nonces.iter().for_each(|update| {
+                contract_to_nonce_keys.insert(update.contract_address);
+            });
 
             // contract storage is a compound key (contract_address:storage_address)
             diff.storage_diffs.iter().for_each(|diff_item| {
-                diff_item.storage_entries.iter().for_each(|entry| { contract_storage_keys.insert((diff_item.address, entry.key)); });
+                diff_item.storage_entries.iter().for_each(|entry| {
+                    contract_storage_keys.insert((diff_item.address, entry.key));
+                });
             });
         }
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap - Option here probably relates to genesis block
@@ -259,8 +267,9 @@ impl MadaraBackend {
                 let contract_key = [
                     &contract_address.to_bytes_be()[..],
                     &storage_key.to_bytes_be()[..],
-                    &block_n.to_be_bytes() as &[u8]
-                ].concat();
+                    &block_n.to_be_bytes() as &[u8],
+                ]
+                .concat();
                 batch.delete_cf(&contract_storage_col, contract_key);
             }
         }

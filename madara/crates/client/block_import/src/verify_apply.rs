@@ -330,15 +330,13 @@ fn block_hash(
 /// played on top.
 ///
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.
-pub fn revert_to(
-    backend: &MadaraBackend,
-    new_tip_block_hash: &Felt,
-) -> Result<ReorgData, BlockImportError> {
-
+pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<ReorgData, BlockImportError> {
     let target_block_info = backend
         .get_block_info(&BlockId::Hash(*new_tip_block_hash))
         .map_err(make_db_error("getting block info for new tip"))?
-        .ok_or(BlockImportError::Internal(Cow::Owned(format!("no block found for requested tip {}", new_tip_block_hash).to_string())))?;
+        .ok_or(BlockImportError::Internal(Cow::Owned(
+            format!("no block found for requested tip {}", new_tip_block_hash).to_string(),
+        )))?;
 
     let previous_tip_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
@@ -348,7 +346,8 @@ pub fn revert_to(
     let target_block_number = target_block_info.block_n().expect("Target block must have a block number");
     let target_block_id = BasicId::new(target_block_number);
 
-    let previous_tip_block_number = previous_tip_block_info.block_n().expect("Previous tip block must have a block number");
+    let previous_tip_block_number =
+        previous_tip_block_info.block_n().expect("Previous tip block must have a block number");
     let previous_tip_block_id = BasicId::new(previous_tip_block_number);
 
     backend
@@ -873,9 +872,9 @@ mod verify_apply_tests {
 
     #[cfg(test)]
     mod reorg_tests {
+        use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
         use mp_class::{ConvertedClass, SierraClassInfo, SierraConvertedClass};
         use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
-        use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
 
         use super::*;
 
@@ -897,8 +896,8 @@ mod verify_apply_tests {
             genesis.unverified_block_number = Some(0);
             genesis.unverified_global_state_root = Some(felt!("0x0"));
             genesis.header.parent_block_hash = None;
-            let block_import =
-                verify_apply_inner(&backend, genesis, validation.clone()).expect("verify_apply_inner failed on genesis");
+            let block_import = verify_apply_inner(&backend, genesis, validation.clone())
+                .expect("verify_apply_inner failed on genesis");
             let parent_hash = block_import.block_hash;
 
             let mut block = create_dummy_block();
@@ -908,21 +907,11 @@ mod verify_apply_tests {
             // TODO: this StateDiff reflects the `converted_class` that we get from our fixture
             //       is there a way to generate this? what ensures that these are consistent in production? the prover?
             block.state_diff = StateDiff {
-                declared_classes: vec![
-                    DeclaredClassItem {
-                        class_hash: Felt::TWO,
-                        compiled_class_hash: Felt::THREE,
-                    },
-                ],
-                deprecated_declared_classes: vec![
-                    Felt::THREE,
-                ],
+                declared_classes: vec![DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::THREE }],
+                deprecated_declared_classes: vec![Felt::THREE],
                 ..Default::default()
             };
-            block.converted_classes = vec![
-                converted_class_sierra,
-                converted_class_legacy,
-            ];
+            block.converted_classes = vec![converted_class_sierra, converted_class_legacy];
             let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
 
             // declared classes should exist now
@@ -934,28 +923,28 @@ mod verify_apply_tests {
             // declared classes should have been pruned during revert_to()
             assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
             assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
-
         }
 
         #[rstest]
         #[tokio::test]
-        async fn test_revert_contract_state(
-            setup_test_backend: Arc<MadaraBackend>,
-        ) {
+        async fn test_revert_contract_state(setup_test_backend: Arc<MadaraBackend>) {
             let backend = setup_test_backend;
 
             // some helper functions to keep this test code concise.
             // related: https://github.com/madara-alliance/madara/issues/570
             let get_latest_contract_class_hash = |contract_address: &Felt| -> Option<Felt> {
-                backend.get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                backend
+                    .get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)
                     .expect("failed to query contract class hash")
             };
             let get_latest_nonce = |contract_address: &Felt| -> Option<Felt> {
-                backend.get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                backend
+                    .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)
                     .expect("failed to query nonce")
             };
             let get_latest_contract_storage = |contract_address: &Felt, key: &Felt| -> Option<Felt> {
-                backend.get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, &key)
+                backend
+                    .get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, &key)
                     .expect("failed to query contract storage")
             };
 
@@ -965,8 +954,8 @@ mod verify_apply_tests {
             genesis.unverified_block_number = Some(0);
             genesis.unverified_global_state_root = Some(felt!("0x0"));
             genesis.header.parent_block_hash = None;
-            let genesis_block_import =
-                verify_apply_inner(&backend, genesis, validation.clone()).expect("verify_apply_inner failed on genesis");
+            let genesis_block_import = verify_apply_inner(&backend, genesis, validation.clone())
+                .expect("verify_apply_inner failed on genesis");
 
             // push block one which contains a first round of storage changes
             let mut block = create_dummy_block();
@@ -983,18 +972,17 @@ mod verify_apply_tests {
                     DeployedContractItem { address: Felt::ONE, class_hash: Felt::ONE },
                     DeployedContractItem { address: Felt::TWO, class_hash: Felt::ONE },
                 ],
-                storage_diffs: vec![
-                    ContractStorageDiffItem {
-                        address: Felt::ONE,
-                        storage_entries: vec![
-                            StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                            StorageEntry { key: Felt::TWO, value: Felt::TWO },
-                        ],
-                    },
-                ],
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                }],
                 ..Default::default()
             };
-            let block_import_1 = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+            let block_import_1 =
+                verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
 
             // push block one which contains a first round of storage changes
             let mut block = create_dummy_block();
@@ -1006,24 +994,16 @@ mod verify_apply_tests {
                     NonceUpdate { contract_address: Felt::ONE, nonce: Felt::TWO },
                     NonceUpdate { contract_address: Felt::THREE, nonce: Felt::ONE },
                 ],
-                replaced_classes: vec![
-                    ReplacedClassItem { contract_address: Felt::ONE, class_hash: Felt::TWO },
-                ],
-                deployed_contracts: vec![
-                    DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE },
-                ],
+                replaced_classes: vec![ReplacedClassItem { contract_address: Felt::ONE, class_hash: Felt::TWO }],
+                deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
                 storage_diffs: vec![
                     ContractStorageDiffItem {
                         address: Felt::ONE,
-                        storage_entries: vec![
-                            StorageEntry { key: Felt::ONE, value: Felt::ZERO },
-                        ],
+                        storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::ZERO }],
                     },
                     ContractStorageDiffItem {
                         address: Felt::TWO,
-                        storage_entries: vec![
-                            StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                        ],
+                        storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::ONE }],
                     },
                 ],
                 ..Default::default()
@@ -1042,7 +1022,7 @@ mod verify_apply_tests {
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), Some(Felt::ZERO));
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
             assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), Some(Felt::ONE));
-            
+
             // revert back to block 1
             // TODO: reorg back one block, assert we go back to block 1 state
             let _ = revert_to(&backend, &block_import_1.block_hash).expect("reorg to block 1 failed");
