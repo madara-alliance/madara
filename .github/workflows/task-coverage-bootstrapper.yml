@@ -127,3 +127,14 @@ jobs:
           parallel-finished: true
           files: lcov.info
           debug: true
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi

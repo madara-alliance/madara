@@ -31,8 +31,8 @@ jobs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
       bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-      cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}
-      bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.hash }}
+      cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
+      bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +68,6 @@ jobs:
 
       - name: Build the artifacts
         run: |
-          git submodule update --init --recursive
           make artifacts-linux
 
       # Build Madara, Orchestrator and test contracts
@@ -139,7 +138,7 @@ jobs:
           # Combine timestamp with files hash for unique identifier
           HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
           # Set output for use in subsequent steps
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "cairo-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
           # Save hash to file for artifact sharing
           echo "$HASH" > cairo_artifacts_hash.txt
           echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
@@ -149,12 +148,12 @@ jobs:
         run: |
           # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
-          # Generate hash of all files in cairo/target directory
+          # Generate hash of all files in artifacts directory
           FILES_HASH=$(find artifacts -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
           # Combine timestamp with files hash for unique identifier
           HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
           # Set output for use in subsequent steps
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "bootstrapper-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
           # Save hash to file for artifact sharing
           echo "$HASH" > bootstrapper_artifacts_hash.txt
           echo "Hash of Bootstrapper artifacts is: $HASH (with timestamp: $TIMESTAMP)"
@@ -209,5 +208,6 @@ jobs:
         run: |
           echo "madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}"
           echo "orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}"
-          echo "cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.hash }}"
-          echo "bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.hash }}"
+          echo "bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}"
+          echo "cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}"
+          echo "bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}"
