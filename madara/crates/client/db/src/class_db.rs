@@ -215,7 +215,7 @@ impl MadaraBackend {
     }
 
     /// Revert items in the class db.
-    /// 
+    ///
     /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
     /// to be reverted in that block.
     ///
@@ -223,13 +223,10 @@ impl MadaraBackend {
     ///  * Each `StateDiff` should include all deployed classes for its block
     ///  * `state_diffs` should form a contiguous range of blocks
     ///  * that range should end with the current blockchain tip
-    /// 
+    ///
     /// If this isn't the case, the db could end up storing classes that aren't canonically
     /// deployed.
-    pub(crate) fn class_db_revert(
-        &self,
-        state_diffs: &Vec<(u64, StateDiff)>,
-    ) -> Result<(), MadaraStorageError> {
+    pub(crate) fn class_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
         let classes_info_col = self.db.get_column(Column::ClassInfo);
         let classes_compiled_col = self.db.get_column(Column::ClassCompiled);
 

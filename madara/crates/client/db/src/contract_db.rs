@@ -204,7 +204,7 @@ impl MadaraBackend {
     }
 
     /// Revert items in the contract db.
-    /// 
+    ///
     /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
     /// to be reverted in that block.
     ///
@@ -212,13 +212,9 @@ impl MadaraBackend {
     ///  * Each `StateDiff` should include the entire state for its block
     ///  * `state_diffs` should form a contiguous range of blocks
     ///  * that range should end with the current blockchain tip
-    /// 
+    ///
     /// If this isn't the case, the blockchain will store inconsistent state for some blocks.
-    pub(crate) fn contract_db_revert(
-        &self,
-        state_diffs: &Vec<(u64, StateDiff)>,
-    ) -> Result<(), MadaraStorageError> {
-
+    pub(crate) fn contract_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
         if state_diffs.is_empty() {
             return Ok(());
         }
@@ -246,7 +242,8 @@ impl MadaraBackend {
                 });
 
             diff.nonces.iter().for_each(|update| {
-                let contract_key = [&update.contract_address.to_bytes_be()[..], &block_n.to_be_bytes() as &[u8]].concat();
+                let contract_key =
+                    [&update.contract_address.to_bytes_be()[..], &block_n.to_be_bytes() as &[u8]].concat();
                 batch.delete_cf(&contract_to_nonces_col, contract_key);
             });
 

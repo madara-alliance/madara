@@ -359,7 +359,7 @@ impl MadaraBackend {
     ///
     /// In addition, this removes all historical data (chain state, transactions, state diffs,
     /// etc.) from the database. `ROW_SYNC_TIP` is set to the new tip.
-    /// 
+    ///
     /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
     /// element is the current tip of the chain and the last is `revert_to`).
     pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
