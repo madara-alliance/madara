@@ -1,5 +1,6 @@
 use httpmock::{Mock, MockServer};
 use mc_gateway_client::GatewayProvider;
+use mp_state_update::DeclaredClassItem;
 use rstest::*;
 use serde_json::{json, Value};
 use starknet_core::types::Felt;
@@ -57,6 +58,25 @@ impl GatewayMock {
     }
 
     pub fn mock_block(&self, block_number: u64, hash: Felt, parent_hash: Felt) {
+        self.mock_block_with_declared_class(block_number, hash, parent_hash, None);
+    }
+
+    pub fn mock_block_with_declared_class(
+        &self,
+        block_number: u64,
+        hash: Felt,
+        parent_hash: Felt,
+        declared_class: Option<DeclaredClassItem>,
+    ) {
+        let declared_classes = declared_class
+            .map(|item| {
+                json!({
+                    "class_hash": item.class_hash,
+                    "compiled_class_hash": item.compiled_class_hash
+                })
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", block_number.to_string());
             then.status(200).header("content-type", "application/json").json_body(json!({
@@ -147,10 +167,7 @@ impl GatewayMock {
                         },
                         "deployed_contracts": [],
                         "old_declared_contracts": [],
-                        "declared_classes": [{
-                            "class_hash": "0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a",
-                            "compiled_class_hash": "0x7d24ab3a5277e064c65b37f2bd4b118050a9f1864bd3f74beeb3e84b2213692"
-                        }],
+                        "declared_classes": declared_classes,
                         "replaced_classes": []
                     }
                 }
@@ -223,7 +240,71 @@ impl GatewayMock {
         })
     }
 
-    pub fn mock_class_hash(&self, contract_file: &[u8]) {
+    /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
+    pub fn mock_block_pending_with_declared_class(&self, parent_hash: Felt, timestamp: usize) -> Mock {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
+            then.status(200).header("content-type", "application/json").json_body(json!({
+                "block": {
+                    "parent_block_hash": format!("{parent_hash:#x}"),
+                    "status": "PENDING",
+                    "l1_da_mode": "CALLDATA",
+                    "l1_gas_price": {
+                        "price_in_wei": "0x274287586",
+                        "price_in_fri": "0x363cc34e29f8"
+                    },
+                    "l1_data_gas_price": {
+                        "price_in_wei": "0x2bc1e42413",
+                        "price_in_fri": "0x3c735d85586c2"
+                    },
+                    "transactions": [],
+                    "timestamp": timestamp,
+                    "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                    "transaction_receipts": [],
+                    "starknet_version": "0.13.2.1",
+                },
+                "state_update": {
+                    "old_root": "0x37817010d31db557217addb3b4357c2422c8d8de0290c3f6a867bbdc49c32a0",
+                    "state_diff": {
+                        "storage_diffs": {
+                            "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d": [
+                                {
+                                    "key": "0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a",
+                                    "value": "0x1b7622454b6cea6e76bb2"
+                                },
+                                {
+                                    "key": "0x5928e5598505749c60b49cc98e3acd5f3faa4a36910f50824395385b3c3a5c6",
+                                    "value": "0xdefb9937f1c6af5096"
+                                }
+                            ]
+                        },
+                        "nonces": {
+                            "0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c": "0x2",
+                            "0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535": "0x18ab"
+                        },
+                        "deployed_contracts": [
+                            {
+                                "address": "0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c",
+                                "class_hash": "0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
+                            },
+                            {
+                                "address": "0x7ab19cc28b12535df410edd1dbaad521ee83479b5936e00decdde5dd566c8b7",
+                                "class_hash": "0x4ccf6144da19dc18c9f109a8a46e66ea2e08b2f22b03f895a715968d26622ea"
+                            }
+                        ],
+                        "old_declared_contracts": [],
+                        "declared_classes": [{
+                            "class_hash": "0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a",
+                            "compiled_class_hash": "0x7d24ab3a5277e064c65b37f2bd4b118050a9f1864bd3f74beeb3e84b2213692"
+                        }],
+                        "replaced_classes": []
+                    }
+                }
+            }));
+        })
+    }
+
+    pub fn mock_class(&self, contract_file: &[u8]) {
         let json: Value = serde_json::from_slice(contract_file).expect("Failed to parse JSON");
 
         // Convert ABI to string

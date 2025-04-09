@@ -12,6 +12,7 @@ use crate::{
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_eth::state_update::L1StateUpdate;
 use mp_chain_config::ChainConfig;
+use mp_state_update::DeclaredClassItem;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
 use starknet_api::felt;
@@ -46,7 +47,6 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
 #[traced_test]
 /// The pipeline should follow the mock_header_latest.
 async fn test_probed(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
     ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
@@ -106,7 +106,6 @@ async fn test_probed(mut ctx: TestContext) {
 #[traced_test]
 async fn test_pending_block_update(mut ctx: TestContext) {
     // 1. No pending block.
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
     ctx.gateway_mock.mock_header_latest(1, felt!("0x13"));
@@ -181,7 +180,6 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 /// First, make the pipeline sync to block 0.
 /// Then, send an l1 head update, the pipeline should follow.
 async fn test_follows_l1(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
     ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
@@ -226,7 +224,6 @@ async fn test_follows_l1(mut ctx: TestContext) {
 #[traced_test]
 /// Pending block is disabled.
 async fn test_no_pending(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_header_latest(0, felt!("0x10"));
     ctx.gateway_mock.mock_block_pending(felt!("0x10"));
@@ -255,7 +252,7 @@ async fn test_no_pending(mut ctx: TestContext) {
 #[traced_test]
 /// The pipeline should stop once fully synced.
 async fn test_stop_on_sync(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
+    ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
     ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
@@ -305,7 +302,7 @@ async fn test_stop_on_sync(mut ctx: TestContext) {
 #[traced_test]
 /// The pipeline should stop once at block_n.
 async fn test_stop_at_block_n(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
+    ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block_pending_not_found();
     let mut latest_mock = ctx.gateway_mock.mock_header_latest(0, felt!("0x10"));
@@ -358,7 +355,7 @@ async fn test_stop_at_block_n(mut ctx: TestContext) {
 /// The pipeline should stop once fully synced.
 /// Unsure: should we also sync the pending block? it's debatable
 async fn test_global_stop(mut ctx: TestContext) {
-    ctx.gateway_mock.mock_class_hash(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
+    ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
     ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
@@ -395,4 +392,81 @@ async fn test_global_stop(mut ctx: TestContext) {
     task.await.unwrap(); // task returned.
 
     service_ctx.cancelled().await // global should be cancelled.
+}
+
+#[rstest]
+#[tokio::test]
+#[traced_test]
+/// Test that we import the class if it's declared in a pending block. For classes declared in closed blocks,
+/// it is already tested in the realistic tests.
+async fn test_pending_declared_class(mut ctx: TestContext) {
+    ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    let mut mock = ctx.gateway_mock.mock_block_pending_not_found();
+    ctx.gateway_mock.mock_header_latest(0, felt!("0x10"));
+
+    let mut sync = crate::gateway::forward_sync(
+        ctx.backend.clone(),
+        ctx.importer,
+        ctx.gateway_mock.client(),
+        SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
+        ForwardSyncConfig::default(),
+    );
+
+    let _task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await.unwrap() });
+
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Starting);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 0 });
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+
+    assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap(), Some(felt!("0x10")));
+    assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap(), None);
+    assert!(!ctx.backend.has_pending_block().unwrap());
+
+    mock.delete();
+
+    ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
+    ctx.gateway_mock.mock_block_pending_with_declared_class(felt!("0x10"), 4242);
+
+    assert_eq!(
+        ctx.backend
+            .get_class_info(
+                &DbBlockId::Pending,
+                &felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a")
+            )
+            .unwrap(),
+        None
+    );
+
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
+
+    assert!(ctx.backend.has_pending_block().unwrap());
+
+    assert_eq!(
+        ctx.backend
+            .get_block_info(&DbBlockId::Pending)
+            .unwrap()
+            .unwrap()
+            .as_pending()
+            .unwrap()
+            .header
+            .block_timestamp
+            .0,
+        4242
+    );
+    assert_eq!(
+        ctx.backend.get_block_state_diff(&DbBlockId::Pending).unwrap().unwrap().declared_classes,
+        vec![DeclaredClassItem {
+            class_hash: felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a"),
+            compiled_class_hash: felt!("0x7d24ab3a5277e064c65b37f2bd4b118050a9f1864bd3f74beeb3e84b2213692")
+        }]
+    );
+    assert!(ctx
+        .backend
+        .get_class_info(
+            &DbBlockId::Pending,
+            &felt!("0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a")
+        )
+        .unwrap()
+        .is_some());
 }

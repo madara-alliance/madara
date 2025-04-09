@@ -160,6 +160,7 @@ pub fn gateway_pending_block_sync(
                     // Deserialization fails in this case.
                     Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
                     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
+                        tracing::debug!("Pending block not found.");
                         return Ok(None)
                     }
                     Err(other) => {
@@ -207,7 +208,7 @@ pub fn gateway_pending_block_sync(
                     }
                 }
 
-                tracing::debug!("Block parent_hash {parent_hash:#x}");
+                tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
 
                 let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
 

@@ -215,7 +215,9 @@ impl<P: ForwardPipeline> SyncController<P> {
                 Some(res) = OptionFuture::from(
                     self.get_pending_block.as_mut().filter(|_| !can_run_pipeline).map(|fut| fut.run())
                 ) => {
-                    if res?.is_some() {
+                    let res = res?;
+                    tracing::debug!("Pending probe successful: {}", res.is_some());
+                    if res.is_some() {
                         self.config.service_state_sender.send(ServiceEvent::UpdatedPendingBlock);
                     }
                 }
