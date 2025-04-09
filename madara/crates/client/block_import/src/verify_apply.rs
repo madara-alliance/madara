@@ -873,7 +873,7 @@ mod verify_apply_tests {
     #[cfg(test)]
     mod reorg_tests {
         use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
-        use mp_class::{ConvertedClass, SierraClassInfo, SierraConvertedClass};
+        use mp_class::ConvertedClass;
         use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
 
         use super::*;
@@ -944,7 +944,7 @@ mod verify_apply_tests {
             };
             let get_latest_contract_storage = |contract_address: &Felt, key: &Felt| -> Option<Felt> {
                 backend
-                    .get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, &key)
+                    .get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, key)
                     .expect("failed to query contract storage")
             };
 
