@@ -162,14 +162,14 @@ jobs:
       - name: Upload Cairo artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.hash }}
+          name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
           path: cairo/target
           retention-days: 1
 
       - name: Upload Bootstrapper artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bootstrapper-artifacts-${{ steps.generate_bootstrapper_artifacts_hash.outputs.hash }}
+          name: bootstrapper-artifacts-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
           path: artifacts
           retention-days: 1
 
@@ -196,13 +196,13 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: cairo/target
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
 
       - name: Cache Bootstrapper artifacts
         uses: actions/cache/save@v4
         with:
           path: artifacts
-          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bootstrapper-${{ steps.generate_bootstrapper_artifacts_hash.outputs.hash }}
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bootstrapper-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
 
       - name: Display hashes
         run: |
