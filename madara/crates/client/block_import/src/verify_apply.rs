@@ -334,16 +334,18 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
     let target_block_info = backend
         .get_block_info(&BlockId::Hash(*new_tip_block_hash))
         .map_err(make_db_error("getting block info for new tip"))?
-        .ok_or(BlockImportError::Internal(Cow::Owned(
-            format!("no block found for requested tip {}", new_tip_block_hash).to_string(),
-        )))?;
+        .ok_or_else(|| {
+            BlockImportError::Internal(format!("no block found for requested tip {new_tip_block_hash:#x}").into())
+        })?;
 
     let previous_tip_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting current tip block info"))?
-        .ok_or(BlockImportError::Internal(Cow::Owned("on blockchain tip in storage".to_string())))?;
+        .ok_or_else(|| BlockImportError::Internal(Cow::Owned("on blockchain tip in storage".to_string())))?;
 
-    let target_block_number = target_block_info.block_n().expect("Target block must have a block number");
+    let target_block_number = target_block_info
+        .block_n()
+        .ok_or_else(|| BlockImportError::Internal(Cow::Owned("Target block must have a block number".to_string())))?;
     let target_block_id = BasicId::new(target_block_number);
 
     let previous_tip_block_number =
@@ -372,7 +374,7 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
     let latest_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting latest block info"))?
-        .ok_or(BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
+        .ok_or_else(|| BlockImportError::Internal(Cow::Owned("no latest block after reorg".to_string())))?;
 
     Ok(ReorgData {
         starting_block_hash: *new_tip_block_hash,
