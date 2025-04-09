@@ -88,6 +88,9 @@ jobs:
           mv target/release/madara ./madara-binary          
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
 
+          # Copy the devnet.yaml file to the test directory
+          cp ./configs/presets/devnet.yaml ./orchestrator/crates/settlement-clients/starknet/src/tests/devnet.yaml
+
       - name: Getting necessary files for testing
         working-directory: orchestrator
         run: |
