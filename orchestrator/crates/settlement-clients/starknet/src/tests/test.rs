@@ -28,7 +28,6 @@ pub async fn spin_up_madara() -> MadaraCmd {
     tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
         .args([
-            "--no-sync-polling",
             "--devnet",
             "--no-l1-sync",
             "--chain-config-path=./src/tests/devnet.yaml",
